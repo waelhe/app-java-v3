@@ -22,7 +22,6 @@ import org.springframework.security.oauth2.server.authorization.context.Authoriz
 import org.springframework.security.oauth2.server.authorization.settings.OAuth2TokenFormat;
 import org.springframework.security.oauth2.server.authorization.token.DefaultOAuth2TokenContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenContext;
-import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenGenerator;
 import org.springframework.stereotype.Component;
 
 import com.marketplace.shared.config.MarketplaceProperties;
@@ -38,14 +37,14 @@ public final class NativePasskeyGrantAuthenticationProvider implements Authentic
 
     private final NativePasskeyService passkeyService;
     private final OAuth2AuthorizationService authorizationService;
-    private final OAuth2TokenGenerator<?> tokenGenerator;
+    private final NativePasskeyAccessTokenGenerator tokenGenerator;
     private final UserDetailsService userDetailsService;
     private final MarketplaceProperties properties;
 
     public NativePasskeyGrantAuthenticationProvider(
             NativePasskeyService passkeyService,
             OAuth2AuthorizationService authorizationService,
-            OAuth2TokenGenerator<?> tokenGenerator,
+            NativePasskeyAccessTokenGenerator tokenGenerator,
             UserDetailsService userDetailsService,
             MarketplaceProperties properties) {
         this.passkeyService = passkeyService;
