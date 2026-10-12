@@ -6,6 +6,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcOperations;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.web.webauthn.authentication.WebAuthnAuthenticationProvider;
 import org.springframework.security.web.webauthn.api.AuthenticatorSelectionCriteria;
 import org.springframework.security.web.webauthn.api.PublicKeyCredentialRpEntity;
 import org.springframework.security.web.webauthn.api.ResidentKeyRequirement;
@@ -74,5 +76,16 @@ public class NativePasskeyWebAuthnConfiguration {
         operations.setCustomizeRequestOptions(options ->
                 options.userVerification(UserVerificationRequirement.REQUIRED));
         return operations;
+    }
+
+    /**
+     * Reuse Spring Security's authentication provider through dependency injection in
+     * the native OAuth grant; keep assertion verification owned by the framework.
+     */
+    @Bean
+    WebAuthnAuthenticationProvider nativePasskeyAuthenticationProvider(
+            WebAuthnRelyingPartyOperations relyingPartyOperations,
+            UserDetailsService userDetailsService) {
+        return new WebAuthnAuthenticationProvider(relyingPartyOperations, userDetailsService);
     }
 }
