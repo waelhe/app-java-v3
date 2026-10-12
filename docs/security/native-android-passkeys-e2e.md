@@ -4,14 +4,14 @@ This is the acceptance procedure for the Android Credential Manager client and t
 
 ## 1. Signing identity is the source of truth
 
-1. Build an opt-in release-signed APK/AAB through the **Android client** GitHub Actions workflow with `buildSignedRelease=true`. The workflow requires these repository secrets: `ANDROID_RELEASE_KEYSTORE_BASE64`, `ANDROID_RELEASE_KEYSTORE_PASSWORD`, `ANDROID_RELEASE_KEY_ALIAS`, and `ANDROID_RELEASE_KEY_PASSWORD`.
-2. Use the certificate fingerprint and `android:apk-key-hash:` origin emitted in the workflow summary only when the same release keystore is the certificate installed on users' devices.
+1. The current signed-release workflow is `.github/workflows/android-release.yml`. It runs only when a tag matching `android-v*` is pushed; it has no `workflow_dispatch` or `buildSignedRelease` input. It requires these repository secrets: `ANDROID_RELEASE_KEYSTORE_BASE64`, `ANDROID_RELEASE_KEYSTORE_PASSWORD`, `ANDROID_RELEASE_KEY_ALIAS`, and `ANDROID_RELEASE_KEY_PASSWORD`. Signed artifacts are uploaded only after `android/scripts/verify-passkey-release.sh` passes.
+2. The workflow's **Derive signing identity** step emits the SHA-256 certificate fingerprint and `android:apk-key-hash:` origin in its job summary before the release preflight. That summary is identity data, not proof that a release is ready; the later gates must still pass. Do not push a production-release tag merely to discover a fingerprint. Derive it from the authorized release keystore or use the approved staging procedure.
 3. If Google Play App Signing is enabled, use the **App signing key certificate** fingerprint shown in Play Console—not the upload-key fingerprint emitted by a local upload build. If the Play signing certificate is different, derive the Android origin from that Play signing certificate too.
 4. Never substitute a generated/debug key or an assumed fingerprint for a release identity.
 
 ## 2. Configure a non-production relying party first
 
-Use a dedicated Railway staging environment and its own sign-in hostname. The relying-party ID must be the bare hostname (no scheme, path, port, or trailing slash). For the production hostname currently used by the app, the host is `app-java-v3-production-59bf.up.railway.app`; do not turn Passkeys on there before the staging acceptance gate passes.
+Use a dedicated Railway staging environment and its own sign-in hostname. The relying-party ID must be the bare hostname (no scheme, path, port, or trailing slash). The Railway project inspected on 2026-10-12 exposes a `production` environment only; no staging environment exists yet. Do not use production as staging or turn Passkeys on at `app-java-v3-production-59bf.up.railway.app` before a separate staging environment has been provisioned and the staging acceptance gate passes.
 
 Set the following service variables in the target environment, using the actual release/distribution certificate and matching hostname:
 
@@ -76,3 +76,9 @@ Do not mark this feature E2E-complete until all of the following are recorded ag
 - The app obtains a server-issued access token and calls a protected API successfully.
 
 No deployment to production is authorized by this runbook. Promote the configuration only after staging acceptance and explicit deployment approval.
+## 6. Current deployment boundary (inspection snapshot: 2026-10-12)
+
+- The companion pull requests are still open: Android client [#548](https://github.com/waelhe/app-java-v3/pull/548) and backend [#555](https://github.com/waelhe/app-java-v3/pull/555). The backend PR must be integrated and deployed to the chosen staging environment before server passkey ceremonies can be tested.
+- The connected Railway production service has the public OAuth client configuration, but none of the WebAuthn relying-party/origin/certificate variables is present: `WEBAUTHN_RP_ID`, `WEBAUTHN_RP_NAME`, `WEBAUTHN_ALLOWED_ORIGINS`, `ANDROID_APP_PACKAGE_NAME`, and `ANDROID_APP_SHA256_CERT_FINGERPRINTS`. Consequently, the deployed service has not been configured to serve an active passkey relying party.
+- The actual release/distribution signing certificate fingerprint is not yet established in this inspection. Do not invent it, use a debug fingerprint, or enable the feature with an incomplete allowlist. Derive the identity from the certificate that will sign the APK installed on users' devices, then set the fingerprint and its exact Android origin together.
+- Production variables and deployments were not changed by this runbook update. Production promotion remains gated on a successful physical-device ceremony and explicit deployment approval.
