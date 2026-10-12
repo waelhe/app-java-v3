@@ -179,13 +179,17 @@ public final class NativePasskeyService {
             if (result == null || !result.isAuthenticated() || !StringUtils.hasText(result.getName())) {
                 throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_GRANT);
             }
-            requireEnabledUserForGrant(result.getName());
             return result;
         } catch (OAuth2AuthenticationException exception) {
             throw exception;
         } catch (DataAccessException exception) {
             throw temporaryOAuthServiceError(exception);
         } catch (Exception exception) {
+            // WebAuthnAuthenticationProvider wraps RuntimeExceptions as bad credentials.
+            // Preserve repository failures hidden in that cause chain as server errors.
+            if (hasDataAccessCause(exception)) {
+                throw temporaryOAuthServiceError(exception);
+            }
             // Unknown, expired, replayed and invalid assertions all return the same grant error.
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_GRANT);
         }
@@ -261,17 +265,16 @@ public final class NativePasskeyService {
         }
     }
 
-    private void requireEnabledUserForGrant(String username) {
-        try {
-            requireEnabledUser(username);
-        } catch (ResponseStatusException exception) {
-            if (HttpStatus.FORBIDDEN.equals(exception.getStatusCode())) {
-                throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_GRANT);
+    private static boolean hasDataAccessCause(Throwable exception) {
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof DataAccessException) {
+                return true;
             }
-            throw temporaryOAuthServiceError(exception);
-        } catch (RuntimeException exception) {
-            throw temporaryOAuthServiceError(exception);
+            if (cause.getCause() == cause) {
+                break;
+            }
         }
+        return false;
     }
 
     private static ResponseStatusException serviceUnavailable(String message, Throwable cause) {
