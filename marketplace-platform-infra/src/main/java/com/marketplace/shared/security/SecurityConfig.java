@@ -113,11 +113,16 @@ public class SecurityConfig {
     @Order(1)
     SecurityFilterChain authorizationServerSecurityFilterChain(
             HttpSecurity http,
-            SpringSessionBackedSessionRegistry<? extends Session> sessionRegistry) throws Exception {
+            SpringSessionBackedSessionRegistry<? extends Session> sessionRegistry,
+            NativePasskeyGrantAuthenticationConverter nativePasskeyGrantAuthenticationConverter,
+            NativePasskeyGrantAuthenticationProvider nativePasskeyGrantAuthenticationProvider) throws Exception {
         http
                 .oauth2AuthorizationServer(authorizationServer -> {
                     http.securityMatcher(authorizationServer.getEndpointsMatcher());
                     authorizationServer.oidc(Customizer.withDefaults());
+                    authorizationServer.tokenEndpoint(tokenEndpoint -> tokenEndpoint
+                            .accessTokenRequestConverter(nativePasskeyGrantAuthenticationConverter)
+                            .authenticationProvider(nativePasskeyGrantAuthenticationProvider));
                 })
                 .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
                 .exceptionHandling(exceptions -> exceptions
@@ -368,6 +373,9 @@ public class SecurityConfig {
                         // authenticated; the password lifecycle items of the
                         // gate will each carry their own line when they open.
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/register").permitAll()
+                        // Native passkey login starts anonymously with fresh server-generated options.
+                        // The WebAuthn assertion is exchanged at the standard OAuth token endpoint.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/passkeys/assertion/options").permitAll()
                         // A-04 (official-compliance plan §6 wave A — A.1/A.2):
                         // the four token-redemption surfaces join the register
                         // precedent by the same measured rule — every one of
@@ -427,7 +435,7 @@ public class SecurityConfig {
                                                    SpringSessionBackedSessionRegistry<? extends Session> sessionRegistry) throws Exception {
         http
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/assets/**", "/login").permitAll()
+                        .requestMatchers("/assets/**", "/login", "/.well-known/assetlinks.json").permitAll()
                         .anyRequest().authenticated())
                 .formLogin(Customizer.withDefaults())
                 // "Sessions until logout" (the Spring Security 7.1.1 compliance wave, G-2) —
@@ -981,7 +989,8 @@ public class SecurityConfig {
         return context -> {
             if (OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
                 boolean userGrant = AuthorizationGrantType.AUTHORIZATION_CODE.equals(context.getAuthorizationGrantType())
-                        || AuthorizationGrantType.REFRESH_TOKEN.equals(context.getAuthorizationGrantType());
+                        || AuthorizationGrantType.REFRESH_TOKEN.equals(context.getAuthorizationGrantType())
+                        || NativePasskeyGrantAuthenticationToken.GRANT_TYPE.equals(context.getAuthorizationGrantType());
                 // The break-glass principal's login handle is "admin", not an email —
                 // emitting it as the email claim would violate the claim's own contract
                 // ("the login username IS the email") and let syncFromOidc persist
