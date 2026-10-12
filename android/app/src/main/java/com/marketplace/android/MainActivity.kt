@@ -45,12 +45,12 @@ import net.openid.appauth.ResponseTypeValues
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private val repository: MarketplaceRepository by lazy { MarketplaceRepository(applicationContext) }
     private val viewModel: CommunityViewModel by viewModels {
-        CommunityViewModel.Factory(MarketplaceRepository(applicationContext))
+        CommunityViewModel.Factory(repository)
     }
     private lateinit var authorizationService: AuthorizationService
     private lateinit var credentialManager: CredentialManager
-    private val repository: MarketplaceRepository by lazy { MarketplaceRepository(applicationContext) }
     private lateinit var authorizationLauncher: ActivityResultLauncher<Intent>
     private lateinit var silentAuthorizationLauncher: ActivityResultLauncher<Intent>
     private lateinit var endSessionLauncher: ActivityResultLauncher<Intent>
