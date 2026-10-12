@@ -1,5 +1,6 @@
 package com.marketplace.shared.security;
 
+
 import jakarta.servlet.http.HttpServletRequest;
 
 import org.springframework.security.core.Authentication;
@@ -66,7 +67,7 @@ public final class NativePasskeyGrantAuthenticationConverter implements Authenti
         if (!StringUtils.hasText(value)) {
             return Set.of();
         }
-        return Arrays.stream(value.split("\\s+"))
+        return Arrays.stream(value.split(" +"))
                 .filter(StringUtils::hasText)
                 .collect(Collectors.toUnmodifiableSet());
     }
