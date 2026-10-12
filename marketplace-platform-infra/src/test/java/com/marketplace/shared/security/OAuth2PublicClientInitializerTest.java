@@ -83,7 +83,7 @@ class OAuth2PublicClientInitializerTest {
         assertThat(saved.getAuthorizationGrantTypes())
                 .as("public client contract grants authorization_code and native passkey only")
                 .containsExactlyInAnyOrder(AuthorizationGrantType.AUTHORIZATION_CODE,
-                        NativePasskeyGrantAuthenticationToken.GRANT_TYPE);
+                        com.marketplace.shared.security.NativePasskeyGrantAuthenticationToken.GRANT_TYPE);
         assertThat(saved.getScopes()).containsExactlyInAnyOrder("openid", "profile");
         assertThat(saved.getRedirectUris())
                 .as("comma-separated env value is split, trimmed and blanks dropped"
