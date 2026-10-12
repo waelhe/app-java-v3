@@ -91,7 +91,13 @@ on:
 # check-runs, so only superseded rounds are ever cancelled — never the
 # round a gate is waiting on.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # CodeRabbit's final round on the #544 slice: the event TYPE rides the
+  # group key — a workflow_dispatch run and a push run on the same ref are
+  # DIFFERENT gates (the deploy gate reads push results; a manual dispatch
+  # must never cancel an in-flight push check, and a scheduled sweep must
+  # never cancel either). Cancellation stays exactly where it belongs:
+  # between older and newer runs of the SAME event type on the same ref.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 permissions:
   contents: read
