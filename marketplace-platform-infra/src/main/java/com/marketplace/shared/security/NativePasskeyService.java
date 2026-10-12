@@ -129,6 +129,11 @@ public final class NativePasskeyService {
                             options, new RelyingPartyPublicKey(credential, safeLabel)));
         } catch (ResponseStatusException exception) {
             throw exception;
+        } catch (org.springframework.dao.DataAccessException exception) {
+            // A repository outage is a server failure, not an invalid client assertion.
+            // Keep the REST error contract distinct from WebAuthn verification failures.
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Passkey registration is temporarily unavailable.", exception);
         } catch (Exception exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "The passkey registration response could not be verified.", exception);
