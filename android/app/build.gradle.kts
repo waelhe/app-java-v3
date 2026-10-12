@@ -37,7 +37,7 @@ fun String.asBuildConfigString(): String = listOf('"', this, '"').joinToString("
 
 extensions.configure<ApplicationExtension> {
     namespace = "com.marketplace.android"
-    compileSdk = 37
+    compileSdk = 36
 
     signingConfigs {
         create("release") {
@@ -51,7 +51,7 @@ extensions.configure<ApplicationExtension> {
     defaultConfig {
         applicationId = "com.marketplace.android"
         minSdk = 26
-        targetSdk = 37
+        targetSdk = 36
         versionCode = 3
         versionName = "0.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

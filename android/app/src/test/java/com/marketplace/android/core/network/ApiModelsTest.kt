@@ -245,4 +245,22 @@ class ApiModelsTest {
         assertEquals(18L, page.content.single().providerReviewCount)
     }
 
+    @Test
+    fun passkeyWireDtosMatchSpringSecurityJsonContracts() {
+        val optionsJson = """{"challenge":"YWJj","rpId":"example.com"}"""
+        val challengeJson = moshi.adapter(Map::class.java).toJson(
+            mapOf("challengeId" to "challenge-1", "optionsJson" to optionsJson)
+        )
+        val challenge = moshi.adapter(PasskeyChallengeDto::class.java).fromJson(challengeJson)
+        assertEquals("challenge-1", challenge?.challengeId)
+        assertEquals(optionsJson, challenge?.optionsJson)
+
+        val tokenJson = """{"access_token":"header.payload.signature","token_type":"Bearer","expires_in":900,"scope":"profile"}"""
+        val token = moshi.adapter(PasskeyTokenResponse::class.java).fromJson(tokenJson)
+        assertEquals("header.payload.signature", token?.accessToken)
+        assertEquals("Bearer", token?.tokenType)
+        assertEquals(900L, token?.expiresIn)
+        assertEquals("profile", token?.scope)
+    }
+
 }

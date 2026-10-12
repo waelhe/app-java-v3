@@ -18,6 +18,21 @@ on:
         type: boolean
         required: true
         default: false
+      apiBaseUrl:
+        description: "HTTPS API base URL used by the signed release"
+        type: string
+        required: true
+        default: "https://app-java-v3-production-59bf.up.railway.app/"
+      oidcIssuer:
+        description: "Exact HTTPS OIDC issuer used by the signed release"
+        type: string
+        required: true
+        default: "https://app-java-v3-production-59bf.up.railway.app"
+      passkeyRpId:
+        description: "DNS relying-party ID serving /.well-known/assetlinks.json (hostname only)"
+        type: string
+        required: true
+        default: "app-java-v3-production-59bf.up.railway.app"
 
 permissions:
   contents: read
@@ -40,27 +55,13 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
 
-      - name: Set up Android SDK
+      - name: Set up stable Android SDK
         uses: android-actions/setup-android@v4.0.4
         with:
-          packages: "platform-tools"
+          packages: "platform-tools platforms;android-36 build-tools;36.0.0"
 
-      # API 37 is distributed on Android's canary SDK channel; the stable-only
-      # sdkmanager in setup-android cannot resolve platforms;android-37.
-      - name: Install Android 17 SDK
-        shell: bash
-        run: |
-          curl -fsSL https://dl.google.com/android/cli/latest/linux_x86_64/install.sh | bash
-          android_bin="$(command -v android || true)"
-          if [[ -z "$android_bin" ]]; then
-            android_bin="$(find -L "$HOME" -type f -name android -perm -u+x -print -quit)"
-          fi
-          if [[ -z "$android_bin" ]]; then
-            echo "Android CLI was installed but could not be located." >&2
-            exit 1
-          fi
-          echo "$(dirname "$android_bin")" >> "$GITHUB_PATH"
-          "$android_bin" --sdk="$ANDROID_SDK_ROOT" sdk install --canary platforms/android-37 build-tools/36.0.0
+      - name: Validate release preflight script syntax
+        run: bash -n android/scripts/verify-passkey-release.sh
 
       - name: Run JVM tests
         working-directory: android
@@ -114,25 +115,10 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
 
-      - name: Set up Android SDK
+      - name: Set up stable Android SDK
         uses: android-actions/setup-android@v4.0.4
         with:
-          packages: "platform-tools"
-
-      - name: Install Android 17 SDK
-        shell: bash
-        run: |
-          curl -fsSL https://dl.google.com/android/cli/latest/linux_x86_64/install.sh | bash
-          android_bin="$(command -v android || true)"
-          if [[ -z "$android_bin" ]]; then
-            android_bin="$(find -L "$HOME" -type f -name android -perm -u+x -print -quit)"
-          fi
-          if [[ -z "$android_bin" ]]; then
-            echo "Android CLI was installed but could not be located." >&2
-            exit 1
-          fi
-          echo "$(dirname "$android_bin")" >> "$GITHUB_PATH"
-          "$android_bin" --sdk="$ANDROID_SDK_ROOT" sdk install --canary platforms/android-37 build-tools/36.0.0
+          packages: "platform-tools platforms;android-36 build-tools;36.0.0"
 
       - name: Decode release keystore
         env:
@@ -151,14 +137,20 @@ jobs:
         env:
           OAUTH_PUBLIC_CLIENT_ID: android-community-native
           OIDC_REDIRECT_URI: com.marketplace.android:/oauth2redirect
+          API_BASE_URL: ${{ inputs.apiBaseUrl }}
+          OIDC_ISSUER: ${{ inputs.oidcIssuer }}
           ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
           ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
           ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
         run: |
+          set -euo pipefail
+          [[ "$API_BASE_URL" == https://* ]] || { echo "apiBaseUrl must use HTTPS." >&2; exit 1; }
+          [[ "$OIDC_ISSUER" == https://* ]] || { echo "oidcIssuer must use HTTPS." >&2; exit 1; }
           ./gradlew :app:assembleRelease :app:bundleRelease \
-            -PoidcClientId="${OAUTH_PUBLIC_CLIENT_ID}" \
-            -PoidcRedirectUri="${OIDC_REDIRECT_URI}"
-
+            -PapiBaseUrl="$API_BASE_URL" \
+            -PoidcIssuer="$OIDC_ISSUER" \
+            -PoidcClientId="$OAUTH_PUBLIC_CLIENT_ID" \
+            -PoidcRedirectUri="$OIDC_REDIRECT_URI"
       - name: Derive signing identity for Digital Asset Links
         env:
           ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
@@ -187,6 +179,16 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           rm -f "$cert"
 
+      - name: Verify signed artifacts and deployed passkey prerequisites
+        env:
+          API_BASE_URL: ${{ inputs.apiBaseUrl }}
+          OIDC_ISSUER: ${{ inputs.oidcIssuer }}
+          PASSKEY_RP_ID: ${{ inputs.passkeyRpId }}
+          ANDROID_PACKAGE_NAME: com.marketplace.android
+          ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+        shell: bash
+        run: bash android/scripts/verify-passkey-release.sh
       - name: Upload signed APK and AAB
         uses: actions/upload-artifact@v6
         with:

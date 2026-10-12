@@ -31,12 +31,12 @@ The current backend does **not** expose the complete public storefront/cart/orde
 
 ## Build and test
 
-Use JDK 17. The checked-in Gradle Wrapper pins Gradle 9.6.0; AGP 9.4.1 is compatible with Gradle 9.6.0, Build Tools 36.0.0 and API 37. The pinned Compose BOM is stable `2026.09.00`. The wrapper automatically provisions the pinned Gradle distribution, keeping local and CI builds on the same Gradle version:
+Use JDK 17. The checked-in Gradle Wrapper pins Gradle 9.7.1; Android Gradle Plugin 9.4.1 requires Gradle 9.6.0 or newer. The app uses stable Android API 36 for both `compileSdk` and `targetSdk`; Android 17 / API 37 is still Preview in the official SDK guide, so this release does not target a preview platform. The pinned Compose BOM is stable `2026.09.00`. The wrapper automatically provisions the pinned Gradle distribution, keeping local and CI builds on the same Gradle version:
 
     cd android
     ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
 
-The Android client workflow installs Android SDK platform 37 (Build Tools 36.0.0), runs JVM unit tests, builds the debug APK and uploads it as a workflow artifact. The CI artifact is a debug build, not a production-signed release.
+The Android client workflow installs stable Android SDK platform 36 and Build Tools 36.0.0 through the official Android SDK setup action, runs JVM unit tests, builds the debug APK and Android test APK, and runs the auth-entry instrumentation test on an API 36 emulator. The CI artifact is a debug build, not a production-signed release.
 
 Override environment-specific values without committing them:
 
@@ -55,11 +55,11 @@ A release-signed APK/AAB is an explicit, manual workflow-dispatch option. Before
 - `ANDROID_RELEASE_KEY_ALIAS`
 - `ANDROID_RELEASE_KEY_PASSWORD`
 
-The release Gradle tasks fail closed if any signing setting is missing. The workflow outputs the signing certificate SHA-256 fingerprint and its `android:apk-key-hash:` origin in the job summary; it does not publish the certificate or modify Railway. If Google Play App Signing is enabled, the upload-key certificate is **not** the certificate installed on users' devices: configure Digital Asset Links with the Play Console **App signing key certificate** fingerprint. Do not use a debug key as a production identity.
+The release Gradle tasks fail closed if any signing setting is missing. The workflow outputs the signing certificate SHA-256 fingerprint and its `android:apk-key-hash:` origin in the job summary; it does not publish the certificate or modify Railway. The manual workflow also requires explicit API base URL, OIDC issuer and RP ID inputs. Before it uploads release artifacts, it verifies that the APK and AAB signatures match the configured keystore, that the RP host's Digital Asset Links JSON associates the exact package and certificate, that OIDC discovery matches the configured issuer, that assertion-options are enabled and return the expected RP ID, and that a protected API rejects anonymous access. The signed-artifact upload is deliberately blocked until those checks pass. If Google Play App Signing is enabled, the upload-key certificate is **not** the certificate installed on users' devices: configure Digital Asset Links with the Play Console **App signing key certificate** fingerprint. Do not use a debug key as a production identity.
 
 For the backend environment that serves this app, the operator must verify/set the exact public OAuth redirect URI `com.marketplace.android:/oauth2redirect`, the RP ID matching the sign-in host, and matching `WEBAUTHN_ALLOWED_ORIGINS` / `ANDROID_APP_SHA256_CERT_FINGERPRINTS` derived from the actual distribution signing certificate. The server must return HTTP 200 and `Content-Type: application/json` from `/.well-known/assetlinks.json`. No production environment is changed by this workflow.
 
-Full device E2E still requires installing the actual release-signed build on a supported Android device with a credential provider, registering a passkey, signing out, authenticating with that passkey, and successfully calling a protected API with the returned access token. Build success and emulator UI tests are not substitutes for this acceptance test.
+The workflow preflight proves release signing, server association, OIDC discovery, an enabled WebAuthn assertion-options endpoint, and anonymous protection of a resource API. It deliberately does not fabricate a credential or claim a successful assertion. Final device E2E still requires installing the exact release-signed build on a supported Android device with a credential provider, registering a passkey, signing out, authenticating with that passkey, and successfully calling a protected API with the returned access token. Build success, the emulator UI test, and server preflight are not substitutes for that final acceptance test. For this repository's current Railway project, production does not yet expose the passkey configuration variables; the preflight must fail until the backend PR is deployed and a real release identity is configured.
 
 ## Code boundaries
 
@@ -76,6 +76,9 @@ Full device E2E still requires installing the actual release-signed build on a s
 - Coil 3 Compose `AsyncImage` and network setup: https://github.com/coil-kt/coil/blob/main/docs/getting_started.md
 - Android SDK setup action: https://github.com/android-actions/setup-android
 - Gradle Wrapper and build-version reproducibility: https://docs.gradle.org/current/userguide/gradle_wrapper.html
+- Android Gradle Plugin 9.4 compatibility: https://developer.android.com/build/releases/agp-9-4-0-release-notes
+- Stable Google Play target API requirements: https://developer.android.com/google/play/requirements/target-sdk
+- Android 17 Preview SDK setup: https://developer.android.com/about/versions/17/setup-sdk
 - Kotlin releases and Compose compiler plugin: https://github.com/JetBrains/kotlin/releases
 - Retrofit: https://github.com/square/retrofit
 - OkHttp: https://github.com/square/okhttp
