@@ -62,7 +62,7 @@ extensions.configure<ApplicationExtension> {
 }
 
 dependencies {
-    implementation(platform("com.squareup.okhttp3:okhttp-bom:5.4.0"))
+    implementation(platform("com.squareup.okhttp3:okhttp-bom:5.5.0"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
     val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
