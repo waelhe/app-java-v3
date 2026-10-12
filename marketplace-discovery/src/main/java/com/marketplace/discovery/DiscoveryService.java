@@ -88,6 +88,15 @@ public class DiscoveryService {
      */
     static final int FOR_YOU_DEEP_WINDOW_MAX = 1000;
 
+    /**
+     * The impression write path's honest daily bound — CodeRabbit's final
+     * round on the #544 slice: one user's distinct impressions per day.
+     * Honest browsing (the home view's six bounded rails plus the topic
+     * pages' capped windows) sits an order of magnitude below; a client
+     * posting random source ids in a loop stops here.
+     */
+    static final int DAILY_IMPRESSIONS_PER_USER = 1000;
+
     /** The closed card sourceType vocabulary (the {@code DiscoveryCardView} contract). */
     static final String SOURCE_NEIGHBORHOOD_POST = "NEIGHBORHOOD_POST";
     static final String SOURCE_NEIGHBORHOOD_EVENT = "NEIGHBORHOOD_EVENT";
@@ -243,14 +252,20 @@ public class DiscoveryService {
             case NEIGHBORHOOD_RECOMMENDATIONS -> communityPort.findRecommendations(locationId, request)
                     .map(post -> postCard(post, REASON_RECOMMENDATIONS));
             case EVENTS_AND_OPPORTUNITIES -> {
+                // CodeRabbit's final round on the #544 slice: the merged-rails
+                // discipline — the identical defect class FOLLOWED_SOURCES
+                // was flagged for (per-source cursors dropping cards between
+                // them) lived here too; both answer the same law now.
+                PagedRequest deep = new PagedRequest(0, deepWindowSize(request), request.sort());
                 PagedResponse<CommunityDiscoveryPort.DiscoveryEventCard> events =
-                        communityPort.findUpcomingEvents(locationId, request);
+                        communityPort.findUpcomingEvents(locationId, deep);
                 PagedResponse<JobsDiscoveryPort.DiscoveryJobCard> jobs =
-                        jobsPort.findOpenJobs(locationId, request);
-                yield mergedPage(recencyOrdered(mergeCards(
+                        jobsPort.findOpenJobs(locationId, deep);
+                yield mergedWindowPage(recencyOrdered(mergeCards(
                                 events.content().stream().map(event -> eventCard(event, REASON_EVENT)).toList(),
                                 jobs.content().stream().map(job -> jobCard(job, REASON_JOB)).toList())),
-                        request, events.totalElements() + jobs.totalElements());
+                        request, events.last() && jobs.last(),
+                        events.totalElements() + jobs.totalElements());
             }
             case FOR_YOU -> forYouPage(locationId, userId, request);
         };
@@ -270,6 +285,23 @@ public class DiscoveryService {
     public void recordImpression(UUID userId, DiscoveryRowType row, String sourceType, UUID sourceId) {
         LocalDate impressionDay = LocalDate.now(clock);
         try {
+            // CodeRabbit's final round on the #544 slice — the write path's
+            // honest bound: the ledger's idempotency key dedups the honest
+            // repeat, but an authenticated client posting RANDOM source ids
+            // grows the table without limit (every distinct id is a new
+            // row). The daily cap rides V176's own user-day index: past
+            // the cap the insert is skipped and logged — browsing still
+            // answers its 204 (bookkeeping never breaks the experience);
+            // honest use never reaches it (the home view's 60 cards plus
+            // the topic pages' bounded windows are an order of magnitude
+            // below).
+            if (impressions.countByUserIdAndImpressionDay(userId, impressionDay)
+                    >= DAILY_IMPRESSIONS_PER_USER) {
+                log.warn("Discovery impression daily cap reached (insert skipped, browse "
+                        + "continues): userId={}, day={}, cap={}",
+                        userId, impressionDay, DAILY_IMPRESSIONS_PER_USER);
+                return;
+            }
             impressions.insertOnce(UUID.randomUUID(), userId, row.name(), sourceType, sourceId, impressionDay);
         } catch (RuntimeException failure) {
             log.warn("Discovery impression recording skipped (browse continues): userId={}, row={}, source={}/{}",
@@ -299,16 +331,23 @@ public class DiscoveryService {
         if (followed.authorIds().isEmpty() && followed.providerIds().isEmpty()) {
             return PagedResponse.empty(request);
         }
+        // CodeRabbit's final round on the #544 slice: the merged-rails
+        // discipline — the deep fetch (page 0, the widened size) over BOTH
+        // sources before the global recency window (see
+        // mergedWindowPage's own law). The pre-fix per-source cursors
+        // dropped every card that fell between them.
+        PagedRequest deep = new PagedRequest(0, deepWindowSize(request), request.sort());
         PagedResponse<CommunityDiscoveryPort.DiscoveryPostCard> posts = followed.authorIds().isEmpty()
-                ? PagedResponse.empty(request)
-                : communityPort.findRecentByAuthors(followed.authorIds(), request);
+                ? PagedResponse.empty(deep)
+                : communityPort.findRecentByAuthors(followed.authorIds(), deep);
         PagedResponse<ProviderListingSummary> listings = followed.providerIds().isEmpty()
-                ? PagedResponse.empty(request)
-                : providerListingsPort.findActiveByProviders(followed.providerIds(), request);
-        List<DiscoveryCardView> cards = recencyOrdered(mergeCards(
+                ? PagedResponse.empty(deep)
+                : providerListingsPort.findActiveByProviders(followed.providerIds(), deep);
+        List<DiscoveryCardView> pool = recencyOrdered(mergeCards(
                 posts.content().stream().map(post -> postCard(post, REASON_FOLLOWED_SOURCES)).toList(),
                 listings.content().stream().map(listing -> listingCard(listing, REASON_FOLLOWED_SOURCES)).toList()));
-        return mergedPage(cards, request, posts.totalElements() + listings.totalElements());
+        return mergedWindowPage(pool, request, posts.last() && listings.last(),
+                posts.totalElements() + listings.totalElements());
     }
 
     private PagedResponse<DiscoveryCardView> forYouPage(UUID locationId, UUID userId, PagedRequest request) {
@@ -357,13 +396,7 @@ public class DiscoveryService {
         boolean sourcesExhausted = lostFound.last() && recommendations.last() && events.last() && jobs.last();
         long totalElements = lostFound.totalElements() + recommendations.totalElements()
                 + events.totalElements() + jobs.totalElements();
-        long from = (long) request.page() * request.size();
-        int to = (int) Math.min(from + request.size(), candidates.size());
-        List<DiscoveryCardView> window = from >= candidates.size()
-                ? List.of() : candidates.subList((int) from, to);
-        boolean last = sourcesExhausted && to >= candidates.size();
-        int totalPages = (int) Math.ceil(totalElements / (double) request.size());
-        return new PagedResponse<>(window, request.page(), request.size(), totalElements, totalPages, last);
+        return mergedWindowPage(candidates, request, sourcesExhausted, totalElements);
     }
 
     /**
@@ -379,6 +412,34 @@ public class DiscoveryService {
      * authority. The first FOR_YOU_DEEP_WINDOW_MAX/size pages — 20 at the
      * documented size cap of 50 — keep the full global-window guarantee.
      */
+
+    /**
+     * The merged rails' global window — CodeRabbit's final round on the
+     * #544 slice (FOLLOWED_SOURCES flagged; EVENTS_AND_OPPORTUNITIES
+     * carried the identical defect class; FOR_YOU's round-3 fix rides the
+     * same discipline — all three merged rails answer ONE law now): a
+     * merged rail's page is a GLOBAL slice over the recency-ordered pool,
+     * so every source must contribute its FIRST (page+1)*size rows (the
+     * k-way merge over sorted sources — the global window
+     * [page*size, page*size+size) can never need more than that from any
+     * single source). The pre-fix per-source cursors let a card cut from
+     * an early window fall between the cursors — never seen on any later
+     * page. The page is LAST only when every source's deep page is last
+     * AND this window's cut reaches the pool's end; the envelope's totals
+     * stay the sources' honest sum.
+     */
+    private PagedResponse<DiscoveryCardView> mergedWindowPage(
+            List<DiscoveryCardView> pool, PagedRequest request,
+            boolean sourcesExhausted, long totalElements) {
+        long from = (long) request.page() * request.size();
+        int to = (int) Math.min(from + request.size(), pool.size());
+        List<DiscoveryCardView> window = from >= pool.size()
+                ? List.of() : pool.subList((int) from, to);
+        boolean last = sourcesExhausted && to >= pool.size();
+        int totalPages = (int) Math.ceil(totalElements / (double) request.size());
+        return new PagedResponse<>(window, request.page(), request.size(), totalElements, totalPages, last);
+    }
+
     private static int deepWindowSize(PagedRequest request) {
         return (int) Math.min(((long) request.page() + 1) * request.size(), FOR_YOU_DEEP_WINDOW_MAX);
     }

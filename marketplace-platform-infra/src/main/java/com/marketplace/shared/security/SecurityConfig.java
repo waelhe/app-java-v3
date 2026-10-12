@@ -450,7 +450,7 @@ public class SecurityConfig {
                                                    SpringSessionBackedSessionRegistry<? extends Session> sessionRegistry) throws Exception {
         http
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/assets/**", "/login", "/.well-known/assetlinks.json").permitAll()
+                        .requestMatchers("/assets/**", "/login", "/favicon.ico", "/default-ui.css", "/error", "/.well-known/assetlinks.json").permitAll()
                         .anyRequest().authenticated())
                 .formLogin(Customizer.withDefaults())
                 // "Sessions until logout" (the Spring Security 7.1.1 compliance wave, G-2) —

@@ -73,15 +73,32 @@ on:
     # only: PRs targeting main and push events are unaffected; the
     # remaining open PRs target main directly and gate through the
     # pull_request event.
-    # The #540 review split's stacked base rides the same §4.1 mechanism:
-    # #541 (discovery/wave-part1 -> main) is slice 1, #540 (the full D1-D4
-    # head -> discovery/wave-part1) is slice 2 — the CodeRabbit free-plan
-    # 100-file review limit's documented remedy (split or change base). The
-    # entry retires with the wave (the precedent's own inertness rule).
-    branches: [ main, discovery/wave-part1 ]
+    # The #540 review split's stacked base rode the same §4.1 mechanism
+    # (#541 slice 1 -> main, #540 slice 2 -> discovery/wave-part1 — the
+    # CodeRabbit free-plan 100-file review limit's documented remedy). Both
+    # slices have since merged, so the entry retired with its wave (the
+    # same inertness the precedent documents above).
+    branches: [ main ]
   schedule:
     - cron: '43 5 * * 1'
 
+
+# One test round per ref: a newer push supersedes the older round and
+# cancels it in place (GitHub's documented concurrency discipline — the
+# 2026-10-11 measured flood: an iterating sibling branch's pushes parked
+# ~75 superseded runs in the queue while the account's 20-runner ceiling
+# starved every live gate). The merge ruleset reads the LATEST head's
+# check-runs, so only superseded rounds are ever cancelled — never the
+# round a gate is waiting on.
+concurrency:
+  # CodeRabbit's final round on the #544 slice: the event TYPE rides the
+  # group key — a workflow_dispatch run and a push run on the same ref are
+  # DIFFERENT gates (the deploy gate reads push results; a manual dispatch
+  # must never cancel an in-flight push check, and a scheduled sweep must
+  # never cancel either). Cancellation stays exactly where it belongs:
+  # between older and newer runs of the SAME event type on the same ref.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
   security-events: write

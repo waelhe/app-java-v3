@@ -51,4 +51,15 @@ public interface DiscoveryImpressionRepository extends JpaRepository<DiscoveryIm
                    @Param("sourceType") String sourceType,
                    @Param("sourceId") UUID sourceId,
                    @Param("impressionDay") LocalDate impressionDay);
+
+    /**
+     * CodeRabbit's final round on the #544 slice — the impression write
+     * path's honest bound: how many DISTINCT impressions has this user
+     * already recorded today? The service's daily cap consults this count
+     * BEFORE the insert (an authenticated client posting random source ids
+     * in a loop must not grow the ledger without limit). The read rides
+     * V176's own {@code idx_discovery_impressions_user_day} index — the
+     * index the ledger's day-scan was already built for.
+     */
+    long countByUserIdAndImpressionDay(UUID userId, LocalDate impressionDay);
 }

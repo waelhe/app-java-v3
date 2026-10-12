@@ -9,6 +9,7 @@ import com.marketplace.shared.api.FollowedSourcesPort;
 import com.marketplace.shared.api.JobsDiscoveryPort;
 import com.marketplace.shared.api.PagedRequest;
 import com.marketplace.shared.api.PagedResponse;
+import com.marketplace.shared.api.ProviderListingSummary;
 import com.marketplace.shared.api.ProviderListingsPort;
 import com.marketplace.shared.api.UrgentAlertsPort;
 import org.junit.jupiter.api.Test;
@@ -125,6 +126,11 @@ class DiscoveryServiceTest {
     private static JobsDiscoveryPort.DiscoveryJobCard job(UUID jobId, Instant updatedAt) {
         return new JobsDiscoveryPort.DiscoveryJobCard(jobId, "وظيفة", "الوصف",
                 "FULL_TIME", "HYBRID", "OPEN", updatedAt);
+    }
+
+    private static ProviderListingSummary listing(UUID listingId, UUID providerId, Instant updatedAt) {
+        return new ProviderListingSummary(listingId, "إعلان المتابَع", "SERVICES",
+                java.math.BigDecimal.TEN, "SAR", providerId, "ACTIVE", updatedAt, updatedAt);
     }
 
     UrgentAlertsPort.UrgentAlertCard alert(UUID alertId, Instant updatedAt) {
@@ -455,6 +461,59 @@ class DiscoveryServiceTest {
         assertThat(result.last()).isFalse();
         assertThat(result.pageNumber()).isEqualTo(1);
         assertThat(result.pageSize()).isEqualTo(2);
+    }
+
+    @Test
+    void followedSourcesTopicPageOmittedCardsStayEligibleForLaterPages() {
+        // CodeRabbit's final round on the #544 slice: FOLLOWED_SOURCES is a
+        // merged rail — the same global-window law FOR_YOU's round-3 fix
+        // rides. Page 1 of size 2: BOTH sources must answer their deep
+        // (0, (1+1)*2) fetch; the cards page 0's window cut stay ranked in
+        // the global recency pool and appear on their own later page — the
+        // pre-fix per-source cursors let them fall between and lose them.
+        callerHasMembership();
+        PagedRequest request = PagedRequest.of(1, 2);
+        PagedRequest deep = PagedRequest.of(0, 4);
+        UUID followedAuthor = UUID.randomUUID();
+        UUID followedProvider = UUID.randomUUID();
+        when(followedSourcesPort.followedSources(USER_ID)).thenReturn(Set.of(
+                new FollowedSourcesPort.FollowedSource("USER", followedAuthor),
+                new FollowedSourcesPort.FollowedSource("PROVIDER", followedProvider)));
+        UUID p1 = UUID.randomUUID();
+        UUID p2 = UUID.randomUUID();
+        UUID p3 = UUID.randomUUID();
+        UUID l1 = UUID.randomUUID();
+        UUID l2 = UUID.randomUUID();
+        // The authors leg: 5 rows total, its deep page carries the first 3
+        // (not last). Recency: P1(now) > P2(now-10) > P3(now-20).
+        when(communityPort.findRecentByAuthors(Set.of(followedAuthor), deep))
+                .thenReturn(new PagedResponse<>(List.of(
+                        post(p1, followedAuthor, now),
+                        post(p2, followedAuthor, now.minusSeconds(10)),
+                        post(p3, followedAuthor, now.minusSeconds(20))),
+                        0, 4, 5, 2, false));
+        // The providers leg: 2 rows total, its deep page carries them all
+        // (last). Recency: L1(now-5) > L2(now-15).
+        when(providerListingsPort.findActiveByProviders(Set.of(followedProvider), deep))
+                .thenReturn(new PagedResponse<>(List.of(
+                        listing(l1, followedProvider, now.minusSeconds(5)),
+                        listing(l2, followedProvider, now.minusSeconds(15))),
+                        0, 4, 2, 1, true));
+
+        PagedResponse<DiscoveryCardView> result =
+                service().rowPage(USER_ID, DiscoveryRowType.FOLLOWED_SOURCES, request);
+
+        // The global pool by recency is P1, L1, P2, L2, P3 — page 1's
+        // window is [P2, L2]: exactly the two cards the pre-fix cursors
+        // would have skipped past.
+        assertThat(result.content()).extracting(DiscoveryCardView::sourceId)
+                .containsExactly(p2, l2);
+        assertThat(result.content()).extracting(DiscoveryCardView::sourceType)
+                .containsExactly("NEIGHBORHOOD_POST", "PROVIDER_LISTING");
+        verify(communityPort).findRecentByAuthors(Set.of(followedAuthor), deep);
+        verify(providerListingsPort).findActiveByProviders(Set.of(followedProvider), deep);
+        assertThat(result.totalElements()).isEqualTo(7L);
+        assertThat(result.last()).isFalse();
     }
 
     @Test
