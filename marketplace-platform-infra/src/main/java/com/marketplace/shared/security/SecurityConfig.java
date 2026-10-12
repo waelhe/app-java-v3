@@ -945,7 +945,7 @@ public class SecurityConfig {
      * <ul>
      *   <li>{@code roles} — flattened authorities (e.g. "ADMIN") per
      *       <a href="https://docs.spring.io/spring-authorization-server/reference/guides/how-to-custom-claims-authorities.html">
-     *       How-to: Customize JWT Claims</a>.</li>
+     *       Spring Security OAuth2TokenCustomizer API</a>.</li>
      *   <li>{@code aud} — the resource server audience per
      *       <a href="https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.3">RFC 7519 §4.1.3</a>.</li>
      *   <li>{@code email} — the login handle of the user principal, on the
