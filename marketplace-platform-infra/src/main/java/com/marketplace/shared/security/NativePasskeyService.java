@@ -19,7 +19,6 @@ import org.springframework.security.web.webauthn.api.PublicKeyCredentialCreation
 import org.springframework.security.web.webauthn.api.PublicKeyCredentialRequestOptions;
 import org.springframework.security.web.webauthn.authentication.WebAuthnAuthenticationProvider;
 import org.springframework.security.web.webauthn.authentication.WebAuthnAuthenticationRequestToken;
-import org.springframework.security.web.webauthn.jackson.WebauthnJacksonModule;
 import org.springframework.security.web.webauthn.management.ImmutablePublicKeyCredentialCreationOptionsRequest;
 import org.springframework.security.web.webauthn.management.ImmutablePublicKeyCredentialRequestOptionsRequest;
 import org.springframework.security.web.webauthn.management.ImmutableRelyingPartyRegistrationRequest;
@@ -68,18 +67,13 @@ public final class NativePasskeyService {
             JdbcTemplate jdbcTemplate,
             WebAuthnRelyingPartyOperations relyingPartyOperations,
             UserDetailsService userDetailsService,
-            NativePasskeyProperties properties) {
+            NativePasskeyProperties properties,
+            JsonMapper webAuthnMapper) {
         this.jdbcTemplate = jdbcTemplate;
         this.relyingPartyOperations = relyingPartyOperations;
         this.userDetailsService = userDetailsService;
         this.properties = properties;
-        // The official module serializes the options types (its mixins carry no
-        // @JsonCreator); the stateless JDBC ceremonies read them back, so the
-        // readback leg is completed by our builder-backed deserializers.
-        this.webAuthnMapper = JsonMapper.builder()
-                .addModule(new WebauthnJacksonModule())
-                .addModule(new NativePasskeyOptionsJacksonModule())
-                .build();
+        this.webAuthnMapper = webAuthnMapper;
         this.webAuthnAuthenticationProvider =
                 new WebAuthnAuthenticationProvider(relyingPartyOperations, userDetailsService);
     }
