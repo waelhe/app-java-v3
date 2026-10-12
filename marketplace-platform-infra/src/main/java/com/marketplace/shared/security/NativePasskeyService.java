@@ -2,6 +2,7 @@ package com.marketplace.shared.security;
 
 import java.util.UUID;
 
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -10,7 +11,9 @@ import org.springframework.security.authentication.AuthenticationTrustResolverIm
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.web.webauthn.api.AuthenticatorAssertionResponse;
 import org.springframework.security.web.webauthn.api.AuthenticatorAttestationResponse;
@@ -80,10 +83,16 @@ public final class NativePasskeyService {
 
     public NativePasskeyChallengeResponse createAuthenticationOptions() {
         requireConfigured();
-        PublicKeyCredentialRequestOptions options =
-                this.relyingPartyOperations.createCredentialRequestOptions(
-                        new ImmutablePublicKeyCredentialRequestOptionsRequest(null));
-        return issueChallenge(AUTHENTICATE, null, options);
+        try {
+            PublicKeyCredentialRequestOptions options =
+                    this.relyingPartyOperations.createCredentialRequestOptions(
+                            new ImmutablePublicKeyCredentialRequestOptionsRequest(null));
+            return issueChallenge(AUTHENTICATE, null, options);
+        } catch (ResponseStatusException exception) {
+            throw exception;
+        } catch (DataAccessException exception) {
+            throw serviceUnavailable("Passkey authentication is temporarily unavailable.", exception);
+        }
     }
 
     public NativePasskeyChallengeResponse createRegistrationOptions(Authentication authentication) {
@@ -91,10 +100,16 @@ public final class NativePasskeyService {
         requireAuthenticated(authentication);
         requireEnabledUser(authentication.getName());
 
-        PublicKeyCredentialCreationOptions options =
-                this.relyingPartyOperations.createPublicKeyCredentialCreationOptions(
-                        new ImmutablePublicKeyCredentialCreationOptionsRequest(authentication));
-        return issueChallenge(REGISTER, authentication.getName(), options);
+        try {
+            PublicKeyCredentialCreationOptions options =
+                    this.relyingPartyOperations.createPublicKeyCredentialCreationOptions(
+                            new ImmutablePublicKeyCredentialCreationOptionsRequest(authentication));
+            return issueChallenge(REGISTER, authentication.getName(), options);
+        } catch (ResponseStatusException exception) {
+            throw exception;
+        } catch (DataAccessException exception) {
+            throw serviceUnavailable("Passkey registration is temporarily unavailable.", exception);
+        }
     }
 
     public void completeRegistration(
@@ -114,6 +129,8 @@ public final class NativePasskeyService {
             // the caller is already authenticated and simply needs a fresh ceremony.
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "The passkey registration challenge is invalid or expired.", exception);
+        } catch (DataAccessException exception) {
+            throw serviceUnavailable("Passkey registration is temporarily unavailable.", exception);
         }
         try {
             PublicKeyCredentialCreationOptions options =
@@ -150,8 +167,8 @@ public final class NativePasskeyService {
             // ResponseStatusException escape the framework's authentication filter.
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_GRANT);
         }
-        String optionsJson = consumeChallenge(challengeId, AUTHENTICATE, null);
         try {
+            String optionsJson = consumeChallenge(challengeId, AUTHENTICATE, null);
             PublicKeyCredentialRequestOptions options =
                     this.webAuthnMapper.readValue(optionsJson, PublicKeyCredentialRequestOptions.class);
             PublicKeyCredential<AuthenticatorAssertionResponse> credential =
@@ -166,6 +183,8 @@ public final class NativePasskeyService {
             return result;
         } catch (OAuth2AuthenticationException exception) {
             throw exception;
+        } catch (DataAccessException exception) {
+            throw temporaryOAuthServiceError(exception);
         } catch (Exception exception) {
             // Unknown, expired, replayed and invalid assertions all return the same grant error.
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_GRANT);
@@ -229,9 +248,11 @@ public final class NativePasskeyService {
         final UserDetails account;
         try {
             account = this.userDetailsService.loadUserByUsername(username);
-        } catch (RuntimeException exception) {
+        } catch (UsernameNotFoundException exception) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "The account is not eligible to register a passkey.");
+                    "The account is not eligible to register a passkey.", exception);
+        } catch (DataAccessException exception) {
+            throw serviceUnavailable("The account status could not be verified.", exception);
         }
         if (!account.isEnabled() || !account.isAccountNonLocked()
                 || !account.isAccountNonExpired() || !account.isCredentialsNonExpired()) {
@@ -244,8 +265,24 @@ public final class NativePasskeyService {
         try {
             requireEnabledUser(username);
         } catch (ResponseStatusException exception) {
-            throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_GRANT);
+            if (HttpStatus.FORBIDDEN.equals(exception.getStatusCode())) {
+                throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_GRANT);
+            }
+            throw temporaryOAuthServiceError(exception);
+        } catch (RuntimeException exception) {
+            throw temporaryOAuthServiceError(exception);
         }
+    }
+
+    private static ResponseStatusException serviceUnavailable(String message, Throwable cause) {
+        return new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, message, cause);
+    }
+
+    private static OAuth2AuthenticationException temporaryOAuthServiceError(Throwable cause) {
+        return new OAuth2AuthenticationException(new OAuth2Error(
+                OAuth2ErrorCodes.SERVER_ERROR,
+                "Passkey authentication is temporarily unavailable.",
+                null), cause);
     }
 
     private void requireConfigured() {
