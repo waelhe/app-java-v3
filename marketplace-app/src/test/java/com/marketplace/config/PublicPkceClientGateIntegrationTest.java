@@ -34,6 +34,8 @@ import org.springframework.security.oauth2.server.authorization.settings.TokenSe
 import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.security.web.webauthn.api.Bytes;
+import org.springframework.security.web.webauthn.api.PublicKeyCredentialRequestOptions;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -158,6 +160,21 @@ class PublicPkceClientGateIntegrationTest {
         if (consent != null) {
             authorizationConsentService.remove(consent);
         }
+    }
+
+    @Test
+    void springBootManagedJsonMapperRoundTripsNativeWebAuthnOptions() throws Exception {
+        PublicKeyCredentialRequestOptions original = PublicKeyCredentialRequestOptions.builder()
+                .challenge(Bytes.fromBase64("OTpSSr50po9rux_ZVOZdrxlfD4FG2-xe6Mi22jg3QaY"))
+                .rpId("example.com")
+                .build();
+
+        String json = this.objectMapper.writeValueAsString(original);
+        PublicKeyCredentialRequestOptions restored =
+                this.objectMapper.readValue(json, PublicKeyCredentialRequestOptions.class);
+
+        assertThat(restored.getRpId()).isEqualTo("example.com");
+        assertThat(restored.getChallenge()).isEqualTo(original.getChallenge());
     }
 
     @Test
