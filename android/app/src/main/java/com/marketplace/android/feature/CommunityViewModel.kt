@@ -39,6 +39,7 @@ data class AppUiState(
     val sessionRestoring: Boolean = false,
     val sessionRestoreAttempted: Boolean = false,
     val silentReauthRequired: Boolean = false,
+    val nativePasskeySession: Boolean = false,
     val loadingAccount: Boolean = false,
     val authError: String? = null,
     val passkeySignInBusy: Boolean = false,
@@ -210,8 +211,21 @@ class CommunityViewModel(
     }
 
     fun passkeySignInFailed(message: String) {
+        repository.clearAccessToken()
+        silentReauthInFlight = false
+        stateBeforeSessionRecovery = null
         _uiState.update {
-            it.copy(passkeySignInBusy = false, authError = message, authSuccess = null, loadingAccount = false)
+            it.copy(
+                authenticated = false,
+                sessionRestoring = false,
+                sessionRestoreAttempted = true,
+                silentReauthRequired = false,
+                nativePasskeySession = false,
+                passkeySignInBusy = false,
+                authError = message,
+                authSuccess = null,
+                loadingAccount = false
+            )
         }
     }
 
@@ -232,7 +246,11 @@ class CommunityViewModel(
         _uiState.update { it.copy(passkeyRegistrationBusy = false, notice = message) }
     }
 
-    fun authenticated(accessToken: String, idToken: String? = null) {
+    fun authenticated(
+        accessToken: String,
+        idToken: String? = null,
+        nativePasskey: Boolean = false
+    ) {
         silentReauthInFlight = false
         idTokenHint = idToken
         repository.setAccessToken(accessToken)
@@ -243,6 +261,7 @@ class CommunityViewModel(
             sessionRestoring = false,
             sessionRestoreAttempted = true,
             silentReauthRequired = false,
+            nativePasskeySession = nativePasskey,
             loadingAccount = true,
             authError = null,
             authSuccess = null,
@@ -1394,6 +1413,7 @@ class CommunityViewModel(
                             sessionRestoring = true,
                             sessionRestoreAttempted = true,
                             silentReauthRequired = true,
+                            nativePasskeySession = current.nativePasskeySession,
                             authError = "انتهت جلسة الدخول. نحاول استعادتها بأمان…"
                         )
                     }
