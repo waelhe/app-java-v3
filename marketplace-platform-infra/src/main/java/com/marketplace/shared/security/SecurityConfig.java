@@ -35,6 +35,7 @@ import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
@@ -46,8 +47,13 @@ import org.springframework.security.oauth2.server.authorization.client.JdbcRegis
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
+import org.springframework.security.oauth2.server.authorization.token.DelegatingOAuth2TokenGenerator;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
+import org.springframework.security.oauth2.server.authorization.token.JwtGenerator;
+import org.springframework.security.oauth2.server.authorization.token.OAuth2AccessTokenGenerator;
+import org.springframework.security.oauth2.server.authorization.token.OAuth2RefreshTokenGenerator;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
+import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenGenerator;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.provisioning.JdbcUserDetailsManager;
@@ -115,13 +121,14 @@ public class SecurityConfig {
             HttpSecurity http,
             SpringSessionBackedSessionRegistry<? extends Session> sessionRegistry,
             NativePasskeyGrantAuthenticationConverter nativePasskeyGrantAuthenticationConverter,
-            NativePasskeyGrantAuthenticationProvider nativePasskeyGrantAuthenticationProvider) throws Exception {
+            NativePasskeyGrantAuthenticationProvider nativePasskeyGrantAuthenticationProvider,
+            OAuth2TokenGenerator<?> oauth2TokenGenerator) throws Exception {
         http
                 .oauth2AuthorizationServer(authorizationServer -> {
                     http.securityMatcher(authorizationServer.getEndpointsMatcher());
                     authorizationServer.oidc(Customizer.withDefaults());
-                    // Add the native grant through the official token endpoint extension points.
-                    // The built-in grants retain Spring Security's automatic token-generator configuration.
+                    // Use the official configured generator for built-in and extension grants alike.
+                    authorizationServer.tokenGenerator(oauth2TokenGenerator);
                     authorizationServer.tokenEndpoint(tokenEndpoint -> tokenEndpoint
                             .accessTokenRequestConverter(nativePasskeyGrantAuthenticationConverter)
                             .authenticationProvider(nativePasskeyGrantAuthenticationProvider));
@@ -752,6 +759,21 @@ public class SecurityConfig {
     @Bean
     RegisteredClientRepository registeredClientRepository(JdbcTemplate jdbcTemplate) {
         return new JdbcRegisteredClientRepository(jdbcTemplate);
+    }
+
+    /**
+     * Spring Security 7.1's documented token-generator composition. One generator
+     * is shared by the Authorization Server protocol providers and the native
+     * extension provider; JWT encoding and claims customization remain framework-owned.
+     */
+    @Bean
+    OAuth2TokenGenerator<?> oauth2TokenGenerator(
+            JWKSource<SecurityContext> jwkSource,
+            OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer) {
+        JwtGenerator jwtGenerator = new JwtGenerator(new NimbusJwtEncoder(jwkSource));
+        jwtGenerator.setJwtCustomizer(jwtTokenCustomizer);
+        return new DelegatingOAuth2TokenGenerator(
+                jwtGenerator, new OAuth2AccessTokenGenerator(), new OAuth2RefreshTokenGenerator());
     }
 
     @Bean
