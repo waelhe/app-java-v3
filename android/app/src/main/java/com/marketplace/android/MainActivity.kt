@@ -282,11 +282,11 @@ class MainActivity : ComponentActivity() {
                 )
             } catch (failure: Exception) {
                 viewModel.passkeySignInFailed(
-                    if ((failure as? retrofit2.HttpException)?.code() == 503) {
-                        "مفاتيح المرور غير مفعّلة على الخادم بعد. استخدم الدخول التقليدي مؤقتًا."
-                    } else {
-                        "تعذر إكمال تسجيل الدخول بمفتاح المرور. جرّب الدخول التقليدي أو أعد المحاولة لاحقًا."
-                    }
+                    passkeyBackendFailureMessage(
+                        failure,
+                        disabledMessage = "مفاتيح المرور غير مفعّلة على الخادم بعد. استخدم الدخول التقليدي مؤقتًا.",
+                        retryMessage = "تعذر إكمال تسجيل الدخول بمفتاح المرور. جرّب الدخول التقليدي أو أعد المحاولة لاحقًا."
+                    )
                 )
             }
         }
@@ -318,14 +318,31 @@ class MainActivity : ComponentActivity() {
                 )
             } catch (failure: Exception) {
                 viewModel.passkeyRegistrationFailed(
-                    if ((failure as? retrofit2.HttpException)?.code() == 503) {
-                        "مفاتيح المرور غير مفعّلة على الخادم بعد. لم يُحفظ أي مفتاح مرور."
-                    } else {
-                        "تعذر إكمال إعداد مفتاح المرور. تحقق من الاتصال وحاول مجددًا."
-                    }
+                    passkeyBackendFailureMessage(
+                        failure,
+                        disabledMessage = "مفاتيح المرور غير مفعّلة على الخادم بعد. لم يُحفظ أي مفتاح مرور.",
+                        retryMessage = "تعذر إكمال إعداد مفتاح المرور. تحقق من الاتصال وحاول مجددًا."
+                    )
                 )
             }
         }
+    }
+
+    private fun passkeyBackendFailureMessage(
+        failure: Exception,
+        disabledMessage: String,
+        retryMessage: String
+    ): String {
+        val httpFailure = failure as? retrofit2.HttpException ?: return retryMessage
+        if (httpFailure.code() != 503) return retryMessage
+
+        // Spring's ProblemDetail includes the ResponseStatusException reason in its detail.
+        // A 503 can also mean the challenge/credential store is unavailable, so status alone
+        // is not enough to tell users that the passkey feature is disabled.
+        val problem = runCatching {
+            httpFailure.response()?.errorBody()?.string().orEmpty()
+        }.getOrDefault("")
+        return if (problem.contains("not enabled", ignoreCase = true)) disabledMessage else retryMessage
     }
 
     private fun beginSignIn(silent: Boolean = false) {
