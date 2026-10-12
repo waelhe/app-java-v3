@@ -17,11 +17,13 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -98,6 +100,9 @@ class NotificationsModuleIntegrationTest {
 
     @Autowired
     private NotificationRepository notificationRepository;
+
+    @Autowired
+    private JdbcTemplate jdbc;
 
     @Test
     void contextLoads() {
@@ -178,5 +183,55 @@ class NotificationsModuleIntegrationTest {
         assertThat(response.version()).isNotNull();
         assertThat(response.updatedAt()).isNotNull();
         assertThat(notificationRepository.findById(unread.getId()).orElseThrow().isRead()).isTrue();
+    }
+
+    /**
+     * The #545 measured defect, closed at its own seam: the urgent-alert
+     * inbox's native idempotent insert EXECUTED against the real migration
+     * schema (V18 + V25 + V180) — the pre-fix statement omitted
+     * created_at/updated_at (NOT NULL, NO database default) so EVERY inbox
+     * insert answered 23502 and the Modulith registry retried the fan-out
+     * forever, a defect invisible to every mock-based router test. The
+     * audit columns now ride the statement as bound parameters; the
+     * V180 ledger key's duplicate answers a returned 0 — the V54/V199
+     * discipline, never a transaction-aborting 23505.
+     */
+    @Test
+    void insertOnce_stampsTheAuditColumnsAndAbsorbsTheDuplicate() {
+        UUID recipient = UUID.randomUUID();
+        UUID sourceEvent = UUID.randomUUID();
+        Instant createdAt = Instant.parse("2026-10-11T08:00:00Z");
+        Instant updatedAt = Instant.parse("2026-10-11T08:00:05Z");
+
+        int first = notificationRepository.insertOnce(UUID.randomUUID(), recipient,
+                NotificationType.URGENT_ALERT.name(), "المصدر الرسمي: إغلاق طريق رئيسي",
+                sourceEvent, createdAt, updatedAt);
+        assertThat(first).as("the first (recipient, source event) insert wins").isEqualTo(1);
+
+        int duplicate = notificationRepository.insertOnce(UUID.randomUUID(), recipient,
+                NotificationType.URGENT_ALERT.name(), "المصدر الرسمي: إغلاق طريق رئيسي",
+                sourceEvent, createdAt.plusSeconds(60), updatedAt.plusSeconds(60));
+        assertThat(duplicate).as("the ledger key absorbs the re-delivery as a returned 0")
+                .isZero();
+
+        assertThat(notificationRepository.existsByRecipientIdAndSourceEventId(recipient,
+                sourceEvent)).as("exactly ONE row survived the duplicate").isTrue();
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM notifications WHERE recipient_id = ?",
+                Integer.class, recipient)).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM notifications WHERE recipient_id = ? "
+                        + "AND source_event_id IS NULL",
+                Integer.class, recipient)).as("the legacy NULL-birth paths stay outside "
+                        + "the ledger's constraint").isZero();
+
+        java.sql.Timestamp createdStamp = jdbc.queryForObject(
+                "SELECT created_at FROM notifications WHERE recipient_id = ?",
+                java.sql.Timestamp.class, recipient);
+        java.sql.Timestamp updatedStamp = jdbc.queryForObject(
+                "SELECT updated_at FROM notifications WHERE recipient_id = ?",
+                java.sql.Timestamp.class, recipient);
+        assertThat(createdStamp.toInstant()).isEqualTo(createdAt);
+        assertThat(updatedStamp.toInstant()).isEqualTo(updatedAt);
     }
 }
