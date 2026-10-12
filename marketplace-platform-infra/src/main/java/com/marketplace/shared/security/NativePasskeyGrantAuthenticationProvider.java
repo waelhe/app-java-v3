@@ -13,6 +13,8 @@ import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AccessTokenAuthenticationToken;
@@ -21,6 +23,7 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 import org.springframework.security.oauth2.server.authorization.context.AuthorizationServerContextHolder;
 import org.springframework.security.oauth2.server.authorization.settings.OAuth2TokenFormat;
 import org.springframework.security.oauth2.server.authorization.token.DefaultOAuth2TokenContext;
+import org.springframework.security.oauth2.server.authorization.token.JwtGenerator;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenContext;
 import org.springframework.stereotype.Component;
 
@@ -28,9 +31,11 @@ import com.marketplace.shared.config.MarketplaceProperties;
 import org.springframework.util.StringUtils;
 
 /**
- * Applies Spring Security's WebAuthn verifier, then delegates access-token
- * creation and persistence to Spring Authorization Server's configured token
- * generator and authorization service.
+ * Applies Spring Security's WebAuthn verifier, then delegates JWT encoding to
+ * Spring Security's {@link JwtGenerator} adapter using the configured JWK source
+ * and application claims customizer. Authorization persistence remains owned by
+ * Spring Security's {@link OAuth2AuthorizationService}. The built-in grant
+ * providers keep their framework-managed generator and default customizers.
  */
 @Component
 public final class NativePasskeyGrantAuthenticationProvider implements AuthenticationProvider {
@@ -66,6 +71,13 @@ public final class NativePasskeyGrantAuthenticationProvider implements Authentic
                 || !registeredClient.getAuthorizationGrantTypes().contains(grant.getGrantType())) {
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
         }
+        if (registeredClient.getClientSecret() != null
+                || !registeredClient.getClientAuthenticationMethods().contains(ClientAuthenticationMethod.NONE)
+                || registeredClient.getAuthorizationGrantTypes().contains(AuthorizationGrantType.REFRESH_TOKEN)
+                || !OAuth2TokenFormat.SELF_CONTAINED.equals(
+                        registeredClient.getTokenSettings().getAccessTokenFormat())) {
+            throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
+        }
         if (!registeredClient.getScopes().contains("profile")) {
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_SCOPE);
         }
@@ -79,7 +91,12 @@ public final class NativePasskeyGrantAuthenticationProvider implements Authentic
 
         // WebAuthn proves possession of a credential, but current account flags
         // remain authoritative (email verification, disabled/locked/expired).
-        UserDetails account = this.userDetailsService.loadUserByUsername(userAuthentication.getName());
+        final UserDetails account;
+        try {
+            account = this.userDetailsService.loadUserByUsername(userAuthentication.getName());
+        } catch (RuntimeException exception) {
+            throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_GRANT);
+        }
         if (!account.isEnabled() || !account.isAccountNonLocked()
                 || !account.isAccountNonExpired() || !account.isCredentialsNonExpired()) {
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_GRANT);
