@@ -1,0 +1,78 @@
+name: Android client
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "android/**"
+      - ".github/workflows/android-client.yml"
+  push:
+    branches: [ main ]
+    paths:
+      - "android/**"
+      - ".github/workflows/android-client.yml"
+
+# Signed releases are produced automatically by pushing an `android-v*` tag
+# (see .github/workflows/android-release.yml) — no manual dispatch lever.
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Native Android build and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
+
+      - name: Set up stable Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          packages: "platform-tools platforms;android-36 build-tools;36.0.0"
+
+      - name: Validate release preflight script syntax
+        run: bash -n android/scripts/verify-passkey-release.sh
+
+      - name: Run JVM tests
+        working-directory: android
+        run: ./gradlew :app:testDebugUnitTest
+
+      - name: Build debug APK
+        working-directory: android
+        env:
+          # Public OAuth client ID only; never pass an OAuth client secret to an Android build.
+          OAUTH_PUBLIC_CLIENT_ID: android-community-native
+        run: |
+          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest -PoidcClientId="${OAUTH_PUBLIC_CLIENT_ID}" -PoidcRedirectUri=com.marketplace.android:/oauth2redirect
+
+      - name: Run Android auth-entry instrumentation test
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            cd android && ./gradlew :app:connectedDebugAndroidTest -PoidcClientId=android-community-native -PoidcRedirectUri=com.marketplace.android:/oauth2redirect
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: community-platform-android-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
