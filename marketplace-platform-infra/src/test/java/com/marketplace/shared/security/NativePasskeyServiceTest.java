@@ -186,6 +186,22 @@ class NativePasskeyServiceTest {
     }
 
     @Test
+    void completeRegistrationMapsAnInvalidChallengeToBadRequest() {
+        when(userDetailsService.loadUserByUsername(USERNAME)).thenReturn(enabledUser());
+        when(jdbcTemplate.queryForObject(anyString(), eq(String.class),
+                any(UUID.class), eq("REGISTER"), eq(USERNAME)))
+                .thenThrow(new EmptyResultDataAccessException(1));
+
+        // The registration path answers problem-detail 400 (RFC 9110 section 15.5.1),
+        // not the OAuth 401 channel its sibling token grant uses — CodeRabbit round 1.
+        assertThatThrownBy(() -> service.completeRegistration(
+                UUID.randomUUID().toString(), "{}", null, signedIn()))
+                .isInstanceOfSatisfying(ResponseStatusException.class, ex ->
+                        assertThat(ex.getStatusCode().value()).isEqualTo(400))
+                .hasMessageContaining("challenge is invalid or expired");
+    }
+
+    @Test
     void completeRegistrationWrapsUnverifiableResponsesInBadRequest() {
         when(userDetailsService.loadUserByUsername(USERNAME)).thenReturn(enabledUser());
         when(jdbcTemplate.queryForObject(anyString(), eq(String.class),

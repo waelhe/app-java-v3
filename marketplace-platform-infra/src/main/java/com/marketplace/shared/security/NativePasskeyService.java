@@ -109,7 +109,18 @@ public final class NativePasskeyService {
         requireAuthenticated(authentication);
         requireEnabledUser(authentication.getName());
 
-        String optionsJson = consumeChallenge(challengeId, REGISTER, authentication.getName());
+        final String optionsJson;
+        try {
+            optionsJson = consumeChallenge(challengeId, REGISTER, authentication.getName());
+        } catch (OAuth2AuthenticationException exception) {
+            // The REST registration path speaks problem-detail semantics, not the
+            // OAuth token-endpoint error channel its sibling grant uses: a malformed,
+            // expired, replayed, or principal-mismatched challenge is an invalid
+            // request payload (RFC 9110 section 15.5.1), not a failed authentication —
+            // the caller is already authenticated and simply needs a fresh ceremony.
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "The passkey registration challenge is invalid or expired.", exception);
+        }
         try {
             PublicKeyCredentialCreationOptions options =
                     this.webAuthnMapper.readValue(optionsJson, PublicKeyCredentialCreationOptions.class);
