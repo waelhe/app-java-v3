@@ -78,7 +78,9 @@ class MarketplaceRepository(
                 val request = original.newBuilder().apply {
                     // OAuth protocol requests (notably the public passkey grant) do not
                     // receive a stale resource-server bearer token.
-                    if (!tokenSnapshot.isNullOrBlank() && original.url.encodedPath.startsWith("/api/")) {
+                    val path = original.url.encodedPath
+                    val anonymousPasskeyOptions = path == "/api/v1/auth/passkeys/assertion/options"
+                    if (!tokenSnapshot.isNullOrBlank() && path.startsWith("/api/") && !anonymousPasskeyOptions) {
                         header("Authorization", "Bearer $tokenSnapshot")
                     }
                     header("Accept", "application/json")
