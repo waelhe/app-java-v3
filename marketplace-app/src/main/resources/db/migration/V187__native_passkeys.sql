@@ -1,43 +1,47 @@
--- Durable WebAuthn credential state and one-time native passkey challenges.
--- The user_entities/user_credentials table names and columns follow the
--- Spring Security 7.1.1 JdbcPublicKeyCredentialUserEntityRepository and
--- JdbcUserCredentialRepository contracts. PostgreSQL bytea is used for
--- binary key/attestation data instead of the generic sample's blob type.
-CREATE TABLE user_entities (
-    id VARCHAR(512) PRIMARY KEY,
-    name VARCHAR(255) NOT NULL UNIQUE,
-    display_name VARCHAR(255) NOT NULL
+-- The credential tables below are copied from Spring Security 7.1.1's
+-- official JDBC WebAuthn PostgreSQL schema resources:
+-- web/src/main/resources/org/springframework/security/user-entities-schema.sql
+-- web/src/main/resources/org/springframework/security/user-credentials-schema-postgres.sql
+-- Only the native ceremony challenge store is application-specific; it is
+-- required because Android's token grant is stateless and cannot rely on an
+-- HttpSession-backed WebAuthn options repository.
+create table user_entities
+(
+    id           varchar(1000) not null,
+    name         varchar(100)  not null,
+    display_name varchar(200),
+    primary key (id)
 );
 
-CREATE TABLE user_credentials (
-    credential_id VARCHAR(1024) PRIMARY KEY,
-    user_entity_user_id VARCHAR(512) NOT NULL REFERENCES user_entities(id) ON DELETE CASCADE,
-    public_key BYTEA NOT NULL,
-    signature_count BIGINT NOT NULL DEFAULT 0,
-    uv_initialized BOOLEAN NOT NULL DEFAULT FALSE,
-    backup_eligible BOOLEAN NOT NULL DEFAULT FALSE,
-    authenticator_transports VARCHAR(256),
-    public_key_credential_type VARCHAR(64) NOT NULL DEFAULT 'public-key',
-    backup_state BOOLEAN NOT NULL DEFAULT FALSE,
-    attestation_object BYTEA NOT NULL,
-    attestation_client_data_json BYTEA,
-    created TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    last_used TIMESTAMP WITH TIME ZONE,
-    label VARCHAR(255) NOT NULL
+create table user_credentials
+(
+    credential_id                varchar(1000) not null,
+    user_entity_user_id          varchar(1000) not null,
+    public_key                   bytea         not null,
+    signature_count              bigint,
+    uv_initialized               boolean,
+    backup_eligible              boolean       not null,
+    authenticator_transports     varchar(1000),
+    public_key_credential_type   varchar(100),
+    backup_state                 boolean       not null,
+    attestation_object           bytea,
+    attestation_client_data_json bytea,
+    created                      timestamp,
+    last_used                    timestamp,
+    label                        varchar(1000) not null,
+    primary key (credential_id)
 );
 
-CREATE INDEX ix_user_credentials_user_entity_user_id
-    ON user_credentials (user_entity_user_id);
-
-CREATE TABLE native_passkey_challenges (
-    challenge_id UUID PRIMARY KEY,
-    purpose VARCHAR(32) NOT NULL CHECK (purpose IN ('AUTHENTICATE', 'REGISTER')),
-    principal_name VARCHAR(255),
-    options_json TEXT NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    CONSTRAINT ck_native_passkey_challenge_expiry CHECK (expires_at > created_at)
+create table native_passkey_challenges
+(
+    challenge_id   uuid primary key,
+    purpose        varchar(32) not null check (purpose in ('AUTHENTICATE', 'REGISTER')),
+    principal_name varchar(100),
+    options_json   text not null,
+    created_at     timestamp with time zone not null default current_timestamp,
+    expires_at     timestamp with time zone not null,
+    constraint ck_native_passkey_challenge_expiry check (expires_at > created_at)
 );
 
-CREATE INDEX ix_native_passkey_challenges_expiry
-    ON native_passkey_challenges (expires_at);
+create index ix_native_passkey_challenges_expiry
+    on native_passkey_challenges (expires_at);
