@@ -1,10 +1,8 @@
 package com.marketplace.shared.security;
 
-import tools.jackson.databind.JsonNode;
-
 /**
- * A WebAuthn ceremony's opaque, one-time challenge identifier and the
- * standards-shaped public-key options returned by the relying party.
+ * Server-issued WebAuthn options paired with the one-time challenge handle used
+ * to resolve the exact options when the Credential Manager response is returned.
  */
-public record NativePasskeyChallengeResponse(String challengeId, JsonNode options) {
+public record NativePasskeyChallengeResponse(String challengeId, String optionsJson) {
 }
