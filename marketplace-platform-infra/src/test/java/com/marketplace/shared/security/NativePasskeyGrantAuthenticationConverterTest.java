@@ -1,7 +1,5 @@
 package com.marketplace.shared.security;
 
-import jakarta.servlet.http.HttpServletRequest;
-
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -27,7 +25,7 @@ class NativePasskeyGrantAuthenticationConverterTest {
     @Test
     void leavesOtherGrantTypesForSpringAuthorizationServerConverters() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        request.setParameter(OAuth2ParameterNames.GRANT_TYPE, OAuth2ParameterNames.AUTHORIZATION_CODE);
+        request.setParameter(OAuth2ParameterNames.GRANT_TYPE, "authorization_code");
         assertThat(this.converter.convert(request)).isNull();
     }
 
