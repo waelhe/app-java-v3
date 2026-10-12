@@ -73,7 +73,13 @@ public final class NativePasskeyService {
         this.relyingPartyOperations = relyingPartyOperations;
         this.userDetailsService = userDetailsService;
         this.properties = properties;
-        this.webAuthnMapper = JsonMapper.builder().addModule(new WebauthnJacksonModule()).build();
+        // The official module serializes the options types (its mixins carry no
+        // @JsonCreator); the stateless JDBC ceremonies read them back, so the
+        // readback leg is completed by our builder-backed deserializers.
+        this.webAuthnMapper = JsonMapper.builder()
+                .addModule(new WebauthnJacksonModule())
+                .addModule(new NativePasskeyOptionsJacksonModule())
+                .build();
         this.webAuthnAuthenticationProvider =
                 new WebAuthnAuthenticationProvider(relyingPartyOperations, userDetailsService);
     }
