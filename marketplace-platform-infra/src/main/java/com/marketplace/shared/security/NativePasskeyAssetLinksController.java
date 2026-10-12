@@ -24,7 +24,7 @@ public final class NativePasskeyAssetLinksController {
 
     @GetMapping("/.well-known/assetlinks.json")
     public List<AssetLinkStatement> assetLinks() {
-        if (this.properties.androidSha256CertFingerprints().isEmpty()) {
+        if (!this.properties.isConfigured()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
         return List.of(new AssetLinkStatement(
