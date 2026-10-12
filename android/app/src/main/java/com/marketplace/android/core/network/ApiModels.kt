@@ -1,5 +1,6 @@
 package com.marketplace.android.core.network
 
+import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 
 @JsonClass(generateAdapter = false)
@@ -127,6 +128,27 @@ data class RegisterRequest(
 )
 
 data class EmailOnlyRequest(val email: String)
+
+@JsonClass(generateAdapter = false)
+data class PasskeyChallengeDto(
+    val challengeId: String = "",
+    val optionsJson: String = ""
+)
+
+@JsonClass(generateAdapter = false)
+data class PasskeyRegistrationRequest(
+    val challengeId: String,
+    val credentialJson: String,
+    val label: String = "Android device"
+)
+
+@JsonClass(generateAdapter = false)
+data class PasskeyTokenResponse(
+    @Json(name = "access_token") val accessToken: String = "",
+    @Json(name = "token_type") val tokenType: String = "Bearer",
+    @Json(name = "expires_in") val expiresIn: Long? = null,
+    val scope: String? = null
+)
 
 data class JoinNeighborhoodRequest(val locationId: String)
 data class CreatePostRequest(val locationId: String, val category: String, val title: String, val body: String)
