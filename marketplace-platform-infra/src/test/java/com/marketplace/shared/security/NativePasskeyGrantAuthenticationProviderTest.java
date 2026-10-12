@@ -13,6 +13,7 @@ import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
@@ -151,6 +152,18 @@ class NativePasskeyGrantAuthenticationProviderTest {
                 () -> provider.authenticate(grant(publicClient(), Set.of())))
                 .isInstanceOfSatisfying(OAuth2AuthenticationException.class, ex ->
                         assertThat(ex.getError().getErrorCode()).isEqualTo(OAuth2ErrorCodes.INVALID_GRANT));
+    }
+
+    @Test
+    void returnsServerErrorWhenAccountStoreIsUnavailable() {
+        when(passkeyService.authenticate(any(), any())).thenReturn(webAuthnUser());
+        when(userDetailsService.loadUserByUsername(USERNAME))
+                .thenThrow(new DataAccessResourceFailureException("database unavailable"));
+
+        assertThatThrownBy(
+                () -> provider.authenticate(grant(publicClient(), Set.of())))
+                .isInstanceOfSatisfying(OAuth2AuthenticationException.class, ex ->
+                        assertThat(ex.getError().getErrorCode()).isEqualTo(OAuth2ErrorCodes.SERVER_ERROR));
     }
 
     @Test
