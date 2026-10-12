@@ -217,6 +217,23 @@ class NativePasskeyServiceTest {
                 .hasMessageContaining("could not be verified");
     }
 
+    @Test
+    void completeRegistrationMapsCredentialRepositoryFailureToServiceUnavailable() {
+        when(userDetailsService.loadUserByUsername(USERNAME)).thenReturn(enabledUser());
+        when(jdbcTemplate.queryForObject(anyString(), eq(String.class),
+                any(UUID.class), eq("REGISTER"), eq(USERNAME)))
+                .thenReturn(creationOptionsJson());
+        when(relyingPartyOperations.registerCredential(any()))
+                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("database unavailable"));
+
+        assertThatThrownBy(() -> service.completeRegistration(
+                UUID.randomUUID().toString(), parseableAttestationCredential(), null, signedIn()))
+                .isInstanceOfSatisfying(ResponseStatusException.class, ex -> {
+                    assertThat(ex.getStatusCode().value()).isEqualTo(503);
+                    assertThat(ex.getReason()).contains("temporarily unavailable");
+                });
+    }
+
     private static Authentication signedIn() {
         return new TestingAuthenticationToken(USERNAME, "n/a", "ROLE_CONSUMER");
     }
