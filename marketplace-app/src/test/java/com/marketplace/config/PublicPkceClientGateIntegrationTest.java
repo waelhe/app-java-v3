@@ -344,7 +344,7 @@ class PublicPkceClientGateIntegrationTest {
         HttpResponse<String> favicon = get(baseUrl() + "/favicon.ico", sessionCookie);
         assertThat(favicon.statusCode())
                 .as("favicon request should not redirect to login")
-                .isNotEqualTo(302);
+                .isNotIn(301, 302, 303, 307, 308);
         sessionCookie = latestSessionCookie(favicon, sessionCookie);
 
         HttpResponse<String> loginPost = postForm(LOGIN_PATH,
