@@ -20,6 +20,8 @@ import org.springframework.security.web.webauthn.api.PublicKeyCredentialCreation
 import org.springframework.security.web.webauthn.api.PublicKeyCredentialParameters;
 import org.springframework.security.web.webauthn.api.PublicKeyCredentialRequestOptions;
 import org.springframework.security.web.webauthn.api.PublicKeyCredentialRpEntity;
+import org.springframework.security.web.webauthn.jackson.WebauthnJacksonModule;
+import tools.jackson.databind.json.JsonMapper;
 import org.springframework.security.web.webauthn.management.WebAuthnRelyingPartyOperations;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -45,14 +47,14 @@ class NativePasskeyServiceTest {
             mock(WebAuthnRelyingPartyOperations.class);
     private final UserDetailsService userDetailsService = mock(UserDetailsService.class);
     private final NativePasskeyService service = new NativePasskeyService(
-            jdbcTemplate, relyingPartyOperations, userDetailsService, configuredProperties());
+            jdbcTemplate, relyingPartyOperations, userDetailsService, configuredProperties(), testMapper());
 
     @Test
     void createAuthenticationOptionsFailsClosedWhenNotConfigured() {
         NativePasskeyService unconfigured = new NativePasskeyService(
                 jdbcTemplate, relyingPartyOperations, userDetailsService,
                 new NativePasskeyProperties("", "Marketplace", List.of(),
-                        "com.marketplace.android", List.of()));
+                        "com.marketplace.android", List.of()), testMapper());
 
         assertThatThrownBy(unconfigured::createAuthenticationOptions)
                 .isInstanceOfSatisfying(ResponseStatusException.class, ex ->
@@ -233,10 +235,17 @@ class NativePasskeyServiceTest {
                 .build();
     }
 
+    private static JsonMapper testMapper() {
+        return JsonMapper.builder()
+                .addModule(new WebauthnJacksonModule())
+                .addModule(new NativePasskeyOptionsJacksonModule())
+                .build();
+    }
+
     private static String creationOptionsJson() {
         try {
-            return tools.jackson.databind.json.JsonMapper.builder()
-                    .addModule(new org.springframework.security.web.webauthn.jackson.WebauthnJacksonModule())
+            return JsonMapper.builder()
+                    .addModule(new WebauthnJacksonModule())
                     .build()
                     .writeValueAsString(creationOptions());
         } catch (Exception exception) {
