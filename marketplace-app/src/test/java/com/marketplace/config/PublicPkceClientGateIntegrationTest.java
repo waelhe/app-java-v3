@@ -178,6 +178,50 @@ class PublicPkceClientGateIntegrationTest {
     }
 
     @Test
+    void nativePasskeyGrantAuthenticatesThePublicClientWithoutPkceCodeVerifier() throws Exception {
+        String credential = "{\"id\":\"invalid\",\"rawId\":\"invalid\",\"type\":\"public-key\","
+                + "\"response\":{\"clientDataJSON\":\"invalid\",\"authenticatorData\":\"invalid\","
+                + "\"signature\":\"invalid\"}}";
+        HttpResponse<String> response = postFormNoAuth(TOKEN_PATH,
+                "grant_type=" + encode("urn:marketplace:params:oauth:grant-type:passkey")
+                        + "&client_id=" + encode(APP_CLIENT_ID)
+                        + "&challenge_id=" + encode(UUID.randomUUID().toString())
+                        + "&credential=" + encode(credential));
+
+        // Test properties deliberately keep RP/release identity unconfigured. Reaching
+        // invalid_grant proves the client-authentication extension accepted the registered
+        // secret-less client and the grant provider ran; invalid_client would prove the
+        // public-client converter incorrectly required the authorization-code PKCE verifier.
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.body()).contains("invalid_grant").doesNotContain("invalid_client");
+    }
+
+    @Test
+    void nativePasskeyGrantRejectsAClientIdThatIsNotRegistered() throws Exception {
+        HttpResponse<String> response = postFormNoAuth(TOKEN_PATH,
+                "grant_type=" + encode("urn:marketplace:params:oauth:grant-type:passkey")
+                        + "&client_id=" + encode("unregistered-client")
+                        + "&challenge_id=" + encode(UUID.randomUUID().toString())
+                        + "&credential=" + encode("{}"));
+
+        assertThat(response.statusCode()).isEqualTo(401);
+        assertThat(response.body()).contains("invalid_client");
+    }
+
+    @Test
+    void nativePasskeyGrantRejectsRepeatedClientIdParameters() throws Exception {
+        HttpResponse<String> response = postFormNoAuth(TOKEN_PATH,
+                "grant_type=" + encode("urn:marketplace:params:oauth:grant-type:passkey")
+                        + "&client_id=" + encode(APP_CLIENT_ID)
+                        + "&client_id=" + encode("other-client")
+                        + "&challenge_id=" + encode(UUID.randomUUID().toString())
+                        + "&credential=" + encode("{}"));
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.body()).contains("invalid_request");
+    }
+
+    @Test
     void nativePasskeyAssertionOptionsFailClosedUntilReleaseIdentityIsConfigured() throws Exception {
         HttpResponse<String> response = postFormNoAuth(
                 "/api/v1/auth/passkeys/assertion/options", "");
