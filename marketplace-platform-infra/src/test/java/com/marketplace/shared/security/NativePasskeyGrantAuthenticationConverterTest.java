@@ -47,6 +47,15 @@ class NativePasskeyGrantAuthenticationConverterTest {
     }
 
     @Test
+    void leavesRepeatedNonPasskeyGrantTypesForSpringSecurityConverters() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setParameter(OAuth2ParameterNames.GRANT_TYPE, "authorization_code");
+        request.addParameter(OAuth2ParameterNames.GRANT_TYPE, "authorization_code");
+
+        assertThat(this.converter.convert(request)).isNull();
+    }
+
+    @Test
     void parsesOAuthScopesSeparatedBySpaces() {
         // The client principal rides the SecurityContext exactly as it does at the
         // token endpoint; without it the grant token's official base class
