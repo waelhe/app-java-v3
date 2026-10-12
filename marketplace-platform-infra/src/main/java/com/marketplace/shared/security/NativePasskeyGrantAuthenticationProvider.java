@@ -124,8 +124,13 @@ public final class NativePasskeyGrantAuthenticationProvider implements Authentic
         // The native extension must not bypass the consent already required by this
         // public client. Enrollment can occur under another client, so check consent
         // specifically for this registered client and its API scope before minting.
-        OAuth2AuthorizationConsent consent = this.authorizationConsentService.findById(
-                registeredClient.getId(), userAuthentication.getName());
+        final OAuth2AuthorizationConsent consent;
+        try {
+            consent = this.authorizationConsentService.findById(
+                    registeredClient.getId(), userAuthentication.getName());
+        } catch (RuntimeException exception) {
+            throw temporaryOAuthServiceError(exception);
+        }
         if (consent == null || !consent.getScopes().contains("profile")) {
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_GRANT);
         }
@@ -151,7 +156,12 @@ public final class NativePasskeyGrantAuthenticationProvider implements Authentic
                 .authorizationGrant(grant)
                 .build();
 
-        var generatedToken = this.tokenGenerator.generate(tokenContext);
+        final org.springframework.security.oauth2.core.OAuth2Token generatedToken;
+        try {
+            generatedToken = this.tokenGenerator.generate(tokenContext);
+        } catch (RuntimeException exception) {
+            throw temporaryOAuthServiceError(exception);
+        }
         if (generatedToken == null || !StringUtils.hasText(generatedToken.getTokenValue())) {
             throw new OAuth2AuthenticationException(new OAuth2Error(
                     OAuth2ErrorCodes.SERVER_ERROR,
@@ -187,7 +197,11 @@ public final class NativePasskeyGrantAuthenticationProvider implements Authentic
             metadata.put(OAuth2Authorization.Token.INVALIDATED_METADATA_NAME, false);
             metadata.put(OAuth2TokenFormat.class.getName(), accessTokenFormat.getValue());
         });
-        this.authorizationService.save(authorizationBuilder.build());
+        try {
+            this.authorizationService.save(authorizationBuilder.build());
+        } catch (RuntimeException exception) {
+            throw temporaryOAuthServiceError(exception);
+        }
 
         return new OAuth2AccessTokenAuthenticationToken(registeredClient, clientPrincipal, accessToken);
     }
