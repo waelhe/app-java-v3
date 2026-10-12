@@ -48,6 +48,12 @@ class NativePasskeyGrantAuthenticationConverterTest {
 
     @Test
     void parsesOAuthScopesSeparatedBySpaces() {
+        // The client principal rides the SecurityContext exactly as it does at the
+        // token endpoint; without it the grant token's official base class
+        // (OAuth2AuthorizationGrantAuthenticationToken) rejects construction.
+        SecurityContextHolder.getContext().setAuthentication(
+                new TestingAuthenticationToken("native-client", "not-a-secret", "ROLE_CLIENT"));
+
         MockHttpServletRequest request = validRequest();
         request.setParameter(OAuth2ParameterNames.SCOPE, "profile openid");
 
