@@ -4,10 +4,13 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
 
+import org.springframework.dao.DataAccessException;
+
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.oauth2.core.ClaimAccessor;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
@@ -105,8 +108,13 @@ public final class NativePasskeyGrantAuthenticationProvider implements Authentic
         final UserDetails account;
         try {
             account = this.userDetailsService.loadUserByUsername(userAuthentication.getName());
-        } catch (RuntimeException exception) {
+        } catch (UsernameNotFoundException exception) {
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_GRANT);
+        } catch (DataAccessException exception) {
+            throw temporaryOAuthServiceError(exception);
+        } catch (RuntimeException exception) {
+            // Do not misreport identity-store or programming failures as bad credentials.
+            throw temporaryOAuthServiceError(exception);
         }
         if (!account.isEnabled() || !account.isAccountNonLocked()
                 || !account.isAccountNonExpired() || !account.isCredentialsNonExpired()) {
@@ -187,6 +195,13 @@ public final class NativePasskeyGrantAuthenticationProvider implements Authentic
     @Override
     public boolean supports(Class<?> authentication) {
         return NativePasskeyGrantAuthenticationToken.class.isAssignableFrom(authentication);
+    }
+
+    private static OAuth2AuthenticationException temporaryOAuthServiceError(Throwable cause) {
+        return new OAuth2AuthenticationException(new OAuth2Error(
+                OAuth2ErrorCodes.SERVER_ERROR,
+                "Passkey authentication is temporarily unavailable.",
+                null), cause);
     }
 
     private static OAuth2ClientAuthenticationToken authenticatedClient(Authentication authentication) {
