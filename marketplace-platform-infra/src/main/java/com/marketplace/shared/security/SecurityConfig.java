@@ -127,8 +127,7 @@ public class SecurityConfig {
                 .oauth2AuthorizationServer(authorizationServer -> {
                     http.securityMatcher(authorizationServer.getEndpointsMatcher());
                     authorizationServer.oidc(Customizer.withDefaults());
-                    // The same official generator serves standard grants and the native extension grant.
-                    authorizationServer.tokenGenerator(oauth2TokenGenerator);
+                    // Spring Authorization Server discovers the configured OAuth2TokenGenerator bean.
                     authorizationServer.tokenEndpoint(tokenEndpoint -> tokenEndpoint
                             .accessTokenRequestConverter(nativePasskeyGrantAuthenticationConverter)
                             .authenticationProvider(nativePasskeyGrantAuthenticationProvider));
