@@ -36,17 +36,13 @@ on:
     # slices have since merged, so the entry retired with its wave (the
     # same inertness the precedent documents above).
     # The #544/#545/#543 stacked wave rides the same §4.1 mechanism:
-    # The stacked bases are listed while the wave is in flight and
-    # retire with it in the post-merge truth-sync (the documented
-    # #540/#541 precedent's own inertness rule).
-    # The #544/#545/#543 stacked wave rides the same §4.1 mechanism:
-    # BOTH stacked bases are listed while the wave is in flight —
-    # feat/phase5-unified-search-arabic gates #545 (phase7's own PR
-    # against its base), feat/phase7-notification-routing gates #543
-    # (this branch's PR against its base). Both retire with the wave
-    # in the post-merge truth-sync (the precedent's inertness rule).
-    branches: [ main, feat/phase5-unified-search-arabic, feat/phase7-notification-routing ]
-
+    # the stacked bases are listed while the wave is in flight and retire
+    # with it in the post-merge truth-sync (the documented #540/#541
+    # precedent's own inertness rule). The #544 slice merged and #545 now
+    # targets main directly, so the phase-5 entry retired with its wave;
+    # feat/phase7-notification-routing stays listed while the wave is in
+    # flight — it gates #543 (this branch's own PR against its base).
+    branches: [ main, feat/phase7-notification-routing ]
   schedule:
     - cron: '27 5 * * 1'
 
