@@ -136,7 +136,7 @@ val verifyReleaseSigning = tasks.register("verifyReleaseSigning") {
         check(missing.isEmpty()) {
             "Release signing is disabled. Configure the required GitHub Actions release-signing secrets; missing: ${missing.joinToString()}."
         }
-        check(rootProject.file(releaseKeystorePath!!).isFile) {
+        check(project.rootProject.file(releaseKeystorePath!!).isFile) {
             "ANDROID_RELEASE_KEYSTORE_PATH does not point to an existing release keystore."
         }
     }
