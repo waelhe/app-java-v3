@@ -129,7 +129,11 @@ public final class NativePasskeyService {
      * with Spring Security's official WebAuthn AuthenticationProvider.
      */
     public Authentication authenticate(String challengeId, String credentialJson) {
-        requireConfigured();
+        if (!this.properties.isConfigured()) {
+            // OAuth token-endpoint failures must use OAuth errors, not let a web
+            // ResponseStatusException escape the framework's authentication filter.
+            throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_GRANT);
+        }
         String optionsJson = consumeChallenge(challengeId, AUTHENTICATE, null);
         try {
             PublicKeyCredentialRequestOptions options =
