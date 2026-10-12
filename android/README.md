@@ -31,7 +31,7 @@ The current backend does **not** expose the complete public storefront/cart/orde
 
 ## Build and test
 
-Use JDK 17. The checked-in Gradle Wrapper pins Gradle 9.6.0; AGP 9.4.0 is compatible with Gradle 9.6.0, Build Tools 36.0.0 and API 37. The pinned Compose BOM is stable `2026.09.00`. The wrapper automatically provisions the pinned Gradle distribution, keeping local and CI builds on the same Gradle version:
+Use JDK 17. The checked-in Gradle Wrapper pins Gradle 9.6.0; AGP 9.4.1 is compatible with Gradle 9.6.0, Build Tools 36.0.0 and API 37. The pinned Compose BOM is stable `2026.09.00`. The wrapper automatically provisions the pinned Gradle distribution, keeping local and CI builds on the same Gradle version:
 
     cd android
     ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
