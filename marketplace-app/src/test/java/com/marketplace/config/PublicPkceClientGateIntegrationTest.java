@@ -82,7 +82,10 @@ import static org.assertj.core.api.Assertions.assertThat;
         "spring.sql.init.mode=always",
         "spring.sql.init.schema-locations=classpath:db/migration/V13__authorization_security.sql",
         "marketplace.security.oauth2.public-client.client-id=marketplace-public-client",
-        "marketplace.security.oauth2.public-client.redirect-uris=com.marketplace.test:/oauth2/callback"
+        "marketplace.security.oauth2.public-client.redirect-uris=com.marketplace.test:/oauth2/callback",
+        "marketplace.security.passkeys.rp-id=",
+        "marketplace.security.passkeys.allowed-origins=",
+        "marketplace.security.passkeys.android-sha256-cert-fingerprints="
 })
 @Testcontainers(disabledWithoutDocker = true)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -155,6 +158,17 @@ class PublicPkceClientGateIntegrationTest {
         if (consent != null) {
             authorizationConsentService.remove(consent);
         }
+    }
+
+    @Test
+    void nativePasskeyAssertionOptionsFailClosedUntilReleaseIdentityIsConfigured() throws Exception {
+        HttpResponse<String> response = postFormNoAuth(
+                "/api/v1/auth/passkeys/assertion/options", "");
+
+        assertThat(response.statusCode())
+                .as("native passkey authentication must stay disabled without the real RP ID and release signing identity")
+                .isEqualTo(503);
+        assertThat(response.body()).contains("Native passkeys are not enabled");
     }
 
     @Test
