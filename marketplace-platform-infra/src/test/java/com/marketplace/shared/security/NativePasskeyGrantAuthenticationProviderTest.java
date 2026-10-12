@@ -41,6 +41,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -190,6 +191,34 @@ class NativePasskeyGrantAuthenticationProviderTest {
                 () -> provider.authenticate(grant(publicClient(), Set.of())))
                 .isInstanceOfSatisfying(OAuth2AuthenticationException.class, ex ->
                         assertThat(ex.getError().getErrorCode()).isEqualTo(OAuth2ErrorCodes.INVALID_GRANT));
+    }
+
+    @Test
+    void returnsServerErrorWhenConsentStoreIsUnavailable() {
+        when(passkeyService.authenticate(any(), any())).thenReturn(webAuthnUser());
+        when(userDetailsService.loadUserByUsername(USERNAME)).thenReturn(enabledUser());
+        when(consentService.findById(CLIENT_ID, USERNAME))
+                .thenThrow(new DataAccessResourceFailureException("database unavailable"));
+
+        assertThatThrownBy(() -> provider.authenticate(grant(publicClient(), Set.of())))
+                .isInstanceOfSatisfying(OAuth2AuthenticationException.class, ex ->
+                        assertThat(ex.getError().getErrorCode()).isEqualTo(OAuth2ErrorCodes.SERVER_ERROR));
+        verify(tokenGenerator, never()).generate(any());
+    }
+
+    @Test
+    void returnsServerErrorWhenAuthorizationStoreIsUnavailable() {
+        stubHappyPath();
+        OAuth2AccessToken generated = new OAuth2AccessToken(OAuth2AccessToken.TokenType.BEARER,
+                "token-value", Instant.now(), Instant.now().plus(15, ChronoUnit.MINUTES),
+                Set.of("profile"));
+        when(tokenGenerator.generate(any())).thenReturn(generated);
+        doThrow(new DataAccessResourceFailureException("database unavailable"))
+                .when(authorizationService).save(any());
+
+        assertThatThrownBy(() -> provider.authenticate(grant(publicClient(), Set.of())))
+                .isInstanceOfSatisfying(OAuth2AuthenticationException.class, ex ->
+                        assertThat(ex.getError().getErrorCode()).isEqualTo(OAuth2ErrorCodes.SERVER_ERROR));
     }
 
     @Test
