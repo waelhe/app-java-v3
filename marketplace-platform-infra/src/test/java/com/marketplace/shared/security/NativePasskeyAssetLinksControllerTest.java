@@ -43,7 +43,7 @@ class NativePasskeyAssetLinksControllerTest {
                         "delegate_permission/common.handle_all_urls",
                         "delegate_permission/common.get_login_creds");
         assertThat(statement.target().namespace()).isEqualTo("android_app");
-        assertThat(statement.target().package_name()).isEqualTo("com.marketplace.dayf");
+        assertThat(statement.target().package_name()).isEqualTo("com.marketplace.android");
         assertThat(statement.target().sha256_cert_fingerprints())
                 .containsExactly(FINGERPRINT);
     }
