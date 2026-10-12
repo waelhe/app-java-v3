@@ -133,7 +133,7 @@ class NativePasskeyServiceTest {
         NativePasskeyService unconfigured = new NativePasskeyService(
                 jdbcTemplate, relyingPartyOperations, userDetailsService,
                 new NativePasskeyProperties("", "Marketplace", List.of(),
-                        "com.marketplace.android", List.of()));
+                        "com.marketplace.android", List.of()), testMapper());
 
         assertThatThrownBy(
                 () -> unconfigured.authenticate(UUID.randomUUID().toString(), "{}"))
