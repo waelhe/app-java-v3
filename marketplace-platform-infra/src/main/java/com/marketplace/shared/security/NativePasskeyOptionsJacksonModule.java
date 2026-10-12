@@ -13,7 +13,6 @@ import org.springframework.security.web.webauthn.api.AuthenticatorAttachment;
 import org.springframework.security.web.webauthn.api.AuthenticatorSelectionCriteria;
 import org.springframework.security.web.webauthn.api.AuthenticatorTransport;
 import org.springframework.security.web.webauthn.api.Bytes;
-import org.springframework.security.web.webauthn.api.COSEAlgorithmIdentifier;
 import org.springframework.security.web.webauthn.api.ImmutableAuthenticationExtensionsClientInput;
 import org.springframework.security.web.webauthn.api.ImmutableAuthenticationExtensionsClientInputs;
 import org.springframework.security.web.webauthn.api.ImmutablePublicKeyCredentialUserEntity;
