@@ -16,6 +16,7 @@ import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
+import org.springframework.security.oauth2.server.authorization.settings.OAuth2TokenFormat;
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -185,6 +186,7 @@ public class OAuth2PublicClientInitializer implements ApplicationRunner {
      */
     private static TokenSettings buildTokenSettings() {
         return TokenSettings.builder()
+                .accessTokenFormat(OAuth2TokenFormat.SELF_CONTAINED)
                 .accessTokenTimeToLive(Duration.ofSeconds(900))
                 .authorizationCodeTimeToLive(Duration.ofSeconds(300))
                 .build();
