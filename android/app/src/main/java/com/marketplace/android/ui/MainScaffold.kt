@@ -93,6 +93,7 @@ internal fun SignedInScaffold(
     onMarkRead: (NotificationDto) -> Unit,
     onRequestVerification: () -> Unit,
     onSignOutOnDevice: () -> Unit,
+    onRegisterPasskey: () -> Unit,
     onPropertyQuery: (String) -> Unit,
     onPropertyPurpose: (String) -> Unit,
     onPropertyType: (String) -> Unit,
@@ -207,7 +208,7 @@ internal fun SignedInScaffold(
                     state, onDirectoryQuery, onDirectoryMinRating, onSearchDirectory, onRefresh
                 )
                 MainTab.NOTIFICATIONS -> NotificationsScreen(state, onRefresh, onMarkRead)
-                MainTab.PROFILE -> ProfileScreen(state, onRequestVerification, onSignOutOnDevice)
+                MainTab.PROFILE -> ProfileScreen(state, onRequestVerification, onSignOutOnDevice, onRegisterPasskey)
             }
         }
     }
@@ -523,7 +524,8 @@ private fun NotificationsScreen(
 private fun ProfileScreen(
     state: AppUiState,
     onRequestVerification: () -> Unit,
-    onSignOut: () -> Unit
+    onSignOut: () -> Unit,
+    onRegisterPasskey: () -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
@@ -572,6 +574,33 @@ private fun ProfileScreen(
                         fontSize = 12.sp,
                         lineHeight = 18.sp
                     )
+                }
+            }
+        }
+        ElevatedCard(shape = RoundedCornerShape(22.dp), colors = CardDefaults.elevatedCardColors(containerColor = androidx.compose.ui.graphics.Color.White)) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("مفتاح المرور", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text(
+                    "أضف مفتاح مرور إلى مدير بيانات الاعتماد في جهازك لتسجيل الدخول دون إدخال كلمة مرور أو فتح المتصفح.",
+                    color = Muted,
+                    lineHeight = 21.sp
+                )
+                Button(
+                    onClick = onRegisterPasskey,
+                    enabled = !state.passkeyRegistrationBusy,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    if (state.passkeyRegistrationBusy) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("جارٍ إعداد مفتاح المرور...")
+                    } else {
+                        Text("إعداد مفتاح المرور")
+                    }
                 }
             }
         }
