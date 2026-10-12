@@ -16,6 +16,8 @@ import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
+import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsent;
+import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AccessTokenAuthenticationToken;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2ClientAuthenticationToken;
@@ -42,6 +44,7 @@ public final class NativePasskeyGrantAuthenticationProvider implements Authentic
 
     private final NativePasskeyService passkeyService;
     private final OAuth2AuthorizationService authorizationService;
+    private final OAuth2AuthorizationConsentService authorizationConsentService;
     private final NativePasskeyAccessTokenGenerator tokenGenerator;
     private final UserDetailsService userDetailsService;
     private final MarketplaceProperties properties;
@@ -49,11 +52,13 @@ public final class NativePasskeyGrantAuthenticationProvider implements Authentic
     public NativePasskeyGrantAuthenticationProvider(
             NativePasskeyService passkeyService,
             OAuth2AuthorizationService authorizationService,
+            OAuth2AuthorizationConsentService authorizationConsentService,
             NativePasskeyAccessTokenGenerator tokenGenerator,
             UserDetailsService userDetailsService,
             MarketplaceProperties properties) {
         this.passkeyService = passkeyService;
         this.authorizationService = authorizationService;
+        this.authorizationConsentService = authorizationConsentService;
         this.tokenGenerator = tokenGenerator;
         this.userDetailsService = userDetailsService;
         this.properties = properties;
@@ -99,6 +104,15 @@ public final class NativePasskeyGrantAuthenticationProvider implements Authentic
         }
         if (!account.isEnabled() || !account.isAccountNonLocked()
                 || !account.isAccountNonExpired() || !account.isCredentialsNonExpired()) {
+            throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_GRANT);
+        }
+
+        // The native extension must not bypass the consent already required by this
+        // public client. Enrollment can occur under another client, so check consent
+        // specifically for this registered client and its API scope before minting.
+        OAuth2AuthorizationConsent consent = this.authorizationConsentService.findById(
+                registeredClient.getId(), userAuthentication.getName());
+        if (consent == null || !consent.getScopes().contains("profile")) {
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_GRANT);
         }
 
