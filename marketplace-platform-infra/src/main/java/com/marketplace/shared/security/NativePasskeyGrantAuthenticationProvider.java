@@ -1,12 +1,10 @@
 package com.marketplace.shared.security;
 
 import java.time.Instant;
-import java.util.Map;
 import java.util.Set;
 
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.oauth2.core.ClaimAccessor;
@@ -20,6 +18,7 @@ import org.springframework.security.oauth2.server.authorization.authentication.O
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2ClientAuthenticationToken;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.context.AuthorizationServerContextHolder;
+import org.springframework.security.oauth2.server.authorization.settings.OAuth2TokenFormat;
 import org.springframework.security.oauth2.server.authorization.token.DefaultOAuth2TokenContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenGenerator;
@@ -107,26 +106,38 @@ public final class NativePasskeyGrantAuthenticationProvider implements Authentic
 
         Instant issuedAt = generatedToken.getIssuedAt();
         Instant expiresAt = generatedToken.getExpiresAt();
+        OAuth2AccessToken.TokenType tokenType = OAuth2AccessToken.TokenType.BEARER;
+        if (generatedToken instanceof ClaimAccessor claimAccessor) {
+            Map<String, Object> confirmation = claimAccessor.getClaimAsMap("cnf");
+            if (confirmation != null && confirmation.containsKey("jkt")) {
+                tokenType = OAuth2AccessToken.TokenType.DPOP;
+            }
+        }
         OAuth2AccessToken accessToken = new OAuth2AccessToken(
-                OAuth2AccessToken.TokenType.BEARER,
+                tokenType,
                 generatedToken.getTokenValue(),
                 issuedAt,
                 expiresAt,
                 authorizedScopes);
+        OAuth2TokenFormat accessTokenFormat = registeredClient.getTokenSettings().getAccessTokenFormat();
 
         OAuth2Authorization.Builder authorizationBuilder = OAuth2Authorization
                 .withRegisteredClient(registeredClient)
                 .principalName(userAuthentication.getName())
                 .authorizationGrantType(grant.getGrantType())
-                .authorizedScopes(authorizedScopes)
-                .attribute(java.security.Principal.class.getName(), userAuthentication);
+                .authorizedScopes(authorizedScopes);
 
-        if (generatedToken instanceof ClaimAccessor claimAccessor) {
-            authorizationBuilder.token(accessToken, metadata -> metadata.put(
-                    OAuth2Authorization.Token.CLAIMS_METADATA_NAME, claimAccessor.getClaims()));
-        } else {
-            authorizationBuilder.accessToken(accessToken);
-        }
+        // Match Spring Security's built-in token providers: persist claims,
+        // invalidation state, and the registered token format in the official
+        // OAuth2Authorization metadata. Do not persist the WebAuthn Authentication
+        // implementation as an arbitrary JDBC-serialized principal attribute.
+        authorizationBuilder.token(accessToken, metadata -> {
+            if (generatedToken instanceof ClaimAccessor claimAccessor) {
+                metadata.put(OAuth2Authorization.Token.CLAIMS_METADATA_NAME, claimAccessor.getClaims());
+            }
+            metadata.put(OAuth2Authorization.Token.INVALIDATED_METADATA_NAME, false);
+            metadata.put(OAuth2TokenFormat.class.getName(), accessTokenFormat.getValue());
+        });
         this.authorizationService.save(authorizationBuilder.build());
 
         return new OAuth2AccessTokenAuthenticationToken(registeredClient, clientPrincipal, accessToken);
