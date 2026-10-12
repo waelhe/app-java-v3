@@ -3,6 +3,7 @@ package com.marketplace.identity;
 import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.security.NativePasskeyChallengeResponse;
 import com.marketplace.shared.security.NativePasskeyService;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -28,16 +29,19 @@ public class NativePasskeyController {
     }
 
     @PostMapping("/passkeys/assertion/options")
+    @RateLimiter(name = "passkeyAssertionOptions")
     public NativePasskeyChallengeResponse assertionOptions() {
         return this.passkeyService.createAuthenticationOptions();
     }
 
     @PostMapping("/passkeys/registration/options")
+    @RateLimiter(name = "passkeyRegistration")
     public NativePasskeyChallengeResponse registrationOptions(Authentication authentication) {
         return this.passkeyService.createRegistrationOptions(authentication);
     }
 
     @PostMapping("/passkeys/registration")
+    @RateLimiter(name = "passkeyRegistration")
     public ResponseEntity<Void> register(
             @Valid @RequestBody PasskeyRegistrationRequest request,
             Authentication authentication) {
