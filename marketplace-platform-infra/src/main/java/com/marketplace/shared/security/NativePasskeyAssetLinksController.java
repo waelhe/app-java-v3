@@ -3,7 +3,6 @@ package com.marketplace.shared.security;
 import java.util.List;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -28,7 +27,9 @@ public final class NativePasskeyAssetLinksController {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
         return List.of(new AssetLinkStatement(
-                List.of("delegate_permission/common.get_login_creds"),
+                List.of(
+                        "delegate_permission/common.handle_all_urls",
+                        "delegate_permission/common.get_login_creds"),
                 new AssetLinkTarget(
                         "android_app",
                         this.properties.androidPackageName(),

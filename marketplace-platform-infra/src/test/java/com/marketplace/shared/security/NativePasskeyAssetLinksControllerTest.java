@@ -32,14 +32,16 @@ class NativePasskeyAssetLinksControllerTest {
                 + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(digest);
         NativePasskeyAssetLinksController controller = new NativePasskeyAssetLinksController(
                 new NativePasskeyProperties("example.com", "Marketplace", List.of(origin),
-                        "com.marketplace.dayf", List.of(FINGERPRINT)));
+                        "com.marketplace.android", List.of(FINGERPRINT)));
 
         List<NativePasskeyAssetLinksController.AssetLinkStatement> statements = controller.assetLinks();
 
         assertThat(statements).hasSize(1);
         NativePasskeyAssetLinksController.AssetLinkStatement statement = statements.get(0);
         assertThat(statement.relation())
-                .containsExactly("delegate_permission/common.get_login_creds");
+                .containsExactly(
+                        "delegate_permission/common.handle_all_urls",
+                        "delegate_permission/common.get_login_creds");
         assertThat(statement.target().namespace()).isEqualTo("android_app");
         assertThat(statement.target().package_name()).isEqualTo("com.marketplace.dayf");
         assertThat(statement.target().sha256_cert_fingerprints())

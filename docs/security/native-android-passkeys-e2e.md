@@ -45,14 +45,15 @@ grep -Eiq '^HTTP/[0-9.]+ 200([[:space:]]|$)' /tmp/assetlinks.headers
 grep -Eiq '^content-type:[[:space:]]*application/json([;[:space:]]|$)' /tmp/assetlinks.headers
 jq -e '
   type == "array" and length >= 1 and
-  any(.[]; (.relation | index("delegate_permission/common.get_login_creds")) != null and
+  any(.[]; (.relation | index("delegate_permission/common.handle_all_urls")) != null and
+    (.relation | index("delegate_permission/common.get_login_creds")) != null and
     .target.namespace == "android_app" and
     .target.package_name == "com.marketplace.android" and
     (.target.sha256_cert_fingerprints | length >= 1))
 ' /tmp/assetlinks.json
 ```
 
-A redirect, non-200 response, wrong content type, package mismatch, or missing real certificate fingerprint is a failure. The expected path is `/.well-known/assetlinks.json`; no debug certificate should be published as a production association.
+A redirect, non-200 response, wrong content type, package mismatch, either missing relation, or a fingerprint that does not match the exact APK under test is a failure. Android passkeys require `delegate_permission/common.handle_all_urls`; `delegate_permission/common.get_login_creds` additionally declares credential sharing. The expected path is `/.well-known/assetlinks.json`. The ephemeral CI debug certificate is permitted only for this designated acceptance run, never as the permanent release association.
 
 ## 4. Real-device acceptance sequence
 
@@ -83,4 +84,5 @@ The existing Railway `production` environment is the authorized staging/acceptan
 - The companion pull requests are still open: Android client [#548](https://github.com/waelhe/app-java-v3/pull/548) and backend [#555](https://github.com/waelhe/app-java-v3/pull/555). The backend PR must be integrated and deployed to the chosen staging environment before server passkey ceremonies can be tested.
 - At initial inspection the connected Railway service had the public OAuth client configuration, but none of the WebAuthn relying-party/origin/certificate variables was present. Recheck those variables and the active deployment after configuration.
 - The permanent release/distribution signing certificate is not provisioned in GitHub Actions yet; the four release keystore secrets were absent during inspection. A one-off debug identity may be used only for the exact staging APK used in acceptance, never as the permanent release identity.
-- The Railway `production` environment is the designated acceptance environment. Configure and deploy this feature there as requested; the permanent release identity must replace the test identity before a release is distributed.
+- The Railway `production` environment is the designated acceptance environment. Use the exact matching debug identity only for the acceptance APK from run [38306828220](https://github.com/waelhe/app-java-v3/actions/runs/38306828220); the permanent release identity must replace it before a release is distributed.
+- The passkey schema migration is named `V199_1__native_passkeys.sql` (Flyway version `199.1`), which sorts after the current `V199` baseline and before the reserved `V200`–`V208` migrations. This avoids advancing the live schema to V209 ahead of those still-open migrations.
