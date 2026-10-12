@@ -143,6 +143,35 @@ class NativePasskeyOptionsJacksonModuleTest {
                 .hasMessageContaining("Unsupported WebAuthn COSE algorithm");
     }
 
+    @Test
+    void malformedTimeoutFailsClosedInsteadOfFallingBackToADefault() throws Exception {
+        String json = mapper.writeValueAsString(creationOptions());
+        assertThat(json).contains("\"timeout\":300000");
+        String malformed = json.replace("\"timeout\":300000", "\"timeout\":0");
+
+        assertThatThrownBy(() -> mapper.readValue(malformed, PublicKeyCredentialCreationOptions.class))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("WebAuthn timeout must be positive");
+    }
+
+    @Test
+    void unknownUserVerificationFailsClosedInsteadOfRemovingTheRequirement() throws Exception {
+        PublicKeyCredentialRequestOptions options = PublicKeyCredentialRequestOptions.builder()
+                .challenge(Bytes.random())
+                .rpId("example.com")
+                .userVerification(UserVerificationRequirement.REQUIRED)
+                .build();
+        String json = mapper.writeValueAsString(options);
+        assertThat(json).contains("\"userVerification\":\"required\"");
+        String unsupported = json.replace(
+                "\"userVerification\":\"required\"",
+                "\"userVerification\":\"future-policy\"");
+
+        assertThatThrownBy(() -> mapper.readValue(unsupported, PublicKeyCredentialRequestOptions.class))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Unsupported WebAuthn user verification requirement");
+    }
+
     private static PublicKeyCredentialCreationOptions creationOptions() {
         return PublicKeyCredentialCreationOptions.builder()
                 .rp(PublicKeyCredentialRpEntity.builder().id("example.com").name("Marketplace").build())
