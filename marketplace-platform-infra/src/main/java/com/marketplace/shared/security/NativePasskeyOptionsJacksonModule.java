@@ -93,11 +93,15 @@ final class NativePasskeyOptionsJacksonModule extends SimpleModule {
                 throw new IllegalArgumentException("Missing required WebAuthn options array: pubKeyCredParams");
             }
             for (JsonNode parameter : parameterArray) {
-                String type = parameter.path("type").asString(null);
+                String type = required(parameter, "type");
                 if (!PublicKeyCredentialType.PUBLIC_KEY.getValue().equals(type)) {
                     throw new IllegalArgumentException("Unsupported WebAuthn credential type: " + type);
                 }
-                long algorithm = parameter.path("alg").asLong(Long.MIN_VALUE);
+                JsonNode algorithmNode = parameter.path("alg");
+                if (!algorithmNode.isNumber()) {
+                    throw new IllegalArgumentException("WebAuthn COSE algorithm must be numeric");
+                }
+                long algorithm = algorithmNode.asLong(Long.MIN_VALUE);
                 PublicKeyCredentialParameters constant = PARAMETERS_BY_ALGORITHM.get(algorithm);
                 if (constant == null) {
                     throw new IllegalArgumentException("Unsupported WebAuthn COSE algorithm: " + algorithm);
@@ -106,26 +110,32 @@ final class NativePasskeyOptionsJacksonModule extends SimpleModule {
             }
             builder.pubKeyCredParams(parameters);
             builder.excludeCredentials(descriptors(node.path("excludeCredentials")));
-            String attestation = node.path("attestation").asString(null);
+            String attestation = optionalString(node, "attestation");
             if (attestation != null) {
                 builder.attestation(AttestationConveyancePreference.valueOf(attestation));
             }
             JsonNode extensions = node.path("extensions");
-            if (extensions.isObject()) {
+            if (!extensions.isMissingNode() && !extensions.isNull()) {
+                if (!extensions.isObject()) {
+                    throw new IllegalArgumentException("WebAuthn extensions must be an object");
+                }
                 builder.extensions(extensions(extensions));
             }
-            long timeoutMillis = node.path("timeout").asLong(Long.MIN_VALUE);
-            if (timeoutMillis > 0) {
-                builder.timeout(Duration.ofMillis(timeoutMillis));
+            Duration timeout = optionalTimeout(node);
+            if (timeout != null) {
+                builder.timeout(timeout);
             }
             JsonNode selection = node.path("authenticatorSelection");
-            if (selection.isObject()) {
+            if (!selection.isMissingNode() && !selection.isNull()) {
+                if (!selection.isObject()) {
+                    throw new IllegalArgumentException("WebAuthn authenticatorSelection must be an object");
+                }
                 AuthenticatorSelectionCriteria.AuthenticatorSelectionCriteriaBuilder criteria =
                         AuthenticatorSelectionCriteria.builder()
                                 .authenticatorAttachment(authenticatorAttachment(
-                                        selection.path("authenticatorAttachment").asString(null)))
-                                .residentKey(residentKey(selection.path("residentKey").asString(null)))
-                                .userVerification(userVerification(selection.path("userVerification").asString(null)));
+                                        optionalString(selection, "authenticatorAttachment")))
+                                .residentKey(residentKey(optionalString(selection, "residentKey")))
+                                .userVerification(userVerification(optionalString(selection, "userVerification")));
                 builder.authenticatorSelection(criteria.build());
             }
             return builder.build();
@@ -141,15 +151,18 @@ final class NativePasskeyOptionsJacksonModule extends SimpleModule {
             PublicKeyCredentialRequestOptions.PublicKeyCredentialRequestOptionsBuilder builder =
                     PublicKeyCredentialRequestOptions.builder()
                             .challenge(Bytes.fromBase64(required(node, "challenge")))
-                            .rpId(node.path("rpId").asString(null));
-            long timeoutMillis = node.path("timeout").asLong(Long.MIN_VALUE);
-            if (timeoutMillis > 0) {
-                builder.timeout(Duration.ofMillis(timeoutMillis));
+                            .rpId(required(node, "rpId"));
+            Duration timeout = optionalTimeout(node);
+            if (timeout != null) {
+                builder.timeout(timeout);
             }
             builder.allowCredentials(descriptors(node.path("allowCredentials")));
-            builder.userVerification(userVerification(node.path("userVerification").asString(null)));
+            builder.userVerification(userVerification(optionalString(node, "userVerification")));
             JsonNode extensions = node.path("extensions");
-            if (extensions.isObject()) {
+            if (!extensions.isMissingNode() && !extensions.isNull()) {
+                if (!extensions.isObject()) {
+                    throw new IllegalArgumentException("WebAuthn extensions must be an object");
+                }
                 builder.extensions(extensions(extensions));
             }
             return builder.build();
@@ -176,25 +189,62 @@ final class NativePasskeyOptionsJacksonModule extends SimpleModule {
 
     private static List<PublicKeyCredentialDescriptor> descriptors(JsonNode array) {
         List<PublicKeyCredentialDescriptor> descriptors = new ArrayList<>();
-        if (array != null && array.isArray()) {
-            for (JsonNode element : array) {
-                PublicKeyCredentialDescriptor.PublicKeyCredentialDescriptorBuilder descriptor =
-                        PublicKeyCredentialDescriptor.builder()
-                                .id(Bytes.fromBase64(required(element, "id")))
-                                .type(PublicKeyCredentialType.valueOf(
-                                        element.path("type").asString("public-key")));
-                JsonNode transports = element.path("transports");
-                if (transports.isArray()) {
-                    Set<AuthenticatorTransport> values = new HashSet<>();
-                    for (JsonNode transport : transports) {
-                        values.add(AuthenticatorTransport.valueOf(transport.asString()));
-                    }
-                    descriptor.transports(Set.copyOf(values));
+        if (array == null || array.isMissingNode() || array.isNull()) {
+            return descriptors;
+        }
+        if (!array.isArray()) {
+            throw new IllegalArgumentException("WebAuthn credential descriptors must be an array");
+        }
+        for (JsonNode element : array) {
+            PublicKeyCredentialDescriptor.PublicKeyCredentialDescriptorBuilder descriptor =
+                    PublicKeyCredentialDescriptor.builder()
+                            .id(Bytes.fromBase64(required(element, "id")))
+                            .type(PublicKeyCredentialType.valueOf(
+                                    optionalString(element, "type") == null
+                                            ? "public-key" : optionalString(element, "type")));
+            JsonNode transports = element.path("transports");
+            if (!transports.isMissingNode() && !transports.isNull()) {
+                if (!transports.isArray()) {
+                    throw new IllegalArgumentException("WebAuthn credential transports must be an array");
                 }
-                descriptors.add(descriptor.build());
+                Set<AuthenticatorTransport> values = new HashSet<>();
+                for (JsonNode transport : transports) {
+                    if (!transport.isString()) {
+                        throw new IllegalArgumentException("WebAuthn credential transport must be a string");
+                    }
+                    values.add(AuthenticatorTransport.valueOf(transport.asString()));
+                }
+                descriptor.transports(Set.copyOf(values));
             }
+            descriptors.add(descriptor.build());
         }
         return descriptors;
+    }
+
+    private static Duration optionalTimeout(JsonNode node) {
+        JsonNode timeout = node.path("timeout");
+        if (timeout.isMissingNode() || timeout.isNull()) {
+            return null;
+        }
+        if (!timeout.isNumber()) {
+            throw new IllegalArgumentException("WebAuthn timeout must be numeric");
+        }
+        long millis = timeout.asLong(Long.MIN_VALUE);
+        if (millis <= 0) {
+            throw new IllegalArgumentException("WebAuthn timeout must be positive");
+        }
+        return Duration.ofMillis(millis);
+    }
+
+    private static String optionalString(JsonNode node, String field) {
+        JsonNode value = node.path(field);
+        if (value.isMissingNode() || value.isNull()) {
+            return null;
+        }
+        if (!value.isString()) {
+            throw new IllegalArgumentException("WebAuthn options field must be a string: " + field);
+        }
+        return value.asString();
     }
 
     private static ImmutableAuthenticationExtensionsClientInputs extensions(JsonNode node) {
@@ -240,8 +290,8 @@ final class NativePasskeyOptionsJacksonModule extends SimpleModule {
     }
 
     private static String required(JsonNode node, String field) {
-        String value = node.path(field).asString(null);
-        if (value == null) {
+        String value = optionalString(node, field);
+        if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("Missing required WebAuthn options field: " + field);
         }
         return value;
