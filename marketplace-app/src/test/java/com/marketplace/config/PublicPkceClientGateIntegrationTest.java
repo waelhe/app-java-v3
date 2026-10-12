@@ -308,19 +308,14 @@ class PublicPkceClientGateIntegrationTest {
     }
 
     /**
-     * No refresh grant exists for the public client. Spring Security Authorization Server checks
-     * <em>before</em> the grant is even evaluated, through the official client
-     * authentication path: {@code PublicClientAuthenticationConverter} only matches a
-     * PKCE token request ({@code grant_type=authorization_code} + {@code code} +
-     * {@code code_verifier} — {@code OAuth2EndpointUtils#matchesPkceTokenRequest}), so a
-     * {@code refresh_token} grant request — which carries no code_verifier by protocol —
-     * leaves the client unauthenticated. The endpoint filters run after the chain's
-     * {@code anyRequest().authenticated()} {@code AuthorizationFilter}, which denies the
-     * anonymous request, and the authorization-server entry point registered for the
-     * OAuth2 endpoints ({@code HttpStatusEntryPoint(UNAUTHORIZED)}, per
-     * {@code OAuth2AuthorizationServerConfigurer}) answers with a bare {@code 401} and an
-     * empty body. That is the framework enforcing "will not issue refresh tokens for a
-     * public client" (SAS how-to how-to-pkce, gh-297) at the authentication layer.
+     * A refresh token is not an enabled grant for this public client. Spring Security
+     * 7.1.1's authorization-code provider generates a refresh token only when the
+     * registered client's grant set contains {@code AuthorizationGrantType.REFRESH_TOKEN}.
+     * This HTTP-level check also pins the current behavior that an unauthenticated
+     * refresh-token request from this public client is rejected.
+     *
+     * @see <a href="https://docs.spring.io/spring-security/reference/servlet/oauth2/authorization-server/core-model-components.html">Spring Security Authorization Server — Core Model / Components</a>
+     * @see <a href="https://github.com/spring-projects/spring-security/blob/7.1.1/oauth2/oauth2-authorization-server/src/main/java/org/springframework/security/oauth2/server/authorization/authentication/OAuth2AuthorizationCodeAuthenticationProvider.java">Spring Security 7.1.1 authorization-code provider</a>
      */
     @Test
     void refreshTokenGrantIsUnavailableForPublicClient() throws Exception {
