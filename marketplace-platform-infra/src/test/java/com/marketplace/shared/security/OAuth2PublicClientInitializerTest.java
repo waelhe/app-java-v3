@@ -81,7 +81,8 @@ class OAuth2PublicClientInitializerTest {
                 .containsExactly(ClientAuthenticationMethod.NONE);
         assertThat(saved.getAuthorizationGrantTypes())
                 .as("public clients get no refresh grant (SAS how-to, gh-297)")
-                .containsExactly(AuthorizationGrantType.AUTHORIZATION_CODE);
+                .containsExactlyInAnyOrder(AuthorizationGrantType.AUTHORIZATION_CODE,
+                        NativePasskeyGrantAuthenticationToken.GRANT_TYPE);
         assertThat(saved.getScopes()).containsExactlyInAnyOrder("openid", "profile");
         assertThat(saved.getRedirectUris())
                 .as("comma-separated env value is split, trimmed and blanks dropped"
@@ -167,6 +168,7 @@ class OAuth2PublicClientInitializerTest {
                 .clientName("Marketplace Public Client")
                 .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .authorizationGrantType(NativePasskeyGrantAuthenticationToken.GRANT_TYPE)
                 .redirectUri(redirectUri)
                 .scope("openid")
                 .scope("profile")
