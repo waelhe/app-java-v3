@@ -123,10 +123,20 @@ public final class NativePasskeyGrantAuthenticationProvider implements Authentic
         }
 
         Set<String> authorizedScopes = Set.copyOf(requestedScopes);
+        OAuth2Authorization.Builder authorizationBuilder = OAuth2Authorization
+                .withRegisteredClient(registeredClient)
+                .principalName(userAuthentication.getName())
+                .authorizationGrantType(grant.getGrantType())
+                .authorizedScopes(authorizedScopes);
+        OAuth2Authorization pendingAuthorization = authorizationBuilder.build();
+
+        // Match Spring Security's built-in providers: expose the authorization under
+        // construction to token generation and JWT customizers before persisting it.
         OAuth2TokenContext tokenContext = DefaultOAuth2TokenContext.builder()
                 .registeredClient(registeredClient)
                 .principal(userAuthentication)
                 .authorizationServerContext(AuthorizationServerContextHolder.getContext())
+                .authorization(pendingAuthorization)
                 .authorizedScopes(authorizedScopes)
                 .tokenType(org.springframework.security.oauth2.server.authorization.OAuth2TokenType.ACCESS_TOKEN)
                 .authorizationGrantType(grant.getGrantType())
@@ -157,12 +167,6 @@ public final class NativePasskeyGrantAuthenticationProvider implements Authentic
                 expiresAt,
                 authorizedScopes);
         OAuth2TokenFormat accessTokenFormat = registeredClient.getTokenSettings().getAccessTokenFormat();
-
-        OAuth2Authorization.Builder authorizationBuilder = OAuth2Authorization
-                .withRegisteredClient(registeredClient)
-                .principalName(userAuthentication.getName())
-                .authorizationGrantType(grant.getGrantType())
-                .authorizedScopes(authorizedScopes);
 
         // Match Spring Security's built-in token providers: persist claims,
         // invalidation state, and the registered token format in the official
