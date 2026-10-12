@@ -324,11 +324,11 @@
                 <artifactId>jqwik</artifactId>
                 <version>${jqwik.version}</version>
             </dependency>
-            <!-- Exception: commons-lang3 — upgrade the explicit compatibility pin to the latest stable 3.21.1; Boot 4.1.1 BOM remains at 3.19.0 -->
+            <!-- Exception: commons-lang3 — latest published stable 3.21.0; Boot 4.1.1 BOM remains at 3.19.0 -->
             <dependency>
                 <groupId>org.apache.commons</groupId>
                 <artifactId>commons-lang3</artifactId>
-                <version>3.21.1</version>
+                <version>3.21.0</version>
             </dependency>
             <!-- Override: Jackson BOM — spring-security-oauth2-authorization-server 7.1.1 requires jackson-databind 3.2.0, Boot 4.1.1 manages 3.1.5 -->
             <dependency>
