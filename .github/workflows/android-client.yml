@@ -37,8 +37,24 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4.0.4
         with:
-          # Android 17 (API 37) is stable; AGP 9.4.1 uses Build Tools 36.0.0.
-          packages: "platform-tools platforms;android-37 build-tools;36.0.0"
+          packages: "platform-tools"
+
+      # API 37 is distributed on Android's canary SDK channel; the stable-only
+      # sdkmanager in setup-android cannot resolve platforms;android-37.
+      - name: Install Android 17 SDK
+        shell: bash
+        run: |
+          curl -fsSL https://dl.google.com/android/cli/latest/linux_x86_64/install.sh | bash
+          android_bin="$(command -v android || true)"
+          if [[ -z "$android_bin" ]]; then
+            android_bin="$(find -L "$HOME" -type f -name android -perm -u+x -print -quit)"
+          fi
+          if [[ -z "$android_bin" ]]; then
+            echo "Android CLI was installed but could not be located." >&2
+            exit 1
+          fi
+          echo "$(dirname "$android_bin")" >> "$GITHUB_PATH"
+          "$android_bin" --sdk="$ANDROID_SDK_ROOT" sdk install --canary platforms/android-37 build-tools/36.0.0
 
       - name: Run JVM tests
         working-directory: android
