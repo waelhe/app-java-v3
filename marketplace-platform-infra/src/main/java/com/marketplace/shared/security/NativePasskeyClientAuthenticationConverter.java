@@ -13,7 +13,6 @@ import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2ClientAuthenticationToken;
 import org.springframework.security.web.authentication.AuthenticationConverter;
-import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 /**
@@ -27,7 +26,6 @@ import org.springframework.util.StringUtils;
  * the exact configured {@code RegisteredClient} before the OAuth grant converter
  * can run.</p>
  */
-@Component
 public final class NativePasskeyClientAuthenticationConverter implements AuthenticationConverter {
 
     static final String CLIENT_AUTHENTICATION_MARKER = "marketplace_native_passkey_client_authentication";

@@ -121,9 +121,8 @@ public class SecurityConfig {
     SecurityFilterChain authorizationServerSecurityFilterChain(
             HttpSecurity http,
             SpringSessionBackedSessionRegistry<? extends Session> sessionRegistry,
-            NativePasskeyClientAuthenticationConverter nativePasskeyClientAuthenticationConverter,
+            AuthorizationServerSettings authorizationServerSettings,
             NativePasskeyClientAuthenticationProvider nativePasskeyClientAuthenticationProvider,
-            NativePasskeyGrantAuthenticationConverter nativePasskeyGrantAuthenticationConverter,
             NativePasskeyGrantAuthenticationProvider nativePasskeyGrantAuthenticationProvider,
             OAuth2TokenGenerator<?> oauth2TokenGenerator) throws Exception {
         http
@@ -133,10 +132,10 @@ public class SecurityConfig {
                     // Use the official configured generator for built-in and extension grants alike.
                     authorizationServer.tokenGenerator(oauth2TokenGenerator);
                     authorizationServer.clientAuthentication(clientAuthentication -> clientAuthentication
-                            .authenticationConverter(nativePasskeyClientAuthenticationConverter)
+                            .authenticationConverter(new NativePasskeyClientAuthenticationConverter(authorizationServerSettings))
                             .authenticationProvider(nativePasskeyClientAuthenticationProvider));
                     authorizationServer.tokenEndpoint(tokenEndpoint -> tokenEndpoint
-                            .accessTokenRequestConverter(nativePasskeyGrantAuthenticationConverter)
+                            .accessTokenRequestConverter(new NativePasskeyGrantAuthenticationConverter())
                             .authenticationProvider(nativePasskeyGrantAuthenticationProvider));
                 })
                 .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())

@@ -12,14 +12,12 @@ import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.web.authentication.AuthenticationConverter;
-import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 /**
  * Parses only the native passkey extension grant. Other grant types are left to
  * Spring Security Authorization Server's own converters.
  */
-@Component
 public final class NativePasskeyGrantAuthenticationConverter implements AuthenticationConverter {
 
     private static final String CHALLENGE_ID = "challenge_id";
