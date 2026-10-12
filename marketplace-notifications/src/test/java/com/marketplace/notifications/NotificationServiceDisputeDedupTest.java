@@ -112,6 +112,15 @@ class NotificationServiceDisputeDedupTest {
                 .thenThrow(new DataIntegrityViolationException(
                         "duplicate key value violates unique constraint "
                                 + "\"uq_notifications_source_event_once\""));
+        // The L22 preference gates must stand OPEN for this scenario — the
+        // silence under test is the LEDGER's verdict, not the gate's. With
+        // the gates shut (the unstubbed boolean default) the && would
+        // short-circuit and the ledger stubs would never be consumed
+        // (Mockito STRICT_STUBS: UnnecessaryStubbingException).
+        when(preferences.isChannelEnabled(OPENER_ID, NotificationType.DISPUTE_OPENED,
+                NotificationChannel.EMAIL)).thenReturn(true);
+        when(preferences.isChannelEnabled(OPENER_ID, NotificationType.DISPUTE_OPENED,
+                NotificationChannel.WS)).thenReturn(true);
         when(deliveryLedger.recordDelivery(eq(DISPUTE_ID), eq(OPENER_ID),
                 eq(com.marketplace.notifications.routing.NotificationDeliveryChannel.EMAIL)))
                 .thenReturn(false);
@@ -121,6 +130,12 @@ class NotificationServiceDisputeDedupTest {
 
         assertThatCode(() -> service().onDisputeOpened(DISPUTE_ID, OPENER_ID))
                 .doesNotThrowAnyException();
+        // The proof of the silence: both channel legs DID consult the
+        // per-channel ledger and it answered "already delivered".
+        verify(deliveryLedger).recordDelivery(DISPUTE_ID, OPENER_ID,
+                com.marketplace.notifications.routing.NotificationDeliveryChannel.EMAIL);
+        verify(deliveryLedger).recordDelivery(DISPUTE_ID, OPENER_ID,
+                com.marketplace.notifications.routing.NotificationDeliveryChannel.WS);
         verify(emailNotificationService, never()).sendEmail(any(), anyString(), anyString(), any());
     }
 
@@ -169,6 +184,12 @@ class NotificationServiceDisputeDedupTest {
                 .thenThrow(new DataIntegrityViolationException(
                         "duplicate key value violates unique constraint "
                                 + "\"uq_notifications_source_event_once\""));
+        // The L22 preference gates stand OPEN — the silence under test is
+        // the LEDGER's verdict on the deterministic key, not the gate's.
+        when(preferences.isChannelEnabled(OPENER_ID, NotificationType.DISPUTE_RESOLVED,
+                NotificationChannel.EMAIL)).thenReturn(true);
+        when(preferences.isChannelEnabled(OPENER_ID, NotificationType.DISPUTE_RESOLVED,
+                NotificationChannel.WS)).thenReturn(true);
         when(deliveryLedger.recordDelivery(eq(deterministicKey()), eq(OPENER_ID),
                 eq(com.marketplace.notifications.routing.NotificationDeliveryChannel.EMAIL)))
                 .thenReturn(false);
@@ -179,6 +200,13 @@ class NotificationServiceDisputeDedupTest {
         assertThatCode(() ->
                 service().onDisputeResolved(DISPUTE_ID, OPENER_ID, "NO_ACTION", null))
                 .doesNotThrowAnyException();
+        // The proof of the silence: both channel legs DID consult the
+        // per-channel ledger with the SAME derived key and it answered
+        // "already delivered".
+        verify(deliveryLedger).recordDelivery(deterministicKey(), OPENER_ID,
+                com.marketplace.notifications.routing.NotificationDeliveryChannel.EMAIL);
+        verify(deliveryLedger).recordDelivery(deterministicKey(), OPENER_ID,
+                com.marketplace.notifications.routing.NotificationDeliveryChannel.WS);
         verify(emailNotificationService, never()).sendEmail(any(), anyString(), anyString(), any());
     }
 
