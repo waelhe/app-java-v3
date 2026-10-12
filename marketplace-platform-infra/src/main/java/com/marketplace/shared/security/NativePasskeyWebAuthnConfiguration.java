@@ -6,7 +6,10 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcOperations;
+import org.springframework.security.web.webauthn.api.AuthenticatorSelectionCriteria;
 import org.springframework.security.web.webauthn.api.PublicKeyCredentialRpEntity;
+import org.springframework.security.web.webauthn.api.ResidentKeyRequirement;
+import org.springframework.security.web.webauthn.api.UserVerificationRequirement;
 import org.springframework.security.web.webauthn.management.JdbcPublicKeyCredentialUserEntityRepository;
 import org.springframework.security.web.webauthn.management.JdbcUserCredentialRepository;
 import org.springframework.security.web.webauthn.management.WebAuthnRelyingPartyOperations;
@@ -40,10 +43,20 @@ public class NativePasskeyWebAuthnConfiguration {
             JdbcUserCredentialRepository userCredentials,
             NativePasskeyProperties properties) {
         String rpId = StringUtils.hasText(properties.rpId()) ? properties.rpId() : "localhost";
-        return new Webauthn4JRelyingPartyOperations(
+        Webauthn4JRelyingPartyOperations operations = new Webauthn4JRelyingPartyOperations(
                 userEntities,
                 userCredentials,
                 PublicKeyCredentialRpEntity.builder().id(rpId).name(properties.rpName()).build(),
                 Set.copyOf(properties.allowedOrigins()));
+        // WebAuthn options are produced by Spring Security. Require local user verification
+        // and a discoverable credential instead of accepting a weaker authenticator policy.
+        operations.setCustomizeCreationOptions(options ->
+                options.authenticatorSelection(AuthenticatorSelectionCriteria.builder()
+                        .residentKey(ResidentKeyRequirement.REQUIRED)
+                        .userVerification(UserVerificationRequirement.REQUIRED)
+                        .build()));
+        operations.setCustomizeRequestOptions(options ->
+                options.userVerification(UserVerificationRequirement.REQUIRED));
+        return operations;
     }
 }
