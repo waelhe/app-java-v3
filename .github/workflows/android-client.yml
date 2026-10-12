@@ -26,7 +26,7 @@ jobs:
   android:
     name: Native Android build and tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -178,9 +178,9 @@ jobs:
           {
             echo "## Release signing identity"
             echo
-            echo "- Android package: `com.marketplace.android`"
-            echo "- SHA-256 certificate fingerprint: `$fingerprint`"
-            echo "- WebAuthn Android origin: `android:apk-key-hash:$origin`"
+            printf '%s\\n' '- Android package: `com.marketplace.android`'
+            printf '%s\\n' "- SHA-256 certificate fingerprint: \\`$fingerprint\\`"
+            printf '%s\\n' "- WebAuthn Android origin: \\`android:apk-key-hash:$origin\\`"
             echo
             echo "If the app is distributed through Google Play App Signing, use the **App signing key certificate** fingerprint from Play Console instead of this upload-key fingerprint."
             echo "Configure the RP ID, allowed origin and fingerprint on the matching non-production or production Railway environment only after validating the intended signing identity. This workflow does not modify Railway."

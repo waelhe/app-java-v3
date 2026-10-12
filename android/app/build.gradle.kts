@@ -41,7 +41,7 @@ extensions.configure<ApplicationExtension> {
 
     signingConfigs {
         create("release") {
-            releaseKeystorePath?.takeIf(String::isNotBlank)?.let { storeFile = file(it) }
+            releaseKeystorePath?.takeIf(String::isNotBlank)?.let { storeFile = rootProject.file(it) }
             releaseKeystorePassword?.let { storePassword = it }
             releaseKeyAlias?.let { keyAlias = it }
             releaseKeyPassword?.let { keyPassword = it }
