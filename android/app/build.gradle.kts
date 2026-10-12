@@ -37,7 +37,7 @@ fun String.asBuildConfigString(): String = listOf('"', this, '"').joinToString("
 
 extensions.configure<ApplicationExtension> {
     namespace = "com.marketplace.android"
-    compileSdk = 37
+    compileSdk = 36
 
     signingConfigs {
         create("release") {
@@ -107,8 +107,8 @@ dependencies {
     implementation("com.squareup.retrofit2:retrofit:3.0.0")
     implementation("com.squareup.retrofit2:converter-moshi:3.0.0")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.2")
-    implementation("io.coil-kt.coil3:coil-compose:3.6.3")
-    implementation("io.coil-kt.coil3:coil-network-okhttp:3.6.3")
+    implementation("io.coil-kt.coil3:coil-compose:3.5.0")
+    implementation("io.coil-kt.coil3:coil-network-okhttp:3.5.0")
     implementation("com.squareup.okhttp3:okhttp")
     implementation("net.openid:appauth:0.11.1")
     // Official Android Credential Manager passkey APIs (latest stable release).
