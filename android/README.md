@@ -1,11 +1,11 @@
 # Native Android client — Local community platform
 
-This is the native Android client for the local community platform. The product brand has not been selected, so the app uses a neutral display name. The client is built with Kotlin, Jetpack Compose, Retrofit/Moshi and AppAuth, outside the root Maven reactor. It adds no Spring module and makes no backend or database changes.
+This is the native Android client for the local community platform. The product brand has not been selected, so the app uses a neutral display name. The client is built with Kotlin, Jetpack Compose, Retrofit/Moshi, Android Credential Manager, and AppAuth, outside the root Maven reactor. Native passkey support depends on the companion backend change in PR #555; this Android client PR does not itself alter Spring modules or the database.
 
 ## Current app journeys
 
 - Four primary destinations: **الحي / السوق / العقار / دليل الأعمال**.
-- Public account registration, email-verification resend, OIDC Authorization Code + PKCE sign-in through the system browser, and neighborhood selection/membership using the existing APIs.
+- Public account registration and email-verification resend in native Compose UI; native passkey sign-in and enrollment via Android Credential Manager when the backend feature is configured; OAuth Authorization Code + PKCE through the system browser remains an explicit fallback. Neighborhood selection/membership uses existing APIs.
 - Live neighborhood feed with server-issued post photos, official Android Photo Picker selection (up to five attachments), presigned direct PUT upload and server-side confirmation, Arabic post search, comments, reactions, events and RSVPs, groups and membership, and polls/voting where the backend contracts exist.
 - Neighborhood classified listings are separate from the store. The property view filters real listing search by purpose/property type; the business-discovery view searches published service/listing offers and can show returned provider-rating metadata.
 - Notification list/read state and the actual neighborhood membership-verification state.
@@ -20,10 +20,13 @@ The current backend does **not** expose the complete public storefront/cart/orde
 - The default API base URL and OIDC issuer target the Railway service `https://app-java-v3-production-59bf.up.railway.app`, the environment selected for this test run. Override both with Gradle properties when targeting another environment.
 - Android sign-in uses the public client ID `android-community-native`, matched to the Railway service's `OAUTH_PUBLIC_CLIENT_ID`. The GitHub Actions Android build passes this explicitly as `-PoidcClientId=android-community-native`. The backend registers `com.marketplace.android:/oauth2redirect`. The client ID is public configuration; no client secret is shipped in the app.
 
-- AppAuth handles Authorization Code + PKCE in the system browser. No confidential-client secret is packaged in the APK.
+- Android Credential Manager handles passkey retrieval and creation on supported devices. The app asks the server for WebAuthn options and sends the returned assertion/registration JSON to the server; Android never verifies the assertion locally and does not invent the challenge.
+- AppAuth handles the explicit Authorization Code + PKCE fallback in the system browser. No confidential-client secret is packaged in the APK.
+- The native passkey OAuth extension grant is `urn:marketplace:params:oauth:grant-type:passkey`; it exchanges a single-use server challenge plus `authenticationResponseJson` at `/oauth2/token` and yields an API access token only. It does not issue an ID token or refresh token, and the app keeps the access token in memory only.
 - Access and ID tokens stay in memory only; neither token is written to persistent app storage. On app launch and after an API 401, the client attempts OIDC Authorization Code + PKCE with `prompt=none` to reuse a valid system-browser session. If the provider returns `login_required`, the app returns to interactive sign-in instead of inventing a local session.
 - Explicit sign-out clears local tokens and invokes AppAuth's RP-initiated end-session request with the discovered end-session endpoint, ID-token hint when available and client ID. The current server registration configures authorization redirect URIs but does not register a post-logout redirect URI, so the client does not send an unregistered callback URL. If the provider does not return an end-session response to the app, the UI confirms only local sign-out; a smooth automatic return requires a registered post-logout redirect in the server's public-client contract.
 - The public client has no refresh-token grant. The resource server validates JWTs locally, so a previously issued access token may remain valid up to its documented 900-second lifetime even after server logout; the app discards its local copy immediately.
+- Passkey setup intentionally fails closed until the backend deploy is configured with `marketplace.security.passkeys.rp-id`, `rp-name`, the exact `allowed-origins` from the real Android signing certificate, and that same certificate's SHA-256 fingerprint in `android-sha256-cert-fingerprints`. The server exposes `/.well-known/assetlinks.json` only after real fingerprints are configured. Do not use an invented or debug signing fingerprint for production. If the backend returns `503`, use the fallback login until an operator completes the official Digital Asset Links association.
 - The issuer, public client ID, API base URL and redirect URI must match the public OAuth client registered on the backend. Real staging sign-in and end-session behavior still require verification against the configured deployment. No backend or production OAuth settings are changed by this client PR.
 
 ## Build and test
@@ -60,5 +63,9 @@ From the `android/` directory, override environment-specific values without comm
 - Retrofit: https://github.com/square/retrofit
 - OkHttp: https://github.com/square/okhttp
 - Kotlin coroutines (Android and tests): https://github.com/Kotlin/kotlinx.coroutines
+- Android Credential Manager sign-in with passkeys: https://developer.android.com/identity/passkeys/sign-in-with-passkeys
+- Android Credential Manager passkey creation: https://developer.android.com/identity/passkeys/create-passkeys
+- AndroidX Credentials release notes (1.6.0 stable): https://developer.android.com/jetpack/androidx/releases/credentials
+- Android Identity Samples: https://github.com/android/identity-samples
 - Native OAuth 2.0 guidance: https://datatracker.ietf.org/doc/html/rfc8252
 - AppAuth Android: https://github.com/openid/AppAuth-Android
