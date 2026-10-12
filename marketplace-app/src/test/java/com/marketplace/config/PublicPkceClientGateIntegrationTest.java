@@ -56,11 +56,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Proves the official public-client constraints live (not by doc-trust):
  * <ul>
  *   <li>the flow works with a custom-scheme redirect URI (RFC 8252 native app);</li>
- *   <li><b>no refresh token is issued</b> — "Spring Authorization Server will not issue
- *       refresh tokens for a public client" (SAS how-to how-to-pkce, gh-297);</li>
+ *   <li><b>no refresh token is issued</b> — "Spring Security Authorization Server does not issue
+ *       refresh tokens for a public client" (Spring Security Authorization Server public-client behavior);</li>
  *   <li>an authorization request <b>without code_challenge is rejected</b> — "Public
  *       clients MUST use PKCE" (RFC 9700 §2.1.1) and "The requireProofKey setting is
- *       important to prevent the PKCE Downgrade Attack" (SAS how-to);</li>
+ *       important to prevent the PKCE Downgrade Attack" (Spring Security Authorization Server reference);</li>
  *   <li>client-secret authentication is <b>rejected</b> for a client registered with
  *       method {@code none};</li>
  *   <li>the issued access token (roles + aud customization, fixed resource-server
