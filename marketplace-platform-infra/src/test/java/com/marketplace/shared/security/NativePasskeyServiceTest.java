@@ -191,6 +191,22 @@ class NativePasskeyServiceTest {
     }
 
     @Test
+    void authenticateMapsCredentialRepositoryFailureToServerError() {
+        when(jdbcTemplate.queryForObject(anyString(), eq(String.class),
+                any(UUID.class), eq("AUTHENTICATE")))
+                .thenReturn(requestOptionsJson());
+        when(webAuthnAuthenticationProvider.authenticate(any()))
+                .thenThrow(new org.springframework.security.authentication.BadCredentialsException(
+                        "verification failed",
+                        new org.springframework.dao.DataAccessResourceFailureException("database unavailable")));
+
+        assertThatThrownBy(() -> service.authenticate(
+                UUID.randomUUID().toString(), parseableAssertionCredential()))
+                .isInstanceOfSatisfying(OAuth2AuthenticationException.class, ex ->
+                        assertThat(ex.getError().getErrorCode()).isEqualTo(OAuth2ErrorCodes.SERVER_ERROR));
+    }
+
+    @Test
     void completeRegistrationMapsAnInvalidChallengeToBadRequest() {
         when(userDetailsService.loadUserByUsername(USERNAME)).thenReturn(enabledUser());
         when(jdbcTemplate.queryForObject(anyString(), eq(String.class),
@@ -260,6 +276,23 @@ class NativePasskeyServiceTest {
                 .addModule(new WebauthnJacksonModule())
                 .addModule(new NativePasskeyOptionsJacksonModule())
                 .build();
+    }
+
+    private static String requestOptionsJson() {
+        try {
+            return testMapper().writeValueAsString(PublicKeyCredentialRequestOptions.builder()
+                    .rpId("example.com")
+                    .challenge(Bytes.random())
+                    .build());
+        } catch (Exception exception) {
+            throw new IllegalStateException("fixture serialization failed", exception);
+        }
+    }
+
+    private static String parseableAssertionCredential() {
+        return "{\"id\":\"AAA\",\"rawId\":\"AAA\",\"type\":\"public-key\","
+                + "\"response\":{\"clientDataJSON\":\"AAA\",\"authenticatorData\":\"AAA\","
+                + "\"signature\":\"AAA\"}}";
     }
 
     private static String creationOptionsJson() {
