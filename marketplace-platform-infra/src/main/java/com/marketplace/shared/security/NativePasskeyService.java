@@ -78,9 +78,9 @@ public final class NativePasskeyService {
             JdbcPublicKeyCredentialUserEntityRepository userEntities,
             JdbcUserCredentialRepository userCredentials,
             UserDetailsService userDetailsService,
-            @Value("\${WEBAUTHN_RP_ID:localhost}") String rpId,
-            @Value("\${WEBAUTHN_RP_NAME:Marketplace}") String rpName,
-            @Value("\${WEBAUTHN_ALLOWED_ORIGINS:}") String allowedOrigins) {
+            @Value("$" + "{WEBAUTHN_RP_ID:localhost}") String rpId,
+            @Value("$" + "{WEBAUTHN_RP_NAME:Marketplace}") String rpName,
+            @Value("$" + "{WEBAUTHN_ALLOWED_ORIGINS:}") String allowedOrigins) {
         this.jdbcTemplate = jdbcTemplate;
         this.userDetailsService = userDetailsService;
         this.rpId = rpId == null ? "" : rpId.trim();
