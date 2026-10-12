@@ -340,10 +340,18 @@ class PublicPkceClientGateIntegrationTest {
         assertThat(csrfToken).as("login CSRF").isNotBlank();
         sessionCookie = latestSessionCookie(loginPage, sessionCookie);
 
+        // Browser favicon requests must not replace the pending authorization request.
+        HttpResponse<String> favicon = get(baseUrl() + "/favicon.ico", sessionCookie);
+        assertThat(favicon.statusCode())
+                .as("favicon request should not redirect to login")
+                .isNotIn(301, 302, 303, 307, 308);
+        sessionCookie = latestSessionCookie(favicon, sessionCookie);
+
         HttpResponse<String> loginPost = postForm(LOGIN_PATH,
                 "username=" + username + "&password=" + password + "&_csrf=" + encode(csrfToken), sessionCookie);
         assertThat(loginPost.statusCode()).as("login: %s", body(loginPost)).isEqualTo(302);
         String savedRequest = loginPost.headers().firstValue("Location").orElse("");
+        assertThat(savedRequest).contains(AUTHORIZE_PATH);
         sessionCookie = latestSessionCookie(loginPost, sessionCookie);
 
         HttpResponse<String> authorizeSecond = get(absolute(savedRequest), sessionCookie);
