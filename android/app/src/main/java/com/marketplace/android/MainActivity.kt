@@ -89,8 +89,16 @@ class MainActivity : ComponentActivity() {
             val state by viewModel.uiState.collectAsStateWithLifecycle()
             LaunchedEffect(state.silentReauthRequired) {
                 if (state.silentReauthRequired) {
+                    val nativePasskeySession = state.nativePasskeySession
                     viewModel.consumeSilentReauthRequest()
-                    beginSignIn(silent = true)
+                    if (nativePasskeySession) {
+                        // A native passkey grant creates no browser session and no ID token.
+                        // Reauthenticate through Credential Manager rather than unexpectedly
+                        // reopening the system browser when the 15-minute access token expires.
+                        beginPasskeySignIn()
+                    } else {
+                        beginSignIn(silent = true)
+                    }
                 }
             }
             DayfTheme {
@@ -260,7 +268,7 @@ class MainActivity : ComponentActivity() {
                 )
                 // This OAuth extension issues an API access token only (no ID or refresh token).
                 // Keep it in memory through the existing ViewModel/repository boundary.
-                viewModel.authenticated(accessToken)
+                viewModel.authenticated(accessToken, nativePasskey = true)
             } catch (cancelled: GetCredentialCancellationException) {
                 viewModel.passkeySignInFailed("أُلغيت عملية تسجيل الدخول بمفتاح المرور.")
             } catch (missing: NoCredentialException) {
