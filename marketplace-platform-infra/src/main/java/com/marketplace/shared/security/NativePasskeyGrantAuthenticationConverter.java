@@ -11,6 +11,10 @@ import org.springframework.security.web.authentication.AuthenticationConverter;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.util.Arrays;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 /**
  * Parses only the native passkey extension grant. Other grant types are left to
  * Spring Authorization Server's own converters.
@@ -24,13 +28,20 @@ public final class NativePasskeyGrantAuthenticationConverter implements Authenti
 
     @Override
     public Authentication convert(HttpServletRequest request) {
-        String grantType = request.getParameter(OAuth2ParameterNames.GRANT_TYPE);
-        if (!NativePasskeyGrantAuthenticationToken.GRANT_TYPE.getValue().equals(grantType)) {
+        String[] grantTypes = request.getParameterValues(OAuth2ParameterNames.GRANT_TYPE);
+        if (grantTypes == null) {
+            return null;
+        }
+        if (grantTypes.length != 1) {
+            throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_REQUEST);
+        }
+        if (!NativePasskeyGrantAuthenticationToken.GRANT_TYPE.getValue().equals(grantTypes[0])) {
             return null;
         }
 
         String challengeId = singleParameter(request, CHALLENGE_ID);
         String credentialJson = singleParameter(request, CREDENTIAL);
+        Set<String> requestedScopes = requestedScopes(request);
         if (!StringUtils.hasText(challengeId)
                 || !StringUtils.hasText(credentialJson)
                 || challengeId.length() > 64
@@ -39,7 +50,25 @@ public final class NativePasskeyGrantAuthenticationConverter implements Authenti
         }
 
         Authentication clientPrincipal = SecurityContextHolder.getContext().getAuthentication();
-        return new NativePasskeyGrantAuthenticationToken(clientPrincipal, challengeId, credentialJson);
+        return new NativePasskeyGrantAuthenticationToken(
+                clientPrincipal, challengeId, credentialJson, requestedScopes);
+    }
+
+    private static Set<String> requestedScopes(HttpServletRequest request) {
+        String[] values = request.getParameterValues(OAuth2ParameterNames.SCOPE);
+        if (values == null) {
+            return Set.of();
+        }
+        if (values.length != 1 || values[0].length() > 256) {
+            throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_REQUEST);
+        }
+        String value = values[0].trim();
+        if (!StringUtils.hasText(value)) {
+            return Set.of();
+        }
+        return Arrays.stream(value.split("\\s+"))
+                .filter(StringUtils::hasText)
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     private static String singleParameter(HttpServletRequest request, String name) {
