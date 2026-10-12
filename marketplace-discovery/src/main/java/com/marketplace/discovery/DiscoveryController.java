@@ -90,15 +90,21 @@ public class DiscoveryController {
     public ResponseEntity<PagedResponse<DiscoveryCardView>> row(
             @Parameter(description = "The rail: URGENT_ALERTS, FOLLOWED_SOURCES, LOST_FOUND, "
                     + "NEIGHBORHOOD_RECOMMENDATIONS, EVENTS_AND_OPPORTUNITIES or FOR_YOU.")
-            @PathVariable DiscoveryRowType row,
+            @PathVariable String row,
             @Parameter(description = "Zero-based page index.")
             @RequestParam(defaultValue = "0") int page,
             @Parameter(description = "Page size (1..50).")
             @RequestParam(defaultValue = "20") int size,
             Authentication authentication) {
+        // CodeRabbit's final round on the #544 slice: the rail arrives as a
+        // String and rides the SAME vocabulary parser the impressions path
+        // already uses (criterion 3's house 400) — a raw enum binding
+        // answers MethodArgumentTypeMismatchException, which no
+        // ControllerAdvice in this tree translates: an unknown rail value
+        // surfaced as a 500, not the documented 400.
         PagedRequest request = parsePage(page, size);
         UUID callerId = currentUserProvider.getCurrentUserId(authentication);
-        return ResponseEntity.ok(discoveryService.rowPage(callerId, row, request));
+        return ResponseEntity.ok(discoveryService.rowPage(callerId, parseRow(row), request));
     }
 
     @PostMapping("/discovery/impressions")

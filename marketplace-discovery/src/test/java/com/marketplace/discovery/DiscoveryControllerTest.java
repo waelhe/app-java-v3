@@ -83,7 +83,7 @@ class DiscoveryControllerTest {
                 .thenReturn(new PagedResponse<>(List.of(card()), 0, 20, 1, 1, true));
 
         ResponseEntity<PagedResponse<DiscoveryCardView>> result =
-                controller.row(DiscoveryRowType.LOST_FOUND, 0, 20, authentication);
+                controller.row(DiscoveryRowType.LOST_FOUND.name(), 0, 20, authentication);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(result.getBody().content()).hasSize(1);
@@ -94,7 +94,7 @@ class DiscoveryControllerTest {
     void rowRejectsASizeAboveTheDocumentedBound() {
         callerIsResolved();
 
-        assertThatThrownBy(() -> controller.row(DiscoveryRowType.LOST_FOUND, 0, 51, authentication))
+        assertThatThrownBy(() -> controller.row(DiscoveryRowType.LOST_FOUND.name(), 0, 51, authentication))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("50");
     }
@@ -103,7 +103,7 @@ class DiscoveryControllerTest {
     void rowRejectsANegativePage() {
         callerIsResolved();
 
-        assertThatThrownBy(() -> controller.row(DiscoveryRowType.FOR_YOU, -1, 20, authentication))
+        assertThatThrownBy(() -> controller.row(DiscoveryRowType.FOR_YOU.name(), -1, 20, authentication))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("page");
     }
@@ -139,5 +139,16 @@ class DiscoveryControllerTest {
         assertThatThrownBy(() -> controller.impression(request, authentication))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("FOR_YOU");
+    }
+
+    @Test
+    void anUnknownRailValueAnswersTheHouse400NeverA500() {
+        // CodeRabbit's final round on the #544 slice: the rail arrives as a
+        // String and rides the vocabulary parser — an unknown value is the
+        // documented 400 (criterion 3), never the MethodArgumentTypeMismatch
+        // 500 the raw enum binding answered.
+        assertThatThrownBy(() -> controller.row("NOT_A_RAIL", 0, 20, authentication))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class)
+                .hasMessageContaining("row");
     }
 }
