@@ -37,7 +37,7 @@ fun String.asBuildConfigString(): String = listOf('"', this, '"').joinToString("
 
 extensions.configure<ApplicationExtension> {
     namespace = "com.marketplace.android"
-    compileSdk = 36
+    compileSdk = 37
 
     signingConfigs {
         create("release") {
