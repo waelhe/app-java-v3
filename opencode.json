@@ -1,0 +1,63 @@
+{
+  // Project config for the app-java-v3 backend (Java 25 / Spring Boot 4.1.1 / Maven multi-module).
+  // Verified against https://opencode.ai/docs/config, /docs/permissions, /docs/skills.
+  //
+  // Why this file exists (measured pain, not preference):
+  //   - PowerShell mangles `gh --jq` and multi-flag Maven commands; the bash
+  //     permission allowlist lets the recurring build/verify commands run without
+  //     a confirmation round-trip while everything else still asks.
+  //   - snapshot indexing is slow and disk-heavy on this 22-module repo.
+  //   - AGENTS.md is a constitution loaded on every request; the mechanical
+  //     detail lives in .agents/skills/spring-backend and loads on demand.
+
+  "$schema": "https://opencode.ai/config.json",
+
+  "shell": "pwsh",
+
+  "permission": {
+    "bash": {
+      "*": "ask",
+      "mvnw *": "allow",
+      "./mvnw *": "allow",
+      "mvn *": "allow",
+      "java *": "allow",
+      "git status*": "allow",
+      "git diff*": "allow",
+      "git log*": "allow",
+      "git fetch*": "allow",
+      "git branch*": "allow",
+      "git add*": "allow",
+      "git commit*": "allow",
+      "git push*": "ask",
+      "git checkout*": "allow",
+      "git switch*": "allow",
+      "git stash*": "allow",
+      "gh pr view*": "allow",
+      "gh pr list*": "allow",
+      "gh pr checks*": "allow",
+      "gh api*": "allow",
+      "gh run view*": "allow",
+      "gh run list*": "allow",
+      "grep *": "allow",
+      "rg *": "allow",
+      "find *": "allow",
+      "curl *": "allow",
+      "rm -rf *": "deny",
+      "rm -r *": "ask",
+      "git reset --hard*": "deny",
+      "git clean*": "deny"
+    }
+  },
+
+  "snapshot": false,
+
+  "watcher": {
+    "ignore": ["**/target/**", "**/node_modules/**", "**/.next/**"]
+  },
+
+  "compaction": {
+    "auto": true,
+    "prune": true,
+    "reserved": 10000
+  }
+}
