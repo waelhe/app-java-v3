@@ -966,7 +966,7 @@ public class SecurityConfig {
      * Customizes every access token issued by Spring Authorization Server:
      * <ul>
      *   <li>{@code roles} — flattened authorities (e.g. "ADMIN") per
-     *       <a href="https://docs.spring.io/spring-authorization-server/reference/guides/how-to-custom-claims-authorities.html">
+     *       <a href="https://docs.spring.io/spring-security/reference/servlet/oauth2/authorization-server/core-model-components.html">
      *       Spring Security OAuth2TokenCustomizer API</a>.</li>
      *   <li>{@code aud} — the resource server audience per
      *       <a href="https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.3">RFC 7519 §4.1.3</a>.</li>
