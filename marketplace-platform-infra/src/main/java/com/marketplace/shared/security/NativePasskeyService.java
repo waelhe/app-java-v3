@@ -1,16 +1,12 @@
 package com.marketplace.shared.security;
 
-import java.util.Arrays;
-import java.util.LinkedHashSet;
-import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.authentication.AuthenticationTrustResolver;
+import org.springframework.security.authentication.AuthenticationTrustResolverImpl;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -18,44 +14,37 @@ import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.web.webauthn.api.AuthenticatorAssertionResponse;
 import org.springframework.security.web.webauthn.api.AuthenticatorAttestationResponse;
-import org.springframework.security.web.webauthn.api.AuthenticatorSelectionCriteria;
 import org.springframework.security.web.webauthn.api.PublicKeyCredential;
 import org.springframework.security.web.webauthn.api.PublicKeyCredentialCreationOptions;
 import org.springframework.security.web.webauthn.api.PublicKeyCredentialRequestOptions;
-import org.springframework.security.web.webauthn.api.PublicKeyCredentialRpEntity;
-import org.springframework.security.web.webauthn.api.ResidentKeyRequirement;
-import org.springframework.security.web.webauthn.api.UserVerificationRequirement;
 import org.springframework.security.web.webauthn.authentication.WebAuthnAuthenticationProvider;
 import org.springframework.security.web.webauthn.authentication.WebAuthnAuthenticationRequestToken;
 import org.springframework.security.web.webauthn.jackson.WebauthnJacksonModule;
 import org.springframework.security.web.webauthn.management.ImmutablePublicKeyCredentialCreationOptionsRequest;
 import org.springframework.security.web.webauthn.management.ImmutablePublicKeyCredentialRequestOptionsRequest;
 import org.springframework.security.web.webauthn.management.ImmutableRelyingPartyRegistrationRequest;
-import org.springframework.security.web.webauthn.management.JdbcPublicKeyCredentialUserEntityRepository;
-import org.springframework.security.web.webauthn.management.JdbcUserCredentialRepository;
 import org.springframework.security.web.webauthn.management.RelyingPartyAuthenticationRequest;
 import org.springframework.security.web.webauthn.management.RelyingPartyPublicKey;
 import org.springframework.security.web.webauthn.management.WebAuthnRelyingPartyOperations;
-import org.springframework.security.web.webauthn.management.Webauthn4JRelyingPartyOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import tools.jackson.core.type.TypeReference;
-import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Server-side WebAuthn ceremonies for native passkey sign-in and enrollment.
+ * Native passkey ceremonies using Spring Security's WebAuthn APIs.
  *
- * <p>Credential verification, challenge validation, origin checks, RP ID checks,
- * signature-counter updates and credential persistence are delegated to Spring
- * Security's WebAuthn implementation. Ceremony challenges are stored in PostgreSQL,
- * expire after five minutes and are atomically consumed exactly once.</p>
+ * <p>The official relying-party operations, authentication provider and JDBC
+ * credential repositories perform WebAuthn verification and credential
+ * persistence. PostgreSQL stores only the request options needed to validate
+ * each mobile ceremony; challenges expire after five minutes and are consumed
+ * atomically once.</p>
  *
- * <p>The feature deliberately fails closed until the operator configures the RP ID
- * and exact Android signing-certificate origin. An invented or debug-key origin
- * must never become a production trust decision.</p>
+ * <p>The endpoints fail closed until the actual relying-party ID, allowed
+ * Android origin, and matching Digital Asset Links signing-certificate
+ * fingerprint are configured.</p>
  */
 @Service
 public final class NativePasskeyService {
@@ -71,41 +60,22 @@ public final class NativePasskeyService {
     private final WebAuthnRelyingPartyOperations relyingPartyOperations;
     private final WebAuthnAuthenticationProvider webAuthnAuthenticationProvider;
     private final UserDetailsService userDetailsService;
+    private final NativePasskeyProperties properties;
     private final JsonMapper webAuthnMapper;
-    private final String rpId;
-    private final Set<String> allowedOrigins;
+    private final AuthenticationTrustResolver trustResolver = new AuthenticationTrustResolverImpl();
 
     public NativePasskeyService(
             JdbcTemplate jdbcTemplate,
-            JdbcPublicKeyCredentialUserEntityRepository userEntities,
-            JdbcUserCredentialRepository userCredentials,
+            WebAuthnRelyingPartyOperations relyingPartyOperations,
             UserDetailsService userDetailsService,
-            @Value("$" + "{WEBAUTHN_RP_ID:localhost}") String rpId,
-            @Value("$" + "{WEBAUTHN_RP_NAME:Marketplace}") String rpName,
-            @Value("$" + "{WEBAUTHN_ALLOWED_ORIGINS:}") String allowedOrigins) {
+            NativePasskeyProperties properties) {
         this.jdbcTemplate = jdbcTemplate;
+        this.relyingPartyOperations = relyingPartyOperations;
         this.userDetailsService = userDetailsService;
-        this.rpId = rpId == null ? "" : rpId.trim();
-        this.allowedOrigins = parseSet(allowedOrigins);
+        this.properties = properties;
         this.webAuthnMapper = JsonMapper.builder().addModule(new WebauthnJacksonModule()).build();
-
-        Webauthn4JRelyingPartyOperations operations = new Webauthn4JRelyingPartyOperations(
-                userEntities,
-                userCredentials,
-                PublicKeyCredentialRpEntity.builder()
-                        .id(this.rpId.isBlank() ? "localhost" : this.rpId)
-                        .name(StringUtils.hasText(rpName) ? rpName.trim() : "Marketplace")
-                        .build(),
-                this.allowedOrigins);
-        operations.setCustomizeCreationOptions(options ->
-                options.authenticatorSelection(AuthenticatorSelectionCriteria.builder()
-                        .residentKey(ResidentKeyRequirement.REQUIRED)
-                        .userVerification(UserVerificationRequirement.REQUIRED)
-                        .build()));
-        operations.setCustomizeRequestOptions(options ->
-                options.userVerification(UserVerificationRequirement.REQUIRED));
-        this.relyingPartyOperations = operations;
-        this.webAuthnAuthenticationProvider = new WebAuthnAuthenticationProvider(operations, userDetailsService);
+        this.webAuthnAuthenticationProvider =
+                new WebAuthnAuthenticationProvider(relyingPartyOperations, userDetailsService);
     }
 
     public NativePasskeyChallengeResponse createAuthenticationOptions() {
@@ -118,10 +88,7 @@ public final class NativePasskeyService {
 
     public NativePasskeyChallengeResponse createRegistrationOptions(Authentication authentication) {
         requireConfigured();
-        if (authentication == null || !authentication.isAuthenticated()
-                || !StringUtils.hasText(authentication.getName())) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sign in before registering a passkey.");
-        }
+        requireAuthenticated(authentication);
         requireEnabledUser(authentication.getName());
 
         PublicKeyCredentialCreationOptions options =
@@ -133,11 +100,9 @@ public final class NativePasskeyService {
     public void completeRegistration(
             String challengeId, String credentialJson, String label, Authentication authentication) {
         requireConfigured();
-        if (authentication == null || !authentication.isAuthenticated()
-                || !StringUtils.hasText(authentication.getName())) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sign in before registering a passkey.");
-        }
+        requireAuthenticated(authentication);
         requireEnabledUser(authentication.getName());
+
         String optionsJson = consumeChallenge(challengeId, REGISTER, authentication.getName());
         try {
             PublicKeyCredentialCreationOptions options =
@@ -145,7 +110,7 @@ public final class NativePasskeyService {
             PublicKeyCredential<AuthenticatorAttestationResponse> credential =
                     this.webAuthnMapper.readValue(credentialJson, ATTESTATION_TYPE);
             String safeLabel = StringUtils.hasText(label) ? label.trim() : "Android device";
-            if (safeLabel.length() > 255) {
+            if (safeLabel.length() > 1000) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Passkey label is too long.");
             }
             this.relyingPartyOperations.registerCredential(
@@ -160,8 +125,8 @@ public final class NativePasskeyService {
     }
 
     /**
-     * Consumes the issued assertion challenge and verifies the assertion using
-     * Spring Security's supported WebAuthn AuthenticationProvider.
+     * Consumes the server-issued assertion challenge and verifies the assertion
+     * with Spring Security's official WebAuthn AuthenticationProvider.
      */
     public Authentication authenticate(String challengeId, String credentialJson) {
         requireConfigured();
@@ -182,15 +147,14 @@ public final class NativePasskeyService {
         } catch (OAuth2AuthenticationException exception) {
             throw exception;
         } catch (Exception exception) {
-            // Treat unknown, expired, replayed and invalid assertions identically.
+            // Unknown, expired, replayed and invalid assertions all return the same grant error.
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_GRANT);
         }
     }
 
     private NativePasskeyChallengeResponse issueChallenge(String purpose, String principalName, Object options) {
         try {
-            // Keep the challenge single-use. Opportunistically prune expired rows so
-            // anonymous requests do not accumulate expired ceremony state forever.
+            // Opportunistic expiry cleanup; challenge consumption below is atomic.
             this.jdbcTemplate.update(
                     "DELETE FROM native_passkey_challenges WHERE expires_at <= CURRENT_TIMESTAMP");
             String optionsJson = this.webAuthnMapper.writeValueAsString(options);
@@ -200,8 +164,7 @@ public final class NativePasskeyService {
                         (challenge_id, purpose, principal_name, options_json, expires_at)
                     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP + INTERVAL '5 minutes')
                     """, challengeId, purpose, principalName, optionsJson);
-            JsonNode optionsNode = this.webAuthnMapper.readTree(optionsJson);
-            return new NativePasskeyChallengeResponse(challengeId.toString(), optionsNode);
+            return new NativePasskeyChallengeResponse(challengeId.toString(), optionsJson);
         } catch (Exception exception) {
             if (exception instanceof ResponseStatusException statusException) {
                 throw statusException;
@@ -231,13 +194,19 @@ public final class NativePasskeyService {
             return this.jdbcTemplate.queryForObject(sql, String.class,
                     challengeId, purpose, principalName);
         } catch (EmptyResultDataAccessException exception) {
-            // DELETE ... RETURNING is the atomic replay and expiry gate.
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_GRANT);
         }
     }
 
+    private void requireAuthenticated(Authentication authentication) {
+        if (!this.trustResolver.isAuthenticated(authentication)
+                || !StringUtils.hasText(authentication.getName())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sign in before registering a passkey.");
+        }
+    }
+
     private void requireEnabledUser(String username) {
-        UserDetails account;
+        final UserDetails account;
         try {
             account = this.userDetailsService.loadUserByUsername(username);
         } catch (RuntimeException exception) {
@@ -260,19 +229,10 @@ public final class NativePasskeyService {
     }
 
     private void requireConfigured() {
-        if (!StringUtils.hasText(this.rpId) || this.allowedOrigins.isEmpty()) {
+        if (!this.properties.isConfigured()) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "Native passkeys are not enabled until the relying-party ID and exact Android signing origin are configured.");
+                    "Native passkeys are not enabled until the relying-party ID, allowed Android origin, "
+                            + "and matching app-signing certificate fingerprint are configured.");
         }
-    }
-
-    private static Set<String> parseSet(String csv) {
-        if (!StringUtils.hasText(csv)) {
-            return Set.of();
-        }
-        return Arrays.stream(csv.split(","))
-                .map(String::trim)
-                .filter(StringUtils::hasText)
-                .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 }
