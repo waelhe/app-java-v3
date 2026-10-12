@@ -94,6 +94,9 @@ fun DayfTheme(content: @Composable () -> Unit) {
 fun DayfApp(
     state: AppUiState,
     onSignIn: () -> Unit,
+    onPasskeySignIn: () -> Unit,
+    passkeysAvailable: Boolean,
+    onRegisterPasskey: () -> Unit,
     onRegisterAccount: (String, String, String) -> Unit,
     onResendVerification: () -> Unit,
     onRefresh: () -> Unit,
@@ -171,8 +174,11 @@ fun DayfApp(
             error = state.authError,
             success = state.authSuccess,
             registrationBusy = state.registrationBusy,
+            passkeySignInBusy = state.passkeySignInBusy,
+            passkeysAvailable = passkeysAvailable,
             canResendVerification = state.registrationEmail.isNotBlank(),
             verificationResendBusy = state.verificationResendBusy,
+            onPasskeySignIn = onPasskeySignIn,
             onSignIn = onSignIn,
             onRegister = onRegisterAccount,
             onResendVerification = onResendVerification
@@ -211,6 +217,7 @@ fun DayfApp(
             onMarkRead = onMarkRead,
             onRequestVerification = onRequestVerification,
             onSignOutOnDevice = onSignOutOnDevice,
+            onRegisterPasskey = onRegisterPasskey,
             onPropertyQuery = onPropertyQuery,
             onPropertyPurpose = onPropertyPurpose,
             onPropertyType = onPropertyType,
@@ -285,8 +292,11 @@ internal fun SignInScreen(
     error: String?,
     success: String?,
     registrationBusy: Boolean,
+    passkeySignInBusy: Boolean,
+    passkeysAvailable: Boolean,
     canResendVerification: Boolean,
     verificationResendBusy: Boolean,
+    onPasskeySignIn: () -> Unit,
     onSignIn: () -> Unit,
     onRegister: (String, String, String) -> Unit,
     onResendVerification: () -> Unit
@@ -369,26 +379,53 @@ internal fun SignInScreen(
                             Text("إعادة إرسال رسالة التحقق")
                         }
                     }
-                    Button(
-                        onClick = onSignIn,
-                        modifier = Modifier.fillMaxWidth().height(54.dp),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Text("تسجيل الدخول الآمن", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                        Spacer(Modifier.width(8.dp))
-                        Icon(Icons.Filled.ArrowForward, contentDescription = null)
+                    if (passkeysAvailable) {
+                        Button(
+                            onClick = onPasskeySignIn,
+                            enabled = !passkeySignInBusy,
+                            modifier = Modifier.fillMaxWidth().height(54.dp),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            if (passkeySignInBusy) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = Color.White
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("جارٍ تسجيل الدخول...")
+                            } else {
+                                Text("المتابعة بمفتاح المرور", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = onSignIn,
+                            enabled = !passkeySignInBusy,
+                            modifier = Modifier.fillMaxWidth().height(50.dp),
+                            shape = RoundedCornerShape(16.dp)
+                        ) { Text("الدخول بالطريقة التقليدية") }
+                    } else {
+                        Button(
+                            onClick = onSignIn,
+                            modifier = Modifier.fillMaxWidth().height(54.dp),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Text("تسجيل الدخول الآمن", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.width(8.dp))
+                            Icon(Icons.Filled.ArrowForward, contentDescription = null)
+                        }
+                        Text(
+                            "طريقة الدخول بمفتاح المرور تتطلب Android 9 أو أحدث. يمكنك استخدام الدخول التقليدي.",
+                            fontSize = 12.sp,
+                            color = Muted,
+                            lineHeight = 18.sp
+                        )
                     }
                     OutlinedButton(
                         onClick = { showRegistration = true; formError = null },
                         modifier = Modifier.fillMaxWidth().height(50.dp),
                         shape = RoundedCornerShape(16.dp)
                     ) { Text("إنشاء حساب جديد") }
-                    Text(
-                        "سيُفتح تسجيل الدخول عبر متصفح النظام. لا يطلب التطبيق كلمة مرورك داخله.",
-                        fontSize = 12.sp,
-                        color = Muted,
-                        lineHeight = 18.sp
-                    )
                 }
             }
             Spacer(Modifier.height(20.dp))
