@@ -227,7 +227,14 @@ class ObservationCoverageFilesTest {
                     "order.cancel", "order.confirm", "order.fulfill", "order.place")),
             Map.entry("marketplace-notifications", List.of(
                     "notification.delete", "notification.mark.all.read",
-                    "notification.mark.read", "notification.preferences.update")),
+                    "notification.mark.read",
+                    // phase 7 (§8.1): the routing wave's preference-surface
+                    // commands join under the same discipline — the topic
+                    // hierarchy update and the geo subscribe/withdraw pair.
+                    "notification.preferences.geo.subscribe",
+                    "notification.preferences.geo.withdraw",
+                    "notification.preferences.topics.update",
+                    "notification.preferences.update")),
             Map.entry("marketplace-payments", List.of(
                     "payment.cancel", "payment.confirm", "payment.fail", "payment.process",
                     "payment.psp.create", "payment.psp.refund", "payment.psp.webhook")),

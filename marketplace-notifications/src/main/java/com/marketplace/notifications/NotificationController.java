@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -20,11 +21,17 @@ public class NotificationController {
 
     private final NotificationService service;
     private final NotificationPreferenceService preferenceService;
+    private final com.marketplace.notifications.routing.NotificationTopicPreferenceService topicPreferenceService;
+    private final com.marketplace.notifications.routing.NotificationGeoSubscriptionService geoSubscriptionService;
 
     public NotificationController(NotificationService service,
-                                   NotificationPreferenceService preferenceService) {
+                                   NotificationPreferenceService preferenceService,
+                                   com.marketplace.notifications.routing.NotificationTopicPreferenceService topicPreferenceService,
+                                   com.marketplace.notifications.routing.NotificationGeoSubscriptionService geoSubscriptionService) {
         this.service = service;
         this.preferenceService = preferenceService;
+        this.topicPreferenceService = topicPreferenceService;
+        this.geoSubscriptionService = geoSubscriptionService;
     }
 
     /**
@@ -132,6 +139,89 @@ public class NotificationController {
             @Valid @RequestBody NotificationPreferencesUpdateRequest request,
             Authentication authentication) {
         return ResponseEntity.ok(preferenceService.updateMyPreferences(authentication, request));
+    }
+
+    /**
+     * Phase 7 (execution plan §10 / §8.1 — notification routing): the
+     * caller's effective HIERARCHICAL TOPIC matrix — every subject family
+     * × the governed channels (EMAIL/WS) with the stored override or the
+     * enabled default. The topic level is the type matrix's second
+     * resolution level: the engine falls through to it only when the
+     * type level has no explicit row.
+     */
+    @GetMapping("/notifications/preferences/topics")
+    @Operation(summary = "Get my hierarchical topic notification preferences",
+            description = "The caller's effective topic matrix — every notification topic "
+                    + "× the EMAIL/WS channels with the stored override or the enabled "
+                    + "default. Resolution order: type-level row > topic-level row > default.")
+    public ResponseEntity<List<NotificationTopicPreferenceView>> getMyTopicPreferences(
+            Authentication authentication) {
+        return ResponseEntity.ok(topicPreferenceService.getMyTopicPreferences(authentication));
+    }
+
+    /**
+     * Phase 7: applies the caller's topic switches (upsert) and returns
+     * the resulting effective matrix. Channels outside EMAIL/WS are
+     * rejected — the in-app channel is always on and push awaits the
+     * provider decision (D-10).
+     */
+    @PutMapping("/notifications/preferences/topics")
+    @Operation(summary = "Update my hierarchical topic notification preferences",
+            description = "Applies the requested topic switches (upsert) and returns the "
+                    + "resulting effective matrix. \"Back to default\" is enabled = true.")
+    public ResponseEntity<List<NotificationTopicPreferenceView>> updateMyTopicPreferences(
+            @Valid @RequestBody NotificationTopicPreferencesUpdateRequest request,
+            Authentication authentication) {
+        return ResponseEntity.ok(
+                topicPreferenceService.updateMyTopicPreferences(authentication, request));
+    }
+
+    /**
+     * Phase 7: the caller's own OPT-IN geographic subscriptions — the
+     * optional widening of the routing engine's effective geo scope
+     * beyond the caller's active membership (the documented default).
+     */
+    @GetMapping("/notifications/preferences/geo")
+    @Operation(summary = "List my geographic notification subscriptions",
+            description = "The caller's own opt-in level-3 neighborhood subscriptions. "
+                    + "With none, the effective geo scope is the caller's active membership "
+                    + "neighborhood — the documented default.")
+    public ResponseEntity<List<NotificationGeoSubscriptionView>> getMyGeoSubscriptions(
+            Authentication authentication) {
+        return ResponseEntity.ok(geoSubscriptionService.getMySubscriptions(authentication));
+    }
+
+    /**
+     * Phase 7: subscribes the caller to one level-3 neighborhood — the
+     * explicit geographic act (the existence/level gate rides
+     * GeoLookupPort; unknown 404, wider level 400). Idempotent on a live
+     * duplicate.
+     */
+    @PostMapping("/notifications/preferences/geo")
+    @Operation(summary = "Subscribe to a neighborhood's notifications",
+            description = "Adds one opt-in level-3 neighborhood subscription for the caller "
+                    + "(404 unknown location, 400 non-neighborhood level). Idempotent on a "
+                    + "live duplicate.")
+    public ResponseEntity<NotificationGeoSubscriptionView> subscribeToGeo(
+            @Valid @RequestBody NotificationGeoSubscriptionRequest request,
+            Authentication authentication) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(geoSubscriptionService.subscribe(authentication, request.locationId()));
+    }
+
+    /**
+     * Phase 7: withdraws the caller's own subscription — the explicit
+     * reversal (soft delete; the pair can be re-subscribed later). An
+     * unknown pair is 404.
+     */
+    @DeleteMapping("/notifications/preferences/geo/{locationId}")
+    @Operation(summary = "Withdraw a geographic notification subscription",
+            description = "Soft-deletes the caller's own subscription for the given "
+                    + "neighborhood (404 when none). The pair can be re-subscribed later.")
+    public ResponseEntity<Void> withdrawGeoSubscription(@PathVariable UUID locationId,
+                                                        Authentication authentication) {
+        geoSubscriptionService.withdraw(authentication, locationId);
+        return ResponseEntity.noContent().build();
     }
 
     /** Plan item 2.6: the badge shape (the MessagingController precedent). */

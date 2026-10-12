@@ -10,11 +10,13 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -38,6 +40,14 @@ class NotificationControllerWebMvcTest {
     /** L22: the preferences endpoints' collaborator. */
     @MockitoBean
     private NotificationPreferenceService preferenceService;
+
+    /** Phase 7 (§8.1): the topic-hierarchy endpoints' collaborator. */
+    @MockitoBean
+    private com.marketplace.notifications.routing.NotificationTopicPreferenceService topicPreferenceService;
+
+    /** Phase 7 (§8.1): the geo-subscription endpoints' collaborator. */
+    @MockitoBean
+    private com.marketplace.notifications.routing.NotificationGeoSubscriptionService geoSubscriptionService;
 
     @TestConfiguration
     @EnableMethodSecurity
@@ -194,5 +204,164 @@ class NotificationControllerWebMvcTest {
                                 ]}
                                 """))
                 .andExpect(status().isBadRequest());
+    }
+
+    // ------------------------------------------------------------------
+    // Phase 7 (§8.1) — the topic-hierarchy and geo-subscription
+    // endpoints: the controller slice for the five surfaces the L22
+    // matrix tests above do not cover (the #545 measured gap: the five
+    // new /notifications/preferences/* routes had zero controller
+    // tests — the mocking seam, the response shapes, and the binding
+    // and service validation layers).
+    // ------------------------------------------------------------------
+
+    @Test
+    @WithMockUser
+    void getMyTopicPreferences_returnsTheEffectiveMatrix() throws Exception {
+        when(topicPreferenceService.getMyTopicPreferences(any())).thenReturn(List.of(
+                new NotificationTopicPreferenceView(
+                        com.marketplace.notifications.routing.NotificationTopic.COMMUNITY,
+                        NotificationChannel.EMAIL, false)));
+
+        mockMvc.perform(get("/api/v1/notifications/preferences/topics"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].topic").value("COMMUNITY"))
+                .andExpect(jsonPath("$[0].channel").value("EMAIL"))
+                .andExpect(jsonPath("$[0].enabled").value(false));
+    }
+
+    @Test
+    @WithMockUser
+    void updateMyTopicPreferences_returnsTheEffectiveMatrix() throws Exception {
+        when(topicPreferenceService.updateMyTopicPreferences(any(), any())).thenReturn(List.of(
+                new NotificationTopicPreferenceView(
+                        com.marketplace.notifications.routing.NotificationTopic.COMMUNITY,
+                        NotificationChannel.EMAIL, false)));
+
+        mockMvc.perform(put("/api/v1/notifications/preferences/topics")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"preferences": [
+                                  {"topic": "COMMUNITY", "channel": "EMAIL", "enabled": false}
+                                ]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].topic").value("COMMUNITY"))
+                .andExpect(jsonPath("$[0].enabled").value(false));
+    }
+
+    @Test
+    @WithMockUser
+    void updateMyTopicPreferences_rejectsTheUngovernedChannel() throws Exception {
+        // The topic record's own @AssertTrue — the in-app channel is
+        // always on, so the framework answers 400 before the service.
+        mockMvc.perform(put("/api/v1/notifications/preferences/topics")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"preferences": [
+                                  {"topic": "COMMUNITY", "channel": "DB", "enabled": false}
+                                ]}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser
+    void updateMyTopicPreferences_rejectsAnUnknownTopicValue() throws Exception {
+        mockMvc.perform(put("/api/v1/notifications/preferences/topics")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"preferences": [
+                                  {"topic": "NOT_A_TOPIC", "channel": "EMAIL", "enabled": false}
+                                ]}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser
+    void updateMyTopicPreferences_rejectsAnEmptySwitchList() throws Exception {
+        mockMvc.perform(put("/api/v1/notifications/preferences/topics")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"preferences": []}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser
+    void getMyGeoSubscriptions_returnsTheCallersOwnList() throws Exception {
+        UUID location = UUID.randomUUID();
+        when(geoSubscriptionService.getMySubscriptions(any())).thenReturn(List.of(
+                new NotificationGeoSubscriptionView(location,
+                        Instant.parse("2026-10-11T09:30:00Z"))));
+
+        mockMvc.perform(get("/api/v1/notifications/preferences/geo"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].locationId").value(location.toString()))
+                .andExpect(jsonPath("$[0].subscribedAt").value("2026-10-11T09:30:00Z"));
+    }
+
+    @Test
+    @WithMockUser
+    void subscribeToGeo_answersCreatedWithTheView() throws Exception {
+        UUID location = UUID.randomUUID();
+        when(geoSubscriptionService.subscribe(any(), any())).thenReturn(
+                new NotificationGeoSubscriptionView(location,
+                        Instant.parse("2026-10-11T09:30:00Z")));
+
+        mockMvc.perform(post("/api/v1/notifications/preferences/geo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"locationId": "%s"}
+                                """.formatted(location)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.locationId").value(location.toString()));
+    }
+
+    @Test
+    @WithMockUser
+    void subscribeToGeo_rejectsAMissingLocation() throws Exception {
+        mockMvc.perform(post("/api/v1/notifications/preferences/geo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser
+    void subscribeToGeo_mapsANonNeighborhoodLevelToBadRequest() throws Exception {
+        when(geoSubscriptionService.subscribe(any(), any())).thenThrow(
+                new com.marketplace.shared.api.BadRequestException(
+                        "Geo subscriptions target level-3 neighborhoods only (got level 2)"));
+
+        mockMvc.perform(post("/api/v1/notifications/preferences/geo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"locationId": "%s"}
+                                """.formatted(UUID.randomUUID())))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser
+    void withdrawGeoSubscription_answersNoContent() throws Exception {
+        UUID location = UUID.randomUUID();
+
+        mockMvc.perform(delete("/api/v1/notifications/preferences/geo/{locationId}", location))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    @WithMockUser
+    void withdrawGeoSubscription_mapsAnUnknownPairToNotFound() throws Exception {
+        UUID location = UUID.randomUUID();
+        org.mockito.Mockito.doThrow(new com.marketplace.shared.api.ResourceNotFoundException(
+                "No subscription to withdraw: location " + location))
+                .when(geoSubscriptionService).withdraw(any(), any());
+
+        mockMvc.perform(delete("/api/v1/notifications/preferences/geo/{locationId}", location))
+                .andExpect(status().isNotFound());
     }
 }

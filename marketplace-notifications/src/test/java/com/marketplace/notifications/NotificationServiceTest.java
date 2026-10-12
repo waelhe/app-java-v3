@@ -56,7 +56,11 @@ class NotificationServiceTest {
         // NotificationTextSourceTest).
         return new NotificationService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, emailNotificationService, messagingTemplate, preferences,
-                new NotificationTextSource(), new DisputeDeliveryWriter(repository));
+                new NotificationTextSource(), new DisputeDeliveryWriter(repository),
+                new DisputeChannelDelivery(preferences, emailNotificationService, messagingTemplate,
+                        org.mockito.Mockito.mock(
+                                com.marketplace.notifications.routing.NotificationDeliveryLedger.class),
+                        new NotificationTextSource()));
     }
 
     /**

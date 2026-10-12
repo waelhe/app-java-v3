@@ -36,7 +36,8 @@ class NotificationEventListenerTest {
     static class TestConfig {
         @Bean
         NotificationEventListener notificationEventListener(NotificationService notificationService) {
-            return new NotificationEventListener(notificationService);
+            return new NotificationEventListener(notificationService,
+                    org.mockito.Mockito.mock(com.marketplace.notifications.routing.UrgentAlertNotificationRouter.class));
         }
     }
 
