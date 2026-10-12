@@ -155,7 +155,8 @@ public class OAuth2PublicClientInitializer implements ApplicationRunner {
                 .clientId(clientId)
                 .clientName(CLIENT_NAME)
                 .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
-                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE);
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .authorizationGrantType(NativePasskeyGrantAuthenticationToken.GRANT_TYPE);
         redirectUris.forEach(builder::redirectUri);
         return builder
                 .scope("openid")
