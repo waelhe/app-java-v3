@@ -35,6 +35,7 @@ import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
@@ -772,10 +773,15 @@ public class SecurityConfig {
      * extension provider; JWT encoding and claims customization remain framework-owned.
      */
     @Bean
+    JwtEncoder jwtEncoder(JWKSource<SecurityContext> jwkSource) {
+        return new NimbusJwtEncoder(jwkSource);
+    }
+
+    @Bean
     OAuth2TokenGenerator<?> oauth2TokenGenerator(
-            JWKSource<SecurityContext> jwkSource,
+            JwtEncoder jwtEncoder,
             OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer) {
-        JwtGenerator jwtGenerator = new JwtGenerator(new NimbusJwtEncoder(jwkSource));
+        JwtGenerator jwtGenerator = new JwtGenerator(jwtEncoder);
         jwtGenerator.setJwtCustomizer(jwtTokenCustomizer);
         return new DelegatingOAuth2TokenGenerator(
                 jwtGenerator, new OAuth2AccessTokenGenerator(), new OAuth2RefreshTokenGenerator());
