@@ -58,7 +58,7 @@ jobs:
       - name: Set up stable Android SDK
         uses: android-actions/setup-android@v4.0.4
         with:
-          packages: "platform-tools platforms;android-37 build-tools;36.0.0"
+          packages: "platform-tools platforms;android-36 build-tools;36.0.0"
 
       - name: Validate release preflight script syntax
         run: bash -n android/scripts/verify-passkey-release.sh
@@ -118,7 +118,7 @@ jobs:
       - name: Set up stable Android SDK
         uses: android-actions/setup-android@v4.0.4
         with:
-          packages: "platform-tools platforms;android-37 build-tools;36.0.0"
+          packages: "platform-tools platforms;android-36 build-tools;36.0.0"
 
       - name: Decode release keystore
         env:
