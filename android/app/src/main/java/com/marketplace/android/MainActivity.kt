@@ -3,6 +3,7 @@ package com.marketplace.android
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -11,12 +12,23 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.credentials.CredentialManager
+import androidx.credentials.CreatePublicKeyCredentialRequest
+import androidx.credentials.CreatePublicKeyCredentialResponse
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.GetPublicKeyCredentialOption
+import androidx.credentials.PublicKeyCredential
+import androidx.credentials.exceptions.CreateCredentialException
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.NoCredentialException
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import com.marketplace.android.data.MarketplaceRepository
 import com.marketplace.android.feature.CommunityViewModel
 import com.marketplace.android.feature.ExploreMode
@@ -30,12 +42,15 @@ import net.openid.appauth.AuthorizationServiceConfiguration
 import net.openid.appauth.EndSessionRequest
 import net.openid.appauth.EndSessionResponse
 import net.openid.appauth.ResponseTypeValues
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val viewModel: CommunityViewModel by viewModels {
         CommunityViewModel.Factory(MarketplaceRepository(applicationContext))
     }
     private lateinit var authorizationService: AuthorizationService
+    private lateinit var credentialManager: CredentialManager
+    private val repository: MarketplaceRepository by lazy { MarketplaceRepository(applicationContext) }
     private lateinit var authorizationLauncher: ActivityResultLauncher<Intent>
     private lateinit var silentAuthorizationLauncher: ActivityResultLauncher<Intent>
     private lateinit var endSessionLauncher: ActivityResultLauncher<Intent>
@@ -45,6 +60,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         authorizationService = AuthorizationService(this)
+        credentialManager = CredentialManager.create(this)
         authorizationLauncher = registerForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
@@ -66,10 +82,9 @@ class MainActivity : ComponentActivity() {
             viewModel.addPostPhotos(selectedUris)
         }
 
-        if (BuildConfig.OIDC_CLIENT_ID.isNotBlank()) {
-            viewModel.requestSessionRestoreIfNeeded()
-        }
-
+        // API access tokens are intentionally memory-only. Do not silently open an
+        // external user-agent at launch; show the native sign-in UI and let the user
+        // choose a passkey or the explicitly labelled OAuth/PKCE fallback.
         setContent {
             val state by viewModel.uiState.collectAsStateWithLifecycle()
             LaunchedEffect(state.silentReauthRequired) {
@@ -83,6 +98,9 @@ class MainActivity : ComponentActivity() {
                     DayfApp(
                         state = state,
                         onSignIn = { beginSignIn(silent = false) },
+                        onPasskeySignIn = ::beginPasskeySignIn,
+                        passkeysAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P,
+                        onRegisterPasskey = ::beginRegisterPasskey,
                         onRegisterAccount = viewModel::registerAccount,
                         onResendVerification = viewModel::resendVerificationEmail,
                         onRefresh = viewModel::refresh,
@@ -215,6 +233,93 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+
+    private fun beginPasskeySignIn() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            viewModel.passkeySignInFailed("مفاتيح المرور تتطلب Android 9 أو أحدث.");
+            return
+        }
+        if (BuildConfig.OIDC_CLIENT_ID.isBlank()) {
+            viewModel.passkeySignInFailed("لم يُضبط معرّف عميل Android العام في هذا الإصدار.");
+            return
+        }
+
+        viewModel.passkeySignInStarted()
+        lifecycleScope.launch {
+            try {
+                val ceremony = repository.createPasskeyAssertionOptions()
+                val request = GetCredentialRequest(
+                    listOf(GetPublicKeyCredentialOption(ceremony.optionsJson, null))
+                )
+                val credentialResponse = credentialManager.getCredential(this@MainActivity, request)
+                val credential = credentialResponse.credential as? PublicKeyCredential
+                    ?: throw IllegalStateException("لم يُرجع مدير بيانات الاعتماد مفتاح مرور صالحًا.")
+                val accessToken = repository.signInWithPasskey(
+                    ceremony.challengeId,
+                    credential.authenticationResponseJson
+                )
+                // This OAuth extension issues an API access token only (no ID or refresh token).
+                // Keep it in memory through the existing ViewModel/repository boundary.
+                viewModel.authenticated(accessToken)
+            } catch (cancelled: GetCredentialCancellationException) {
+                viewModel.passkeySignInFailed("أُلغيت عملية تسجيل الدخول بمفتاح المرور.")
+            } catch (missing: NoCredentialException) {
+                viewModel.passkeySignInFailed(
+                    "لا يوجد مفتاح مرور متاح لهذا الحساب على الجهاز. سجّل الدخول بالطريقة التقليدية، " +
+                            "ثم أضف مفتاح مرور من صفحة حسابك."
+                )
+            } catch (failure: GetCredentialException) {
+                viewModel.passkeySignInFailed(
+                    "تعذر استخدام مفتاح المرور. جرّب الدخول بالطريقة التقليدية أو أعد المحاولة لاحقًا."
+                )
+            } catch (failure: Exception) {
+                viewModel.passkeySignInFailed(
+                    if ((failure as? retrofit2.HttpException)?.code() == 503) {
+                        "مفاتيح المرور غير مفعّلة على الخادم بعد. استخدم الدخول التقليدي مؤقتًا."
+                    } else {
+                        "تعذر إكمال تسجيل الدخول بمفتاح المرور. جرّب الدخول التقليدي أو أعد المحاولة لاحقًا."
+                    }
+                )
+            }
+        }
+    }
+
+    private fun beginRegisterPasskey() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            viewModel.passkeyRegistrationFailed("مفاتيح المرور تتطلب Android 9 أو أحدث.");
+            return
+        }
+
+        viewModel.passkeyRegistrationStarted()
+        lifecycleScope.launch {
+            try {
+                val ceremony = repository.createPasskeyRegistrationOptions()
+                val response = credentialManager.createCredential(
+                    this@MainActivity,
+                    CreatePublicKeyCredentialRequest(ceremony.optionsJson)
+                ) as? CreatePublicKeyCredentialResponse
+                    ?: throw IllegalStateException("لم يُرجع مدير بيانات الاعتماد نتيجة تسجيل مفتاح مرور.")
+                repository.registerPasskey(
+                    challengeId = ceremony.challengeId,
+                    credentialJson = response.registrationResponseJson
+                )
+                viewModel.passkeyRegistrationCompleted()
+            } catch (failure: CreateCredentialException) {
+                viewModel.passkeyRegistrationFailed(
+                    "تعذر إعداد مفتاح المرور. تأكد من إعدادات بيانات الاعتماد ثم أعد المحاولة."
+                )
+            } catch (failure: Exception) {
+                viewModel.passkeyRegistrationFailed(
+                    if ((failure as? retrofit2.HttpException)?.code() == 503) {
+                        "مفاتيح المرور غير مفعّلة على الخادم بعد. لم يُحفظ أي مفتاح مرور."
+                    } else {
+                        "تعذر إكمال إعداد مفتاح المرور. تحقق من الاتصال وحاول مجددًا."
+                    }
+                )
+            }
+        }
+    }
+
     private fun beginSignIn(silent: Boolean = false) {
         if (BuildConfig.OIDC_CLIENT_ID.isBlank()) {
             val message = "لم يُضبط معرّف عميل Android العام بعد. اضبط OAUTH_PUBLIC_CLIENT_ID على الخادم وابنِ التطبيق باستخدام -PoidcClientId."
@@ -251,6 +356,13 @@ class MainActivity : ComponentActivity() {
 
     private fun beginSignOut() {
         val idTokenHint = viewModel.signOutOnDevice()
+
+        // Passkey login doesn't mint an OIDC ID token or a browser session. Avoid
+        // opening a browser merely to report local sign-out for that flow.
+        if (idTokenHint.isNullOrBlank()) {
+            viewModel.completeLocalSignOut()
+            return
+        }
 
         if (BuildConfig.OIDC_CLIENT_ID.isBlank()) {
             viewModel.completeSignOut(
