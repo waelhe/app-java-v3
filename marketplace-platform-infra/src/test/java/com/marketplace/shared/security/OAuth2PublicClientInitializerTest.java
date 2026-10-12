@@ -11,6 +11,7 @@ import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
+import org.springframework.security.oauth2.server.authorization.settings.OAuth2TokenFormat;
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -80,7 +81,7 @@ class OAuth2PublicClientInitializerTest {
         assertThat(saved.getClientAuthenticationMethods())
                 .containsExactly(ClientAuthenticationMethod.NONE);
         assertThat(saved.getAuthorizationGrantTypes())
-                .as("public clients get no refresh grant (SAS how-to, gh-297)")
+                .as("public client contract grants authorization_code and native passkey only")
                 .containsExactlyInAnyOrder(AuthorizationGrantType.AUTHORIZATION_CODE,
                         NativePasskeyGrantAuthenticationToken.GRANT_TYPE);
         assertThat(saved.getScopes()).containsExactlyInAnyOrder("openid", "profile");
@@ -95,7 +96,8 @@ class OAuth2PublicClientInitializerTest {
         assertThat(saved.getTokenSettings().getSettings().get("settings.token.authorization-code-time-to-live"))
                 .isEqualTo(Duration.ofSeconds(300));
         assertThat(saved.getTokenSettings().getIdTokenSignatureAlgorithm()).isNotNull();
-        assertThat(saved.getTokenSettings().getAccessTokenFormat()).isNotNull();
+        assertThat(saved.getTokenSettings().getAccessTokenFormat())
+                .isEqualTo(OAuth2TokenFormat.SELF_CONTAINED);
     }
 
     @Test
