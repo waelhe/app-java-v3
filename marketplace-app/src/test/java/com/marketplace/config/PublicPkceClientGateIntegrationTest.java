@@ -246,6 +246,25 @@ class PublicPkceClientGateIntegrationTest {
     }
 
     @Test
+    void assetLinksEndpointIsPublicButFailsClosedUntilTheReleaseCertificateIsConfigured() throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(
+                        URI.create(baseUrl() + "/.well-known/assetlinks.json"))
+                .timeout(Duration.ofSeconds(10))
+                .header("Accept", "application/json")
+                .GET()
+                .build();
+
+        // No session or bearer token is sent. Android/Google must be able to fetch
+        // Digital Asset Links anonymously; an unconfigured release identity is a
+        // deliberate 404, not a login redirect or an authentication challenge.
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode())
+                .as("Digital Asset Links is a public metadata resource but must not publish an unverified identity")
+                .isEqualTo(404);
+    }
+
+    @Test
     void bootstrappedPublicClientKeepsOfficialDefinition() {
         RegisteredClient publicClient = registeredClientRepository.findByClientId(APP_CLIENT_ID);
         assertThat(publicClient)
