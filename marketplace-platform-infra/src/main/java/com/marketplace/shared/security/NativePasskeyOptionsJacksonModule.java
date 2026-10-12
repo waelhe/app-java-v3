@@ -203,10 +203,9 @@ final class NativePasskeyOptionsJacksonModule extends SimpleModule {
             if ("credProps".equals(property.getKey()) && property.getValue().asBoolean(false)) {
                 inputs.add(ImmutableAuthenticationExtensionsClientInput.credProps);
             } else {
-                // Retain extension values as their original JSON tree. WebAuthn's
-                // server verification uses the server options' challenge, RP, UV,
-                // credential IDs and algorithms; extension input values are not
-                // converted into a different semantic type or silently discarded.
+                // Retain unknown extension payloads as JSON trees so their
+                // serialized values survive persistence. The application does not
+                // interpret extension-specific payloads it does not understand.
                 inputs.add(new ImmutableAuthenticationExtensionsClientInput<>(
                         property.getKey(), property.getValue()));
             }
