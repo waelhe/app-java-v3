@@ -1,3 +1,13 @@
+marketplace:
+  security:
+    passkeys:
+      # Passkeys remain disabled until the actual Android release signing identity is configured.
+      rp-id: ${WEBAUTHN_RP_ID:}
+      rp-name: ${WEBAUTHN_RP_NAME:Marketplace}
+      allowed-origins: ${WEBAUTHN_ALLOWED_ORIGINS:}
+      android-package-name: ${ANDROID_APP_PACKAGE_NAME:com.marketplace.android}
+      android-sha256-cert-fingerprints: ${ANDROID_APP_SHA256_CERT_FINGERPRINTS:}
+
 spring:
   application:
     name: marketplace
