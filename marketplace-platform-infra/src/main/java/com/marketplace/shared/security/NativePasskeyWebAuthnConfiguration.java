@@ -13,6 +13,7 @@ import org.springframework.security.web.webauthn.api.UserVerificationRequirement
 import org.springframework.security.web.webauthn.management.JdbcPublicKeyCredentialUserEntityRepository;
 import org.springframework.security.web.webauthn.management.JdbcUserCredentialRepository;
 import org.springframework.security.web.webauthn.management.WebAuthnRelyingPartyOperations;
+import org.springframework.security.web.webauthn.jackson.WebauthnJacksonModule;
 import org.springframework.security.web.webauthn.management.Webauthn4JRelyingPartyOperations;
 import org.springframework.util.StringUtils;
 
@@ -25,6 +26,21 @@ import org.springframework.util.StringUtils;
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(NativePasskeyProperties.class)
 public class NativePasskeyWebAuthnConfiguration {
+
+    /**
+     * Contribute Spring Security's official WebAuthn serializers to Spring Boot's
+     * auto-configured Jackson 3 JsonMapper through the documented JacksonModule
+     * bean mechanism, rather than maintaining a second mapper instance.
+     */
+    @Bean
+    WebauthnJacksonModule webauthnJacksonModule() {
+        return new WebauthnJacksonModule();
+    }
+
+    @Bean
+    NativePasskeyOptionsJacksonModule nativePasskeyOptionsJacksonModule() {
+        return new NativePasskeyOptionsJacksonModule();
+    }
 
     @Bean
     JdbcPublicKeyCredentialUserEntityRepository publicKeyCredentialUserEntityRepository(
