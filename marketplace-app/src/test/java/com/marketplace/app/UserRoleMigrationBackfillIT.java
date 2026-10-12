@@ -184,8 +184,12 @@ class UserRoleMigrationBackfillIT {
                     .as("granted_at is the account's own birthday")
                     .isEqualTo(Boolean.TRUE);
         }
+        // The query's own deterministic order is u.subject (backfill-admin
+        // < backfill-consumer < backfill-provider) — the assertion rides
+        // that order, not the insertion order the original shape expected
+        // (another latent defect its never-executing V51 deadlock owned).
         assertThat(rows.stream().map(r -> r.get("role")))
-                .containsExactly("CONSUMER", "PROVIDER", "ADMIN");
+                .containsExactly("ADMIN", "CONSUMER", "PROVIDER");
     }
 
     @Test
