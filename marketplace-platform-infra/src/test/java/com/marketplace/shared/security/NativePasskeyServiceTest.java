@@ -45,14 +45,17 @@ class NativePasskeyServiceTest {
     private final JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
     private final WebAuthnRelyingPartyOperations relyingPartyOperations =
             mock(WebAuthnRelyingPartyOperations.class);
+    private final org.springframework.security.web.webauthn.authentication.WebAuthnAuthenticationProvider
+            webAuthnAuthenticationProvider = mock(
+                    org.springframework.security.web.webauthn.authentication.WebAuthnAuthenticationProvider.class);
     private final UserDetailsService userDetailsService = mock(UserDetailsService.class);
     private final NativePasskeyService service = new NativePasskeyService(
-            jdbcTemplate, relyingPartyOperations, userDetailsService, configuredProperties(), testMapper());
+            jdbcTemplate, relyingPartyOperations, webAuthnAuthenticationProvider, userDetailsService, configuredProperties(), testMapper());
 
     @Test
     void createAuthenticationOptionsFailsClosedWhenNotConfigured() {
         NativePasskeyService unconfigured = new NativePasskeyService(
-                jdbcTemplate, relyingPartyOperations, userDetailsService,
+                jdbcTemplate, relyingPartyOperations, webAuthnAuthenticationProvider, userDetailsService,
                 new NativePasskeyProperties("", "Marketplace", List.of(),
                         "com.marketplace.android", List.of()), testMapper());
 
@@ -131,7 +134,7 @@ class NativePasskeyServiceTest {
     @Test
     void authenticateFailsClosedWithTheGrantErrorWhenNotConfigured() {
         NativePasskeyService unconfigured = new NativePasskeyService(
-                jdbcTemplate, relyingPartyOperations, userDetailsService,
+                jdbcTemplate, relyingPartyOperations, webAuthnAuthenticationProvider, userDetailsService,
                 new NativePasskeyProperties("", "Marketplace", List.of(),
                         "com.marketplace.android", List.of()), testMapper());
 
