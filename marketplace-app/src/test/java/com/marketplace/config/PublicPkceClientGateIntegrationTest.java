@@ -197,6 +197,19 @@ class PublicPkceClientGateIntegrationTest {
     }
 
     @Test
+    void nativePasskeyGrantRejectsClientSecretAuthentication() throws Exception {
+        HttpResponse<String> response = postFormNoAuth(TOKEN_PATH,
+                "grant_type=" + encode("urn:marketplace:params:oauth:grant-type:passkey")
+                        + "&client_id=" + encode(APP_CLIENT_ID)
+                        + "&client_secret=" + encode("must-not-be-sent")
+                        + "&challenge_id=" + encode(UUID.randomUUID().toString())
+                        + "&credential=" + encode("{}"));
+
+        assertThat(response.statusCode()).isEqualTo(401);
+        assertThat(response.body()).contains("invalid_client");
+    }
+
+    @Test
     void nativePasskeyGrantRejectsAClientIdThatIsNotRegistered() throws Exception {
         HttpResponse<String> response = postFormNoAuth(TOKEN_PATH,
                 "grant_type=" + encode("urn:marketplace:params:oauth:grant-type:passkey")
