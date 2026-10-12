@@ -1,6 +1,8 @@
 package com.marketplace.android.core.network
 
 import retrofit2.http.Body
+import retrofit2.http.Field
+import retrofit2.http.FormUrlEncoded
 import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
@@ -16,6 +18,24 @@ interface MarketplaceApi {
 
     @POST("api/v1/auth/email-verification/resend")
     suspend fun resendVerificationEmail(@Body request: EmailOnlyRequest): Response<ResponseBody>
+
+    @POST("api/v1/auth/passkeys/assertion/options")
+    suspend fun createPasskeyAssertionOptions(): PasskeyChallengeDto
+
+    @FormUrlEncoded
+    @POST("oauth2/token")
+    suspend fun exchangePasskeyGrant(
+        @Field("grant_type") grantType: String,
+        @Field("client_id") clientId: String,
+        @Field("challenge_id") challengeId: String,
+        @Field("credential") credentialJson: String
+    ): Response<PasskeyTokenResponse>
+
+    @POST("api/v1/auth/passkeys/registration/options")
+    suspend fun createPasskeyRegistrationOptions(): PasskeyChallengeDto
+
+    @POST("api/v1/auth/passkeys/registration")
+    suspend fun registerPasskey(@Body request: PasskeyRegistrationRequest): Response<ResponseBody>
 
     @GET("api/v1/search")
     suspend fun searchListings(
