@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -71,17 +72,34 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
      * pre-check/flush/catch dance is retired (the conflict is absorbed
      * inside the database, exactly the discipline the delivery ledger
      * already rides).
+     *
+     * <p><b>The audit columns are BOUND, not defaulted</b> (the #545
+     * measured defect, the V18 schema's own law): {@code created_at} and
+     * {@code updated_at} are NOT NULL with NO database default — on the
+     * JPA write path the {@code AuditingEntityListener} stamps them
+     * (@CreatedDate/@LastModifiedDate, the official Spring Data JPA
+     * auditing contract), but a native INSERT bypasses the persistence
+     * layer entirely, so the caller must carry the clock's values into
+     * the statement itself — the same explicit-parameter discipline the
+     * official Spring Data JPA query-methods documentation prescribes
+     * for native queries. {@code version} (default 0) and
+     * {@code is_deleted} (default false) ride their V25 database
+     * defaults; {@code created_by}/{@code updated_by} are nullable.</p>
      */
     @Transactional
     @Modifying
     @Query(value = """
-            INSERT INTO notifications (id, recipient_id, type, message, is_read, source_event_id)
-            VALUES (:id, :recipientId, :type, :message, false, :sourceEventId)
+            INSERT INTO notifications (id, recipient_id, type, message, is_read,
+                                       source_event_id, created_at, updated_at)
+            VALUES (:id, :recipientId, :type, :message, false,
+                    :sourceEventId, :createdAt, :updatedAt)
             ON CONFLICT DO NOTHING
             """, nativeQuery = true)
     int insertOnce(@Param("id") UUID id,
                    @Param("recipientId") UUID recipientId,
                    @Param("type") String type,
                    @Param("message") String message,
-                   @Param("sourceEventId") UUID sourceEventId);
+                   @Param("sourceEventId") UUID sourceEventId,
+                   @Param("createdAt") Instant createdAt,
+                   @Param("updatedAt") Instant updatedAt);
 }

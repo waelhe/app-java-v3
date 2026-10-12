@@ -1,5 +1,7 @@
 package com.marketplace.notifications.routing;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -56,19 +58,22 @@ class UrgentAlertDelivery {
     private final UrgentAlertWebSocketPush webSocketPush;
     private final Optional<PushNotificationChannel> pushChannel;
     private final NotificationTextSource text;
+    private final Clock clock;
 
     UrgentAlertDelivery(NotificationRepository repository,
                         NotificationDeliveryLedger deliveryLedger,
                         EmailNotificationService emailNotificationService,
                         UrgentAlertWebSocketPush webSocketPush,
                         Optional<PushNotificationChannel> pushChannel,
-                        NotificationTextSource text) {
+                        NotificationTextSource text,
+                        Clock clock) {
         this.repository = repository;
         this.deliveryLedger = deliveryLedger;
         this.emailNotificationService = emailNotificationService;
         this.webSocketPush = webSocketPush;
         this.pushChannel = pushChannel;
         this.text = text;
+        this.clock = clock;
     }
 
     /**
@@ -83,8 +88,16 @@ class UrgentAlertDelivery {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     void deliver(UUID alertId, UUID recipient, RoutingDecision decision,
                  String message, String sourceName, String title) {
+        // The audit columns ride the statement itself — created_at and
+        // updated_at are NOT NULL with no database default since V18, and a
+        // native INSERT never meets the AuditingEntityListener that stamps
+        // them on the JPA path (the #545 measured defect: every inbox insert
+        // answered 23502 and the registry retried forever). The injected
+        // Clock — the house time source (ClockConfig) — carries the values,
+        // the exact stamps @CreatedDate/@LastModifiedDate would have written.
+        Instant now = clock.instant();
         boolean firstDelivery = repository.insertOnce(UUID.randomUUID(), recipient,
-                NotificationType.URGENT_ALERT.name(), message, alertId) == 1;
+                NotificationType.URGENT_ALERT.name(), message, alertId, now, now) == 1;
         if (!firstDelivery) {
             // The winner's proof: the concurrent insert lost nothing — the row
             // exists, the delivery happened, the fan-out continues.
