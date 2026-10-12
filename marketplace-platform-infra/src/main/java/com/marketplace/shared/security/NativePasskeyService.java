@@ -18,10 +18,12 @@ import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.web.webauthn.api.AuthenticatorAssertionResponse;
 import org.springframework.security.web.webauthn.api.AuthenticatorAttestationResponse;
+import org.springframework.security.web.webauthn.api.AuthenticatorSelectionCriteria;
 import org.springframework.security.web.webauthn.api.PublicKeyCredential;
 import org.springframework.security.web.webauthn.api.PublicKeyCredentialCreationOptions;
 import org.springframework.security.web.webauthn.api.PublicKeyCredentialRequestOptions;
 import org.springframework.security.web.webauthn.api.PublicKeyCredentialRpEntity;
+import org.springframework.security.web.webauthn.api.ResidentKeyRequirement;
 import org.springframework.security.web.webauthn.api.UserVerificationRequirement;
 import org.springframework.security.web.webauthn.authentication.WebAuthnAuthenticationProvider;
 import org.springframework.security.web.webauthn.authentication.WebAuthnAuthenticationRequestToken;
@@ -95,6 +97,11 @@ public final class NativePasskeyService {
                         .name(StringUtils.hasText(rpName) ? rpName.trim() : "Marketplace")
                         .build(),
                 this.allowedOrigins);
+        operations.setCustomizeCreationOptions(options ->
+                options.authenticatorSelection(AuthenticatorSelectionCriteria.builder()
+                        .residentKey(ResidentKeyRequirement.REQUIRED)
+                        .userVerification(UserVerificationRequirement.REQUIRED)
+                        .build()));
         operations.setCustomizeRequestOptions(options ->
                 options.userVerification(UserVerificationRequirement.REQUIRED));
         this.relyingPartyOperations = operations;
