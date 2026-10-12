@@ -58,7 +58,7 @@ The server serves `/.well-known/assetlinks.json` only when the actual SHA-256 fi
 - [Spring Security 7.1.1 — OAuth 2.1 Authorization Server](https://docs.spring.io/spring-security/reference/servlet/oauth2/authorization-server/)
 - [Spring Security 7.1.1 — Protocol Endpoints and token-endpoint extension points](https://docs.spring.io/spring-security/reference/servlet/oauth2/authorization-server/protocol-endpoints.html)
 - [Spring Security 7.1.1 — `OAuth2AuthorizationServerConfigurer` API](https://docs.spring.io/spring-security/reference/api/java/org/springframework/security/config/annotation/web/configurers/oauth2/server/authorization/OAuth2AuthorizationServerConfigurer.html)
-- [Spring Boot 4 — Security starter migration names](https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.0-Migration-Guide)
+- [Spring Boot 4.1.1 — JSON auto-configuration and module beans](https://docs.spring.io/spring-boot/4.1.1/reference/features/json.html)
 - [Spring Security 7.1.1 — Passkeys](https://docs.spring.io/spring-security/reference/servlet/authentication/passkeys.html)
 - [Spring Boot — managed Spring Security dependency versions](https://docs.spring.io/spring-boot/appendix/dependency-versions/coordinates.html)
 - [Android Developers — Sign in with a passkey](https://developer.android.com/identity/passkeys/sign-in-with-passkeys)
