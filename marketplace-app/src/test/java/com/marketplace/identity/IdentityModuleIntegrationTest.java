@@ -70,6 +70,14 @@ class IdentityModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.security.SubjectPseudonymizer subjectPseudonymizer;
 
+    // #555: NativePasskeyController consumes NativePasskeyService — a
+    // platform-infra shared-security component, likewise outside this module
+    // slice (the same package and treatment as SubjectPseudonymizer above).
+    // The full-app wiring (the service bean + the WebAuthn configuration)
+    // is the app-level integration guards' job, not the module slice's.
+    @MockitoBean
+    com.marketplace.shared.security.NativePasskeyService nativePasskeyService;
+
     // I7 Phase 2: UserController's aggregation service consumes the five
     // cross-module export ports (shared-api contracts implemented by the
     // booking/reviews/messaging/media/notifications modules — outside this
