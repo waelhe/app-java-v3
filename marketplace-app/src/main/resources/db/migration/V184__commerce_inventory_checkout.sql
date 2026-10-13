@@ -13,10 +13,15 @@ ALTER TABLE products
     ADD CONSTRAINT products_reserved_within_stock_chk CHECK (reserved_quantity <= stock_quantity);
 
 -- 2. The product's display lifecycle (the storefront-visible states).
+--    (The provider-status index that rode here originally moved to
+--    V211's CONCURRENTLY split — the review round's populated-table
+--    discipline: products is populated in production, and a plain
+--    CREATE INDEX inside this transaction would hold the table lock
+--    against the still-live previous instance's writes through the
+--    whole deploy window.)
 ALTER TABLE products
     ADD COLUMN product_status varchar(16) NOT NULL DEFAULT 'ACTIVE',
     ADD CONSTRAINT products_status_chk CHECK (product_status IN ('ACTIVE', 'SUSPENDED', 'ARCHIVED'));
-CREATE INDEX idx_products_provider_status ON products (provider_id, product_status);
 
 -- 3. The order machine's commerce fields: the single seller (the ADR-0002
 --    cart invariant, stored at placement), the payment linkage and the

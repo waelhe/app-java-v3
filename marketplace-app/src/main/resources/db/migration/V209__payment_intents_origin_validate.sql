@@ -10,6 +10,7 @@
 -- the weaker SHARE UPDATE EXCLUSIVE lock, every existing row satisfies the
 -- widened shapes by construction (ORDER/LOAN rows are new; legacy rows
 -- carry their booking/ad pairing columns), and the constraints leave the
--- "NOT VALID" state behind — the catalog's honest, validated end state.
+-- "NOT VALID" state behind — the catalog's honest, validated end state,
+-- the applied-state guarantee main's V104 gave, restored.
 ALTER TABLE payment_intents VALIDATE CONSTRAINT chk_payment_intents_origin;
 ALTER TABLE payment_intents VALIDATE CONSTRAINT ck_payment_intents_origin_pairing;

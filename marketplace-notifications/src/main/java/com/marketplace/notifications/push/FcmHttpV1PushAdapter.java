@@ -17,6 +17,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.util.concurrent.TimeUnit;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -57,6 +58,16 @@ public class FcmHttpV1PushAdapter implements PushNotificationPort {
         FirebaseOptions options = FirebaseOptions.builder()
                 .setCredentials(GoogleCredentials.fromStream(
                         new ByteArrayInputStream(credentialsJson.getBytes(StandardCharsets.UTF_8))))
+                // The official FirebaseOptions.Builder timeout API (the
+                // firebase-admin reference documents both): an unbounded
+                // HTTP call would pin the dispatch transaction's pooled
+                // connection for the hang's whole duration, so this
+                // channel carries explicit bounds — 10s to connect, 30s
+                // to read (the review round's hardening: no house
+                // precedent existed, so the budget is stated here
+                // plainly instead of inherited).
+                .setConnectTimeout(10, TimeUnit.SECONDS)
+                .setReadTimeout(30, TimeUnit.SECONDS)
                 .build();
         // The official idempotent bootstrap: one app per process, the
         // [DEFAULT] name is the SDK's own convention.

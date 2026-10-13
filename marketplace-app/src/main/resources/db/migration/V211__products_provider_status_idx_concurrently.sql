@@ -1,0 +1,16 @@
+-- ADR-0002 (the review round on the cascade): the products'
+-- provider-status index, built CONCURRENTLY in its own
+-- non-transactional migration — the house's populated-table discipline
+-- (V51/V67/V80/V81/V168/V169/V173/V186 verbatim).
+--
+-- WHY IT MOVED OUT OF V184: the products table is POPULATED in
+-- production (it has carried the catalog since the early schema). A
+-- plain CREATE INDEX inside V184's transaction acquires the table lock
+-- and blocks ordinary writes for the whole build — including the
+-- still-live previous instance's catalog writes during the deploy
+-- window (the blue/green overlap the Railway channel serves).
+-- PostgreSQL's own documented remedy is CREATE INDEX CONCURRENTLY,
+-- which builds without blocking ordinary writes; the price (a slower
+-- build, no transactional wrap) is the one the house's split carries
+-- through the .sql.conf (executeInTransaction=false) discipline.
+CREATE INDEX CONCURRENTLY idx_products_provider_status ON products (provider_id, product_status);

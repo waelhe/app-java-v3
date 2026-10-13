@@ -42,7 +42,11 @@ ALTER TABLE disputes
      OR (subject_type = 'LOAN'    AND booking_id IS NULL     AND loan_id IS NOT NULL)
     ) NOT VALID;
 
-CREATE INDEX idx_disputes_loan ON disputes(loan_id);
+-- (The loan-subject index that rode here originally moved to V212's
+-- CONCURRENTLY split — the review round's populated-table discipline:
+-- disputes is populated in production, and a plain CREATE INDEX inside
+-- this transaction would hold the table lock against the still-live
+-- previous instance's writes through the whole deploy window.)
 
 -- The freeze holds the period: DISPUTED joins the live set (ADR-0009).
 ALTER TABLE loans DROP CONSTRAINT loans_live_period_exclusive;

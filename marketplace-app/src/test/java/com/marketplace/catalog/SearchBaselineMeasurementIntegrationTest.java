@@ -256,7 +256,10 @@ class SearchBaselineMeasurementIntegrationTest {
         // -- the structural gates (the D-I3 pattern) — the GIN indexes ARE
         // the serving paths (proved under the documented bitmap-only plan
         // harness above, where no other index can answer the predicates);
-        // the substring scan is honest about having none.
+        // the naive ILIKE baseline is gated on the structural fact alone:
+        // it cannot serve from the FTS GIN (its cost choice between a
+        // trigram bitmap and a sequential scan is the planner's, per the
+        // pg_trgm docs' own ILIKE support).
         assertThat(planWithSeqscanDisabled(ftsArabic))
                 .as("the production FTS query must serve from its Arabic GIN index (V106)")
                 .contains("Bitmap Index Scan on idx_listing_search_title");
@@ -264,8 +267,11 @@ class SearchBaselineMeasurementIntegrationTest {
                 .as("the production trigram query must serve from its trigram GIN index (V34/V106 family)")
                 .contains("Bitmap Index Scan on idx_listing_search_trgm");
         assertThat(planWithSeqscanDisabled(substring))
-                .as("the naive ILIKE scan has NO index by construction — the honest baseline row")
-                .contains("Seq Scan");
+                .as("the naive ILIKE baseline cannot serve from the FTS GIN (no tsquery machinery) — "
+                        + "whether the planner settles on a trigram-GIN bitmap or a sequential scan is "
+                        + "a cost choice, not a structural fact (pg_trgm's docs: a gin_trgm_ops index "
+                        + "is a documented servant of ILIKE)")
+                .doesNotContain("idx_listing_search_title");
         assertThat(rows).allSatisfy(row ->
                 assertThat(row.minMs()).as("measured steady state for " + row.path()).isPositive());
 

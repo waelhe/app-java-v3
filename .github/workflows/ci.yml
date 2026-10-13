@@ -21,14 +21,16 @@ on:
     # CodeRabbit free-plan 100-file review limit's documented remedy). Both
     # slices have since merged, so the entry retired with its wave (the
     # same inertness the precedent documents above).
-    # The #544/#545/#543 stacked wave rides the same §4.1 mechanism:
-    # the stacked bases are listed while the wave is in flight and retire
-    # with it in the post-merge truth-sync (the documented #540/#541
-    # precedent's own inertness rule). The #544 slice merged and #545 now
-    # targets main directly, so the phase-5 entry retired with its wave;
-    # feat/phase7-notification-routing stays listed while the wave is in
-    # flight — it gates #543 (this branch's own PR against its base).
-    branches: [ main, feat/phase7-notification-routing ]
+    # The #544/#545/#543 stacked wave rode the same §4.1 mechanism:
+    # the stacked bases were listed while the wave was in flight and
+    # retired with it in the post-merge truth-sync (the documented
+    # #540/#541 precedent's own inertness rule). #545 merged (2026-10-12)
+    # and #543 re-targeted main directly, so the phase-7 entry retired
+    # with its wave here: no open PR carries that branch as its base any
+    # longer, and PRs targeting main gate through the pull_request event
+    # exactly as before (the filter entry is inert weight otherwise —
+    # the same inertness the precedents above document).
+    branches: [ main ]
 
 
 # One test round per ref: a newer push supersedes the older round and

@@ -17,10 +17,21 @@
 -- This widening ALSO closes the measured stage-8 gap: the three
 -- decision-gate types ADR-0004 added to the Java enum (LOAN_REQUESTED /
 -- LOAN_APPROVED / LOAN_CANCELLED) never joined the surviving DB-side
--- guard (V200 widened no type CHECK — V164's sixteen remained the
--- constraint), so a preference row for any of them violated the CHECK at
--- flush time: the exact defect class V110's header documents. The union
--- below carries all twenty-two values the enum now names.
+-- guard, so a preference row for any of them violated the CHECK at
+-- flush time: the exact defect class V110's header documents.
+--
+-- THE BASE THE REWRITE INHERITS (the review round's correction): the
+-- surviving applied constraint on main is V180's NINETEEN-value list —
+-- V180 (the #545 wave, notifications_dedup_and_urgent_type) widened
+-- V164's sixteen with URGENT_ALERT, DISPUTE_OPENED, DISPUTE_RESOLVED,
+-- and V181 validated it. A rewrite that starts from V164's sixteen
+-- would NARROW the applied guard: V207's VALIDATE would fail against
+-- any production row carrying one of V180's three types (a
+-- deploy-blocking migration failure), and even on a clean table every
+-- future preference write for them would violate the CHECK at flush
+-- (the V110 defect class, re-opened). The union below therefore carries
+-- the enum's COMPLETE vocabulary — V180's nineteen plus the six loan
+-- types — all twenty-five values the enum names.
 --
 -- NOT VALID here; VALIDATE in V207 — the V93/V94/V151/V152 and V164/V165
 -- split verbatim (inside one transaction the DROP/ADD statements' ACCESS
@@ -40,5 +51,6 @@ ALTER TABLE notification_preferences
                     'ORDER_FULFILLED', 'ORDER_CANCELLED',
                     'MESSAGE_RECEIVED', 'MEMBERSHIP_VERIFIED',
                     'REPORT_RESOLVED',
+                    'URGENT_ALERT', 'DISPUTE_OPENED', 'DISPUTE_RESOLVED',
                     'LOAN_REQUESTED', 'LOAN_APPROVED', 'LOAN_CANCELLED',
                     'LOAN_DISPUTED', 'LOAN_DISPUTE_RESOLVED', 'LOAN_CLOSED')) NOT VALID;

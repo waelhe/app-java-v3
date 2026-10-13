@@ -8,11 +8,18 @@
 -- 1. The channel vocabulary: PUSH joins DB/EMAIL/WS (the sparse-override
 --    semantics are untouched — no row is the enabled default, so every
 --    existing user's behavior is unchanged until they opt explicitly).
+-- (The channel guard's PUSH widening rides NOT VALID here with its
+-- validation in V210 — the V93/V94/V164/V165 split: the ADD inside
+-- this transaction would otherwise hold the ACCESS EXCLUSIVE lock
+-- through the validation scan on the shared delivery-gate table the
+-- still-live previous instance keeps consulting through the deploy
+-- window. Every stored row satisfies the widened membership by
+-- construction: DB/EMAIL/WS are all still members.)
 ALTER TABLE notification_preferences
     DROP CONSTRAINT notification_preferences_channel_check;
 ALTER TABLE notification_preferences
     ADD CONSTRAINT notification_preferences_channel_check
-        CHECK (channel IN ('DB', 'EMAIL', 'WS', 'PUSH'));
+        CHECK (channel IN ('DB', 'EMAIL', 'WS', 'PUSH')) NOT VALID;
 
 -- 2. The device-token registry — the push channel's addressing record.
 --    user_id is a plain UUID column without FK (the V40 discipline
