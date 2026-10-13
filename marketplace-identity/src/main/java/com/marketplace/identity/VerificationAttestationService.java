@@ -6,6 +6,7 @@ import com.marketplace.shared.api.TrustType;
 import io.micrometer.observation.annotation.Observed;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -78,8 +79,15 @@ public class VerificationAttestationService {
      * queue stays clean (the CodeRabbit #543 round: a double-submit
      * never stacks a duplicate the reviewer must then reject by hand).
      * A fresh request after REJECT/REVOKE is legal — the pair is freed
-     * by the transition itself (V189's unique index constrains only the
-     * GRANTED state).
+     * by the transition itself (V189's unique indexes constrain only
+     * the GRANTED and PENDING states). The concurrent double-submit
+     * race rides its own two-layer model: the service's read above
+     * answers the clean 409 first; the rare loser dies on
+     * V189's {@code uq_verification_attestations_one_pending} at the
+     * flushed INSERT and is translated to the SAME 409 (the
+     * {@code FollowService} race shape — only that index's own
+     * violation speaks here, every other integrity violation
+     * propagates unchanged).
      */
     @Observed(name = "identity.attestation.request")
     public VerificationAttestationView request(UUID subjectUserId, TrustType trustType,
@@ -102,11 +110,38 @@ public class VerificationAttestationService {
                             "A " + trustType.name()
                                     + " attestation is already under review for this account");
                 });
-        VerificationAttestation saved = repository.save(
-                VerificationAttestation.request(UUID.randomUUID(), subjectUserId, trustType, evidenceRef));
-        log.info("Verification attestation audit: subjectUserId={}, trustType={}, action=REQUEST, actor={}",
-                subjectUserId, trustType, actor);
-        return VerificationAttestationView.of(saved);
+        try {
+            VerificationAttestation saved = repository.saveAndFlush(
+                    VerificationAttestation.request(UUID.randomUUID(), subjectUserId, trustType, evidenceRef));
+            log.info("Verification attestation audit: subjectUserId={}, trustType={}, action=REQUEST, actor={}",
+                    subjectUserId, trustType, actor);
+            return VerificationAttestationView.of(saved);
+        } catch (DataIntegrityViolationException race) {
+            if (!isOnePendingPairDuplicate(race)) {
+                throw race;
+            }
+            // The concurrent loser answers the same honest 409 the read
+            // above would have answered.
+            throw new ConflictException(
+                    "A " + trustType.name() + " attestation is already under review for this account");
+        }
+    }
+
+    /**
+     * The pending-pair duplicate test: the violation's cause chain must
+     * name {@code uq_verification_attestations_one_pending} itself
+     * (V189) — every OTHER integrity violation is a server-side
+     * anomaly and propagates unchanged (the {@code FollowService}
+     * shape verbatim).
+     */
+    private static boolean isOnePendingPairDuplicate(DataIntegrityViolationException e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t.getMessage() != null
+                    && t.getMessage().contains("uq_verification_attestations_one_pending")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

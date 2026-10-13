@@ -141,6 +141,14 @@ CREATE INDEX idx_user_role_assignments_role_active
     ON user_role_assignments (role)
     WHERE revoked_at IS NULL AND is_deleted = FALSE;
 
+-- (d) The pair's FULL history read (active and revoked/soft-deleted
+-- alike — the V188 revoked-authority filter probes the pair's
+-- non-active rows per login-side authority row, the CodeRabbit #543
+-- re-review round's leg; the re-grant flows read the pair regardless
+-- of state).
+CREATE INDEX idx_user_role_assignments_user_role
+    ON user_role_assignments (user_id, role);
+
 -- THE SAFE BACKFILL — one active assignment per login-side role
 -- authority each LIVE account already holds (see the header's
 -- no-expansion proof): the derivation joins the account's own

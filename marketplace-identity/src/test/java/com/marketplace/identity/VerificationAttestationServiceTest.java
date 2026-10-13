@@ -62,7 +62,7 @@ class VerificationAttestationServiceTest {
         when(repository.findBySubjectUserIdAndTrustTypeAndState(
                 subjectId, TrustType.VERIFIED_LOCAL_MEMBER, VerificationAttestationState.GRANTED))
                 .thenReturn(Optional.empty());
-        when(repository.save(any(VerificationAttestation.class)))
+        when(repository.saveAndFlush(any(VerificationAttestation.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
         VerificationAttestationView view = service.request(
@@ -120,6 +120,39 @@ class VerificationAttestationServiceTest {
     }
 
     @Test
+    void request_theConcurrentRaceLoserAnswersTheSame409() {
+        // The two-layer model's index leg (the CodeRabbit #543 round):
+        // the double-submit race that slips past the PENDING read dies
+        // on V189's uq_verification_attestations_one_pending at the
+        // flushed INSERT — translated to the SAME 409 the read would
+        // have answered (the FollowService race shape).
+        UUID subjectId = UUID.randomUUID();
+        when(userRepository.findById(subjectId)).thenReturn(Optional.of(user("member@example.com")));
+        when(repository.saveAndFlush(any(VerificationAttestation.class)))
+                .thenThrow(new org.springframework.dao.DataIntegrityViolationException(
+                        "duplicate key value violates unique constraint "
+                                + "\"uq_verification_attestations_one_pending\""));
+
+        ConflictException ex = assertThrows(ConflictException.class,
+                () -> service.request(subjectId, TrustType.VERIFIED_BUSINESS, "ev", "member"));
+        assertThat(ex.getMessage()).contains("VERIFIED_BUSINESS").contains("under review");
+    }
+
+    @Test
+    void request_aForeignIntegrityViolationPropagatesUnchanged() {
+        // Only the pending-pair index's own violation speaks — every
+        // other integrity violation is a server-side anomaly.
+        UUID subjectId = UUID.randomUUID();
+        when(userRepository.findById(subjectId)).thenReturn(Optional.of(user("member@example.com")));
+        when(repository.saveAndFlush(any(VerificationAttestation.class)))
+                .thenThrow(new org.springframework.dao.DataIntegrityViolationException(
+                        "NOT NULL violation on an unrelated column"));
+
+        assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
+                () -> service.request(subjectId, TrustType.VERIFIED_BUSINESS, "ev", "member"));
+    }
+
+    @Test
     void request_forAnotherPairStaysLegal_whileOneIsPending() {
         // The gate is per (subject, type) — another type's request rides
         // through untouched (the four §6.5 facts stay separate).
@@ -129,7 +162,7 @@ class VerificationAttestationServiceTest {
                 subjectId, TrustType.VERIFIED_SOURCE, VerificationAttestationState.PENDING))
                 .thenReturn(Optional.of(VerificationAttestation.request(
                         UUID.randomUUID(), subjectId, TrustType.VERIFIED_SOURCE, "ev")));
-        when(repository.save(any(VerificationAttestation.class)))
+        when(repository.saveAndFlush(any(VerificationAttestation.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
         VerificationAttestationView view = service.request(

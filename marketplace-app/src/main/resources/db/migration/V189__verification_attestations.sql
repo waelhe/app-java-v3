@@ -46,14 +46,19 @@
 -- uq_verification_attestations_one_active — ONE GRANTED attestation per
 -- (subject, trust_type). A REVOKED or REJECTED row frees the pair: a new
 -- request after a rejection is legal (the fresh evidence row stays as
--- the pair's own history). PENDING rows are NOT unique-constrained at
--- the index level (the concurrent double-submit race may still queue a
--- duplicate); the SERVICE layer refuses a second PENDING request for
--- the same (subject, type) pair with the honest 409 — one review at a
--- time, the queue stays clean (the CodeRabbit #543 round).
+-- the pair's own history). The ONE-REVIEW-AT-A-TIME gate rides its own
+-- two-layer model (the CodeRabbit #543 round): the service's
+-- PENDING-duplicate read answers the clean 409 first, and
+-- uq_verification_attestations_one_pending — ONE PENDING row per
+-- (subject, trust_type) — is the concurrent double-submit backstop
+-- (the service translates that index's own violation to the same 409,
+-- the FollowService race shape; every other integrity violation
+-- propagates unchanged).
 --
 -- Indexes (one per measured read, the V93 shape):
--- (a) uq_verification_attestations_one_active — the partial unique above.
+-- (a) uq_verification_attestations_one_active — the granted pair's
+--     partial unique above; uq_verification_attestations_one_pending —
+--     the pending pair's own (the one-review-at-a-time backstop).
 -- (b) idx_verification_attestations_subject — the subject's own list
 --     (the /me read), state-scoped.
 -- (c) idx_verification_attestations_type_state — the type-side scan
@@ -119,6 +124,16 @@ ALTER TABLE verification_attestations
 CREATE UNIQUE INDEX uq_verification_attestations_one_active
     ON verification_attestations (subject_user_id, trust_type)
     WHERE state = 'GRANTED' AND is_deleted = FALSE;
+
+-- One PENDING request per (subject, type) — the one-review-at-a-time
+-- gate's own concurrent backstop (the service's read answers the clean
+-- 409 first; the rare double-submit race dies here and is translated
+-- by the service to the same 409). A REJECTED/REVOKED/GRANTED row frees
+-- the pair — the index constrains PENDING only, so the pair's history
+-- keeps growing one review at a time.
+CREATE UNIQUE INDEX uq_verification_attestations_one_pending
+    ON verification_attestations (subject_user_id, trust_type)
+    WHERE state = 'PENDING' AND is_deleted = FALSE;
 
 -- The subject's own list (the /me read), newest first.
 CREATE INDEX idx_verification_attestations_subject

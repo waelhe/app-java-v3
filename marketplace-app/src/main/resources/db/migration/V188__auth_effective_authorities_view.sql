@@ -39,7 +39,21 @@
 --     byte on the maintained state, and on a DRIFTED pair (either
 --     direction) the assignment set IS the login-side truth by
 --     construction: the union never widens beyond what the account's
---     own authority rows carry — and removes nothing;
+--     own authority rows carry;
+--   * THE REVOKED-AUTHORITY FILTER (the CodeRabbit #543 re-review
+--     round): on a drifted pair the backfill creates a NON-primary
+--     assignment for the drifted authority (users.role CONSUMER,
+--     auth_authorities ROLE_ADMIN → an ADMIN assignment) — a revoke of
+--     that assignment must remove the authority, but the union's first
+--     leg would keep serving the login-side row. The first leg
+--     therefore EXCLUDES every authority that matches a NON-ACTIVE
+--     (revoked or soft-deleted) assignment of the same (subject, role)
+--     pair: the assignment — active or not — is the pair's governor,
+--     auth_authorities the fallback when no assignment row exists. On
+--     the maintained state the filter is a no-op (the primary's
+--     assignment is un-revokable by the service's own primary guard,
+--     and non-primary grants never had a login-side row); an active
+--     re-grant restores the authority through the second leg verbatim;
 --   * the break-glass admin is provably unaffected: its authority set
 --     stays exactly {ROLE_ADMIN} whether or not a users row (and thus a
 --     backfilled ADMIN assignment) exists — UNION deduplicates the
@@ -68,8 +82,16 @@
 -- rows, never a copy.
 
 CREATE VIEW auth_effective_authorities AS
-    SELECT username, authority
-    FROM auth_authorities
+    SELECT aa.username, aa.authority
+    FROM auth_authorities aa
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM user_role_assignments ra
+        JOIN users u ON u.id = ra.user_id
+        WHERE u.subject = aa.username
+          AND aa.authority = 'ROLE_' || ra.role
+          AND (ra.revoked_at IS NOT NULL OR ra.is_deleted = TRUE)
+    )
     UNION
     SELECT u.subject AS username, 'ROLE_' || ra.role AS authority
     FROM user_role_assignments ra

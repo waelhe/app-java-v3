@@ -181,6 +181,38 @@ class UserRoleMigrationIntegrationTest {
     }
 
     @Test
+    @WithMockUser(roles = "ADMIN")
+    void theDriftedAuthorityDiesWithItsAssignment_theRegrantRestoresIt() {
+        // The CodeRabbit #543 re-review round: a drifted pair (users.role
+        // CONSUMER, login-side ROLE_ADMIN — the pre-fix stock) whose
+        // backfill-shaped ADMIN assignment is revoked must lose the
+        // authority through the view's revoked-authority filter — the
+        // first leg refuses to serve a login row whose pair carries a
+        // non-active assignment; an active re-grant restores it through
+        // the second leg.
+        String subject = "phase1-it-driftrevoke@example.com";
+        UUID userId = seedAccount("driftrevoke", subject, "CONSUMER", false);
+        seedAuthUser(subject, "ROLE_CONSUMER", "ROLE_ADMIN");
+        seedAssignment(userId, "ADMIN", false);
+
+        assertThat(authoritiesOf(subject))
+                .as("the drifted pair reads its login-side truth before any revoke")
+                .containsExactlyInAnyOrder("ROLE_CONSUMER", "ROLE_ADMIN");
+
+        roleAssignmentService.revoke(userId, com.marketplace.identity.UserRole.ADMIN,
+                "phase1-it-admin");
+        assertThat(authoritiesOf(subject))
+                .as("the revoked assignment kills the drifted authority through the filter")
+                .containsExactlyInAnyOrder("ROLE_CONSUMER");
+
+        roleAssignmentService.grant(userId, com.marketplace.identity.UserRole.ADMIN,
+                userId, "phase1-it-admin");
+        assertThat(authoritiesOf(subject))
+                .as("the active re-grant restores the authority")
+                .containsExactlyInAnyOrder("ROLE_CONSUMER", "ROLE_ADMIN");
+    }
+
+    @Test
     void theViewUnionsWithoutDuplicationAndWithoutTheDeadRows() {
         // (a) The mirrored assignment collapses into the login-side row it
         // duplicates — the union is the OLD behavior, byte for byte (the
@@ -282,6 +314,27 @@ class UserRoleMigrationIntegrationTest {
         jdbc.update("insert into verification_attestations "
                         + "(id, subject_user_id, trust_type, state, evidence_ref) "
                         + "values (?, ?, 'VERIFIED_BUSINESS', 'PENDING', 'fresh-evidence')",
+                UUID.randomUUID(), userId);
+
+        // One PENDING request per (subject, type) — the one-review-at-a-time
+        // backstop (the CodeRabbit #543 round): the service's read answers
+        // the clean 409; the concurrent double-submit race dies here.
+        assertThatThrownBy(() -> jdbc.update(
+                "insert into verification_attestations "
+                        + "(id, subject_user_id, trust_type, state, evidence_ref) "
+                        + "values (?, ?, 'VERIFIED_BUSINESS', 'PENDING', 'twin')",
+                UUID.randomUUID(), userId))
+                .as("a second PENDING of the same pair is refused")
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("uq_verification_attestations_one_pending");
+
+        // The decision frees the pair — a REJECTED row lets the fresh
+        // request ride (the history keeps growing one review at a time).
+        jdbc.update("update verification_attestations set state = 'REJECTED' "
+                + "where subject_user_id = ? and trust_type = 'VERIFIED_BUSINESS'", userId);
+        jdbc.update("insert into verification_attestations "
+                        + "(id, subject_user_id, trust_type, state, evidence_ref) "
+                        + "values (?, ?, 'VERIFIED_BUSINESS', 'PENDING', 'after-rejection')",
                 UUID.randomUUID(), userId);
     }
 
