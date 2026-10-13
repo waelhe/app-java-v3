@@ -61,17 +61,19 @@ jobs:
       - name: Run Android auth-entry instrumentation test
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
         with:
-          api-level: 36
+          # Instrumented smoke on the stable API 35 system image (minSdk 26). The
+          # android-36 google_apis x86_64 image served by sdkmanager --channel=0
+          # turned deterministic-broken on hosted runners between 2026-10-12T21:29Z
+          # (run 38305458516: same runner image, same config, BUILD SUCCESSFUL in
+          # 44s) and 23:30Z (every run since: adbd ShellCommandUnresponsiveException
+          # at default RAM, then boot-timeout at 4096M). compileSdk/targetSdk stay 36.
+          api-level: 35
           target: google_apis
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          # Documented inputs (runner README): the API 36 emulator on hosted runners
-          # starved adbd while the Gradle daemon booted concurrently — measured twice
-          # as ShellCommandUnresponsiveException on emulator-5554 then "No compatible
-          # devices connected" (same signature on main since #548). 4096M AVD RAM is
-          # the documented lever (ram-size: "Size of RAM to use for this AVD").
           ram-size: 4096M
+          emulator-boot-timeout: 900
           script: |
             cd android && ./gradlew :app:connectedDebugAndroidTest -PoidcClientId=android-community-native -PoidcRedirectUri=com.marketplace.android:/oauth2redirect
 
