@@ -125,7 +125,7 @@ class NotificationPreferencesIntegrationTest {
 
     private void firePaymentState(UUID consumerId, UUID providerId, UUID intentId, UUID bookingId) {
         when(paymentIntentLookupPort.findById(intentId)).thenReturn(Optional.of(
-                new PaymentIntentDetails(intentId, bookingId, consumerId, null, "COMPLETED", "BOOKING", 25000L, "SAR")));
+                new PaymentIntentDetails(intentId, bookingId, consumerId, null, "COMPLETED", "BOOKING", 25000L, "SAR", null, null)));
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(new BookingInfo(
                 providerId, consumerId, "CONFIRMED", PRICE_CENTS, "SAR", Instant.now(), Instant.now()));
         notificationService.onPaymentStateChanged(intentId, "COMPLETED");
@@ -220,15 +220,20 @@ class NotificationPreferencesIntegrationTest {
         // V158/V159 CHECK widening; the union's own wave added
         // BOOKING_CONFIRMED and A-11's three order types
         // ORDER_CONFIRMED/ORDER_FULFILLED/ORDER_CANCELLED backed by the
-        // V110-V115 CHECK widening; the discovery waves' V180 widened the
-        // CHECK once more for URGENT_ALERT (the CMP-46/JT-10 delegated
-        // alert) and the two dispute events DISPUTE_OPENED/DISPUTE_RESOLVED
-        // (the D-N7 structural registration) — the 19-type membership the
-        // CHECK carries, the count DocumentationNumbersGuardTest pins).
+        // V110-V115 CHECK widening; stage-8/ADR-0009's LOAN_* six joined via
+        // the V206 CHECK widening (the D-N7 discipline — Java enum, SQL
+        // CHECK); the discovery waves' V180 widened the CHECK once more for
+        // URGENT_ALERT (the CMP-46/JT-10 delegated alert) and the two
+        // dispute events DISPUTE_OPENED/DISPUTE_RESOLVED (the D-N7
+        // structural registration) — the 25-type membership the CHECK
+        // carries, the full cross product 25 types x 4 channels = 100 rows
+        // (CI's actual output measured the matrix as the enum cross product
+        // itself; the discovery trio carries its PUSH row like every other
+        // type), the count the preference unit test pins.
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(consumerId);
         List<NotificationPreferenceView> matrix = preferenceService.getMyPreferences(
                 SecurityContextHolder.getContext().getAuthentication());
-        assertThat(matrix).hasSize(57);
+        assertThat(matrix).hasSize(100);
         assertThat(matrix).allMatch(NotificationPreferenceView::enabled);
     }
 

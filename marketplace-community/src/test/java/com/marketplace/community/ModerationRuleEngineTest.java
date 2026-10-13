@@ -134,7 +134,7 @@ class ModerationRuleEngineTest {
                 .thenReturn(Optional.of(rule));
         theOpenCountIs(3);
         NeighborhoodPost post = NeighborhoodPost.post(authorId, locationId,
-                PostCategory.GENERAL, "Title", "Body", clock);
+                PostCategory.GENERAL, "Title", "Body", false, clock);
         when(postRepository.findById(postId)).thenReturn(Optional.of(post));
         ContentReport trigger = reportOn(reporterA, ReportTargetType.POST, postId, ReportReason.SPAM);
         ContentReport otherB = reportOn(reporterB, ReportTargetType.POST, postId, ReportReason.SPAM);
@@ -273,7 +273,7 @@ class ModerationRuleEngineTest {
                 .thenReturn(Optional.of(rule));
         theOpenCountIs(2);
         NeighborhoodPost hidden = NeighborhoodPost.post(authorId, locationId,
-                PostCategory.GENERAL, "Title", "Body", clock);
+                PostCategory.GENERAL, "Title", "Body", false, clock);
         hidden.hideByModerator();
         when(postRepository.findById(postId)).thenReturn(Optional.of(hidden));
         ContentReport trigger = reportOn(reporterA, ReportTargetType.POST, postId, ReportReason.SPAM);

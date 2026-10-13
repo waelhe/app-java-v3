@@ -1,0 +1,460 @@
+package com.marketplace.catalog;
+
+import test.config.IntegrationContainers;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.cache.CacheManager;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * ADR-0008 (plan D-06): the search-engine baseline harness — PostgreSQL IS
+ * the baseline, OpenSearch stays behind a proven measurement. The harness
+ * measures the EXACT production SQL (the {@code ProviderListingRepository}
+ * query shapes verbatim, literals inlined) on a REAL Flyway-migrated
+ * PostgreSQL 18, across the plan's three lexical behaviors and their
+ * composition:
+ *
+ * <ol>
+ *   <li><b>full-text</b> — {@code to_tsvector('arabic', …) @@ websearch_to_tsquery('arabic', …)}
+ *       ordered by the production boost/{@code ts_rank} clause;</li>
+ *   <li><b>trigram</b> — the {@code word_similarity}/&lt;% typo fallback;</li>
+ *   <li><b>substring</b> — the naive {@code ILIKE '%…%'} scan (the baseline
+ *       row that shows WHY the two GIN indexes exist — sequential by
+ *       construction);</li>
+ *   <li><b>filters + ranking</b> — the production composition (category +
+ *       price range on top of FTS) and the {@code ts_rank_cd} ordering
+ *       variant (the community surface's ordering).</li>
+ * </ol>
+ *
+ * <p><b>Methodology (fixed, official):</b> every measured path runs
+ * {@code EXPLAIN (ANALYZE, BUFFERS)} — PostgreSQL reference, Chapter 14
+ * ("Performance Tips", measuring with EXPLAIN ANALYZE and controlling its
+ * noise): six executions, the first discarded (cache-warm), the MINIMUM of
+ * the remainder reported as the steady state. Structural index-usage
+ * assertions ride the repo's own D-I3 pattern
+ * ({@code RadiusSearchIntegrationTest}: {@code SET enable_seqscan = off} and
+ * the EXPLAIN on the SAME connection, RESET after — no session state leaks)
+ * to prove the structural facts — the two GIN families' operator sets do
+ * not overlap and the catalog carries both serving-capable definitions —
+ * the MEASURED plans never touch the planner. Absolute latencies are recorded, never asserted (a
+ * latency threshold in a test is a flake generator, not a gate).
+ *
+ * <p><b>The report is the D-06 artifact</b> ("تقرير قياس"): the harness
+ * writes {@code target/search-baseline-report.md} — methodology, the
+ * measured table, and the serving lines — the standing instrument that
+ * produces the engine-comparison evidence on demand. Until the owner/ops
+ * accept such a report, PostgreSQL remains the only search engine; no
+ * parallel engine, no speculative index.
+ *
+ * <p>Boot pattern: {@code CatalogSearchFullTextIntegrationTest} verbatim —
+ * isolated owned container, Flyway on, {@code ddl-auto=none}.
+ */
+@SpringBootTest(properties = {
+        "spring.flyway.enabled=true",
+        "spring.jpa.hibernate.ddl-auto=none",
+})
+@ActiveProfiles("test")
+@Testcontainers(disabledWithoutDocker = true)
+class SearchBaselineMeasurementIntegrationTest {
+
+    /** The representative dataset's size — large enough to exercise the paths, small enough for CI. */
+    private static final int SEED_ROWS = 20_000;
+    // 20k: the planner's btree-vs-GIN crossover measured at 2k (CI
+        // 2026-10-12: even at threshold 0.3 the category btree+filter beat the
+        // trigram GIN on a 2k-row table) — the corpus must be representative
+        // of the production scale the GIN paths exist for, or the baseline
+        // measures the wrong regime.
+
+    private static final String REPORT_PROPERTY = "search-baseline.report";
+    private static final Path REPORT_PATH = Path.of(
+            System.getProperty(REPORT_PROPERTY, "target/search-baseline-report.md"));
+
+    @Container
+    @ServiceConnection
+    @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers extension; raw type matches CatalogSearchFullTextIntegrationTest (this testcontainers version ships a non-generic PostgreSQLContainer)
+    static PostgreSQLContainer postgres = IntegrationContainers.postgres();
+
+    @Autowired
+    private ProviderListingRepository listingRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private ObjectProvider<CacheManager> cacheManagerProvider;
+
+    /** FK parent (V2: provider_listings.provider_id references users(id)). */
+    private static final UUID PROVIDER_USER_ID = UUID.randomUUID();
+
+    // The corpus's own diversity — ten Arabic variants, two bearing 'شقة':
+    // the 4-slot rotation made the typo probe match a QUARTER of the corpus
+    // (the CI-measured 20k run: 'شقه' hit 5000 of 20000 rows and the planner
+    // honestly preferred the btree full scan over a 25%-selectivity GIN).
+    // A production table carries thousands of DISTINCT words; ten variants
+    // keep the probe a realistic ~10% match, the regime the GIN exists for.
+    private static final String[] ARABIC_TITLES = {
+            "شقة مفروشة للإيجار", "شقة غرفتين حي النرجس", "بيت للإيجار مع حديقة",
+            "استوديو للايجار", "مكتب مجهز للايجار الشهري", "محل تجاري على شارع رئيسي",
+            "فيلا مستقلة مع مسبح", "أرض تجارية للبناء", "مستودع للايجار منطقة صناعية",
+            "شاليه بحري مفروش"};
+    private static final String[] ARABIC_DESCRIPTIONS = {
+            "شقة نظيفة بحي هادئ قريبة من المسجد والمدارس مع حديقة صغيرة",
+            "غرفتان وصالة مطلة على الشارع الرئيسي مواقف خاصة ومصعد",
+            "بيت واسع مع حديقة خلفية ومدخل مستقل جاهز للسكن",
+            "استوديو صغير مناسب لطالب أو موظف قريب من الجامعة",
+            "مكتب بجناحين ومجلس واسع تجهيز كامل شبكة وإنترنت",
+            "واجهة تجارية موقع حيوي حركة عالية مناسبة لأي نشاط",
+            "فيلا بمدخل مستقل ومسبح خاص وحديقة واسعة بحي راقٍ",
+            "أرض بموقع استراتيجي قريبة من الشوارع الرئيسية مرافق كاملة",
+            "مستودع بارتفاع مناسب ومدخل شاحنات وموقع صناعي منظوم",
+            "شاليه على البحر مفروش بالكامل مع تراس مطل"};
+    private static final String[] ENGLISH_TITLES = {
+            "Garden View Apartment", "City View Loft", "Cozy House", "Mechanical Keyboard"};
+    private static final String[] ENGLISH_DESCRIPTIONS = {
+            "Apartment overlooking a large garden with a nice view",
+            "Modern loft with a skyline panorama and big windows",
+            "A house with a large garden and a quiet street view",
+            "Clicky switches, tenkeyless, hot swappable keyboard"};
+
+    private record BaselineRow(String path, String query, double minMs, String serving) {
+    }
+
+    private record Plan(String planText, double executionMs) {
+    }
+
+    @BeforeEach
+    void seedRepresentativeDataset() {
+        cacheManagerProvider.ifAvailable(cm ->
+                cm.getCacheNames().forEach(name -> {
+                    var cache = cm.getCache(name);
+                    if (cache != null) {
+                        cache.clear();
+                    }
+                }));
+        // Idempotent across re-runs within the class' container: the seed
+        // only fills when the representative row count is not there yet.
+        Long existing = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM provider_listings WHERE provider_id = ?", Long.class, PROVIDER_USER_ID);
+        if (existing != null && existing >= SEED_ROWS) {
+            return;
+        }
+        jdbcTemplate.update(
+                """
+                INSERT INTO users (id, subject, email, display_name, role)
+                VALUES (?, ?, ?, ?, 'PROVIDER')
+                ON CONFLICT (id) DO NOTHING
+                """,
+                PROVIDER_USER_ID, "search-baseline@example.com", "search-baseline@example.com",
+                "Search Baseline Provider");
+
+        List<ProviderListing> rows = new ArrayList<>(SEED_ROWS);
+        for (int i = 0; i < SEED_ROWS; i++) {
+            boolean arabic = i < SEED_ROWS / 2;
+            int arabicSlot = i % ARABIC_TITLES.length;
+            int englishSlot = i % ENGLISH_TITLES.length;
+            String title = (arabic ? ARABIC_TITLES[arabicSlot] : ENGLISH_TITLES[englishSlot]) + " " + (i + 1);
+            String description = arabic ? ARABIC_DESCRIPTIONS[arabicSlot] : ENGLISH_DESCRIPTIONS[englishSlot];
+            ProviderListing listing = ProviderListing.create(
+                    PROVIDER_USER_ID, title, description, "home", 100_00L + (i % 900) * 25L);
+            listing.activate();
+            rows.add(listing);
+        }
+        listingRepository.saveAll(rows);
+        // The planner needs current statistics to cost the GIN paths against
+        // the seeded reality — PostgreSQL's own practice after a bulk load
+        // (the stats chapter: run ANALYZE after inserting a large amount of
+        // data). Without it the stale tiny-table stats let the category
+        // btree win the plan even with seqscan disabled (the CI-measured
+        // 2026-10-12 deviation: "Index Scan using idx_listings_category").
+        jdbcTemplate.execute("ANALYZE provider_listings");
+    }
+
+    @Test
+    void theBaselineIsMeasuredAndReported() throws IOException {
+        // -- the production shapes, literals inlined (the methodology's own
+        // choice: the measured SQL is the exact production SQL, the literals
+        // are this test's own constants — no parameter-planning variance).
+        String ftsArabic = """
+                SELECT * FROM provider_listings
+                WHERE is_deleted = false AND status = 'ACTIVE'
+                  AND to_tsvector('arabic', coalesce(title,'') || ' ' || coalesce(description,''))
+                      @@ websearch_to_tsquery('arabic', 'شقة للإيجار')
+                ORDER BY ((promoted_until IS NOT NULL AND promoted_until > '2026-01-01 00:00:00+00')
+                  OR EXISTS (SELECT 1 FROM ad_campaigns campaign
+                             WHERE campaign.listing_id = provider_listings.id
+                               AND campaign.is_deleted = false
+                               AND campaign.status = 'ACTIVE'
+                               AND campaign.consumed_cents < campaign.budget_cents
+                               AND (campaign.ends_at IS NULL OR campaign.ends_at > '2026-01-01 00:00:00+00'))) DESC,
+                    ts_rank(
+                        to_tsvector('arabic', coalesce(title,'') || ' ' || coalesce(description,'')),
+                        websearch_to_tsquery('arabic', 'شقة للإيجار')
+                    ) DESC, id
+                LIMIT 20
+                """;
+        String ftsEnglish = ftsArabic.replace("شقة للإيجار", "garden view");
+        String trigram = """
+                SELECT * FROM provider_listings
+                WHERE is_deleted = false AND status = 'ACTIVE'
+                  AND 'شقه' <% (coalesce(title,'') || ' ' || coalesce(description,''))
+                ORDER BY ((promoted_until IS NOT NULL AND promoted_until > '2026-01-01 00:00:00+00')
+                  OR EXISTS (SELECT 1 FROM ad_campaigns campaign
+                             WHERE campaign.listing_id = provider_listings.id
+                               AND campaign.is_deleted = false
+                               AND campaign.status = 'ACTIVE'
+                               AND campaign.consumed_cents < campaign.budget_cents
+                               AND (campaign.ends_at IS NULL OR campaign.ends_at > '2026-01-01 00:00:00+00'))) DESC,
+                    word_similarity('شقه', coalesce(title,'') || ' ' || coalesce(description,'')) DESC, id
+                LIMIT 20
+                """;
+        String trigramEnglish = trigram.replace("شقه", "gardn");
+        String substring = """
+                SELECT * FROM provider_listings
+                WHERE is_deleted = false AND status = 'ACTIVE'
+                  AND (coalesce(title,'') || ' ' || coalesce(description,'')) ILIKE '%شقة%'
+                ORDER BY id
+                LIMIT 20
+                """;
+        String ftsFiltered = ftsArabic
+                .replace("      @@ websearch_to_tsquery('arabic', 'شقة للإيجار')",
+                        "      @@ websearch_to_tsquery('arabic', 'شقة للإيجار')\n"
+                                + "                  AND category = 'home'\n"
+                                + "                  AND price_cents >= 10000 AND price_cents <= 30000");
+        String tsRankCd = ftsArabic.replace("ts_rank(", "ts_rank_cd(");
+
+        List<BaselineRow> rows = new ArrayList<>();
+        // The production reality (the planner free) — measured and reported.
+        rows.add(measured("full-text", "arabic multi-word (production ranking)", ftsArabic));
+        rows.add(measured("full-text", "english multi-word (production ranking)", ftsEnglish));
+        rows.add(measured("trigram", "arabic one-edit typo", trigram));
+        rows.add(measured("trigram", "english one-edit typo", trigramEnglish));
+        rows.add(measured("substring", "ILIKE naive scan", substring));
+        rows.add(measured("full-text + filters", "arabic multi-word + category + price", ftsFiltered));
+        rows.add(measured("full-text", "ts_rank_cd ordering variant", tsRankCd));
+
+        // -- the structural gates (the D-I3 pattern) — the facts that are
+        // structural on this schema, asserted alone (the finding-6
+        // principle applied consistently). The CI-measured 2026-10-13 plan
+        // closed the question the hard way: under enable_seqscan=off +
+        // enable_indexscan=off the partial category btree (V2) still
+        // served the delivery predicates through a BITMAP index scan — a
+        // btree's amgetbitmap is part of the official index access-method
+        // contract (bitmap scans are not a GIN privilege) — so WHICH index
+        // serves a query that also carries is_deleted/status is a cost
+        // choice between the three partial indexes' bitmaps, run to run.
+        // What IS structural: the two GIN families' operator sets do not
+        // overlap (the tsvector GIN serves @@ alone; gin_trgm_ops serves
+        // the similarity/ILIKE family — pg_trgm's own operator table), so
+        // a plan cannot ride the FTS GIN for a trigram predicate nor the
+        // trigram GIN for a tsquery one; and the catalog carries both
+        // serving-capable definitions (the usability proof).
+        assertThat(planWithSeqscanDisabled(ftsArabic))
+                .as("the FTS predicate cannot ride the trigram GIN (gin_trgm_ops serves the "
+                        + "similarity/ILIKE family, not @@ — pg_trgm's docs' own operator table); "
+                        + "which bitmap serves the delivery predicates (the FTS GIN's or the "
+                        + "category btree's) is the planner's cost choice")
+                .doesNotContain("idx_listing_search_trgm");
+        assertThat(planWithSeqscanDisabled(trigram))
+                .as("the trigram predicate cannot ride the FTS GIN (a tsvector GIN serves @@ alone) — "
+                        + "whether the planner settles on the trigram GIN's bitmap or the category "
+                        + "btree's bitmap is a cost choice, not a structural fact (the CI-measured "
+                        + "2026-10-13 plan: Bitmap Index Scan on idx_listings_category)")
+                .doesNotContain("idx_listing_search_title");
+        assertThat(planWithSeqscanDisabled(substring))
+                .as("the naive ILIKE baseline cannot serve from the FTS GIN (no tsquery machinery) — "
+                        + "whether the planner settles on a trigram-GIN bitmap or a sequential scan is "
+                        + "a cost choice, not a structural fact (pg_trgm's docs: a gin_trgm_ops index "
+                        + "is a documented servant of ILIKE)")
+                .doesNotContain("idx_listing_search_title");
+        // The usable serving paths EXIST — the catalog's own definitions:
+        // gin_trgm_ops is pg_trgm's documented servant of <% and the
+        // arabic tsvector GIN is @@'s only servant; each definition below
+        // must carry the family's partial predicate verbatim (the indexes
+        // V34/V106 built are the ones the measured queries predicate on).
+        String trgmIndexDef = jdbcTemplate.queryForObject(
+                "SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() "
+                        + "AND indexname = 'idx_listing_search_trgm'", String.class);
+        assertThat(trgmIndexDef)
+                .as("the trigram GIN (V34) must exist with gin_trgm_ops on the production "
+                        + "coalesce expression and the family's partial predicate — the "
+                        + "documented usable serving path for <%")
+                .containsIgnoringCase("USING gin")
+                .contains("gin_trgm_ops")
+                .containsIgnoringCase("coalesce(")
+                .contains("is_deleted = false")
+                .contains("'ACTIVE'");
+        String ftsIndexDef = jdbcTemplate.queryForObject(
+                "SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() "
+                        + "AND indexname = 'idx_listing_search_title'", String.class);
+        assertThat(ftsIndexDef)
+                .as("the Arabic FTS GIN (V106) must exist with to_tsvector('arabic', …) on the "
+                        + "production coalesce expression and the family's partial predicate — "
+                        + "the documented serving path for @@")
+                .containsIgnoringCase("USING gin")
+                .containsIgnoringCase("to_tsvector('arabic'")
+                .containsIgnoringCase("coalesce(")
+                .contains("is_deleted = false")
+                .contains("'ACTIVE'");
+        assertThat(rows).allSatisfy(row ->
+                assertThat(row.minMs()).as("measured steady state for " + row.path()).isPositive());
+
+        // -- the D-06 artifact: the measurement report ("تقرير قياس").
+        writeReport(rows);
+        assertThat(REPORT_PATH)
+                .as("the baseline report must be written (pass -Dsearch-baseline.report=... to relocate)")
+                .exists();
+    }
+
+    /**
+     * The production paths return through the REAL repository — a smoke the
+     * report cites (the measured EXPLAIN times are the engine-side steady
+     * state; these calls prove the same SQL is what production executes).
+     */
+    @Test
+    void theProductionRepositoryPathsReturnOnTheSeededBaseline() {
+        var fts = listingRepository.searchFullText("شقة للإيجار", null, null, null, null,
+                java.time.Instant.now(), org.springframework.data.domain.Pageable.ofSize(20));
+        assertThat(fts.getTotalElements()).as("the Arabic FTS path matches the seeded rows").isPositive();
+        var similar = listingRepository.searchSimilar("شقه", null, null, null, null,
+                java.time.Instant.now(), org.springframework.data.domain.Pageable.ofSize(20));
+        assertThat(similar.getTotalElements()).as("the trigram fallback matches the typo").isPositive();
+    }
+
+    // -- the harness internals -------------------------------------------
+
+    /**
+     * Six executions, the first discarded (cache-warm), the minimum of the
+     * rest reported — the noise control the reference's own EXPLAIN
+     * discussion implies; the serving line cites the plan's scan choice.
+     */
+    private BaselineRow measured(String path, String query, String sql) {
+        double minMs = Double.MAX_VALUE;
+        String serving = "planner choice (no index scan in the plan)";
+        for (int i = 0; i < 6; i++) {
+            Plan plan = explain(sql);
+            if (i == 0) {
+                continue; // the warm-up run, discarded
+            }
+            minMs = Math.min(minMs, plan.executionMs());
+            if (plan.planText().contains("Bitmap Index Scan on idx_listing_search_title")
+                    || plan.planText().contains("Bitmap Index Scan on idx_listing_search_trgm")) {
+                serving = "GIN index";
+            } else if (plan.planText().contains("Bitmap Index Scan")) {
+                // A bitmap from one of the OTHER partial indexes (the
+                // category btree) with the GIN predicate as a heap filter —
+                // the planner's legal cost choice; the report records it
+                // honestly rather than claiming a GIN served the path.
+                serving = "bitmap scan (planner choice)";
+            } else if (plan.planText().contains("Seq Scan")) {
+                serving = "sequential scan";
+            }
+        }
+        return new BaselineRow(path, query, minMs, serving);
+    }
+
+    private Plan explain(String sql) {
+        return jdbcTemplate.execute((Connection con) -> {
+            try (Statement statement = con.createStatement()) {
+                ResultSet rs = statement.executeQuery("EXPLAIN (ANALYZE, BUFFERS) " + sql);
+                StringBuilder plan = new StringBuilder();
+                while (rs.next()) {
+                    plan.append(rs.getString(1)).append('\n');
+                }
+                return new Plan(plan.toString(), parseExecutionTime(plan.toString()));
+            }
+        });
+    }
+
+    /**
+     * The structural gate's plan harness: the documented planner-cost
+     * controls (PostgreSQL reference, planner cost parameters — the same
+     * chapter the enable_seqscan lever comes from) pin the access-path
+     * FAMILY so the gate proves what it claims: that the trigram GIN is
+     * a usable serving path for the {@code <%} predicate and the FTS GIN
+     * for the {@code @@} one — proven by the catalog definitions (the
+     * operator classes are pg_trgm's documented servants) plus the
+     * operator-set facts, NOT by plan exclusivity. The CI-measured
+     * 2026-10-13 plan is the proof that exclusivity is a cost choice on
+     * this schema: under enable_seqscan=off + enable_indexscan=off the
+     * partial category btree (V2) still served the delivery predicates
+     * through a Bitmap Index Scan (a btree's amgetbitmap is part of the
+     * official index AM contract), riding the same partial predicate both
+     * GINs carry. Linear index scans are disabled alongside seq scans to
+     * keep the FAMILY pinned to bitmaps — the crossover the planner
+     * settles run to run (the CI-measured 2026-10-12 plan: cost 2729 via
+     * idx_listings_category vs a bitmap of ~2000 heap fetches spread over
+     * the same 591 pages) stays the planner's, and the report records
+     * whatever it settles. RESET after — no session state leaks (the
+     * harness's own discipline).
+     */
+    private String planWithSeqscanDisabled(String sql) {
+        return jdbcTemplate.execute((Connection con) -> {
+            try (Statement statement = con.createStatement()) {
+                statement.execute("SET enable_seqscan = off");
+                statement.execute("SET enable_indexscan = off");
+                ResultSet rs = statement.executeQuery("EXPLAIN (ANALYZE, BUFFERS) " + sql);
+                StringBuilder plan = new StringBuilder();
+                while (rs.next()) {
+                    plan.append(rs.getString(1)).append('\n');
+                }
+                statement.execute("RESET enable_seqscan");
+                statement.execute("RESET enable_indexscan");
+                return plan.toString();
+            }
+        });
+    }
+
+    private static double parseExecutionTime(String planText) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("Execution Time: ([0-9.]+) ms").matcher(planText);
+        assertThat(matcher.find())
+                .as("EXPLAIN ANALYZE must report its Execution Time line")
+                .isTrue();
+        return Double.parseDouble(matcher.group(1));
+    }
+
+    private void writeReport(List<BaselineRow> rows) throws IOException {
+        StringBuilder report = new StringBuilder();
+        report.append("# Search baseline measurement (ADR-0008, plan D-06)\n\n");
+        report.append("Produced by `SearchBaselineMeasurementIntegrationTest` on the real\n");
+        report.append("Flyway-migrated PostgreSQL (the CI's own engine), the production SQL\n");
+        report.append("verbatim with literals inlined, `EXPLAIN (ANALYZE, BUFFERS)` — six\n");
+        report.append("executions per path, first discarded (cache-warm), minimum of the rest\n");
+        report.append("reported as the steady state (PostgreSQL reference, Chapter 14).\n\n");
+        report.append("| path | query | steady state (ms) | serving |\n");
+        report.append("|---|---|---|---|\n");
+        for (BaselineRow row : rows) {
+            report.append("| ").append(row.path()).append(" | ").append(row.query())
+                    .append(" | ").append(String.format(java.util.Locale.ROOT, "%.3f", row.minMs()))
+                    .append(" | ").append(row.serving()).append(" |\n");
+        }
+        report.append("\nThe engine decision (plan D-06) rides THIS instrument: PostgreSQL is the\n");
+        report.append("baseline; an OpenSearch adoption is refused until a report produced on a\n");
+        report.append("representative benchmark demonstrates the measured need and the owner/ops\n");
+        report.append("accept it. No parallel engine, no speculative index.\n");
+        Files.createDirectories(REPORT_PATH.toAbsolutePath().getParent());
+        Files.writeString(REPORT_PATH, report.toString(), StandardCharsets.UTF_8);
+    }
+}

@@ -1,0 +1,7 @@
+# Line-ending policy for the Android Gradle wrapper (Gradle's own generated
+# project shape): the shell script stays LF, Windows batch files must check
+# out CRLF so cmd.exe can resolve their goto/call labels, and the wrapper jar
+# is binary.
+gradlew      text eol=lf
+*.bat        text eol=crlf
+*.jar        binary

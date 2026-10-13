@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * Phase 7 (§8.1 — notification routing): the topic family mapping — the
  * hierarchical preference's second level — is TOTAL over the legal
- * NotificationType vocabulary (nineteen types, ten families, no gaps)
+ * NotificationType vocabulary (twenty-five types, eleven families, no gaps)
  * and loud on a gap (a new type without its mapping is a build-time
  * defect, never a silently unroutable event).
  */
@@ -17,7 +17,7 @@ class NotificationTopicTest {
 
     @Test
     void everyNotificationTypeMapsToExactlyOneTopic() {
-        // 19 types / 10 families — the mapping is the single source of
+        // 25 types / 11 families — the mapping is the single source of
         // truth the policy factory and the engine both read.
         for (NotificationType type : NotificationType.values()) {
             assertThat(NotificationTopic.topicFor(type))

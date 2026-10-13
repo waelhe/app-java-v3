@@ -52,14 +52,14 @@ public class RealestateService implements PropertyDetailsPort {
      * already carries; L32's facet results are as stale-prone as price).
      *
      * <p>B-02 (compliance plan 0.2 — the measured defect §3.4-1): aligned
-     * with the LIVE search cache name {@code search-results-v5} — the name
+     * with the LIVE search cache name {@code search-results-v6} — the name
      * SearchService's two {@code @Cacheable} sites actually cache under.
      * The prior {@code -v4} literal was a dead name: property writes
      * evicted nothing and stale search pages rode the full TTL. The test
      * pins the literal on purpose — see RealestateServiceTest.
      */
     public static final java.util.Set<String> REALESTATE_CACHE_NAMES =
-            java.util.Set.of("search-results-v5");
+            java.util.Set.of("search-results-v6");
 
     private final PropertyDetailsRepository repository;
     private final ListingPriceProvider listingPriceProvider;

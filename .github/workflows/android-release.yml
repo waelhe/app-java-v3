@@ -1,0 +1,129 @@
+name: Android release
+
+# Automatic signed-release management: pushing an `android-v*` tag builds,
+# signs, verifies and publishes the release artifacts. The same fail-closed
+# gates apply as before (keystore secrets must exist; the preflight verifies
+# the deployed passkey prerequisites before any upload) — the only change is
+# the trigger: no manual workflow_dispatch lever.
+#
+# Environment-specific values come from GitHub repository configuration
+# variables (Settings > Secrets and variables > Actions > Variables), each
+# with the production default below:
+#   ANDROID_RELEASE_API_BASE_URL  (default https://app-java-v3-production-59bf.up.railway.app/)
+#   ANDROID_RELEASE_OIDC_ISSUER   (default https://app-java-v3-production-59bf.up.railway.app)
+#   ANDROID_RELEASE_PASSKEY_RP_ID (default app-java-v3-production-59bf.up.railway.app)
+
+on:
+  push:
+    tags:
+      - "android-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Sign and verify Android release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
+
+      - name: Set up stable Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          packages: "platform-tools platforms;android-36 build-tools;36.0.0"
+
+      - name: Decode release keystore
+        env:
+          ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${ANDROID_RELEASE_KEYSTORE_BASE64:?Missing secret ANDROID_RELEASE_KEYSTORE_BASE64}"
+          keystore="$RUNNER_TEMP/android-release.jks"
+          printf '%s' "$ANDROID_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          chmod 600 "$keystore"
+          printf 'ANDROID_RELEASE_KEYSTORE_PATH=%s\n' "$keystore" >> "$GITHUB_ENV"
+
+      - name: Build signed release APK and AAB
+        working-directory: android
+        env:
+          OAUTH_PUBLIC_CLIENT_ID: android-community-native
+          OIDC_REDIRECT_URI: com.marketplace.android:/oauth2redirect
+          API_BASE_URL: ${{ vars.ANDROID_RELEASE_API_BASE_URL || 'https://app-java-v3-production-59bf.up.railway.app/' }}
+          OIDC_ISSUER: ${{ vars.ANDROID_RELEASE_OIDC_ISSUER || 'https://app-java-v3-production-59bf.up.railway.app' }}
+          ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          [[ "$API_BASE_URL" == https://* ]] || { echo "ANDROID_RELEASE_API_BASE_URL must use HTTPS." >&2; exit 1; }
+          [[ "$OIDC_ISSUER" == https://* ]] || { echo "ANDROID_RELEASE_OIDC_ISSUER must use HTTPS." >&2; exit 1; }
+          ./gradlew :app:assembleRelease :app:bundleRelease \
+            -PapiBaseUrl="$API_BASE_URL" \
+            -PoidcIssuer="$OIDC_ISSUER" \
+            -PoidcClientId="$OAUTH_PUBLIC_CLIENT_ID" \
+            -PoidcRedirectUri="$OIDC_REDIRECT_URI"
+
+      - name: Derive signing identity for Digital Asset Links
+        env:
+          ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          keystore="$ANDROID_RELEASE_KEYSTORE_PATH"
+          cert="$RUNNER_TEMP/android-release-cert.der"
+          keytool -exportcert -keystore "$keystore" -storepass:env ANDROID_RELEASE_KEYSTORE_PASSWORD \
+            -alias "$ANDROID_RELEASE_KEY_ALIAS" -file "$cert" >/dev/null
+          fingerprint="$(keytool -list -v -keystore "$keystore" -storepass:env ANDROID_RELEASE_KEYSTORE_PASSWORD \
+            -alias "$ANDROID_RELEASE_KEY_ALIAS" | awk -F': ' '/SHA256:/{print $2; exit}')"
+          origin="$(openssl dgst -sha256 -binary "$cert" | openssl base64 -A | tr '/+' '_-' | tr -d '=')"
+          test -n "$fingerprint"
+          test -n "$origin"
+          {
+            echo "## Release signing identity"
+            echo
+            printf '%s\n' '- Android package: `com.marketplace.android`'
+            printf '%s\n' "- Release tag: ${GITHUB_REF_NAME}"
+            printf '%s\n' "- SHA-256 certificate fingerprint: $fingerprint"
+            printf '%s\n' "- WebAuthn Android origin: android:apk-key-hash:$origin"
+            echo
+            echo "If the app is distributed through Google Play App Signing, use the **App signing key certificate** fingerprint from Play Console instead of this upload-key fingerprint."
+            echo "Configure the RP ID, allowed origin and fingerprint on the matching non-production or production Railway environment only after validating the intended signing identity. This workflow does not modify Railway."
+          } >> "$GITHUB_STEP_SUMMARY"
+          rm -f "$cert"
+
+      - name: Verify signed artifacts and deployed passkey prerequisites
+        env:
+          API_BASE_URL: ${{ vars.ANDROID_RELEASE_API_BASE_URL || 'https://app-java-v3-production-59bf.up.railway.app/' }}
+          OIDC_ISSUER: ${{ vars.ANDROID_RELEASE_OIDC_ISSUER || 'https://app-java-v3-production-59bf.up.railway.app' }}
+          PASSKEY_RP_ID: ${{ vars.ANDROID_RELEASE_PASSKEY_RP_ID || 'app-java-v3-production-59bf.up.railway.app' }}
+          ANDROID_PACKAGE_NAME: com.marketplace.android
+          ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+        shell: bash
+        run: bash android/scripts/verify-passkey-release.sh
+
+      - name: Upload signed APK and AAB
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: community-platform-android-release-signed
+          path: |
+            android/app/build/outputs/apk/release/app-release.apk
+            android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 14

@@ -73,6 +73,10 @@ class CatalogServiceSecurityTest {
     @MockitoBean
     private com.marketplace.shared.api.ReviewStatsPort reviewStatsPort;
 
+    /** D-15's promotion-marking read — the service's tenth constructor dep. */
+    @MockitoBean
+    private AdCampaignRepository adCampaignRepository;
+
     @Test
     @WithMockUser(roles = "USER")
     void create_whenNotProvider_thenAccessDenied() {

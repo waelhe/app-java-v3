@@ -202,7 +202,14 @@ public class GlobalExceptionHandler {
     public ProblemDetail handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {
         // A5: an illegal argument is a client-contract violation (400), matching
         // the GraphQL resolver's VALIDATION_ERROR mapping — never a 500.
-        return problem(ApiErrorTaxonomy.VALIDATION, ex.getMessage(), request, null, "detail");
+        ProblemDetail pd = problem(ApiErrorTaxonomy.VALIDATION, ex.getMessage(), request, null, "detail");
+        // §5 contract completeness (the same discipline the body-validation and
+        // method-validation legs already answer): a BARE VAL-001 hides the
+        // violated clause — the localized detail replaces ex.getMessage() — so
+        // the IAE's own message rides the fieldErrors extension. A client
+        // renders one violations list for every 400, never a bare VAL-001.
+        pd.setProperty("fieldErrors", List.of(new ApiErrorPayload.FieldError("argument", ex.getMessage())));
+        return pd;
     }
 
     /**

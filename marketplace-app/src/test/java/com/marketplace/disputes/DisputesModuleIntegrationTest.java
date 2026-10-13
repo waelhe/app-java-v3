@@ -4,6 +4,7 @@ import test.config.IntegrationContainers;
 import test.config.ModuleTestConfig;
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.LoanPartyProvider;
 import com.marketplace.shared.api.PaymentRefundPort;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
@@ -57,6 +58,16 @@ class DisputesModuleIntegrationTest {
      */
     @MockitoBean
     PaymentRefundPort paymentRefundPort;
+
+    /**
+     * The loan party port is implemented in marketplace-lending — outside
+     * this module slice — so the slice replaces it at the boundary (the
+     * same @MockitoBean treatment PaymentRefundPort gets; the ADR-0009
+     * loan-freeze contract added the port to the service's constructor —
+     * the CI-measured 2026-10-12 first run of this slice).
+     */
+    @MockitoBean
+    LoanPartyProvider loanPartyProvider;
 
     @Autowired
     private DisputeService disputeService;

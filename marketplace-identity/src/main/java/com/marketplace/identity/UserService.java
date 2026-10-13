@@ -57,6 +57,7 @@ public class UserService implements IdentitySpi {
      */
     private final EmailVerificationService emailVerificationService;
     private final AuthActionTokenService authActionTokenService;
+    private final RoleAssignmentService roleAssignmentService;
     /**
      * ObjectProvider (the Modulith module-slice shape — the #392 CI-round-1
      * lesson, measured again by #395's round): the encoder bean lives in the
@@ -134,6 +135,7 @@ public class UserService implements IdentitySpi {
                        AuditHistoryPurgeService auditHistoryPurgeService,
                        EmailVerificationService emailVerificationService,
                        AuthActionTokenService authActionTokenService,
+                       RoleAssignmentService roleAssignmentService,
                        org.springframework.beans.factory.ObjectProvider<org.springframework.security.crypto.password.PasswordEncoder> passwordEncoder) {
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
@@ -144,6 +146,7 @@ public class UserService implements IdentitySpi {
         this.auditHistoryPurgeService = auditHistoryPurgeService;
         this.emailVerificationService = emailVerificationService;
         this.authActionTokenService = authActionTokenService;
+        this.roleAssignmentService = roleAssignmentService;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -503,6 +506,60 @@ public class UserService implements IdentitySpi {
 
         log.info("Account role audit: userId={}, username={}, role: {} -> {}, actor={}",
                 userId, username, previous, target, actor);
+    }
+
+    /**
+     * Phase 1 (the unified plan §10, D-03) — the multi-role grant, the
+     * SPI leg over the assignment model: {@link RoleAssignmentService}
+     * owns the command (the ADMIN gate, the duplicate-active 409, the
+     * V187 row, the audit line — the A-07 three-layer pattern's third
+     * layer rides the OWNED bean, not this delegation). The grant's
+     * provenance: the acting administrator's subject resolves to its
+     * users row when it is one of ours (granted_by carries the honest
+     * id); a foreign/test principal still rides the audit string with a
+     * NULL granted_by.
+     */
+    @Override
+    public void grantUserRole(UUID userId, String role, String actor) {
+        roleAssignmentService.grant(userId, UserRole.valueOf(role), resolveActorId(actor), actor);
+    }
+
+    /**
+     * Phase 1 (the unified plan §10, D-03) — the multi-role revoke, the
+     * SPI leg over the assignment model: {@link RoleAssignmentService}
+     * owns the command (the ADMIN gate, the primary-role refusal, the
+     * refresh-resurrection kill, the session-expiring event, the audit
+     * line).
+     */
+    @Override
+    public void revokeUserRole(UUID userId, String role, String actor) {
+        roleAssignmentService.revoke(userId, UserRole.valueOf(role), actor);
+    }
+
+    /**
+     * Phase 1 (the unified plan §10, D-03) — the administrative read of
+     * the account's ACTIVE assignments (the V188 effective-authorities
+     * union's own multi-role half), sorted for the stable admin display
+     * order. The read stays un-gated (the roster's own class rule is the
+     * gate) — the same honesty {@code /me/roles} rides.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.Set<String> getUserRoles(UUID userId) {
+        return roleAssignmentService.activeRoles(userId).stream()
+                .map(view -> view.role())
+                .collect(java.util.stream.Collectors.toCollection(java.util.TreeSet::new));
+    }
+
+    /**
+     * The acting administrator's own row id — NULL for a foreign/test
+     * principal (the audit string still carries the actor).
+     */
+    private UUID resolveActorId(String actor) {
+        if (actor == null || actor.isBlank()) {
+            return null;
+        }
+        return userRepository.findBySubject(actor).map(User::getId).orElse(null);
     }
 
     /**

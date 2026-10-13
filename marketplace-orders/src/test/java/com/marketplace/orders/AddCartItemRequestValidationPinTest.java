@@ -43,7 +43,7 @@ class AddCartItemRequestValidationPinTest {
         ObjectMapper mapper = new ObjectMapper();
         UUID product = UUID.randomUUID();
         String body = """
-                {"productId":"%s","quantity":3,"unitAmountMinor":1500,"currency":"SAR"}"""
+                {"productId":"%s","quantity":3}"""
                 .formatted(product);
 
         CartController.AddCartItemRequest request = mapper.readValue(body,
@@ -51,8 +51,6 @@ class AddCartItemRequestValidationPinTest {
 
         assertThat(request.productId()).isEqualTo(product);
         assertThat(request.quantity()).isEqualTo(3);
-        assertThat(request.unitAmountMinor()).isEqualTo(1500L);
-        assertThat(request.currency()).isEqualTo("SAR");
 
         Validator validator = factory.getValidator();
         Set<ConstraintViolation<CartController.AddCartItemRequest>> violations =

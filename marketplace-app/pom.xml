@@ -54,6 +54,12 @@
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-orders</artifactId>
         </dependency>
+        <!-- Stage 8 (plan D-09, ADR-0004) — the lending module joins the
+             aggregating application. -->
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-lending</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-messaging</artifactId>

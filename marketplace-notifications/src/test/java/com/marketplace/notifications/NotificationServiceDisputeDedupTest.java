@@ -17,6 +17,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.Mockito.mock;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -79,7 +80,11 @@ class NotificationServiceDisputeDedupTest {
         return new NotificationService(repository, bookingParticipantProvider,
                 paymentIntentLookupPort, currentUserProvider, emailNotificationService,
                 Optional.<SimpMessagingTemplate>empty(), preferences,
-                new NotificationTextSource(), new DisputeDeliveryWriter(repository),
+                new NotificationTextSource(),
+                new PushTokenService(mock(PushTokenRepository.class),
+                        mock(com.marketplace.notifications.push.PushNotificationPort.class),
+                        currentUserProvider),
+                new DisputeDeliveryWriter(repository),
                 new DisputeChannelDelivery(preferences, emailNotificationService,
                         Optional.<SimpMessagingTemplate>empty(), deliveryLedger,
                         new NotificationTextSource()));

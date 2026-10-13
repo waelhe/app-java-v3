@@ -5,6 +5,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.modulith.NamedInterface;
 
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -43,6 +44,72 @@ public interface IdentitySpi {
      *                the action in the audit line
      */
     void updateUserRole(UUID userId, String newRole, String actor);
+
+    /**
+     * Phase 1 (the unified plan §10, D-03) — the multi-role GRANT on the
+     * assignment model ({@code RoleAssignmentService.grant}): one ACTIVE
+     * {@code user_role_assignments} row for the (account, role) pair —
+     * the additive layer the V188 effective-authorities view unions into
+     * the login-side read, so an active assignment IS an authority at
+     * the next token mint. {@code users.role} and its S2/N4/N6
+     * {@code auth_authorities} projection stay untouched (the Phase-1
+     * letter); the revoke's refresh/session kills are the revoke leg's
+     * own.
+     *
+     * <p>The vocabulary stays closed: {@code CONSUMER}/{@code PROVIDER}/
+     * {@code ADMIN} — the V187 CHECK's own list, pinned at the SPI
+     * boundary through the {@code UserRole} enum.
+     *
+     * @param userId the identity projection id (the {@code users} row)
+     * @param role   the stored {@code UserRole} name to grant
+     * @param actor  the acting administrator (JWT subject), recorded with
+     *               the action in the audit line
+     * @throws com.marketplace.shared.api.ResourceNotFoundException
+     *         no users row for the id
+     * @throws com.marketplace.shared.api.ConflictException
+     *         the pair already holds an ACTIVE assignment (the clean 409)
+     */
+    void grantUserRole(UUID userId, String role, String actor);
+
+    /**
+     * Phase 1 (the unified plan §10, D-03) — the multi-role REVOKE on the
+     * assignment model ({@code RoleAssignmentService.revoke}): stamps the
+     * pair's ACTIVE row revoked, removes the account's issued
+     * {@code oauth2_authorization} rows in the same transaction (the L23
+     * refresh-resurrection kill), and publishes
+     * {@code UserRoleAssignmentRevoked} in-transaction — consumed at
+     * AFTER_COMMIT to expire the live sessions whose cached authorities
+     * still hold the role.
+     *
+     * <p>The account's PRIMARY role ({@code users.role}) refuses the
+     * revoke with the honest 409 — the primary's change path is
+     * {@link #updateUserRole} (the two-store command); only
+     * granted-beyond-primary assignments ride this surface.
+     *
+     * @param userId the identity projection id (the {@code users} row)
+     * @param role   the stored {@code UserRole} name to revoke
+     * @param actor  the acting administrator (JWT subject), recorded with
+     *               the action in the audit line
+     * @throws com.marketplace.shared.api.ResourceNotFoundException
+     *         no users row for the id
+     * @throws com.marketplace.shared.api.ConflictException
+     *         the role is the account's primary role, or the pair holds
+     *         no ACTIVE assignment to revoke
+     */
+    void revokeUserRole(UUID userId, String role, String actor);
+
+    /**
+     * Phase 1 (the unified plan §10, D-03) — the administrative read of
+     * the account's ACTIVE role assignments (the multi-role truth the
+     * V188 view unions into the login-side authorities), whose
+     * primary-role projection the roster's single-value {@code role}
+     * field renders.
+     *
+     * @param userId the identity projection id (the {@code users} row)
+     * @return the active assignment role names, sorted (stable admin
+     *         display order)
+     */
+    Set<String> getUserRoles(UUID userId);
 
     /**
      * L23 (feature-expansion roadmap §5): administrative account disable/enable.

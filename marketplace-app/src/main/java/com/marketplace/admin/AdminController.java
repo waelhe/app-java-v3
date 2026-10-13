@@ -26,6 +26,7 @@ import jakarta.validation.constraints.NotBlank;
 import tools.jackson.databind.JsonNode;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @RestController
@@ -85,6 +86,58 @@ public class AdminController {
                                                @Valid @RequestBody ChangeRoleRequest request,
                                                Authentication authentication) {
         identitySpi.updateUserRole(id, request.role(),
+                authentication != null ? authentication.getName() : null);
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * ADR-0001 (D-03, plan §Phase 1) — the multi-role admin surface on the
+     * assignment model (#543's user_role_assignments + the V188 union): the
+     * vocabulary pinned at the request boundary (the ChangeStatusRequest
+     * pattern); the service keeps its own parse guard as defense-in-depth
+     * for SPI callers.
+     */
+    public record ModifyRoleRequest(
+            @NotBlank @jakarta.validation.constraints.Pattern(regexp = "CONSUMER|PROVIDER|ADMIN",
+                    message = "role must be one of CONSUMER, PROVIDER, ADMIN") String role) {}
+
+    @GetMapping("/users/{id}/roles")
+    @Operation(summary = "List an account's roles",
+            description = "The account's ACTIVE role assignments (ADR-0001's assignment model) — the "
+                    + "multi-role truth the V188 effective-authorities view unions into the login-side "
+                    + "read, whose primary projection the roster's single-value role field renders. "
+                    + "Sorted, stable order.")
+    public ResponseEntity<Set<String>> getUserRoles(@PathVariable UUID id) {
+        return ResponseEntity.ok(identitySpi.getUserRoles(id));
+    }
+
+    @PostMapping("/users/{id}/roles")
+    @Operation(summary = "Grant a role to an account",
+            description = "Adds one ACTIVE role assignment (CONSUMER/PROVIDER/ADMIN) to the account — "
+                    + "an additive layer over the untouched primary role and its login-side projection "
+                    + "(ADR-0001). The pair's active assignment reaches the account's authorities at "
+                    + "the next token mint through the effective-authorities union; an already-active "
+                    + "pair answers the honest 409, and the acting administrator is recorded in the "
+                    + "audit line.")
+    public ResponseEntity<Void> grantUserRole(@PathVariable UUID id,
+                                              @Valid @RequestBody ModifyRoleRequest request,
+                                              Authentication authentication) {
+        identitySpi.grantUserRole(id, request.role(),
+                authentication != null ? authentication.getName() : null);
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("/users/{id}/roles/{role}")
+    @Operation(summary = "Revoke a role from an account",
+            description = "Stamps the account's ACTIVE assignment of one role (CONSUMER/PROVIDER/ADMIN) "
+                    + "revoked (ADR-0001) — the authority dies at the next login, the outstanding OIDC "
+                    + "authorizations are removed in the same transaction, and the live sessions are "
+                    + "expired after commit. The account's PRIMARY role refuses the revoke (its honest "
+                    + "path is the role update); an inactive pair answers its own 409.")
+    public ResponseEntity<Void> revokeUserRole(@PathVariable UUID id,
+                                               @PathVariable String role,
+                                               Authentication authentication) {
+        identitySpi.revokeUserRole(id, role,
                 authentication != null ? authentication.getName() : null);
         return ResponseEntity.ok().build();
     }

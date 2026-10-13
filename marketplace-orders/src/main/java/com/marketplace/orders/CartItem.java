@@ -77,6 +77,17 @@ public class CartItem extends BaseEntity {
         this.quantity = quantity;
     }
 
+    /**
+     * Stage 6 (ADR-0002): the placement-instant re-pricing write — the
+     * authoritative product price resolved fresh at placement replaces
+     * the add-instant copy when the store moved its price between the
+     * two events (the frozen order line is the placement-instant
+     * agreement, never the add-instant one).
+     */
+    public void updateUnitAmountMinor(Long unitAmountMinor) {
+        this.unitAmountMinor = unitAmountMinor;
+    }
+
     @Override
     public UUID getId() {
         return id;

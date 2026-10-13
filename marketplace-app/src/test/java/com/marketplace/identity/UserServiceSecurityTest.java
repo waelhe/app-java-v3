@@ -83,6 +83,9 @@ class UserServiceSecurityTest {
     private AuthActionTokenService authActionTokenService;
 
     @MockitoBean
+    private RoleAssignmentService roleAssignmentService;
+
+    @MockitoBean
     private org.springframework.beans.factory.ObjectProvider<org.springframework.security.crypto.password.PasswordEncoder> passwordEncoder;
 
     @MockitoBean(name = "authHelper")
