@@ -75,7 +75,13 @@ jobs:
           ram-size: 4096M
           emulator-boot-timeout: 900
           script: |
-            cd android && ./gradlew :app:connectedDebugAndroidTest -PoidcClientId=android-community-native -PoidcRedirectUri=com.marketplace.android:/oauth2redirect
+            cd android
+            ./gradlew :app:connectedDebugAndroidTest -i -PoidcClientId=android-community-native -PoidcRedirectUri=com.marketplace.android:/oauth2redirect || {
+              echo "===== connected-test failure diagnostics ====="
+              find app/build/reports/androidTests -type f | head -30
+              for f in app/build/reports/androidTests/connected/debug/*.txt; do echo "--- $f"; cat "$f"; done
+              exit 1
+            }
 
       - name: Upload debug APK
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
