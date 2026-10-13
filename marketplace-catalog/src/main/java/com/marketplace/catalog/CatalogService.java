@@ -71,6 +71,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     private final CatalogProperties catalogProperties;
     private final CategoryRepository categoryRepository;
     private final com.marketplace.shared.api.ReviewStatsPort reviewStatsPort;
+    private final AdCampaignRepository adCampaignRepository;
 
     public CatalogService(ProviderListingRepository listingRepository,
                           CurrentUserProvider currentUserProvider,
@@ -80,7 +81,8 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
                           java.time.Clock clock,
                           CatalogProperties catalogProperties,
                           CategoryRepository categoryRepository,
-                          com.marketplace.shared.api.ReviewStatsPort reviewStatsPort) {
+                          com.marketplace.shared.api.ReviewStatsPort reviewStatsPort,
+                          AdCampaignRepository adCampaignRepository) {
         this.listingRepository = listingRepository;
         this.currentUserProvider = currentUserProvider;
         this.providerNameResolver = providerNameResolver;
@@ -90,11 +92,12 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         this.catalogProperties = catalogProperties;
         this.categoryRepository = categoryRepository;
         this.reviewStatsPort = reviewStatsPort;
+        this.adCampaignRepository = adCampaignRepository;
     }
 
     @Override
     @Transactional(readOnly = true)
-    @Cacheable(cacheNames = "catalog-active-v3", key = "#request.page + '-' + #request.size + '-' + #request.sort")
+    @Cacheable(cacheNames = "catalog-active-v4", key = "#request.page + '-' + #request.size + '-' + #request.sort")
     public PagedResponse<ListingSummary> listActive(PagedRequest request) {
         Pageable pageable = SpringPagination.toPageable(request);
         // L37: the derived query rides the official Specifications path now —
@@ -109,7 +112,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
 
     @Override
     @Transactional(readOnly = true)
-    @Cacheable(cacheNames = "catalog-by-category-v3", key = "#category + '-' + #request.page + '-' + #request.size + '-' + #request.sort")
+    @Cacheable(cacheNames = "catalog-by-category-v4", key = "#category + '-' + #request.page + '-' + #request.size + '-' + #request.sort")
     public PagedResponse<ListingSummary> listByCategory(String category, PagedRequest request) {
         Pageable pageable = SpringPagination.toPageable(request);
         Page<ProviderListing> page = findBoostFirst(
@@ -178,7 +181,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     // concatenation key over the criteria here would reproduce the exact
     // ambiguity the repository fixed with SearchCriteriaCacheKeyGenerator
     // (PR #256 round 1) — the house discipline rejects it.
-    @Cacheable(cacheNames = "catalog-search-v3",
+    @Cacheable(cacheNames = "catalog-search-v4",
             condition = "#criteria != null && #criteria.category == null && #criteria.minPrice == null && #criteria.maxPrice == null && #criteria.guests == null && #criteria.minRating == null",
             key = "#criteria.query + '-' + #request.page + '-' + #request.size + '-' + #request.sort")
     public PagedResponse<ListingSummary> searchFullText(SearchCriteria criteria, PagedRequest request) {
@@ -287,7 +290,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      * / browse-all are optional predicates of the same query), plus the
      * {@code provider_id} restriction. Deliberately NOT cached at this
      * level: the whitelist varies per request, and the search module's
-     * {@code search-results-v5} cache (criteria-keyed, window included) is
+     * {@code search-results-v6} cache (criteria-keyed, window included) is
      * the caching surface for window searches.
      *
      * <p><b>W6 (search-unit compliance pass):</b> the Specification path —
@@ -345,7 +348,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      * windowed text search no longer drops the filters that ride it.
      * Deliberately NOT cached at this level (the same policy as
      * {@link #searchByCriteriaRestricted}): the search module's
-     * criteria-keyed {@code search-results-v5} cache is the caching
+     * criteria-keyed {@code search-results-v6} cache is the caching
      * surface for the restricted window searches.
      */
     @Override
@@ -550,7 +553,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      * BOTH the content and count queries — the property flow's text branch
      * and the saved-search matcher's membership probe no longer drop the
      * filters that ride them. Deliberately NOT cached at this level: the
-     * search module's criteria-keyed {@code search-results-v5} cache is
+     * search module's criteria-keyed {@code search-results-v6} cache is
      * the caching surface for the id-restricted forms.
      */
     @Override
@@ -641,11 +644,14 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         // row composition keeps the paged and by-ids paths one shape).
         Map<UUID, com.marketplace.shared.api.ReviewStats> ratings = reviewStatsPort.findStatsByProviderUserIds(
                 byId.values().stream().map(ProviderListing::getProviderId).collect(Collectors.toSet()));
+        // ADR-0011: the by-ids rows carry the same real-time promotion
+        // identification — one batch query for the whole id list.
+        Set<UUID> promotedListingIds = resolvePromotedListingIds(byId.values());
         // restore the caller's order (the area-sorted page assembly)
         return idsInOrder.stream()
                 .map(byId::get)
                 .filter(Objects::nonNull)
-                .map(listing -> toSummary(listing, providerNames, ratings))
+                .map(listing -> toSummary(listing, providerNames, ratings, promotedListingIds))
                 .toList();
     }
 
@@ -719,7 +725,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     // the key generator's prefix bump keeps the key spaces disjoint AND the
     // name bump evicts at deploy time through the deploy itself).
     static final Set<String> CATALOG_CACHE_NAMES =
-            Set.of("catalog-active-v3", "catalog-by-category-v3", "catalog-search-v3", "search-results-v5");
+            Set.of("catalog-active-v4", "catalog-by-category-v4", "catalog-search-v4", "search-results-v6");
 
     /**
      * Creates a listing for the caller-owned provider profile. The
@@ -1051,13 +1057,42 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         // by the page size no matter the total).
         Map<UUID, com.marketplace.shared.api.ReviewStats> ratings =
                 reviewStatsPort.findStatsByProviderUserIds(providerIds);
-        return page.map(listing -> toSummary(listing, providerNames, ratings));
+        // ADR-0011 (D-15 — DSA Art. 26(1)(a)): the rows' real-time promotion
+        // identification rides the SAME page batch discipline — one grouped
+        // live-campaign query beside the names/stats queries, never per-row.
+        Set<UUID> promotedListingIds = resolvePromotedListingIds(page.getContent());
+        return page.map(listing -> toSummary(listing, providerNames, ratings, promotedListingIds));
+    }
+
+    /**
+     * ADR-0011 (D-15): the page's promoted ids — the SAME boolean the
+     * ordering's first tier evaluated (a live paid campaign with remaining
+     * budget, or an admin featured window still in the future), resolved
+     * against the injected Clock (the expiry self-correction's own seam).
+     * One batch query per page; the window half is the entity's own column.
+     */
+    private Set<UUID> resolvePromotedListingIds(java.util.Collection<ProviderListing> listings) {
+        if (listings.isEmpty()) {
+            return Set.of();
+        }
+        java.time.Instant now = clock.instant();
+        Set<UUID> promoted = new java.util.HashSet<>(adCampaignRepository.findLiveCampaignListingIds(
+                listings.stream().map(ProviderListing::getId).toList(),
+                AdCampaignStatus.ACTIVE, now));
+        for (ProviderListing listing : listings) {
+            java.time.Instant windowEnd = listing.getPromotedUntil();
+            if (windowEnd != null && windowEnd.isAfter(now)) {
+                promoted.add(listing.getId());
+            }
+        }
+        return Set.copyOf(promoted);
     }
 
     /** The single row composition — shared by the paged and the by-ids paths. */
     private static ListingSummary toSummary(ProviderListing listing,
                                             Map<UUID, String> providerNames,
-                                            Map<UUID, com.marketplace.shared.api.ReviewStats> ratings) {
+                                            Map<UUID, com.marketplace.shared.api.ReviewStats> ratings,
+                                            Set<UUID> promotedListingIds) {
         com.marketplace.shared.api.ReviewStats stats = ratings.get(listing.getProviderId());
         return new ListingSummary(
                 listing.getId(),
@@ -1070,7 +1105,11 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
                 // never a fabricated zero (a provider with no verified
                 // reviews is absent from the batch answer by construction).
                 stats == null ? null : stats.averageRating(),
-                stats == null ? 0L : stats.reviewCount()
+                stats == null ? 0L : stats.reviewCount(),
+                // DSA Art. 26(1)(a): the real-time advertisement
+                // identification — the same live-promotion law the row's
+                // own ORDER BY tier spoke when the page was read.
+                promotedListingIds.contains(listing.getId())
         );
     }
 

@@ -286,8 +286,14 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
      *
      * <p>Operator {@code query <% text}: true when
      * {@code word_similarity(query, text) >= pg_trgm.word_similarity_threshold}
-     * — the framework default (0.6), deliberately not overridden: threshold
-     * tuning is a measurement-backed decision, not a code default.
+     * — the threshold is a SESSION default set by the pool's
+     * {@code connection-init-sql} (application.yml), and it IS
+     * measurement-backed now: the D-06 baseline harness measured the
+     * framework default 0.6 blind to its own one-codepoint Arabic typo
+     * probe ('شقه' → 'شقة …' scores ≈ 0.5 — ة→ه costs a third of a
+     * three-letter word's trigram set, the fallback returned zero rows
+     * for exactly the case it exists for), so the pool opens every
+     * session at 0.3 (the official pg_trgm GUC, trigram operators only).
      *
      * <p><b>R6 (Wave 5):</b> the fallback carries the SAME optional catalog
      * predicates as {@link #searchFullText} — a fallback that dropped the

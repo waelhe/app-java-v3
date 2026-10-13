@@ -5,7 +5,9 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -32,6 +34,31 @@ public interface AdCampaignRepository extends JpaRepository<AdCampaign, UUID>, J
 
     /** The live paid promotion of a listing — at most one by the partial unique index (V103). */
     Optional<AdCampaign> findFirstByListingIdAndStatusOrderByIdAsc(UUID listingId, AdCampaignStatus status);
+
+    /**
+     * ADR-0011 (D-15 — DSA Art. 26(1)(a) real-time identification): the
+     * page-level batch answer to the SAME live-campaign law the recipient
+     * ordering's first tier speaks in
+     * {@code ProviderListingRepository}'s baked ORDER BY — a campaign is
+     * live when ACTIVE with remaining budget and (its duration unbounded
+     * or its end strictly in the future). One grouped query per page (the
+     * W3 names/stats batch discipline — never per-row); the soft-delete
+     * predicate rides Hibernate 7's {@code @SoftDelete} automatically.
+     * The flag's freshness follows the caller's read instant — the same
+     * {@code :now} the ordering's EXISTS evaluated on the uncached paths,
+     * and the cache namespace's bounded staleness on the cached ones (the
+     * flag is baked WITH the order it describes, never beside it).
+     */
+    @Query("""
+            select distinct c.listingId from AdCampaign c
+            where c.listingId in :ids
+              and c.status = :status
+              and c.consumedCents < c.budgetCents
+              and (c.endsAt is null or c.endsAt > :now)
+            """)
+    List<UUID> findLiveCampaignListingIds(@Param("ids") Collection<UUID> ids,
+                                          @Param("status") AdCampaignStatus status,
+                                          @Param("now") Instant now);
 
     /** The provider's own campaigns, newest first with the deterministic id tiebreak (L32). */
     List<AdCampaign> findByProviderIdOrderByCreatedAtDescIdDesc(UUID providerId);

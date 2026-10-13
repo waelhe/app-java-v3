@@ -67,8 +67,8 @@ class CacheTtlConfigTest {
                 .toList();
         assertThat(declared)
                 .containsExactlyInAnyOrder(
-                        "catalog-active-v3", "catalog-by-category-v3", "catalog-search-v3",
-                        "pricing-calculations", "search-results-v5", "availability",
+                        "catalog-active-v4", "catalog-by-category-v4", "catalog-search-v4",
+                        "pricing-calculations", "search-results-v6", "availability",
                         "bookings", "users", "userSubjects", "conversations",
                         "paymentIntents", "reviews", "providers", "provider-stats",
                         "geo-tree", "system-settings");

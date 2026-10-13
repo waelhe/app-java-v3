@@ -146,8 +146,8 @@ class GeoServiceTest {
     @Test
     void geoCacheNames_carryTheLiveSearchResultsCacheName() {
         assertThat(GeoService.GEO_CACHE_NAMES)
-                .contains("geo-tree", "search-results-v5")
-                .doesNotContain("search-results-v4");
+                .contains("geo-tree", "search-results-v6")
+                .doesNotContain("search-results-v4", "search-results-v5");
     }
 
     @Test

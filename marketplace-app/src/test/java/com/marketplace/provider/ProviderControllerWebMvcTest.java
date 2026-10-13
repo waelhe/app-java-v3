@@ -102,7 +102,7 @@ class ProviderControllerWebMvcTest {
                 new com.marketplace.shared.api.PagedResponse<>(
                         List.of(new com.marketplace.shared.api.ListingSummary(
                                 UUID.randomUUID(), "Sunny flat", "APARTMENT",
-                                java.math.BigDecimal.valueOf(150000), "SAR", "Qudsia Prime", null, 0L)),
+                                java.math.BigDecimal.valueOf(150000), "SAR", "Qudsia Prime", null, 0L, false)),
                         0, 20, 1, 1, true),
                 java.util.List.of(),
                 java.util.List.of(),

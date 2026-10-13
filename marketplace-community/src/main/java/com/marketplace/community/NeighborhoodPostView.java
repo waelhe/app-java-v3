@@ -31,6 +31,16 @@ import java.util.UUID;
  * left the publish factory has none (the same zero-fresh stance the
  * reaction facts carry).
  *
+ * <p><b>ADR-0011 (D-15 — DSA (EU) 2022/2065 Art. 26(2)) widens the
+ * projection with the author's own commercial-communications
+ * declaration:</b> {@code declaredCommercial} — the self-declaration the
+ * publish surface accepts ("this post is or contains commercial
+ * communications") and every read carries back, so other recipients
+ * identify the declared content in real time (the article's own
+ * marking law). The declaration is the AUTHOR's statement — the
+ * moderation layer never flips it; the stored fact is audited
+ * (V208's _aud mirror).
+ *
  * <p><b>JT-20 (the lost-and-found lifecycle) widens the projection with
  * the report's own state:</b> {@code lostFoundState} — present ONLY when
  * the post's category is {@code LOST_FOUND} (the V171 column's own
@@ -53,6 +63,7 @@ public record NeighborhoodPostView(
         String title,
         String body,
         String status,
+        boolean declaredCommercial,
         String lostFoundState,
         long reactionsCount,
         boolean reactedByMe,
@@ -81,6 +92,7 @@ public record NeighborhoodPostView(
                 post.getTitle(),
                 post.getBody(),
                 post.getStatus().name(),
+                post.isDeclaredCommercial(),
                 lostFoundStateOf(post),
                 0L,
                 false,
@@ -105,6 +117,7 @@ public record NeighborhoodPostView(
                 post.getTitle(),
                 post.getBody(),
                 post.getStatus().name(),
+                post.isDeclaredCommercial(),
                 lostFoundStateOf(post),
                 reactionsCount,
                 reactedByMe,
@@ -124,6 +137,12 @@ public record NeighborhoodPostView(
                                 String category, String title, String body, String status,
                                 Instant createdAt, Instant updatedAt) {
         this(id, authorId, locationId, category, title, body, status,
-                null, 0L, false, List.of(), createdAt, updatedAt);
+                // ADR-0011: the compatibility echo's declaration — a post
+                // this constructor echoes carries no declared fact (the
+                // write paths' own zero-false stance).
+                false,
+                // JT-20: the echo carries no lost-and-found state either.
+                null,
+                0L, false, List.of(), createdAt, updatedAt);
     }
 }

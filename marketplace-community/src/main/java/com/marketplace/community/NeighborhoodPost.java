@@ -79,6 +79,16 @@ public class NeighborhoodPost extends BaseEntity {
     private PostStatus status;
 
     /**
+     * ADR-0011 (D-15 — DSA Art. 26(2)): the author's own declaration that
+     * the post is or contains commercial communications. Set ONLY by the
+     * publish factory from the author's request — no other write exists
+     * (the moderation layer flips {@code status}, never this). The stored
+     * fact is audited (V208) and rides every read through the view.
+     */
+    @Column(name = "declared_commercial", nullable = false)
+    private boolean declaredCommercial;
+
+    /**
      * The lost-and-found lifecycle state (JT-20) — present ONLY when
      * {@code category} is {@code LOST_FOUND} (null otherwise, the V171
      * column's own documented shape).
@@ -108,18 +118,24 @@ public class NeighborhoodPost extends BaseEntity {
      */
     public static NeighborhoodPost post(UUID authorId, UUID locationId,
                                         PostCategory category, String title, String body,
-                                        Clock clock) {
+                                        boolean declaredCommercial, Clock clock) {
         NeighborhoodPost post = new NeighborhoodPost(UUID.randomUUID(), authorId, locationId);
         post.category = category;
         post.title = title;
         post.body = body;
         post.status = PostStatus.VISIBLE;
+        post.declaredCommercial = declaredCommercial;
         // JT-20: the lost-and-found lifecycle starts the moment the
         // report is published — ACTIVE only for LOST_FOUND, NULL for
         // every other category (the V171 column's own documented shape).
         post.lostFoundState =
                 category == PostCategory.LOST_FOUND ? LostFoundState.ACTIVE : null;
         return post;
+    }
+
+    /** The view's read accessor (ADR-0011) — the declaration the reads carry. */
+    public boolean isDeclaredCommercial() {
+        return declaredCommercial;
     }
 
     /**

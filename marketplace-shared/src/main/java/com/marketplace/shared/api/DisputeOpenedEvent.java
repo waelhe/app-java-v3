@@ -3,28 +3,18 @@ package com.marketplace.shared.api;
 import java.util.UUID;
 
 /**
- * B-06 (compliance plan 0.7 — Modulith reference/events.html): a dispute
- * entered the pipeline. Published by {@code DisputeService#open} on the
- * module's exposed {@code disputes} NamedInterface — the event vocabulary
- * the notifications/audit consumers can subscribe to (the additive-only
- * registration: a NEW event, never a rename/move of an existing one —
- * pending the contracts ledger the foundation branch will carry).
+ * A dispute entered the pipeline (B-06 introduced it; ADR-0009 moved it to
+ * {@code shared/api} — the parallel contracts ledger's own rule: "at the
+ * first cross-boundary consumer the record moves to shared/api, by
+ * documented decision not improvisation"). The first cross-boundary
+ * consumer is the lending module's freeze listener: a dispute opened on a
+ * LOAN freezes the loan's ACTIVE edges through {@code Loan.markDisputed()}.
  *
- * <p>The payload is the house's lean event shape (business ids only —
- * {@code BookingCreatedEvent}/{@code ListingLeadCreatedEvent} pattern):
- * the dispute row, the disputed booking, and who opened it.
- *
- * <p><b>Relocated to shared-api per the events-through-Modulith rule</b>
- * (the contracts ledger §1.1 own ruling for this record: "عند أول مستهلك
- * عبر الحدود: ينتقل السجل إلى shared/api" — the first cross-boundary
- * consumer arriving is this commit's notifications listener, so the
- * module-local record moves here, the {@code MessageReceivedEvent} CR-4
- * flow verbatim: package declaration only, byte-equivalent payload, no
- * pom change anywhere).</p>
- *
- * @param disputeId the dispute's id
- * @param bookingId the disputed booking's id
- * @param openedBy  the disputing party's user id
+ * <p>The payload carries the subject kind plus the subject's id (exactly
+ * one of {@code bookingId}/{@code loanId} is non-null — the V203 pairing
+ * constraint is the row-level twin of this invariant) and who opened it —
+ * the house's lean event shape (business ids only).
  */
-public record DisputeOpenedEvent(UUID disputeId, UUID bookingId, UUID openedBy) {
+public record DisputeOpenedEvent(UUID disputeId, DisputeSubject subjectType,
+                                 UUID bookingId, UUID loanId, UUID openedBy) {
 }

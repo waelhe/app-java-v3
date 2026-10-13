@@ -164,6 +164,33 @@ public enum NotificationType {
     MESSAGE_RECEIVED,
     MEMBERSHIP_VERIFIED,
     REPORT_RESOLVED,
+    /** Stage 8 (ADR-0004): the lending workflow's decision gates. */
+    LOAN_REQUESTED,
+    LOAN_APPROVED,
+    LOAN_CANCELLED,
+    /**
+     * ADR-0009 (plan D-09 closure — the dispute cycle): the loan's freeze
+     * and release facts. LOAN_DISPUTED reaches BOTH parties (the freeze),
+     * LOAN_DISPUTE_RESOLVED reaches BOTH parties (the resume — a
+     * REFUND_CONSUMER resolution terminates the loan instead, so the
+     * existing LOAN_CANCELLED carries that outcome), and LOAN_CLOSED is
+     * the settlement's terminal receipt for BOTH parties (including the
+     * computed late-fee adjustment, ADR-0009). The V206 CHECK widening
+     * also closes the measured stage-8 gap: the three LOAN_* decision-gate
+     * types were Java-expressible since ADR-0004 but never joined the
+     * DB-side membership guard (the exact defect class V110's header
+     * documents — NotificationType stays the single source of truth for
+     * the Java side, the constraint for the SQL side, the D-N7 discipline).
+     */
+    LOAN_DISPUTED,
+    LOAN_DISPUTE_RESOLVED,
+    LOAN_CLOSED,
+    /**
+     * #540 (the discovery wave's urgent path): the delivery-dedup ledger
+     * gates URGENT_ALERT to once-per-source-event, and the dispute cycle's
+     * opened/resolved facts join the union — the V180 CHECK widening is
+     * the DB-side membership guard for these three.
+     */
     URGENT_ALERT,
     DISPUTE_OPENED,
     DISPUTE_RESOLVED

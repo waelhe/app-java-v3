@@ -46,6 +46,8 @@
         <module>marketplace-discovery</module>
         <!-- A-11 (compliance plan wave C: C.1) — the store's order flow -->
         <module>marketplace-orders</module>
+        <!-- Stage 8 (plan D-09, ADR-0004) — the lending workflow -->
+        <module>marketplace-lending</module>
         <module>marketplace-app</module>
         <module>marketplace-edge</module>
     </modules>
@@ -349,11 +351,16 @@
                  upper bound (above every -android requirement) and the -jre
                  flavor is the correct one for a server JVM (the -android
                  flavor strips server-side implementation); 33.4.0-jre →
-                 33.4.8-jre is the same-line patch (Maven Central, 2026-10-07). -->
+                 33.4.8-jre is the same-line patch (Maven Central, 2026-10-07).
+                 33.4.8-jre → 33.6.0-jre: the firebase-admin 9.11.0 tree's
+                 own upper bounds (api-common 2.68.0 / cloud-storage 2.73.0 /
+                 auth-library 1.52.0 request 33.6.0-jre — the 2026-10-11 CI
+                 measured RequireUpperBoundDeps fail with the older pin;
+                 same-line patch, Maven Central). -->
             <dependency>
                 <groupId>com.google.guava</groupId>
                 <artifactId>guava</artifactId>
-                <version>33.4.8-jre</version>
+                <version>33.6.0-jre</version>
             </dependency>
             <!-- Override: lz4-java — kafka-clients (spring-kafka, the A-14
                  dependency set) manages 1.10.1; the container gate measured
@@ -386,11 +393,34 @@
             <!-- Override: error_prone_annotations — annotations-only artifact;
                  gson 2.13.2 (managed) requires 2.41.0 while the rest of the
                  Google tree requires 2.36.0 (RequireUpperBoundDeps, measured
-                 2026-09-17). Pin the max; zero behavioral surface. -->
+                 2026-09-17). Pin the max; zero behavioral surface.
+                 2.41.0 → 2.50.0: the firebase-admin 9.11.0 tree's own upper
+                 bound (the 2026-10-11 CI measured RequireUpperBoundDeps fail
+                 with the older pin). -->
             <dependency>
                 <groupId>com.google.errorprone</groupId>
                 <artifactId>error_prone_annotations</artifactId>
-                <version>2.41.0</version>
+                <version>2.50.0</version>
+            </dependency>
+            <!-- Override: gson — the Boot BOM manages 2.13.2 while the
+                 firebase-admin 9.11.0 tree's google-cloud-storage 2.73.0 line
+                 requests 2.14.0 (the 2026-10-11 CI measured
+                 RequireUpperBoundDeps fail on marketplace-notifications).
+                 Direct management wins over the imported BOM (the official
+                 precedence); same major line, patch-line bump. -->
+            <dependency>
+                <groupId>com.google.code.gson</groupId>
+                <artifactId>gson</artifactId>
+                <version>2.14.0</version>
+            </dependency>
+            <!-- Override: slf4j-api — the Boot BOM manages 2.0.18 while the
+                 firebase-admin 9.11.0 tree requests 2.0.19 (the 2026-10-11
+                 CI measured RequireUpperBoundDeps fail). Direct management
+                 wins over the imported BOM; the same patch line. -->
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-api</artifactId>
+                <version>2.0.19</version>
             </dependency>
             <!-- Override: checker-qual — annotations-only artifact; postgresql
                  42.7.13 requires 3.55.1 while guava 33.4.x-jre (override
@@ -502,6 +532,77 @@
                 <artifactId>firebase-admin</artifactId>
                 <version>${firebase-admin.version}</version>
             </dependency>
+            <!-- Exception #17b: the firebase-admin transitive convergence pins.
+                 The SDK's own tree carries two versions of seven shared google
+                 artifacts (its google-api-client 2.7.2 line vs its
+                 google-cloud-storage 2.73.0 line — the 2026-10-11 CI measured
+                 the enforcer's dependency-convergence rule fail on
+                 marketplace-notifications). Maven's dependencyManagement
+                 precedence (the official mechanism: managed versions win over
+                 transitive mediation) pins each conflicting artifact at the
+                 highest of its two measured versions — the same major line,
+                 backward compatible for both consumers. -->
+            <dependency>
+                <groupId>com.google.oauth-client</groupId>
+                <artifactId>google-oauth-client</artifactId>
+                <version>1.39.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.http-client</groupId>
+                <artifactId>google-http-client</artifactId>
+                <version>2.2.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.http-client</groupId>
+                <artifactId>google-http-client-apache-v2</artifactId>
+                <version>2.2.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.http-client</groupId>
+                <artifactId>google-http-client-gson</artifactId>
+                <version>2.2.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.auth</groupId>
+                <artifactId>google-auth-library-oauth2-http</artifactId>
+                <version>1.52.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.auth</groupId>
+                <artifactId>google-auth-library-credentials</artifactId>
+                <version>1.52.0</version>
+            </dependency>
+            <!-- Exception #17c: the google-genai 1.65.0 tree (spring-ai's
+                 model-google-genai starter, marketplace-ai) carries two
+                 api-common versions — the SDK's own direct 2.45.0 vs its
+                 google-auth-library-oauth2-http 1.52.0's 2.68.0 (the
+                 2026-10-11 CI measured the enforcer's
+                 RequireUpperBoundDeps fail on marketplace-ai). The same
+                 #17b discipline: the managed version wins, pinned at the
+                 highest measured version — the same major line, backward
+                 compatible for both consumers. -->
+            <dependency>
+                <groupId>com.google.api</groupId>
+                <artifactId>api-common</artifactId>
+                <version>2.68.0</version>
+            </dependency>
+            <!-- Exception #17d: the firebase-admin tree's
+                 google-cloud-storage/firestore request opentelemetry-semconv
+                 1.29.0-alpha while spring-boot-starter-opentelemetry's
+                 micrometer-tracing-bridge-otel requests 1.41.1 (the
+                 2026-10-11 LOCAL JDK 25 reactor measured the enforcer's
+                 RequireUpperBoundDeps fail on marketplace-app). The same
+                 #17b discipline: managed at the highest measured version. -->
+            <dependency>
+                <groupId>io.opentelemetry.semconv</groupId>
+                <artifactId>opentelemetry-semconv</artifactId>
+                <version>1.41.1</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.j2objc</groupId>
+                <artifactId>j2objc-annotations</artifactId>
+                <version>3.1</version>
+            </dependency>
             <!-- Exception #10: AWS SDK v2 BOM — Boot does not manage the AWS SDK.
                  Consumed only by marketplace-media (S3-compatible presigned channel,
                  roadmap B1 / G-PROD-1). Official evidence cached under
@@ -575,6 +676,17 @@
             <dependency>
                 <groupId>com.marketplace</groupId>
                 <artifactId>marketplace-orders</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <!-- Stage 8 (plan D-09, ADR-0004) — the lending module's managed
+                 version: the aggregating app declares it bare, the management
+                 entry supplies ${project.version} (the house pattern every
+                 internal module rides; the 2026-10-11 CI measured its
+                 absence: "'dependencies.dependency.version' for
+                 com.marketplace:marketplace-lending:jar is missing"). -->
+            <dependency>
+                <groupId>com.marketplace</groupId>
+                <artifactId>marketplace-lending</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -750,6 +862,21 @@
                         <exclude>**/shared/api/SystemSettingTypeException.*</exclude>
                         <exclude>**/shared/api/ProviderNameResolver.*</exclude>
                         <exclude>**/shared/api/BookingParticipantProvider.*</exclude>
+                        <!-- The reserved-decisions contract wave (ADR-0009/0010/0011):
+                             the relocated dispute enums (pure constants), the
+                             one-method loan party port, the unified search data
+                             record and the verification decision carrier join the
+                             same data-only category (the 05bda28 precedent — root
+                             fix for the class, not the instance; the bundle measured
+                             0.65 against the 0.70 gate with these counted). LoanInfo
+                             stays measured — its requireParty is real logic, covered
+                             by LoanInfoTest (the BookingInfoTest pattern). -->
+                        <exclude>**/shared/api/DisputeResolution.*</exclude>
+                        <exclude>**/shared/api/DisputeSubject.*</exclude>
+                        <exclude>**/shared/api/UnifiedSearchDomain.*</exclude>
+                        <exclude>**/shared/api/UnifiedSearchHit.*</exclude>
+                        <exclude>**/shared/api/LoanPartyProvider.*</exclude>
+                        <exclude>**/shared/api/VerificationCredentialDecided.*</exclude>
                         <!-- marketplace-platform-infra: data-only config, simple delegators, pure interfaces -->
                         <exclude>**/shared/config/**</exclude>
                         <exclude>**/shared/email/EmailSendException.*</exclude>

@@ -18,6 +18,7 @@ import java.util.regex.Pattern;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import com.marketplace.orders.OrdersService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -132,6 +133,19 @@ class PlatformJourneyIntegrationTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    @BeforeEach
+    void seedTheStoreDictionary() {
+        // The journey's category arrives as DATA (the plan's own wording —
+        // never a migration), seeded by the class itself: the register path
+        // validates the code against the live dictionary, and relying on
+        // another test class to have seeded it first was a run-order
+        // dependency the added waves unmasked (CI 2026-10-12: the 404
+        // "StoreCategory not found: journey-appliances" cluster).
+        jdbcTemplate.update("INSERT INTO store_categories (id, code, name_en, name_ar, position) "
+                + "VALUES (?, ?, ?, ?, ?) ON CONFLICT (code) DO NOTHING",
+                UUID.randomUUID(), "journey-appliances", "Home appliances", "أجهزة منزلية", 0);
+    }
+
     @Test
     void theSixFacetJourneyFromColdBootToTheNotifiedBuyer() throws Exception {
         // ---- FACET: ضلع عمر التطبيق (§7 moment 1) — the cold-boot readiness,
@@ -179,7 +193,7 @@ class PlatformJourneyIntegrationTest {
         // Arabic locale carries the real messages_ar.properties title.
         HttpResponse<String> arabicRejection = postJsonWithLanguage(
                 "/api/v1/me/cart/items", gate.accessToken(), """
-                        {"productId":"%s","quantity":0,"unitAmountMinor":1500,"currency":"SAR"}"""
+                        {"productId":"%s","quantity":0}"""
                         .formatted(UUID.randomUUID()),
                 "ar");
         assertThat(arabicRejection.statusCode())
@@ -190,20 +204,41 @@ class PlatformJourneyIntegrationTest {
 
         // ---- FACET: الخلفية (API + أحداث) — the cart fills over HTTP (the
         // union semantics on the duplicate add) and the placement freezes the
-        // snapshot with the derived total.
-        UUID product = UUID.randomUUID();
+        // snapshot with the derived total. Stage 6 (ADR-0002): the amounts
+        // are the store's own records now — the seller provisions the real
+        // products (with stock) before the buyer's adds land.
+        String sellerName = "it-platform-seller-" + UUID.randomUUID().toString().substring(0, 8);
+        registerUser(sellerName, "USER", "PROVIDER");
+        GateResult sellerGate = loginGate(sellerName, PASSWORD);
+        assertThat(getWithBearer("/api/v1/users/me", sellerGate.accessToken()).statusCode())
+                .as("the seller's /me provisioning sync").isEqualTo(200);
+        HttpResponse<String> productCreated = postJson("/api/v1/store/products", sellerGate.accessToken(), """
+                {"storeCategoryCode":"journey-appliances","title":"Platform journey product",
+                 "description":"Stage-6 stock","priceMinor":1500,"currency":"SAR"}""");
+        assertThat(productCreated.statusCode()).as("product register: %s", body(productCreated)).isEqualTo(201);
+        UUID product = UUID.fromString(objectMapper.readTree(productCreated.body()).path("id").asString());
+        HttpResponse<String> product2Created = postJson("/api/v1/store/products", sellerGate.accessToken(), """
+                {"storeCategoryCode":"journey-appliances","title":"Platform journey product 2",
+                 "description":"Stage-6 stock","priceMinor":9900,"currency":"SAR"}""");
+        assertThat(product2Created.statusCode()).as("product2 register: %s", body(product2Created)).isEqualTo(201);
+        UUID product2 = UUID.fromString(objectMapper.readTree(product2Created.body()).path("id").asString());
+        assertThat(putJson("/api/v1/store/products/" + product + "/inventory",
+                sellerGate.accessToken(), "{\"stockQuantity\":10}").statusCode()).isEqualTo(200);
+        assertThat(putJson("/api/v1/store/products/" + product2 + "/inventory",
+                sellerGate.accessToken(), "{\"stockQuantity\":10}").statusCode()).isEqualTo(200);
+
         postJson("/api/v1/me/cart/items", gate.accessToken(), """
-                {"productId":"%s","quantity":2,"unitAmountMinor":1500,"currency":"SAR"}"""
+                {"productId":"%s","quantity":2}"""
                 .formatted(product));
         HttpResponse<String> unionAdd = postJson("/api/v1/me/cart/items", gate.accessToken(), """
-                {"productId":"%s","quantity":3,"unitAmountMinor":1500,"currency":"SAR"}"""
+                {"productId":"%s","quantity":3}"""
                 .formatted(product));
         assertThat(unionAdd.statusCode()).as("duplicate add: %s", body(unionAdd)).isEqualTo(201);
         assertThat(objectMapper.readTree(unionAdd.body()).path("quantity").asInt())
                 .as("the duplicate add collapses into the quantity bump").isEqualTo(5);
         postJson("/api/v1/me/cart/items", gate.accessToken(), """
-                {"productId":"%s","quantity":1,"unitAmountMinor":9900,"currency":"SAR"}"""
-                .formatted(UUID.randomUUID()));
+                {"productId":"%s","quantity":1}"""
+                .formatted(product2));
 
         HttpResponse<String> placement = postJson("/api/v1/orders", gate.accessToken(), "");
         assertThat(placement.statusCode()).as("placement: %s", body(placement)).isEqualTo(201);
@@ -239,14 +274,14 @@ class PlatformJourneyIntegrationTest {
 
     // ---------- the OrderJourneyIntegrationTest idioms (the A-11 gate's own helpers) ----------
 
-    private void registerUser(String username) {
+    private void registerUser(String username, String... roles) {
         if (userDetailsManager.userExists(username)) {
             return;
         }
         userDetailsManager.createUser(org.springframework.security.core.userdetails.User
                 .withUsername(username)
                 .password("{noop}" + PASSWORD)
-                .roles("USER")
+                .roles(roles.length == 0 ? new String[]{"USER"} : roles)
                 .build());
     }
 
@@ -353,6 +388,16 @@ class PlatformJourneyIntegrationTest {
         }
         HttpRequest request = builder
                 .POST(HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8))
+                .build();
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> putJson(String path, String accessToken, String json) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl() + path))
+                .timeout(Duration.ofSeconds(30))
+                .header("Authorization", "Bearer " + accessToken)
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(json, java.nio.charset.StandardCharsets.UTF_8))
                 .build();
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
     }

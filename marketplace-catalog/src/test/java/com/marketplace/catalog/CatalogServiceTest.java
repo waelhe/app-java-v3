@@ -84,6 +84,10 @@ class CatalogServiceTest {
     @MockitoBean
     private com.marketplace.shared.api.ReviewStatsPort reviewStatsPort;
 
+    /** D-15's promotion-marking read — the service's tenth constructor dep. */
+    @MockitoBean
+    private AdCampaignRepository adCampaignRepository;
+
     private ProviderListing listing(ListingStatus status) {
         return Instancio.of(ProviderListing.class)
                 .set(field(ProviderListing::getStatus), status)

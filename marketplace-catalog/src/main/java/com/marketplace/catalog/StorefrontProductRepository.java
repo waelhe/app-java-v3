@@ -40,6 +40,7 @@ public interface StorefrontProductRepository extends JpaRepository<Product, UUID
                    max(p.updatedAt) as lastActivityAt
             from Product p
             where p.providerId = :sellerId
+              and p.status = com.marketplace.catalog.ProductStatus.ACTIVE
             group by p.providerId
             """)
     Optional<SellerSummaryView> summarizeSeller(@Param("sellerId") UUID sellerId);
@@ -56,6 +57,7 @@ public interface StorefrontProductRepository extends JpaRepository<Product, UUID
                    max(p.priceMinor) as maxPriceMinor
             from Product p
             where p.providerId = :sellerId
+              and p.status = com.marketplace.catalog.ProductStatus.ACTIVE
             group by p.currency
             """)
     List<SellerCurrencyBand> sellerCurrencyBands(@Param("sellerId") UUID sellerId);
@@ -69,7 +71,22 @@ public interface StorefrontProductRepository extends JpaRepository<Product, UUID
                    count(p) as productCount
             from Product p
             where p.providerId = :sellerId
+              and p.status = com.marketplace.catalog.ProductStatus.ACTIVE
             group by p.storeCategoryCode
             """)
     List<SellerCategoryCount> sellerCategoryCounts(@Param("sellerId") UUID sellerId);
+
+    /**
+     * Stage 6 (ADR-0002): the buyer's product detail read — ACTIVE only.
+     * The suspended/archived/deleted product answers the honest 404: the
+     * gate rule («المخفي/المعلق يختفي من الأسطح العامة») at the query
+     * level, and the purchase path's own gate (the cart's add, the
+     * placement's freshness check) re-checks the state at write time.
+     */
+    @Query("""
+            select p from Product p
+            where p.id = :productId
+              and p.status = com.marketplace.catalog.ProductStatus.ACTIVE
+            """)
+    Optional<Product> findActiveProduct(@Param("productId") UUID productId);
 }

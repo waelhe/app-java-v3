@@ -67,12 +67,15 @@ class NotificationPreferenceServiceTest {
 
     @Test
     void getMyPreferencesReturnsTheFullEffectiveMatrix() {
-        // Forty-eight rows today (16 types x 3 channels — L34 added LEAD_RECEIVED,
+        // Eighty-eight rows today (22 types x 4 channels — the channel
+        // enum itself grew to DB/EMAIL/WS/PUSH, and the type list is
         // L35 added SAVED_SEARCH_MATCH, L42 added POST_COMMENTED, L46 added
         // NEW_LISTING_IN_NEIGHBORHOOD, L45 added CONTENT_MODERATED, L47 added
         // POST_REACTED, W4 added FOLLOWED_PROVIDER_NEW_LISTING, A-03 added
         // BOOKING_CONFIRMED, A-11 added the three order types, B-08 added
-        // MESSAGE_RECEIVED, B-17 added MEMBERSHIP_VERIFIED and REPORT_RESOLVED)
+        // MESSAGE_RECEIVED, B-17 added MEMBERSHIP_VERIFIED and REPORT_RESOLVED,
+        // stage 8 (ADR-0004) added the three loan decision gates, and ADR-0009
+        // added the dispute pair plus LOAN_CLOSED)
         // in stable order, all enabled except the one stored override.
         NotificationPreference override = NotificationPreference.create(
                 USER_ID, NotificationType.PAYMENT_STATE, NotificationChannel.WS, false);
@@ -82,83 +85,121 @@ class NotificationPreferenceServiceTest {
         List<NotificationPreferenceView> matrix = createService(repository, mockUser())
                 .getMyPreferences(mock(Authentication.class));
 
-        // Waves D1-D4: URGENT_ALERT (the CMP-46 registered vocabulary) joins
-        // DISPUTE_OPENED/DISPUTE_RESOLVED (the disputes void closure) — 19 types
-        // x 3 channels = 57 effective preferences.
-        assertThat(matrix).hasSize(57);
+        // The union rides the full cross product: 25 types x 4 channels
+        // (DB/EMAIL/WS/PUSH) = 100 rows — CI's actual output measured the
+        // matrix as the enum cross product itself; the discovery wave's
+        // three point additions carry the PUSH row like every other type.
+        assertThat(matrix).hasSize(100);
         assertThat(matrix).containsExactly(
                 new NotificationPreferenceView(NotificationType.BOOKING_CREATED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.BOOKING_CREATED, NotificationChannel.EMAIL, true),
                 new NotificationPreferenceView(NotificationType.BOOKING_CREATED, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.BOOKING_CREATED, NotificationChannel.PUSH, true),
                 new NotificationPreferenceView(NotificationType.PAYMENT_STATE, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL, true),
                 new NotificationPreferenceView(NotificationType.PAYMENT_STATE, NotificationChannel.WS, false),
+                new NotificationPreferenceView(NotificationType.PAYMENT_STATE, NotificationChannel.PUSH, true),
                 new NotificationPreferenceView(NotificationType.LEAD_RECEIVED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.LEAD_RECEIVED, NotificationChannel.EMAIL, true),
                 new NotificationPreferenceView(NotificationType.LEAD_RECEIVED, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.LEAD_RECEIVED, NotificationChannel.PUSH, true),
                 new NotificationPreferenceView(NotificationType.SAVED_SEARCH_MATCH, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.SAVED_SEARCH_MATCH, NotificationChannel.EMAIL, true),
                 new NotificationPreferenceView(NotificationType.SAVED_SEARCH_MATCH, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.SAVED_SEARCH_MATCH, NotificationChannel.PUSH, true),
                 new NotificationPreferenceView(NotificationType.POST_COMMENTED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.POST_COMMENTED, NotificationChannel.EMAIL, true),
                 new NotificationPreferenceView(NotificationType.POST_COMMENTED, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.POST_COMMENTED, NotificationChannel.PUSH, true),
                 new NotificationPreferenceView(NotificationType.NEW_LISTING_IN_NEIGHBORHOOD, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.NEW_LISTING_IN_NEIGHBORHOOD, NotificationChannel.EMAIL, true),
                 new NotificationPreferenceView(NotificationType.NEW_LISTING_IN_NEIGHBORHOOD, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.NEW_LISTING_IN_NEIGHBORHOOD, NotificationChannel.PUSH, true),
                 new NotificationPreferenceView(NotificationType.CONTENT_MODERATED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.CONTENT_MODERATED, NotificationChannel.EMAIL, true),
                 new NotificationPreferenceView(NotificationType.CONTENT_MODERATED, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.CONTENT_MODERATED, NotificationChannel.PUSH, true),
                 new NotificationPreferenceView(NotificationType.POST_REACTED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.POST_REACTED, NotificationChannel.EMAIL, true),
                 new NotificationPreferenceView(NotificationType.POST_REACTED, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.POST_REACTED, NotificationChannel.PUSH, true),
                 new NotificationPreferenceView(NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, NotificationChannel.EMAIL, true),
                 new NotificationPreferenceView(NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, NotificationChannel.WS, true),
-                // A-03 (compliance plan 0.6): BOOKING_CONFIRMED joins as the tenth type —
-                // the same point addition, default on across all three channels.
+                new NotificationPreferenceView(NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, NotificationChannel.PUSH, true),
                 new NotificationPreferenceView(NotificationType.BOOKING_CONFIRMED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.BOOKING_CONFIRMED, NotificationChannel.EMAIL, true),
                 new NotificationPreferenceView(NotificationType.BOOKING_CONFIRMED, NotificationChannel.WS, true),
-                // A-11 (order machine legs): the three order types join the
-                // effective matrix — default on, the L22 day-one contract.
+                new NotificationPreferenceView(NotificationType.BOOKING_CONFIRMED, NotificationChannel.PUSH, true),
                 new NotificationPreferenceView(NotificationType.ORDER_CONFIRMED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.ORDER_CONFIRMED, NotificationChannel.EMAIL, true),
                 new NotificationPreferenceView(NotificationType.ORDER_CONFIRMED, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.ORDER_CONFIRMED, NotificationChannel.PUSH, true),
                 new NotificationPreferenceView(NotificationType.ORDER_FULFILLED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.ORDER_FULFILLED, NotificationChannel.EMAIL, true),
                 new NotificationPreferenceView(NotificationType.ORDER_FULFILLED, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.ORDER_FULFILLED, NotificationChannel.PUSH, true),
                 new NotificationPreferenceView(NotificationType.ORDER_CANCELLED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.ORDER_CANCELLED, NotificationChannel.EMAIL, true),
                 new NotificationPreferenceView(NotificationType.ORDER_CANCELLED, NotificationChannel.WS, true),
-                // B-08 (compliance plan 0.10, unioned from main): MESSAGE_RECEIVED
-                // joins as the fourteenth type — same point addition, default on.
+                new NotificationPreferenceView(NotificationType.ORDER_CANCELLED, NotificationChannel.PUSH, true),
                 new NotificationPreferenceView(NotificationType.MESSAGE_RECEIVED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.MESSAGE_RECEIVED, NotificationChannel.EMAIL, true),
                 new NotificationPreferenceView(NotificationType.MESSAGE_RECEIVED, NotificationChannel.WS, true),
-                // B-17 (compliance plan C.9, unioned from main): the trust pair —
-                // MEMBERSHIP_VERIFIED (fifteenth) and REPORT_RESOLVED (sixteenth),
-                // same point additions, default on.
+                new NotificationPreferenceView(NotificationType.MESSAGE_RECEIVED, NotificationChannel.PUSH, true),
                 new NotificationPreferenceView(NotificationType.MEMBERSHIP_VERIFIED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.MEMBERSHIP_VERIFIED, NotificationChannel.EMAIL, true),
                 new NotificationPreferenceView(NotificationType.MEMBERSHIP_VERIFIED, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.MEMBERSHIP_VERIFIED, NotificationChannel.PUSH, true),
                 new NotificationPreferenceView(NotificationType.REPORT_RESOLVED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.REPORT_RESOLVED, NotificationChannel.EMAIL, true),
                 new NotificationPreferenceView(NotificationType.REPORT_RESOLVED, NotificationChannel.WS, true),
-                // Waves D1-D4: the three point additions — URGENT_ALERT (the
-                // CMP-46/JT-10 delegated-alert vocabulary; the collective alert
-                // delivery rides the discovery surface, the notification type is
-                // registered structurally), and the disputes pair closing the
-                // events-without-consumers void (the opener's own facts) —
-                // same point additions, default on.
+                new NotificationPreferenceView(NotificationType.REPORT_RESOLVED, NotificationChannel.PUSH, true),
+                // Stage 8 (ADR-0004): the three loan decision gates — default on.
+                new NotificationPreferenceView(NotificationType.LOAN_REQUESTED, NotificationChannel.DB, true),
+                new NotificationPreferenceView(NotificationType.LOAN_REQUESTED, NotificationChannel.EMAIL, true),
+                new NotificationPreferenceView(NotificationType.LOAN_REQUESTED, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.LOAN_REQUESTED, NotificationChannel.PUSH, true),
+                new NotificationPreferenceView(NotificationType.LOAN_APPROVED, NotificationChannel.DB, true),
+                new NotificationPreferenceView(NotificationType.LOAN_APPROVED, NotificationChannel.EMAIL, true),
+                new NotificationPreferenceView(NotificationType.LOAN_APPROVED, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.LOAN_APPROVED, NotificationChannel.PUSH, true),
+                new NotificationPreferenceView(NotificationType.LOAN_CANCELLED, NotificationChannel.DB, true),
+                new NotificationPreferenceView(NotificationType.LOAN_CANCELLED, NotificationChannel.EMAIL, true),
+                new NotificationPreferenceView(NotificationType.LOAN_CANCELLED, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.LOAN_CANCELLED, NotificationChannel.PUSH, true),
+                // ADR-0009 (the dispute cycle): the freeze, the resume and
+                // the settlement receipt — all three reach BOTH parties, default on.
+                new NotificationPreferenceView(NotificationType.LOAN_DISPUTED, NotificationChannel.DB, true),
+                new NotificationPreferenceView(NotificationType.LOAN_DISPUTED, NotificationChannel.EMAIL, true),
+                new NotificationPreferenceView(NotificationType.LOAN_DISPUTED, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.LOAN_DISPUTED, NotificationChannel.PUSH, true),
+                new NotificationPreferenceView(NotificationType.LOAN_DISPUTE_RESOLVED, NotificationChannel.DB, true),
+                new NotificationPreferenceView(NotificationType.LOAN_DISPUTE_RESOLVED, NotificationChannel.EMAIL, true),
+                new NotificationPreferenceView(NotificationType.LOAN_DISPUTE_RESOLVED, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.LOAN_DISPUTE_RESOLVED, NotificationChannel.PUSH, true),
+                new NotificationPreferenceView(NotificationType.LOAN_CLOSED, NotificationChannel.DB, true),
+                new NotificationPreferenceView(NotificationType.LOAN_CLOSED, NotificationChannel.EMAIL, true),
+                new NotificationPreferenceView(NotificationType.LOAN_CLOSED, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.LOAN_CLOSED, NotificationChannel.PUSH, true),
+                // #540 (waves D1-D4): the three point additions — URGENT_ALERT
+                // (the CMP-46/JT-10 delegated-alert vocabulary) and the
+                // disputes pair closing the events-without-consumers void —
+                // default on, all four channels (the matrix is the full type
+                // x channel cross product; CI's actual output pinned the PUSH
+                // rows the earlier "no push" narrative had assumed away).
                 new NotificationPreferenceView(NotificationType.URGENT_ALERT, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.URGENT_ALERT, NotificationChannel.EMAIL, true),
                 new NotificationPreferenceView(NotificationType.URGENT_ALERT, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.URGENT_ALERT, NotificationChannel.PUSH, true),
                 new NotificationPreferenceView(NotificationType.DISPUTE_OPENED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.DISPUTE_OPENED, NotificationChannel.EMAIL, true),
                 new NotificationPreferenceView(NotificationType.DISPUTE_OPENED, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.DISPUTE_OPENED, NotificationChannel.PUSH, true),
                 new NotificationPreferenceView(NotificationType.DISPUTE_RESOLVED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.DISPUTE_RESOLVED, NotificationChannel.EMAIL, true),
-                new NotificationPreferenceView(NotificationType.DISPUTE_RESOLVED, NotificationChannel.WS, true));
+                new NotificationPreferenceView(NotificationType.DISPUTE_RESOLVED, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.DISPUTE_RESOLVED, NotificationChannel.PUSH, true));
     }
 
     @Test
@@ -182,13 +223,19 @@ class NotificationPreferenceServiceTest {
         assertThat(saved.getValue().getChannel()).isEqualTo(NotificationChannel.EMAIL);
         assertThat(saved.getValue().isEnabled()).isFalse();
         assertThat(matrix).extracting(NotificationPreferenceView::enabled)
-                .containsExactly(true, true, true, true, false, true, true, true, true,
-                        true, true, true, true, true, true, true, true, true, true, true, true,
-                        true, true, true, true, true, true,
-                        true, true, true,
-                        true, true, true, true, true, true, true, true, true,
-                        true, true, true, true, true, true, true, true, true,
-                        true, true, true, true, true, true, true, true, true); // + A-11: ORDER_CONFIRMED x3 + ORDER_FULFILLED x3 + ORDER_CANCELLED x3 + B-08: MESSAGE_RECEIVED x3 + B-17: MEMBERSHIP_VERIFIED x3 + REPORT_RESOLVED x3 + waves D1-D4: URGENT_ALERT x3 + DISPUTE_OPENED x3 + DISPUTE_RESOLVED x3, default on
+.containsExactly(                        true, true, true, true, true, false, true, true, true, true, true,
+                        true, true, true, true, true, true, true, true, true, true, true,
+                        true, true, true, true, true, true, true, true, true, true, true,
+                        true, true, true, true, true, true, true, true, true, true, true,
+                        true, true, true, true, true, true, true, true, true, true, true,
+                        true, true, true, true, true, true, true, true, true, true, true,
+                        true, true, true, true, true, true, true, true, true, true, true,
+                        true, true, true, true, true, true, true, true, true, true, true,
+                        true, true, true, true, true, true, true, true, true, true, true, true); // The
+                // full cross product: 25 types x 4 channels = 100 (stage-8's 88
+                // for the 22 four-channel types + the discovery trio's rows
+                // including PUSH), position 6 = the PAYMENT_STATE/EMAIL
+                // override, default on everywhere else.
     }
 
     @Test
@@ -284,12 +331,18 @@ class NotificationPreferenceServiceTest {
                 .as("the retry flips the winner's row to the requested value")
                 .isFalse();
         assertThat(matrix).extracting(NotificationPreferenceView::enabled)
-                .containsExactly(true, true, true, true, false, true, true, true, true,
-                        true, true, true, true, true, true, true, true, true, true, true, true,
-                        true, true, true, true, true, true,
-                        true, true, true,
-                        true, true, true, true, true, true, true, true, true,
-                        true, true, true, true, true, true, true, true, true,
-                        true, true, true, true, true, true, true, true, true); // + A-11: ORDER_CONFIRMED x3 + ORDER_FULFILLED x3 + ORDER_CANCELLED x3 + B-08: MESSAGE_RECEIVED x3 + B-17: MEMBERSHIP_VERIFIED x3 + REPORT_RESOLVED x3 + waves D1-D4: URGENT_ALERT x3 + DISPUTE_OPENED x3 + DISPUTE_RESOLVED x3, default on
+.containsExactly(                        true, true, true, true, true, false, true, true, true, true, true,
+                        true, true, true, true, true, true, true, true, true, true, true,
+                        true, true, true, true, true, true, true, true, true, true, true,
+                        true, true, true, true, true, true, true, true, true, true, true,
+                        true, true, true, true, true, true, true, true, true, true, true,
+                        true, true, true, true, true, true, true, true, true, true, true,
+                        true, true, true, true, true, true, true, true, true, true, true,
+                        true, true, true, true, true, true, true, true, true, true, true,
+                        true, true, true, true, true, true, true, true, true, true, true, true); // The
+                // full cross product: 25 types x 4 channels = 100 (stage-8's 88
+                // for the 22 four-channel types + the discovery trio's rows
+                // including PUSH), position 6 = the PAYMENT_STATE/EMAIL
+                // override, default on everywhere else.
     }
 }

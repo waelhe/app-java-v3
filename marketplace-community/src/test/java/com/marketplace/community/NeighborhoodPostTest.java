@@ -26,7 +26,7 @@ class NeighborhoodPostTest {
         UUID locationId = UUID.randomUUID();
 
         NeighborhoodPost post = NeighborhoodPost.post(authorId, locationId,
-                PostCategory.CLASSIFIED, "Bicycle for sale", "Good condition, rarely used.",
+                PostCategory.CLASSIFIED, "Bicycle for sale", "Good condition, rarely used.", false,
                 clock);
 
         assertThat(post.getId()).isNotNull();
@@ -35,7 +35,28 @@ class NeighborhoodPostTest {
         assertThat(post.getCategory()).isEqualTo(PostCategory.CLASSIFIED);
         assertThat(post.getTitle()).isEqualTo("Bicycle for sale");
         assertThat(post.getBody()).isEqualTo("Good condition, rarely used.");
+
         assertThat(post.getStatus()).isEqualTo(PostStatus.VISIBLE);
+        // ADR-0011 (DSA Art. 26(2)): the undeclared factory form reads false.
+        assertThat(post.isDeclaredCommercial()).isFalse();
+    }
+
+    @Test
+    void theCommercialDeclarationIsTheAuthorsOwnStoredFact() {
+        // ADR-0011 (D-15 — DSA Art. 26(2)): the declaration is set ONLY by
+        // the publish factory from the author's request — the moderation
+        // layer flips status, never this fact.
+        UUID authorId = UUID.randomUUID();
+        UUID locationId = UUID.randomUUID();
+
+        NeighborhoodPost declared = NeighborhoodPost.post(authorId, locationId,
+                PostCategory.CLASSIFIED, "Selling my bike", "Barely used, message me.",
+                true, clock);
+        assertThat(declared.isDeclaredCommercial()).isTrue();
+
+        NeighborhoodPost undeclared = NeighborhoodPost.post(authorId, locationId,
+                PostCategory.GENERAL, "Title", "Body", false, clock);
+        assertThat(undeclared.isDeclaredCommercial()).isFalse();
     }
 
     @Test
@@ -62,7 +83,7 @@ class NeighborhoodPostTest {
         NeighborhoodPost post = NeighborhoodPost.post(authorId, locationId,
                 PostCategory.RECOMMENDATION,
                 "Any trustworthy plumber around?",
-                "Looking for a reliable plumber for a kitchen leak.",
+                "Looking for a reliable plumber for a kitchen leak.", false,
                 clock);
 
         assertThat(post.getCategory()).isEqualTo(PostCategory.RECOMMENDATION);

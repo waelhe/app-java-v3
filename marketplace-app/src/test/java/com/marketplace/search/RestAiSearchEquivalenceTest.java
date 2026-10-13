@@ -199,7 +199,7 @@ class RestAiSearchEquivalenceTest {
 
     private ListingSummary listing(String title) {
         return new ListingSummary(UUID.randomUUID(), title, "SERVICES", BigDecimal.TEN,
-                "SAR", "مزود", 4.5, 12L);
+                "SAR", "مزود", 4.5, 12L, false);
     }
 
     private GeoLookupPort.GeoNode node(UUID id, String nameAr) {

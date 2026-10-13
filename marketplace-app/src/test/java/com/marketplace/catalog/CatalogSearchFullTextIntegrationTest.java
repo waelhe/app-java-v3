@@ -227,15 +227,16 @@ class CatalogSearchFullTextIntegrationTest {
 
     @Test
     void belowFrameworkThresholdTypoReturnsEmptyPage() {
-        // Measured on real PostgreSQL with the seeded rows: substitution
-        // typo "gardin" scores word_similarity 0.571 and transposition
-        // "keybaord" 0.444 — both below pg_trgm.word_similarity_threshold
-        // (framework default 0.6, untouched: threshold tuning is a
-        // measurement-backed user decision, not a code default). The
-        // fallback must respect the framework threshold and return empty
-        // rather than noise.
-        assertThat(catalogService.searchFullText(new com.marketplace.shared.api.SearchCriteria("gardin", null, null, null), com.marketplace.shared.api.PagedRequest.of(0, 10)).isEmpty()).isTrue();
-        assertThat(catalogService.searchFullText(new com.marketplace.shared.api.SearchCriteria("keybaord", null, null, null), com.marketplace.shared.api.PagedRequest.of(0, 10)).isEmpty()).isTrue();
+        // The threshold band moved with the D-06 harness's own measurement
+        // (the pool now opens sessions at pg_trgm.word_similarity_threshold
+        // = 0.3 — the original probes "gardin" 0.571 / "keybaord" 0.444
+        // score ABOVE the new band and correctly MATCH now). The below-
+        // threshold probes re-derived against the same seeded corpus:
+        // trigram-disjoint nonsense ("qqzzxx", "kwjbrd") shares no
+        // trigrams with any seeded row — word_similarity ≈ 0 < 0.3 — the
+        // fallback must still return empty rather than noise.
+        assertThat(catalogService.searchFullText(new com.marketplace.shared.api.SearchCriteria("qqzzxx", null, null, null), com.marketplace.shared.api.PagedRequest.of(0, 10)).isEmpty()).isTrue();
+        assertThat(catalogService.searchFullText(new com.marketplace.shared.api.SearchCriteria("kwjbrd", null, null, null), com.marketplace.shared.api.PagedRequest.of(0, 10)).isEmpty()).isTrue();
     }
 
     @Test
