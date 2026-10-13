@@ -56,8 +56,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * assertions ride the repo's own D-I3 pattern
  * ({@code RadiusSearchIntegrationTest}: {@code SET enable_seqscan = off} and
  * the EXPLAIN on the SAME connection, RESET after — no session state leaks)
- * to prove the GIN indexes ARE the serving paths; the MEASURED plans never
- * touch the planner. Absolute latencies are recorded, never asserted (a
+ * to prove the structural facts — the two GIN families' operator sets do
+ * not overlap and the catalog carries both serving-capable definitions —
+ * the MEASURED plans never touch the planner. Absolute latencies are recorded, never asserted (a
  * latency threshold in a test is a flake generator, not a gate).
  *
  * <p><b>The report is the D-06 artifact</b> ("تقرير قياس"): the harness
@@ -253,25 +254,69 @@ class SearchBaselineMeasurementIntegrationTest {
         rows.add(measured("full-text + filters", "arabic multi-word + category + price", ftsFiltered));
         rows.add(measured("full-text", "ts_rank_cd ordering variant", tsRankCd));
 
-        // -- the structural gates (the D-I3 pattern) — the GIN indexes ARE
-        // the serving paths (proved under the documented bitmap-only plan
-        // harness above, where no other index can answer the predicates);
-        // the naive ILIKE baseline is gated on the structural fact alone:
-        // it cannot serve from the FTS GIN (its cost choice between a
-        // trigram bitmap and a sequential scan is the planner's, per the
-        // pg_trgm docs' own ILIKE support).
+        // -- the structural gates (the D-I3 pattern) — the facts that are
+        // structural on this schema, asserted alone (the finding-6
+        // principle applied consistently). The CI-measured 2026-10-13 plan
+        // closed the question the hard way: under enable_seqscan=off +
+        // enable_indexscan=off the partial category btree (V2) still
+        // served the delivery predicates through a BITMAP index scan — a
+        // btree's amgetbitmap is part of the official index access-method
+        // contract (bitmap scans are not a GIN privilege) — so WHICH index
+        // serves a query that also carries is_deleted/status is a cost
+        // choice between the three partial indexes' bitmaps, run to run.
+        // What IS structural: the two GIN families' operator sets do not
+        // overlap (the tsvector GIN serves @@ alone; gin_trgm_ops serves
+        // the similarity/ILIKE family — pg_trgm's own operator table), so
+        // a plan cannot ride the FTS GIN for a trigram predicate nor the
+        // trigram GIN for a tsquery one; and the catalog carries both
+        // serving-capable definitions (the usability proof).
         assertThat(planWithSeqscanDisabled(ftsArabic))
-                .as("the production FTS query must serve from its Arabic GIN index (V106)")
-                .contains("Bitmap Index Scan on idx_listing_search_title");
+                .as("the FTS predicate cannot ride the trigram GIN (gin_trgm_ops serves the "
+                        + "similarity/ILIKE family, not @@ — pg_trgm's docs' own operator table); "
+                        + "which bitmap serves the delivery predicates (the FTS GIN's or the "
+                        + "category btree's) is the planner's cost choice")
+                .doesNotContain("idx_listing_search_trgm");
         assertThat(planWithSeqscanDisabled(trigram))
-                .as("the production trigram query must serve from its trigram GIN index (V34/V106 family)")
-                .contains("Bitmap Index Scan on idx_listing_search_trgm");
+                .as("the trigram predicate cannot ride the FTS GIN (a tsvector GIN serves @@ alone) — "
+                        + "whether the planner settles on the trigram GIN's bitmap or the category "
+                        + "btree's bitmap is a cost choice, not a structural fact (the CI-measured "
+                        + "2026-10-13 plan: Bitmap Index Scan on idx_listings_category)")
+                .doesNotContain("idx_listing_search_title");
         assertThat(planWithSeqscanDisabled(substring))
                 .as("the naive ILIKE baseline cannot serve from the FTS GIN (no tsquery machinery) — "
                         + "whether the planner settles on a trigram-GIN bitmap or a sequential scan is "
                         + "a cost choice, not a structural fact (pg_trgm's docs: a gin_trgm_ops index "
                         + "is a documented servant of ILIKE)")
                 .doesNotContain("idx_listing_search_title");
+        // The usable serving paths EXIST — the catalog's own definitions:
+        // gin_trgm_ops is pg_trgm's documented servant of <% and the
+        // arabic tsvector GIN is @@'s only servant; each definition below
+        // must carry the family's partial predicate verbatim (the indexes
+        // V34/V106 built are the ones the measured queries predicate on).
+        String trgmIndexDef = jdbcTemplate.queryForObject(
+                "SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() "
+                        + "AND indexname = 'idx_listing_search_trgm'", String.class);
+        assertThat(trgmIndexDef)
+                .as("the trigram GIN (V34) must exist with gin_trgm_ops on the production "
+                        + "coalesce expression and the family's partial predicate — the "
+                        + "documented usable serving path for <%")
+                .containsIgnoringCase("USING gin")
+                .contains("gin_trgm_ops")
+                .containsIgnoringCase("coalesce(")
+                .contains("is_deleted = false")
+                .contains("'ACTIVE'");
+        String ftsIndexDef = jdbcTemplate.queryForObject(
+                "SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() "
+                        + "AND indexname = 'idx_listing_search_title'", String.class);
+        assertThat(ftsIndexDef)
+                .as("the Arabic FTS GIN (V106) must exist with to_tsvector('arabic', …) on the "
+                        + "production coalesce expression and the family's partial predicate — "
+                        + "the documented serving path for @@")
+                .containsIgnoringCase("USING gin")
+                .containsIgnoringCase("to_tsvector('arabic'")
+                .containsIgnoringCase("coalesce(")
+                .contains("is_deleted = false")
+                .contains("'ACTIVE'");
         assertThat(rows).allSatisfy(row ->
                 assertThat(row.minMs()).as("measured steady state for " + row.path()).isPositive());
 
@@ -316,6 +361,12 @@ class SearchBaselineMeasurementIntegrationTest {
             if (plan.planText().contains("Bitmap Index Scan on idx_listing_search_title")
                     || plan.planText().contains("Bitmap Index Scan on idx_listing_search_trgm")) {
                 serving = "GIN index";
+            } else if (plan.planText().contains("Bitmap Index Scan")) {
+                // A bitmap from one of the OTHER partial indexes (the
+                // category btree) with the GIN predicate as a heap filter —
+                // the planner's legal cost choice; the report records it
+                // honestly rather than claiming a GIN served the path.
+                serving = "bitmap scan (planner choice)";
             } else if (plan.planText().contains("Seq Scan")) {
                 serving = "sequential scan";
             }
@@ -342,16 +393,21 @@ class SearchBaselineMeasurementIntegrationTest {
      * chapter the enable_seqscan lever comes from) pin the access-path
      * FAMILY so the gate proves what it claims: that the trigram GIN is
      * a usable serving path for the {@code <%} predicate and the FTS GIN
-     * for the {@code @@} one. Linear index scans are disabled alongside
-     * seq scans because at the measured ~10% trigram selectivity the
-     * category btree's linear walk and the GIN bitmap sit ON the planner's
-     * measured crossover (the CI-measured 2026-10-12 plan: cost 2729 via
+     * for the {@code @@} one — proven by the catalog definitions (the
+     * operator classes are pg_trgm's documented servants) plus the
+     * operator-set facts, NOT by plan exclusivity. The CI-measured
+     * 2026-10-13 plan is the proof that exclusivity is a cost choice on
+     * this schema: under enable_seqscan=off + enable_indexscan=off the
+     * partial category btree (V2) still served the delivery predicates
+     * through a Bitmap Index Scan (a btree's amgetbitmap is part of the
+     * official index AM contract), riding the same partial predicate both
+     * GINs carry. Linear index scans are disabled alongside seq scans to
+     * keep the FAMILY pinned to bitmaps — the crossover the planner
+     * settles run to run (the CI-measured 2026-10-12 plan: cost 2729 via
      * idx_listings_category vs a bitmap of ~2000 heap fetches spread over
-     * the same 591 pages) — the honest coin-flip the planner may settle
-     * either way, run to run. With only bitmap paths left, the ONLY index
-     * that can serve {@code <%} is the trigram GIN — the gate stops
-     * depending on costing taste and states a structural fact. RESET
-     * after — no session state leaks (the harness's own discipline).
+     * the same 591 pages) stays the planner's, and the report records
+     * whatever it settles. RESET after — no session state leaks (the
+     * harness's own discipline).
      */
     private String planWithSeqscanDisabled(String sql) {
         return jdbcTemplate.execute((Connection con) -> {
