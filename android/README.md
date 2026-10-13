@@ -2,6 +2,10 @@
 
 This is the native Android client for the local community platform. The product brand has not been selected, so the app uses a neutral display name. The client is built with Kotlin, Jetpack Compose, Retrofit/Moshi, Android Credential Manager, and AppAuth, outside the root Maven reactor. Native passkey support depends on the companion backend change in PR #555; this Android client PR does not itself alter Spring modules or the database.
 
+## Client coverage — Master Control Matrix
+
+Every client journey carries a measured status in [`docs/master-control-matrix.md`](../docs/master-control-matrix.md) (the single journey-state control record, waves M0-M8, gates G1-G6). At base `38546731` the client wires 39 Retrofit endpoints (identity/passkeys, search, geo, neighborhood membership, posts/media/comments/reactions, neighborhood market, notification read state, events/groups/polls) and holds **zero contracts** for catalog browsing, cart, checkout/payment, booking, lending, disputes, messaging, reviews, knowledge, news, urgent alerts, reports, and FCM token registration — each recorded there as `CLIENT-GAP`/`ANDROID-PARTIAL` with the owning server evidence. No journey is described as complete without an `E2E-PASS` evidence log (matrix §8).
+
 ## Current app journeys
 
 - Four primary destinations: **الحي / السوق / العقار / دليل الأعمال**.
