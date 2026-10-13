@@ -99,6 +99,46 @@ class VerificationAttestationServiceTest {
         verify(repository, never()).save(any(VerificationAttestation.class));
     }
 
+    @Test
+    void request_whileTheSamePairIsAlreadyPendingAnswers409_oneReviewAtATime() {
+        // The one-review-at-a-time gate (the CodeRabbit #543 round): the
+        // standing PENDING request of the same pair refuses the
+        // duplicate — the reviewer's queue never carries a stale twin
+        // the grant path would have to 409 anyway (and a double-submit
+        // never stacks work for the reviewer to reject by hand).
+        UUID subjectId = UUID.randomUUID();
+        when(userRepository.findById(subjectId)).thenReturn(Optional.of(user("member@example.com")));
+        when(repository.findBySubjectUserIdAndTrustTypeAndState(
+                subjectId, TrustType.VERIFIED_SOURCE, VerificationAttestationState.PENDING))
+                .thenReturn(Optional.of(VerificationAttestation.request(
+                        UUID.randomUUID(), subjectId, TrustType.VERIFIED_SOURCE, "ev")));
+
+        ConflictException ex = assertThrows(ConflictException.class,
+                () -> service.request(subjectId, TrustType.VERIFIED_SOURCE, "ev2", "member"));
+        assertThat(ex.getMessage()).contains("VERIFIED_SOURCE").contains("under review");
+        verify(repository, never()).save(any(VerificationAttestation.class));
+    }
+
+    @Test
+    void request_forAnotherPairStaysLegal_whileOneIsPending() {
+        // The gate is per (subject, type) — another type's request rides
+        // through untouched (the four §6.5 facts stay separate).
+        UUID subjectId = UUID.randomUUID();
+        when(userRepository.findById(subjectId)).thenReturn(Optional.of(user("member@example.com")));
+        when(repository.findBySubjectUserIdAndTrustTypeAndState(
+                subjectId, TrustType.VERIFIED_SOURCE, VerificationAttestationState.PENDING))
+                .thenReturn(Optional.of(VerificationAttestation.request(
+                        UUID.randomUUID(), subjectId, TrustType.VERIFIED_SOURCE, "ev")));
+        when(repository.save(any(VerificationAttestation.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        VerificationAttestationView view = service.request(
+                subjectId, TrustType.COMMUNITY_ENDORSEMENT, "endorsement:ref", "member");
+
+        assertEquals("PENDING", view.state());
+        assertEquals("COMMUNITY_ENDORSEMENT", view.trustType());
+    }
+
     // ------------------------------------------------------------------
     // review — the reviewer's decision
     // ------------------------------------------------------------------

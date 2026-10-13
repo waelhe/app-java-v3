@@ -46,9 +46,11 @@
 -- uq_verification_attestations_one_active — ONE GRANTED attestation per
 -- (subject, trust_type). A REVOKED or REJECTED row frees the pair: a new
 -- request after a rejection is legal (the fresh evidence row stays as
--- the pair's own history). PENDING rows are NOT unique-constrained —
--- several pending requests may queue; the service's review transition
--- targets one.
+-- the pair's own history). PENDING rows are NOT unique-constrained at
+-- the index level (the concurrent double-submit race may still queue a
+-- duplicate); the SERVICE layer refuses a second PENDING request for
+-- the same (subject, type) pair with the honest 409 — one review at a
+-- time, the queue stays clean (the CodeRabbit #543 round).
 --
 -- Indexes (one per measured read, the V93 shape):
 -- (a) uq_verification_attestations_one_active — the partial unique above.

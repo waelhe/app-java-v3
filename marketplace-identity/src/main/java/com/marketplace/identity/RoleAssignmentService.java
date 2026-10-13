@@ -138,13 +138,33 @@ public class RoleAssignmentService {
      * Revoke the account's ACTIVE assignment of one role — the one
      * transition the active state accepts, refusing an already-revoked
      * (or absent) pair with the honest 404/409 (see the class javadoc
-     * for the two fail-open carriers that die with this command).
+     * for the two fail-open carriers that die with this command). The
+     * account's PRIMARY role ({@code users.role}) refuses the revoke
+     * outright — its assignment is the choreography's own row, and the
+     * primary role's honest change path is
+     * {@code UserService.updateUserRole} (the two-store command);
+     * only granted-beyond-primary assignments ride this surface.
      */
     @Observed(name = "identity.role.revoke")
     @PreAuthorize("hasRole('ADMIN')")
     public RoleAssignmentView revoke(UUID userId, UserRole role, String actor) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+
+        // The primary-role guard (the CodeRabbit #543 round): users.role's
+        // own assignment is the S2/N4/N6 choreography's row — revoking it
+        // would leave users.role and its auth_authorities projection
+        // untouched, so the authority would SURVIVE the revoke through the
+        // login-side leg of the V188 union while the assignment read and
+        // the effective authorities disagree (and the refresh/session
+        // kills would have fired for nothing). The refusal precedes every
+        // write; the honest path stays the two-store role update.
+        if (user.getRole() == role) {
+            throw new ConflictException(
+                    "The " + role.name() + " role is this account's primary role — "
+                            + "change it through the account role update, not a revoke");
+        }
+
         RoleAssignment active = repository.findByUserIdAndRoleAndRevokedAtIsNull(userId, role)
                 .orElseThrow(() -> new ConflictException(
                         "No active " + role.name() + " role assignment to revoke for this account"));

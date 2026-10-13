@@ -28,13 +28,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * Phase 1 (the unified plan §10 — D-03 multi-role) — the V187 backfill's
  * own acceptance proof, run against the REAL migration chain on an
- * isolated PostgreSQL: the backfill must give every LIVE account exactly
- * ONE active assignment mirroring its OWN {@code users.role} —
- * preserving the account's access without expanding it («الحسابات
- * القائمة تحفظ وصولها بلا توسيع صلاحيات», the Phase-1 gate) — and
- * nothing for the withdrawn (soft-deleted) memberships. The gateway's
- * other legs — the effective authorities view and the closed
- * vocabularies on the booted chain — are the {@code
+ * isolated PostgreSQL: the backfill must give every LIVE account
+ * exactly the login-side role authorities it ALREADY HOLDS — one active
+ * assignment per auth_authorities row of the closed three-role
+ * vocabulary, preserving the account's access without expanding it
+ * («الحسابات القائمة تحفظ وصولها بلا توسيع صلاحيات», the Phase-1 gate)
+ * — and nothing for the withdrawn (soft-deleted) memberships. The
+ * derivation reads auth_authorities, never users.role (the CodeRabbit
+ * #543 round): a DRIFTED pair (users.role ADMIN, authority
+ * ROLE_CONSUMER) is backfilled with the login-side truth only — the
+ * migration can never mint an authority the account's own login rows
+ * do not carry. The gateway's other legs — the effective authorities
+ * view and the closed vocabularies on the booted chain — are the {@code
  * UserRoleMigrationIntegrationTest}'s subject; this class proves the
  * WRITE the migration itself performs, so the backfill is exercised
  * exactly as production will experience it: the migration's own
@@ -95,6 +100,22 @@ class UserRoleMigrationBackfillIT {
     }
 
     /**
+     * The login-side store the backfill derives from: the auth_users row
+     * and its authority projection (the S2/N4/N6 choreography's own
+     * shape — one {@code ROLE_<role>} row per granted role).
+     */
+    private void insertAuthUser(String subject, String... authorities) {
+        jdbcTemplate.update(
+                "insert into auth_users (username, password, enabled) values (?, '{noop}backfill-it', true)",
+                subject);
+        for (String authority : authorities) {
+            jdbcTemplate.update(
+                    "insert into auth_authorities (username, authority) values (?, ?)",
+                    subject, authority);
+        }
+    }
+
+    /**
      * V187's backfill statement, VERBATIM from the migration file on the
      * classpath — the exact INSERT..SELECT production runs, not a
      * re-implementation. Line comments are stripped; the statement is
@@ -120,62 +141,109 @@ class UserRoleMigrationBackfillIT {
     }
 
     @Test
-    void backfillMirrorsEveryLiveAccountsOwnRole_withoutAnyExpansion() {
+    void backfillMirrorsEveryLiveAccountsLoginAuthorities_withoutAnyExpansion() {
         UUID consumerId = UUID.randomUUID();
         UUID providerId = UUID.randomUUID();
         UUID adminId = UUID.randomUUID();
+        UUID driftId = UUID.randomUUID();
+        UUID multiId = UUID.randomUUID();
         UUID deletedId = UUID.randomUUID();
         // The pre-wave population: live accounts carrying their own
-        // users.role and NO assignment rows — exactly the state a live
-        // production database presents to V187 (the booted chain's own
-        // backfill pass found an empty users table: seedContent=false).
+        // login-side authority projection and NO assignment rows —
+        // exactly the state a live production database presents to V187
+        // (the booted chain's own backfill pass found an empty users
+        // table: seedContent=false). Three maintained pairs
+        // (auth == users.role projection), one DRIFTED pair (users.role
+        // ADMIN, authority ROLE_CONSUMER — the CodeRabbit #543 case the
+        // derivation must survive), one multi-authority account, and
+        // one withdrawn membership.
         insertUser(consumerId, "backfill-consumer@example.com", "CONSUMER", OLD, false);
+        insertAuthUser("backfill-consumer@example.com", "ROLE_CONSUMER");
         insertUser(providerId, "backfill-provider@example.com", "PROVIDER", OLD.plusSeconds(60), false);
+        insertAuthUser("backfill-provider@example.com", "ROLE_PROVIDER");
         insertUser(adminId, "backfill-admin@example.com", "ADMIN", OLD.plusSeconds(120), false);
+        insertAuthUser("backfill-admin@example.com", "ROLE_ADMIN");
+        insertUser(driftId, "backfill-drift@example.com", "ADMIN", OLD.plusSeconds(150), false);
+        insertAuthUser("backfill-drift@example.com", "ROLE_CONSUMER");
+        insertUser(multiId, "backfill-multi@example.com", "CONSUMER", OLD.plusSeconds(160), false);
+        insertAuthUser("backfill-multi@example.com", "ROLE_CONSUMER", "ROLE_PROVIDER");
         insertUser(deletedId, "backfill-deleted@example.com", "PROVIDER", OLD.plusSeconds(180), true);
 
         // The backfill itself — the migration's own statement, verbatim.
         jdbcTemplate.update(backfillStatement());
 
-        // Exactly ONE active assignment per live account, and it mirrors
-        // its OWN users.role — the no-expansion invariant is a JOIN: no
-        // assignment may claim a role the account's row does not carry
-        // (scoped to this test's own pre-migration population, the same
-        // shape the production replay would present). Soft-deleted
-        // accounts are OUTSIDE the invariant's own letter («every LIVE
-        // account») — their empty answer is the SEPARATE assertion below
-        // (the withdrawn membership carries nothing to preserve); without
-        // this filter the deleted account's legit emptiness would read as
-        // a mismatch (the latent defect this line closes — the test's
-        // original programmatic-Flyway shape never got far enough to run).
-        List<Map<String, Object>> mismatches = jdbcTemplate.queryForList(
-                "select u.id, u.role as user_role, ra.role as assigned_role "
-                        + "from users u "
-                        + "left join user_role_assignments ra "
-                        + "  on ra.user_id = u.id and ra.revoked_at is null "
-                        + "where u.id in (?, ?, ?, ?) "
+        // THE NO-EXPANSION INVARIANT, both directions, as a JOIN against
+        // the login-side store the derivation reads: every ACTIVE
+        // assignment of a live account must carry exactly a role its own
+        // auth_authorities rows hold (no assignment may claim an
+        // authority the login store does not) — and every login-side
+        // three-role authority must have its assignment (nothing held
+        // is lost). Scoped to this test's own population.
+        List<Map<String, Object>> expansions = jdbcTemplate.queryForList(
+                "select ra.user_id, ra.role as assigned_role "
+                        + "from user_role_assignments ra "
+                        + "join users u on u.id = ra.user_id "
+                        + "where ra.user_id in (?, ?, ?, ?, ?, ?) "
+                        + "  and ra.revoked_at is null "
                         + "  and u.is_deleted = FALSE "
-                        + "  and (ra.id is null or ra.role <> u.role)",
-                consumerId, providerId, adminId, deletedId);
-        assertThat(mismatches).as("every live account holds exactly its own role").isEmpty();
+                        + "  and not exists ("
+                        + "    select 1 from auth_authorities aa "
+                        + "    where aa.username = u.subject "
+                        + "      and aa.authority = 'ROLE_' || ra.role)",
+                consumerId, providerId, adminId, driftId, multiId, deletedId);
+        assertThat(expansions)
+                .as("no assignment exceeds the account's own login-side authorities")
+                .isEmpty();
 
-        // The soft-deleted membership carries nothing — there is no access
-        // left to preserve.
+        List<Map<String, Object>> losses = jdbcTemplate.queryForList(
+                "select u.id, aa.authority "
+                        + "from users u "
+                        + "join auth_authorities aa on aa.username = u.subject "
+                        + "where u.id in (?, ?, ?, ?, ?, ?) "
+                        + "  and u.is_deleted = FALSE "
+                        + "  and aa.authority in ('ROLE_CONSUMER', 'ROLE_PROVIDER', 'ROLE_ADMIN') "
+                        + "  and not exists ("
+                        + "    select 1 from user_role_assignments ra "
+                        + "    where ra.user_id = u.id and ra.revoked_at is null "
+                        + "      and ra.role = substring(aa.authority from 6))",
+                consumerId, providerId, adminId, driftId, multiId, deletedId);
+        assertThat(losses)
+                .as("every login-side role authority the account holds is backfilled")
+                .isEmpty();
+
+        // The drifted pair's own letter: the login-side truth only — the
+        // users.role ADMIN column grants nothing here (no expansion).
+        Integer driftAdminRows = jdbcTemplate.queryForObject(
+                "select count(*) from user_role_assignments where user_id = ? and role = 'ADMIN'",
+                Integer.class, driftId);
+        assertThat(driftAdminRows)
+                .as("the drifted users.role ADMIN never becomes an assignment")
+                .isZero();
+        Integer driftConsumerRows = jdbcTemplate.queryForObject(
+                "select count(*) from user_role_assignments "
+                        + "where user_id = ? and role = 'CONSUMER' and revoked_at is null",
+                Integer.class, driftId);
+        assertThat(driftConsumerRows)
+                .as("the drifted account keeps exactly its login-side CONSUMER authority")
+                .isEqualTo(1);
+
+        // The soft-deleted membership carries nothing — there is no
+        // access left to preserve.
         Integer deletedRows = jdbcTemplate.queryForObject(
                 "select count(*) from user_role_assignments where user_id = ?",
                 Integer.class, deletedId);
         assertThat(deletedRows).as("withdrawn memberships are not backfilled").isZero();
 
         // The backfill's own provenance, per the migration's header. The
-        // birthday comparison rides timestamptz equality in the database —
-        // the same instant, whatever zone the driver renders it in.
+        // birthday comparison rides timestamptz equality in the database
+        // — the same instant, whatever zone the driver renders it in.
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 "select ra.role, ra.granted_by, ra.source, ra.revoked_at, "
                         + "(ra.granted_at = u.created_at) as granted_at_is_the_birthday "
                         + "from user_role_assignments ra join users u on u.id = ra.user_id "
-                        + "where u.id in (?, ?, ?) order by u.subject",
-                consumerId, providerId, adminId);
-        assertThat(rows).hasSize(3);
+                        + "where u.id in (?, ?, ?, ?, ?) order by u.subject, ra.role",
+                consumerId, providerId, adminId, driftId, multiId);
+        assertThat(rows).as("3 maintained pairs + the drifted one + the multi's two").hasSize(6);
         for (Map<String, Object> row : rows) {
             assertThat(row.get("granted_by")).as("the migration is a system act").isNull();
             assertThat(row.get("source")).isEqualTo("BACKFILL");
@@ -184,12 +252,11 @@ class UserRoleMigrationBackfillIT {
                     .as("granted_at is the account's own birthday")
                     .isEqualTo(Boolean.TRUE);
         }
-        // The query's own deterministic order is u.subject (backfill-admin
-        // < backfill-consumer < backfill-provider) — the assertion rides
-        // that order, not the insertion order the original shape expected
-        // (another latent defect its never-executing V51 deadlock owned).
+        // The deterministic order (u.subject, then role) — the assertion
+        // rides that order: admin(ADMIN), consumer(CONSUMER),
+        // drift(CONSUMER), multi(CONSUMER, PROVIDER), provider(PROVIDER).
         assertThat(rows.stream().map(r -> r.get("role")))
-                .containsExactly("ADMIN", "CONSUMER", "PROVIDER");
+                .containsExactly("ADMIN", "CONSUMER", "CONSUMER", "CONSUMER", "PROVIDER", "PROVIDER");
     }
 
     @Test

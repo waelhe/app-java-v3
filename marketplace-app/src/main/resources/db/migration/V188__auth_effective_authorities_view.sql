@@ -27,19 +27,19 @@
 --    them — no materialized copy that two writers must keep in step.
 --
 -- THE UNION IS THE OLD BEHAVIOR PLUS EXACTLY THE GRANTED ASSIGNMENTS:
---   * every account with no assignment rows (the backfill gave each live
---     account exactly ONE, mirroring its own users.role) reads exactly
---     what it read before — the auth_authorities rows;
---   * a backfilled assignment mirrors users.role, and the maintained
---     state has auth_authorities == users.role (the S2/N4/N6
---     choreography), so UNION collapses the duplicate and the authority
+--   * every account with no assignment rows (the backfill wrote one per
+--     login-side role authority it already holds — exactly one on the
+--     maintained state) reads exactly what it read before — the
+--     auth_authorities rows;
+--   * a backfilled assignment mirrors its own login-side authority row
+--     (V187's derivation reads auth_authorities itself, never
+--     users.role), so UNION collapses the duplicate and the authority
 --     set is IDENTICAL to the pre-migration one — the Phase-1 gate
 --     «الحسابات القائمة تحفظ وصولها بلا توسيع صلاحيات» holds byte for
---     byte on the maintained state. On a DRIFTED pair (the pre-fix stock:
---     users.role CONSUMER, authority ROLE_ADMIN) the union adds only the
---     account's own recorded users.role authority — the baseline role
---     every account is born with (registration grants roles("CONSUMER"))
---     — and removes nothing;
+--     byte on the maintained state, and on a DRIFTED pair (either
+--     direction) the assignment set IS the login-side truth by
+--     construction: the union never widens beyond what the account's
+--     own authority rows carry — and removes nothing;
 --   * the break-glass admin is provably unaffected: its authority set
 --     stays exactly {ROLE_ADMIN} whether or not a users row (and thus a
 --     backfilled ADMIN assignment) exists — UNION deduplicates the

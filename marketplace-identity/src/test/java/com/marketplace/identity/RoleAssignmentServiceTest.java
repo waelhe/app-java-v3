@@ -178,6 +178,31 @@ class RoleAssignmentServiceTest {
         verifyNoInteractions(jdbcTemplate, eventPublisher);
     }
 
+    @Test
+    void revoke_ofTheAccountsPrimaryRoleAnswers409_routedToTheTwoStoreRoleUpdate() {
+        // The primary role's assignment is the S2/N4/N6 choreography's
+        // own row — revoking it would leave users.role and its
+        // auth_authorities projection intact, so the authority would
+        // survive the revoke through the V188 union's login-side leg
+        // while /me/roles and the effective authorities disagree. The
+        // refusal precedes every write (the CodeRabbit #543 round); the
+        // honest path is UserService.updateUserRole.
+        UUID userId = UUID.randomUUID();
+        RoleAssignment primary = RoleAssignment.grant(
+                UUID.randomUUID(), userId, UserRole.CONSUMER, NOW.minusSeconds(3600), null, "BACKFILL");
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user("member@example.com")));
+        when(repository.findByUserIdAndRoleAndRevokedAtIsNull(userId, UserRole.CONSUMER))
+                .thenReturn(Optional.of(primary));
+
+        ConflictException ex = assertThrows(ConflictException.class,
+                () -> service.revoke(userId, UserRole.CONSUMER, "admin"));
+        assertThat(ex.getMessage()).contains("primary").contains("CONSUMER");
+        assertThat(primary.isActive())
+                .as("the refusal precedes every write — the row stays active")
+                .isTrue();
+        verifyNoInteractions(jdbcTemplate, eventPublisher);
+    }
+
     // ------------------------------------------------------------------
     // The read — the account's active set
     // ------------------------------------------------------------------

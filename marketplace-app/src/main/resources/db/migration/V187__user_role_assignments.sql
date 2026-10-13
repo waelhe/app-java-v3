@@ -22,19 +22,27 @@
 -- widened.
 --
 -- THE SAFE BACKFILL («الحسابات القائمة تحفظ وصولها بلا توسيع صلاحيات»):
--- every LIVE account (users.is_deleted = FALSE) receives exactly ONE
--- active assignment mirroring ITS OWN users.role — granted_at = the
--- account's own birthday (COALESCE created_at, now(); the role existed
--- since the account did — honest provenance), granted_by = NULL (the
--- migration is a system act, not an administrator's). The insert reads
--- users.role and nothing else: a backfilled assignment can never exceed
--- the authority the account already holds. Soft-deleted accounts
--- (is_deleted = TRUE — withdrawn memberships) are deliberately NOT
--- backfilled: there is no access left to preserve. Pseudonymized
+-- every LIVE account (users.is_deleted = FALSE) receives one active
+-- assignment per login-side role authority it ALREADY HOLDS — the
+-- derivation reads auth_authorities (restricted to the closed
+-- ROLE_CONSUMER/ROLE_PROVIDER/ROLE_ADMIN vocabulary), never users.role
+-- (the CodeRabbit #543 round): a backfilled assignment can never
+-- exceed the authority the account's own login rows carry, so on a
+-- DRIFTED pair (users.role ADMIN, authority ROLE_CONSUMER) the
+-- backfill preserves the login-side truth without expansion — the
+-- migration's own gate enforced by construction. On the maintained
+-- state (auth_authorities == the users.role projection, the S2/N4/N6
+-- choreography) the answer is exactly ONE assignment per live account —
+-- the same row the users.role mirror would have written. granted_at =
+-- the account's own birthday (COALESCE created_at, now(); the authority
+-- existed since the account did — honest provenance), granted_by = NULL
+-- (the migration is a system act, not an administrator's). Soft-deleted
+-- accounts (is_deleted = TRUE — withdrawn memberships) are deliberately
+-- NOT backfilled: there is no access left to preserve. Pseudonymized
 -- accounts (I7 — is_deleted stays FALSE, the row persists by the
--- Art. 17(3)(b) decision) ARE backfilled, preserving their recorded
--- role with zero access effect (their auth_users row is already gone —
--- the V188 union cannot grant anything a login row no longer backs).
+-- Art. 17(3)(b) decision) receive whatever their own login rows back
+-- (typically nothing once the subject is rewritten in place) — the V188
+-- union cannot grant anything a login row no longer backs.
 --
 -- Cross-module discipline: NONE needed — users is THIS module's own
 -- table, so the FK is a real intra-module REFERENCES (the V178
@@ -133,18 +141,24 @@ CREATE INDEX idx_user_role_assignments_role_active
     ON user_role_assignments (role)
     WHERE revoked_at IS NULL AND is_deleted = FALSE;
 
--- THE SAFE BACKFILL — one active assignment per live account, mirroring
--- exactly its own users.role (see the header's no-expansion proof).
+-- THE SAFE BACKFILL — one active assignment per login-side role
+-- authority each LIVE account already holds (see the header's
+-- no-expansion proof): the derivation joins the account's own
+-- auth_authorities rows and carries only the closed three-role
+-- vocabulary — the backfill can never mint an authority the login
+-- store does not already carry.
 INSERT INTO user_role_assignments
         (id, user_id, role, granted_at, granted_by, source)
 SELECT gen_random_uuid(),
        u.id,
-       u.role,
+       SUBSTRING(aa.authority FROM 6),
        COALESCE(u.created_at, now()),
        NULL,
        'BACKFILL'
 FROM users u
-WHERE u.is_deleted = FALSE;
+JOIN auth_authorities aa ON aa.username = u.subject
+WHERE u.is_deleted = FALSE
+  AND aa.authority IN ('ROLE_CONSUMER', 'ROLE_PROVIDER', 'ROLE_ADMIN');
 
 -- Envers mirror (V24 convention — all columns NULLABLE).
 CREATE TABLE user_role_assignments_aud (

@@ -73,8 +73,13 @@ public class VerificationAttestationService {
      * type, with its evidence reference (required — the evidence is the
      * essence of «أدلة ارتباط بالحي/المنطقة»). A standing GRANTED
      * attestation of the same (subject, type) pair answers the honest
-     * 409 — the fact is already granted; fresh PENDING requests queue
-     * freely (V189's unique index constrains only the GRANTED state).
+     * 409 — the fact is already granted; a standing PENDING request of
+     * the same pair answers its own 409 — one review at a time, the
+     * queue stays clean (the CodeRabbit #543 round: a double-submit
+     * never stacks a duplicate the reviewer must then reject by hand).
+     * A fresh request after REJECT/REVOKE is legal — the pair is freed
+     * by the transition itself (V189's unique index constrains only the
+     * GRANTED state).
      */
     @Observed(name = "identity.attestation.request")
     public VerificationAttestationView request(UUID subjectUserId, TrustType trustType,
@@ -86,6 +91,16 @@ public class VerificationAttestationService {
                 .ifPresent(existing -> {
                     throw new ConflictException(
                             "A " + trustType.name() + " attestation is already GRANTED for this account");
+                });
+        // The one-review-at-a-time gate: the standing PENDING request of
+        // the same pair refuses the duplicate — the reviewer's queue never
+        // carries a stale twin the grant path would have to 409 anyway.
+        repository.findBySubjectUserIdAndTrustTypeAndState(
+                        subjectUserId, trustType, VerificationAttestationState.PENDING)
+                .ifPresent(existing -> {
+                    throw new ConflictException(
+                            "A " + trustType.name()
+                                    + " attestation is already under review for this account");
                 });
         VerificationAttestation saved = repository.save(
                 VerificationAttestation.request(UUID.randomUUID(), subjectUserId, trustType, evidenceRef));
