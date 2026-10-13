@@ -1,7 +1,9 @@
 package com.marketplace.notifications;
 
 import com.marketplace.shared.api.DisputeOpenedEvent;
+import com.marketplace.shared.api.DisputeResolution;
 import com.marketplace.shared.api.DisputeResolvedEvent;
+import com.marketplace.shared.api.DisputeSubject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -58,7 +60,8 @@ class NotificationDisputeEventListenerTest {
         UUID disputeId = UUID.randomUUID();
         UUID openedBy = UUID.randomUUID();
 
-        listener.onDisputeOpened(new DisputeOpenedEvent(disputeId, UUID.randomUUID(), openedBy));
+        listener.onDisputeOpened(new DisputeOpenedEvent(
+                disputeId, DisputeSubject.BOOKING, UUID.randomUUID(), null, openedBy));
 
         verify(notificationService).onDisputeOpened(disputeId, openedBy);
     }
@@ -69,7 +72,8 @@ class NotificationDisputeEventListenerTest {
         UUID openedBy = UUID.randomUUID();
 
         listener.onDisputeResolved(new DisputeResolvedEvent(
-                disputeId, UUID.randomUUID(), openedBy, "REFUND_CONSUMER", 5000L));
+                disputeId, DisputeSubject.BOOKING, UUID.randomUUID(), null, openedBy,
+                DisputeResolution.REFUND_CONSUMER, 5000L));
 
         verify(notificationService).onDisputeResolved(
                 eq(disputeId), eq(openedBy), eq("REFUND_CONSUMER"), eq(5000L));
@@ -81,7 +85,8 @@ class NotificationDisputeEventListenerTest {
         UUID openedBy = UUID.randomUUID();
 
         listener.onDisputeResolved(new DisputeResolvedEvent(
-                disputeId, UUID.randomUUID(), openedBy, "NO_ACTION", null));
+                disputeId, DisputeSubject.BOOKING, UUID.randomUUID(), null, openedBy,
+                DisputeResolution.NO_ACTION, null));
 
         verify(notificationService).onDisputeResolved(
                 eq(disputeId), eq(openedBy), eq("NO_ACTION"), isNull());
@@ -96,7 +101,8 @@ class NotificationDisputeEventListenerTest {
 
         org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
                 () -> listener.onDisputeOpened(
-                        new DisputeOpenedEvent(disputeId, UUID.randomUUID(), openedBy)));
+                        new DisputeOpenedEvent(
+                                disputeId, DisputeSubject.BOOKING, UUID.randomUUID(), null, openedBy)));
         verify(notificationService).onDisputeOpened(disputeId, openedBy);
     }
 

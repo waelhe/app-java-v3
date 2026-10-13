@@ -404,7 +404,7 @@ public class NotificationEventListener {
     @ApplicationModuleListener
     public void onDisputeResolved(DisputeResolvedEvent event) {
         notificationService.onDisputeResolved(event.disputeId(), event.openedBy(),
-                event.resolution(), event.refundedAmountCents());
+                event.resolution().name(), event.refundedAmountCents());
         log.info("Notification sent for dispute resolved: disputeId={}, openedBy={}, resolution={}",
                 event.disputeId(), event.openedBy(), event.resolution());
     }

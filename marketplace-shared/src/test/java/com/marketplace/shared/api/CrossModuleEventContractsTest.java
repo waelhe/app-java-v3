@@ -15,7 +15,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * urgent-alert publication carries the honest attribution (source name +
  * level + scope — CMP-46), the withdrawal carries only the identity pair,
  * and the relocated knowledge/dispute contracts keep their exact field
- * shapes the consumers already read.
+ * shapes the consumers already read (the dispute records ride ADR-0009's
+ * five-component subject-aware shapes — the union the merge measured).
  */
 class CrossModuleEventContractsTest {
 
@@ -86,20 +87,42 @@ class CrossModuleEventContractsTest {
     void relocatedDisputeContracts_keepTheirExactShapes() {
         UUID disputeId = UUID.randomUUID();
         UUID bookingId = UUID.randomUUID();
+        UUID loanId = UUID.randomUUID();
         UUID opener = UUID.randomUUID();
-        DisputeOpenedEvent opened = new DisputeOpenedEvent(disputeId, bookingId, opener);
-        DisputeResolvedEvent resolved =
-                new DisputeResolvedEvent(disputeId, bookingId, opener, "REFUND_CONSUMER", 5000L);
-        assertThat(opened.disputeId()).isEqualTo(disputeId);
-        assertThat(opened.bookingId()).isEqualTo(bookingId);
-        assertThat(opened.openedBy()).isEqualTo(opener);
-        assertThat(opened).isEqualTo(new DisputeOpenedEvent(disputeId, bookingId, opener));
+        // ADR-0009's five-component shape: the subject pair carries exactly
+        // one of bookingId/loanId (the V203 pairing constraint's event twin).
+        DisputeOpenedEvent bookingOpen = new DisputeOpenedEvent(
+                disputeId, DisputeSubject.BOOKING, bookingId, null, opener);
+        DisputeOpenedEvent loanOpen = new DisputeOpenedEvent(
+                disputeId, DisputeSubject.LOAN, null, loanId, opener);
+        assertThat(bookingOpen.disputeId()).isEqualTo(disputeId);
+        assertThat(bookingOpen.subjectType()).isEqualTo(DisputeSubject.BOOKING);
+        assertThat(bookingOpen.bookingId()).isEqualTo(bookingId);
+        assertThat(bookingOpen.loanId()).isNull();
+        assertThat(bookingOpen.openedBy()).isEqualTo(opener);
+        assertThat(bookingOpen).isEqualTo(new DisputeOpenedEvent(
+                disputeId, DisputeSubject.BOOKING, bookingId, null, opener));
+        assertThat(loanOpen.subjectType()).isEqualTo(DisputeSubject.LOAN);
+        assertThat(loanOpen.bookingId()).isNull();
+        assertThat(loanOpen.loanId()).isEqualTo(loanId);
+        // The resolve fact: the typed resolution plus the executed money
+        // outcome (non-null only for the BOOKING refund path).
+        DisputeResolvedEvent resolved = new DisputeResolvedEvent(
+                disputeId, DisputeSubject.BOOKING, bookingId, null, opener,
+                DisputeResolution.REFUND_CONSUMER, 5000L);
+        DisputeResolvedEvent loanResolved = new DisputeResolvedEvent(
+                disputeId, DisputeSubject.LOAN, null, loanId, opener,
+                DisputeResolution.REFUND_CONSUMER, null);
         assertThat(resolved.disputeId()).isEqualTo(disputeId);
         assertThat(resolved.openedBy()).isEqualTo(opener);
-        assertThat(resolved.resolution()).isEqualTo("REFUND_CONSUMER");
+        assertThat(resolved.resolution()).isEqualTo(DisputeResolution.REFUND_CONSUMER);
         assertThat(resolved.refundedAmountCents()).isEqualTo(5000L);
         assertThat(resolved).isEqualTo(new DisputeResolvedEvent(
-                disputeId, bookingId, opener, "REFUND_CONSUMER", 5000L));
+                disputeId, DisputeSubject.BOOKING, bookingId, null, opener,
+                DisputeResolution.REFUND_CONSUMER, 5000L));
         assertThat(resolved.toString()).contains("REFUND_CONSUMER");
+        // The loan path never moves money through this fact (ADR-0009's
+        // ONE refund contract: the lending cancellation chain carries it).
+        assertThat(loanResolved.refundedAmountCents()).isNull();
     }
 }

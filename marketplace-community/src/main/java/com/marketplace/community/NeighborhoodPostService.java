@@ -113,7 +113,8 @@ public class NeighborhoodPostService {
      */
     @Observed(name = "community.post.create")
     public NeighborhoodPostView createPost(UUID authorId, UUID locationId,
-                                           PostCategory category, String title, String body) {
+                                           PostCategory category, String title, String body,
+                                           boolean declaredCommercial) {
         GeoLookupPort.GeoNode node = geoLookupPort.getLocation(locationId);
         if (node.level() != NEIGHBORHOOD_LEVEL) {
             throw new BadRequestException(
@@ -124,7 +125,8 @@ public class NeighborhoodPostService {
                 "Join a neighborhood before posting (PUT /api/v1/me/neighborhood)",
                 "Posts go to your own neighborhood — this location is not it");
         NeighborhoodPost saved = repository.save(
-                NeighborhoodPost.post(authorId, locationId, category, title, body, clock));
+                NeighborhoodPost.post(authorId, locationId, category, title, body,
+                        declaredCommercial, clock));
         return NeighborhoodPostView.of(saved);
     }
 

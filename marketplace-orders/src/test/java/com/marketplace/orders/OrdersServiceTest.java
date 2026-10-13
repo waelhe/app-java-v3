@@ -1,6 +1,9 @@
 package com.marketplace.orders;
 
 import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.OrderPaymentPort;
+import com.marketplace.shared.api.ProductPricingPort;
+import com.marketplace.shared.api.ProductStockPort;
 import com.marketplace.shared.api.OrderCancelledEvent;
 import com.marketplace.shared.api.OrderConfirmedEvent;
 import com.marketplace.shared.api.OrderFulfilledEvent;
@@ -58,16 +61,36 @@ class OrdersServiceTest {
     @Mock
     private ApplicationEventPublisher eventPublisher;
     @Mock
+    private ProductPricingPort productPricingPort;
+    @Mock
+    private ProductStockPort productStockPort;
+    @Mock
+    private OrderPaymentPort orderPaymentPort;
+    @Mock
     private Authentication authentication;
 
     private OrdersService service;
 
     private final UUID consumer = UUID.randomUUID();
 
+    /**
+     * Stage 6 (ADR-0002): the placement tests' pricing stub — every line's
+     * product prices ACTIVE under one seller, so the single-seller and
+     * state gates pass and the stock seam is the only remaining edge.
+     */
+    private void priceActive(UUID productId) {
+        when(productPricingPort.priceOf(productId)).thenReturn(
+                new ProductPricingPort.ProductPrice(productId, seller, 1500L, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE));
+    }
+
+    private final UUID seller = UUID.randomUUID();
+
     @BeforeEach
     void setUp() {
         service = new OrdersService(cartRepository, cartItemRepository,
-                orderRepository, orderItemRepository, currentUserProvider, eventPublisher);
+                orderRepository, orderItemRepository, currentUserProvider, eventPublisher,
+                productPricingPort, productStockPort, orderPaymentPort);
     }
 
     // ------------------------------------------------------------------
@@ -79,6 +102,10 @@ class OrdersServiceTest {
         Cart cart = Cart.activeFor(consumer);
         CartItem line = CartItem.of(cart.getId(), UUID.randomUUID(), 2, 1500L, "SAR");
         CartItem line2 = CartItem.of(cart.getId(), UUID.randomUUID(), 1, 9900L, "SAR");
+        priceActive(line.getProductId());
+        when(productPricingPort.priceOf(line2.getProductId())).thenReturn(
+                new ProductPricingPort.ProductPrice(line2.getProductId(), seller, 9900L, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE));
         when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
                 .thenReturn(Optional.of(cart));
         when(cartItemRepository.findByCartId(cart.getId())).thenReturn(List.of(line, line2));
@@ -89,9 +116,10 @@ class OrdersServiceTest {
         when(cartRepository.save(any(Cart.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
-        OrderDetail detail = service.place(consumer);
-        Order order = detail.order();
+        java.util.List<OrderDetail> placed = service.place(consumer);
+        Order order = placed.get(0).order();
 
+        assertThat(placed).as("the single-seller cart places as one order").hasSize(1);
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PLACED);
         // The derived total: 2 × 1500 + 1 × 9900 — never caller-supplied.
         assertThat(order.getTotalAmountMinor()).isEqualTo(12900L);
@@ -117,8 +145,10 @@ class OrdersServiceTest {
         Cart cart = Cart.activeFor(consumer);
         when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
                 .thenReturn(Optional.of(cart));
+        java.util.UUID productId = java.util.UUID.randomUUID();
+        priceActive(productId);
         when(cartItemRepository.findByCartId(cart.getId()))
-                .thenReturn(List.of(CartItem.of(cart.getId(), UUID.randomUUID(), 1, 100L, "SAR")));
+                .thenReturn(List.of(CartItem.of(cart.getId(), productId, 1, 100L, "SAR")));
         when(orderRepository.save(any(Order.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         when(orderItemRepository.save(any(OrderItem.class)))
@@ -155,17 +185,149 @@ class OrdersServiceTest {
     }
 
     @Test
-    void placementRejectsAMixedCurrencyCart() {
+    void placementRejectsAStaleCurrencyLine() {
+        // The ADR-0002 re-pricing: the line carries what the add resolved;
+        // the product NOW prices in another currency — the placement
+        // refuses (re-add the line) instead of freezing a mixed record.
         Cart cart = Cart.activeFor(consumer);
+        java.util.UUID productId = java.util.UUID.randomUUID();
         when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
                 .thenReturn(Optional.of(cart));
         when(cartItemRepository.findByCartId(cart.getId())).thenReturn(List.of(
-                CartItem.of(cart.getId(), UUID.randomUUID(), 1, 100L, "SAR"),
-                CartItem.of(cart.getId(), UUID.randomUUID(), 1, 100L, "USD")));
+                CartItem.of(cart.getId(), productId, 1, 100L, "SAR")));
+        when(productPricingPort.priceOf(productId)).thenReturn(
+                new ProductPricingPort.ProductPrice(productId, seller, 100L, "USD",
+                        ProductPricingPort.StorefrontState.ACTIVE));
 
         assertThatThrownBy(() -> service.place(consumer))
                 .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("Mixed-currency");
+                .hasMessageContaining("re-add the line");
+    }
+
+    /**
+     * ADR-0010 (the ADR-0002 deferral opened): the mixed-seller cart SPLITS
+     * into one order per seller — each order carries its own seller, its
+     * own derived total and its own frozen lines; ONE whole-cart reserve
+     * (all-or-nothing across the groups), the cart tombstones once, and
+     * PLACED still publishes nothing.
+     */
+    @Test
+    void placementSplitsAMixedSellerCartIntoOneOrderPerSeller() {
+        Cart cart = Cart.activeFor(consumer);
+        java.util.UUID p1 = java.util.UUID.randomUUID();
+        java.util.UUID p2 = java.util.UUID.randomUUID();
+        java.util.UUID sellerA = UUID.randomUUID();
+        java.util.UUID sellerB = UUID.randomUUID();
+        when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
+                .thenReturn(Optional.of(cart));
+        when(cartItemRepository.findByCartId(cart.getId())).thenReturn(List.of(
+                CartItem.of(cart.getId(), p1, 2, 1500L, "SAR"),
+                CartItem.of(cart.getId(), p2, 1, 9900L, "SAR")));
+        when(productPricingPort.priceOf(p1)).thenReturn(
+                new ProductPricingPort.ProductPrice(p1, sellerA, 1500L, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE));
+        when(productPricingPort.priceOf(p2)).thenReturn(
+                new ProductPricingPort.ProductPrice(p2, sellerB, 9900L, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE));
+        when(orderRepository.save(any(Order.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(orderItemRepository.save(any(OrderItem.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(cartRepository.save(any(Cart.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        List<OrderDetail> placed = service.place(consumer);
+
+        assertThat(placed).as("one order per seller").hasSize(2);
+        Order first = placed.get(0).order();
+        Order second = placed.get(1).order();
+        // First-seen group order: p1's seller owns the first order.
+        assertThat(first.getSellerId()).isEqualTo(sellerA);
+        assertThat(first.getTotalAmountMinor()).isEqualTo(3000L);
+        assertThat(second.getSellerId()).isEqualTo(sellerB);
+        assertThat(second.getTotalAmountMinor()).isEqualTo(9900L);
+        // ONE whole-cart reserve: all lines, all-or-nothing across groups.
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<java.util.Map<UUID, Integer>> reserved =
+                ArgumentCaptor.forClass(java.util.Map.class);
+        verify(productStockPort).reserve(reserved.capture());
+        assertThat(reserved.getValue()).containsEntry(p1, 2).containsEntry(p2, 1);
+        // The cart tombstones ONCE; PLACED still publishes nothing.
+        assertThat(cart.getStatus()).isEqualTo(CartStatus.CHECKED_OUT);
+        verify(eventPublisher, never()).publishEvent(any());
+        // Each order's frozen lines ride its own order id.
+        ArgumentCaptor<OrderItem> frozen = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemRepository, org.mockito.Mockito.times(2)).save(frozen.capture());
+        assertThat(frozen.getAllValues().get(0).getOrderId()).isEqualTo(first.getId());
+        assertThat(frozen.getAllValues().get(1).getOrderId()).isEqualTo(second.getId());
+    }
+
+    /** One currency per order: a seller group carrying mixed currencies answers the honest 409. */
+    @Test
+    void aSellerGroupWithMixedCurrenciesAnswersThe409() {
+        Cart cart = Cart.activeFor(consumer);
+        java.util.UUID p1 = java.util.UUID.randomUUID();
+        java.util.UUID p2 = java.util.UUID.randomUUID();
+        java.util.UUID sellerA = UUID.randomUUID();
+        when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
+                .thenReturn(Optional.of(cart));
+        when(cartItemRepository.findByCartId(cart.getId())).thenReturn(List.of(
+                CartItem.of(cart.getId(), p1, 1, 100L, "SAR"),
+                CartItem.of(cart.getId(), p2, 1, 100L, "USD")));
+        when(productPricingPort.priceOf(p1)).thenReturn(
+                new ProductPricingPort.ProductPrice(p1, sellerA, 100L, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE));
+        when(productPricingPort.priceOf(p2)).thenReturn(
+                new ProductPricingPort.ProductPrice(p2, sellerA, 100L, "USD",
+                        ProductPricingPort.StorefrontState.ACTIVE));
+
+        assertThatThrownBy(() -> service.place(consumer))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("one currency per order");
+        verify(productStockPort, never()).reserve(any());
+        verify(orderRepository, never()).save(any());
+    }
+
+    @Test
+    void placementReservesTheLinesStockAndFlagsTheOrder() {
+        Cart cart = Cart.activeFor(consumer);
+        java.util.UUID productId = java.util.UUID.randomUUID();
+        priceActive(productId);
+        when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
+                .thenReturn(Optional.of(cart));
+        when(cartItemRepository.findByCartId(cart.getId()))
+                .thenReturn(List.of(CartItem.of(cart.getId(), productId, 2, 1500L, "SAR")));
+        when(orderRepository.save(any(Order.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(orderItemRepository.save(any(OrderItem.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(cartRepository.save(any(Cart.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        OrderDetail detail = service.place(consumer).get(0);
+
+        org.mockito.ArgumentCaptor<java.util.Map<java.util.UUID, Integer>> reserved =
+                org.mockito.ArgumentCaptor.forClass(java.util.Map.class);
+        verify(productStockPort).reserve(reserved.capture());
+        assertThat(reserved.getValue()).containsEntry(productId, 2);
+        assertThat(detail.order().isStockReserved()).isTrue();
+    }
+
+    @Test
+    void placementRefusedByTheStockSeamRollsTheWholeOrderBack() {
+        Cart cart = Cart.activeFor(consumer);
+        java.util.UUID productId = java.util.UUID.randomUUID();
+        priceActive(productId);
+        when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
+                .thenReturn(Optional.of(cart));
+        when(cartItemRepository.findByCartId(cart.getId()))
+                .thenReturn(List.of(CartItem.of(cart.getId(), productId, 2, 1500L, "SAR")));
+        org.mockito.Mockito.doThrow(new ConflictException("cannot reserve"))
+                .when(productStockPort).reserve(any());
+
+        assertThatThrownBy(() -> service.place(consumer))
+                .isInstanceOf(ConflictException.class);
+        verify(orderRepository, never()).save(any());
     }
 
     // ------------------------------------------------------------------
@@ -329,7 +491,11 @@ class OrdersServiceTest {
         when(cartItemRepository.findByCartIdAndProductId(cart.getId(), product))
                 .thenReturn(Optional.of(existing));
 
-        CartItem result = service.addCartItem(consumer, product, 2, 500L, "SAR");
+        when(productPricingPort.priceOf(product)).thenReturn(
+                new ProductPricingPort.ProductPrice(product, seller, 500L, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE));
+
+        CartItem result = service.addCartItem(consumer, product, 2);
 
         assertThat(result.getQuantity()).isEqualTo(3);
         verify(cartItemRepository, never()).save(any());
@@ -339,6 +505,6 @@ class OrdersServiceTest {
         // Order.placed generates its own id (UUID.randomUUID()) — no
         // reflection needed; the helper exists for the one read that
         // matters: a fresh PLACED machine state.
-        return Order.placed(consumer, 5000L, "SAR");
+        return Order.placed(consumer, 5000L, "SAR", null);
     }
 }

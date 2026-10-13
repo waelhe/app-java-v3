@@ -32,6 +32,25 @@ import java.util.UUID;
  * twin: review writes do not evict search pages; the 1h TTL bounds the
  * drift) — the cache-name suffix bumps with this component change (the
  * D-R6 rule pinned by {@code ListingSummaryCacheContractFilesTest}).
+ *
+ * <p>ADR-0011 (D-15 — DSA (EU) 2022/2065 Art. 26(1)(a), the EUR-Lex
+ * text): "Providers of online platforms that present advertisements on
+ * their online interfaces shall ensure that, for each specific
+ * advertisement presented to each individual recipient, the recipients
+ * of the service are able to identify, in a clear, concise and
+ * unambiguous manner and in real time" that the information is an
+ * advertisement. The platform's advertisement is the paid promotion the
+ * ordering already speaks (a live per-impression/per-click campaign with
+ * remaining budget, or an admin featured window — the
+ * {@code ProviderListingRepository} ORDER BY's own first tier). The row
+ * now carries that truth: {@code promoted} is the SAME boolean the
+ * ordering's first tier evaluated when the page was read (resolved in
+ * ONE batch per page beside the names/stats batch — never per-row), so
+ * the recipient identifies the promoted rows in real time on the same
+ * response the reordering presents. The flag rides the caches' bounded
+ * staleness exactly like the ordering itself (the namespace bump keeps
+ * the pair consistent: the flag never disagrees with the order of the
+ * page it rides).
  */
 public record ListingSummary(
         UUID id,
@@ -41,6 +60,7 @@ public record ListingSummary(
         String currency,
         String providerName,
         Double providerRating,
-        long providerReviewCount
+        long providerReviewCount,
+        boolean promoted
 ) implements Serializable {
 }

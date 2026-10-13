@@ -403,7 +403,7 @@ class ProviderPublicPageServiceTest {
     private static PagedResponse<ListingSummary> pageOf(int count) {
         List<ListingSummary> content = java.util.stream.IntStream.range(0, count)
                 .mapToObj(i -> new ListingSummary(UUID.randomUUID(), "Listing " + i, "APARTMENT",
-                        BigDecimal.valueOf(1000 + i), "SAR", "Qudsia Prime", null, 0L))
+                        BigDecimal.valueOf(1000 + i), "SAR", "Qudsia Prime", null, 0L, false))
                 .toList();
         return PagedResponse.of(new PageImpl<>(content, PageRequest.of(0, 20), count));
     }

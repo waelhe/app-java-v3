@@ -215,7 +215,7 @@ public class SystemSettingsService implements SystemSettingsPort {
                 throw new BadRequestException("Setting '" + key + "' must be a JSON string");
             }
             try {
-                ReviewMode.parse(value.asText());
+                ReviewMode.parse(value.asString());
             } catch (SystemSettingTypeException unknown) {
                 throw new BadRequestException(unknown.getMessage());
             }

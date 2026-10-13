@@ -79,6 +79,17 @@ public class SearchService {
         this.realestatePropertyFilterPort = realestatePropertyFilterPort;
     }
 
+    /**
+     * ADR-0011 (D-15 — DSA Art. 27(1)/(2) + Art. 26(1)(d)): the machine
+     * truth of the ranking — the public read the terms and conditions cite.
+     * Reference data (the categories-registry pattern): a closed shape
+     * composed from the modules' documented laws, never a free-form store.
+     */
+    @Transactional(readOnly = true)
+    public RankingParametersView rankingParameters() {
+        return RankingParametersView.thePlatformTruth();
+    }
+
     // W6 (search-unit compliance pass): the legacy two-argument
     // search(query, category, pageable) overload was REMOVED. Its
     // @Cacheable key was a hand-rolled SpEL concatenation
@@ -91,7 +102,7 @@ public class SearchService {
     // page). It had no production caller (the controller binds the
     // criteria form; its own javadoc said so) and no test caller, so the
     // removal is behavior-neutral for every live surface: the criteria
-    // form below is the single entry into the search-results-v5 cache,
+    // form below is the single entry into the search-results-v6 cache,
     // keyed exclusively through the generator. The criteria path is the
     // ONE surface (the same law the catalog's CATALOG_CACHE_NAMES set
     // documents for its own names).
@@ -121,7 +132,7 @@ public class SearchService {
      * registration the L32 facets use — a coordinate change is a property
      * change).
      */
-    @Cacheable(cacheNames = "search-results-v5", keyGenerator = "searchCriteriaKeyGenerator")
+    @Cacheable(cacheNames = "search-results-v6", keyGenerator = "searchCriteriaKeyGenerator")
     public Page<ListingSummary> search(SearchCriteria criteria, Pageable pageable) {
         // P1 (postgis plan): the radius branch — hasRadius() pushes to the
         // dedicated dispatch exactly like hasPropertyCriteria() does for
@@ -578,7 +589,7 @@ public class SearchService {
     // the controller's normalize() gate (an unmapped sort property then
     // failed deep inside the Specification path as an attribute-lookup
     // error — an HTTP 500 the search surface answers 400 for). The criteria
-    // form is the ONE entry into the search-results-v5 cache, keyed
+    // form is the ONE entry into the search-results-v6 cache, keyed
     // exclusively through the generator; every browse form (category-only,
     // empty) routes through it byte-identically (searchUnwindowed's legacy
     // branch calls the same listByCategory/listActive reads).

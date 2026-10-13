@@ -8,6 +8,8 @@ import com.marketplace.shared.api.PaymentIntentDetails;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.ProviderLookupPort;
+import com.marketplace.shared.api.OrderSellerPort;
+import com.marketplace.shared.api.LoanOwnerPort;
 import com.marketplace.shared.api.ProviderSummary;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
@@ -65,6 +67,26 @@ class LedgerModuleIntegrationTest {
     @MockitoBean
     ProviderLookupPort providerLookupPort;
 
+    /**
+     * The seller port is implemented in marketplace-orders — outside this
+     * module slice — so the slice replaces it at the boundary (the same
+     * @MockitoBean treatment ProviderLookupPort gets; the settlement-wave
+     * contract added the port to LedgerPaymentEventListener's constructor
+     * — the CI-measured 2026-10-12 first run of this slice).
+     */
+    @MockitoBean
+    OrderSellerPort orderSellerPort;
+
+    /**
+     * The loan owner port is implemented in marketplace-lending — outside
+     * this module slice — so the slice replaces it at the boundary (the
+     * same @MockitoBean treatment OrderSellerPort gets; the settlement
+     * contract's loan leg reaches this listener through the same port
+     * family — the CI-measured 2026-10-12 second run: param 4).
+     */
+    @MockitoBean
+    LoanOwnerPort loanOwnerPort;
+
     @Autowired
     private LedgerService ledgerService;
 
@@ -119,7 +141,7 @@ class LedgerModuleIntegrationTest {
         long commissionCents = 500L; // app.commission.rate = 0.10 (test profile)
 
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(
-                new PaymentIntentDetails(paymentIntentId, bookingId, consumerId, null, "COMPLETED", "BOOKING", 25000L, "SAR")));
+                new PaymentIntentDetails(paymentIntentId, bookingId, consumerId, null, "COMPLETED", "BOOKING", 25000L, "SAR", null, null)));
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(new BookingInfo(
                 providerId, consumerId, "CONFIRMED", priceCents, "SAR",
                 Instant.now(), Instant.now()));

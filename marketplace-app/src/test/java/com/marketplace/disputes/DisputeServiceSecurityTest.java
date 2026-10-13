@@ -1,6 +1,8 @@
 package com.marketplace.disputes;
 
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.DisputeResolution;
+import com.marketplace.shared.api.LoanPartyProvider;
 import com.marketplace.shared.api.PaymentRefundPort;
 import com.marketplace.shared.api.RefundOutcome;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -43,6 +45,9 @@ class DisputeServiceSecurityTest {
     private BookingParticipantProvider bookingParticipantProvider;
 
     @MockitoBean
+    private LoanPartyProvider loanPartyProvider;
+
+    @MockitoBean
     private PaymentRefundPort paymentRefundPort;
 
     @Test
@@ -58,7 +63,7 @@ class DisputeServiceSecurityTest {
     @Test
     @WithMockUser(roles = "ADMIN", username = "admin")
     void resolve_whenAdmin_thenInvokes() {
-        Dispute dispute = Dispute.open(UUID.randomUUID(), UUID.randomUUID(), "late delivery");
+        Dispute dispute = Dispute.openBooking(UUID.randomUUID(), UUID.randomUUID(), "late delivery");
         when(repository.findById(any(UUID.class))).thenReturn(Optional.of(dispute));
 
         Dispute result = disputeService.resolve(dispute.getId(), DisputeResolution.NO_ACTION,
@@ -73,7 +78,7 @@ class DisputeServiceSecurityTest {
     void resolve_whenAdminAndRefundConsumer_thenRefundPortExecutes() {
         UUID bookingId = UUID.randomUUID();
         UUID paymentId = UUID.randomUUID();
-        Dispute dispute = Dispute.open(bookingId, UUID.randomUUID(), "late delivery");
+        Dispute dispute = Dispute.openBooking(bookingId, UUID.randomUUID(), "late delivery");
         when(repository.findById(any(UUID.class))).thenReturn(Optional.of(dispute));
         when(paymentRefundPort.refundForBooking(bookingId, null))
                 .thenReturn(new RefundOutcome(paymentId, 5000L));

@@ -169,17 +169,27 @@ class ObservationCoverageFilesTest {
                     "community.report.create", "community.report.resolve",
                     "community.rule.register", "community.rule.retire",
                     "community.rule.toggle", "community.rule.update")),
-            Map.entry("marketplace-disputes", List.of("dispute.open", "dispute.resolve")),
+            // ADR-0009: the loan-dispute seam is its own observed command —
+            // the freeze path's write (the commands-not-reads policy holds).
+            Map.entry("marketplace-disputes", List.of("dispute.open", "dispute.open.loan", "dispute.resolve")),
+            // phase 1 (D-03 + §6.5): the role-assignment and trust
+            // -attestation commands join under the same discipline —
+            // every business command observed at its service seam,
+            // reads stay out (the commands-not-reads policy).
             Map.entry("marketplace-identity", List.of(
                     "email.verification.complete", "email.verification.resend", "email.verification.send",
                     // waves D1-D4: the generalized follows (USER/GROUP) ride
                     // the same observation discipline as the provider follow pair.
                     "follow.group.create", "follow.group.delete",
                     "follow.user.create", "follow.user.delete",
+                    "identity.attestation.grant", "identity.attestation.reject",
+                    "identity.attestation.request", "identity.attestation.revoke",
+                    "identity.role.grant", "identity.role.revoke",
                     "password.reset.complete", "password.reset.request",
                     "provider.follow.create", "provider.follow.delete",
-                    "user.audit.purge", "user.content.purge", "user.pseudonymize", "user.role.update",
-                    "user.self.deletion", "user.status.update", "user.sync.oidc")),
+                    "user.audit.purge", "user.content.purge", "user.pseudonymize",
+                    "user.role.update", "user.self.deletion", "user.status.update",
+                    "user.sync.oidc")),
             // B-13 (compliance plan C.3): the institution registry's three
             // business commands (register + the verification request + the
             // review verdict) — the module is not yet in the app reactor
@@ -215,6 +225,12 @@ class ObservationCoverageFilesTest {
                     "job.application.withdraw", "job.close", "job.create")),
             Map.entry("marketplace-ledger", List.of(
                     "ledger.credit.payment", "ledger.debit.ads", "ledger.debit.commission", "ledger.debit.refund")),
+            // ADR-0009 (stage 8): the lending workflow's four commands —
+            // offer.publish is the owner's terms write, request/approve/cancel
+            // are the loan machine's gates (alphabetical — the scan's order).
+            Map.entry("marketplace-lending", List.of(
+                    "lending.loan.approve", "lending.loan.cancel",
+                    "lending.loan.request", "lending.offer.publish")),
             Map.entry("marketplace-media", List.of(
                     "media.asset.delete", "media.review.asset.delete",
                     "media.review.upload.confirm", "media.review.upload.request",
@@ -224,7 +240,11 @@ class ObservationCoverageFilesTest {
                     // A-11 (compliance plan wave C: C.1) — the order machine's
                     // four commands (the reads stay unobserved per the
                     // commands-not-reads policy).
-                    "order.cancel", "order.confirm", "order.fulfill", "order.place")),
+                    // ADR-0010: the multi-seller split's intent creation is its
+                    // own observed command (order.payment-intent rides the
+                    // per-seller place loop — alphabetical, the scan's order).
+                    "order.cancel", "order.confirm", "order.fulfill",
+                    "order.payment-intent", "order.place")),
             Map.entry("marketplace-notifications", List.of(
                     "notification.delete", "notification.mark.all.read",
                     "notification.mark.read",

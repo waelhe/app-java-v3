@@ -47,13 +47,13 @@ public class GeoService implements GeoLookupPort {
      * tree alone left stale search pages for the full TTL).
      *
      * <p>B-02 (compliance plan 0.2 — the measured defect §3.4-1): the name
-     * is aligned with the LIVE search cache {@code search-results-v5} —
+     * is aligned with the LIVE search cache {@code search-results-v6} —
      * the name SearchService's two {@code @Cacheable} sites actually cache
      * under. The prior {@code -v4} literal was a dead name: geo amendments
      * evicted nothing and stale search pages rode the full TTL. The test
      * pins the literal on purpose — see GeoServiceTest.
      */
-    public static final Set<String> GEO_CACHE_NAMES = Set.of("geo-tree", "search-results-v5");
+    public static final Set<String> GEO_CACHE_NAMES = Set.of("geo-tree", "search-results-v6");
 
     /** The plan's autocomplete floor: a 1-character prefix is a 400, not a query. */
     static final int MIN_SUGGEST_PREFIX = 2;

@@ -1,0 +1,101 @@
+-- Phase 1 (the unified plan §10) — the effective login-side authority
+-- source: the SINGLE official seam the whole chain already reads, widened
+-- at the data layer to the D-03 multi-role model.
+--
+-- THE CHAIN THIS VIEW SERVES (measured in SecurityConfig, all official
+-- Spring Security 7.1.1 mechanisms — nothing here is a parallel
+-- mechanism):
+--   login → JdbcUserDetailsManager.loadUserByUsername →
+--     UserDetails#getAuthorities ← setAuthoritiesByUsernameQuery (THIS
+--     view — the one string SecurityConfig wires) →
+--   the AS token customizer mints the roles claim from those authorities
+--     (SecurityConfig#jwtTokenCustomizer — unchanged) →
+--   the resource server maps the claim with JwtGrantedAuthoritiesConverter
+--     (unchanged).
+-- Active role assignments therefore reach EVERY authority consumer the
+-- platform has, through the one store the chain already trusts.
+--
+-- WHY A VIEW AND NOT A QUERY REWRITE OR A SECOND WRITE PATH:
+--  * the manager's authorities mapping declares exactly ONE SQL parameter
+--    (JdbcUserDetailsManager's AuthoritiesByUsernameMapping — one
+--    declareParameter(username)), so the union cannot be written inline
+--    as a two-placeholder query;
+--  * the house's one-home rule (FollowedSourcesPort's letter: "Two live
+--    queries, one honest union — never a dual write"): auth_authorities
+--    keeps its S2/N4/N6 write path (the primary role's projection),
+--    user_role_assignments keeps its own (V187), and the read unions
+--    them — no materialized copy that two writers must keep in step.
+--
+-- THE UNION IS THE OLD BEHAVIOR PLUS EXACTLY THE GRANTED ASSIGNMENTS:
+--   * every account with no assignment rows (the backfill wrote one per
+--     login-side role authority it already holds — exactly one on the
+--     maintained state) reads exactly what it read before — the
+--     auth_authorities rows;
+--   * a backfilled assignment mirrors its own login-side authority row
+--     (V187's derivation reads auth_authorities itself, never
+--     users.role), so UNION collapses the duplicate and the authority
+--     set is IDENTICAL to the pre-migration one — the Phase-1 gate
+--     «الحسابات القائمة تحفظ وصولها بلا توسيع صلاحيات» holds byte for
+--     byte on the maintained state, and on a DRIFTED pair (either
+--     direction) the assignment set IS the login-side truth by
+--     construction: the union never widens beyond what the account's
+--     own authority rows carry;
+--   * THE REVOKED-AUTHORITY FILTER (the CodeRabbit #543 re-review
+--     round): on a drifted pair the backfill creates a NON-primary
+--     assignment for the drifted authority (users.role CONSUMER,
+--     auth_authorities ROLE_ADMIN → an ADMIN assignment) — a revoke of
+--     that assignment must remove the authority, but the union's first
+--     leg would keep serving the login-side row. The first leg
+--     therefore EXCLUDES every authority that matches a NON-ACTIVE
+--     (revoked or soft-deleted) assignment of the same (subject, role)
+--     pair: the assignment — active or not — is the pair's governor,
+--     auth_authorities the fallback when no assignment row exists. On
+--     the maintained state the filter is a no-op (the primary's
+--     assignment is un-revokable by the service's own primary guard,
+--     and non-primary grants never had a login-side row); an active
+--     re-grant restores the authority through the second leg verbatim;
+--   * the break-glass admin is provably unaffected: its authority set
+--     stays exactly {ROLE_ADMIN} whether or not a users row (and thus a
+--     backfilled ADMIN assignment) exists — UNION deduplicates the
+--     identical authority row, which keeps
+--     AdminUserInitializer#matchesDerivedDefinition's exact-set contract
+--     true;
+--   * a GRANT beyond the primary role appears here the moment its row is
+--     active; a REVOKE (revoked_at set, the service's own transition)
+--     removes the authority at the very next login/token mint — in-flight
+--     access tokens die by their documented 900s TTL, live sessions are
+--     expired by the UserRoleAssignmentRevoked consumer (the same R8
+--     asymmetry AccountStatusChanged rides: grant is fail-closed for live
+--     sessions — the new authority is simply absent — so only the REVOKE
+--     leg has a named consumer), and refresh resurrection is killed by
+--     the service's authorization-row deletion (the L23 documented basis,
+--     the identical store UserService.updateUserRole cleans).
+--
+-- The users JOIN is the honest relation (no denormalized subject): a
+-- pseudonymized account's subject is rewritten in place (I7), so the
+-- union follows the row automatically; u.is_deleted = FALSE keeps a
+-- withdrawn membership from carrying any authority even if an
+-- assignment row outlived it.
+--
+-- View (not table): no storage, no stats to stale, the predicate is
+-- re-evaluated per read — the assignments' truth is the assignments'
+-- rows, never a copy.
+
+CREATE VIEW auth_effective_authorities AS
+    SELECT aa.username, aa.authority
+    FROM auth_authorities aa
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM user_role_assignments ra
+        JOIN users u ON u.id = ra.user_id
+        WHERE u.subject = aa.username
+          AND aa.authority = 'ROLE_' || ra.role
+          AND (ra.revoked_at IS NOT NULL OR ra.is_deleted = TRUE)
+    )
+    UNION
+    SELECT u.subject AS username, 'ROLE_' || ra.role AS authority
+    FROM user_role_assignments ra
+    JOIN users u ON u.id = ra.user_id
+    WHERE ra.revoked_at IS NULL
+      AND ra.is_deleted = FALSE
+      AND u.is_deleted = FALSE;

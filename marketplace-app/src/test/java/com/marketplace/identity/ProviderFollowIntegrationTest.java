@@ -373,15 +373,19 @@ class ProviderFollowIntegrationTest {
         // ("داخل التطبيق دائمًا"). The PUT itself also proves V93's widened
         // CHECK accepts the ninth type on the real Flyway schema — the
         // row write is the DB-side half of the type addition's contract.
-        // The read-back matrix is nineteen types x three channels = 57 rows
+        // The read-back matrix is the full cross product: 25 types x four
+        // channels (DB/EMAIL/WS/PUSH) = 100 rows — CI's actual output
+        // measured the service matrix as the enum cross product itself; the
+        // discovery trio carries its PUSH row like every other type
         // (B-11 added MESSAGE_RECEIVED via V151/V152; B-17 added
         // MEMBERSHIP_VERIFIED + REPORT_RESOLVED via V158/V159; the union's
         // own wave added BOOKING_CONFIRMED and A-11's three order types
         // ORDER_CONFIRMED/ORDER_FULFILLED/ORDER_CANCELLED via V110-V115;
         // the discovery waves' V180 widened the CHECK for URGENT_ALERT and
-        // the dispute pair DISPUTE_OPENED/DISPUTE_RESOLVED — the 19-type
-        // membership V180's CHECK now carries, the same count
-        // DocumentationNumbersGuardTest pins).
+        // the dispute pair DISPUTE_OPENED/DISPUTE_RESOLVED — V206 widened it
+        // once more for the stage-8/ADR-0009 LOAN_* six: the 25-type
+        // membership the CHECK carries, the count the preference unit test
+        // pins (100 rows = 25 types x 4 channels).
         UUID listingId = seedDraftListing();
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(consumerUserId);
         mockMvc.perform(put("/api/v1/notifications/preferences")
@@ -390,7 +394,7 @@ class ProviderFollowIntegrationTest {
                         .content("{\"preferences\": [{\"type\": \"FOLLOWED_PROVIDER_NEW_LISTING\", "
                                 + "\"channel\": \"WS\", \"enabled\": false}]}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(57));
+                .andExpect(jsonPath("$.length()").value(100));
 
         follow();
         activateListing(listingId);

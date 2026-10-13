@@ -4,6 +4,7 @@ import com.marketplace.booking.spi.BookingSpi;
 import com.marketplace.catalog.spi.CatalogSpi;
 import com.marketplace.identity.spi.IdentitySpi;
 import com.marketplace.payments.spi.PaymentsSpi;
+import com.marketplace.shared.api.ConflictException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -13,14 +14,20 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.Set;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.springframework.boot.security.oauth2.server.resource.autoconfigure.OAuth2ResourceServerAutoConfiguration;
@@ -269,5 +276,81 @@ class AdminControllerWebMvcTest {
                                 {"value": "OPEN"}
                                 """))
                 .andExpect(status().isForbidden());
+    }
+
+    // -- The multi-role surface (ADR-0001's assignment model, delegated
+    //    through IdentitySpi to #543's RoleAssignmentService semantics) --
+
+    @Test
+    void getUserRoles_returnsTheActiveSet() throws Exception {
+        when(identitySpi.getUserRoles(any())).thenReturn(Set.of("CONSUMER", "PROVIDER"));
+
+        mockMvc.perform(get("/api/v1/admin/users/{id}/roles", UUID.randomUUID()))
+                .andExpect(status().isOk())
+                .andExpect(content().json("[\"CONSUMER\",\"PROVIDER\"]"));
+    }
+
+    @Test
+    void grantUserRole_delegatesAndReturnsOk() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/users/{id}/roles", UUID.randomUUID())
+                        .contentType("application/json")
+                        .content("""
+                                {"role": "PROVIDER"}
+                                """))
+                .andExpect(status().isOk());
+        verify(identitySpi).grantUserRole(any(), eq("PROVIDER"), any());
+    }
+
+    @Test
+    void grantUserRole_withInvalidRoleName_returnsBadRequest() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/users/{id}/roles", UUID.randomUUID())
+                        .contentType("application/json")
+                        .content("""
+                                {"role": "SUPERUSER"}
+                                """))
+                .andExpect(status().isBadRequest());
+        verify(identitySpi, org.mockito.Mockito.never()).grantUserRole(any(), any(), any());
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    void grantUserRole_withUserRole_returnsForbidden() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/users/{id}/roles", UUID.randomUUID())
+                        .contentType("application/json")
+                        .content("""
+                                {"role": "PROVIDER"}
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void grantUserRole_duplicateActivePair_answers409() throws Exception {
+        doThrow(new ConflictException(
+                "An active PROVIDER assignment already exists for this account"))
+                .when(identitySpi).grantUserRole(any(), eq("PROVIDER"), any());
+
+        mockMvc.perform(post("/api/v1/admin/users/{id}/roles", UUID.randomUUID())
+                        .contentType("application/json")
+                        .content("""
+                                {"role": "PROVIDER"}
+                                """))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void revokeUserRole_delegatesAndReturnsOk() throws Exception {
+        mockMvc.perform(delete("/api/v1/admin/users/{id}/roles/{role}", UUID.randomUUID(), "PROVIDER"))
+                .andExpect(status().isOk());
+        verify(identitySpi).revokeUserRole(any(), eq("PROVIDER"), any());
+    }
+
+    @Test
+    void revokeUserRole_primaryRoleRefusal_answers409() throws Exception {
+        doThrow(new ConflictException(
+                "The account's primary role refuses the revoke — its honest path is the role update"))
+                .when(identitySpi).revokeUserRole(any(), eq("CONSUMER"), any());
+
+        mockMvc.perform(delete("/api/v1/admin/users/{id}/roles/{role}", UUID.randomUUID(), "CONSUMER"))
+                .andExpect(status().isConflict());
     }
 }

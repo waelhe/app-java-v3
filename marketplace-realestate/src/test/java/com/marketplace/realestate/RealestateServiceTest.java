@@ -220,6 +220,6 @@ class RealestateServiceTest {
     @Test
     void realestateCacheNames_areExactlyTheLiveSearchResultsCacheName() {
         assertThat(RealestateService.REALESTATE_CACHE_NAMES)
-                .containsExactly("search-results-v5");
+                .containsExactly("search-results-v6");
     }
 }

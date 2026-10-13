@@ -1,5 +1,6 @@
 package com.marketplace.disputes;
 
+import com.marketplace.shared.api.DisputeResolution;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;

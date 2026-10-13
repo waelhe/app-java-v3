@@ -55,7 +55,7 @@ class UnifiedSearchServiceTest {
     @Test
     void theAnswerComposesBothLegsWithTheirOwnHonestShapes() {
         ListingSummary listing = new ListingSummary(UUID.randomUUID(), "مقهى",
-                "SERVICES", BigDecimal.TEN, "SAR", "مزود", 4.5, 3L);
+                "SERVICES", BigDecimal.TEN, "SAR", "مزود", 4.5, 3L, false);
         when(searchService.search(any(SearchCriteria.class), any()))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(listing)));
         com.marketplace.shared.api.DiscoveryCardView card =
@@ -77,7 +77,7 @@ class UnifiedSearchServiceTest {
     @Test
     void aDarkCommunityLegLeavesTheListingsPageIntactAndLabelsTheLeg() {
         ListingSummary listing = new ListingSummary(UUID.randomUUID(), "مقهى",
-                "SERVICES", BigDecimal.TEN, "SAR", "مزود", 4.5, 3L);
+                "SERVICES", BigDecimal.TEN, "SAR", "مزود", 4.5, 3L, false);
         when(searchService.search(any(SearchCriteria.class), any()))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(listing)));
         when(communityLeg.search(any(SearchCriteria.class), any(PagedRequest.class)))

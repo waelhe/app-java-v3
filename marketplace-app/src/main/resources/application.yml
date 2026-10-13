@@ -71,6 +71,17 @@ spring:
       max-lifetime: 1800000
       connection-timeout: 30000
       leak-detection-threshold: 60000
+      # The trigram fallback's operator threshold (pg_trgm.word_similarity_threshold
+      # — the GUC the `<%` operator reads per the official pg_trgm docs). The D-06
+      # baseline harness (SearchBaselineMeasurementIntegrationTest) measured the
+      # framework default 0.6 BLIND to its own one-codepoint typo probe: the
+      # seeded Arabic rows ('شقة …') score word_similarity ≈ 0.5 against the
+      # query word 'شقه' (ة→ه costs a third of a three-letter word's trigram
+      # set) — the fallback returned ZERO rows for exactly the case it exists
+      # for. 0.3 is the measurement-backed decision the repository javadoc
+      # reserved this slot for; a session-level GUC affects only the trigram
+      # operators, no other statement semantics.
+      connection-init-sql: SET pg_trgm.word_similarity_threshold = 0.3
 
   jpa:
     open-in-view: false
@@ -230,7 +241,7 @@ spring:
     # settings table, keyed by setting key, evicted by SystemSettingsService
     # through the same relay (its absent case is cached too, so a create
     # evicts as well).
-    cache-names: catalog-active-v3,catalog-by-category-v3,catalog-search-v3,pricing-calculations,search-results-v5,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers,provider-stats,geo-tree,system-settings
+    cache-names: catalog-active-v4,catalog-by-category-v4,catalog-search-v4,pricing-calculations,search-results-v6,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers,provider-stats,geo-tree,system-settings
     redis:
       # Entry TTL — the framework's own expiration channel for cache entries.
       # Evidence: spring-configuration-metadata.json of spring-boot-cache

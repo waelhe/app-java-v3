@@ -157,11 +157,11 @@ class NeighborhoodPostControllerTest {
     void create_answers201WithTheStoredView() {
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(authorId);
         when(postService.createPost(authorId, locationId, PostCategory.GENERAL,
-                "Title", "Body")).thenReturn(view());
+                "Title", "Body", false)).thenReturn(view());
 
         ResponseEntity<NeighborhoodPostView> result = controller.create(
                 new NeighborhoodPostController.CreatePostRequest(
-                        locationId, "GENERAL", "Title", "Body"),
+                        locationId, "GENERAL", "Title", "Body", false),
                 authentication);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.CREATED);
@@ -172,7 +172,7 @@ class NeighborhoodPostControllerTest {
     void create_invalidCategory_is400BeforeAnyServiceCall() {
         assertThatThrownBy(() -> controller.create(
                 new NeighborhoodPostController.CreatePostRequest(
-                        locationId, "SPAM", "Title", "Body"),
+                        locationId, "SPAM", "Title", "Body", false),
                 authentication))
                 .isInstanceOf(com.marketplace.shared.api.BadRequestException.class);
         org.mockito.Mockito.verifyNoInteractions(postService);

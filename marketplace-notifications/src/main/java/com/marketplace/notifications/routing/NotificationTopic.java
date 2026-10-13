@@ -16,8 +16,14 @@ import java.util.Map;
  * wins over the topic-level override row (V198) wins over the enabled
  * default — three levels, two override layers, resolved at read time.
  * The topic is a GROUPING of {@link NotificationType} values, never a
- * per-combination enum (the §8.1 rule): the vocabulary is ten families,
- * each mapping a fixed set of the nineteen legal types.
+ * per-combination enum (the §8.1 rule): the vocabulary is eleven
+ * families, each mapping a fixed set of the twenty-five legal types.
+ * The LOANS family joined last (the #545 meeting): the lending wave's
+ * six lifecycle types are a first-class surface of their own — the same
+ * reason DISPUTES is a family — and folding them into BOOKINGS would
+ * make muting bookings mute loan updates (distinct surfaces, distinct
+ * agreements). The V198 table carries no topic CHECK — the vocabulary
+ * lives only in this enum, so the family is a pure addition.
  *
  * <p>{@link #topicFor(NotificationType)} is the single mapping source —
  * the policy factory derives the topic from the event type, so a policy
@@ -33,7 +39,8 @@ public enum NotificationTopic {
     SEARCH,
     TRUST,
     DISPUTES,
-    OFFICIAL;
+    OFFICIAL,
+    LOANS;
 
     /**
      * The type→topic family mapping — the single source of truth the
@@ -75,6 +82,10 @@ public enum NotificationTopic {
             case DISPUTES -> new NotificationType[] {
                     NotificationType.DISPUTE_OPENED, NotificationType.DISPUTE_RESOLVED };
             case OFFICIAL -> new NotificationType[] { NotificationType.URGENT_ALERT };
+            case LOANS -> new NotificationType[] {
+                    NotificationType.LOAN_REQUESTED, NotificationType.LOAN_APPROVED,
+                    NotificationType.LOAN_CANCELLED, NotificationType.LOAN_DISPUTED,
+                    NotificationType.LOAN_DISPUTE_RESOLVED, NotificationType.LOAN_CLOSED };
         };
     }
 

@@ -35,6 +35,15 @@ on:
     # CodeRabbit free-plan 100-file review limit's documented remedy). Both
     # slices have since merged, so the entry retired with its wave (the
     # same inertness the precedent documents above).
+    # The #544/#545/#543 stacked wave rode the same §4.1 mechanism:
+    # the stacked bases were listed while the wave was in flight and
+    # retired with it in the post-merge truth-sync (the documented
+    # #540/#541 precedent's own inertness rule). #545 merged (2026-10-12)
+    # and #543 re-targeted main directly, so the phase-7 entry retired
+    # with its wave here: no open PR carries that branch as its base any
+    # longer, and PRs targeting main gate through the pull_request event
+    # exactly as before (the filter entry is inert weight otherwise —
+    # the same inertness the precedents above document).
     branches: [ main ]
   schedule:
     - cron: '27 5 * * 1'

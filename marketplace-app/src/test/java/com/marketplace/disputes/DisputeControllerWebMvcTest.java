@@ -1,5 +1,6 @@
 package com.marketplace.disputes;
 
+import com.marketplace.shared.api.DisputeResolution;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -122,6 +123,6 @@ class DisputeControllerWebMvcTest {
     }
 
     private static DisputeResponse mockResponse() {
-        return new DisputeResponse(UUID.randomUUID(), null, null, null, null, null, null, null, null, null);
+        return new DisputeResponse(UUID.randomUUID(), null, null, null, null, null, null, null, null, null, null, null);
     }
 }
