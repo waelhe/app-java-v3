@@ -66,6 +66,12 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
+          # Documented inputs (runner README): the API 36 emulator on hosted runners
+          # starved adbd while the Gradle daemon booted concurrently — measured twice
+          # as ShellCommandUnresponsiveException on emulator-5554 then "No compatible
+          # devices connected" (same signature on main since #548). 4096M AVD RAM is
+          # the documented lever (ram-size: "Size of RAM to use for this AVD").
+          ram-size: 4096M
           script: |
             cd android && ./gradlew :app:connectedDebugAndroidTest -PoidcClientId=android-community-native -PoidcRedirectUri=com.marketplace.android:/oauth2redirect
 
