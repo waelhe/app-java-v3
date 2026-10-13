@@ -19,6 +19,18 @@
 3. **The report is the D-06 artifact.** The harness writes `search-baseline-report.md` (the CI artifact) containing the methodology, the measured table (path × query × execution time), and the plan excerpts. The engine decision stays WHERE the plan put it: **PostgreSQL remains the only search engine**; an OpenSearch adoption is refused until a report produced by THIS instrument on a representative benchmark demonstrates the measured need, and the owner/ops accept it — the harness is the standing instrument that produces that evidence on demand. No parallel engine, no speculative index, no UBI/behavioral pipeline until that measured gate (the plan's own §5.2 wording).
 4. **No production code moves.** The harness is measurement-only: no query is rewritten, no index added, no threshold tuned (the framework-default 0.6 similarity threshold stays untouched — the measured-repository rule). The D-06 reservation closes as the plan defines it: the measuring instrument exists, the baseline is measurable at any time, the engine decision is a report-and-acceptance away — never an assumption.
 
+   > **Amendment (2026-10-13, same wave):** the threshold statement above held exactly
+   > until the instrument measured the default's own blind spot — the framework-default
+   > `0.6` was BLIND to the one-codepoint typo probe (`'شقه'` vs the seeded `'شقة …'`:
+   > ة→ه costs a third of a three-letter word's trigram set, `word_similarity ≈ 0.5`),
+   > so the fallback returned zero rows for precisely the case it exists for. The
+   > measurement-backed decision the measured-repository rule itself reserved the slot
+   > for then landed in the same wave: `pg_trgm.word_similarity_threshold = 0.3` as a
+   > session-level GUC via `hikari.connection-init-sql` (affects only the trigram
+   > operators, no other statement semantics — the full decision record lives in the
+   > `application.yml` comment at the setting itself). The ADR's letter stands amended:
+   > no UNMEASURED threshold moves — this one moved because it was measured.
+
 ## Consequences
 
 - The CI gains a standing, repeatable baseline instrument (owned container, seeded data, structural index assertions) — an index/config regression that flips a production query off its GIN index fails the gate structurally.

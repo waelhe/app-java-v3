@@ -55,7 +55,7 @@ public class PaymentIntent extends BaseEntity {
 
     /**
      * Stage 6 (ADR-0002): the order this intent pays for — non-null iff
-     * origin is ORDER (the V172 pairing CHECK pins the pairing at the
+     * origin is ORDER (the V184 pairing CHECK pins the pairing at the
      * database level). One intent per order is the partial-unique index's
      * own rule; the deterministic {@code order-…} idempotency key is the
      * first line of defense.
@@ -65,7 +65,7 @@ public class PaymentIntent extends BaseEntity {
 
     /**
      * Stage 8 (ADR-0004): the loan this intent's fee pays for — non-null
-     * iff origin is LOAN (the V174 pairing CHECK). One intent per loan is
+     * iff origin is LOAN (the V200 pairing CHECK). One intent per loan is
      * the partial-unique index's own rule.
      */
     @Column(name = "loan_id")
@@ -154,7 +154,7 @@ public class PaymentIntent extends BaseEntity {
     /**
      * Stage 6 (ADR-0002): the order-checkout intent. The payer is the
      * buyer (consumer_id carries the order's consumer), the subject is
-     * the order (no booking, no campaign — the V172 pairing CHECK), and
+     * the order (no booking, no campaign — the V184 pairing CHECK), and
      * the idempotency key is the DETERMINISTIC order key
      * {@code order-{orderId}} — the engine deduplicates on it.
      */

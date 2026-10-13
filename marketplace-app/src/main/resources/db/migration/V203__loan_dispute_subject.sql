@@ -16,7 +16,7 @@
 -- DROP/ADD pair — no VALIDATE semantics apply to exclusion constraints;
 -- the scan is the index rebuild itself).
 --
--- NOT VALID here; VALIDATE in V178 — the V166/V167 and V74/V75 precedent
+-- NOT VALID here; VALIDATE in V204 — the V166/V167 and V74/V75 precedent
 -- verbatim (inside one transaction the ADD's ACCESS EXCLUSIVE lock would
 -- still be held during the validation scan, blocking the ordinary reads
 -- and writes of the dispute surfaces).

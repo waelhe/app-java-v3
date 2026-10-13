@@ -442,8 +442,8 @@ public class PaymentsService implements PaymentsSpi {
      * Stage 6 (ADR-0002): the order-checkout intent — the
      * {@code createAdIntent} twin verbatim: the deterministic
      * {@code order-{orderId}} idempotency key is the first line of
-     * defense (the replay answers the SAME intent), the V172
-     * partial-unique index is the concurrency backstop, and the INITIATED
+     * defense (the replay answers the SAME intent), the V184
+     * order_id UNIQUE constraint is the concurrency backstop, and the INITIATED
      * event keeps the notification vocabulary continuous.
      */
     public PaymentIntent createOrderIntent(UUID orderId, UUID consumerId,
@@ -469,7 +469,7 @@ public class PaymentsService implements PaymentsSpi {
     /**
      * Stage 8 (ADR-0004): the loan-fee intent — the order-checkout twin
      * verbatim (the deterministic {@code loan-{loanId}} key is the first
-     * line of defense, the V174 partial-unique index the backstop).
+     * line of defense, the V200 loan_id UNIQUE constraint the backstop).
      */
     public PaymentIntent createLoanIntent(UUID loanId, UUID borrowerId,
                                           long amountCents, String currency) {
@@ -787,7 +787,7 @@ public class PaymentsService implements PaymentsSpi {
     /**
      * Stage 6 (ADR-0002): the ORDER cancellation's money half — the
      * {@code autoRefundByBooking} twin verbatim, keyed by the order's ONE
-     * intent (the V172 partial-unique index makes the single lookup the
+     * intent (the V184 order_id UNIQUE constraint makes the single lookup the
      * whole truth): the collectible attempt is aborted where it stands,
      * the collected attempt is refunded in full — through the ONE refund
      * contract, no second refund path.

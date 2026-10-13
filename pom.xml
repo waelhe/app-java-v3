@@ -876,7 +876,6 @@
                         <exclude>**/shared/api/UnifiedSearchDomain.*</exclude>
                         <exclude>**/shared/api/UnifiedSearchHit.*</exclude>
                         <exclude>**/shared/api/LoanPartyProvider.*</exclude>
-                        <exclude>**/shared/api/VerificationCredentialDecided.*</exclude>
                         <!-- marketplace-platform-infra: data-only config, simple delegators, pure interfaces -->
                         <exclude>**/shared/config/**</exclude>
                         <exclude>**/shared/email/EmailSendException.*</exclude>
