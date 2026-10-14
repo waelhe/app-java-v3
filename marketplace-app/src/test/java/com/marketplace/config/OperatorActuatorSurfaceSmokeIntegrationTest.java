@@ -18,9 +18,11 @@ import test.config.IntegrationContainers;
 import java.time.Instant;
 import java.util.Map;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -47,7 +49,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   the incident diagnostics (threaddump), the automation inventory
  *   (scheduledtasks), the cache board (caches), the wire inventory
  *   (mappings), the context inventory (beans, conditions, env,
- *   configprops), and the migration history (flyway).</li>
+ *   configprops), the migration history (flyway), and the module
+ *   structure (modulith — the system reporting its own layers).</li>
  *   <li><b>The auditevents leg (the official Auditing recipe end-to-end)</b>
  *   — the JPA-backed AuditEventRepository (the reference's production
  *   recommendation) receives an event through the documented {@code add}
@@ -94,7 +97,8 @@ class OperatorActuatorSurfaceSmokeIntegrationTest {
         // whole expanded surface: 401 before any endpoint body is served.
         for (String id : new String[] {
                 "auditevents", "beans", "caches", "conditions", "configprops",
-                "env", "flyway", "loggers", "mappings", "scheduledtasks", "threaddump"}) {
+                "env", "flyway", "loggers", "mappings", "modulith",
+                "scheduledtasks", "threaddump"}) {
             mockMvc.perform(get("/actuator/" + id))
                     .andExpect(status().isUnauthorized());
         }
@@ -106,7 +110,8 @@ class OperatorActuatorSurfaceSmokeIntegrationTest {
         // the operator surface is not theirs — 403, never a body.
         for (String id : new String[] {
                 "auditevents", "beans", "caches", "conditions", "configprops",
-                "env", "flyway", "loggers", "mappings", "scheduledtasks", "threaddump"}) {
+                "env", "flyway", "loggers", "mappings", "modulith",
+                "scheduledtasks", "threaddump"}) {
             mockMvc.perform(get("/actuator/" + id).with(jwt()))
                     .andExpect(status().isForbidden());
         }
@@ -149,13 +154,34 @@ class OperatorActuatorSurfaceSmokeIntegrationTest {
 
     @Test
     void theCacheAndWireInventoriesAnswerTheOperator() throws Exception {
+        // caches — "Exposes available caches": the OFFICIAL Response
+        // Structure, paths verbatim — cacheManagers (Object — "cache
+        // managers keyed by id"), each manager carrying its caches
+        // ("caches in the application context keyed by name"). The pre-fix
+        // pinned "$.caches", a root key the endpoint never serves (the
+        // reference API page is the authority, and the CI runs agreed:
+        // PathNotFound on every round).
         mockMvc.perform(get("/actuator/caches").with(operatorJwt()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.caches").isArray());
+                .andExpect(jsonPath("$.cacheManagers").isMap())
+                .andExpect(jsonPath("$.cacheManagers.*.caches").isNotEmpty());
 
         mockMvc.perform(get("/actuator/mappings").with(operatorJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.contexts").isMap());
+    }
+
+    @Test
+    void theModuleStructureAnswersTheOperator() throws Exception {
+        // modulith — the Application Module Actuator (spring-modulith-
+        // actuator, the official Modulith "Production-ready Features"
+        // recipe): the live module structure so the system reports its
+        // own layers — the JSON names the catalog module (SYSTEM.md §5).
+        // The 200 leg the cleanup IT used to carry before the operator-
+        // role tightening moved it here, now behind the operator JWT.
+        mockMvc.perform(get("/actuator/modulith").with(operatorJwt()))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("catalog")));
     }
 
     @Test
