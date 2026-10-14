@@ -1,10 +1,27 @@
 name: Railway Deploy
 
-# The manual deploy lever — the automatic channel that used to live here was
-# disabled by the owner's measured decision (2026-10-10): the project runs on
-# a trial account, merges arrive in bursts, and every merge rebuilt two Java
-# images for no behavioural change. Everything below is unchanged, so the
-# automatic path returns by restoring the `workflow_run` trigger alone.
+# The automatic deploy channel — restored per the owner's governing
+# instruction (2026-10-14): every manual intervention in the management
+# channel is removed without exception and replaced by automatic
+# management. The 2026-10-10 "manual lever" decision is superseded by that
+# instruction. The shape is exactly the automatic channel that shipped in
+# #526: the `workflow_run` trigger plus the two main-only guard clauses,
+# with the unchanged all-green gate and the same Railway deploy mutations.
+#
+# Official basis (docs cited, not invented):
+# - GitHub docs, "Events that trigger workflows" — workflow_run: "This event
+#   will only trigger a workflow run if the workflow file is on the default
+#   branch"; the run fires when each named workflow completes.
+# - Railway docs, "GitHub autodeploys" — Wait for CI: "new deployments sit
+#   in a WAITING state until every GitHub Actions check suite on the commit
+#   has finished... A workflow that fails skips the deployment immediately.
+#   A workflow that is skipped or reports neutral never blocks. A workflow
+#   that is cancelled blocks the deployment only if no other workflow on the
+#   same commit succeeded." This gate adopts exactly those semantics.
+# - Railway API cookbook, "Deploy a specific service in an environment"
+#   (integrations/api/manage-deployments) — serviceInstanceDeployV2(commitSha,
+#   environmentId, serviceId) pins the exact commit that passed the gate, so
+#   a newer push can never race ahead of verification.
 #
 # Why a workflow at all rather than Railway-native auto-deploy (measured
 # 2026-10-09): the Railway project has no workspace member with their GitHub
@@ -24,6 +41,9 @@ name: Railway Deploy
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: ["CI", "Integration Test", "CodeQL", "Container Scan"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -43,17 +63,15 @@ env:
 
 jobs:
   deploy:
-    name: Deploy the dispatched commit to Railway (all suites green)
-    # Manual lever only. The automatic channel that used to fire on every
-    # main merge was disabled by the owner's measured decision
-    # (2026-10-10): a trial account with bursty merges (13 in one day, mostly
-    # docs and design) paid two full Java image builds per merge for no
-    # behavioural change. Restoring it means adding back the `workflow_run`
-    # trigger and the two clauses:
-    #   github.event.workflow_run.event == 'push' &&
-    #   github.event.workflow_run.head_branch == 'main'
+    name: Deploy main to Railway (every suite green)
+    # workflow_run fires for PR-head runs too — deploy only main commits.
+    # workflow_dispatch stays as the emergency lever (same all-green gate);
+    # it is not the primary channel — every main merge deploys itself.
     if: >-
-      github.repository == 'waelhe/app-java-v3'
+      github.repository == 'waelhe/app-java-v3' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main'))
     runs-on: ubuntu-latest
     steps:
       - name: Gate — every GitHub Actions suite on the commit must be green
@@ -62,7 +80,7 @@ jobs:
         with:
           script: |
             // The verified commit: the workflow_run's head for merge pushes,
-            // the dispatched ref's head for the manual lever.
+            // the dispatched ref's head for the emergency lever.
             const target = context.eventName === 'workflow_dispatch'
               ? context.sha
               : context.payload.workflow_run.head_sha;
