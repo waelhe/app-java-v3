@@ -337,16 +337,89 @@ management:
   endpoints:
     web:
       exposure:
-        # "modulith" — the Application Module Actuator (spring-modulith-actuator,
-        # official Modulith 2.1.1 "Production-ready Features" recipe): GET
-        # /actuator/modulith returns the live module structure (names,
-        # displayName, dependency graph) so the system reports its own layers.
-        # NOT permitAll in SecurityConfig — it falls under the authenticated()
-        # default for /actuator/** (module topology is internal information).
-        include: health,info,metrics,prometheus,modulith
+        # The official operator surface — the complete documented endpoint
+        # set for THIS application (Spring Boot Reference, Actuator ›
+        # Endpoints: the endpoint id table; Monitoring and Management Over
+        # HTTP: "you should take care to protect HTTP endpoints in the same
+        # way you would any other sensitive instance" — every id below rides
+        # the chain's hasRole('ADMIN') rule for /actuator/** (the operator
+        # role — the same vocabulary every /api/v1/admin surface carries),
+        # with only the health probes and info the SecurityConfig
+        # permitAlls deliberately for the Railway healthcheck and the
+        # watchdog probe contract).
+        #
+        # The set, id by id, each the reference's own row:
+        #   auditevents  — "Exposes audit events information" (activated by
+        #                  the JpaActuatorAuditEventRepository bean — the
+        #                  official Auditing recipe's production form)
+        #   beans        — "Displays a complete list of all the Spring beans"
+        #   caches       — "Exposes available caches" (read + the documented
+        #                  evict operation for the operator)
+        #   conditions   — "Shows the conditions that were evaluated on
+        #                  configuration and auto-configuration classes"
+        #                  (closes the dead-config gap: the endpoint was
+        #                  enabled below but never listed here — unreachable)
+        #   configprops  — "Displays a collated list of all
+        #                  @ConfigurationProperties. Subject to sanitization"
+        #   env          — "Exposes properties from Spring's
+        #                  ConfigurableEnvironment. Subject to sanitization"
+        #   flyway       — "Shows any Flyway database migrations that have
+        #                  been applied" (the migration history the operator
+        #                  reconciles a deployment against)
+        #   health       — the deployment's own gates (permitAll'd probes)
+        #   info         — application info
+        #   loggers      — "Shows and modifies the configuration of loggers"
+        #                  (the documented RUNTIME control: the operator
+        #                  raises a package to DEBUG at incident time and
+        #                  lowers it back — no redeploy, no restart)
+        #   mappings     — "Displays a collated list of all @RequestMapping
+        #                  paths" (the wire's own inventory)
+        #   metrics      — "Shows metrics information" (the MeterRegistry
+        #                  listing the /console/metrics board reads)
+        #   prometheus   — the scraping exposition (the watchdog/alert rules)
+        #   modulith     — the Application Module Actuator
+        #                  (spring-modulith-actuator, official Modulith
+        #                  "Production-ready Features" recipe): GET
+        #                  /actuator/modulith returns the live module
+        #                  structure (names, displayName, dependency graph)
+        #                  so the system reports its own layers.
+        #   scheduledtasks — "Displays the scheduled tasks in your
+        #                    application" (the automation inventory — the
+        #                    operator SEES every automatic job the platform
+        #                    runs: cleanups, resubmission, expirations)
+        #   threaddump   — "Performs a thread dump" (the incident-time
+        #                  diagnostic)
+        #
+        # Deliberately NOT in the set (each the reference's own guidance):
+        #   httpexchanges — "we recommend using InMemoryHttpExchangeRepository
+        #                    only for development environments. For production
+        #                    environments, we recommend using a production-ready
+        #                    tracing or observability solution" — this platform
+        #                    runs the OTel/OTLP tracing pipeline (tracing
+        #                    sampling below), so the production exchange record
+        #                    is the trace, not an in-memory ring.
+        #   shutdown      — "Disabled by default" and it stays disabled: the
+        #                    platform's stop channel is Railway's, not an
+        #                    HTTP POST.
+        #   sessions/quartz/liquibase/integrationgraph — no such technology in
+        #                    this application (stateless JWT chain, Flyway not
+        #                    Liquibase, no Quartz, no spring-integration).
+        include: auditevents,beans,caches,conditions,configprops,env,flyway,health,info,loggers,mappings,metrics,prometheus,modulith,scheduledtasks,threaddump
   endpoint:
     conditions:
       enabled: true
+    env:
+      # The official sanitized-by-default posture, lifted exactly one notch
+      # to the reference's own operator option: "when-authorized - values
+      # are shown only to authorized users". Belt and suspenders with the
+      # chain rule: only the ADMIN role even reaches these endpoints (the
+      # CodeRabbit #564 round), and authorized = the authenticated
+      # operator; anything else that ever reaches the endpoint still sees
+      # fully sanitized values ("by default values are always fully
+      # sanitized (replaced with ******)").
+      show-values: when-authorized
+    configprops:
+      show-values: when-authorized
     health:
       show-details: when-authorized
       show-components: when-authorized

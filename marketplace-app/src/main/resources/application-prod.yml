@@ -134,6 +134,14 @@ management:
   server:
     port: ${MANAGEMENT_SERVER_PORT:8081}
   endpoint:
+    env:
+      # The reference's own operator option ("when-authorized - values are
+      # shown only to authorized users") — same semantics as health
+      # show-details above: anonymous callers see fully sanitized values,
+      # the authenticated operator sees the real ones.
+      show-values: when-authorized
+    configprops:
+      show-values: when-authorized
     health:
       # S10: the pre-fix never/never made the aggregate verdict BLIND — the
       # endpoint reported 503 DOWN with zero diagnostic surface, so the mail
@@ -157,7 +165,22 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        # The official operator surface — the same complete documented set
+        # as application.yml (the reference's endpoint id table; every id
+        # rides the chain's hasRole('ADMIN') rule for /actuator/** — the
+        # operator role — with only the permitAll'd health probes and info
+        # staying public). Profiles REPLACE list properties, so
+        # the set is restated here in full — this closes the drift this
+        # file carried: the base profile exposed "modulith" (the system
+        # reporting its own layers) while production silently dropped it,
+        # and the operator's documented endpoints (loggers, threaddump,
+        # scheduledtasks, caches, env, configprops, mappings, beans,
+        # conditions, flyway, auditevents) were absent from production
+        # entirely. See application.yml for the id-by-id official citations
+        # and the deliberate exclusions (httpexchanges: the production
+        # exchange record is the OTel/OTLP trace; shutdown stays disabled
+        # per the reference's own default).
+        include: auditevents,beans,caches,conditions,configprops,env,flyway,health,info,loggers,mappings,metrics,prometheus,modulith,scheduledtasks,threaddump
   observations:
     enabled: true
   metrics:
