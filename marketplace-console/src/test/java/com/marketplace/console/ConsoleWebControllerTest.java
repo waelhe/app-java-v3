@@ -87,13 +87,32 @@ class ConsoleWebControllerTest {
 
     @Test
     void theFlipIsOneServiceCallAndRedirects() {
-        RedirectView view = controller.flipFlag("some.flag");
+        when(consoleService.flipFlag("some.flag")).thenReturn(java.util.Optional.empty());
+
+        RedirectView view = controller.flipFlag("some.flag", redirect);
 
         // post/redirect/get — the guide's own pattern (a refresh never re-submits)
         assertThat(view.getUrl()).isEqualTo("/console");
         // the whole flip is the service's own method — the row's state
         // inverted inside the service, never in the controller
         verify(consoleService).flipFlag("some.flag");
+        // an absent row is the service's own no-op — the SILENT redirect
+        // stands (a forged or stale form gets no banner)
+        verify(redirect, never()).addFlashAttribute(any(), any());
+    }
+
+    @Test
+    void theLandedFlipAnswersTheConfirmationBanner() {
+        when(consoleService.flipFlag("some.flag"))
+                .thenReturn(java.util.Optional.of(FeatureFlag.register("some.flag", null, false)));
+
+        RedirectView view = controller.flipFlag("some.flag", redirect);
+
+        assertThat(view.getUrl()).isEqualTo("/console");
+        // a flip that LANDS answers the flash contract's Arabic banner —
+        // the operator sees the new state, not a silent redirect
+        verify(redirect).addFlashAttribute(eq(ConsoleWebController.FLASH_SUCCESS),
+                eq("أُطفئ العلم some.flag"));
     }
 
     // -------------------------------------------------------------------------
@@ -214,11 +233,30 @@ class ConsoleWebControllerTest {
     @Test
     void theGeographicFlipIsOneServiceCallAndRedirects() {
         UUID location = UUID.randomUUID();
+        when(consoleService.flipGeographicSetting("some.key", location))
+                .thenReturn(java.util.Optional.empty());
 
-        RedirectView view = controller.flipGeographicSetting("some.key", location);
+        RedirectView view = controller.flipGeographicSetting("some.key", location, redirect);
 
         assertThat(view.getUrl()).isEqualTo("/console");
         verify(consoleService).flipGeographicSetting("some.key", location);
+        // an absent (key, location) pair is the service's own no-op — the
+        // SILENT redirect stands
+        verify(redirect, never()).addFlashAttribute(any(), any());
+    }
+
+    @Test
+    void theLandedGeographicFlipAnswersTheConfirmationBanner() {
+        UUID location = UUID.randomUUID();
+        when(consoleService.flipGeographicSetting("some.key", location))
+                .thenReturn(java.util.Optional.of(
+                        GeographicFeatureSetting.register("some.key", location, false)));
+
+        RedirectView view = controller.flipGeographicSetting("some.key", location, redirect);
+
+        assertThat(view.getUrl()).isEqualTo("/console");
+        verify(redirect).addFlashAttribute(eq(ConsoleWebController.FLASH_SUCCESS),
+                eq("أُطفئ الإعداد الجغرافي some.key في " + location));
     }
 
     // -------------------------------------------------------------------------

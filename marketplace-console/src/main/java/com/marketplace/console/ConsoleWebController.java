@@ -130,8 +130,14 @@ public class ConsoleWebController {
      * follows), and a key with no row is a service-level no-op.
      */
     @PostMapping("/console/flags/{key}/flip")
-    public RedirectView flipFlag(@PathVariable String key) {
-        consoleService.flipFlag(key);
+    public RedirectView flipFlag(@PathVariable String key,
+                                  RedirectAttributes redirect) {
+        // the flip that LANDED answers the banner (the flash contract);
+        // a key with no live row is the service's own no-op — the silent
+        // redirect stands (a forged or stale form).
+        consoleService.flipFlag(key)
+                .ifPresent(flag -> redirect.addFlashAttribute(FLASH_SUCCESS,
+                        (flag.isEnabled() ? "فُعّل العلم " : "أُطفئ العلم ") + key));
         return consoleHome();
     }
 
@@ -251,14 +257,19 @@ public class ConsoleWebController {
 
     /**
      * The geographic flip — {@link #flipFlag(String)}'s own shape at one
-     * scope: the row's state inverted in ONE service call; an absent (key,
-     * location) pair is a no-op redirect (a forged or stale form — the
-     * flag flip's own contract).
+     * scope: the row's state inverted in ONE service call; a flip that
+     * LANDS answers the banner (the flash contract), while an absent
+     * (key, location) pair is a silent no-op redirect (a forged or stale
+     * form — the flag flip's own contract).
      */
     @PostMapping("/console/geo-settings/{key}/{locationId}/flip")
     public RedirectView flipGeographicSetting(@PathVariable String key,
-                                              @PathVariable UUID locationId) {
-        consoleService.flipGeographicSetting(key, locationId);
+                                              @PathVariable UUID locationId,
+                                              RedirectAttributes redirect) {
+        consoleService.flipGeographicSetting(key, locationId)
+                .ifPresent(setting -> redirect.addFlashAttribute(FLASH_SUCCESS,
+                        (setting.isEnabled() ? "فُعّل الإعداد الجغرافي " : "أُطفئ الإعداد الجغرافي ")
+                                + key + " في " + locationId));
         return consoleHome();
     }
 
@@ -328,6 +339,13 @@ public class ConsoleWebController {
                     "أُعيد نشر المراجعة " + revisionNo + " كمراجعة رقم " + rolled.revisionNo());
         } catch (ResourceNotFoundException ex) {
             return refusedPlanning(redirect, "لا مراجعة بهذا الرقم: " + revisionNo);
+        } catch (com.marketplace.shared.api.BadRequestException ex) {
+            // the rollback republishes the TARGET revision's stored payload
+            // through the validator — a vocabulary that drifted since that
+            // revision (a component removed from the closed set) refuses
+            // the republish HERE, with the banner (the publish lever's own
+            // polite face), never an error page.
+            return refusedPlanning(redirect, ex.getMessage());
         }
         return planningBoard();
     }

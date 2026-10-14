@@ -26,11 +26,23 @@
 -- change-history read shows them as such (SQL seeds bypass JPA, so no
 -- Envers revision is written — the migration file itself is the trail).
 --
+-- Upgrade safety (the CodeRabbit-verified contract): both inserts are
+-- GUARDED. The pre-V214 surface already publishes planning revisions
+-- (revision 1 on an empty table) and registers flag keys — a live
+-- environment can therefore hold the seed's own targets BEFORE V214
+-- applies, and the unique constraints (V201's revision_no, V157's
+-- partial live-key index) would fail the migration mid-upgrade. The
+-- guards make the seed idempotent: an existing row wins — the
+-- operator's live state is the authority, the seed only arms Day-1
+-- environments that have nothing yet.
+--
 -- Numbering: V214 — the console module's own sequential claim after
 -- V213 (the actuator audit events table).
 
 -- The planning record's Day-1 revision: the six documented sections,
 -- all visible, in the discovery order the §1.4 vocabulary defines.
+-- Guarded: an admin-published revision 1 on a pre-V214 environment is
+-- the live baseline — the seed never overrides it.
 INSERT INTO console_planning_revisions (
     id, revision_no, payload, note, is_deleted, version,
     created_by, created_at, updated_by, updated_at)
@@ -38,10 +50,14 @@ VALUES (
     gen_random_uuid(), 1,
     '{"sections":[{"code":"URGENT","visible":true,"position":1},{"code":"FOLLOWED_SOURCES","visible":true,"position":2},{"code":"LOST_FOUND","visible":true,"position":3},{"code":"RECOMMENDATIONS","visible":true,"position":4},{"code":"EVENTS","visible":true,"position":5},{"code":"FOR_YOU","visible":true,"position":6}]}',
     'بذرة اليوم-واحد: الأقسام الستة الموثّقة كما يعرفها محرّك العميل',
-    FALSE, 0, 'system-seed', now(), 'system-seed', now());
+    FALSE, 0, 'system-seed', now(), 'system-seed', now())
+ON CONFLICT (revision_no) DO NOTHING;
 
 -- The Day-1 flag inventory: one row per EXISTING capability (the service
 -- class that owns it today), enabled=TRUE = the current behavior.
+-- Guarded on the V157 partial live-key index: an operator-registered
+-- live key (whatever its state) is the authority — the seed never
+-- overrides the operator's own lever.
 INSERT INTO feature_flags (
     id, key_name, description, enabled, is_deleted, version,
     created_by, created_at, updated_by, updated_at)
@@ -60,4 +76,5 @@ VALUES
      TRUE, FALSE, 0, 'system-seed', now(), 'system-seed', now()),
     (gen_random_uuid(), 'institutions.urgent.enabled',
      'المصادر العاجلة المفوَّضة — المصادر والتنبيهات (V178): مفتاح إيقاف قناة العاجل عند الحادث',
-     TRUE, FALSE, 0, 'system-seed', now(), 'system-seed', now());
+     TRUE, FALSE, 0, 'system-seed', now(), 'system-seed', now())
+ON CONFLICT (key_name) WHERE is_deleted = FALSE DO NOTHING;
