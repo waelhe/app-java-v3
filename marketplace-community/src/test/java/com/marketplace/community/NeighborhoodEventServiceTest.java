@@ -279,7 +279,9 @@ class NeighborhoodEventServiceTest {
     void getBoard_whenTheFlagHasNoRow_KeepsTheBuiltBehavior() {
         // The two-half contract: an absent row answers the caller's
         // fallback — the built behavior serves exactly as before the
-        // console existed (the E2E-honest adoption).
+        // console existed (the E2E-honest adoption). The board's own
+        // pageable shape (a page request, never unpaged — the board read
+        // derives its sort from the page's coordinates).
         when(featureGate.isEnabled("community.events.enabled", true)).thenReturn(true);
         when(membershipRepository.findByUserId(memberId))
                 .thenReturn(Optional.of(membershipOf(memberId, locationId)));
@@ -287,7 +289,7 @@ class NeighborhoodEventServiceTest {
                 any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
 
-        assertThat(service.getBoard(memberId, null, Pageable.unpaged())).isEmpty();
+        assertThat(service.getBoard(memberId, null, PageRequest.of(0, 20))).isEmpty();
     }
 
     @Test
