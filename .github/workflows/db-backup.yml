@@ -1,0 +1,220 @@
+name: Database Backup
+
+# The AUTOMATIC backup channel — replaces the manual pg_dump runbook
+# (docs/operating/manual-db-backup-runbook.md) per the owner's governing
+# instruction (2026-10-14): every manual intervention in the management
+# channel is removed without exception and replaced by automatic
+# management. The measured reality before this workflow: ZERO backups
+# (Railway volume backups are blocked by the trial plan; PITR/pgBackRest
+# is a paid follow-up) — the manual runbook was the documented workaround,
+# and it depended on a human remembering to run it before every risky
+# event. This workflow IS the remembering.
+#
+# Official basis (docs cited, not invented):
+# - GitHub docs, "Events that trigger workflows" — schedule: "The
+#   scheduled workflow runs on the latest commit on the default branch"
+#   (and the repo's own displaced-minutes guidance, already adopted by
+#   fork-sync: "High load times include the start of every hour").
+# - GitHub docs, "Storing workflow data as artifacts" —
+#   actions/upload-artifact: the documented storage channel for a
+#   workflow's output files, with retention-days.
+# - GitHub docs, "Reusing workflows" — workflow_call: this workflow is
+#   callable, so the deploy channel can take a pre-deploy snapshot
+#   (the safety floor's own trigger: any event that touches the schema).
+# - PostgreSQL docs, Client Applications — pg_dump: the custom format
+#   (-Fc, compressed, pg_restore-able), the documented "pg_dump must be
+#   at the same or higher major version as the database server" (the
+#   client comes from the official pgdg apt repository), and The Password
+#   File (libpq) for the credential channel — 0600, never a command line.
+# - Railway API — the SAME GraphQL channel the deploy workflow already
+#   trusts (backboard.railway.com/graphql/v2 + RAILWAY_TOKEN): the
+#   project→environment→serviceInstance discovery shape and the
+#   variablesForServiceDeployment value read are the repo's own measured
+#   patterns (trial-renewal runbook §Step 2/§Step 4: "القناة الوحيدة
+#   للقيم — المنصة write-only في العرض"). Zero new secrets, zero manual
+#   provisioning.
+#
+# What stays manual BY DESIGN: the RESTORE. Restoring is an incident-time
+# human decision (which snapshot, which moment, confirm the loss window)
+# — the runbook documents that procedure; no automation ever writes back
+# to the production database on a schedule.
+
+on:
+  schedule:
+    # Daily 01:13 UTC — displaced minutes per the official guidance
+    # (never the top of the hour), a quiet window for a pre-traffic
+    # database. The dump itself is seconds at this scale.
+    - cron: "13 1 * * *"
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Why this on-demand snapshot (the emergency lever: pre-migration, pre-transfer)"
+        required: false
+        default: "on-demand"
+  workflow_call:
+    # The callable form — the deploy channel's pre-deploy safety floor.
+    inputs:
+      reason:
+        description: "Why this snapshot (the caller's own context)"
+        required: false
+        type: string
+        default: "pre-deploy"
+
+permissions:
+  contents: read
+
+concurrency:
+  # One backup at a time — a deploy-time snapshot and the daily schedule
+  # can collide; they queue, never cancel (a snapshot is never worthless).
+  group: database-backup
+  cancel-in-progress: false
+
+env:
+  RAILWAY_API: https://backboard.railway.com/graphql/v2
+  RAILWAY_PROJECT_ID: bf8053b0-8021-4a13-af3a-45695223f5a2
+  RAILWAY_ENVIRONMENT_ID: 2f49b83a-ebe8-4c14-8e83-ba5678fce752
+
+jobs:
+  backup:
+    name: pg_dump the production database to a workflow artifact
+    if: >-
+      github.repository == 'waelhe/app-java-v3'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Resolve the database service and its live connection (self-served, zero new secrets)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          # The repo's own measured discovery shape (trial-renewal runbook
+          # §Step 2): projects → environments → serviceInstances.
+          curl -sSf -X POST "$RAILWAY_API" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"query":"query { projects { edges { node { id name environments { edges { node { id name serviceInstances { edges { node { id serviceName } } } } } } } } } }"}' \
+            -o /tmp/projects.json
+
+          # The value read (the runbook's §Step 4 measured channel — the
+          # display is write-only, the mutation returns the live values).
+          # The service id resolves from the discovery above; the mutation
+          # is fetched only after the python step below has resolved it.
+          python3 - <<'PY'
+          import json, os, sys
+
+          with open("/tmp/projects.json") as f:
+              data = json.load(f)
+
+          target = None
+          names_seen = []
+          for project in data["data"]["projects"]["edges"]:
+              if project["node"]["id"] != os.environ["RAILWAY_PROJECT_ID"]:
+                  continue
+              for environment in project["node"]["environments"]["edges"]:
+                  if environment["node"]["id"] != os.environ["RAILWAY_ENVIRONMENT_ID"]:
+                      continue
+                  for instance in environment["node"]["serviceInstances"]["edges"]:
+                      service_name = instance["node"]["serviceName"] or ""
+                      names_seen.append(service_name)
+                      if "postgres" in service_name.lower():
+                          target = instance["node"]
+                          break
+
+          if target is None:
+              print(f"::error::No postgres serviceInstance in the production environment (seen: {names_seen})")
+              sys.exit(1)
+
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write("DB_SERVICE_ID=" + target["id"] + "\n")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write("service=" + target["serviceName"] + "\n")
+          print("Resolved the database service: " + target["serviceName"])
+          PY
+
+          curl -sSf -X POST "$RAILWAY_API" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"query":"mutation($projectId: String!, $environmentId: String!, $serviceId: String!) { variablesForServiceDeployment(projectId: $projectId, environmentId: $environmentId, serviceId: $serviceId) }","variables":{"projectId":"'"$RAILWAY_PROJECT_ID"'","environmentId":"'"$RAILWAY_ENVIRONMENT_ID"'","serviceId":"'"$DB_SERVICE_ID"'"}}' \
+            -o /tmp/variables.json
+
+          python3 - <<'PY'
+          import json, os, sys, stat, urllib.parse
+
+          with open("/tmp/variables.json") as f:
+              response = json.load(f)
+
+          raw = response["data"]["variablesForServiceDeployment"]
+          # The mutation answers the live values as a JSON document (string
+          # or object — both accepted defensively).
+          variables = json.loads(raw) if isinstance(raw, str) else raw
+
+          public_url = variables.get("DATABASE_PUBLIC_URL")
+          if not public_url:
+              print("::error::DATABASE_PUBLIC_URL not found on the database service (variables seen: "
+                    + ", ".join(sorted(variables)) + ")")
+              sys.exit(1)
+
+          parsed = urllib.parse.urlparse(public_url)
+          if not parsed.password:
+              print("::error::The public connection URL carries no password — cannot authenticate")
+              sys.exit(1)
+
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write("PGHOST=" + (parsed.hostname or "") + "\n")
+              env.write("PGPORT=" + str(parsed.port or 5432) + "\n")
+              env.write("PGDATABASE=" + (parsed.path or "/").lstrip("/") + "\n")
+              env.write("PGUSER=" + (parsed.username or "") + "\n")
+
+          # The documented credential channel (PostgreSQL docs, The
+          # Password File): an ephemeral runner's ~/.pgpass at 0600 — the
+          # password never rides a command line, a process table, or a
+          # GITHUB_ENV file.
+          passfile = os.path.expanduser("~/.pgpass")
+          with open(passfile, "w") as f:
+              f.write(f"{parsed.hostname}:{parsed.port or 5432}:{(parsed.path or '/').lstrip('/')}:"
+                      f"{parsed.username}:{parsed.password}\n")
+          os.chmod(passfile, stat.S_IRUSR | stat.S_IWUSR)
+          print("Connection resolved: host=" + (parsed.hostname or "") + " db=" + (parsed.path or "/").lstrip("/"))
+          PY
+        id: resolve
+
+      - name: Install the PostgreSQL client that matches the server
+        run: |
+          set -euo pipefail
+          # pg_dump's own contract: the client must be at the same or
+          # higher major version as the server — the runner's distro
+          # client lags, so the client comes from the official pgdg apt
+          # repository (apt.postgresql.org, the documented channel).
+          sudo install -d /usr/share/postgresql-common/pgdg
+          curl -sSf https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc >/dev/null
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+
+      - name: pg_dump (custom format — compressed, restorable, pg_restore-able)
+        run: |
+          set -euo pipefail
+          STAMP="$(date -u '+%Y%m%d-%H%M%S')"
+          echo "STAMP=$STAMP" >> "$GITHUB_ENV"
+          mkdir -p backup
+          pg_dump --format=custom --file="backup/production-$STAMP.dump" --no-password
+          ls -lh backup/
+
+      - name: Upload the backup artifact (the documented storage channel)
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-db-backup-${{ env.STAMP }}
+          path: backup/*.dump
+          retention-days: 30
+          compression-level: 0   # the dump is already compressed (-Fc)
+
+      - name: The summary line (the operator's receipt)
+        run: |
+          echo "### Database backup complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Service: \`${{ steps.resolve.outputs.service }}\` (resolved through the Railway API)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Snapshot: \`production-$STAMP.dump\` (pg_dump custom format)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Retention: 30 days in the workflow artifacts" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Reason: ${{ inputs.reason || 'daily schedule' }}" >> "$GITHUB_STEP_SUMMARY"
