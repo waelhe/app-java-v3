@@ -249,7 +249,11 @@ class ManagerConsoleWebSecurityIntegrationTest {
                 .andReturn().getResponse().getContentAsString();
         assertThat(after).contains("نُشرت المراجعة رقم 2");
         assertThat(after).contains("اختبار النشر من الويب");
-        assertThat(after).contains("\"visible\":false");
+        // the NEW payload is the current planning — the comparison runs on
+        // whitespace-collapsed text because PostgreSQL jsonb normalizes the
+        // stored JSON on the way out (key order and separators are the
+        // column's own, never the write's)
+        assertThat(after.replaceAll("\\s+", "")).contains("\"visible\":false");
 
         // the refusal: an unknown component code answers the banner, nothing stored
         String csrfAfter = csrfOf(after);

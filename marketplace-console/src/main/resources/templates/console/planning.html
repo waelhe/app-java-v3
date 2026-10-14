@@ -150,8 +150,8 @@
             </td>
             <td th:text="${revision.note} ?: '—'">—</td>
             <td th:text="${revision.createdBy} ?: '—'">—</td>
-            <td class="when" th:text="${revision.createdAt != null}
-                    ? ${#temporals.format(revision.createdAt, 'yyyy-MM-dd HH:mm')} : '—'">—</td>
+            <td class="when" th:text="${revision.createdAt != null
+                    ? #temporals.format(revision.createdAt, 'yyyy-MM-dd HH:mm') : '—'}">—</td>
             <td>
                 <form th:action="@{/console/planning/rollback/{revisionNo}(revisionNo=${revision.revisionNo})}"
                       method="post">

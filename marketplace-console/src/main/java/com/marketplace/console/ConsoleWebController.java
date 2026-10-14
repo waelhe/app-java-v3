@@ -281,6 +281,10 @@ public class ConsoleWebController {
      * The planning publish — the payload validated at the service's gate
      * BEFORE any write; an unparseable or invalid shape is refused with
      * the banner and NOTHING is stored (the closed-payload discipline).
+     * The revision's own number reaches the banner through the DTO's
+     * mapping factory — the controller never calls the entity (the
+     * {@code controllersMustNotDependOnJpaEntities} rule the REST console
+     * itself follows).
      */
     @PostMapping("/console/planning/publish")
     public RedirectView publishPlanning(@RequestParam String payload,
@@ -294,9 +298,10 @@ public class ConsoleWebController {
             return refusedPlanning(redirect, "الملاحظة حتى 500 حرف — القيمة المرسلة أطول");
         }
         try {
-            ConsolePlanningRevision revision = planningService.publish(trimmed, note);
+            PlanningRevisionResponse published =
+                    PlanningRevisionResponse.of(planningService.publish(trimmed, note));
             redirect.addFlashAttribute(FLASH_SUCCESS,
-                    "نُشرت المراجعة رقم " + revision.getRevisionNo());
+                    "نُشرت المراجعة رقم " + published.revisionNo());
         } catch (com.marketplace.shared.api.BadRequestException ex) {
             return refusedPlanning(redirect, ex.getMessage());
         }
@@ -306,7 +311,8 @@ public class ConsoleWebController {
     /**
      * The planning rollback — the target payload REPUBLISHED as a new
      * revision (the append-only trail never rewrites); an unknown target
-     * answers the banner.
+     * answers the banner. The new revision's number rides the DTO's
+     * mapping factory — the controller never calls the entity.
      */
     @PostMapping("/console/planning/rollback/{revisionNo}")
     public RedirectView rollbackPlanning(@PathVariable int revisionNo,
@@ -316,9 +322,10 @@ public class ConsoleWebController {
             return refusedPlanning(redirect, "الملاحظة حتى 500 حرف — القيمة المرسلة أطول");
         }
         try {
-            ConsolePlanningRevision revision = planningService.rollback(revisionNo, note);
+            PlanningRevisionResponse rolled =
+                    PlanningRevisionResponse.of(planningService.rollback(revisionNo, note));
             redirect.addFlashAttribute(FLASH_SUCCESS,
-                    "أُعيد نشر المراجعة " + revisionNo + " كمراجعة رقم " + revision.getRevisionNo());
+                    "أُعيد نشر المراجعة " + revisionNo + " كمراجعة رقم " + rolled.revisionNo());
         } catch (ResourceNotFoundException ex) {
             return refusedPlanning(redirect, "لا مراجعة بهذا الرقم: " + revisionNo);
         }

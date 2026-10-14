@@ -308,10 +308,10 @@
         <tr th:each="change : ${changes}">
             <td th:text="${change.kind}">—</td>
             <td><code class="k" th:text="${change.key}">—</code></td>
-            <td th:text="${change.updatedBy} ?: ${change.createdBy} ?: '—'">—</td>
-            <td class="when" th:text="${change.updatedAt != null}
-                    ? ${#temporals.format(change.updatedAt, 'yyyy-MM-dd HH:mm')}
-                    : (${change.createdAt != null} ? ${#temporals.format(change.createdAt, 'yyyy-MM-dd HH:mm')} : '—')">—</td>
+            <td th:text="${change.updatedBy ?: change.createdBy ?: '—'}">—</td>
+            <td class="when" th:text="${change.updatedAt != null
+                    ? #temporals.format(change.updatedAt, 'yyyy-MM-dd HH:mm')
+                    : (change.createdAt != null ? #temporals.format(change.createdAt, 'yyyy-MM-dd HH:mm') : '—')}">—</td>
         </tr>
         </tbody>
     </table>
