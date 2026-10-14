@@ -1,20 +1,14 @@
 package com.marketplace.admin;
 
-import com.marketplace.community.ContentReportService;
-import com.marketplace.community.MembershipVerificationState;
-import com.marketplace.community.ModerationAction;
-import com.marketplace.community.NeighborhoodMembershipService;
-import com.marketplace.community.ReportStatus;
-import com.marketplace.institutions.InstitutionResponse;
-import com.marketplace.institutions.InstitutionService;
-import com.marketplace.institutions.InstitutionVerificationState;
-import com.marketplace.reviews.ReviewModerationStatus;
-import com.marketplace.reviews.ReviewsService;
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.ContentReportQueuePort;
+import com.marketplace.shared.api.InstitutionReviewQueuePort;
+import com.marketplace.shared.api.NeighborhoodVerificationQueuePort;
+import com.marketplace.shared.api.ReportResolution;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.ReviewModerationQueuePort;
 import com.marketplace.shared.security.CurrentUserProvider;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
@@ -36,8 +30,8 @@ import java.util.UUID;
  * verdict forms that call the SAME service methods the REST admin
  * controllers call (no parallel write path, no new permissions — the
  * class-level {@code @PreAuthorize} carries the house vocabulary, and
- * every verdict method keeps its own {@code @PreAuthorize} where the
- * service declares one).
+ * every verdict method keeps the service's own method security on the
+ * delegation).
  *
  * <p><b>Why this controller lives in the app module:</b> the queues are
  * cross-domain by nature (community's memberships and reports, reviews'
@@ -46,6 +40,17 @@ import java.util.UUID;
  * the admin surface's own home). The console MODULE keeps its own
  * boards (flags/config/geo/planning — its own domain); these boards are
  * the app-root's view over the domains' own queues.</p>
+ *
+ * <p><b>The boundaries stay flat — the shared-api port seam:</b> every
+ * queue arrives through its {@code shared.api} port (the
+ * {@code CommunityMembershipPort} house pattern verbatim: the interface
+ * lives in shared-api, the data owner implements it in its spi package,
+ * this consumer injects it). No module dependency is crossed in code —
+ * {@code ModulithVerificationTest} guards the seam, and the board rows
+ * are shared records, never JPA entities — the controllers-touch-no-
+ * entities rule holds on the web surface exactly as it holds on REST.
+ * The admin module's own {@code allowedDependencies} is untouched
+ * (shared-api was already on the list).</p>
  *
  * <p><b>The stack, verbatim in shape (the #566/#570 pattern):</b>
  * gs/serving-web-content's {@code @Controller} + {@code Model} +
@@ -75,21 +80,21 @@ public class ConsoleQueuesWebController {
     /** The actionable head of each queue — the REST surface keeps the deep pagination. */
     static final int QUEUE_SLICE = 50;
 
-    private final NeighborhoodMembershipService membershipService;
-    private final InstitutionService institutionService;
-    private final ReviewsService reviewsService;
-    private final ContentReportService reportService;
+    private final NeighborhoodVerificationQueuePort membershipQueue;
+    private final InstitutionReviewQueuePort institutionQueue;
+    private final ReviewModerationQueuePort moderationQueue;
+    private final ContentReportQueuePort reportQueue;
     private final CurrentUserProvider currentUserProvider;
 
-    public ConsoleQueuesWebController(NeighborhoodMembershipService membershipService,
-                                      InstitutionService institutionService,
-                                      ReviewsService reviewsService,
-                                      ContentReportService reportService,
+    public ConsoleQueuesWebController(NeighborhoodVerificationQueuePort membershipQueue,
+                                      InstitutionReviewQueuePort institutionQueue,
+                                      ReviewModerationQueuePort moderationQueue,
+                                      ContentReportQueuePort reportQueue,
                                       CurrentUserProvider currentUserProvider) {
-        this.membershipService = membershipService;
-        this.institutionService = institutionService;
-        this.reviewsService = reviewsService;
-        this.reportService = reportService;
+        this.membershipQueue = membershipQueue;
+        this.institutionQueue = institutionQueue;
+        this.moderationQueue = moderationQueue;
+        this.reportQueue = reportQueue;
         this.currentUserProvider = currentUserProvider;
     }
 
@@ -100,26 +105,18 @@ public class ConsoleQueuesWebController {
      */
     @GetMapping("/console/queues")
     public String queues(Model model) {
-        model.addAttribute("memberships", membershipService
-                .getVerificationQueue(MembershipVerificationState.PENDING, PageRequest.of(0, QUEUE_SLICE))
-                .getContent());
-        model.addAttribute("institutions", institutionService
-                .reviewQueue(InstitutionVerificationState.PENDING, PageRequest.of(0, QUEUE_SLICE))
-                .map(InstitutionResponse::from)
-                .getContent());
-        model.addAttribute("reviews", reviewsService
-                .moderationQueue(ReviewModerationStatus.PENDING_REVIEW, PageRequest.of(0, QUEUE_SLICE))
-                .getContent());
-        model.addAttribute("reports", reportService
-                .getReports(ReportStatus.OPEN, PageRequest.of(0, QUEUE_SLICE))
-                .getContent());
+        model.addAttribute("memberships", membershipQueue.pendingVerificationQueue(QUEUE_SLICE));
+        model.addAttribute("institutions", institutionQueue.pendingReviewQueue(QUEUE_SLICE));
+        model.addAttribute("reviews", moderationQueue.pendingModerationQueue(QUEUE_SLICE));
+        model.addAttribute("reports", reportQueue.openReportsQueue(QUEUE_SLICE));
         return "console/queues";
     }
 
     /**
      * The neighborhood verification verdict — the verdict's ONLY mover in
      * both directions (APPROVE admits a PENDING claim and RE-ADMITS a
-     * REJECTED one; REJECT refuses a PENDING claim), one service call.
+     * REJECTED one; REJECT refuses a PENDING claim), one service call
+     * through the port seam.
      */
     @PostMapping("/console/queues/memberships/{membershipId}/review")
     public RedirectView reviewMembership(@PathVariable UUID membershipId,
@@ -133,7 +130,7 @@ public class ConsoleQueuesWebController {
             return queuesBoard();
         }
         try {
-            membershipService.reviewVerification(membershipId, approve);
+            membershipQueue.reviewVerification(membershipId, approve);
             redirect.addFlashAttribute(FLASH_SUCCESS,
                     (approve ? "اعتُمد توثيق الجوار " : "رُفض توثيق الجوار ") + membershipId);
         } catch (ConflictException ex) {
@@ -147,7 +144,8 @@ public class ConsoleQueuesWebController {
     /**
      * The institution verification verdict — the same both-directions
      * lever over the registry (APPROVE lands the trust mark, REJECT
-     * refuses the PENDING claim), one service call.
+     * refuses the PENDING claim), one service call through the port
+     * seam.
      */
     @PostMapping("/console/queues/institutions/{institutionId}/review")
     public RedirectView reviewInstitution(@PathVariable UUID institutionId,
@@ -161,7 +159,7 @@ public class ConsoleQueuesWebController {
             return queuesBoard();
         }
         try {
-            institutionService.review(institutionId, approve);
+            institutionQueue.reviewInstitution(institutionId, approve);
             redirect.addFlashAttribute(FLASH_SUCCESS,
                     (approve ? "اعتُمد توثيق المؤسسة " : "رُفض توثيق المؤسسة ") + institutionId);
         } catch (ConflictException ex) {
@@ -175,7 +173,7 @@ public class ConsoleQueuesWebController {
     /**
      * The review moderation verdict — APPROVE publishes (the averages
      * recompute with it), REJECT hides (they recompute without it),
-     * one service call each way.
+     * one service call each way through the port seam.
      */
     @PostMapping("/console/queues/reviews/{reviewId}/moderate")
     public RedirectView moderateReview(@PathVariable UUID reviewId,
@@ -190,10 +188,10 @@ public class ConsoleQueuesWebController {
         }
         try {
             if (approve) {
-                reviewsService.approve(reviewId);
+                moderationQueue.approveReview(reviewId);
                 redirect.addFlashAttribute(FLASH_SUCCESS, "نُشرت المراجعة " + reviewId);
             } else {
-                reviewsService.reject(reviewId);
+                moderationQueue.rejectReview(reviewId);
                 redirect.addFlashAttribute(FLASH_SUCCESS, "أُخفيت المراجعة " + reviewId);
             }
         } catch (ConflictException ex) {
@@ -206,9 +204,10 @@ public class ConsoleQueuesWebController {
 
     /**
      * The report resolution — the ONE transition out of OPEN, both ways
-     * in one service call: DISMISS closes the report as-is; HIDE_CONTENT
-     * flips the content, alerts the author after commit, and closes the
-     * report RESOLVED — the operator's note recorded with the action.
+     * in one service call through the port seam: DISMISS closes the
+     * report as-is; HIDE_CONTENT flips the content, alerts the author
+     * after commit, and closes the report RESOLVED — the operator's
+     * note recorded with the action.
      */
     @PostMapping("/console/queues/reports/{reportId}/resolve")
     public RedirectView resolveReport(@PathVariable UUID reportId,
@@ -216,7 +215,7 @@ public class ConsoleQueuesWebController {
                                       @RequestParam(required = false) String note,
                                       Authentication authentication,
                                       RedirectAttributes redirect) {
-        ModerationAction resolution;
+        ReportResolution resolution;
         try {
             resolution = parseResolution(action);
         } catch (BadRequestException ex) {
@@ -229,9 +228,9 @@ public class ConsoleQueuesWebController {
         }
         try {
             UUID adminId = currentUserProvider.getCurrentUserId(authentication);
-            reportService.resolveReport(adminId, reportId, resolution, note);
+            reportQueue.resolveReport(adminId, reportId, resolution, note);
             redirect.addFlashAttribute(FLASH_SUCCESS,
-                    (resolution == ModerationAction.HIDE_CONTENT
+                    (resolution == ReportResolution.HIDE_CONTENT
                             ? "أُخفي المحتوى وأُغلق البلاغ " : "جُرى تجاهل البلاغ ") + reportId);
         } catch (ConflictException ex) {
             redirect.addFlashAttribute(FLASH_ERROR, ex.getMessage());
@@ -260,10 +259,10 @@ public class ConsoleQueuesWebController {
     }
 
     /** The report resolution gate — the REST surface's own words. */
-    private static ModerationAction parseResolution(String raw) {
+    private static ReportResolution parseResolution(String raw) {
         return switch (raw == null ? "" : raw.trim()) {
-            case "DISMISS" -> ModerationAction.DISMISS;
-            case "HIDE_CONTENT" -> ModerationAction.HIDE_CONTENT;
+            case "DISMISS" -> ReportResolution.DISMISS;
+            case "HIDE_CONTENT" -> ReportResolution.HIDE_CONTENT;
             default -> throw new BadRequestException(
                     "قرار غير صالح '" + raw + "' — القيم: DISMISS، HIDE_CONTENT");
         };

@@ -1,25 +1,19 @@
 package com.marketplace.admin;
 
-import com.marketplace.community.ContentReportService;
-import com.marketplace.community.MembershipVerificationState;
-import com.marketplace.community.ModerationAction;
-import com.marketplace.community.NeighborhoodMembershipService;
-import com.marketplace.community.ReportStatus;
-import com.marketplace.institutions.InstitutionService;
-import com.marketplace.institutions.InstitutionVerificationState;
-import com.marketplace.reviews.ReviewModerationStatus;
-import com.marketplace.reviews.ReviewsService;
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.ContentReportQueuePort;
+import com.marketplace.shared.api.InstitutionReviewQueuePort;
+import com.marketplace.shared.api.NeighborhoodVerificationQueuePort;
+import com.marketplace.shared.api.ReportResolution;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.ReviewModerationQueuePort;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.Pageable;
 import org.springframework.ui.Model;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import org.springframework.web.servlet.view.RedirectView;
@@ -37,27 +31,28 @@ import static org.mockito.Mockito.when;
 
 /**
  * The queue boards' controller contract — the #570 wave's own discipline:
- * every verdict is ONE service call (the SAME method the REST admin
- * controller calls), the post/redirect/get answer, and the flash banner
- * for every polite refusal face (an invalid action word, 409's
- * already-decided, 404's unknown row). The board reads ask each queue
- * for its actionable slice (PENDING / PENDING_REVIEW / OPEN) — never the
- * whole ledger.
+ * every verdict is ONE port call (the SAME service method the REST admin
+ * controllers reach through the module's own adapter — the shared-api
+ * seam keeps the write path single), the post/redirect/get answer, and
+ * the flash banner for every polite refusal face (an invalid action
+ * word, 409's already-decided, 404's unknown row). The board reads ask
+ * each queue for its actionable slice (PENDING / PENDING_REVIEW / OPEN)
+ * — never the whole ledger.
  */
 @ExtendWith(MockitoExtension.class)
 class ConsoleQueuesWebControllerTest {
 
     @Mock
-    private NeighborhoodMembershipService membershipService;
+    private NeighborhoodVerificationQueuePort membershipQueue;
 
     @Mock
-    private InstitutionService institutionService;
+    private InstitutionReviewQueuePort institutionQueue;
 
     @Mock
-    private ReviewsService reviewsService;
+    private ReviewModerationQueuePort moderationQueue;
 
     @Mock
-    private ContentReportService reportService;
+    private ContentReportQueuePort reportQueue;
 
     @Mock
     private CurrentUserProvider currentUserProvider;
@@ -73,14 +68,14 @@ class ConsoleQueuesWebControllerTest {
 
     @Test
     void theQueuesBoardAsksEveryQueueForItsActionableSlice() {
-        when(membershipService.getVerificationQueue(eq(MembershipVerificationState.PENDING), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of()));
-        when(institutionService.reviewQueue(eq(InstitutionVerificationState.PENDING), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of()));
-        when(reviewsService.moderationQueue(eq(ReviewModerationStatus.PENDING_REVIEW), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of()));
-        when(reportService.getReports(eq(ReportStatus.OPEN), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of()));
+        when(membershipQueue.pendingVerificationQueue(ConsoleQueuesWebController.QUEUE_SLICE))
+                .thenReturn(List.of());
+        when(institutionQueue.pendingReviewQueue(ConsoleQueuesWebController.QUEUE_SLICE))
+                .thenReturn(List.of());
+        when(moderationQueue.pendingModerationQueue(ConsoleQueuesWebController.QUEUE_SLICE))
+                .thenReturn(List.of());
+        when(reportQueue.openReportsQueue(ConsoleQueuesWebController.QUEUE_SLICE))
+                .thenReturn(List.of());
 
         assertThat(controller.queues(model)).isEqualTo("console/queues");
 
@@ -92,30 +87,32 @@ class ConsoleQueuesWebControllerTest {
     }
 
     @Test
-    void theMembershipVerdictIsOneServiceCallWithAConfirmationBanner() {
+    void theMembershipVerdictIsOnePortCallWithAConfirmationBanner() {
         UUID id = UUID.randomUUID();
 
         RedirectView view = controller.reviewMembership(id, "APPROVE", redirect);
 
         assertThat(view.getUrl()).isEqualTo("/console/queues");
-        verify(membershipService).reviewVerification(id, true);
+        verify(membershipQueue).reviewVerification(id, true);
         verify(redirect).addFlashAttribute(eq(ConsoleQueuesWebController.FLASH_SUCCESS), eq("اعتُمد توثيق الجوار " + id));
     }
 
     @Test
-    void anInvalidDecisionWordNeverReachesTheService() {
+    void anInvalidDecisionWordNeverReachesThePort() {
         RedirectView view = controller.reviewMembership(UUID.randomUUID(), "MAYBE", redirect);
 
         assertThat(view.getUrl()).isEqualTo("/console/queues");
         verify(redirect).addFlashAttribute(eq(ConsoleQueuesWebController.FLASH_ERROR), any());
-        verifyNoInteractions(membershipService);
+        verifyNoInteractions(membershipQueue);
     }
 
     @Test
     void anAlreadyDecidedMembershipAnswersTheConflictBanner() {
         UUID id = UUID.randomUUID();
-        when(membershipService.reviewVerification(id, false))
-                .thenThrow(new ConflictException("already VERIFIED"));
+        // the port's verdict is void-shaped — the doThrow form is Mockito's
+        // own contract for stubbing it (when() needs a value to return)
+        org.mockito.Mockito.doThrow(new ConflictException("already VERIFIED"))
+                .when(membershipQueue).reviewVerification(id, false);
 
         RedirectView view = controller.reviewMembership(id, "REJECT", redirect);
 
@@ -124,21 +121,21 @@ class ConsoleQueuesWebControllerTest {
     }
 
     @Test
-    void theInstitutionVerdictIsOneServiceCallWithAConfirmationBanner() {
+    void theInstitutionVerdictIsOnePortCallWithAConfirmationBanner() {
         UUID id = UUID.randomUUID();
 
         RedirectView view = controller.reviewInstitution(id, "APPROVE", redirect);
 
         assertThat(view.getUrl()).isEqualTo("/console/queues");
-        verify(institutionService).review(id, true);
+        verify(institutionQueue).reviewInstitution(id, true);
         verify(redirect).addFlashAttribute(eq(ConsoleQueuesWebController.FLASH_SUCCESS), eq("اعتُمد توثيق المؤسسة " + id));
     }
 
     @Test
     void anUnknownInstitutionAnswersTheNotFoundBanner() {
         UUID id = UUID.randomUUID();
-        when(institutionService.review(id, true))
-                .thenThrow(new ResourceNotFoundException("Institution", id));
+        org.mockito.Mockito.doThrow(new ResourceNotFoundException("Institution", id))
+                .when(institutionQueue).reviewInstitution(id, true);
 
         RedirectView view = controller.reviewInstitution(id, "APPROVE", redirect);
 
@@ -147,24 +144,24 @@ class ConsoleQueuesWebControllerTest {
     }
 
     @Test
-    void theReviewApprovalIsOneServiceCallWithAConfirmationBanner() {
+    void theReviewApprovalIsOnePortCallWithAConfirmationBanner() {
         UUID id = UUID.randomUUID();
 
         RedirectView view = controller.moderateReview(id, "APPROVE", redirect);
 
         assertThat(view.getUrl()).isEqualTo("/console/queues");
-        verify(reviewsService).approve(id);
+        verify(moderationQueue).approveReview(id);
         verify(redirect).addFlashAttribute(eq(ConsoleQueuesWebController.FLASH_SUCCESS), eq("نُشرت المراجعة " + id));
     }
 
     @Test
-    void theReviewRejectionIsOneServiceCallWithAConfirmationBanner() {
+    void theReviewRejectionIsOnePortCallWithAConfirmationBanner() {
         UUID id = UUID.randomUUID();
 
         RedirectView view = controller.moderateReview(id, "REJECT", redirect);
 
         assertThat(view.getUrl()).isEqualTo("/console/queues");
-        verify(reviewsService).reject(id);
+        verify(moderationQueue).rejectReview(id);
         verify(redirect).addFlashAttribute(eq(ConsoleQueuesWebController.FLASH_SUCCESS), eq("أُخفيت المراجعة " + id));
     }
 
@@ -177,7 +174,7 @@ class ConsoleQueuesWebControllerTest {
         RedirectView view = controller.resolveReport(reportId, "HIDE_CONTENT", "ملاحظة الإشراف", null, redirect);
 
         assertThat(view.getUrl()).isEqualTo("/console/queues");
-        verify(reportService).resolveReport(adminId, reportId, ModerationAction.HIDE_CONTENT, "ملاحظة الإشراف");
+        verify(reportQueue).resolveReport(adminId, reportId, ReportResolution.HIDE_CONTENT, "ملاحظة الإشراف");
         verify(redirect).addFlashAttribute(eq(ConsoleQueuesWebController.FLASH_SUCCESS), eq("أُخفي المحتوى وأُغلق البلاغ " + reportId));
     }
 
@@ -190,20 +187,20 @@ class ConsoleQueuesWebControllerTest {
         RedirectView view = controller.resolveReport(reportId, "DISMISS", null, null, redirect);
 
         assertThat(view.getUrl()).isEqualTo("/console/queues");
-        verify(reportService).resolveReport(adminId, reportId, ModerationAction.DISMISS, null);
+        verify(reportQueue).resolveReport(adminId, reportId, ReportResolution.DISMISS, null);
         verify(redirect).addFlashAttribute(eq(ConsoleQueuesWebController.FLASH_SUCCESS), eq("جُرى تجاهل البلاغ " + reportId));
     }
 
     @Test
-    void anInvalidResolutionWordAndAnOversizedNoteNeverReachTheService() {
-        verifyNoInteractions(reportService);
+    void anInvalidResolutionWordAndAnOversizedNoteNeverReachThePort() {
+        verifyNoInteractions(reportQueue);
 
         controller.resolveReport(UUID.randomUUID(), "DELETE", null, null, redirect);
         controller.resolveReport(UUID.randomUUID(), "DISMISS", "ن".repeat(2001), null, redirect);
 
         verify(redirect, org.mockito.Mockito.times(2))
                 .addFlashAttribute(eq(ConsoleQueuesWebController.FLASH_ERROR), any());
-        verifyNoInteractions(reportService);
+        verifyNoInteractions(reportQueue);
     }
 
     @Test
@@ -211,7 +208,7 @@ class ConsoleQueuesWebControllerTest {
         UUID reportId = UUID.randomUUID();
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(UUID.randomUUID());
         org.mockito.Mockito.doThrow(new ConflictException("already RESOLVED"))
-                .when(reportService).resolveReport(any(), eq(reportId), any(), isNull());
+                .when(reportQueue).resolveReport(any(), eq(reportId), any(), isNull());
 
         RedirectView view = controller.resolveReport(reportId, "DISMISS", null, null, redirect);
 
