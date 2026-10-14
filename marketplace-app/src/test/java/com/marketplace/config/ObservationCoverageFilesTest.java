@@ -218,7 +218,7 @@ class ObservationCoverageFilesTest {
             // adds the geographic setting pair.
             Map.entry("marketplace-console", List.of(
                     "console.config.register", "console.config.update",
-                    "console.flag.register", "console.flag.update",
+                    "console.flag.flip", "console.flag.register", "console.flag.update",
                     "console.geo.setting.register", "console.geo.setting.update")),
             Map.entry("marketplace-jobs", List.of(
                     "job.application.create", "job.application.move",

@@ -16,20 +16,6 @@ on:
     # only: PRs targeting main and push events are unaffected; the
     # remaining open PRs target main directly and gate through the
     # pull_request event.
-    # The #540 review split's stacked base rode the same §4.1 mechanism
-    # (#541 slice 1 -> main, #540 slice 2 -> discovery/wave-part1 — the
-    # CodeRabbit free-plan 100-file review limit's documented remedy). Both
-    # slices have since merged, so the entry retired with its wave (the
-    # same inertness the precedent documents above).
-    # The #544/#545/#543 stacked wave rode the same §4.1 mechanism:
-    # the stacked bases were listed while the wave was in flight and
-    # retired with it in the post-merge truth-sync (the documented
-    # #540/#541 precedent's own inertness rule). #545 merged (2026-10-12)
-    # and #543 re-targeted main directly, so the phase-7 entry retired
-    # with its wave here: no open PR carries that branch as its base any
-    # longer, and PRs targeting main gate through the pull_request event
-    # exactly as before (the filter entry is inert weight otherwise —
-    # the same inertness the precedents above document).
     branches: [ main ]
 
 
@@ -52,6 +38,17 @@ concurrency:
 permissions:
   contents: read
 
+# The 2026-10-14 measured redesign: this workflow's OLD flow ran `clean
+# verify` (a full second copy of the entire 160.4-minute suite — the same
+# tests the CI workflow already runs on the same events) and then ANOTHER
+# full `install -DskipTests` compile before ever booting the app. Three
+# full compiles per PR round, two full test passes, one 185-minute wall.
+# The suite itself now lives exactly once, sharded eight ways in the CI
+# workflow; what only THIS workflow ever measured — the real application
+# booting against real service containers and the composed five-leg
+# visitor journey — is what it now runs: install (no tests), boot, smoke.
+# The job name (a merge-ruleset required context) is preserved byte-for-
+# byte.
 jobs:
   integration:
     name: Full Integration Test (JDK 25)
@@ -110,55 +107,12 @@ jobs:
           echo "=== Redis ==="
           redis-cli -h localhost -p 6379 ping 2>&1 || echo "Checking via health check..."
 
-      - name: Build and Verify
-        run: ./mvnw clean verify --batch-mode
-        env:
-          SPRING_PROFILES_ACTIVE: test
-          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/marketplace
-          SPRING_DATASOURCE_USERNAME: test
-          SPRING_DATASOURCE_PASSWORD: test
-          SPRING_DATA_REDIS_HOST: localhost
-          SPRING_DATA_REDIS_PORT: 6379
-
-      - name: Analyze Test Results
-        if: always()
-        run: |
-          echo "=== Test Results Summary ==="
-          TOTAL=0
-          PASSED=0
-          FAILED=0
-          ERRORS=0
-          SKIPPED=0
-          for report in $(find . -path '*/surefire-reports/TEST-*.xml' 2>/dev/null); do
-            MODULE=$(echo "$report" | cut -d'/' -f2)
-            tests=$(grep -oP 'tests="\K[^"]+' "$report" 2>/dev/null || echo 0)
-            failures=$(grep -oP 'failures="\K[^"]+' "$report" 2>/dev/null || echo 0)
-            errors=$(grep -oP 'errors="\K[^"]+' "$report" 2>/dev/null || echo 0)
-            skipped=$(grep -oP 'skipped="\K[^"]+' "$report" 2>/dev/null || echo 0)
-            passed=$((tests - failures - errors - skipped))
-            TOTAL=$((TOTAL + tests))
-            PASSED=$((PASSED + passed))
-            FAILED=$((FAILED + failures))
-            ERRORS=$((ERRORS + errors))
-            SKIPPED=$((SKIPPED + skipped))
-            echo "  $MODULE: $passed/$tests passed, $failures failed, $errors errors, $skipped skipped"
-          done
-          echo ""
-          echo "=== Total: $PASSED/$TOTAL passed | $FAILED failed | $ERRORS errors | $SKIPPED skipped ==="
-          if [ "$FAILED" -gt 0 ] || [ "$ERRORS" -gt 0 ]; then
-            echo "FAILED TESTS:"
-            for report in $(find . -path '*/surefire-reports/TEST-*.xml' 2>/dev/null); do
-              failures=$(grep -oP 'failures="\K[^"]+' "$report" 2>/dev/null || echo 0)
-              errors=$(grep -oP 'errors="\K[^"]+' "$report" 2>/dev/null || echo 0)
-              if [ "$failures" -gt 0 ] || [ "$errors" -gt 0 ]; then
-                echo "  $report"
-              fi
-            done
-          else
-            echo "All tests passed!"
-          fi
-
-      - name: Install Modules
+      # ONE compile for the boot (the old flow compiled three times: clean
+      # verify, install, then the test-run below). -DskipTests keeps test
+      # COMPILATION (a broken test source still fails here) while skipping
+      # execution — the documented skipTests semantics; the suite itself
+      # runs once, sharded, in the CI workflow.
+      - name: Build Application (install, tests skipped)
         run: ./mvnw install -DskipTests --batch-mode
         env:
           SPRING_PROFILES_ACTIVE: test
@@ -300,11 +254,3 @@ jobs:
       - name: Stop Application
         if: always()
         run: pkill -f "spring-boot" || true
-
-      - name: Upload test results
-        uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: integration-test-results
-          path: '**/target/surefire-reports/'
-          retention-days: 7

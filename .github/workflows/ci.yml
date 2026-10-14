@@ -16,20 +16,6 @@ on:
     # only: PRs targeting main and push events are unaffected; the
     # remaining open PRs target main directly and gate through the
     # pull_request event.
-    # The #540 review split's stacked base rode the same §4.1 mechanism
-    # (#541 slice 1 -> main, #540 slice 2 -> discovery/wave-part1 — the
-    # CodeRabbit free-plan 100-file review limit's documented remedy). Both
-    # slices have since merged, so the entry retired with its wave (the
-    # same inertness the precedent documents above).
-    # The #544/#545/#543 stacked wave rode the same §4.1 mechanism:
-    # the stacked bases were listed while the wave was in flight and
-    # retired with it in the post-merge truth-sync (the documented
-    # #540/#541 precedent's own inertness rule). #545 merged (2026-10-12)
-    # and #543 re-targeted main directly, so the phase-7 entry retired
-    # with its wave here: no open PR carries that branch as its base any
-    # longer, and PRs targeting main gate through the pull_request event
-    # exactly as before (the filter entry is inert weight otherwise —
-    # the same inertness the precedents above document).
     branches: [ main ]
 
 
@@ -53,15 +39,94 @@ permissions:
   contents: read
   pull-requests: read
 
+# The 2026-10-14 measured redesign. The suite's own artifact parsed:
+# 160.4 test-minutes per round, of which marketplace-app's failsafe phase
+# alone is 156.5 (97.5%) — 227 classes (*IT / *IntegrationTest, the root
+# pom's failsafe includes) averaging ~40s each, evenly spread (top-10
+# classes = 10.7% of the time). The old single "Build & Test" job
+# serialized everything on ONE runner: 70.6min at 09-28, 166.0min at
+# 10-13. The new shape uses only the official building blocks:
+#   1. Jobs run in parallel by default
+#      (docs.github.com/actions/using-jobs-in-a-workflow).
+#   2. The matrix fans marketplace-app's suite out 8-way
+#      (docs.github.com/actions/using-jobs-in-a-workflow/using-a-matrix-for-your-jobs).
+#   3. Install once, test many: `build` installs the whole reactor to the
+#      local repository, every test job then runs `verify -pl <modules>`
+#      and resolves the sibling modules from ~/.m2 — Maven's documented
+#      multi-module model (maven.apache.org, Guide to Working with
+#      Multiple Modules: installed modules are resolved from the local
+#      repository). The installed tree travels between jobs as an artifact
+#      (github.com/actions/upload-artifact, github.com/actions/
+#      download-artifact — the official actions).
+#   4. Shard membership is computed ON THE RUNNER from the live tree,
+#      mirroring the root pom's failsafe <includes> exactly — every
+#      discovered class lands in exactly ONE bucket, so a newly added
+#      test class can never be silently missed (no stale pattern lists).
+#   5. The required check name "Build & Test (JDK 25)" — one of the four
+#      contexts the merge ruleset demands — is preserved by the final
+#      `build-test` aggregate job over `needs.*.result`, the documented
+#      pattern for a matrix-dependent summary check. Every new gate (the
+#      8 shards, the modules suite, the OpenAPI gate, the coverage gate)
+#      is enforced THROUGH it: nothing that failed silently before can
+#      pass now.
+#   6. JaCoCo: shards neutralize only the threshold (a CLI -D property
+#      override — Maven's documented property precedence) and export
+#      their partial execution data; the `coverage` job merges the 9
+#      partial .exec files (8 IT shards + the unit pass) with the jacoco
+#      merge mojo (the plugin's own documented fileSets mechanism) and
+#      re-enforces the SAME 0.70 INSTRUCTION gate on the merged bundle.
+#      The check's documented skip-on-missing-data behavior is why
+#      `install -DskipTests` has always passed clean (no data file, no
+#      check) — the same behavior keeps the build job green.
 jobs:
   build:
-    name: Build & Test (JDK ${{ matrix.java }})
+    name: Build (JDK 25)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks secret scan (high/critical policy)
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: true
+          GITLEAKS_NOTIFY_USER_LIST: ''
+          GITLEAKS_FAIL_LEVEL: high
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v6
+        with:
+          java-version: "25"
+          distribution: temurin
+          cache: maven
+
+      # Compile the 29-module reactor ONCE per round. -DskipTests keeps the
+      # test COMPILATION (a broken test source still fails here, exactly as
+      # the old single job's first phase did) while skipping execution —
+      # the documented surefire/failsafe skipTests semantics.
+      - name: Install reactor (compile once, tests skipped)
+        run: ./mvnw install -DskipTests --batch-mode
+
+      - name: Upload installed module artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: maven-artifacts
+          path: /home/runner/.m2/repository/com/marketplace
+          retention-days: 1
+          if-no-files-found: error
+
+  test-app:
+    name: Tests — app shard ${{ matrix.shard }}/8 (JDK 25)
+    needs: build
     runs-on: ubuntu-latest
     strategy:
-      matrix:
-        java: [ 25 ]
       fail-fast: false
-
+      matrix:
+        shard: [ 1, 2, 3, 4, 5, 6, 7, 8 ]
     services:
       postgres:
         image: postgis/postgis:18-3.6-alpine
@@ -85,27 +150,253 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
 
+      - name: Set up JDK 25
+        uses: actions/setup-java@v6
+        with:
+          java-version: "25"
+          distribution: temurin
+          cache: maven
+
+      - name: Restore installed module artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: maven-artifacts
+          path: /home/runner/.m2/repository/com/marketplace
+
+      # Round-robin over the sorted class list: with the measured uniform
+      # ~40s spread, NR % 8 buckets are near-identical in size. The find
+      # patterns mirror the root pom's failsafe <includes> EXACTLY
+      # (**/*IT.java + **/*IntegrationTest.java) — anything the plugin
+      # would run is discovered here, and anything discovered runs in
+      # exactly one shard. An empty bucket (a future tree shrink) uses the
+      # sentinel class name: matches nothing, and
+      # failsafe.failIfNoSpecifiedTests=false lets the shard pass instead
+      # of widening into "run everything".
+      - name: Discover shard bucket (round-robin over failsafe classes)
+        run: |
+          set -euo pipefail
+          TOTAL=8
+          SHARD=${{ matrix.shard }}
+          mapfile -t CLASSES < <(find marketplace-app/src/test/java \
+            \( -name '*IT.java' -o -name '*IntegrationTest.java' \) -type f \
+            | sed -e 's|^marketplace-app/src/test/java/||' -e 's|\.java$||' -e 's|/|.|g' \
+            | sort)
+          echo "Discovered ${#CLASSES[@]} integration test classes in marketplace-app"
+          COUNT=0
+          BUCKET=""
+          IDX=0
+          for c in "${CLASSES[@]}"; do
+            if [ $(( IDX % TOTAL )) -eq $(( SHARD - 1 )) ]; then
+              BUCKET="${BUCKET}${BUCKET:+,}$c"
+              COUNT=$(( COUNT + 1 ))
+            fi
+            IDX=$(( IDX + 1 ))
+          done
+          echo "Shard ${SHARD}/${TOTAL}: ${COUNT} classes"
+          BUCKET="${BUCKET:-NoneMatchThisIT}"
+          echo "BUCKET=${BUCKET}" >> "$GITHUB_ENV"
+
+      # it.test is failsafe's documented selector (the failsafe counterpart
+      # of surefire's `test` parameter); `test` here pins surefire to a
+      # matching-nothing sentinel so the unit phase (3.1 measured minutes)
+      # runs ONCE in test-modules instead of eight times. The JaCoCo
+      # threshold override rides Maven's documented CLI-property precedence:
+      # the agent still records the shard's execution data; only the
+      # per-shard bundle check is neutralized (a shard sees ~1/8 of the
+      # coverage by construction). The merged-data gate lives in the
+      # `coverage` job.
+      - name: Run app integration shard
+        env:
+          SPRING_PROFILES_ACTIVE: test
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/marketplace
+          SPRING_DATASOURCE_USERNAME: test
+          SPRING_DATASOURCE_PASSWORD: test
+          SPRING_DATA_REDIS_HOST: localhost
+          SPRING_DATA_REDIS_PORT: 6379
+        run: |
+          ./mvnw verify -pl marketplace-app --batch-mode \
+            -Dtest=NoneMatchThisUnitTest \
+            -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dit.test="$BUCKET" \
+            -Dfailsafe.failIfNoSpecifiedTests=false \
+            -Djacoco.coverage.threshold=0.00
+
+      - name: Stage execution data for the coverage merge
+        if: always()
+        run: |
+          set -euo pipefail
+          cp marketplace-app/target/jacoco.exec \
+            "$RUNNER_TEMP/app-exec-${{ matrix.shard }}.exec" || \
+            { echo "::warning::no jacoco.exec produced by this shard"; touch "$RUNNER_TEMP/app-exec-${{ matrix.shard }}.exec"; }
+
+      - name: Upload shard execution data
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-exec-${{ matrix.shard }}
+          path: ${{ runner.temp }}/app-exec-${{ matrix.shard }}.exec
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: test-results-app-shard-${{ matrix.shard }}
+          path: |
+            marketplace-app/target/surefire-reports/
+            marketplace-app/target/failsafe-reports/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  test-modules:
+    name: Tests — modules (JDK 25)
+    needs: build
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:18-3.6-alpine
+        env:
+          POSTGRES_DB: marketplace
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v6
+        with:
+          java-version: "25"
+          distribution: temurin
+          cache: maven
+
+      - name: Restore installed module artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: maven-artifacts
+          path: /home/runner/.m2/repository/com/marketplace
+
+      # Every module except marketplace-app — a measured 3.9 test-minutes
+      # combined (the app module IS the suite). Their JaCoCo 0.70 gates
+      # run here unchanged: each module's own tests produce its own
+      # complete execution data, so no merge is needed below them.
+      - name: Run every non-app module's suite (unit + integration)
+        env:
+          SPRING_PROFILES_ACTIVE: test
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/marketplace
+          SPRING_DATASOURCE_USERNAME: test
+          SPRING_DATASOURCE_PASSWORD: test
+          SPRING_DATA_REDIS_HOST: localhost
+          SPRING_DATA_REDIS_PORT: 6379
+        run: |
+          ./mvnw verify --batch-mode \
+            -pl marketplace-shared,marketplace-platform-infra,marketplace-identity,marketplace-catalog,marketplace-booking,marketplace-payments,marketplace-pricing,marketplace-reviews,marketplace-messaging,marketplace-search,marketplace-provider,marketplace-availability,marketplace-notifications,marketplace-ledger,marketplace-disputes,marketplace-media,marketplace-geo,marketplace-realestate,marketplace-community,marketplace-institutions,marketplace-jobs,marketplace-knowledge,marketplace-console,marketplace-ai,marketplace-discovery,marketplace-orders,marketplace-lending,marketplace-edge
+
+      # The app module's UNIT tests (3.1 measured minutes) run exactly once,
+      # here: the `test` phase stops before verify, so the JaCoCo check
+      # (verify-bound) never fires — the agent still records the unit-pass
+      # execution data for the coverage merge.
+      - name: Run the app module's unit tests
+        env:
+          SPRING_PROFILES_ACTIVE: test
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/marketplace
+          SPRING_DATASOURCE_USERNAME: test
+          SPRING_DATASOURCE_PASSWORD: test
+          SPRING_DATA_REDIS_HOST: localhost
+          SPRING_DATA_REDIS_PORT: 6379
+        run: ./mvnw test -pl marketplace-app --batch-mode
+
+      - name: Stage execution data for the coverage merge
+        if: always()
+        run: |
+          set -euo pipefail
+          cp marketplace-app/target/jacoco.exec \
+            "$RUNNER_TEMP/app-exec-unit.exec" || \
+            { echo "::warning::no jacoco.exec produced by the unit pass"; touch "$RUNNER_TEMP/app-exec-unit.exec"; }
+
+      - name: Upload unit-pass execution data
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-exec-unit
+          path: ${{ runner.temp }}/app-exec-unit.exec
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: test-results-modules
+          path: |
+            **/target/surefire-reports/
+            **/target/failsafe-reports/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # The gate's script is untouched (its `clean` and its boot order are
+  # measured load-bearing — see its own comments). It needs the full tag
+  # history and its own service containers; it runs its own
+  # `-pl marketplace-app -am clean package -DskipTests`, so it neither
+  # needs nor waits for the maven-artifacts upload — it starts in parallel
+  # with `build`.
+  openapi-gate:
+    name: OpenAPI Compatibility Gate
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:18-3.6-alpine
+        env:
+          POSTGRES_DB: marketplace
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-
-      - name: Gitleaks secret scan (high/critical policy)
-        uses: gitleaks/gitleaks-action@v3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_CONFIG: .gitleaks.toml
-          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: true
-          GITLEAKS_NOTIFY_USER_LIST: ''
-          GITLEAKS_FAIL_LEVEL: high
-
-      - name: Set up JDK ${{ matrix.java }}
+      - name: Set up JDK 25
         uses: actions/setup-java@v6
         with:
-          java-version: ${{ matrix.java }}
+          java-version: "25"
           distribution: temurin
           cache: maven
 
@@ -114,59 +405,92 @@ jobs:
 
       - name: OpenAPI backward compatibility gate
         env:
-          # The gate boots the built jar (default profile, no
-          # SPRING_PROFILES_ACTIVE) to fetch /v3/api-docs. The base
-          # application.yml defaults to localhost:5432 with user
-          # "marketplace" — the CI postgres service runs as test/test, so
-          # without these overrides the boot fails with a connection/auth
-          # error the first time a baseline tag exists. (The tag path had
-          # never executed before 2026-09-05: zero tags existed, so the
-          # script always skipped itself.) The last three flags mirror the
-          # proven "Start Application" env of integration-test.yml.
           SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/marketplace
           SPRING_DATASOURCE_USERNAME: test
           SPRING_DATASOURCE_PASSWORD: test
           SPRING_DATA_REDIS_HOST: localhost
           SPRING_DATA_REDIS_PORT: 6379
-          # Spring AI's Google embedding connection details require a credential
-          # even when the embedding model selector is `none`. This harmless
-          # placeholder satisfies configuration binding only; the gate never calls Google.
           GOOGLE_GENAI_API_KEY: test-key
           MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: false
           MANAGEMENT_HEALTH_MAIL_ENABLED: false
           MANAGEMENT_TRACING_ENABLED: false
         run: ./.ci/check-openapi-compat.sh
 
-      # The gate boots two app instances (current + baseline tag) whose
-      # stdout goes to runner-local logs; on failure those logs were
-      # invisible. This upload found the 2026-09-29 baseline-boot root
-      # cause (stale target/ resources ghosting into the tag jar) in a
-      # single run — keep the visibility permanent.
       - name: Upload OpenAPI gate boot logs
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: openapi-gate-logs-java-${{ matrix.java }}
+          name: openapi-gate-logs
           path: .ci/openapi-compat/
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: Run Maven verify (unit + integration tests)
-        env:
-          SPRING_PROFILES_ACTIVE: test
-          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/marketplace
-          SPRING_DATASOURCE_USERNAME: test
-          SPRING_DATASOURCE_PASSWORD: test
-          SPRING_DATA_REDIS_HOST: localhost
-          SPRING_DATA_REDIS_PORT: 6379
-        run: ./mvnw verify --batch-mode
+  # The app bundle's coverage gate, reconstituted on MERGED data: the 9
+  # partial .exec files (8 IT shards + the unit pass) combine through the
+  # jacoco merge mojo (the root pom's ci-coverage-merge profile — the
+  # plugin's own documented fileSets mechanism), then the DEFAULT report +
+  # check executions re-run against the merged target/jacoco.exec with the
+  # unchanged 0.70 root property. Same gate, same threshold, same bundle —
+  # sharding cannot dilute it.
+  coverage:
+    name: Coverage Gate (JDK 25)
+    needs: [ build, test-app, test-modules ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
 
-      - name: Upload test results
-        uses: actions/upload-artifact@v7
-        if: always()
+      - name: Set up JDK 25
+        uses: actions/setup-java@v6
         with:
-          name: test-results-java-${{ matrix.java }}
-          path: |
-            **/target/surefire-reports/
-            **/target/failsafe-reports/
+          java-version: "25"
+          distribution: temurin
+          cache: maven
+
+      - name: Restore installed module artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: maven-artifacts
+          path: /home/runner/.m2/repository/com/marketplace
+
+      - name: Collect the sharded execution data
+        uses: actions/download-artifact@v7
+        with:
+          pattern: app-exec-*
+          path: marketplace-app/target/shards
+          merge-multiple: true
+
+      - name: Merge execution data and enforce the 0.70 app-bundle gate
+        run: ./mvnw verify -pl marketplace-app -P ci-coverage-merge -DskipTests --batch-mode
+
+      - name: Upload merged coverage report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report-app
+          path: marketplace-app/target/site/jacoco/
           retention-days: 7
+          if-no-files-found: ignore
+
+  # The required-check contract: the merge ruleset demands the context
+  # "Build & Test (JDK 25)" — the documented matrix-summary pattern (a
+  # final job over needs.*.result) keeps that exact check name while the
+  # work fans out. It is green ONLY when build, all 8 shards, the modules
+  # suite, the OpenAPI gate, AND the coverage gate are green — strictly
+  # more enforcement than the old single job (which could not even
+  # distinguish a shard failure from a flake retry).
+  build-test:
+    name: Build & Test (JDK 25)
+    needs: [ build, test-app, test-modules, openapi-gate, coverage ]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert every gate passed
+        run: |
+          RESULTS="${{ join(needs.*.result, ' ') }}"
+          echo "Gate results: $RESULTS"
+          if echo "$RESULTS" | grep -Eq 'failure|cancelled|skipped'; then
+            echo "::error::One or more required gates did not pass — see the failed jobs in this run."
+            exit 1
+          fi
+          echo "All gates green: build, 8 app shards, modules suite, OpenAPI gate, coverage gate."
