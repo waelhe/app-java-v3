@@ -13,6 +13,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -90,7 +92,8 @@ class EventPublicationActuatorSmokeIntegrationTest {
 
     @Test
     void modulithActuatorReportsTheLiveModuleStructure() throws Exception {
-        mockMvc.perform(get("/actuator/modulith").with(jwt()))
+        mockMvc.perform(get("/actuator/modulith").with(jwt()
+                .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
                 .andExpect(status().isOk())
                 // the reference's JSON structure: $.{moduleName}.basePackage —
                 // one known module pinned so the endpoint cannot drift away

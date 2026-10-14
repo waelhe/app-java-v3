@@ -167,8 +167,9 @@ management:
       exposure:
         # The official operator surface — the same complete documented set
         # as application.yml (the reference's endpoint id table; every id
-        # rides the authenticated() default for /actuator/** except the
-        # permitAll'd health probes). Profiles REPLACE list properties, so
+        # rides the chain's hasRole('ADMIN') rule for /actuator/** — the
+        # operator role — with only the permitAll'd health probes and info
+        # staying public). Profiles REPLACE list properties, so
         # the set is restated here in full — this closes the drift this
         # file carried: the base profile exposed "modulith" (the system
         # reporting its own layers) while production silently dropped it,

@@ -342,8 +342,11 @@ management:
         # Endpoints: the endpoint id table; Monitoring and Management Over
         # HTTP: "you should take care to protect HTTP endpoints in the same
         # way you would any other sensitive instance" — every id below rides
-        # the authenticated() default for /actuator/** except the health
-        # probes the SecurityConfig permitAlls deliberately).
+        # the chain's hasRole('ADMIN') rule for /actuator/** (the operator
+        # role — the same vocabulary every /api/v1/admin surface carries),
+        # with only the health probes and info the SecurityConfig
+        # permitAlls deliberately for the Railway healthcheck and the
+        # watchdog probe contract).
         #
         # The set, id by id, each the reference's own row:
         #   auditevents  — "Exposes audit events information" (activated by
@@ -408,11 +411,12 @@ management:
     env:
       # The official sanitized-by-default posture, lifted exactly one notch
       # to the reference's own operator option: "when-authorized - values
-      # are shown only to authorized users" (the same semantics the health
-      # endpoints below already carry for show-details). Anonymous callers
-      # still see fully sanitized values ("by default values are always fully
-      # sanitized (replaced with ******)"); the authenticated operator
-      # carrying a valid token sees the real ones.
+      # are shown only to authorized users". Belt and suspenders with the
+      # chain rule: only the ADMIN role even reaches these endpoints (the
+      # CodeRabbit #564 round), and authorized = the authenticated
+      # operator; anything else that ever reaches the endpoint still sees
+      # fully sanitized values ("by default values are always fully
+      # sanitized (replaced with ******)").
       show-values: when-authorized
     configprops:
       show-values: when-authorized

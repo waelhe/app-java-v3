@@ -355,6 +355,26 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/store/sellers/*/summary").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/info").permitAll()
+                        // The operator surface — everything else under
+                        // /actuator/** (the official endpoint set the operator
+                        // surface exposes: loggers, threaddump, env,
+                        // configprops, beans, caches, mappings, conditions,
+                        // flyway, auditevents, metrics, prometheus, modulith,
+                        // scheduledtasks) belongs to the OPERATOR role, not to
+                        // every authenticated principal. The reference's own
+                        // protection warning ("take care to protect HTTP
+                        // endpoints in the same way you would any other
+                        // sensitive instance") + the CodeRabbit #564 round:
+                        // authenticated() alone would hand loggers' documented
+                        // RUNTIME write (the POST log-level change) and the
+                        // unsanitized authorized reads (env/configprops
+                        // show-values: when-authorized) to ANY logged-in
+                        // account — an ordinary member of the platform. The
+                        // house vocabulary is hasRole('ADMIN'), the same rule
+                        // every /api/v1/admin/** surface carries. The health
+                        // probes above stay public (the Railway healthcheck
+                        // and the watchdog probe contract, measured live).
+                        .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/v3/api-docs").permitAll()
                         .requestMatchers("/api/v1/payments/webhooks/**").permitAll()
                         // S1/B1 (platform-readiness audit §6 gate B1 — the

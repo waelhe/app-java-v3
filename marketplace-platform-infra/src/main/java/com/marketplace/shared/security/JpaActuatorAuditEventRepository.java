@@ -2,6 +2,9 @@ package com.marketplace.shared.security;
 
 import org.springframework.boot.actuate.audit.AuditEvent;
 import org.springframework.boot.actuate.audit.AuditEventRepository;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Component;
 
@@ -35,15 +38,41 @@ import java.util.UUID;
  * {@code auditevents} id in {@code management.endpoints.web.exposure.include}
  * — the operator-surface configuration this change ships with it.
  *
- * <p><b>The contract honored verbatim:</b> {@code add} persists the event's
- * own triple (timestamp, principal, type, data) with a fresh identifier;
- * {@code find} applies exactly the non-null filters — the endpoint's three
- * documented query parameters, {@code null} meaning "no filter" — newest
- * first, so the operator's dashboard reads the live tail of the security
- * history.
+ * <p><b>The contract honored verbatim — the reference's own
+ * InMemoryAuditEventRepository semantics:</b></p>
+ * <ul>
+ *   <li>{@code add} persists the event's own triple (timestamp, principal,
+ *   type, data) with a fresh identifier.</li>
+ *   <li>{@code find} applies exactly the non-null filters — the endpoint's
+ *   three documented query parameters, {@code null} meaning "no filter".</li>
+ *   <li>The {@code after} filter is EXCLUSIVE — an event whose timestamp
+ *   EQUALS {@code after} is not returned, matching the reference
+ *   implementation's {@code event.getTimestamp().isAfter(after)} (the
+ *   CodeRabbit #564 round caught the inclusive deviation).</li>
+ * </ul>
+ *
+ * <p><b>The bounded read (the CodeRabbit #564 round):</b> the table is
+ * append-only and grows forever; an unbounded {@code find} would load the
+ * entire history into the endpoint's response. Every read is the newest
+ * {@value #FIND_LIMIT} matching events — the incident-time window the
+ * operator actually investigates (older history stays in the table,
+ * reachable through the database itself when an investigation needs it).
  */
 @Component
 public class JpaActuatorAuditEventRepository implements AuditEventRepository {
+
+    /**
+     * The newest-events window every find serves — generous for an
+     * incident-time read ("what happened in the last stretch"), bounded for
+     * an append-only table that only grows.
+     */
+    static final int FIND_LIMIT = 1000;
+
+    /**
+     * The read's own shape: newest first, capped at {@value #FIND_LIMIT}.
+     */
+    private static final Pageable NEWEST_FIRST =
+            PageRequest.of(0, FIND_LIMIT, Sort.by(Sort.Direction.DESC, "eventTime"));
 
     private final ActuatorAuditEventEntryRepository entries;
 
@@ -71,8 +100,10 @@ public class JpaActuatorAuditEventRepository implements AuditEventRepository {
             filters.add((root, query, builder) -> builder.equal(root.get("principal"), principal));
         }
         if (after != null) {
+            // EXCLUSIVE — the reference implementation's own boundary:
+            // an event AT the after instant is not part of the answer.
             filters.add((root, query, builder) ->
-                    builder.greaterThanOrEqualTo(root.get("eventTime"), after));
+                    builder.greaterThan(root.get("eventTime"), after));
         }
         if (type != null) {
             filters.add((root, query, builder) -> builder.equal(root.get("auditType"), type));
@@ -82,13 +113,10 @@ public class JpaActuatorAuditEventRepository implements AuditEventRepository {
         for (Specification<ActuatorAuditEventEntry> filter : filters) {
             combined = combined == null ? filter : combined.and(filter);
         }
-        if (combined != null) {
-            combined = combined.and(orderByNewestFirst());
-        }
 
         List<ActuatorAuditEventEntry> found = combined == null
-                ? entries.findAll(orderByNewestFirst())
-                : entries.findAll(combined);
+                ? entries.findAll(NEWEST_FIRST).getContent()
+                : entries.findAll(combined, NEWEST_FIRST).getContent();
 
         return found.stream()
                 .map(entry -> new AuditEvent(
@@ -97,12 +125,5 @@ public class JpaActuatorAuditEventRepository implements AuditEventRepository {
                         entry.getAuditType(),
                         entry.getData()))
                 .toList();
-    }
-
-    private Specification<ActuatorAuditEventEntry> orderByNewestFirst() {
-        return (root, query, builder) -> {
-            query.orderBy(builder.desc(root.get("eventTime")));
-            return builder.conjunction();
-        };
     }
 }

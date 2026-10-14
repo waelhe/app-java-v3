@@ -1,7 +1,13 @@
 package com.marketplace.shared.security;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.boot.actuate.audit.AuditEvent;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 
 import java.time.Instant;
@@ -21,16 +27,18 @@ import static org.mockito.Mockito.when;
  * the reference's Auditing recipe ("provide a bean of type
  * AuditEventRepository... for production environments, consider creating
  * your own implementation") has exactly two methods, and this test pins
- * both halves: {@code add} persists the event's own triple, and
- * {@code find} applies exactly the non-null filters (the
- * /actuator/auditevents endpoint's three documented query parameters,
- * null meaning "no filter").
+ * both halves plus the two CodeRabbit #564 round corrections: the
+ * EXCLUSIVE after boundary (the reference implementation's own
+ * {@code isAfter} semantics) and the bounded newest-first read (an
+ * append-only table is never loaded whole).
  */
+@ExtendWith(MockitoExtension.class)
 class JpaActuatorAuditEventRepositoryTest {
 
     private final ActuatorAuditEventEntryRepository entries = mock(ActuatorAuditEventEntryRepository.class);
 
-    private final JpaActuatorAuditEventRepository repository = new JpaActuatorAuditEventRepository(entries);
+    @InjectMocks
+    private JpaActuatorAuditEventRepository repository;
 
     @Test
     void addPersistsTheEventsOwnTripleWithAFreshId() {
@@ -68,9 +76,10 @@ class JpaActuatorAuditEventRepositoryTest {
         Map<String, Object> data = Map.of("type", "InvalidBearerTokenException");
         ActuatorAuditEventEntry row = new ActuatorAuditEventEntry(
                 UUID.randomUUID(), timestamp, "operator", "AUTHENTICATION_FAILURE", data);
-        when(entries.findAll(any(Specification.class))).thenReturn(List.of(row));
+        when(entries.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(row)));
 
-        List<AuditEvent> found = repository.find("operator", timestamp, "AUTHENTICATION_FAILURE");
+        List<AuditEvent> found = repository.find("operator", timestamp.minusSeconds(60), "AUTHENTICATION_FAILURE");
 
         assertThat(found).hasSize(1);
         assertThat(found.get(0).getTimestamp()).isEqualTo(timestamp);
@@ -81,14 +90,33 @@ class JpaActuatorAuditEventRepositoryTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void findWithNoFiltersStillOrdersNewestFirst() {
-        when(entries.findAll(any(Specification.class))).thenReturn(List.of());
+    void theReadIsBoundedNewestFirstEvenWithNoFilters() {
+        when(entries.findAll(any(Pageable.class))).thenReturn(new PageImpl<>(List.of()));
 
         List<AuditEvent> found = repository.find(null, null, null);
 
         assertThat(found).isEmpty();
-        // The no-filter path still passes the ordering specification — the
-        // operator's dashboard reads the live tail, newest first.
-        verify(entries).findAll(any(Specification.class));
+        // The bounded window: the newest FIND_LIMIT events, never the whole
+        // append-only table (the CodeRabbit #564 round).
+        verify(entries).findAll(argThat((Pageable pageable) ->
+                pageable.getPageSize() == JpaActuatorAuditEventRepository.FIND_LIMIT
+                        && pageable.getSort().getOrderFor("eventTime") != null
+                        && pageable.getSort().getOrderFor("eventTime").getDirection().isDescending()));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void theAfterFilterCarriesTheExclusiveBoundary() {
+        // The reference implementation's own semantics: an event AT the
+        // after instant is excluded — the filter is a STRICTLY-after
+        // predicate. With the boundary pinned by the integration test's
+        // real query, this unit pins the wiring: an after filter present
+        // means the filtered overload runs (never the unfiltered one).
+        when(entries.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        repository.find(null, Instant.now(), null);
+
+        verify(entries).findAll(any(Specification.class), any(Pageable.class));
     }
 }

@@ -15,6 +15,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItem;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -97,7 +99,8 @@ class ActuatorHealthGroupsAndMetricsSmokeIntegrationTest {
 
     @Test
     void metricsEndpointCarriesTheHouseGaugeAndTheStandardBinders() throws Exception {
-        mockMvc.perform(get("/actuator/metrics").with(jwt()))
+        mockMvc.perform(get("/actuator/metrics").with(jwt()
+                        .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
                 .andExpect(status().isOk())
                 // the D.1 monitoring gauge rides the E.1 metrics pipeline
                 .andExpect(jsonPath("$.names", hasItem("marketplace.eventbus.stale")))
@@ -110,7 +113,8 @@ class ActuatorHealthGroupsAndMetricsSmokeIntegrationTest {
         // the exposition the Prometheus alert rules scrape — the registry's
         // naming convention turns marketplace.eventbus.stale into
         // marketplace_eventbus_stale
-        mockMvc.perform(get("/actuator/prometheus").with(jwt()))
+        mockMvc.perform(get("/actuator/prometheus").with(jwt()
+                        .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("marketplace_eventbus_stale")));
     }
