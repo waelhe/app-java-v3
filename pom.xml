@@ -1011,4 +1011,50 @@
             </plugin>
         </plugins>
     </build>
+    <!-- CI sharded-coverage profile (activated ONLY by -P ci-coverage-merge;
+         never active in a normal local or CI build): the 2026-10-14 app-suite
+         sharding fans marketplace-app's 227 failsafe classes across 8 CI jobs,
+         so the module's JaCoCo execution data arrives as 9 partial *.exec
+         files (8 IT shards + the unit pass). The merge mojo is the plugin's
+         own documented way to combine them (jacoco merge-mojo fileSets —
+         "Merging execution data"); it is bound to the initialize phase so it
+         runs BEFORE the default report/check executions (verify-bound),
+         writing the merged bundle to the default target/jacoco.exec the
+         check already reads. The 0.70 INSTRUCTION gate then enforces the
+         SAME merged bundle the single-job era measured — sharding cannot
+         dilute the gate. The check's documented skip-on-missing-data
+         behavior keeps ordinary builds (no target/shards) untouched. -->
+    <profiles>
+        <profile>
+            <id>ci-coverage-merge</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.jacoco</groupId>
+                        <artifactId>jacoco-maven-plugin</artifactId>
+                        <version>${jacoco.version}</version>
+                        <executions>
+                            <execution>
+                                <id>merge-app-exec-data</id>
+                                <phase>initialize</phase>
+                                <goals>
+                                    <goal>merge</goal>
+                                </goals>
+                                <configuration>
+                                    <fileSets>
+                                        <fileSet>
+                                            <directory>${project.build.directory}/shards</directory>
+                                            <includes>
+                                                <include>*.exec</include>
+                                            </includes>
+                                        </fileSet>
+                                    </fileSets>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
