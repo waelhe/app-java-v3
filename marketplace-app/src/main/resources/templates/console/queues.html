@@ -123,8 +123,8 @@
             <td><code class="k" th:text="${m.userId}">—</code></td>
             <td><code class="k" th:text="${m.locationId}">—</code></td>
             <td><span class="state" th:text="${m.verificationState}">PENDING</span></td>
-            <td class="when" th:text="${m.updatedAt != null}
-                    ? ${#temporals.format(m.updatedAt, 'yyyy-MM-dd HH:mm')} : '—'">—</td>
+            <td class="when" th:text="${m.updatedAt != null
+                    ? #temporals.format(m.updatedAt, 'yyyy-MM-dd HH:mm') : '—'}">—</td>
             <td>
                 <span class="verdict">
                     <form th:action="@{/console/queues/memberships/{id}/review(id=${m.id})}" method="post">
@@ -221,8 +221,8 @@
                 <code class="k" th:text="${report.targetId}">—</code>
             </td>
             <td th:text="${report.reason}">—</td>
-            <td class="when" th:text="${report.createdAt != null}
-                    ? ${#temporals.format(report.createdAt, 'yyyy-MM-dd HH:mm')} : '—'">—</td>
+            <td class="when" th:text="${report.createdAt != null
+                    ? #temporals.format(report.createdAt, 'yyyy-MM-dd HH:mm') : '—'}">—</td>
             <td>
                 <form th:action="@{/console/queues/reports/{id}/resolve(id=${report.id})}" method="post"
                       style="display: flex; gap: 6px; flex-wrap: wrap; width: 100%;">
