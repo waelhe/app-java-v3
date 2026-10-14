@@ -8,7 +8,6 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -54,13 +53,15 @@ public class JpaActuatorAuditEventRepository implements AuditEventRepository {
 
     @Override
     public void add(AuditEvent event) {
-        Map<String, Object> data = event.getData();
+        // The event's data map is never null by construction — Boot's own
+        // AuditEvent constructors wrap it in an unmodifiable map (the
+        // varargs convenience form builds an empty one).
         entries.save(new ActuatorAuditEventEntry(
                 UUID.randomUUID(),
                 event.getTimestamp(),
                 event.getPrincipal(),
                 event.getType(),
-                data == null ? Map.of() : data));
+                event.getData()));
     }
 
     @Override
