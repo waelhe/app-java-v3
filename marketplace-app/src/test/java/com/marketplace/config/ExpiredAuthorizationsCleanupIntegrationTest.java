@@ -47,9 +47,16 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  *       no scheduled or expiry-driven DELETE; {@code remove()} fires on
  *       explicit revocation only).</li>
  *   <li>The Application Module Actuator is exposed and secured: anonymous
- *       {@code GET /actuator/modulith} → 401, authenticated via a
- *       client_credentials token → 200 with the live module structure
- *       (official Modulith 2.1.1 "Production-ready Features" recipe).</li>
+ *       {@code GET /actuator/modulith} → 401, and an authenticated
+ *       client_credentials principal (no operator role) → 403 — #564
+ *       tightened the whole /actuator/** surface to the operator role
+ *       (hasRole('ADMIN')). The 403 — not a 401 — is the precise proof
+ *       that the client_credentials minting and the audience validation
+ *       still work: the token authenticates, then the role gate fires.
+ *       The 200 leg with the live module structure lives in
+ *       {@code OperatorActuatorSurfaceSmokeIntegrationTest} (the operator
+ *       JWT; official Modulith 2.1.1 "Production-ready Features"
+ *       recipe).</li>
  * </ol>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
@@ -128,8 +135,9 @@ class ExpiredAuthorizationsCleanupIntegrationTest {
 
     @Test
     void modulithEndpointIsExposedAndSecured() throws Exception {
-        // Anonymous → 401: module topology falls under the authenticated()
-        // default of SecurityConfig's /actuator/** rules (not permitAll).
+        // Anonymous → 401: module topology falls under the operator-role
+        // rule SecurityConfig carries for /actuator/** (not permitAll) —
+        // unauthenticated callers never see the topology.
         HttpResponse<String> anonymous = get(MODULE_PATH, null);
         assertThat(anonymous.statusCode())
                 .as("anonymous /actuator/modulith must be rejected: %s", anonymous.body())
@@ -156,16 +164,19 @@ class ExpiredAuthorizationsCleanupIntegrationTest {
         JsonNode tokens = objectMapper.readTree(tokenResponse.body());
         String accessToken = tokens.path("access_token").asString();
 
-        // Authenticated → 200 with the live module structure. The JSON is keyed
-        // by module names (official docs table: "$.{moduleName}"); catalog is
-        // one of this application's modules (SYSTEM.md §5).
+        // Authenticated but NOT the operator: #564 tightened the whole
+        // /actuator/** surface to hasRole('ADMIN'), so a client_credentials
+        // principal (no role claim) now meets the role gate. 403 — not 401 —
+        // is the precise contract: the token itself authenticated (the
+        // audience validator passed — this minting leg is still the proof)
+        // and the authorization rule fired. The 200 leg with the live
+        // module structure lives in OperatorActuatorSurfaceSmokeIntegrationTest
+        // (the operator JWT).
         HttpResponse<String> modulith = get(MODULE_PATH, accessToken);
         assertThat(modulith.statusCode())
-                .as("authenticated /actuator/modulith: %s", modulith.body())
-                .isEqualTo(200);
-        assertThat(modulith.body())
-                .as("the live module structure names the catalog module")
-                .contains("catalog");
+                .as("client_credentials principal (no operator role) on /actuator/modulith: %s",
+                        modulith.body())
+                .isEqualTo(403);
     }
 
     private HttpResponse<String> get(String path, String bearer) throws Exception {
