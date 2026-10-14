@@ -62,8 +62,8 @@ env:
   RAILWAY_SERVICE_EDGE: ee9a69ef-16ee-43b6-9e1b-42e19de56b04
 
 jobs:
-  deploy:
-    name: Deploy main to Railway (every suite green)
+  gate:
+    name: Gate — every GitHub Actions suite on the commit must be green
     # workflow_run fires for PR-head runs too — deploy only main commits.
     # workflow_dispatch stays as the emergency lever (same all-green gate);
     # it is not the primary channel — every main merge deploys itself.
@@ -73,6 +73,9 @@ jobs:
        (github.event.workflow_run.event == 'push' &&
         github.event.workflow_run.head_branch == 'main'))
     runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.gate.outputs.deploy }}
+      sha: ${{ steps.gate.outputs.sha }}
     steps:
       - name: Gate — every GitHub Actions suite on the commit must be green
         uses: actions/github-script@v8
@@ -155,23 +158,30 @@ jobs:
             core.setOutput('sha', target);
             core.info(`All suites green on ${target} — and it is still main's head — deploying.`);
 
-      - name: The pre-deploy database snapshot (the safety floor, automated)
-        # The backup runbook's own eligibility rule — "any Flyway migration
-        # reaching production deserves a restore floor" — automated: every
-        # deploy takes a pg_dump snapshot BEFORE the Railway mutations land
-        # (the deploy is the event that carries new migrations to
-        # production). GitHub docs, Reusing workflows: jobs.<id>.uses calls
-        # the reusable workflow (db-backup.yml's workflow_call form); a
-        # failed snapshot fails the deploy (a deploy without its floor is
-        # the deviation, not the snapshot).
-        if: steps.gate.outputs.deploy == 'true'
-        uses: ./.github/workflows/db-backup.yml
-        with:
-          reason: "pre-deploy ${{ steps.gate.outputs.sha }}"
-        secrets: inherit
+  snapshot:
+    name: The pre-deploy database snapshot (the safety floor, automated)
+    # The backup runbook's own eligibility rule — "any Flyway migration
+    # reaching production deserves a restore floor" — automated at its true
+    # trigger: the deploy IS the event that carries new migrations to
+    # production. Every deploy takes a pg_dump snapshot BEFORE the Railway
+    # mutations land. GitHub docs, Reusing workflows: jobs.<id>.uses calls
+    # the reusable workflow (db-backup.yml's workflow_call form) with
+    # secrets: inherit; a failed snapshot fails the deploy (a deploy without
+    # its floor is the deviation, not the snapshot).
+    needs: gate
+    if: needs.gate.outputs.deploy == 'true'
+    uses: ./.github/workflows/db-backup.yml
+    with:
+      reason: "pre-deploy ${{ needs.gate.outputs.sha }}"
+    secrets: inherit
 
+  deploy:
+    name: Deploy the verified commit to Railway (gate passed, snapshot taken)
+    needs: [gate, snapshot]
+    if: needs.gate.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    steps:
       - name: Deploy app-java-v3 (the main web marketplace service)
-        if: steps.gate.outputs.deploy == 'true'
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
@@ -179,12 +189,11 @@ jobs:
           response="$(curl -sSf -X POST "$RAILWAY_API" \
             -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"query":"mutation($serviceId: String!, $environmentId: String!, $commitSha: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId, commitSha: $commitSha) }","variables":{"serviceId":"'"$RAILWAY_SERVICE_APP"'","environmentId":"'"$RAILWAY_ENVIRONMENT_ID"'","commitSha":"'"${{ steps.gate.outputs.sha }}"'"}}')"
+            -d '{"query":"mutation($serviceId: String!, $environmentId: String!, $commitSha: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId, commitSha: $commitSha) }","variables":{"serviceId":"'"$RAILWAY_SERVICE_APP"'","environmentId":"'"$RAILWAY_ENVIRONMENT_ID"'","commitSha":"'"${{ needs.gate.outputs.sha }}"'"}}')"
           echo "$response"
           echo "$response" | grep -q '"serviceInstanceDeployV2"'
 
       - name: Deploy app-java-v3-edge (the edge unit)
-        if: steps.gate.outputs.deploy == 'true'
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
@@ -192,6 +201,6 @@ jobs:
           response="$(curl -sSf -X POST "$RAILWAY_API" \
             -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"query":"mutation($serviceId: String!, $environmentId: String!, $commitSha: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId, commitSha: $commitSha) }","variables":{"serviceId":"'"$RAILWAY_SERVICE_EDGE"'","environmentId":"'"$RAILWAY_ENVIRONMENT_ID"'","commitSha":"'"${{ steps.gate.outputs.sha }}"'"}}')"
+            -d '{"query":"mutation($serviceId: String!, $environmentId: String!, $commitSha: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId, commitSha: $commitSha) }","variables":{"serviceId":"'"$RAILWAY_SERVICE_EDGE"'","environmentId":"'"$RAILWAY_ENVIRONMENT_ID"'","commitSha":"'"${{ needs.gate.outputs.sha }}"'"}}')"
           echo "$response"
           echo "$response" | grep -q '"serviceInstanceDeployV2"'
