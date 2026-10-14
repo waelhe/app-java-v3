@@ -428,6 +428,18 @@ public class SecurityConfig {
         http
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/assets/**", "/login", "/favicon.ico", "/default-ui.css", "/error").permitAll()
+                        // The manager console's own pages — the officially guided
+                        // web experience (the spring.io guides' server-rendered
+                        // stack: serving-web-content's @Controller + Thymeleaf view,
+                        // secured the securing-web way). This chain IS that stack's
+                        // documented home: formLogin with the JdbcUserDetailsManager
+                        // below, sessions in Redis (spring-session-data-redis), CSRF
+                        // at its documented default (Thymeleaf's own form integration
+                        // carries the token — the resource chain's /api/** relaxation
+                        // does NOT apply here), remember-me, and the Clear-Site-Data
+                        // logout. hasRole("ADMIN") is the same method-security
+                        // vocabulary every /api/v1/admin/** surface already carries.
+                        .requestMatchers("/console/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .formLogin(Customizer.withDefaults())
                 // "Sessions until logout" (the Spring Security 7.1.1 compliance wave, G-2) —

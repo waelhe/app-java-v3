@@ -103,6 +103,24 @@ public class ConsoleService {
         return flag;
     }
 
+    /**
+     * The web console's flip — the ROW's own state inverted (not the
+     * policy-default read: the two are different reads by design), one
+     * service call from the controller. An absent key is an empty Optional
+     * — a no-op, never a 404: the web board renders existing rows only, so
+     * an absent key means a forged or stale form, and the honest answer is
+     * "nothing happened" (the redirect stands). The entity stays inside the
+     * service layer — the HTTP boundary speaks DTO records only (the
+     * {@code controllersMustNotDependOnJpaEntities} architecture rule).
+     */
+    @Observed(name = "console.flag.flip")
+    public java.util.Optional<FeatureFlag> flipFlag(String key) {
+        return flagRepository.findByKey(key).map(flag -> {
+            flag.setEnabled(!flag.isEnabled());
+            return flag;
+        });
+    }
+
     /** The flags board — the operator's inventory. */
     @Transactional(readOnly = true)
     public List<FeatureFlag> flags() {
