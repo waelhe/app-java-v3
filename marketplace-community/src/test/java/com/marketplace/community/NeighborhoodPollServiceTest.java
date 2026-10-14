@@ -73,12 +73,19 @@ class NeighborhoodPollServiceTest {
     @Mock
     private GeoLookupPort geoLookupPort;
 
+    @Mock
+    private com.marketplace.shared.api.FeatureGatePort featureGate;
+
     private NeighborhoodPollService service;
 
     @BeforeEach
     void setUp() {
+        // The Day-1 lever's honest default (the built behavior) — the
+        // kill-switch's off-path has its own dedicated test below.
+        org.mockito.Mockito.lenient()
+                .when(featureGate.isEnabled("community.polls.enabled", true)).thenReturn(true);
         service = new NeighborhoodPollService(pollRepository, optionRepository,
-                voteRepository, membershipRepository, geoLookupPort);
+                voteRepository, membershipRepository, geoLookupPort, featureGate);
     }
 
     private final UUID callerId = UUID.randomUUID();
@@ -382,6 +389,20 @@ class NeighborhoodPollServiceTest {
     }
 
     // ---------- getBoard ----------
+
+    @Test
+    void getBoard_whenTheConsoleSwitchIsOff_answersEmptyBeforeAnyOtherGate() {
+        // The Day-1 lever's off-path: the console's row says OFF — the
+        // board answers the honest empty page BEFORE the membership rule.
+        // No repository is stubbed: nothing else may run.
+        when(featureGate.isEnabled("community.polls.enabled", true)).thenReturn(false);
+
+        Page<NeighborhoodPollView> board = service.getBoard(callerId, Pageable.unpaged());
+
+        assertThat(board).isEmpty();
+        org.mockito.Mockito.verifyNoInteractions(membershipRepository, pollRepository,
+                optionRepository, voteRepository);
+    }
 
     @Test
     void getBoard_noMembership_is403() {

@@ -2,6 +2,7 @@ package com.marketplace.community;
 
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.Currencies;
+import com.marketplace.shared.api.FeatureGatePort;
 import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import io.micrometer.observation.annotation.Observed;
@@ -83,13 +84,16 @@ public class NeighborhoodMarketItemService {
     private final NeighborhoodMarketItemRepository itemRepository;
     private final NeighborhoodMembershipRepository membershipRepository;
     private final GeoLookupPort geoLookupPort;
+    private final FeatureGatePort featureGate;
 
     public NeighborhoodMarketItemService(NeighborhoodMarketItemRepository itemRepository,
                                          NeighborhoodMembershipRepository membershipRepository,
-                                         GeoLookupPort geoLookupPort) {
+                                         GeoLookupPort geoLookupPort,
+                                         FeatureGatePort featureGate) {
         this.itemRepository = itemRepository;
         this.membershipRepository = membershipRepository;
         this.geoLookupPort = geoLookupPort;
+        this.featureGate = featureGate;
     }
 
     /**
@@ -141,6 +145,14 @@ public class NeighborhoodMarketItemService {
     public Page<NeighborhoodMarketItemView> getBoard(UUID callerId, MarketCategory category,
                                                      String query, boolean mine,
                                                      Pageable pageable) {
+        // The operational kill-switch — the console's registered lever for
+        // THIS capability (the Day-1 seed's row; an absent row keeps the
+        // built behavior through the fallback). The FIRST gate by design:
+        // the capability itself is off — the membership rule and the
+        // board's own filters answer nothing until the switch is back.
+        if (!featureGate.isEnabled("community.market.enabled", true)) {
+            return Page.empty(pageable);
+        }
         UUID locationId = requireMembership(callerId,
                 "Join a neighborhood before reading its market board (PUT /api/v1/me/neighborhood)")
                 .getLocationId();

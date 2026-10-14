@@ -68,14 +68,23 @@ class NeighborhoodEventServiceTest {
     @Mock
     private GeoLookupPort geoLookupPort;
 
+    @Mock
+    private com.marketplace.shared.api.FeatureGatePort featureGate;
+
     private final Clock clock = Clock.fixed(FIXED, ZoneOffset.UTC);
 
     private NeighborhoodEventService service;
 
     @BeforeEach
     void setUp() {
+        // The Day-1 lever's honest default: the capability is BUILT — the
+        // board tests exercise the built behavior, so the gate answers
+        // the fallback's own true (the kill-switch's off-path has its own
+        // dedicated test below).
+        org.mockito.Mockito.lenient()
+                .when(featureGate.isEnabled("community.events.enabled", true)).thenReturn(true);
         service = new NeighborhoodEventService(eventRepository, rsvpRepository,
-                membershipRepository, geoLookupPort, clock);
+                membershipRepository, geoLookupPort, featureGate, clock);
     }
 
     private UUID authorId = UUID.randomUUID();
@@ -250,6 +259,36 @@ class NeighborhoodEventServiceTest {
     }
 
     // ---------- getBoard ----------
+
+    @Test
+    void getBoard_whenTheConsoleSwitchIsOff_answersEmptyBeforeAnyOtherGate() {
+        // The Day-1 lever's off-path: the console's row says OFF — the
+        // board answers the honest empty page BEFORE the membership rule
+        // (the capability itself is off; the finer rules stay quiet until
+        // the switch is back). No repository is stubbed: nothing else may
+        // run.
+        when(featureGate.isEnabled("community.events.enabled", true)).thenReturn(false);
+
+        Page<NeighborhoodEventView> board = service.getBoard(memberId, null, PageRequest.of(0, 20));
+
+        assertThat(board).isEmpty();
+        org.mockito.Mockito.verifyNoInteractions(membershipRepository, eventRepository, rsvpRepository);
+    }
+
+    @Test
+    void getBoard_whenTheFlagHasNoRow_KeepsTheBuiltBehavior() {
+        // The two-half contract: an absent row answers the caller's
+        // fallback — the built behavior serves exactly as before the
+        // console existed (the E2E-honest adoption).
+        when(featureGate.isEnabled("community.events.enabled", true)).thenReturn(true);
+        when(membershipRepository.findByUserId(memberId))
+                .thenReturn(Optional.of(membershipOf(memberId, locationId)));
+        when(eventRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        assertThat(service.getBoard(memberId, null, Pageable.unpaged())).isEmpty();
+    }
 
     @Test
     void getBoard_noMembership_is403() {

@@ -89,6 +89,26 @@ class ConsoleServiceTest {
         assertThat(service(failClosed()).isEnabled("typoed.key")).isFalse();
     }
 
+    /**
+     * The FeatureGatePort contract (the two-half gate): a live row answers
+     * the row's state; an absent row answers the CALLER's fallback — the
+     * built behavior's own default, so an unseeded environment keeps
+     * serving exactly what the code built (the E2E-honest adoption).
+     */
+    @Test
+    void thePortReadAnswersTheRowOrTheCallersFallback() {
+        when(flagRepository.findByKey("community.events.enabled"))
+                .thenReturn(Optional.of(FeatureFlag.register("community.events.enabled", "وصف", false)));
+        when(flagRepository.findByKey("not.seeded.yet")).thenReturn(Optional.empty());
+
+        ConsoleService consoleService = service(failClosed());
+        // the live row WINS over the fallback (the operational override)
+        assertThat(consoleService.isEnabled("community.events.enabled", true)).isFalse();
+        // the absent row answers the caller's own default — BOTH ways
+        assertThat(consoleService.isEnabled("not.seeded.yet", true)).isTrue();
+        assertThat(consoleService.isEnabled("not.seeded.yet", false)).isFalse();
+    }
+
     @Test
     void theMigrationWindowCanOpenThePolicy() {
         when(flagRepository.findByKey("not.yet.registered")).thenReturn(Optional.empty());
