@@ -136,6 +136,21 @@ jobs:
             core.setOutput('sha', target);
             core.info(`All suites green on ${target} — deploying.`);
 
+      - name: The pre-deploy database snapshot (the safety floor, automated)
+        # The backup runbook's own eligibility rule — "any Flyway migration
+        # reaching production deserves a restore floor" — automated: every
+        # deploy takes a pg_dump snapshot BEFORE the Railway mutations land
+        # (the deploy is the event that carries new migrations to
+        # production). GitHub docs, Reusing workflows: jobs.<id>.uses calls
+        # the reusable workflow (db-backup.yml's workflow_call form); a
+        # failed snapshot fails the deploy (a deploy without its floor is
+        # the deviation, not the snapshot).
+        if: steps.gate.outputs.deploy == 'true'
+        uses: ./.github/workflows/db-backup.yml
+        with:
+          reason: "pre-deploy ${{ steps.gate.outputs.sha }}"
+        secrets: inherit
+
       - name: Deploy app-java-v3 (the main web marketplace service)
         if: steps.gate.outputs.deploy == 'true'
         env:
