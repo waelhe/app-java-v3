@@ -132,9 +132,28 @@ jobs:
               return;
             }
 
+            // Staleness guard (the CodeRabbit #563 round): a completed suite
+            // for an OLDER main push must never deploy after a newer commit
+            // exists — otherwise a slow old gate could regress production to
+            // superseded code. The verified target must still BE main's head;
+            // a stale target skips (the newer commit's own gate — which fires
+            // when ITS suites complete — is the one that deploys). The last
+            // commit on main is thus always the one that lands, and a burst
+            // of merges collapses to exactly one deploy: the newest.
+            const { data: mainRef } = await github.rest.git.getRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'heads/main',
+            });
+            if (target !== mainRef.object.sha) {
+              core.notice(`Stale target ${target.slice(0, 12)} — main has moved to ${mainRef.object.sha.slice(0, 12)}; the newer commit's own gate will deploy it.`);
+              core.setOutput('deploy', 'false');
+              return;
+            }
+
             core.setOutput('deploy', 'true');
             core.setOutput('sha', target);
-            core.info(`All suites green on ${target} — deploying.`);
+            core.info(`All suites green on ${target} — and it is still main's head — deploying.`);
 
       - name: The pre-deploy database snapshot (the safety floor, automated)
         # The backup runbook's own eligibility rule — "any Flyway migration
