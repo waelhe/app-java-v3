@@ -252,8 +252,15 @@ class ManagerConsoleWebSecurityIntegrationTest {
         // the NEW payload is the current planning — the comparison runs on
         // whitespace-collapsed text because PostgreSQL jsonb normalizes the
         // stored JSON on the way out (key order and separators are the
-        // column's own, never the write's)
-        assertThat(after.replaceAll("\\s+", "")).contains("\"visible\":false");
+        // column's own, never the write's), and on the HTML-unescaped text
+        // because the board renders the payload through th:text: the
+        // documented default escapes the JSON's quotes into &quot; (the
+        // safe face of operator-supplied content — the textarea
+        // placeholder rides a single-quoted attribute and keeps its raw
+        // form, but the published payload's home is the escaped pre
+        // block). The assertion pins the SEMANTIC payload either way.
+        assertThat(after.replaceAll("\\s+", "")
+                .replace("&quot;", "\"")).contains("\"visible\":false");
 
         // the refusal: an unknown component code answers the banner, nothing stored
         String csrfAfter = csrfOf(after);
