@@ -74,14 +74,21 @@ jobs:
           disable-animations: true
           ram-size: 4096M
           emulator-boot-timeout: 900
-          script: |
-            cd android
-            ./gradlew :app:connectedDebugAndroidTest -i -PoidcClientId=android-community-native -PoidcRedirectUri=com.marketplace.android:/oauth2redirect || {
-              echo "===== connected-test failure diagnostics ====="
-              find app/build/reports/androidTests -type f | head -30
-              for f in app/build/reports/androidTests/connected/debug/*.txt; do echo "--- $f"; cat "$f"; done
-              exit 1
-            }
+          # The action's parseScript splits the script input by newlines and
+          # executes EACH line as its own `sh -c <line>` (action source at the
+          # pinned SHA: lib/script-parser.js + lib/main.js). Multi-line shell
+          # blocks (`|| { … }`) therefore cannot work — run 38474535656 failed
+          # with `sh: Syntax error: end of file unexpected (expecting "}")`
+          # AFTER a healthy 984s boot. Use the action's own working-directory
+          # input (action.yml: "A custom working directory - e.g. ./android")
+          # and keep the whole command on a single folded line.
+          working-directory: android
+          script: >-
+            ./gradlew :app:connectedDebugAndroidTest -PoidcClientId=android-community-native -PoidcRedirectUri=com.marketplace.android:/oauth2redirect
+            || (echo "===== connected-test failure diagnostics =====";
+            find app/build/reports/androidTests -type f | head -30;
+            for f in app/build/reports/androidTests/connected/debug/*.txt; do echo "--- $f"; cat "$f"; done;
+            exit 1)
 
       - name: Upload debug APK
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
