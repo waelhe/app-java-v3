@@ -74,17 +74,16 @@ public class ConsoleWebController {
     /**
      * The flag flip — handling-form-submission's POST shape: a form action
      * bound to this path, the service call, then the redirect (the guide's
-     * own post/redirect/get so a refresh never re-submits). The flip reads
-     * the ROW's own state (not {@code isEnabled}'s policy default — the
-     * two are different reads by design); a key with no row — a forged or
-     * stale form — simply redirects back without any write.
+     * own post/redirect/get so a refresh never re-submits). The whole flip
+     * is ONE service call ({@link ConsoleService#flipFlag} — the row's own
+     * state inverted, the auditing fields recording who and when); the
+     * controller never touches the entity (the HTTP boundary speaks DTO
+     * records only — the architecture rule the REST console itself
+     * follows), and a key with no row is a service-level no-op.
      */
     @PostMapping("/console/flags/{key}/flip")
     public RedirectView flipFlag(@PathVariable String key) {
-        consoleService.flags().stream()
-                .filter(flag -> flag.getKey().equals(key))
-                .findFirst()
-                .ifPresent(flag -> consoleService.setFlag(key, !flag.isEnabled()));
+        consoleService.flipFlag(key);
         return new RedirectView("/console", true, false);
     }
 }
