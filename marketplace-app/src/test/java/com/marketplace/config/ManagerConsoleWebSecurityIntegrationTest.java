@@ -23,6 +23,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import test.config.IntegrationContainers;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -173,6 +174,110 @@ class ManagerConsoleWebSecurityIntegrationTest {
                         .param("_csrf", consoleCsrf))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(redirectedUrl("/console"));
+    }
+
+    /**
+     * The console-operations wave's own registration lever, end to end
+     * through the real chain: the operator POSTs the register form (CSRF
+     * honored — Thymeleaf's own integration carries the token), the row
+     * lands through the SAME service the REST console writes through,
+     * and the redirected board carries BOTH the confirmation banner (the
+     * flash map's one-time delivery) and the newly registered row with
+     * its live state — the operator SEES what the lever did.
+     */
+    @Test
+    void theFlagRegistrationLandsAndTheRedirectedBoardShowsTheRowAndTheBanner() throws Exception {
+        String session = loginForSession(ADMIN_USERNAME);
+        String csrf = csrfOf(consolePage(session));
+
+        String uniqueKey = "it.web.registered." + System.nanoTime();
+
+        mockMvc.perform(post("/console/flags")
+                        .cookie(new Cookie("SESSION", session))
+                        .param("key", uniqueKey)
+                        .param("description", "صف للاختبار")
+                        .param("enabled", "on")
+                        .param("_csrf", csrf))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/console"));
+
+        // the flash banner rides the redirected GET (its model BEFORE the
+        // handler runs), and the board carries the row itself
+        String board = consolePage(session);
+        assertThat(board).contains("سُجّل العلم " + uniqueKey);
+        assertThat(board).contains(uniqueKey);
+        assertThat(board).contains("مفعّل");
+    }
+
+    /**
+     * The planning board's Day-1 state (V214's seed) and its publish
+     * lever, end to end: the seeded revision 1 renders as the current
+     * planning, the operator's publish appends revision 2 through the
+     * service's validating gate, and the redirected planning board shows
+     * BOTH revisions with the confirmation banner naming the new number.
+     * An invalid payload is refused with the banner — nothing stored.
+     */
+    @Test
+    void thePlanningBoardSeedsRendersPublishesAndRefusesInvalidPayloads() throws Exception {
+        String session = loginForSession(ADMIN_USERNAME);
+
+        // the Day-1 seed: revision 1 is the current planning (the public
+        // read answers 200 from day one — the gap V214 closed)
+        String board = mockMvc.perform(get("/console/planning")
+                        .cookie(new Cookie("SESSION", session)))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("تخطيط الطرفية")))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(board).contains("\"URGENT\"");
+        assertThat(board).contains("بذرة اليوم-واحد");
+
+        String csrf = csrfOf(board);
+
+        // the publish: a valid payload appends revision 2
+        String payload = "{\"sections\":[{\"code\":\"URGENT\",\"visible\":false,\"position\":1}]}";
+        mockMvc.perform(post("/console/planning/publish")
+                        .cookie(new Cookie("SESSION", session))
+                        .param("payload", payload)
+                        .param("note", "اختبار النشر من الويب")
+                        .param("_csrf", csrf))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/console/planning"));
+
+        String after = mockMvc.perform(get("/console/planning")
+                        .cookie(new Cookie("SESSION", session)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(after).contains("نُشرت المراجعة رقم 2");
+        assertThat(after).contains("اختبار النشر من الويب");
+        // the NEW payload is the current planning — the comparison runs on
+        // whitespace-collapsed text because PostgreSQL jsonb normalizes the
+        // stored JSON on the way out (key order and separators are the
+        // column's own, never the write's), and on the HTML-unescaped text
+        // because the board renders the payload through th:text: the
+        // documented default escapes the JSON's quotes into &quot; (the
+        // safe face of operator-supplied content — the textarea
+        // placeholder rides a single-quoted attribute and keeps its raw
+        // form, but the published payload's home is the escaped pre
+        // block). The assertion pins the SEMANTIC payload either way.
+        assertThat(after.replaceAll("\\s+", "")
+                .replace("&quot;", "\"")).contains("\"visible\":false");
+
+        // the refusal: an unknown component code answers the banner, nothing stored
+        String csrfAfter = csrfOf(after);
+        mockMvc.perform(post("/console/planning/publish")
+                        .cookie(new Cookie("SESSION", session))
+                        .param("payload", "{\"sections\":[{\"code\":\"NOT_A_COMPONENT\"}]}")
+                        .param("_csrf", csrfAfter))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/console/planning"));
+
+        String refusedBoard = mockMvc.perform(get("/console/planning")
+                        .cookie(new Cookie("SESSION", session)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(refusedBoard).contains("Unknown section code");
+        // the trail still carries exactly the two revisions (1 seed + 1 publish)
+        assertThat(refusedBoard).doesNotContain("نُشرت المراجعة رقم 3");
     }
 
     /**

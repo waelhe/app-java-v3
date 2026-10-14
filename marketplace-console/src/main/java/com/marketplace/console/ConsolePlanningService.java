@@ -96,6 +96,23 @@ public class ConsolePlanningService {
                 .orElseThrow(() -> new ResourceNotFoundException("ConsolePlanningRevision"));
     }
 
+    /**
+     * The web board's read: the current planning, or empty before the
+     * first publish — the operator's board renders an honest empty state
+     * (the seeded environments carry revision 1 from V214; a fresh
+     * create-drop test tree carries nothing, and the board says so).
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<ConsolePlanningRevision> currentIfPresent() {
+        return revisionRepository.findTopByOrderByRevisionNoDesc();
+    }
+
+    /** The web board's trail: the whole append-only inventory, newest first. */
+    @Transactional(readOnly = true)
+    public java.util.List<ConsolePlanningRevision> revisions() {
+        return revisionRepository.findAllByOrderByRevisionNoDesc();
+    }
+
     private JsonNode parse(String payload) {
         try {
             return objectMapper.readTree(payload);

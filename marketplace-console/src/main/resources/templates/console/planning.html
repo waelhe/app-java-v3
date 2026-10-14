@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>تخطيط الطرفية — لوحة مدير المنصة</title>
+    <style>
+        :root {
+            --ink: #1f2933;
+            --muted: #616e7c;
+            --line: #e4e7eb;
+            --surface: #ffffff;
+            --back: #f5f7fa;
+            --accent: #0b6e4f;
+            --accent-soft: #e6f4ef;
+            --danger: #b3261e;
+            --danger-soft: #fdecea;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, "Noto Sans Arabic", system-ui, sans-serif;
+            background: var(--back);
+            color: var(--ink);
+            line-height: 1.7;
+        }
+        .shell { max-width: 980px; margin: 0 auto; padding: 24px 20px 64px; }
+        header.page {
+            display: flex; flex-wrap: wrap; gap: 12px;
+            align-items: center; justify-content: space-between;
+            padding: 18px 22px; margin-bottom: 14px;
+            background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+        }
+        header.page h1 { margin: 0; font-size: 22px; }
+        header.page .sub { color: var(--muted); font-size: 13px; }
+        .logout-btn {
+            border: 1px solid var(--line); background: var(--surface); color: var(--muted);
+            padding: 8px 18px; border-radius: 9px; cursor: pointer; font-size: 14px;
+        }
+        .logout-btn:hover { border-color: var(--danger); color: var(--danger); }
+        nav.boards { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+        nav.boards a {
+            text-decoration: none; font-size: 13.5px;
+            border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+            padding: 7px 16px; border-radius: 999px;
+        }
+        nav.boards a:hover { border-color: var(--accent); color: var(--accent); }
+        .flash {
+            margin: 0 0 18px; padding: 11px 16px; border-radius: 11px; font-size: 14px;
+            border: 1px solid transparent;
+        }
+        .flash.error { background: var(--danger-soft); color: var(--danger); border-color: #f2c4c0; }
+        .flash.success { background: var(--accent-soft); color: var(--accent); border-color: #bcdcd1; }
+        h2.band {
+            font-size: 16px; margin: 34px 0 12px; padding-bottom: 8px;
+            border-bottom: 2px solid var(--accent-soft); color: var(--accent);
+        }
+        .card {
+            background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+            padding: 14px 16px;
+        }
+        table.board {
+            width: 100%; border-collapse: collapse; background: var(--surface);
+            border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+            font-size: 13.5px;
+        }
+        table.board th {
+            background: var(--accent-soft); color: var(--accent);
+            text-align: right; padding: 9px 12px; font-size: 12.5px; white-space: nowrap;
+        }
+        table.board td { padding: 9px 12px; border-top: 1px solid var(--line); vertical-align: top; }
+        td.num, td.when { direction: ltr; text-align: left; white-space: nowrap; color: var(--muted); font-size: 12.5px; }
+        pre.payload {
+            direction: ltr; text-align: left; margin: 0;
+            background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+            padding: 14px 16px; font-size: 12.5px; font-family: ui-monospace, monospace;
+            overflow-x: auto; white-space: pre-wrap; word-break: break-all;
+        }
+        textarea {
+            width: 100%; min-height: 120px; direction: ltr; text-align: left;
+            font-family: ui-monospace, monospace; font-size: 12.5px;
+            border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px;
+            background: var(--surface); color: var(--ink);
+        }
+        input[type="text"] {
+            border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px;
+            font-size: 13px; font-family: inherit; background: var(--surface); color: var(--ink);
+        }
+        .flip-btn {
+            border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+            padding: 5px 14px; border-radius: 8px; cursor: pointer; font-size: 12.5px;
+        }
+        .flip-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .empty { color: var(--muted); font-size: 13px; padding: 14px 16px; background: var(--surface); border: 1px dashed var(--line); border-radius: 12px; }
+        footer.page { margin-top: 40px; color: var(--muted); font-size: 12px; text-align: center; }
+    </style>
+</head>
+<body>
+<div class="shell">
+
+    <header class="page">
+        <div>
+            <h1>تخطيط الطرفية</h1>
+            <div class="sub">سجل المراجعات المُلحقة — النشر يضيف والتراجع يُعيد النشر (ADR-0005: المسار لا يُعاد كتابته قط)</div>
+        </div>
+        <form th:action="@{/logout}" method="post">
+            <button class="logout-btn" type="submit">تسجيل الخروج</button>
+        </form>
+    </header>
+
+    <nav class="boards">
+        <a th:href="@{/console}">الرئيسية</a>
+        <a th:href="@{/console/planning}">تخطيط الطرفية (نشر / تراجع)</a>
+    </nav>
+
+    <div class="flash error" th:if="${consoleFlashError}" th:text="${consoleFlashError}">رسالة الخطأ</div>
+    <div class="flash success" th:if="${consoleFlashSuccess}" th:text="${consoleFlashSuccess}">رسالة التأكيد</div>
+
+    <h2 class="band">التخطيط الحالي (أعلى مراجعة)</h2>
+    <pre class="payload" th:if="${current}" th:text="${current.payload}">{ "sections": [] }</pre>
+    <div class="empty" th:if="${current == null}">لا مراجعة منشورة بعد — النموذج أدناه ينشر المراجعة الأولى.</div>
+
+    <h2 class="band">نشر مراجعة جديدة</h2>
+    <div class="card">
+        <form th:action="@{/console/planning/publish}" method="post">
+            <textarea name="payload" required
+                      placeholder='{"sections":[{"code":"URGENT","visible":true,"position":1},{"code":"FOR_YOU","visible":true,"position":2}]}'></textarea>
+            <p style="margin: 10px 0 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                <input type="text" name="note" maxlength="500" placeholder="ملاحظة المراجعة (اختياري، حتى 500 حرف)">
+                <button class="flip-btn" type="submit">نشر المراجعة</button>
+            </p>
+        </form>
+        <p style="color: var(--muted); font-size: 12.5px; margin: 10px 0 0;">
+            المكونات المدعومة: URGENT / FOLLOWED_SOURCES / LOST_FOUND / RECOMMENDATIONS / EVENTS / FOR_YOU —
+            أي حقل أو مكوّن خارج المفردة المغلقة يُرفض قبل أي كتابة.
+        </p>
+    </div>
+
+    <h2 class="band">سجل المراجعات (الأحدث أولًا)</h2>
+    <table class="board" th:if="${not #lists.isEmpty(revisions)}">
+        <thead>
+        <tr><th>المراجعة</th><th>الملاحظة</th><th>من نشرها</th><th>متى</th><th></th></tr>
+        </thead>
+        <tbody>
+        <tr th:each="revision : ${revisions}">
+            <td class="num">
+                <span th:text="${revision.revisionNo}">1</span>
+                <span th:if="${current != null and current.revisionNo == revision.revisionNo}"
+                      class="state on">الحالية</span>
+            </td>
+            <td th:text="${revision.note} ?: '—'">—</td>
+            <td th:text="${revision.createdBy} ?: '—'">—</td>
+            <td class="when" th:text="${revision.createdAt != null
+                    ? #temporals.format(revision.createdAt, 'yyyy-MM-dd HH:mm') : '—'}">—</td>
+            <td>
+                <form th:action="@{/console/planning/rollback/{revisionNo}(revisionNo=${revision.revisionNo})}"
+                      method="post">
+                    <button class="flip-btn" type="submit">التراجع إلى هذه المراجعة</button>
+                </form>
+            </td>
+        </tr>
+        </tbody>
+    </table>
+    <div class="empty" th:if="${#lists.isEmpty(revisions)}">لا مراجعات بعد.</div>
+
+    <footer class="page">
+        التراجع يُعيد نشر حمولة المراجعة الهدف كمراجعة جديدة — المسار المُلحق لا يُعاد كتابته،
+        وكل تغيير يحمل مؤلفه وطابعه الزمني (حقول التدقيق).
+    </footer>
+
+</div>
+</body>
+</html>

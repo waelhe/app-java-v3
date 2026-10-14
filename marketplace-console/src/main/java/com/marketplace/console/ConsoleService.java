@@ -110,14 +110,16 @@ public class ConsoleService {
      * — a no-op, never a 404: the web board renders existing rows only, so
      * an absent key means a forged or stale form, and the honest answer is
      * "nothing happened" (the redirect stands). The entity stays inside the
-     * service layer — the HTTP boundary speaks DTO records only (the
-     * {@code controllersMustNotDependOnJpaEntities} architecture rule).
+     * service layer — the NEW STATE rides out as a boolean, the HTTP
+     * boundary speaks values and DTO records only (the
+     * {@code controllersMustNotDependOnJpaEntities} architecture rule —
+     * the flash banner reads the returned state, never the entity).
      */
     @Observed(name = "console.flag.flip")
-    public java.util.Optional<FeatureFlag> flipFlag(String key) {
+    public java.util.Optional<Boolean> flipFlag(String key) {
         return flagRepository.findByKey(key).map(flag -> {
             flag.setEnabled(!flag.isEnabled());
-            return flag;
+            return flag.isEnabled();
         });
     }
 
@@ -202,6 +204,23 @@ public class ConsoleService {
                         "Geographic feature setting not found: " + key + " at location " + locationId));
         setting.setEnabled(enabled);
         return setting;
+    }
+
+    /**
+     * The web console's geographic flip — {@link #flipFlag(String)}'s own
+     * shape at one scope: the ROW's own state inverted in ONE service
+     * call, never a read-then-write in the controller. An absent (key,
+     * location) pair is an empty Optional — a no-op, never a 404: the web
+     * board renders existing rows only, so an absent pair means a forged
+     * or stale form, and the honest answer is "nothing happened" (the
+     * redirect stands) — the same contract the flag flip carries.
+     */
+    @Observed(name = "console.geo.setting.flip")
+    public java.util.Optional<Boolean> flipGeographicSetting(String key, UUID locationId) {
+        return geographicRepository.findByKeyAndLocationId(key, locationId).map(setting -> {
+            setting.setEnabled(!setting.isEnabled());
+            return setting.isEnabled();
+        });
     }
 
     /** B-18 (C.10): the geographic settings board — the operator's inventory. */
