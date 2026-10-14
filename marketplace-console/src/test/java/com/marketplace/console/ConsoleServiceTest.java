@@ -381,14 +381,14 @@ class ConsoleServiceTest {
         when(geographicRepository.findByKeyAndLocationId("ghost.key", CITY)).thenReturn(Optional.empty());
         assertThat(service(failClosed()).flipGeographicSetting("ghost.key", CITY)).isEmpty();
 
-        // the live pair: the row's own state inverted
+        // the live pair: the row's own state inverted — the NEW STATE rides
+        // out as a boolean (the entity stays inside the service layer)
         GeographicFeatureSetting setting = GeographicFeatureSetting.register("some.key", CITY, false);
         when(geographicRepository.findByKeyAndLocationId("some.key", CITY)).thenReturn(Optional.of(setting));
 
-        Optional<GeographicFeatureSetting> flipped = service(failClosed()).flipGeographicSetting("some.key", CITY);
+        Optional<Boolean> flipped = service(failClosed()).flipGeographicSetting("some.key", CITY);
 
-        assertThat(flipped).isPresent();
-        assertThat(flipped.get().isEnabled()).isTrue();
+        assertThat(flipped).contains(true);
         assertThat(setting.isEnabled()).isTrue();
     }
 }

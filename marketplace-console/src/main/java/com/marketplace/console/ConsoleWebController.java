@@ -136,8 +136,8 @@ public class ConsoleWebController {
         // a key with no live row is the service's own no-op — the silent
         // redirect stands (a forged or stale form).
         consoleService.flipFlag(key)
-                .ifPresent(flag -> redirect.addFlashAttribute(FLASH_SUCCESS,
-                        (flag.isEnabled() ? "فُعّل العلم " : "أُطفئ العلم ") + key));
+                .ifPresent(enabled -> redirect.addFlashAttribute(FLASH_SUCCESS,
+                        (enabled ? "فُعّل العلم " : "أُطفئ العلم ") + key));
         return consoleHome();
     }
 
@@ -267,8 +267,8 @@ public class ConsoleWebController {
                                               @PathVariable UUID locationId,
                                               RedirectAttributes redirect) {
         consoleService.flipGeographicSetting(key, locationId)
-                .ifPresent(setting -> redirect.addFlashAttribute(FLASH_SUCCESS,
-                        (setting.isEnabled() ? "فُعّل الإعداد الجغرافي " : "أُطفئ الإعداد الجغرافي ")
+                .ifPresent(enabled -> redirect.addFlashAttribute(FLASH_SUCCESS,
+                        (enabled ? "فُعّل الإعداد الجغرافي " : "أُطفئ الإعداد الجغرافي ")
                                 + key + " في " + locationId));
         return consoleHome();
     }

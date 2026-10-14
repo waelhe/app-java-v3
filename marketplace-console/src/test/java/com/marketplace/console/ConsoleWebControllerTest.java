@@ -104,7 +104,7 @@ class ConsoleWebControllerTest {
     @Test
     void theLandedFlipAnswersTheConfirmationBanner() {
         when(consoleService.flipFlag("some.flag"))
-                .thenReturn(java.util.Optional.of(FeatureFlag.register("some.flag", null, false)));
+                .thenReturn(java.util.Optional.of(Boolean.FALSE));
 
         RedirectView view = controller.flipFlag("some.flag", redirect);
 
@@ -249,8 +249,7 @@ class ConsoleWebControllerTest {
     void theLandedGeographicFlipAnswersTheConfirmationBanner() {
         UUID location = UUID.randomUUID();
         when(consoleService.flipGeographicSetting("some.key", location))
-                .thenReturn(java.util.Optional.of(
-                        GeographicFeatureSetting.register("some.key", location, false)));
+                .thenReturn(java.util.Optional.of(Boolean.FALSE));
 
         RedirectView view = controller.flipGeographicSetting("some.key", location, redirect);
 
