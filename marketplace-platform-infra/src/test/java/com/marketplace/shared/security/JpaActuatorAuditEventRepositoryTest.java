@@ -50,10 +50,10 @@ class JpaActuatorAuditEventRepositoryTest {
 
     @Test
     void addTreatsTheEmptyDataMapAsWritten() {
-        // The varargs convenience constructor builds the empty data map —
-        // Boot's AuditEvent can never carry null data (its own constructors
-        // wrap the map unmodifiable), so the empty map is the floor.
-        AuditEvent event = new AuditEvent(Instant.now(), "operator", "AUTHORIZATION_DENIED");
+        // The empty data map IS the floor — Boot's AuditEvent constructors
+        // never accept null data (the map is wrapped unmodifiable), so an
+        // event with no extra details carries Map.of().
+        AuditEvent event = new AuditEvent(Instant.now(), "operator", "AUTHORIZATION_DENIED", Map.of());
 
         repository.add(event);
 
