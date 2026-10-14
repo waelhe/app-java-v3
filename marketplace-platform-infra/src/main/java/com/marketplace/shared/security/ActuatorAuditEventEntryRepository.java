@@ -20,7 +20,17 @@ import java.util.UUID;
  * PostgreSQL), while {@link JpaSpecificationExecutor} composes exactly the
  * non-null predicates — the documented dynamic-query approach, one
  * specification per present filter, nothing bound for the absent ones.
+ *
+ * <p><b>Why PUBLIC — the measured startup failure:</b> Spring Data builds
+ * every repository as a JDK dynamic proxy, and {@code java.lang.reflect.Proxy}
+ * refuses a NON-public interface that is not defined by the caller's loader
+ * ("non-public interface is not defined by the given loader"). Single-loader
+ * test contexts boot either way, but the devtools two-loader run (base
+ * loader for the installed infra jar, restart loader for the application)
+ * hits exactly that boundary and the whole application fails to start.
+ * A public repository interface is proxiable across loaders — the shape
+ * every other repository interface in the platform already carries.
  */
-interface ActuatorAuditEventEntryRepository
+public interface ActuatorAuditEventEntryRepository
         extends JpaRepository<ActuatorAuditEventEntry, UUID>, JpaSpecificationExecutor<ActuatorAuditEventEntry> {
 }
