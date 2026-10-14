@@ -80,4 +80,18 @@ public class ConsolePlanningController {
                     revision.getPayload(), revision.getNote());
         }
     }
+
+    /**
+     * The web board's trail row — the revision's own identity plus the
+     * auditing fields (who published, when), the trail table the
+     * operator's rollback screen renders. The REST read model above stays
+     * the clients' own contract; this row is the operator's.
+     */
+    public record PlanningBoardRow(
+            int revisionNo, String note, String createdBy, java.time.Instant createdAt) {
+        static PlanningBoardRow of(ConsolePlanningRevision revision) {
+            return new PlanningBoardRow(revision.getRevisionNo(), revision.getNote(),
+                    revision.getCreatedBy(), revision.getCreatedAt());
+        }
+    }
 }

@@ -215,11 +215,14 @@ class ObservationCoverageFilesTest {
             // (the flag/config/geo-setting registrations + updates) — the
             // reads (view/flags/metrics/audit/effective) carry no
             // observation by the commands-not-reads policy. B-18 (C.10)
-            // adds the geographic setting pair.
+            // adds the geographic setting pair; the console-operations
+            // wave adds the WEB geographic flip (the flag flip's own
+            // shape at one scope — the row's state inverted in one call).
             Map.entry("marketplace-console", List.of(
                     "console.config.register", "console.config.update",
                     "console.flag.flip", "console.flag.register", "console.flag.update",
-                    "console.geo.setting.register", "console.geo.setting.update")),
+                    "console.geo.setting.flip", "console.geo.setting.register",
+                    "console.geo.setting.update")),
             Map.entry("marketplace-jobs", List.of(
                     "job.application.create", "job.application.move",
                     "job.application.withdraw", "job.close", "job.create")),

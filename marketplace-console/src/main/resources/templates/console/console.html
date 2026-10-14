@@ -28,7 +28,7 @@
         header.page {
             display: flex; flex-wrap: wrap; gap: 12px;
             align-items: center; justify-content: space-between;
-            padding: 18px 22px; margin-bottom: 22px;
+            padding: 18px 22px; margin-bottom: 14px;
             background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
         }
         header.page h1 { margin: 0; font-size: 22px; }
@@ -38,6 +38,21 @@
             padding: 8px 18px; border-radius: 9px; cursor: pointer; font-size: 14px;
         }
         .logout-btn:hover { border-color: var(--danger); color: var(--danger); }
+        nav.boards {
+            display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px;
+        }
+        nav.boards a {
+            text-decoration: none; font-size: 13.5px;
+            border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+            padding: 7px 16px; border-radius: 999px;
+        }
+        nav.boards a:hover { border-color: var(--accent); color: var(--accent); }
+        .flash {
+            margin: 0 0 18px; padding: 11px 16px; border-radius: 11px; font-size: 14px;
+            border: 1px solid transparent;
+        }
+        .flash.error { background: var(--danger-soft); color: var(--danger); border-color: #f2c4c0; }
+        .flash.success { background: var(--accent-soft); color: var(--accent); border-color: #bcdcd1; }
         h2.band {
             font-size: 16px; margin: 34px 0 12px; padding-bottom: 8px;
             border-bottom: 2px solid var(--accent-soft); color: var(--accent);
@@ -51,6 +66,10 @@
         ul.surfaces { list-style: none; margin: 0; padding: 0; }
         ul.surfaces li { padding: 5px 0; border-top: 1px dashed var(--line); font-size: 13.5px; }
         ul.surfaces li:first-child { border-top: 0; }
+        ul.surfaces a {
+            color: inherit; text-decoration: none;
+        }
+        ul.surfaces a:hover { color: var(--accent); }
         ul.surfaces code {
             display: block; direction: ltr; text-align: left;
             color: var(--muted); font-size: 11.5px; font-family: ui-monospace, monospace;
@@ -75,6 +94,22 @@
             padding: 5px 14px; border-radius: 8px; cursor: pointer; font-size: 12.5px;
         }
         .flip-btn:hover { border-color: var(--accent); color: var(--accent); }
+        details.lever {
+            margin-top: 12px; background: var(--surface); border: 1px dashed var(--line);
+            border-radius: 12px; padding: 10px 14px;
+        }
+        details.lever summary { cursor: pointer; font-size: 13.5px; color: var(--muted); }
+        details.lever[open] summary { color: var(--accent); }
+        form.row-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+        form.register-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+        input[type="text"], input[type="password"], textarea {
+            border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px;
+            font-size: 13px; font-family: inherit; background: var(--surface); color: var(--ink);
+        }
+        input.code { direction: ltr; text-align: left; font-family: ui-monospace, monospace; }
+        textarea { width: 100%; min-height: 84px; direction: ltr; text-align: left;
+                   font-family: ui-monospace, monospace; font-size: 12.5px; }
+        label.check { font-size: 13px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
         .empty { color: var(--muted); font-size: 13px; padding: 14px 16px; background: var(--surface); border: 1px dashed var(--line); border-radius: 12px; }
         code.k { direction: ltr; display: inline-block; font-family: ui-monospace, monospace; font-size: 12px; }
         footer.page { margin-top: 40px; color: var(--muted); font-size: 12px; text-align: center; }
@@ -93,6 +128,14 @@
         </form>
     </header>
 
+    <nav class="boards">
+        <a th:href="@{/console}">الرئيسية</a>
+        <a th:href="@{/console/planning}">تخطيط الطرفية (نشر / تراجع)</a>
+    </nav>
+
+    <div class="flash error" th:if="${consoleFlashError}" th:text="${consoleFlashError}">رسالة الخطأ</div>
+    <div class="flash success" th:if="${consoleFlashSuccess}" th:text="${consoleFlashSuccess}">رسالة التأكيد</div>
+
     <h2 class="band">أقسام اللوحة (التشغيل / المحتوى / النظام)</h2>
     <div class="grid">
         <div class="card" th:each="section : ${sections}">
@@ -100,7 +143,9 @@
             <ul class="surfaces">
                 <li th:each="surface : ${section.surfaces}">
                     <span th:text="${surface.label}">المدفوعات</span>
-                    <code th:text="${surface.path}">/api/v1/admin/payments</code>
+                    <a th:href="${surface.path}" target="_blank" rel="noopener">
+                        <code th:text="${surface.path}">/api/v1/admin/payments</code>
+                    </a>
                 </li>
             </ul>
         </div>
@@ -137,11 +182,22 @@
         </tbody>
     </table>
     <div class="empty" th:if="${#lists.isEmpty(flags)}">لا أعلام مسجّلة بعد.</div>
+    <details class="lever">
+        <summary>تسجيل علم ميزات جديد</summary>
+        <form class="register-form" th:action="@{/console/flags}" method="post">
+            <input class="code" type="text" name="key" maxlength="200" required
+                   placeholder="community.events.enabled" dir="ltr">
+            <input type="text" name="description" maxlength="2000"
+                   placeholder="ما الذي يتحكم به هذا العلم">
+            <label class="check"><input type="checkbox" name="enabled"> مفعّل عند التسجيل</label>
+            <button class="flip-btn" type="submit">تسجيل العلم</button>
+        </form>
+    </details>
 
     <h2 class="band">الإعداد البعيد</h2>
     <table class="board" th:if="${not #lists.isEmpty(configs)}">
         <thead>
-        <tr><th>المفتاح</th><th>القيمة</th><th>ما الذي تعايره</th><th>آخر تغيير</th></tr>
+        <tr><th>المفتاح</th><th>القيمة</th><th>ما الذي تعايره</th><th>آخر تغيير</th><th>تعديل</th></tr>
         </thead>
         <tbody>
         <tr th:each="config : ${configs}">
@@ -153,10 +209,76 @@
                 <span th:if="${config.updatedAt != null}"
                       th:text="${#temporals.format(config.updatedAt, 'yyyy-MM-dd HH:mm')}">—</span>
             </td>
+            <td>
+                <details class="lever">
+                    <summary>تعديل القيمة</summary>
+                    <form class="row-form"
+                          th:action="@{/console/config/{key}/revise(key=${config.key})}" method="post">
+                        <input class="code" type="text" name="value" maxlength="2000" required
+                               th:placeholder="${config.value}" dir="ltr">
+                        <input type="text" name="description" maxlength="2000"
+                               th:value="${config.description}" placeholder="الوصف">
+                        <button class="flip-btn" type="submit">حفظ التعديل</button>
+                    </form>
+                </details>
+            </td>
         </tr>
         </tbody>
     </table>
     <div class="empty" th:if="${#lists.isEmpty(configs)}">لا إعدادات بعيدة مسجّلة بعد.</div>
+    <details class="lever">
+        <summary>تسجيل إعداد بعيد جديد</summary>
+        <form class="register-form" th:action="@{/console/config}" method="post">
+            <input class="code" type="text" name="key" maxlength="200" required
+                   placeholder="community.posts.max-length" dir="ltr">
+            <input class="code" type="text" name="value" maxlength="2000" required
+                   placeholder="2000" dir="ltr">
+            <input type="text" name="description" maxlength="2000"
+                   placeholder="ما الذي تعايره هذه القيمة">
+            <button class="flip-btn" type="submit">تسجيل الإعداد</button>
+        </form>
+    </details>
+
+    <h2 class="band">إعدادات الميزات الجغرافية (بلد ← مدينة ← حي)</h2>
+    <table class="board" th:if="${not #lists.isEmpty(geoSettings)}">
+        <thead>
+        <tr><th>المفتاح</th><th>الموقع</th><th>الحالة</th><th>آخر تغيير</th><th></th></tr>
+        </thead>
+        <tbody>
+        <tr th:each="geo : ${geoSettings}">
+            <td><code class="k" th:text="${geo.key}">—</code></td>
+            <td class="when"><code class="k" th:text="${geo.locationId}">—</code></td>
+            <td>
+                <span class="state on" th:if="${geo.enabled}">مفعّل</span>
+                <span class="state off" th:unless="${geo.enabled}">معطّل</span>
+            </td>
+            <td class="when">
+                <span th:text="${geo.updatedBy} ?: '—'">—</span>
+                <span th:if="${geo.updatedAt != null}"
+                      th:text="${#temporals.format(geo.updatedAt, 'yyyy-MM-dd HH:mm')}">—</span>
+            </td>
+            <td>
+                <form th:action="@{/console/geo-settings/{key}/{locationId}/flip(key=${geo.key}, locationId=${geo.locationId})}"
+                      method="post">
+                    <button class="flip-btn" type="submit"
+                            th:text="${geo.enabled} ? 'إيقاف' : 'تفعيل'">تفعيل</button>
+                </form>
+            </td>
+        </tr>
+        </tbody>
+    </table>
+    <div class="empty" th:if="${#lists.isEmpty(geoSettings)}">لا إعدادات جغرافية مسجّلة بعد — «الأخص يغلب الأعم» عند القراءة، ثم العلم العام، ثم الافتراضي المتحفّظ.</div>
+    <details class="lever">
+        <summary>تسجيل إعداد جغرافي جديد</summary>
+        <form class="register-form" th:action="@{/console/geo-settings}" method="post">
+            <input class="code" type="text" name="key" maxlength="200" required
+                   placeholder="community.events.enabled" dir="ltr">
+            <input class="code" type="text" name="locationId" maxlength="36" required
+                   placeholder="UUID للموقع (بلد/مدينة/حي)" dir="ltr">
+            <label class="check"><input type="checkbox" name="enabled"> مفعّل عند التسجيل</label>
+            <button class="flip-btn" type="submit">تسجيل الإعداد</button>
+        </form>
+    </details>
 
     <h2 class="band">المقاييس (قراءة)</h2>
     <table class="board" th:if="${not #lists.isEmpty(meters)}">

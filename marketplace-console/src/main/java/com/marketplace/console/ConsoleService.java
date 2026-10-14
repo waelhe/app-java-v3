@@ -204,6 +204,23 @@ public class ConsoleService {
         return setting;
     }
 
+    /**
+     * The web console's geographic flip — {@link #flipFlag(String)}'s own
+     * shape at one scope: the ROW's own state inverted in ONE service
+     * call, never a read-then-write in the controller. An absent (key,
+     * location) pair is an empty Optional — a no-op, never a 404: the web
+     * board renders existing rows only, so an absent pair means a forged
+     * or stale form, and the honest answer is "nothing happened" (the
+     * redirect stands) — the same contract the flag flip carries.
+     */
+    @Observed(name = "console.geo.setting.flip")
+    public java.util.Optional<GeographicFeatureSetting> flipGeographicSetting(String key, UUID locationId) {
+        return geographicRepository.findByKeyAndLocationId(key, locationId).map(setting -> {
+            setting.setEnabled(!setting.isEnabled());
+            return setting;
+        });
+    }
+
     /** B-18 (C.10): the geographic settings board — the operator's inventory. */
     @Transactional(readOnly = true)
     public List<GeographicFeatureSetting> geographicSettings() {

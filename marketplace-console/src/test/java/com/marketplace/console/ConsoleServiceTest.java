@@ -368,4 +368,27 @@ class ConsoleServiceTest {
         assertThat(board.get(0).getKey()).isEqualTo("a.key");
         assertThat(board.get(0).getLocationId()).isEqualTo(COUNTRY);
     }
+
+    /**
+     * The WEB console's geographic flip — the flag flip's own contract at
+     * one scope: the row's own state inverted in ONE call, and an absent
+     * (key, location) pair is an honest empty Optional (a no-op for the
+     * web board — never a 404: a forged or stale form).
+     */
+    @Test
+    void theWebGeographicFlipInvertsTheRowAndNoOpsForTheAbsentPair() {
+        // the absent pair: the no-op answer
+        when(geographicRepository.findByKeyAndLocationId("ghost.key", CITY)).thenReturn(Optional.empty());
+        assertThat(service(failClosed()).flipGeographicSetting("ghost.key", CITY)).isEmpty();
+
+        // the live pair: the row's own state inverted
+        GeographicFeatureSetting setting = GeographicFeatureSetting.register("some.key", CITY, false);
+        when(geographicRepository.findByKeyAndLocationId("some.key", CITY)).thenReturn(Optional.of(setting));
+
+        Optional<GeographicFeatureSetting> flipped = service(failClosed()).flipGeographicSetting("some.key", CITY);
+
+        assertThat(flipped).isPresent();
+        assertThat(flipped.get().isEnabled()).isTrue();
+        assertThat(setting.isEnabled()).isTrue();
+    }
 }
