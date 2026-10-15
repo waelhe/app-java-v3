@@ -3,16 +3,17 @@
 # (docs.railway.com/guides/dockerfiles — "Cache mounts":
 #   --mount=type=cache,id=s/<service id>-<target path>,target=<target path>
 # copy saved at scripts/prod-design-docs/railway-dockerfiles.txt). The id embeds
-# this service's Railway id (221b33de-…, restored 2026-10-15 by live
-# measurement — GraphQL project.services AND
-# serviceInstance(environmentId, serviceId) both resolve the production
-# project's app service to 221b33de, and the deployment that built with this
-# exact id (0e82181d on af1a916) SUCCEEDED, while both "rebinds" measured
-# their ids against a DIFFERENT account's migration attempt: f97e6783
-# (#569) and 3efcf70c (#573) never existed in this project — 9a899faa
-# failed BUILD_IMAGE validation on f97e6783 exactly there. Any future
-# migration rebind must first measure THIS project's services live
-# (serviceInstance(environmentId, serviceId)) — not another account's.
+# this service's Railway id (3efcf70c-…, the migration account wael.he /
+# project reasonable-presence — corrected 2026-10-15: the deployment reality
+# is the NEW account, whose genuine GitHub binding auto-deploys every main
+# merge — the measured proof is f9f3b9b6, which built #573's merge
+# (acc96ec70) SUCCESSFULLY with this exact id; 9a899faa (477011a) failed
+# BUILD_IMAGE validation on the stale f97e6783 for the same reason. The
+# previous restoration to 221b33de measured the OLD trial account
+# (successful-simplicity) — the sunset path with no GitHub binding, whose
+# last deploy (0e82181d on af1a916) rode a variable-change redeploy, not a
+# merge. Any future rebind must first measure the account that ACTUALLY
+# builds from main — the one whose GitHub connection fires on merges.
 # so Maven's local repository
 # (~/.m2 of the build-stage root user, including the mvnw 3.9.16 wrapper
 # distribution) survives across builds — the "exploit the cache" guidance of the
@@ -22,7 +23,7 @@
 FROM eclipse-temurin:25-jdk-alpine AS build
 WORKDIR /app
 COPY . .
-RUN --mount=type=cache,id=s/221b33de-25ac-4df6-be61-911af3f9da18-/root/.m2,target=/root/.m2 \
+RUN --mount=type=cache,id=s/3efcf70c-56d5-4d87-ada5-6bba32022229-/root/.m2,target=/root/.m2 \
     chmod +x mvnw && ./mvnw clean package -DskipTests -B -pl marketplace-app -am
 
 # ── Extract layers stage ─────────────────────────────
