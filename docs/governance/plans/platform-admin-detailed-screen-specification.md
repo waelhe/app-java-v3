@@ -101,7 +101,7 @@ The user can always navigate directly, but new or non-technical managers can sta
 
 ## 4. Screen contracts
 
-### S01 — الرئيسية: مركز قيادة المدير
+### S01 — اليوم: مركز قيادة المدير
 
 **Manager question:** “ما الذي يحتاج انتباهي الآن؟”
 
@@ -121,7 +121,7 @@ The user can always navigate directly, but new or non-technical managers can sta
 - Suspicious but unconfirmed trend: say “اشتباه يحتاج مراجعة”، not “عطل مؤكد”.
 - New manager: a short guided tour explains scope, work, approvals and evidence.
 
-### S02 — البحث في المنصة
+### S02 — البحث العام (متاح من كل مكان)
 
 Search members, neighborhoods, institutions, posts/reports, providers/listings, orders/bookings, payments/disputes, official notices, cases/incidents, releases and operations as authorized.
 
@@ -217,7 +217,7 @@ Detail: surrounding context, policy/rule, similar reports, permitted author hist
 
 Actions are distinct: “لا توجد مخالفة”، “اطلب مراجعة إضافية”، “أخفِ المحتوى مؤقتًا”، “أزل المحتوى وفق السياسة”، “قيّد الحساب ضمن النطاق المسموح”، “أحل لجهة مختصة”. Group actions require sample review, dry-run and higher approval for broad enforcement.
 
-### S11 — الأخبار والتنبيهات الرسمية
+### S11 — التواصل الرسمي (ضمن المجتمع والثقة)
 
 Stages: “مسودة”، “جاهز للمراجعة”، “مجدول”، “منشور”. “منشور” and “وصل للأعضاء” are separate states.
 
@@ -225,7 +225,7 @@ Composer: title/body, authorized source, geography/audience, publish time/timezo
 
 After publishing show accepted, delivered, failed and unknown counts per channel, retryable subset, receipts and correction/withdrawal path. A delivered alert cannot be “unsent”; a correction is a linked new message.
 
-### S12 — السوق والأموال
+### S12 — حل مشكلات السوق والمال
 
 Categories: “مشكلات الطلبات”، “الحجوزات والخدمات”، “مزودو الخدمة”، “المبالغ والمدفوعات”، “النزاعات والاسترداد”، “التسويات المالية”.
 
@@ -237,7 +237,7 @@ Refund flow: identify exact payment → show refundable amount/currency from sou
 
 If outcome is unknown, state “لم نتأكد بعد من نتيجة العملية؛ إعادة الطلب الآن قد تسبب تكرارًا. افحص الحالة أولًا.” and do not expose a blind retry.
 
-### S13 — تجربة التطبيق والإصدارات
+### S13 — تجربة الأعضاء والإصدارات
 
 Tabs: “ما يظهر للأعضاء”، “ترتيب الصفحة الرئيسية”، “التجربة حسب النسخة”، “إصدارات التطبيق”، “نسبة التحديث”، “مشكلات النسخة”.
 
@@ -245,7 +245,7 @@ Visual editor provides phone preview, platform/app version, locale, viewport, su
 
 Release flow: select build → devices/minimum version → notes → mandatory-update behavior → rollout groups/regions → compatibility checks → review → staged release → observe crash/login/verification/search/primary journey → expand or pause/restore. Warn plainly that raising minimum version may prevent older members from continuing until they update.
 
-### S14 — صحة المنصة
+### S14 — صحة المنصة (مساحة متقدمة ضمن إعدادات المنصة والفريق)
 
 Lead with “الأعضاء يواجهون مشكلة في…” or “لا توجد معلومات حديثة عن…”. Views include member-journey impact, availability, slowness, failures, delayed operations, dependencies and recent changes.
 
@@ -269,7 +269,7 @@ Grant flow: person → task permission → exact scope → allowed/blocked simul
 
 Privacy request: verify identity/authority → list systems/data categories → explain legal retention → select export/restrict/correct/delete → approval → background run with per-system results → secure delivery → final receipt. Erasure is never a one-click unreviewed action.
 
-### S17 — البيانات والأداء
+### S17 — مؤشرات الأهداف وتجارب الأعضاء
 
 Question-first entry: “هل أصبح توثيق الأعضاء أسهل؟”، “كم يستغرق حل البلاغ؟”، “هل وصلت التنبيهات؟”، “أين يتعثر إكمال الطلب؟”.
 
