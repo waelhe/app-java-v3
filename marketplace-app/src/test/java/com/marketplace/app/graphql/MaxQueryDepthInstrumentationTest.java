@@ -55,6 +55,8 @@ class MaxQueryDepthInstrumentationTest {
         return sb.toString();
     }
 
+    /** A query within the depth budget executes normally — data, no
+     * errors. */
     @Test
     void aQueryWithinTheBudgetExecutes() {
         var result = graphQl(4).execute(nested(1));
@@ -62,6 +64,13 @@ class MaxQueryDepthInstrumentationTest {
         assertThat((Object) result.getData()).isNotNull();
     }
 
+    /**
+     * A query deeper than the budget is aborted with the framework's own
+     * envelope: the measured "maximum query depth exceeded" message, the
+     * ExecutionAborted classification (on the wire via toSpecification),
+     * and no partial data — the abort happens during validation, before
+     * execution.
+     */
     @Test
     void aQueryBeyondTheBudgetIsAbortedWithTheFrameworkEnvelope() {
         var result = graphQl(4).execute(nested(6));

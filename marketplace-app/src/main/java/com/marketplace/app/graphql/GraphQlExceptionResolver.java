@@ -59,6 +59,15 @@ public class GraphQlExceptionResolver extends DataFetcherExceptionResolverAdapte
         this.includeTraceId = properties.errors().includeTraceId();
     }
 
+    /**
+     * Maps one data-fetcher exception onto the canonical taxonomy pair
+     * ({@code errorCode} + {@code category} from {@link ApiErrorTaxonomy}):
+     * not-found, validation (argument binding and Bean Validation), domain
+     * conflict, authorization, rate limit, and the masked internal default.
+     * Only the designated-safe domain messages pass through; every unknown
+     * failure carries the generic internal sentence — never a stack trace,
+     * SQL, or provider detail.
+     */
     @Override
     protected GraphQLError resolveToSingleError(Throwable ex, DataFetchingEnvironment env) {
         if (ex instanceof ResourceNotFoundException) {

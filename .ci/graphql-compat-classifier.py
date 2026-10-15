@@ -262,10 +262,19 @@ def extract_block(text: str, start: int):
 #   detail — the human sentence for the report
 
 def nullable(t: str):
+    """True when the SDL type reference is nullable — it carries no
+    trailing non-null marker '!'. The predicate reports the marker
+    only; which nullability DIRECTION is breaking is a position
+    decision compare() makes (inputs are contravariant, outputs
+    covariant)."""
     return not t.endswith("!")
 
 
 def strip_bang(t: str):
+    """Drops the trailing non-null marker so two type references can
+    be compared by their underlying (wrapped) type alone — the
+    nullability verdicts then come from the position-aware
+    safe_change_* ports instead of an ambiguous mixed comparison."""
     return t.rstrip("!")
 
 
@@ -317,6 +326,24 @@ def safe_change_for_input_value(old: str, new: str):
 
 
 def compare(baseline: dict, current: dict):
+    """Classifies every difference between two parsed schemas into
+    breaking and additive findings.
+
+    A finding is the structured tuple (kind, object, detail): kind is
+    'type' | 'field' | 'enum-value' | 'argument'; object is the dotted
+    path without the kind word ('Query.services', 'Service.description',
+    'Query.services.first'); detail is the human sentence the report
+    prints.
+
+    Breaking verdicts follow the compatibility contract this gate
+    enforces: removals (type/field/argument/enum-value/union member),
+    kind changes (an input is not interchangeable with an output
+    type), position-aware nullability (input tightening and output
+    widening break; the lenient directions are reported additive),
+    type changes whose underlying type differs, default loss on a
+    non-null input member or argument (omission stops validating),
+    and required additions on the input side. Everything strictly
+    additive is reported as reviewer context, never blocked."""
     breaking, additive = [], []
     for tname, tdef in baseline.items():
         if tname not in current:
@@ -509,6 +536,11 @@ def parse_allowlist(path: str):
 
 
 def is_stale(expiry: str):
+    """True when an allowlist exception's expiry date has passed — an
+    expired exception no longer covers its finding, so the gate
+    treats the breaking change as unallowlisted again. An unparseable
+    date is deliberately stale: the exception lifecycle must fail
+    loudly, never silently extend through a malformed value."""
     import datetime
     try:
         return datetime.date.today() > datetime.date.fromisoformat(expiry)
@@ -562,6 +594,15 @@ def covers(parsed_target, finding):
 
 
 def main():
+    """The gate's entry point: argv = baseline SDL path, current SDL
+    path, allowlist YAML path. Emits the compatibility report, then
+    enforces three exit contracts: exit 2 for usage and allowlist
+    structural errors (malformed targets, missing ticket/reason/
+    expiry), exit 1 for unallowlisted breaking changes, stale
+    exceptions, or unused entries (the documented lifecycle that
+    keeps the allowlist temporary after a re-baseline), and exit 0
+    only when every breaking change is covered by a live, documented
+    exception."""
     if len(sys.argv) != 4:
         print(__doc__)
         return 2

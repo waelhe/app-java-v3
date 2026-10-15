@@ -28,6 +28,12 @@ class GraphQlSettingsFilesTest {
 
     private final YamlPropertySourceLoader loader = new YamlPropertySourceLoader();
 
+    /**
+     * The base document carries the safe posture: introspection explicitly
+     * off (the framework default is on), GraphiQL absent (the framework
+     * default false), no WebSocket path (transport off), and the startup
+     * schema inspection on.
+     */
     @Test
     void theBaseDocumentCarriesTheSafeDefaults() throws Exception {
         // Introspection: explicitly OFF in the base (the framework default
@@ -48,6 +54,11 @@ class GraphQlSettingsFilesTest {
                 .isEqualTo("true");
     }
 
+    /**
+     * The dev document is the explicit local-development opt-in: GraphiQL
+     * and introspection on — and the WebSocket transport stays off even
+     * here, because no Subscription contract exists to serve on it.
+     */
     @Test
     void theDevDocumentIsTheExplicitLocalDevelopmentOptIn() throws Exception {
         assertThat(property("application-dev.yml", "spring.graphql.graphiql.enabled"))
@@ -59,6 +70,11 @@ class GraphQlSettingsFilesTest {
         assertThat(property("application-dev.yml", "spring.graphql.websocket.path")).isNull();
     }
 
+    /**
+     * The hardened profiles keep their explicit off posture and inherit
+     * the safe base — no profile re-adds the WebSocket path the base
+     * removal closed.
+     */
     @Test
     void theHardenedProfilesKeepTheirExplicitPostureAndInheritTheSafeBase() throws Exception {
         for (String profile : List.of("application-staging.yml", "application-prod.yml")) {
@@ -71,6 +87,11 @@ class GraphQlSettingsFilesTest {
         }
     }
 
+    /**
+     * The operational budgets ride the base document as configuration —
+     * the rate-limit instances every environment inherits; page sizes stay
+     * on the typed record's own defaults.
+     */
     @Test
     void theQueryCostAndRateLimitBudgetsRideTheBaseDocument() throws Exception {
         // The operational contract is configuration, not code (the G-R6

@@ -78,6 +78,12 @@ class GraphQlObservationIntegrationTest {
 
     private HttpGraphQlTester graphQlTester;
 
+    /**
+     * Boots the real HTTP transport against the test containers with an
+     * authenticated PROVIDER Jwt — the observation census runs against the
+     * integrated request path with the auto-configured instrumentation,
+     * not a hand-built execution.
+     */
     @BeforeEach
     void setUpGraphQlTester() {
         Jwt testJwt = Jwt.withTokenValue("test-token")
@@ -137,14 +143,26 @@ class GraphQlObservationIntegrationTest {
 
         static final List<String> names = new CopyOnWriteArrayList<>();
 
+        /**
+         * Registers the observation-name collector into the test context —
+         * the census mechanism the two assertions below read.
+         */
         @Bean
         ObservationHandler<Observation.Context> observationNameCollector() {
             return new ObservationHandler<>() {
+                /**
+                 * Accepts every context — the recorder's purpose is a name
+                 * census, not filtering.
+                 */
                 @Override
                 public boolean supportsContext(Observation.Context context) {
                     return true;
                 }
 
+                /**
+                 * Records the finished observation's name into the shared
+                 * census list.
+                 */
                 @Override
                 public void onStop(Observation.Context context) {
                     names.add(context.getName());

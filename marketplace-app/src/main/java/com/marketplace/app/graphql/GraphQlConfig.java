@@ -37,11 +37,27 @@ import org.springframework.context.annotation.Configuration;
 @EnableConfigurationProperties(GraphQlProperties.class)
 public class GraphQlConfig {
 
+    /**
+     * The query-depth budget: graphql-java's own {@code MaxQueryDepthInstrumentation}
+     * bound to {@code marketplace.graphql.limits.max-query-depth} (default 10 —
+     * the deepest valid query today is 4, so the budget is forward defense).
+     * A deeper query tree is aborted during validation with the framework's
+     * {@code ErrorType.ExecutionAborted} envelope.
+     */
     @Bean
     public Instrumentation maxQueryDepthInstrumentation(GraphQlProperties properties) {
         return new MaxQueryDepthInstrumentation(properties.limits().maxQueryDepth());
     }
 
+    /**
+     * The weighted query-cost budget: graphql-java's own
+     * {@code MaxQueryComplexityInstrumentation} bound to
+     * {@code marketplace.graphql.limits.max-query-complexity} (default 200, with
+     * the documented default calculator {@code 1 + childComplexity} per field —
+     * the full services selection measures ~14, so the budget admits roughly a
+     * dozen parallel full selections and rejects the aliased fan-out abuse
+     * shape).
+     */
     @Bean
     public Instrumentation maxQueryComplexityInstrumentation(GraphQlProperties properties) {
         return new MaxQueryComplexityInstrumentation(properties.limits().maxQueryComplexity());

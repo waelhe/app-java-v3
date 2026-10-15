@@ -54,6 +54,12 @@ class GraphQlErrorIntegrationTest {
     @MockitoBean
     private JwtDecoder jwtDecoder;
 
+    /**
+     * Boots the real HTTP transport against the test containers with an
+     * authenticated PROVIDER Jwt — the same stateless security chain the
+     * production endpoint runs, so every envelope test below exercises the
+     * integrated stack rather than the resolver in isolation.
+     */
     @BeforeEach
     void setUpGraphQlTester() {
         Jwt testJwt = Jwt.withTokenValue("test-token")
@@ -70,6 +76,12 @@ class GraphQlErrorIntegrationTest {
                 .build();
     }
 
+    /**
+     * A not-found read maps to the canonical NOT_FOUND pair (NF-001 /
+     * RESOURCE) with the domain's designated-safe message — and, with the
+     * trace-id policy enabled for the test profile, the correlation id
+     * rides the extensions exactly as the contract documents.
+     */
     @Test
     void shouldMapNotFoundError() {
         UUID id = UUID.randomUUID();
@@ -93,6 +105,12 @@ class GraphQlErrorIntegrationTest {
                 });
     }
 
+    /**
+     * A domain conflict (IllegalStateException from the use case) maps to
+     * the canonical CONFLICT pair with the domain message — the same
+     * semantics the REST ProblemDetail surface emits for the same
+     * exception.
+     */
     @Test
     void shouldMapDomainConflictError() {
         UUID id = UUID.randomUUID();
@@ -112,6 +130,11 @@ class GraphQlErrorIntegrationTest {
                 });
     }
 
+    /**
+     * An unknown failure is masked: the generic internal sentence and the
+     * canonical INTERNAL pair — the exception's own message, stack trace,
+     * and any persistence detail never reach the client.
+     */
     @Test
     void shouldHideInternalErrorDetails() {
         UUID id = UUID.randomUUID();

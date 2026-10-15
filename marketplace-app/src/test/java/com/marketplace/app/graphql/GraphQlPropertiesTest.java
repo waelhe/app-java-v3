@@ -30,6 +30,12 @@ class GraphQlPropertiesTest {
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withConfiguration(UserConfigurations.of(GraphQlConfig.class));
 
+    /**
+     * Absent sections bind to the {@code @DefaultValue}-primed safe
+     * defaults — the constructor-binding house rule (an absent nested
+     * section would otherwise bind to null), so every budget has a value
+     * without any configuration line.
+     */
     @Test
     void absentSectionsBindToTheSafeDefaults() {
         runner.run(context -> {
@@ -43,6 +49,11 @@ class GraphQlPropertiesTest {
         });
     }
 
+    /**
+     * Environment variables bind through Boot's relaxed naming into the
+     * typed record — every section and key, proving the env-tunable
+     * contract (G-R6) without a rebuild.
+     */
     @Test
     void environmentValuesBindThroughRelaxedNaming() {
         runner.withPropertyValues(
@@ -62,6 +73,12 @@ class GraphQlPropertiesTest {
                 });
     }
 
+    /**
+     * A non-positive page size fails STARTUP at binding time through the
+     * {@code @Validated} + {@code @Valid} cascade (BindValidationException
+     * naming the field) — a non-deployable budget never surfaces as an
+     * unbounded read at runtime.
+     */
     @Test
     void nonPositivePageSizeFailsStartupAtBindingTime() {
         // default-page-size=0 trips the @Min(1) constraint CLEANLY: the
@@ -80,6 +97,11 @@ class GraphQlPropertiesTest {
                 });
     }
 
+    /**
+     * The complexity budget twin: a non-positive max-query-complexity
+     * fails startup at binding time with the validation exception naming
+     * the field.
+     */
     @Test
     void nonPositiveComplexityBudgetFailsStartupAtBindingTime() {
         runner.withPropertyValues("marketplace.graphql.limits.max-query-complexity=0")

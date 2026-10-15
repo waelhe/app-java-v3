@@ -70,6 +70,13 @@ class GraphQlLimitsIntegrationTest {
 
     private HttpGraphQlTester graphQlTester;
 
+    /**
+     * Boots the real HTTP transport against the test containers with an
+     * authenticated PROVIDER Jwt and an empty-catalog SPI answer — the
+     * budget tests exercise the integrated execution path (instrumentation
+     composed with the auto-configured observation stack), not the
+     instrumentations in isolation.
+     */
     @BeforeEach
     void setUpGraphQlTester() {
         Jwt testJwt = Jwt.withTokenValue("test-token")

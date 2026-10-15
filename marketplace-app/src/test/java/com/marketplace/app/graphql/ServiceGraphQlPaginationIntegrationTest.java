@@ -76,6 +76,12 @@ class ServiceGraphQlPaginationIntegrationTest {
             }
             """;
 
+    /**
+     * Boots the real HTTP transport against the test containers with an
+     * authenticated PROVIDER Jwt — every connection test below paginates
+     * through the integrated ScrollSubrange binding, SliceConnectionAdapter
+     * cursor math, and security chain.
+     */
     @BeforeEach
     void setUpGraphQlTester() {
         Jwt testJwt = Jwt.withTokenValue("test-token")
@@ -108,6 +114,11 @@ class ServiceGraphQlPaginationIntegrationTest {
         return new PageImpl<>(content, pageable, totalItems);
     }
 
+    /**
+     * Builds a deterministic catalog view for page-content assertions —
+     * the ordinal drives both the stable id (nameUUIDFromBytes) and the
+     * price, so pages assert exact server-side order.
+     */
     private static com.marketplace.shared.api.ProviderListingView listing(int ordinal) {
         return new com.marketplace.shared.api.ProviderListingView(
                 UUID.nameUUIDFromBytes(("svc-" + ordinal).getBytes()),
@@ -322,6 +333,11 @@ class ServiceGraphQlPaginationIntegrationTest {
                 });
     }
 
+    /**
+     * Executes the connection query once and returns the first page's
+     * {@code endCursor} — the exact framework-produced cursor the
+     * next-page legs consume.
+     */
     private String captureEndCursor() {
         List<String> captured = new ArrayList<>();
         graphQlTester.document(CONNECTION_QUERY).execute()

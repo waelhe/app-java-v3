@@ -46,6 +46,18 @@ public class ServiceGraphQlController {
     private final ServiceMapper serviceMapper;
     private final GraphQlProperties properties;
 
+    /**
+     * @param catalogSpi          the catalog module's declared SPI — the only
+     *                            data path this adapter may use; no repository
+     *                            or entity crosses the Modulith boundary
+     * @param currentUserProvider resolves the authenticated principal into
+     *                            the owning provider id for the write path
+     * @param serviceMapper       maps the shared catalog view into this
+     *                            surface's response contract
+     * @param properties          the typed {@code marketplace.graphql.*}
+     *                            binding — pagination bounds and limit
+     *                            budgets, validated at startup
+     */
     public ServiceGraphQlController(CatalogSpi catalogSpi,
                                     CurrentUserProvider currentUserProvider,
                                     ServiceMapper serviceMapper,
@@ -56,6 +68,12 @@ public class ServiceGraphQlController {
         this.properties = properties;
     }
 
+    /**
+     * The single-service read: delegates to the catalog SPI's active-by-id
+     * lookup and maps the shared view into the response contract. A missing
+     * id surfaces as the SPI's not-found domain error, which the exception
+     * resolver classifies to the canonical NF-001/RESOURCE pair.
+     */
     @QueryMapping
     public ServiceResponse service(@Argument UUID id) {
         return serviceMapper.toResponse(catalogSpi.getActiveById(id));
@@ -140,6 +158,14 @@ public class ServiceGraphQlController {
         return catalogSpi.findAll(pageable).map(serviceMapper::toResponse);
     }
 
+    /**
+     * The create command: the framework binds and validates the input
+     * ({@code @Argument} + {@code @Valid}), the caller is resolved to the
+     * owning provider, and the write delegates to the catalog SPI's single
+     * authoritative use case — the same business rule the REST surface
+     * invokes. Currency keeps the pre-B4 SAR house default. Rate-limited at
+     * the mutation budget ({@code graphqlCreateService}).
+     */
     @MutationMapping
     @RateLimiter(name = "graphqlCreateService")
     public ServiceResponse createService(@Argument @Valid ServiceInput input,
@@ -169,6 +195,16 @@ public class ServiceGraphQlController {
                 .orElse(0);
     }
 
+    /**
+     * Converts a cursor offset into the zero-based page index under the
+     * connection's exclusive-after semantics (the item at {@code offset} is
+     * excluded, so the page starts at {@code offset + 1}). Two cases have no
+     * honest page representation and are rejected as client-contract
+     * violations (VAL-001): an offset beyond the addressable page space, and
+     * a misaligned cursor — {@link #services} documents why alignment is part
+     * of this field's contract and why rejection beats the overlap/gap
+     * ambiguity of clamping.
+     */
     private static int pageIndex(long offset, int pageSize) {
         long firstItem = offset + 1;
         if (firstItem > Integer.MAX_VALUE - pageSize) {
@@ -202,6 +238,11 @@ public class ServiceGraphQlController {
      * and is rejected as a validation error.
      */
     private static final class OffsetPosition {
+        /**
+         * Extracts the offset an {@code O_<offset>} connection cursor carries.
+         * Any other position shape — a keyset {@code K_} cursor — is foreign
+         * to this field's contract and rejected as a validation error.
+         */
         static long pageOf(ScrollPosition position) {
             if (position instanceof OffsetScrollPosition offsetPosition) {
                 return offsetPosition.getOffset();

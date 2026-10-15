@@ -47,6 +47,11 @@ class ServiceGraphQlControllerTest {
             new GraphQlProperties.Pagination(20, 100),
             new GraphQlProperties.Limits(10, 200));
 
+    /**
+     * Instantiates the controller under test with the mocked SPI and
+     * principal provider plus the real mapper and the production-shaped
+     * properties (20/100 pagination, 10/200 budgets).
+     */
     @BeforeEach
     void setUpController() {
         controller = new ServiceGraphQlController(catalogService, currentUserProvider,
@@ -58,6 +63,10 @@ class ServiceGraphQlControllerTest {
                 UUID.randomUUID(), status, null, null, null);
     }
 
+    /**
+     * service(id) delegates to the SPI's active-by-id lookup and maps the
+     * shared view into the response contract.
+     */
     @Test
     void shouldReturnServiceById() {
         UUID id = UUID.randomUUID();
@@ -165,6 +174,11 @@ class ServiceGraphQlControllerTest {
         verifyNoInteractions(catalogService);
     }
 
+    /**
+     * createService resolves the authenticated caller into the owning
+     * provider id and delegates the write to the SPI's create use case —
+     * the same authoritative business rule the REST surface invokes.
+     */
     @Test
     void shouldCreateServiceWhenAdmin() {
         UUID providerId = UUID.randomUUID();
