@@ -1,12 +1,15 @@
 # Platform Administration — Global Product, UX Journeys, and Backend Gap Specification
 
-**Status:** Target-state product and backend design; not an implementation-completion declaration  
+**Status:** Supporting target-state journey/gap specification; the backend-independent Product Charter is the canonical UX and product authority. Not an implementation-completion declaration  
 **Baseline inspected:** waelhe/app-java-v3 / main, 15 October 2026  
-**Stack:** Java 25, Spring Boot 4.1.1, Spring Security 7.1.x, Spring Modulith 2.1.1, Maven modular monolith
+**Observed backend baseline (not the target product or frontend stack):** Java 25, Spring Boot 4.1.1, Spring Security 7.1.x, Spring Modulith 2.1.1, Maven modular monolith
 
 > **Truth rule:** Current code is evidence of what exists, not the ceiling of the target. A route is not a complete administrator journey. A database row is not a usable capability. A feature flag is not an effective kill switch unless every promised path observes it. Proposed screens, endpoints and records below are target-state proposals unless explicitly identified as existing.
 
 ## 0. Executive decision
+
+> **Product authority:** The independent [Platform Administration Operating System Product Charter](platform-admin-operating-system-product-charter.md) defines the desired interface, operator journey, frontend architecture and backend-independent contracts. This companion document adds current-backend evidence, cross-domain journeys and the gap register; it must not constrain or downgrade the charter's target.
+
 
 The target is an **administrative operating system for a multi-country, multi-city, neighborhood-based community and commerce platform**. It combines five views of one product: control plane, work plane, evidence plane, product intelligence plane and reliability plane. These are not five new microservices.
 
@@ -76,7 +79,7 @@ Every screen shares:
 - Breadcrumbs and back-navigation preserving case, entity and source context.
 - Data freshness timestamp and stale-data warnings on operational cards.
 
-Navigation reflects administrator tasks, not the set of REST endpoints. Existing Thymeleaf remains a valid delivery surface until user research justifies a richer frontend, but it is not the UX ceiling.
+Navigation reflects administrator tasks, not the set of REST endpoints. The canonical experience is defined by the independent [Platform Administration Operating System Product Charter](platform-admin-operating-system-product-charter.md). The current Thymeleaf console is evidence of current behavior only; it is not a presumed shell or selected implementation foundation. The admin UI must have a dedicated repository chosen through an explicit fitness review or a newly created repository. The backend, including the current Spring platform, is a replaceable adapter: when it cannot meet target contracts, security, outcome verification or reliability requirements, redesign or rebuild the relevant capability rather than deleting the product requirement.
 
 ### 2.2 Entity 360-degree view
 
