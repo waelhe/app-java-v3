@@ -2,7 +2,7 @@
 
 ## Platform administration product target
 
-Target product spec: [platform-admin-end-to-end-product-spec.md](docs/governance/plans/platform-admin-end-to-end-product-spec.md) defines the intended global administrator product, 30 E2E journeys, backend contracts and G01–G35 gap register. **Design only, not implemented**; see the specification's truth-sync and delivery gates.
+Canonical product/UX authority: [Platform Administration Operating System Product Charter](docs/governance/plans/platform-admin-operating-system-product-charter.md). Supporting backend evidence and gap register: [End-to-End Product and Gap Specification](docs/governance/plans/platform-admin-end-to-end-product-spec.md). Both are **design only, not implementation completion**. The UI remains independent of any selected backend; current app-java-v3 is a replaceable adapter candidate, not the design ceiling.
 
 
 > **غرض هذا الملف:** المرجع الدائم لفهم «كيف يعمل نظامنا» — يُقرأ **أولاً** قبل أي تعمّق في أي طبقة، ويُحدَّث عند كل حقيقة جديدة موثَّقة. هو الثالث في عائلة ملفات الجذر: `AGENTS.md` (القواعد) / `PROJECT_MAP.md` (سجل الحالة والقرارات) / `SYSTEM.md` (الآلية والفهم).
