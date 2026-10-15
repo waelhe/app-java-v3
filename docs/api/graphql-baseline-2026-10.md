@@ -98,7 +98,7 @@ This record is honest about its boundaries — the following are **not** measure
 | Phase-0 item (target architecture §11) | Status after this record |
 |---|---|
 | 1. Inventory GraphQL consumers and operations | **Measured — closed:** no external consumers (0 Kotlin references; 21 internal Java files); consumers are the repository's own tests and the CI smoke contract |
-| 2. Anonymous-read policy for public discovery | **Open decision — unchanged:** anonymous `/graphql` stays 401 until the product/security policy and per-field rules exist |
+| 2. Anonymous-read policy for public discovery | **Decided — closed (2026-10-15):** retained protected contract — anonymous `/graphql` stays 401 (grounded in OWASP GraphQL Cheat Sheet authorization enforcement + Spring for GraphQL Security reference + the measured 401 smoke contract and zero external consumers). Re-open trigger: an approved public-discovery journey with designed and tested per-field/object authorization |
 | 3. Confirm exact Spring GraphQL and GraphQL Java versions | **Measured — closed:** Boot 4.1.1 BOM → spring-graphql 2.0.5 → graphql-java 25.0 → java-dataloader 6.0.0 |
 | 4. Measure WebSocket subscription usage | **Measured — closed:** unused (no Subscription root, no consumers, path still configured — disable in Phase 1) |
 | 5. Baseline for latency / response size / DB query count | **Partially measured:** CI gate timings + GraphQL test suite + resolved versions recorded (§1, §4, §5); runtime latency/size/DB-count deferred to the Phase-1 executable gates (§6) |
