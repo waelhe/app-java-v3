@@ -2,6 +2,7 @@ package com.marketplace.institutions;
 
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.FeatureGatePort;
 import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.UrgentAlertPublishedEvent;
@@ -26,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.instancio.Instancio.create;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -37,7 +39,12 @@ import static org.mockito.Mockito.when;
  * level-3 geo → window rule, all BEFORE any write), the withdrawal's
  * honesty leg with its own Modulith signal, and the eligibility engine's
  * AC-20-01 leg (a VERIFIED source is a display precondition — an
- * unverified source's alerts never leak, deterministically).
+ * unverified source's alerts never leak, deterministically) — plus the
+ * console wave 4 gate: the channel's operational kill-switch answers
+ * silence on the ONE seam every surface reads, BEFORE any repository
+ * interaction, while an absent row keeps the built behavior through the
+ * caller's fallback (the two-half contract — the boards' wave 3 pattern
+ * verbatim).
  */
 @ExtendWith(MockitoExtension.class)
 class UrgentAlertServiceTest {
@@ -54,13 +61,22 @@ class UrgentAlertServiceTest {
     private GeoLookupPort geoLookupPort;
 
     @Mock
+    private FeatureGatePort featureGate;
+
+    @Mock
     private ApplicationEventPublisher eventPublisher;
 
     private final Instant now = Instant.parse("2026-10-07T12:00:00Z");
     private final Clock clock = Clock.fixed(now, java.time.ZoneOffset.UTC);
 
     private UrgentAlertService service() {
-        return new UrgentAlertService(sourceRepository, alertRepository, geoLookupPort, eventPublisher, clock);
+        // The honest fallback stub (the two-half contract's absent-row
+        // half): an environment without the seed serves the built
+        // behavior — the existing engine tests ride the ON branch.
+        lenient().when(featureGate.isEnabled("institutions.urgent.enabled", true))
+                .thenReturn(true);
+        return new UrgentAlertService(sourceRepository, alertRepository, geoLookupPort,
+                featureGate, eventPublisher, clock);
     }
 
     private void neighborhoodNode() {
@@ -322,6 +338,24 @@ class UrgentAlertServiceTest {
 
         assertThat(service().activeAlerts(NEIGHBORHOOD_ID, now)).isEmpty();
         verifyNoInteractions(sourceRepository);
+    }
+
+    @Test
+    void activeAlertsOffByTheOperationalLeverAnswersSilenceOnEverySurface_beforeAnyQuery() {
+        // The console's flip — a live OFF row overrides the built
+        // behavior: the ONE seam every urgent surface reads (the public
+        // controller, the discovery rail's port, the notification
+        // router's re-check) answers silence, and NO repository is
+        // touched (the boards' wave 3 discipline: the channel itself is
+        // off, so the live-window query and the source-state filter
+        // answer nothing). The OFF stub lands AFTER the factory's
+        // fallback stub — the last stubbing wins.
+        UrgentAlertService built = service();
+        when(featureGate.isEnabled("institutions.urgent.enabled", true))
+                .thenReturn(false);
+
+        assertThat(built.activeAlerts(NEIGHBORHOOD_ID, now)).isEmpty();
+        verifyNoInteractions(alertRepository, sourceRepository);
     }
 
     @Test

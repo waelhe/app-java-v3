@@ -9,6 +9,7 @@ import com.marketplace.community.NeighborhoodPostRepository;
 import com.marketplace.community.PostCategory;
 import com.marketplace.community.PostStatus;
 import com.marketplace.shared.api.CommunityDiscoveryPort;
+import com.marketplace.shared.api.FeatureGatePort;
 import com.marketplace.shared.api.PagedRequest;
 import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.SpringPagination;
@@ -38,11 +39,11 @@ import java.util.stream.IntStream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
-
 /**
  * JT-20 — the discovery adapter's eligibility-first contract, unit-pinned
  * (the {@code MediaLookupAdapterTest} delegation shape over the module's
@@ -59,7 +60,12 @@ import static org.mockito.Mockito.when;
  *       literal CANCELLED/POSTPONED exclusion;</li>
  *   <li>the followed-sources leg: the honest empty page, the loud cap,
  *       the IN on authors;</li>
- *   <li>each rail pins its own deterministic complete sort key (D-N5).</li>
+ *   <li>each rail pins its own deterministic complete sort key (D-N5);</li>
+ *   <li><b>the console wave 4 gate:</b> the lost-and-found rail's
+ *       operational kill-switch — OFF answers the honest empty page
+ *       BEFORE any repository interaction, and an absent row keeps the
+ *       built behavior through the caller's fallback (the two-half
+ *       contract — the boards' wave 3 pattern verbatim).</li>
  * </ul>
  */
 @ExtendWith(MockitoExtension.class)
@@ -73,10 +79,18 @@ class CommunityDiscoveryAdapterTest {
     @Mock
     private NeighborhoodEventRepository eventRepository;
 
+    @Mock
+    private FeatureGatePort featureGate;
+
     private final Clock clock = Clock.fixed(FIXED, ZoneOffset.UTC);
 
     private CommunityDiscoveryAdapter adapter() {
-        return new CommunityDiscoveryAdapter(postRepository, eventRepository, clock);
+        // The honest fallback stub (the two-half contract's absent-row
+        // half): an environment without the seed serves the built
+        // behavior — the existing rail tests ride the ON branch.
+        lenient().when(featureGate.isEnabled("community.lost-found.enabled", true))
+                .thenReturn(true);
+        return new CommunityDiscoveryAdapter(postRepository, eventRepository, featureGate, clock);
     }
 
     private UUID locationId = UUID.randomUUID();
@@ -92,6 +106,27 @@ class CommunityDiscoveryAdapterTest {
     }
 
     // ---------- findActiveLostFound ----------
+
+    @Test
+    void findActiveLostFound_offByTheOperationalLever_answersTheHonestEmptyPage_beforeAnyQuery() {
+        // The console's flip — a live OFF row overrides the built
+        // behavior: the rail answers the honest empty page and NO
+        // repository is touched (the boards' wave 3 discipline: the
+        // capability itself is off, so the eligibility set and the
+        // V173 index answer nothing). The OFF stub lands AFTER the
+        // factory's fallback stub — the last stubbing wins.
+        CommunityDiscoveryAdapter built = adapter();
+        when(featureGate.isEnabled("community.lost-found.enabled", true))
+                .thenReturn(false);
+
+        PagedResponse<CommunityDiscoveryPort.DiscoveryPostCard> response =
+                built.findActiveLostFound(locationId, PagedRequest.of(0, 20));
+
+        assertThat(response.isEmpty()).isTrue();
+        assertThat(response.pageNumber()).isEqualTo(0);
+        assertThat(response.last()).isTrue();
+        verifyNoInteractions(postRepository, eventRepository);
+    }
 
     @Test
     @SuppressWarnings("unchecked")
