@@ -8,6 +8,8 @@
 
 ## Detailed UX authority — required alongside this gap register
 
+Manager navigation and control-studio direction are governed by the [Global Manager UX Research](platform-admin-global-manager-ux-research.md); the old 14-module navigation should not be reintroduced from gap inventory headings.
+
 - [Detailed screen and interaction specification](platform-admin-detailed-screen-specification.md) defines what the manager sees, the plain-language Arabic UI, action preview, statuses, and empty/error/stale/permission states.
 - [24 step-by-step End-to-End journey recipes](platform-admin-e2e-journey-recipes.md) defines the complete user journey, branches, recovery and acceptance tests.
 
