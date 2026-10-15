@@ -203,18 +203,22 @@ class DeploymentChannelFilesTest {
                 .contains("- name: Probe deployment channel freshness");
         assertThat(yml).as("the probe reads the governing repo's main")
                 .contains("UPSTREAM: waelhe/app-java-v3");
-        // 2026-09-19 channel redesign (PR #347): production deploys directly
-        // from main via Railway's GitHub App; the retired fork compare would
-        // measure a frozen repository forever (the fork-sync workflow is
-        // disabled and the fork frozen at its last fast-forward). The live
-        // channel's own telemetry is the commit status the App posts on the
-        // exact commit it builds — context "<project> - <service>",
-        // measured: success on bb6da39 ("Success - app-java-v3-production...")
-        // and failure on 7371afbb/16117d8 ("Deployment failed").
+        // 2026-09-19 channel redesign (PR #347), rebound 2026-10-15 for the
+        // v5 migration account: production deploys directly from main via
+        // Railway's GitHub App; the retired fork compare would measure a
+        // frozen repository forever (the fork-sync workflow is disabled and
+        // the fork frozen at its last fast-forward). The live channel's own
+        // telemetry is the commit status the App posts on the exact commit
+        // it builds — context "<project> - <service>", rebound to the
+        // measured v5 value: success on main HEAD e8e272d
+        // ("reasonable-presence - app-java-v3" — "Success -
+        // app-java-v3-production.up.railway.app", deployment a66c48c8);
+        // the v4-era context belongs to the old dying account and nobody
+        // posts to it.
         assertThat(yml).as("the probe reads Railway's own commit status on main "
                         + "HEAD - the live deployment channel's telemetry "
-                        + "(measured context)")
-                .contains("RAILWAY_STATUS_CONTEXT: \"app-java-v3 - app-java-v3\"");
+                        + "(rebound measured context)")
+                .contains("RAILWAY_STATUS_CONTEXT: \"reasonable-presence - app-java-v3\"");
         assertThat(yml).as("the retired fork compare must be gone - the fork "
                         + "channel was decommissioned with the old account")
                 .doesNotContain("DEPLOY_FORK");

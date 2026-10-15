@@ -65,15 +65,21 @@ name: Production Watchdog
 # fork's runs become skipped (green) instead of failing.
 #
 # Deployment-channel freshness probe (layer 15, redesigned 2026-09-19 for the
-# v3 account migration): production now deploys directly from this
+# v3 account migration, rebound 2026-10-15 for the v5 migration — project
+# reasonable-presence, the wael.he trial account, migrated 2026-10-14):
+# production now deploys directly from this
 # repository's main via Railway's GitHub App — the old channel (deployment
 # fork + scheduled fork-sync.yml) is decommissioned and a fork-vs-upstream
 # compare would measure a frozen repository, failing forever. The App reports
 # each deployment as a commit status on the exact commit it built, context
-# "<project> - <service>" (measured on this account: success on bb6da39 →
-# "Success - app-java-v3-production.up.railway.app"; failure on 7371afbb and
-# 16117d8 → "Deployment failed" — the BUILD_IMAGE cache-id validation that
-# PR #347 closes). The probe reads that status on main HEAD: success =
+# "<project> - <service>" (measured on the current account, main HEAD
+# e8e272d 2026-10-15: "reasonable-presence - app-java-v3" → success,
+# "Success - app-java-v3-production.up.railway.app" — deployment a66c48c8,
+# created 3 seconds after the #576 merge; the v4-era context
+# "app-java-v3 - app-java-v3" and the -59bf domain belong to the OLD
+# account, which still answers 200 today but is a frozen deployment on a
+# dying trial — probing it would measure the wrong production and
+# false-page the day it expires). The probe reads that status on main HEAD: success =
 # fresh; failure = production is serving stale code (incident, immediately —
 # a failed build never self-heals); pending/missing is bounded by the commit's
 # age, because a push-triggered channel reports within minutes of the push —
@@ -122,7 +128,7 @@ jobs:
       - name: Probe public production endpoints
         id: probe
         env:
-          BASE_URL: https://app-java-v3-production-59bf.up.railway.app
+          BASE_URL: https://app-java-v3-production.up.railway.app
         run: |
           set -u
           declare -A want=(
@@ -163,7 +169,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           UPSTREAM: waelhe/app-java-v3
-          RAILWAY_STATUS_CONTEXT: "app-java-v3 - app-java-v3"
+          RAILWAY_STATUS_CONTEXT: "reasonable-presence - app-java-v3"
           MAX_LAG_MINUTES: 240
         run: |
           set -u
