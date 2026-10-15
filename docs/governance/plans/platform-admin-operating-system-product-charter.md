@@ -502,6 +502,15 @@ Run the same contract/journey suite against app-java-v3. For every gap, decide w
 
 ---
 
+## Detailed build documents — required reading before implementation
+
+The strategic charter is not a screen-by-screen implementation recipe. The detailed experience is specified in two linked documents that are part of this product definition:
+
+- [Detailed screen and interaction specification](platform-admin-detailed-screen-specification.md): manager-facing Arabic labels, exact screen composition, field/action semantics, navigation, preview patterns, error/empty/stale/permission states, and accessibility behavior.
+- [24 step-by-step End-to-End journey recipes](platform-admin-e2e-journey-recipes.md): the full manager path from entry to verified result, decision branches, failure/recovery paths, source-of-truth evidence and browser E2E matrix.
+
+These are not optional appendices. Designers and developers must use them alongside this charter. The current backend gap list cannot be used to delete a defined step; a missing capability becomes a tracked gap or replacement requirement. A prototype is not live product functionality.
+
 ## Final target statement
 
 The product is a new, independent command environment for governing the entire community-and-commerce platform. It gives the manager a connected view of people, places, trust, content, services, commerce, money, mobile experience, data, AI and reliability; converts signals into authorized, coordinated, evidence-backed action; and proves outcomes.
