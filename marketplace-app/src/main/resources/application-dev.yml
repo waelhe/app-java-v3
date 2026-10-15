@@ -34,6 +34,19 @@ spring:
     events:
       completion-mode: delete
 
+  graphql:
+    # The explicit local-development opt-in (GraphQL target design §2.2:
+    # "Prefer safe defaults in the base profile and explicit opt-in for
+    # local development"): GraphiQL's in-browser IDE and schema
+    # introspection are developer tooling, so they ride the dev profile
+    # only — the base stays safe-by-default and staging/production stay
+    # hardened.
+    graphiql:
+      enabled: true
+    schema:
+      introspection:
+        enabled: true
+
   devtools:
     restart:
       enabled: true

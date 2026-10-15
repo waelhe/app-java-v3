@@ -1,6 +1,21 @@
 type Query {
     service(id: ID!): Service
-    services: [Service!]!
+    # The bounded collection contract (GraphQL target design Phase 1): the
+    # unbounded demo field `services: [Service!]!` (Pageable.unpaged() under
+    # it) is REPLACED, not paralleled — the consumer inventory measured zero
+    # contracted consumers (the repo's own tests are the only callers; the
+    # Android client is REST-only), which is the design plan §6 condition for
+    # direct replacement. The field is the official Spring for GraphQL relay
+    # Connection path: ServiceConnection/ServiceEdge/PageInfo are generated
+    # at startup by Boot's ConnectionTypeDefinitionConfigurer, the returned
+    # Spring Data Page is adapted by the auto-registered SliceConnectionAdapter
+    # (Page is-a Slice — verified against spring-boot-graphql 4.1.1), and
+    # `after` cursors are base64 ScrollPosition offsets produced by that same
+    # adapter — decoded back by the auto-registered Subrange argument resolver.
+    # `first` defaults to the server's default page size (bounded, hard-capped);
+    # forward-only (last/before deliberately absent) with deterministic
+    # server-side ordering.
+    services(first: Int = 20, after: String): ServiceConnection!
 }
 
 type Mutation {

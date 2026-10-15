@@ -157,15 +157,30 @@ spring:
       enabled: true
 
   graphql:
-    graphiql:
-      enabled: true
-    websocket:
-      path: /graphql/ws
     schema:
+      # Safe-by-default posture (GraphQL target design Phase 1, verified
+      # against the Boot 4.1.1 configuration metadata): introspection's
+      # framework default is TRUE, so the base profile disables it
+      # explicitly — the JVM-wide kill switch Boot wires into
+      # GraphQlAutoConfiguration (Introspection.enabledJvmWide(false)).
+      # GraphiQL needs no line: its Boot default is already false, and the
+      # local-development opt-in lives in application-dev.yml. Staging and
+      # production keep their existing explicit hardening; every profile
+      # inherits the safe base.
       introspection:
-        enabled: true
+        enabled: false
+      # Startup schema-vs-mappings inspection — the framework's missing-
+      # mapping correctness gate, kept on in the base so a dev/test boot
+      # fails fast on an unmapped field (staging/prod keep it off as
+      # shipped).
       inspection:
         enabled: true
+    # The GraphQL WebSocket transport is deliberately NOT configured: its
+    # Boot default is "no path, transport off", the schema has no
+    # Subscription root, and push delivery is the STOMP channel's contract
+    # (design §5.8: do not keep a second unexplained push protocol). The
+    # former base-level spring.graphql.websocket.path is removed — removal
+    # disables the transport in every profile that inherited it.
 
   session:
     data:
@@ -610,6 +625,25 @@ resilience4j:
       # default 20 — the scan's page size bounds memory, this window
       # bounds frequency).
       savedSearchCreate:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      # GraphQL target design Phase 1 (docs/api/graphql-target-architecture.md
+      # §5.6/§6 — "rate-limit the surface"): the two named instances of the
+      # GraphQL catalog surface, the same L29 fail-fast model (429 RL-001 on
+      # the GraphQL side via the resolver's RequestNotPermitted mapping).
+      # graphqlServiceQuery sits at the catalog REST read budget (50/min —
+      # the `catalog` instance's own number): the services connection reads
+      # the same listing store the catalog endpoints read. graphqlCreateService
+      # sits at the bookingCreate/reviewCreate/leadCreate write budget
+      # (10/min): it delegates to the same catalog use case those writes
+      # share. Instance-wide windows per the house model; per-subject caps
+      # are the later G-R6 calibration decision, never a silent default.
+      graphqlServiceQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      graphqlCreateService:
         base-config: default
         limit-for-period: 10
         timeout-duration: 0

@@ -197,8 +197,8 @@ class ServiceGraphQlMutationIntegrationTest {
                 .satisfy(errors -> {
                     assertThat(errors).isNotEmpty();
                     var error = errors.getFirst();
-                    assertThat(error.getExtensions()).containsEntry("errorCode", "VALIDATION_ERROR");
-                    assertThat(error.getExtensions()).containsEntry("category", "VALIDATION");
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
+                    assertThat(error.getExtensions()).containsEntry("category", "validation");
                 });
 
         verify(catalogService, never()).create(any(), anyString(), any(), anyString(), any(), any());

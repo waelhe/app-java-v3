@@ -1,11 +1,13 @@
 package com.marketplace.app.graphql;
 
+import com.marketplace.shared.api.ApiErrorTaxonomy;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import graphql.GraphQLError;
 import graphql.execution.ExecutionStepInfo;
 import graphql.language.Field;
 import graphql.language.SourceLocation;
 import graphql.schema.DataFetchingEnvironment;
+import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.access.AccessDeniedException;
@@ -18,13 +20,17 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * A4: GraphQL must not leak authorization failures as INTERNAL_ERROR — an
- * {@link AccessDeniedException} is a 403-equivalent and must surface as
- * {@code FORBIDDEN}/{@code ACCESS_DENIED}, matching the AUTHZ taxonomy.
+ * The GraphQL error contract's canonical alignment (GraphQL target design
+ * Phase 1): every mapped failure carries the SAME {@code errorCode} +
+ * {@code category} pair the REST ProblemDetail contract emits from
+ * {@link ApiErrorTaxonomy} — one machine vocabulary across both
+ * transports, replacing the demo-era ad-hoc literals (A4 kept the
+ * authorization distinction; the taxonomy now supplies both values).
  */
 class GraphQlExceptionResolverTest {
 
-    private final GraphQlExceptionResolver resolver = new GraphQlExceptionResolver(false);
+    private final GraphQlExceptionResolver resolver = new GraphQlExceptionResolver(
+            new GraphQlProperties(new GraphQlProperties.Errors(false), null, null));
     private final DataFetchingEnvironment env = mock(DataFetchingEnvironment.class);
 
     /**
@@ -42,48 +48,52 @@ class GraphQlExceptionResolverTest {
     }
 
     /**
-     * A4: an {@code AccessDeniedException} must surface as
-     * FORBIDDEN/ACCESS_DENIED (authz), never INTERNAL_ERROR.
+     * A4: an {@code AccessDeniedException} must surface as FORBIDDEN with
+     * the canonical AUTHZ pair (AUTHZ-001 / authz) — never INTERNAL.
      */
     @Test
-    void mapsAccessDeniedToForbiddenWithAccessDeniedCode() {
+    void mapsAccessDeniedToForbiddenWithCanonicalAuthzTaxonomy() {
         GraphQLError error = first(resolver.resolveException(new AccessDeniedException("No access"), env).block());
 
         assertThat(error.getErrorType()).isEqualTo(org.springframework.graphql.execution.ErrorType.FORBIDDEN);
-        assertThat(error.getExtensions()).containsEntry("errorCode", "ACCESS_DENIED");
-        assertThat(error.getExtensions()).containsEntry("category", "authz");
+        assertThat(error.getExtensions()).containsEntry("errorCode", ApiErrorTaxonomy.AUTHZ.errorCode());
+        assertThat(error.getExtensions()).containsEntry("category", ApiErrorTaxonomy.AUTHZ.category());
         assertThat(error.getMessage()).isEqualTo("No access");
     }
 
     /**
-     * Regression: the NOT_FOUND mapping is unchanged by the A4 branch.
+     * Regression: the NOT_FOUND mapping is unchanged in shape, now with the
+     * canonical pair (NF-001 / not-found).
      */
     @Test
     void mapsResourceNotFoundAsBefore() {
         GraphQLError error = first(resolver.resolveException(
-                new ResourceNotFoundException("Listing", java.util.UUID.randomUUID()), env).block());
+                new ResourceNotFoundException("Listing", UUID.randomUUID()), env).block());
 
         assertThat(error.getErrorType()).isEqualTo(org.springframework.graphql.execution.ErrorType.NOT_FOUND);
+        assertThat(error.getExtensions()).containsEntry("errorCode", ApiErrorTaxonomy.NOT_FOUND.errorCode());
+        assertThat(error.getExtensions()).containsEntry("category", ApiErrorTaxonomy.NOT_FOUND.category());
     }
 
     /**
-     * Regression: the DOMAIN_CONFLICT mapping is unchanged by the A4
-     * branch.
+     * Regression: the domain-conflict mapping keeps BAD_REQUEST errorType,
+     * now with the canonical pair (CONFLICT-001 / conflict).
      */
     @Test
     void mapsDomainConflictAsBefore() {
         GraphQLError error = first(resolver.resolveException(new IllegalStateException("boom"), env).block());
 
         assertThat(error.getErrorType()).isEqualTo(org.springframework.graphql.execution.ErrorType.BAD_REQUEST);
-        assertThat(error.getExtensions()).containsEntry("errorCode", "DOMAIN_CONFLICT");
+        assertThat(error.getExtensions()).containsEntry("errorCode", ApiErrorTaxonomy.CONFLICT.errorCode());
+        assertThat(error.getExtensions()).containsEntry("category", ApiErrorTaxonomy.CONFLICT.category());
     }
 
     /**
      * Bean Validation failures (surfaced by spring-graphql's ValidationHelper
-     * for @Valid @Argument parameters) must carry the same VALIDATION
-     * taxonomy the REST GlobalExceptionHandler returns for
-     * ConstraintViolationException — never the masked INTERNAL_ERROR
-     * fallback.
+     * for @Valid @Argument parameters) must carry the canonical VALIDATION
+     * pair (VAL-001 / validation) — the same semantics the REST
+     * GlobalExceptionHandler returns for ConstraintViolationException —
+     * never the masked INTERNAL fallback.
      */
     @Test
     void mapsConstraintViolationToValidationTaxonomy() {
@@ -94,9 +104,44 @@ class GraphQlExceptionResolverTest {
                 env).block());
 
         assertThat(error.getErrorType()).isEqualTo(org.springframework.graphql.execution.ErrorType.BAD_REQUEST);
-        assertThat(error.getExtensions()).containsEntry("errorCode", "VALIDATION_ERROR");
-        assertThat(error.getExtensions()).containsEntry("category", "VALIDATION");
+        assertThat(error.getExtensions()).containsEntry("errorCode", ApiErrorTaxonomy.VALIDATION.errorCode());
+        assertThat(error.getExtensions()).containsEntry("category", ApiErrorTaxonomy.VALIDATION.category());
         assertThat(error.getMessage()).contains("must be greater than or equal to 0");
+    }
+
+    /**
+     * Phase 1 "rate-limit the surface": a resilience4j {@code
+     * RequestNotPermitted} from the GraphQL named instances maps to the
+     * canonical RATE_LIMIT pair (RL-001 / rate-limit) with the SAME fixed
+     * sentence the REST advice returns — never the limiter's internal
+     * instance state.
+     */
+    @Test
+    void mapsRequestNotPermittedToRateLimitTaxonomyWithTheFixedSentence() {
+        GraphQLError error = first(resolver.resolveException(
+                RequestNotPermitted.createRequestNotPermitted(
+                        io.github.resilience4j.ratelimiter.RateLimiter.of(
+                                "graphqlServiceQuery",
+                                io.github.resilience4j.ratelimiter.RateLimiterConfig.ofDefaults())),
+                env).block());
+
+        assertThat(error.getExtensions()).containsEntry("errorCode", ApiErrorTaxonomy.RATE_LIMIT.errorCode());
+        assertThat(error.getExtensions()).containsEntry("category", ApiErrorTaxonomy.RATE_LIMIT.category());
+        assertThat(error.getMessage()).isEqualTo("Rate limit exceeded. Please try again later.");
+    }
+
+    /**
+     * The masked fallback keeps the canonical INTERNAL pair (INT-001 /
+     * internal) and the generic message.
+     */
+    @Test
+    void masksUnknownFailuresAsInternal() {
+        GraphQLError error = first(resolver.resolveException(new RuntimeException("secret"), env).block());
+
+        assertThat(error.getErrorType()).isEqualTo(org.springframework.graphql.execution.ErrorType.INTERNAL_ERROR);
+        assertThat(error.getExtensions()).containsEntry("errorCode", ApiErrorTaxonomy.INTERNAL.errorCode());
+        assertThat(error.getExtensions()).containsEntry("category", ApiErrorTaxonomy.INTERNAL.category());
+        assertThat(error.getMessage()).isEqualTo("An unexpected error occurred");
     }
 
     /**

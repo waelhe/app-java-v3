@@ -134,16 +134,37 @@ Marketplace intentionally uses **two different error envelopes** depending on pr
 
 ### Marketplace GraphQL `extensions` contract
 
-For domain/runtime failures resolved by the central GraphQL exception resolver, each error includes:
+For domain/runtime failures resolved by the central GraphQL exception resolver, each error carries the **canonical taxonomy pair** — the same `errorCode` + `category` values the REST ProblemDetail contract emits from `ApiErrorTaxonomy` (the GraphQL target design §7 alignment; the demo-era ad-hoc literals were its recorded drift, replaced while the surface still had zero contracted consumers):
 
-- `errorCode`: stable machine-readable code (e.g. `NOT_FOUND`, `DOMAIN_CONFLICT`, `INTERNAL_ERROR`).
-- `category`: high-level class (`RESOURCE`, `DOMAIN`, `VALIDATION`, `INTERNAL`).
+| Failure | `errorCode` | `category` | GraphQL `errorType` |
+|---|---|---|---|
+| Not found (`ResourceNotFoundException`) | `NF-001` | `not-found` | `NOT_FOUND` |
+| Validation (`IllegalArgumentException`, `ConstraintViolationException`) | `VAL-001` | `validation` | `BAD_REQUEST` |
+| Domain conflict (`IllegalStateException`) | `CONFLICT-001` | `conflict` | `BAD_REQUEST` |
+| Authorization (`AccessDeniedException`) | `AUTHZ-001` | `authz` | `FORBIDDEN` |
+| Rate limit (`RequestNotPermitted`, resilience4j instances) | `RL-001` | `rate-limit` | `BAD_REQUEST` |
+| Unknown/internal (masked) | `INT-001` | `internal` | `INTERNAL_ERROR` |
+
+- The GraphQL-spec `errorType` is derived from spring-graphql's fixed five-value vocabulary (it has no rate-limit or conflict value); the authoritative machine contract is the extensions pair.
 - `traceId`: propagated correlation identifier, included only when `marketplace.graphql.errors.include-trace-id=true`.
+- Rate-limit rejections carry the same fixed sentence REST returns (`Rate limit exceeded. Please try again later.`) — never the limiter's internal instance state.
+
+### Request-level errors (the layer the resolver never sees)
+
+GraphQL failures split into two distinct layers (the design §7 rule "test what the exact Spring version returns before custom-normalizing it"):
+
+- **Request-level failures** — syntax errors, schema validation (unknown fields), argument coercion — surface the framework's own envelopes (`classification: InvalidSyntax` / `ValidationError` on the wire) and are deliberately NOT re-mapped through the resolver taxonomy. Pinned by `GraphQlLimitsIntegrationTest`.
+- **Data-fetcher failures** — the resolver table above. Pinned by `GraphQlExceptionResolverTest`, `GraphQlErrorIntegrationTest` and the mutation integration test.
+- **Query-cost rejections** — graphql-java's `MaxQueryDepthInstrumentation`/`MaxQueryComplexityInstrumentation` abort with the framework's own `ExecutionAborted` classification and a measured message (`maximum query complexity exceeded N > M`), with no partial data. Pinned end-to-end by `GraphQlLimitsIntegrationTest` and at the instrumentation layer by `MaxQueryDepthInstrumentationTest`.
 
 ### Security and leakage policy
 
 - Internal/unknown exceptions MUST return a generic message (`An unexpected error occurred`).
 - Stack traces and internal exception details MUST NOT be exposed in GraphQL error messages.
+
+### GraphQL schema compatibility CI gate
+
+The GraphQL schema has its own compatibility gate (the OpenAPI gate's twin): `.ci/check-graphql-compat.sh` compares the release-tag baseline runtime SDL against the current runtime SDL (graphql-java `GraphQLSchemaPrinter` output from a booted `GraphQlSource` in both trees), and `.ci/graphql-compat-classifier.py` fails the gate on removals, nullability tightening, argument removal/requirement, and type changes unless documented in `.ci/graphql-compat-allowlist.yml` with ticket, reason, and expiry (the same temporary-exception lifecycle as the OpenAPI allowlist).
 
 ## Migration note (naming)
 

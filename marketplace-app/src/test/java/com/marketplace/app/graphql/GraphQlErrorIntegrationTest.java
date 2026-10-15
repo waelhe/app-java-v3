@@ -3,6 +3,7 @@ package com.marketplace.app.graphql;
 import test.config.IntegrationContainers;
 
 import com.marketplace.catalog.CatalogService;
+import com.marketplace.shared.api.ApiErrorTaxonomy;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -84,8 +85,10 @@ class GraphQlErrorIntegrationTest {
                 .satisfy(errors -> {
                     var error = errors.getFirst();
                     org.assertj.core.api.Assertions.assertThat(error.getMessage()).contains("Listing not found");
-                    org.assertj.core.api.Assertions.assertThat(error.getExtensions()).containsEntry("errorCode", "NOT_FOUND");
-                    org.assertj.core.api.Assertions.assertThat(error.getExtensions()).containsEntry("category", "RESOURCE");
+                    org.assertj.core.api.Assertions.assertThat(error.getExtensions())
+                            .containsEntry("errorCode", ApiErrorTaxonomy.NOT_FOUND.errorCode());
+                    org.assertj.core.api.Assertions.assertThat(error.getExtensions())
+                            .containsEntry("category", ApiErrorTaxonomy.NOT_FOUND.category());
                     org.assertj.core.api.Assertions.assertThat(error.getExtensions()).containsEntry("traceId", "trace-not-found");
                 });
     }
@@ -102,8 +105,10 @@ class GraphQlErrorIntegrationTest {
                 .satisfy(errors -> {
                     var error = errors.getFirst();
                     org.assertj.core.api.Assertions.assertThat(error.getMessage()).isEqualTo("Listing status conflict");
-                    org.assertj.core.api.Assertions.assertThat(error.getExtensions()).containsEntry("errorCode", "DOMAIN_CONFLICT");
-                    org.assertj.core.api.Assertions.assertThat(error.getExtensions()).containsEntry("category", "DOMAIN");
+                    org.assertj.core.api.Assertions.assertThat(error.getExtensions())
+                            .containsEntry("errorCode", ApiErrorTaxonomy.CONFLICT.errorCode());
+                    org.assertj.core.api.Assertions.assertThat(error.getExtensions())
+                            .containsEntry("category", ApiErrorTaxonomy.CONFLICT.category());
                 });
     }
 
@@ -120,8 +125,10 @@ class GraphQlErrorIntegrationTest {
                     var error = errors.getFirst();
                     org.assertj.core.api.Assertions.assertThat(error.getMessage()).isEqualTo("An unexpected error occurred");
                     org.assertj.core.api.Assertions.assertThat(error.getMessage()).doesNotContain("sensitive");
-                    org.assertj.core.api.Assertions.assertThat(error.getExtensions()).containsEntry("errorCode", "INTERNAL_ERROR");
-                    org.assertj.core.api.Assertions.assertThat(error.getExtensions()).containsEntry("category", "INTERNAL");
+                    org.assertj.core.api.Assertions.assertThat(error.getExtensions())
+                            .containsEntry("errorCode", ApiErrorTaxonomy.INTERNAL.errorCode());
+                    org.assertj.core.api.Assertions.assertThat(error.getExtensions())
+                            .containsEntry("category", ApiErrorTaxonomy.INTERNAL.category());
                 });
     }
 }
