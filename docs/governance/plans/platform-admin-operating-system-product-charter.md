@@ -191,6 +191,18 @@ The **Member Experience Studio** designs the member's actual app journeys with p
 
 Internal concepts such as event processing, application metrics, dependencies and capability manifests remain specialist details under “صحة المنصة”/advanced diagnostics. They do not determine the main navigation.
 
+## 4A. Domain suites must have full domain depth — governing requirement
+
+A top-level destination is not a complete domain UX. The authoritative scope is [Domain-Grade Administration Suites](platform-admin-domain-grade-suites.md). It specifies the required workspace family, collection/detail/editor patterns, lifecycle states, bulk tools, configuration, permissions, analytics, audit, recovery, and acceptance evidence for each major domain.
+
+**Non-negotiable reference maturity:**
+- Market/commerce: Saleor Dashboard-level administrative breadth and interaction depth, expanded for a local multi-provider marketplace, listings, service availability/bookings, provider verification and local fulfilment.
+- Community/trust: Discourse-level community administration/moderation/analytics plus neighborhood geography, verified membership, groups, events, institutional authority and official local alerts.
+- Business directory: Yelp for Business-level profile claims, verification, reviews and replies, local visibility, leads and outcome reporting.
+- Members/geography, official reach, money/growth, member experience and team governance must each meet the equivalent explicit breadth defined in the suite specification.
+
+**A domain cannot pass acceptance because its entry in the main navigation exists.** It must have its own operational home, all applicable management workspaces, searchable collection screens, detailed records, full create/edit and lifecycle flows, exception queues, domain settings, permissions, audit, reports and complete End-to-End journeys. The Experience Studio and Change Centre complement these domain tools; they do not replace them.
+
 ## 5. The universal command lifecycle
 
 Every state-changing UI uses one command protocol. Low-risk actions may use a compact preview; high-impact operations must expose every phase.
@@ -529,6 +541,7 @@ The strategic charter is not a screen-by-screen implementation recipe. The detai
 
 - [Detailed screen and interaction specification](platform-admin-detailed-screen-specification.md): manager-facing Arabic labels, exact screen composition, field/action semantics, navigation, preview patterns, error/empty/stale/permission states, and accessibility behavior.
 - [Global manager UX research](platform-admin-global-manager-ux-research.md): documented product patterns, source repository review, the revised eight-destination navigation, and the member-experience/control-studio model.
+- [Domain-grade administration suites](platform-admin-domain-grade-suites.md): Saleor-depth commerce, Discourse-depth community and Yelp-depth directory screen families, workflows, cross-domain maturity contract and acceptance gates.
 - [Primary screen wireframes](platform-admin-primary-screen-wireframes.md): eight structural layouts that pin down the homepage, queue, incident room, feature-stop flow, payment case, official alert, setting review and permission grant.
 - [24 step-by-step End-to-End journey recipes](platform-admin-e2e-journey-recipes.md): the full manager path from entry to verified result, decision branches, failure/recovery paths, source-of-truth evidence and browser E2E matrix.
 
