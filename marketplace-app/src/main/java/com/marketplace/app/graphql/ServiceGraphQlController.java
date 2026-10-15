@@ -14,7 +14,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.graphql.data.method.annotation.Argument;
 import org.springframework.graphql.data.method.annotation.MutationMapping;
 import org.springframework.graphql.data.method.annotation.QueryMapping;
-import org.springframework.graphql.data.pagination.Subrange;
+import org.springframework.graphql.data.query.ScrollSubrange;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 
@@ -70,8 +70,8 @@ public class ServiceGraphQlController {
      * auto-registered by the Boot starter, measured in
      * spring-boot-graphql 4.1.1):</b> the SDL declares the relay arguments
      * {@code first}/{@code after}; the auto-registered
-     * {@code ScrollSubrangeMethodArgumentResolver} binds them into
-     * {@code Subrange<ScrollPosition>} (the {@code after} cursor decoded by
+     * {@code ScrollSubrangeMethodArgumentResolver} binds them into a
+     * {@code ScrollSubrange} (the {@code after} cursor decoded by
      * the Boot-registered base64 {@code ScrollPositionCursorStrategy}); this
      * method converts the subrange into a bounded Spring Data
      * {@link Pageable}; the returned {@link Page} is adapted into the
@@ -79,6 +79,19 @@ public class ServiceGraphQlController {
      * {@code SliceConnectionAdapter} — which also produces the next page's
      * {@code O_<offset>} cursors, so the cursor format stays the
      * framework's own, never a hand-rolled string.</p>
+     *
+     * <p><b>The parameter carries no {@code @Argument} — a measured
+     * contract of the resolver chain (spring-graphql 2.0.5 sources):
+     * {@code AnnotatedControllerConfigurer} registers
+     * {@code ArgumentMethodArgumentResolver} ahead of the subrange
+     * resolver, so an {@code @Argument}-annotated parameter is claimed by
+     * name binding against a schema argument "subrange" that does not
+     * exist. The binder returns {@code null} for an omitted argument, the
+     * method fails internally, and the startup schema inspection reports
+     * the parameter as an unmapped argument. The exact
+     * {@code ScrollSubrange} type is what
+     * {@code ScrollSubrangeMethodArgumentResolver.supportsParameter}
+     * claims — the binding contract of this surface.</p>
      *
      * <p><b>Bounds (design §6):</b> {@code first} resolves against the
      * configured default when absent and is clamped to the configured hard
@@ -103,7 +116,7 @@ public class ServiceGraphQlController {
      */
     @QueryMapping
     @RateLimiter(name = "graphqlServiceQuery")
-    public Page<ServiceResponse> services(@Argument Subrange<ScrollPosition> subrange) {
+    public Page<ServiceResponse> services(ScrollSubrange subrange) {
         int requested = subrange.count().orElse(properties.pagination().defaultPageSize());
         if (requested <= 0) {
             // Relay connection spec: a non-positive `first` asks for an
@@ -138,7 +151,7 @@ public class ServiceGraphQlController {
      * — the bounded, never-widening behavior documented on
      * {@link #services}.
      */
-    private int pageFor(Subrange<ScrollPosition> subrange, int pageSize) {
+    private int pageFor(ScrollSubrange subrange, int pageSize) {
         return subrange.position()
                 .map(OffsetPosition::pageOf)
                 .map(offset -> pageIndex(offset, pageSize))

@@ -11,7 +11,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.ScrollPosition;
-import org.springframework.graphql.data.pagination.Subrange;
+import org.springframework.graphql.data.query.ScrollSubrange;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 
 import java.util.List;
@@ -83,7 +83,7 @@ class ServiceGraphQlControllerTest {
         when(catalogService.findAll(any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(l1, l2)));
 
-        controller.services(new Subrange<>(null, null, true));
+        controller.services(ScrollSubrange.create(null, null, true));
 
         verify(catalogService).findAll(argThat((Pageable pageable) ->
                 pageable.getPageSize() == 20
@@ -100,7 +100,7 @@ class ServiceGraphQlControllerTest {
         when(catalogService.findAll(any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
 
-        controller.services(new Subrange<>(null, 5_000, true));
+        controller.services(ScrollSubrange.create(null, 5_000, true));
 
         verify(catalogService).findAll(argThat((Pageable pageable) ->
                 pageable.getPageSize() == 100));
@@ -112,7 +112,7 @@ class ServiceGraphQlControllerTest {
      */
     @Test
     void servicesAnswersNonPositiveFirstWithAnEmptyPageWithoutReading() {
-        var page = controller.services(new Subrange<>(null, 0, true));
+        var page = controller.services(ScrollSubrange.create(null, 0, true));
 
         assertThat(page.getContent()).isEmpty();
         verifyNoInteractions(catalogService);
@@ -130,7 +130,7 @@ class ServiceGraphQlControllerTest {
                 .thenReturn(new PageImpl<>(List.of()));
 
         // The terminal cursor of page 0 with size 20 is item offset 19.
-        controller.services(new Subrange<>(ScrollPosition.offset(19), 20, true));
+        controller.services(ScrollSubrange.create(ScrollPosition.offset(19), 20, true));
 
         verify(catalogService).findAll(argThat((Pageable pageable) ->
                 pageable.getPageNumber() == 1 && pageable.getPageSize() == 20));
@@ -146,7 +146,7 @@ class ServiceGraphQlControllerTest {
     void servicesRejectsAKeysetCursorAsAValidationError() {
         ScrollPosition keyset = ScrollPosition.forward(Map.of("createdAt", "2026-01-01"));
 
-        assertThatThrownBy(() -> controller.services(new Subrange<>(keyset, 20, true)))
+        assertThatThrownBy(() -> controller.services(ScrollSubrange.create(keyset, 20, true)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("offset cursors");
         verifyNoInteractions(catalogService);
@@ -159,7 +159,7 @@ class ServiceGraphQlControllerTest {
     @Test
     void servicesRejectsAnOffsetBeyondThePaginableRange() {
         assertThatThrownBy(() ->
-                controller.services(new Subrange<>(ScrollPosition.offset(Long.MAX_VALUE - 1), 20, true)))
+                controller.services(ScrollSubrange.create(ScrollPosition.offset(Long.MAX_VALUE - 1), 20, true)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("outside the paginable range");
         verifyNoInteractions(catalogService);
