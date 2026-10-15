@@ -147,28 +147,49 @@ The page prioritizes decisions and effects. Charts are secondary to actionable q
 - Responsive desktop-first information architecture with functional tablet support. Essential incident acknowledgement, task assignment and safe stop controls remain usable at narrow widths; complex authoring and bulk work may require a larger viewport with a clear explanation.
 - Accessibility target: WCAG 2.2 AA, full keyboard operation, visible focus, semantic controls, non-color statuses, screen-reader announcements for asynchronous outcomes and zoom/reflow testing.
 
-## 4. Information architecture
+## 4. Manager-centred information architecture — authoritative revision
 
-Navigation follows operator responsibilities and real user journeys, not package names or endpoint groups.
+The earlier 14-workbench catalogue was too close to the platform's internal capability map and forced managers to learn our taxonomy. It is superseded by the evidence-based [Global Manager UX Research and Information Architecture](platform-admin-global-manager-ux-research.md). The following eight primary destinations organize work around responsibilities that a non-technical director recognizes.
 
-| Workbench | Core pages and capabilities |
-|---|---|
-| **01 — Command Centre** | My shift; global pulse; critical signals; experience health; release impact; global map; what changed; next actions |
-| **02 — Work & Decisions** | My work; team queues; case manager; task board; approvals; escalations; SLA/routing; bulk operation studio; handover and shift report |
-| **03 — Global Explore** | Universal search; saved investigations; relationship explorer; entity 360; evidence viewer; timeline and command history |
-| **04 — People, Identity & Trust** | Members; membership claims; verification evidence; referrals/attestations; institutions/representatives; appeals; account security; privacy profile; trust-source registry |
-| **05 — Community & Safety** | Posts/discussions; reports; coordinated abuse; moderation rules; enforcement/appeals; lost-and-found; groups/events; neighborhood health; safety response |
-| **06 — Official Reach & Publishing** | News/editorial; broadcast/urgent alerts; audience builder/simulation; scheduling; institutional source authority; delivery receipts; correction/withdrawal history |
-| **07 — Commerce & Money** | Providers/business directory; products/listings; property; jobs/services; inventory/availability; orders/bookings; lending; disputes; promotions/ads; payment intents; ledger/reconciliation; refunds; settlement |
-| **08 — Product Experience** | Onboarding/verification funnel; discovery/search relevance; ranking diagnostics; subscriptions/preferences; notification quality; feature/capability registry; experiments; mobile home/layout studio; releases/adoption |
-| **09 — Platform Reliability** | Service/dependency map; incidents; SLO/error budgets; traces/logs/profiles; event publications; jobs/workflows; webhooks/integrations; delivery pipelines; circuit breakers; caches/indexes; runbooks; deployment history |
-| **10 — Configuration & Policy** | Typed settings; policy studio; geographic rules; notification routing; taxonomy; moderation rules; capability controls; secrets references; schema validation; approval/revision history |
-| **11 — Data & Intelligence** | Metric catalogue; data lineage/freshness; funnels; cohorts; retention; exports; search evaluation; experiment results; anomaly evidence; data-quality cases |
-| **12 — AI & Knowledge** | Copilot; approved knowledge/source registry; retrieval/provenance; evaluation datasets; model/router configuration; quality/cost budgets; prompt/model revisions; AI action policy; incident controls |
-| **13 — Security, Privacy & Audit** | IAM; permission/scope explorer; just-in-time access; access reviews; policy simulation; audit search; privacy requests; retention/deletion; evidence export; compliance cases |
-| **14 — Platform Governance** | Capability ownership; service catalogue; dependency/version registry; environment differences; operational readiness; migrations/compatibility; deprecation; change calendar; recovery exercises |
+| Primary destination | The manager's question | What belongs here |
+|---|---|---|
+| **01 — اليوم** | ما الذي يحتاج انتباهي أو قراري الآن؟ | Personal operating focus, goals and progress, priority risks, pending decisions, active work, evidence-backed improvement opportunities and recent changes with outcome |
+| **02 — الأعضاء والأحياء** | من هم الأعضاء، وأين ينتمون، وما الذي يحدث في أحيائهم؟ | Member lifecycle, address/neighborhood verification, referrals, institutions, representatives, neighborhood map, local health and membership/source disputes |
+| **03 — المجتمع والثقة** | كيف أحافظ على مشاركة مفيدة وآمنة؟ | Posts/feed quality, reports, moderation decisions, groups, events, lost-and-found, official information, appeals and community health |
+| **04 — السوق والأعمال** | هل يستطيع العضو العثور على منتج أو خدمة موثوقة وإكمال حاجته؟ | Businesses/providers, product listings, used goods, property, cars, jobs, services, taxonomy, availability, provider quality and marketplace issue resolution |
+| **05 — المال والنمو** | هل تنجح المعاملات والنمو ونماذج الإيراد؟ | Orders/bookings, refunds/disputes, payout/reconciliation views, ads/promotions, business revenue, acquisition, activation, retention and experiments |
+| **06 — تجربة الأعضاء** | ماذا يرى العضو وكيف ينتقل خلال رحلته؟ | Journey explorer, home/feed/navigation editor, rows and sections, categories, allowed ranking/recommendation controls, search, onboarding, notification experience, localization and app-version preview |
+| **07 — القواعد والأتمتة** | كيف يجب أن يتصرف النظام عندما يحدث شيء؟ | Visual rules, membership requirements within policy, moderation rules, queue routing, response templates, notification automation, escalation and reusable action bundles |
+| **08 — إعدادات المنصة والفريق** | من يملك الصلاحية، وما التغييرات المعتمدة، وهل المنصة تعمل؟ | Staff/team roles and scopes, approvals, privacy, platform policies, geography/brand defaults, Change Centre, current platform health and advanced diagnostics |
 
-A capability may appear in several workbenches through the same canonical entity. The UI must not create a separate copy of a record just because another team needs a different view.
+Global actions remain visible regardless of destination: universal search, “أنشئ تغييرًا”, “العمل المطلوب”, pending approvals and the Change Centre.
+
+### The home experience is organized around the manager's goals
+
+The director may choose a focus such as community safety, activation of new neighborhoods, marketplace quality, growth/revenue or platform operations. The page preserves mandatory critical risks and approvals; the remaining view adapts to that focus.
+
+Four panels organize the day: **يحتاج قرارًا**, **تقدّم أهدافي**, **فرص للتحسين**, and **العمل النشط**. Metrics require a plain-language definition, period, scope, freshness and a route into the relevant journey. The dashboard is a personal operating board, not a generic grid of technical metrics.
+
+### Start from intentions, not destinations
+
+Persistent task launchers include:
+- “أريد تغيير ما يراه الأعضاء”
+- “أريد تحسين تجربة أو نتيجة”
+- “أريد وضع قاعدة أو أتمتة عمل”
+- “أريد مراجعة عضو أو بلاغ أو جهة”
+- “أريد إطلاق رسالة أو حملة”
+- “أريد حل مشكلة في السوق أو الدفع”
+- “أريد معرفة ما يحدث في حي أو مدينة”
+- “أريد تغيير صلاحيات فريق”
+- “أريد إيقاف مشكلة أو استعادة الخدمة”
+
+Every launcher leads to a guided journey with context, choices, scope, preview, publication and verification. Users may navigate directly whenever they know where to go.
+
+### Cross-cutting studios, not new top-level technical menus
+
+The **Member Experience Studio** designs the member's actual app journeys with phone preview and approved components. The **Rules & Automation Studio** defines named triggers, conditions, actions, fallbacks and review requirements. The **Change Centre** is the single place for drafts, validation, diffs, approvals, staged release, monitoring, pausing and restore.
+
+Internal concepts such as event processing, application metrics, dependencies and capability manifests remain specialist details under “صحة المنصة”/advanced diagnostics. They do not determine the main navigation.
 
 ## 5. The universal command lifecycle
 
@@ -507,6 +528,7 @@ Run the same contract/journey suite against app-java-v3. For every gap, decide w
 The strategic charter is not a screen-by-screen implementation recipe. The detailed experience is specified in two linked documents that are part of this product definition:
 
 - [Detailed screen and interaction specification](platform-admin-detailed-screen-specification.md): manager-facing Arabic labels, exact screen composition, field/action semantics, navigation, preview patterns, error/empty/stale/permission states, and accessibility behavior.
+- [Global manager UX research](platform-admin-global-manager-ux-research.md): documented product patterns, source repository review, the revised eight-destination navigation, and the member-experience/control-studio model.
 - [Primary screen wireframes](platform-admin-primary-screen-wireframes.md): eight structural layouts that pin down the homepage, queue, incident room, feature-stop flow, payment case, official alert, setting review and permission grant.
 - [24 step-by-step End-to-End journey recipes](platform-admin-e2e-journey-recipes.md): the full manager path from entry to verified result, decision branches, failure/recovery paths, source-of-truth evidence and browser E2E matrix.
 
