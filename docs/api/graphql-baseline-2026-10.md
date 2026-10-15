@@ -14,7 +14,7 @@
 | spring-graphql 2.0.5 POM | `com.graphql-java:graphql-java` (compile) | **25.0** | Maven Central `spring-graphql-2.0.5.pom` |
 | graphql-java 25.0 POM | `com.graphql-java:java-dataloader` (compile) | **6.0.0** | Maven Central `graphql-java-25.0.pom` |
 
-Cross-check: `mvn dependency:tree` executed on `marketplace-app` (2026-10-15, the session before this record) resolved the identical chain — `spring-graphql-test:2.0.5:test` → `spring-graphql:2.0.5:compile` → `graphql-java:25.0` → `java-dataloader:6.0.0`. The two independent sources agree, which satisfies the §12 requirement ("Do not infer the application's resolved transitive GraphQL Java version from the Spring GraphQL release tag; confirm the exact resolved dependency tree").
+Cross-check: `mvn dependency:tree` executed on `marketplace-app` in the prior working session's local Maven environment (2026-10-15 — a version-resolution query only: no build, no tests, no application run; performed before the owner's push-only directive, and every measurement made by this record itself is GitHub-side) resolved the identical chain — `spring-graphql-test:2.0.5:test` → `spring-graphql:2.0.5:compile` → `graphql-java:25.0` → `java-dataloader:6.0.0`. The two independent sources agree, which satisfies the §12 requirement ("Do not infer the application's resolved transitive GraphQL Java version from the Spring GraphQL release tag; confirm the exact resolved dependency tree").
 
 Consequences:
 
@@ -49,10 +49,10 @@ Staging/production profiles disable GraphiQL and introspection (per the §2.2 au
 
 GitHub code search over the repository, executed 2026-10-15:
 
-- **Kotlin: 0 files** reference GraphQL. The Android client does not consume GraphQL — no mobile or deployed client binds to this schema.
+- **Kotlin: 0 files** reference GraphQL. The repository's Android client does not consume it, and no client code inside this repository binds to this schema; clients outside this repository are beyond the reach of repository search.
 - **Java: 21 files** reference GraphQL, all internal to this repository: the GraphQL controller package (5 main files), its 6 test classes, the shared API contract layer (`SpringPagination`, `ApiProblemDetailException`, `GlobalExceptionHandler` + its test, `ProviderListingView`), the security chain (`SecurityConfig` — the `/graphql` stateless Bearer chain), catalog javadoc-level references (`CatalogService`, `ProviderListingRepository`), and two configuration tests (`StagingProfileConfigTest`, `ObservationCoverageFilesTest`).
 
-Conclusion: the only consumers of the current GraphQL surface are this repository's own integration tests and the CI smoke contract (anonymous `/graphql` → 401). There is no external consumer to break. Schema-compatibility leverage is highest now and decreases after the first client binds — the compatibility gate must land (Phase 1) before any external consumer is attached.
+Conclusion: within the repository's measured boundary, the only consumers of the current GraphQL surface are this repository's own integration tests and the CI smoke contract (anonymous `/graphql` → 401); no in-repository consumer would break. Repository search cannot prove the absence of clients outside this repository — no external client registry exists — so the no-consumer statement is scoped to what the search measures. Schema-compatibility leverage is highest now and decreases after the first client binds — the compatibility gate must land (Phase 1) before any external consumer is attached.
 
 ## 4. Test baseline (Phase 0, item 5 — measured part)
 
@@ -97,10 +97,10 @@ This record is honest about its boundaries — the following are **not** measure
 
 | Phase-0 item (target architecture §11) | Status after this record |
 |---|---|
-| 1. Inventory GraphQL consumers and operations | **Measured — closed:** no external consumers (0 Kotlin references; 21 internal Java files); consumers are the repository's own tests and the CI smoke contract |
+| 1. Inventory GraphQL consumers and operations | **Measured — closed (in-repository scope):** no consumers within the repository (0 Kotlin references; 21 internal Java files, all internal to it); consumers found are the repository's own tests and the CI smoke contract; absence of clients outside the repository is not provable by search |
 | 2. Anonymous-read policy for public discovery | **Decided — closed (2026-10-15):** retained protected contract — anonymous `/graphql` stays 401 (grounded in OWASP GraphQL Cheat Sheet authorization enforcement + Spring for GraphQL Security reference + the measured 401 smoke contract and zero external consumers). Re-open trigger: an approved public-discovery journey with designed and tested per-field/object authorization |
 | 3. Confirm exact Spring GraphQL and GraphQL Java versions | **Measured — closed:** Boot 4.1.1 BOM → spring-graphql 2.0.5 → graphql-java 25.0 → java-dataloader 6.0.0 |
-| 4. Measure WebSocket subscription usage | **Measured — closed:** unused (no Subscription root, no consumers, path still configured — disable in Phase 1) |
+| 4. Measure WebSocket subscription usage | **Measured — closed (in-repository scope):** unused (no Subscription root, no in-repository references to the transport, path still configured — disable in Phase 1) |
 | 5. Baseline for latency / response size / DB query count | **Partially measured:** CI gate timings + GraphQL test suite + resolved versions recorded (§1, §4, §5); runtime latency/size/DB-count deferred to the Phase-1 executable gates (§6) |
 
 ## 8. Re-measurement path (no local environment required)
