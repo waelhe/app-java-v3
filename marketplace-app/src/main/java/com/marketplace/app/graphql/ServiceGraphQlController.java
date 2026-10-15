@@ -35,7 +35,7 @@ public class ServiceGraphQlController {
         return serviceMapper.toResponse(catalogSpi.getActiveById(id));
     }
 
-    @QueryMapping
+    @QueryMapping(name = DgsConstants.QUERY.Services)
     public List<ServiceResponse> services() {
         return catalogSpi.findAll(Pageable.unpaged()).getContent().stream()
                 .map(serviceMapper::toResponse)
