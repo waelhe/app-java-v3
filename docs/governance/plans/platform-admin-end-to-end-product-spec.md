@@ -6,6 +6,13 @@
 
 > **Truth rule:** Current code is evidence of what exists, not the ceiling of the target. A route is not a complete administrator journey. A database row is not a usable capability. A feature flag is not an effective kill switch unless every promised path observes it. Proposed screens, endpoints and records below are target-state proposals unless explicitly identified as existing.
 
+## Detailed UX authority — required alongside this gap register
+
+- [Detailed screen and interaction specification](platform-admin-detailed-screen-specification.md) defines what the manager sees, the plain-language Arabic UI, action preview, statuses, and empty/error/stale/permission states.
+- [24 step-by-step End-to-End journey recipes](platform-admin-e2e-journey-recipes.md) defines the complete user journey, branches, recovery and acceptance tests.
+
+This document remains the evidence register for current backend capability and gaps; it cannot be used to lower the product experience or delete a manager step. Missing capability means implement, adapt or replace the backend capability—not omit the user requirement.
+
 ## 0. Executive decision
 
 > **Product authority:** The independent [Platform Administration Operating System Product Charter](platform-admin-operating-system-product-charter.md) defines the desired interface, operator journey, frontend architecture and backend-independent contracts. This companion document adds current-backend evidence, cross-domain journeys and the gap register; it must not constrain or downgrade the charter's target.
