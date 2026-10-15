@@ -13,7 +13,7 @@
 
 ## Administrative product experience — independent product target, not implementation
 
-The canonical target is [Platform Administration Operating System Product Charter](governance/plans/platform-admin-operating-system-product-charter.md), which defines a dedicated standalone admin product, 24 end-to-end operator journeys, independent frontend architecture and backend-replacement criteria. Supporting current-code truth and gaps are in [the End-to-End Product and Gap Specification](governance/plans/platform-admin-end-to-end-product-spec.md). The UI is not limited by current endpoints or the existing console; no old frontend repository is selected as its foundation. Design only; implementation and replacement decisions remain separate gated work.
+The canonical target is [Platform Administration Operating System Product Charter](governance/plans/platform-admin-operating-system-product-charter.md). Implementation-level UX is defined by the [Detailed Screen and Interaction Specification](governance/plans/platform-admin-detailed-screen-specification.md), and the [24 End-to-End Journey Recipes](governance/plans/platform-admin-e2e-journey-recipes.md) provide step sequences, alternate paths and acceptance checks. Current-code facts and backend gaps are in the [End-to-End Product and Gap Specification](governance/plans/platform-admin-end-to-end-product-spec.md). The UI is not limited by current endpoints or the existing console; no old frontend repository is selected as its foundation. Design only; implementation and replacement decisions remain separate gated work.
 
 ## 0. نقطة الانطلاق — مقيسة لا مفترضة
 
