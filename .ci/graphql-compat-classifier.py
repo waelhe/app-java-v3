@@ -412,14 +412,32 @@ def parse_target(target: str):
 
 
 def covers(parsed_target, finding):
-    """A target covers a finding when kinds match and the finding's object
-    IS the target object or lives UNDER it (an argument-level finding is
-    covered by its field-level target — a field replacement exception
-    covers the argument findings under that field; a type-level target
-    covers every finding under the type)."""
+    """A target covers a finding when the finding's object IS the target
+    object or lives UNDER it, and the finding's kind sits at or below the
+    target's level in the schema hierarchy:
+
+      type X          covers every finding on X and under it (its own
+                      type-level findings, its fields, its enum values,
+                      its fields' arguments)
+      field X.y       covers the field's own findings AND the argument
+                      findings under it (a field replacement exception
+                      covers the argument findings under that field)
+      enum-value X.v  covers exactly itself
+      argument X.y.a  covers exactly itself
+
+    (The kind hierarchy must be honored alongside the path prefix: a
+    'field' entry never covers an enum-value finding even if the path
+    happened to align — enum values are covered by 'enum-value' or by
+    the owning type.)"""
     kind, obj = parsed_target
     fkind, fobj, _ = finding
-    return fkind == kind and (fobj == obj or fobj.startswith(obj + "."))
+    if not (fobj == obj or fobj.startswith(obj + ".")):
+        return False
+    if kind == "type":
+        return True
+    if kind == "field":
+        return fkind in ("field", "argument")
+    return fkind == kind
 
 
 def main():
