@@ -252,3 +252,58 @@ Before an action is confirmed, the manager can answer:
 - What is the safe next step if the result is unknown or failed?
 
 If the interface cannot answer these questions, the action is not ready for production exposure.
+
+
+## 5. Domain-depth journeys — required beyond the original 24 recipes
+
+The original 24 recipes cover cross-platform incidents and representative tasks. They do not replace the domain-specific workflow acceptance in [Domain-Grade Administration Suites](platform-admin-domain-grade-suites.md). The following journeys are required product tests, not optional examples.
+
+### D25 — Catalog and variant lifecycle (Saleor-depth)
+Create a product/listing → select the correct type → define required attributes → add variants and identifiers → bind media → set price/currency and channel availability → configure stock/location or service capacity → preview category/search/member presentation → validate completeness and conflicts → publish → verify it is discoverable and correctly purchasable/bookable → inspect audit and result.
+
+Alternates: missing required attribute; duplicate identifier; invalid category; unsupported channel; price conflict; low or unknown inventory; media/translation/accessibility error; permission denied; concurrent edit; publish accepted but member-visible result remains stale.
+
+Success evidence: the published record, variant/availability/price states and member-facing detail view agree, and the revision can be traced.
+
+### D26 — Taxonomy/attributes change with live-content impact
+Create or edit a category, collection, listing type or attribute → inspect linked records and existing values → choose migrate, keep, map or remove with a reason → simulate impact on search filters, saved views, product forms, navigation and active listings → resolve invalid rows → approve → publish one revision → verify affected records and discovery → monitor no-result/search and incomplete-listing metrics.
+
+Alternates: overlapping taxonomy rules; migration failure for part of the set; a live campaign references the old category; permission conflict; rollback cannot undo an already completed transaction and requires a compensating mapping.
+
+### D27 — Stock correction across locations
+Find inventory discrepancies → choose locations and variants → compare on-hand/reserved/available with explicit definitions → inspect active reservations and in-flight orders → enter reason and proposed adjustments → dry-run count and conflicts → confirm within scope → process and read back every location → reconcile affected availability and orders → review actor, before/after and per-row failures.
+
+Alternates: some locations fail; a reservation races the adjustment; a command times out; a retry may duplicate adjustment; the system lacks trustworthy source freshness.
+
+### D28 — Pricing/promotion precedence
+Choose market/channel and date range → inspect base price, price list, provider fee, platform fee and active promotions → create a bounded rule → define audience, eligible categories/providers, stacking, exclusions, budget/liability and effective dates → test representative baskets → show which rule wins and example totals → require finance approval when configured → launch limited/scheduled → monitor orders, cancellations and complaints → pause/expire/restore.
+
+Alternates: overlapping promotion, stale market data, currency/tax mismatch, provider-specific exclusion, spend limit hit, publication succeeds but exposure cannot be verified.
+
+### D29 — Process an order through fulfilment and refund
+Open the order list using a saved work view → review customer/provider/line items/charges/status → resolve payment state → assign fulfilment or provider slot → record dispatch/pickup/completion → handle cancellation/return and reason → calculate eligible full/partial refund → preview customer and ledger effects → obtain separate approval if required → execute through the financial owner → read back provider, order and ledger state → notify member with an accurate outcome.
+
+Success evidence: a single coherent timeline with each state independently confirmed; no unknown-state retry or false “completed” badge.
+
+### D30 — Claim and operate a local business profile (Yelp-depth)
+Open claim queue → inspect proof of business/representative authority and duplicate profiles → ask for missing evidence or approve/deny with a reason → link canonical provider identity and branch records → configure public profile, category, hours, service area, media and languages → preview as local member → publish → respond to review → inspect page visits, contact intent and qualified leads with distinct definitions → improve profile and measure downstream result.
+
+Alternates: conflicting owner claims; duplicate branches; outdated hours; review removal appeal; a profile view is counted but the lead event is unknown.
+
+### D31 — Moderate content and complete an appeal (Discourse-depth)
+Open a saved review queue → inspect full post/thread, geography, linked reports, policy version and prior actions → assign reviewer and deadline → choose a distinct proportionate action → preview member consequence/message → submit and read back content/account state → process appeal with independent review where required → restore/replace action if overturned → examine pattern/false-positive report → decide whether to change a rule only after simulation.
+
+Alternates: missing context; false/duplicated reports; partially applied actions; expired evidence; moderator conflict of interest; appeal service temporarily unavailable.
+
+### D32 — Configure a community category, group or event
+Edit category/tag/post type or create a group/event → set purpose, geography, privacy/admission rules, local moderators, required fields and visibility → inspect existing content and memberships affected by configuration → preview member app and notification changes → validate permissions and localization → publish → test member join/post/RSVP path → monitor participation and reports → amend/restore as needed.
+
+### D33 — Publish official local communication with delivery proof
+Select authorized institutional source → draft source-linked message and severity → define geography, eligible audience, language, scheduled/urgent route, expiry and correction owner → simulate reach and excluded audience → obtain appropriate approval → publish → track queued/attempted/provider-accepted/delivered/failed/unknown separately → inspect feedback → issue linked correction or expiry → close only when delivery and follow-up obligations are reconciled.
+
+### D34 — Improve community discovery from unanswered questions and failed searches
+Review community analytics and search-query report → select geography/time/cohort → inspect representative unanswered posts and no-result/no-click searches → classify cause as missing supply, taxonomy, eligibility, stale content or ranking issue → choose a supported change (content campaign, category, search rule or UI experience) → test sampled queries and member personas → staged release → measure useful result clicks, answers, resolved questions and safety guardrails → promote/pause/restore.
+
+### D35 — Review a domain permission and scope
+Select staff member/team → choose concrete job and domain capabilities (view/edit/import/export/publish/refund/enforce/approve) → select provider/geographic/channel scope and expiry → show a human-readable effective-access preview and potential conflicts → request independent approval → verify applied policy → test allowed and denied actions → log review date and recertification.
+
