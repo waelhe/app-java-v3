@@ -209,13 +209,17 @@ Decisions:
 
 Recommendations/referrals support a decision but never grant authority automatically. Read back actual membership state and track notification separately.
 
-### S10 — البلاغات وسلامة المجتمع
+### S10 — طابور البلاغات وسلامة المحتوى (جزء من جناح المجتمع)
 
-Queue row: content/item, neighborhood, report reason, age, current exposure, safe related-report count, prior actions and urgency.
+This screen is the review queue and case entry point only. It must not be mistaken for the entire community management suite. The full target suite is specified in [Domain-Grade Administration Suites §5](platform-admin-domain-grade-suites.md): community overview/health; content operations; categories/tags/post types; member trust and sanctions; neighborhood governance; groups; events/initiatives; official publishing; discovery/relevance; rules/automation; appeals/corrections; reports and audit.
 
-Detail: surrounding context, policy/rule, similar reports, permitted author history, potential overreach, effect of each choice and appeal route.
+Queue row: content/item, neighborhood, report reason, age, current exposure, linked report count, prior actions, policy matched, owner, deadline and urgency.
 
-Actions are distinct: “لا توجد مخالفة”، “اطلب مراجعة إضافية”، “أخفِ المحتوى مؤقتًا”، “أزل المحتوى وفق السياسة”، “قيّد الحساب ضمن النطاق المسموح”، “أحل لجهة مختصة”. Group actions require sample review, dry-run and higher approval for broad enforcement.
+Detail: complete post/thread context, affected neighborhood, policy/rule explanation, similar/duplicate reports, permitted author history, prior decisions, potential overreach, effect of each allowed choice, member message and appeal path.
+
+Actions remain distinct: no violation, request context, temporary hide, remove under policy, apply a scoped account limitation, preserve evidence, escalate, or refer to appeal. Batch actions require sample review, dry-run, counts of affected/excluded items and stronger approval for wide enforcement.
+
+The queue also supports saved filters, team/geographic assignments, private notes, linked reports, deadline queues, handover and return-to-queue state preservation. Completion is proven by reading back the resulting content/account state, not by closing the case.
 
 ### S11 — التواصل الرسمي (ضمن المجتمع والثقة)
 
@@ -225,15 +229,15 @@ Composer: title/body, authorized source, geography/audience, publish time/timezo
 
 After publishing show accepted, delivered, failed and unknown counts per channel, retryable subset, receipts and correction/withdrawal path. A delivered alert cannot be “unsent”; a correction is a linked new message.
 
-### S12 — حل مشكلات السوق والمال
+### S12 — الاستثناءات المالية والتجارية (جزء من جناح السوق والمال)
 
-Categories: “مشكلات الطلبات”، “الحجوزات والخدمات”، “مزودو الخدمة”، “المبالغ والمدفوعات”، “النزاعات والاسترداد”، “التسويات المالية”.
+This screen handles order/booking exceptions and money integrity; it is not the complete commerce-management surface. The full market suite is specified in [Domain-Grade Administration Suites §4](platform-admin-domain-grade-suites.md), and includes dedicated screens for catalogue/listings, product types/attributes, variants, categories/collections, inventory/locations/reservations, channels, pricing/fees, promotions, orders/checkouts, service bookings, fulfilment/returns/refunds, customers, providers/sellers, shipping/local delivery, taxes/payment settings, reviews/search/merchandising, analytics, staff permissions and audit.
 
-Payment issue shows order/booking, expected amount/currency, member-facing state, payment provider response, platform financial state, last update, duplicate/retry risk and related dispute.
+The exception entry screen groups “مشكلات الطلبات”، “الحجوزات والخدمات”، “مزودو الخدمة”، “المبالغ والمدفوعات”، “النزاعات والاسترداد” and “التسويات المالية”. Each queue has search, saved views, status filters, owner/deadline, last update, permitted actions and a detail workspace with a timeline.
 
-Actions: “افحص حالة الدفع”، “اطلب مطابقة السجلات”، “اطلب استرداد المبلغ”، “راجع طلب الاسترداد”، “أحل للمراجعة المالية”. No direct ledger/balance edits.
+Payment issue detail shows order/booking, expected amount/currency, member-facing state, provider response, platform financial state, ledger/reconciliation status, last update, duplicate/retry risk and related dispute.
 
-Refund flow: identify exact payment → show refundable amount/currency from source owner → reason → preview customer/ledger effects → independent approval if required → execute via payment owner → verify provider and ledger → member message when justified.
+Allowed actions are state-aware: inspect status, request reconciliation, request refund, review refund, escalate to finance, or contact the member/provider where policy permits. No direct ledger/balance edits. Refund flow identifies the exact payment, derives refundable amount from the authoritative owner, requires a reason, previews customer/ledger effect, obtains independent approval where required, executes through the payment owner, and reads back provider and ledger outcomes.
 
 If outcome is unknown, state “لم نتأكد بعد من نتيجة العملية؛ إعادة الطلب الآن قد تسبب تكرارًا. افحص الحالة أولًا.” and do not expose a blind retry.
 
@@ -294,6 +298,26 @@ Status vocabulary:
 - “اكتمل التنفيذ ولم نتمكن من التحقق من الأثر”
 - “أُلغي قبل اكتماله”
 - “لا يمكن التراجع؛ الإجراء التصحيحي المتاح هو…”
+
+### S20 — جناح السوق والكتالوج (Saleor-level domain suite)
+
+The navigation opens a full suite, not a market summary card. Required sub-workspaces: overview; products/listings; variants/options; product/listing types and attributes; categories and collections; inventory/stock locations/reservations; channels/regions; pricing/price lists/fees; promotions/vouchers; orders/checkouts; service bookings; fulfilment/delivery/returns/refunds; customers/groups; providers/sellers; shipping/local delivery; taxes/payment methods; reviews/search/merchandising; reports/exports; staff permissions and market settings.
+
+Each collection provides search, configurable columns, filters, sorting, saved views, pagination, multi-select and previewed bulk actions. Each record has a dedicated detail workspace with lifecycle, related records, media/evidence, timeline, scoped actions, audit and outcome. Editors must support draft, field validation, member-facing preview, conflicts, publication state and restore semantics. Variants and physical stock use SKU/location concepts where applicable; service listings use coverage, capacity, calendars/slots, provider assignment and service-specific cancellation rules instead of fake retail fields.
+
+Before accepting the market suite, demonstrate end-to-end catalog creation, taxonomy change, multi-location inventory correction, local-service onboarding, channel-specific price/availability, promotion eligibility, order completion and safe refund. Evidence and detailed screen families: [Domain-Grade Administration Suites §4](platform-admin-domain-grade-suites.md). Official reference: [Saleor product model](https://docs.saleor.io/developer/products/overview) and [channel model](https://docs.saleor.io/developer/channels/overview).
+
+### S21 — جناح المجتمع والثقة (Discourse-level domain suite)
+
+The navigation opens a complete community suite: community health/dashboard; review queue; posts/comments; categories/tags/post types; member trust and sanctions; neighborhood boundaries and scoped moderators; groups and membership; events/initiatives; official notices and source authority; search/relevance; rules/automation; appeals/corrections; reports and audit.
+
+Each workspace has its own search/saved views, record list, detail context, permitted lifecycle actions, owner/deadline, member-facing consequences, audit and reports. Review decisions keep post context, linked reports, policy version, evidence, notes, member communication and appeals together. Community analytics must cover engagement, trust progression, category/content activity, unanswered questions, search gaps and support resolution with defined metrics and drill-through. Evidence and detailed screen families: [Domain-Grade Administration Suites §5](platform-admin-domain-grade-suites.md). Official reference: [Discourse Admin Dashboard, 10 August 2026](https://blog.discourse.org/2026/08/introducing-the-all-new-admin-dashboard/).
+
+### S22 — جناح دليل الأعمال (Yelp-level domain suite)
+
+The directory needs dedicated collections and detail workspaces for business profiles, ownership claims/verification, branches, reviews/ratings, owner responses, leads/customer intent, local visibility/search, promotions, content quality, completeness/expiry, analytics, permissions and audit. Page visits, contact attempts, qualified leads, bookings and completed transactions must be distinct, with explicit definitions and drill-through.
+
+Profile changes use a member-facing preview; claims show ownership evidence and conflicts; review responses and removals require policy-aware workflows; local visibility reports break down geography, category, source and period. Detailed target and end-to-end acceptance: [Domain-Grade Administration Suites §6](platform-admin-domain-grade-suites.md). Reference: [Yelp for Business lead metrics](https://www.yelp-support.com/article/How-do-you-measure-User-Views-and-Customer-Leads-on-Yelp-for-Business?bui=null&l=en_GB).
 
 ## 5. Universal impact preview
 
