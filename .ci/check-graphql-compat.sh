@@ -9,11 +9,13 @@ set -euo pipefail
 # SDL generation is SYMMETRIC and owned by this script alone: the same
 # injected, self-contained JUnit dump test (below, DUMP_TEST_HEREDOC) is
 # written into BOTH trees and executed with the same Maven invocation and
-# the same CI-provided service containers — the printed SDL comes from
-# graphql-java's graphql.schema.idl.SchemaPrinter over the booted
-# GraphQlSource in each tree, so generated types (the Connection family),
-# applied type-definition configurers and runtime wiring are all part of
-# the compared artifact. The dump test never enters either tree's history.
+# the same CI-provided service containers, booting each tree's OWN
+# default profile (the twin gate's java -jar boot semantics) — the printed
+# SDL comes from graphql-java's graphql.schema.idl.SchemaPrinter over the
+# booted GraphQlSource in each tree, so generated types (the Connection
+# family), applied type-definition configurers and runtime wiring are all
+# part of the compared artifact. The dump test never enters either
+# tree's history.
 #
 # Bootstrap semantics (honest, same spirit as the OpenAPI gate's no-tag
 # skip — but decided from the tag's OWN tree, never from a run failure):
@@ -66,8 +68,18 @@ fi
 # Boot 4.1.1 BOM resolves; note graphql.schema.GraphQLSchemaPrinter does
 # NOT exist in graphql-java — an injected test that imports it cannot
 # compile, and a non-compiling baseline used to pass the gate through the
-# old run-failure skip). The test boots the plain test profile against
-# the CI-provided services and writes the deterministic SDL print.
+# old run-failure skip). The test boots the application's OWN default
+# profile — the exact boot semantics of the OpenAPI twin's java -jar leg,
+# against the same CI-provided service containers via the step's env
+# vars — and writes the deterministic SDL print. The TEST profile is
+# deliberately NOT used (measured on v0.1.0): the test profile is a
+# tree-specific moving target — the tag's context fails to satisfy a
+# SecurityConfig dependency (AuthorizationServerSettings) that later
+# trees' test arrangements provide, while the tag's own default-profile
+# boot is exactly what runs in production and in the twin gate, and is
+# proven green on the same tag. The boot is FULL (a live web server on a
+# random port, runners and all) — the twin's java -jar semantics exactly,
+# not a stripped-down context.
 write_dump_test() {
   mkdir -p "$DUMP_CLASS_DIR"
   cat > "$DUMP_CLASS_DIR/$DUMP_CLASS" <<'EOF'
@@ -80,10 +92,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.graphql.execution.GraphQlSource;
-import org.springframework.test.context.ActiveProfiles;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
-@ActiveProfiles("test")
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class GraphQlSchemaDumpGate {
 
     @Autowired
