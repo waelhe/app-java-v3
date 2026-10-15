@@ -273,6 +273,30 @@ The suite needs:
 7. Update inventory across locations → preview selected variants/locations → inspect conflicting reservations → apply adjustments with reason → verify available stock and affected orders.
 8. Suspend or reinstate a provider → inspect evidence and scope → choose proportionate policy action → preview member impact and active transactions → approve when needed → communicate and track appeal → verify actual listing/transaction state.
 
+### 4.18 Explicit Saleor Dashboard parity map
+
+The product review must compare concrete work surfaces, not use “Saleor-level” as a label. The table below separates the comparable ecommerce capability from our local-marketplace extension and the proof expected.
+
+| Saleor concept / admin surface | PAOS market workspace | Local-marketplace extension | Acceptance proof |
+|---|---|---|---|
+| Products and media | Catalog/listing collection and product detail/editor | Listing types for goods, used items, vehicles, property, services and jobs | Create/edit a listing, validate media/required fields, preview member card/detail, publish and verify discovery |
+| Product types and attributes | Type builder and field definitions | Type-specific fields, required evidence/disclosures, service-specific schemas | Change a required field with impact preview and show affected records/forms/search filters |
+| Product variants/options and identifiers | Variant matrix, options, SKU/reference and per-variant data | Attribute-specific variation plus unit/condition and booking offers where appropriate | Add/edit many variants, preserve identifiers and check per-variant price/availability |
+| Categories and collections | Hierarchical category manager plus curated collections | Geographic visibility, neighborhood navigation and cross-links to community context | Move/merge category and prove affected records, discovery filters, saved views and pages reconcile |
+| Inventory and stock locations | Location-aware on-hand/reserved/available workspace | Pickup points, delivery zones, service capacity, booking slots and provider calendars | Correct multi-location inventory with live reservations and prove no duplicate adjustment |
+| Channels | Channel/market configuration | Country/city/neighborhood scope, language/currency, audience and app surfaces | Preview product/price/availability differences across two channels/locales |
+| Price lists and promotions | Price/fee rules and promotion/voucher workspaces | Provider contracts, local pricing, service rates, advertising distinction and commission | Evaluate overlapping rules for sample baskets, show deterministic winner/liability and approve effective revision |
+| Orders and checkout | Order list, order detail, checkout/payment/fulfilment timeline | Local delivery, appointment bookings and service fulfillment | Move a valid order through every allowed transition and safely resolve unknown payment state |
+| Customers and customer groups | Customer/segment view linked to canonical member | Member trust/geography/profile/preferences remain governed by member suite | Explain why a member is in a permitted segment and avoid duplicate member identity |
+| Shipping and fulfilment | Delivery methods, zones, shipments/returns | Local couriers, pickup points, provider fulfillment and area-specific capacity | Reconfigure a zone and preview affected offers/orders without silently rewriting history |
+| Taxes/payment configuration | Governed tax/payment settings and finance review | Local market eligibility and provider capabilities | Validate a sample order, require appropriate approval and audit the applied rule |
+| Staff/permission groups | Market roles/scopes | Separate provider, geography and action permissions | Demonstrate allowed and denied actions, approval separation and audited access |
+| Translations/site settings | Localization and public-presentation settings | RTL/LTR, city-language defaults, institution/business profile copy | Preview changes in each configured locale and prove fallback for untranslated fields |
+| Dashboard extension points | Approved extensions at list/detail/overview contexts | Add local verticals without creating a second inconsistent admin shell | Extension respects permission, record context, loading/error state and shared design contract |
+| Commerce reports | PAOS outcome reports across the listed workspaces | Supply/demand, local search, leads, bookings, complaints and trust measures | Each metric has definition, freshness and drill-through to real source records |
+
+**Scope rule:** we should not claim one-to-one parity solely because a similarly named screen exists. A parity item passes only when the user can complete the intended workflow, including validation, state transitions, failure recovery, permissions and outcome confirmation. Saleor-specific concepts that do not fit the product (for example stored value/gift cards if no such product policy is approved) are not copied to manufacture superficial parity.
+
 ## 5. Community & trust suite — Discourse depth plus neighborhood governance
 
 The main “المجتمع والثقة” destination opens a complete community operating suite. Safety is only one area of the suite; it is not a synonym for the whole community.
@@ -456,7 +480,24 @@ Standard reports:
 - Group lifecycle and local participation.
 - Member feedback/support resolution.
 
-### 5.14 Community journeys that must be testable end-to-end
+### 5.14 Explicit Discourse administration parity map
+
+| Discourse concept / admin surface | PAOS community workspace | Neighborhood-platform extension | Acceptance proof |
+|---|---|---|---|
+| Admin dashboard and reports | Community health and configurable, defined KPIs | Comparisons by neighborhood/city, member verification stage, local service coverage and official notices | Open a summary metric, inspect definition/freshness, drill to segment and specific records |
+| Review queue and flagged content | Unified review queue and case room | Geography, repeat reports, source authority, local moderator ownership and appeals | Decide from full thread context, record rationale, verify result and follow through appeal |
+| Topics/posts/replies | Content operations and thread detail | Questions, requests, recommendations, polls, lost/found, local news and paid lending | Edit/recategorize/hide/restore using permitted lifecycle, preserve comment/history context |
+| Categories, tags and tag groups | Taxonomy and posting policy | Global vs neighborhood categories, local synonyms, type-specific required fields and cross-domain discovery | Merge/reparent taxonomy with preview of affected content, filters, moderators and saved views |
+| Users, trust levels and suspensions | Member trust, scoped sanctions and member 360 | Verified address/neighborhood, referral evidence and separate legal verification | Explain evidence for decision and prove actual local access state and appeal path |
+| Groups and group permissions | Group directory, membership requests, owners/moderators | Local membership, eligibility, institution-linked groups and neighborhood discoverability | Create group, test privacy/admission/membership, replace inactive owner and audit |
+| Announcements/notification settings | Official publishing and notification controls | Verified institutional source, emergency/local reach, geography, translations and delivery receipts | Publish authorized alert, separate queued/published/delivered/unknown and handle correction |
+| Search and content discovery | Search/relevance analysis | Unanswered local requests, zero-result location queries, local provider supply and cross-surface relevance | Repair a taxonomy/supply/discovery gap, test known searches and measure helpful result/outcome |
+| Moderation rules/trust configuration | Rules & Automation Studio | Local policy scopes, thresholds, expiry, human review, jurisdiction/source scope | Simulate on historical cases, inspect false positives, publish bounded rule and prove pause/restore |
+| Appeals/admin history | Independent appeal, correction and audit timeline | Restore post/membership/official notice and correct local information already delivered | A successfully upheld appeal shows the resulting member-facing state, not only a closed case |
+
+Discourse is a benchmark for community-specific depth, not the final product model. Our suite adds real-world neighborhood relationship, place boundary, resident verification, institutional authority, local groups/events and geographically targeted official reach.
+
+### 5.15 Community journeys that must be testable end-to-end
 
 1. Review a potentially harmful post → see thread and location → consolidate reports → choose proportionate action → communicate → track appeal → verify content/account state.
 2. Change category structure → preview affected posts, filters, moderators, navigation and rules → approve → publish → verify member app and taxonomy reporting.
@@ -488,6 +529,21 @@ Required workspaces:
 Required journey: claim a profile → verify authority → resolve duplicate/conflict → complete details and service area → preview public page → publish → respond to first review → inspect leads and profile actions → improve missing information → measure change.
 
 Important boundary: aggregate visibility/clicks, a lead, a booked service and a completed transaction are different events. They must never be labelled as the same “conversion”.
+
+### 6.13 Explicit Yelp for Business parity map
+
+| Yelp for Business capability | PAOS directory workspace | Acceptance proof |
+|---|---|---|
+| Business profile and owner claim | Business portfolio, claim queue and verification evidence | Resolve conflicting claims and connect the correct authorized representative |
+| Profile completeness and public page | Business profile editor with public member preview | Publish correct hours, categories, services, contact, media and geographic coverage |
+| Public reviews and rating health | Reviews/ratings, policy review, response and appeal | Reply to a review, handle a report according to policy and preserve history |
+| Owner/customer interaction | Response workflow, escalation and recovery | Track response time and whether the issue was resolved, without exposing private notes |
+| Views and customer leads | Funnel separating impressions/views/profile actions/calls/messages/leads/bookings/transactions | Prove each event is distinct and defined; no “lead” count from a raw view |
+| Local search and visibility | Local visibility, query and category analytics | Break down results by geography, category, date and source and drill into sample records |
+| Paid visibility and campaigns | Promotion/ads controls with disclosure, audience and budget | Preview scope/spend, confirm paid disclosure, cap exposure, measure valid lead outcomes |
+| Branches/multi-location business | Parent business + branches, shared and per-branch profile attributes | Delegate one branch without allowing cross-branch data leakage; aggregate and local reports |
+| Quality and operational trust | Outdated-hour, duplicate, incomplete-profile, verification-expiry and report queues | Resolve quality case, update public profile, verify member-visible changes and audit |
+| Access and reporting | Owner/branch-manager/reviewer/platform-admin scopes | Demonstrate effective permissions, export restrictions and attributed history |
 
 ## 7. Members, neighborhoods and governance suite
 
