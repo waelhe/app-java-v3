@@ -10,6 +10,11 @@
 
 ---
 
+
+## Administrative product experience — target spec, not implementation
+
+Use [the platform administration product specification](governance/plans/platform-admin-end-to-end-product-spec.md) as the product/UX and cross-domain journey target. It defines role/scoped responsibilities, 30 end-to-end operator journeys, screen/IA requirements, proposed backend contracts, candidate admin records, technology decisions and gaps G01–G35. Existing controllers and the current console are evidence, not the design ceiling. The document is a design target: no implementation completeness is implied. Implementation must truth-sync current main, tests, schema and open PRs before each wave.
+
 ## 0. نقطة الانطلاق — مقيسة لا مفترضة
 
 كل الأدلة قيست هذه الجلسة (2026-10-05) على **رأس main `193ff248`** (دمج #496) وعلى **الإنتاج الحي `app-java-v3-production-59bf.up.railway.app`** (liveness 200 + api-docs 200 بـ**157 مسارًا** — قياس مباشر هذه الجلسة) وعلى **النموذج الحي للمالك** (PR #502) وعلى **مصادر الإطار الرسمية المحفوظة** (قائمة §0.3).
