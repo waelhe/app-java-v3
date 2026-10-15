@@ -99,9 +99,20 @@ public class ServiceGraphQlController {
      * is the relay-spec "empty page" case and answers an honestly empty
      * connection without touching the repository. The page index is derived
      * from the cursor's offset: an aligned cursor (the only kind this
-     * surface emits — the adapter's terminal-item cursors) lands exactly;
-     * a tampered misaligned cursor clamps down to the page boundary —
-     * bounded, never a widening.</p>
+     * surface emits — the adapter computes every cursor as
+     * {@code number * size + index}, the measured formula of
+     * spring-graphql 2.0.5's {@code SliceConnectionAdapter#cursorAt}, so
+     * its {@code O_<offset>} cursors are page-aligned by construction)
+     * lands exactly; a misaligned cursor — one whose {@code offset + 1} is
+     * not a multiple of the requested page size, which arises when a
+     * client changes {@code first} between pages — is rejected as a
+     * validation error (VAL-001) rather than clamped: clamping to the
+     * page boundary repeats or skips items (the measured example: page 1
+     * with {@code first: 3} ends at {@code O_2}; a follow-up with
+     * {@code first: 4} would replay items 0–3), the exact overlap/gap
+     * ambiguity the connection contract forbids — and the framework's
+     * page-number cursor math has no representation for an unaligned
+     * start position in the first place.</p>
      *
      * <p><b>Cursor validation (design §6: "validate … cursor/page
      * arguments"):</b> this field paginates by offset cursors only — a
@@ -147,9 +158,9 @@ public class ServiceGraphQlController {
      * position. The exclusive-after semantics of the connection contract:
      * the item at {@code offset} is excluded, so the page starts at
      * {@code offset + 1}; page-aligned cursors (every cursor this surface
-     * emits) land exactly, misaligned ones clamp down to the page boundary
-     * — the bounded, never-widening behavior documented on
-     * {@link #services}.
+     * emits) land exactly, and a misaligned one is rejected as a
+     * client-contract violation — see {@link #pageIndex} for the measured
+     * framework rationale.
      */
     private int pageFor(ScrollSubrange subrange, int pageSize) {
         return subrange.position()
@@ -166,6 +177,20 @@ public class ServiceGraphQlController {
             // overflow.
             throw new IllegalArgumentException(
                     "after cursor offset " + offset + " is outside the paginable range");
+        }
+        if (firstItem % pageSize != 0) {
+            // Alignment is part of this field's cursor contract: the
+            // framework's SliceConnectionAdapter computes every cursor as
+            // number * size + index (spring-graphql 2.0.5 sources), so the
+            // O_<offset> cursors this surface emits are page-aligned by
+            // construction. A misaligned cursor arises only when a client
+            // changes `first` between pages; clamping it to the boundary
+            // (the previous behavior) repeats or skips items — the exact
+            // overlap/gap ambiguity the no-overlap/no-gaps guarantee
+            // forbids — so it is rejected as a validation error instead.
+            throw new IllegalArgumentException(
+                    "after cursor offset " + offset + " is not aligned to the requested page size "
+                            + pageSize + " — paginate with the same first, or start over without after");
         }
         return (int) (firstItem / pageSize);
     }

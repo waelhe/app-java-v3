@@ -10,18 +10,21 @@ set -euo pipefail
 # injected, self-contained JUnit dump test (below, DUMP_TEST_HEREDOC) is
 # written into BOTH trees and executed with the same Maven invocation and
 # the same CI-provided service containers — the printed SDL comes from
-# graphql-java's GraphQLSchemaPrinter over the booted GraphQlSource in
-# each tree, so generated types (the Connection family), applied
-# type-definition configurers and runtime wiring are all part of the
-# compared artifact. The dump test never enters either tree's history.
+# graphql-java's graphql.schema.idl.SchemaPrinter over the booted
+# GraphQlSource in each tree, so generated types (the Connection family),
+# applied type-definition configurers and runtime wiring are all part of
+# the compared artifact. The dump test never enters either tree's history.
 #
 # Bootstrap semantics (honest, same spirit as the OpenAPI gate's no-tag
-# skip): if the baseline tag's tree cannot run the dump (no GraphQL
-# surface / does not compile / does not boot), there is no baseline to
-# compare against yet — the gate passes with a NOTICE, and the first
-# release tag whose tree carries this gate's expectations becomes the
-# real baseline. The current side MUST always dump; a current-side
-# failure is a gate failure.
+# skip — but decided from the tag's OWN tree, never from a run failure):
+# the gate skips ONLY when the baseline tag carries no GraphQL surface at
+# all — no src/main/resources/graphql/*.graphqls file anywhere in the
+# tag's tree, so there is no schema to compare against yet. A tag that
+# HAS a GraphQL surface must produce its dump: a baseline-side dump
+# failure (compile error, boot failure, dependency download failure under
+# -U, an unavailable database) FAILS the gate — a missing-baseline skip
+# must never mask a broken baseline. The current side MUST always dump;
+# a current-side failure is a gate failure.
 #
 # Environment (mirrors the OpenAPI gate job):
 #   SPRING_DATASOURCE_URL / USERNAME / PASSWORD, SPRING_DATA_REDIS_* —
@@ -44,10 +47,27 @@ if [[ -z "$LATEST_TAG" ]]; then
 fi
 echo "Using GraphQL schema baseline tag: $LATEST_TAG"
 
+# The tag's own surface inventory, measured from the tag object itself
+# before any checkout: a tree without src/main/resources/graphql/*.graphqls
+# has no GraphQL schema to baseline against — the one true bootstrap case.
+# Everything else (a surface-carrying tag whose dump fails) is a broken
+# baseline and fails the gate below.
+TAG_TREE_FILES="$(git ls-tree -r --name-only "$LATEST_TAG")"
+if [[ "$TAG_TREE_FILES" != *"src/main/resources/graphql/"*".graphqls"* ]]; then
+  echo "NOTICE: baseline tag $LATEST_TAG carries no GraphQL schema (no src/main/resources/graphql/*.graphqls in its tree) — no baseline to compare against yet. Gate passes; see .ci/check-graphql-compat.sh header for the bootstrap semantics."
+  exit 0
+fi
+
 # The self-contained dump test — compiled into whichever tree is checked
-# out. It uses only APIs present since spring-graphql 1.0 (GraphQlSource
-# bean + GraphQLSchemaPrinter), boots the plain test profile against the
-# CI-provided services, and writes the deterministic SDL print.
+# out. It uses only framework APIs that exist across every version in
+# play (the GraphQlSource bean since spring-graphql 1.0; the SDL printer
+# of record is graphql.schema.idl.SchemaPrinter — present in graphql-java
+# across the whole resolved range, and verified in the 25.0 artifact the
+# Boot 4.1.1 BOM resolves; note graphql.schema.GraphQLSchemaPrinter does
+# NOT exist in graphql-java — an injected test that imports it cannot
+# compile, and a non-compiling baseline used to pass the gate through the
+# old run-failure skip). The test boots the plain test profile against
+# the CI-provided services and writes the deterministic SDL print.
 write_dump_test() {
   mkdir -p "$DUMP_CLASS_DIR"
   cat > "$DUMP_CLASS_DIR/$DUMP_CLASS" <<'EOF'
@@ -55,7 +75,7 @@ package com.marketplace.app.graphql;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import graphql.schema.GraphQLSchemaPrinter;
+import graphql.schema.idl.SchemaPrinter;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -71,7 +91,7 @@ class GraphQlSchemaDumpGate {
 
     @Test
     void dumpRuntimeSchema() throws Exception {
-        String sdl = new GraphQLSchemaPrinter().print(graphQlSource.schema());
+        String sdl = new SchemaPrinter().print(graphQlSource.schema());
         Path out = Path.of("target", "graphql-schema.graphqls");
         Files.createDirectories(out.getParent());
         Files.writeString(out, sdl);
@@ -95,14 +115,14 @@ if ! ./mvnw -U -q -pl marketplace-app -am clean test -Dtest=GraphQlSchemaDumpGat
       > "$WORK_DIR/baseline-maven.log" 2>&1; then
   remove_dump_test
   git checkout -q "$CURRENT_SHA"
-  echo "NOTICE: baseline tag $LATEST_TAG cannot run the schema dump (no GraphQL surface or boot failure) — no baseline to compare against yet. Gate passes; see .ci/check-graphql-compat.sh header for the bootstrap semantics."
-  exit 0
+  echo "FAIL: baseline tag $LATEST_TAG carries a GraphQL schema but its dump run failed — the baseline is broken, not absent. See .ci/graphql-compat/baseline-maven.log (uploaded as a workflow artifact on failure)."
+  exit 1
 fi
 if [[ ! -f "$DUMP_FILE" ]]; then
   remove_dump_test
   git checkout -q "$CURRENT_SHA"
-  echo "NOTICE: baseline tag $LATEST_TAG produced no schema dump — no baseline yet. Gate passes (bootstrap semantics)."
-  exit 0
+  echo "FAIL: baseline tag $LATEST_TAG produced no schema dump despite carrying a GraphQL schema. See .ci/graphql-compat/baseline-maven.log."
+  exit 1
 fi
 cp "$DUMP_FILE" "$WORK_DIR/baseline-schema.graphqls"
 remove_dump_test
@@ -111,8 +131,8 @@ remove_dump_test
 git checkout -q "$CURRENT_SHA"
 write_dump_test
 ./mvnw -U -q -pl marketplace-app -am clean test -Dtest=GraphQlSchemaDumpGate \
-  -Dsurefire.failIfNoSpecifiedTests=false -DskipITs \
-  > "$WORK_DIR/current-maven.log" 2>&1 || {
+      -Dsurefire.failIfNoSpecifiedTests=false -DskipITs \
+      > "$WORK_DIR/current-maven.log" 2>&1 || {
     remove_dump_test
     echo "Current tree failed to produce the schema dump — see $WORK_DIR/current-maven.log"
     exit 1

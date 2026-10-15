@@ -157,6 +157,59 @@ class ServiceGraphQlPaginationIntegrationTest {
     }
 
     /**
+     * Changing {@code first} between pages (the CodeRabbit round-1 measured
+     * example): page 1 with {@code first: 3} ends at cursor {@code O_2};
+     * the follow-up with {@code first: 4} is misaligned (3 is not a
+     * multiple of 4) and is rejected as a validation error (VAL-001) —
+     * clamping it to the page boundary would replay items 0–3 (overlap),
+     * and smaller sizes cause gaps instead, the exact ambiguity the
+     * no-overlap/no-gaps guarantee forbids. The framework's own cursor
+     * formula ({@code number * size + index}, spring-graphql 2.0.5's
+     * SliceConnectionAdapter) makes its cursors page-aligned by
+     * construction, so an unaligned start has no page-coordinate
+     * representation.
+     */
+    @Test
+    void changingFirstBetweenPagesIsRejectedAsAValidationError() {
+        when(catalogService.findAll(any(Pageable.class))).thenAnswer(inv -> pageOf(inv.getArgument(0), 9));
+
+        String endCursor = captureEndCursor(); // first=3 page 1 → O_2
+
+        graphQlTester.document(CONNECTION_QUERY)
+                .variable("first", 4)
+                .variable("after", endCursor)
+                .execute()
+                .errors()
+                .satisfy(errors -> {
+                    assertThat(errors).isNotEmpty();
+                    var error = errors.getFirst();
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
+                    assertThat(error.getMessage()).contains("not aligned");
+                });
+    }
+
+    /**
+     * Alignment — not size constancy — is the cursor contract: an ALIGNED
+     * cursor paginates exactly under a different page size ({@code O_2}
+     * with {@code first: 1} lands on item 3 exactly, the one-item page).
+     */
+    @Test
+    void anAlignedCursorPaginatesExactlyUnderADifferentPageSize() {
+        when(catalogService.findAll(any(Pageable.class))).thenAnswer(inv -> pageOf(inv.getArgument(0), 9));
+
+        String endCursor = captureEndCursor(); // O_2
+
+        graphQlTester.document(CONNECTION_QUERY)
+                .variable("first", 1)
+                .variable("after", endCursor)
+                .execute()
+                .errors().verify()
+                .path("services.edges[*].node.name").entityList(String.class)
+                .isEqualTo(List.of("Service 3"))
+                .path("services.pageInfo.hasNextPage").entity(Boolean.class).isEqualTo(true);
+    }
+
+    /**
      * The hard maximum: a first beyond the configured ceiling is clamped to
      * it (5 here) — the transport can never widen the read.
      */
