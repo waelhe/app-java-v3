@@ -30,7 +30,7 @@ public class ServiceGraphQlController {
         this.serviceMapper = serviceMapper;
     }
 
-    @QueryMapping
+    @QueryMapping(name = DgsConstants.QUERY.Service)
     public ServiceResponse service(@Argument UUID id) {
         return serviceMapper.toResponse(catalogSpi.getActiveById(id));
     }
