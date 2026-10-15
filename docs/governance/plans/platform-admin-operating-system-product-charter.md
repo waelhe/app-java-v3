@@ -542,6 +542,7 @@ The strategic charter is not a screen-by-screen implementation recipe. The detai
 - [Detailed screen and interaction specification](platform-admin-detailed-screen-specification.md): manager-facing Arabic labels, exact screen composition, field/action semantics, navigation, preview patterns, error/empty/stale/permission states, and accessibility behavior.
 - [Global manager UX research](platform-admin-global-manager-ux-research.md): documented product patterns, source repository review, the revised eight-destination navigation, and the member-experience/control-studio model.
 - [Domain-grade administration suites](platform-admin-domain-grade-suites.md): Saleor-depth commerce, Discourse-depth community and Yelp-depth directory screen families, workflows, cross-domain maturity contract and acceptance gates.
+- [Domain-depth journey acceptance](platform-admin-e2e-journey-recipes.md) now includes D25–D35 for catalog/variants, taxonomy, multi-location inventory, promotions, fulfilment/refunds, business claims/leads, moderation/appeals, groups/events, official delivery, discovery and permissions.
 - [Primary screen wireframes](platform-admin-primary-screen-wireframes.md): eight structural layouts that pin down the homepage, queue, incident room, feature-stop flow, payment case, official alert, setting review and permission grant.
 - [24 step-by-step End-to-End journey recipes](platform-admin-e2e-journey-recipes.md): the full manager path from entry to verified result, decision branches, failure/recovery paths, source-of-truth evidence and browser E2E matrix.
 
