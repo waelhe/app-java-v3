@@ -144,7 +144,7 @@ class ServiceGraphQlPaginationIntegrationTest {
                 .variable("after", endCursor)
                 .execute()
                 .errors().verify()
-                .path("services.edges.node.name").entityList(String.class)
+                .path("services.edges[*].node.name").entityList(String.class)
                 .isEqualTo(List.of("Service 3", "Service 4", "Service 5"))
                 .path("services.pageInfo.hasPreviousPage").entity(Boolean.class).isEqualTo(true);
 
@@ -202,7 +202,7 @@ class ServiceGraphQlPaginationIntegrationTest {
                 .variable("first", 4)
                 .execute()
                 .errors().verify()
-                .path("services.edges.node.name").entityList(String.class)
+                .path("services.edges[*].node.name").entityList(String.class)
                 .isEqualTo(List.of("Service 0", "Service 1", "Service 2", "Service 3"))
                 .path("services.pageInfo.endCursor").hasValue();
     }
@@ -230,10 +230,14 @@ class ServiceGraphQlPaginationIntegrationTest {
      */
     @Test
     void aKeysetCursorIsRejectedAsAValidationError() {
-        // base64("K_{\"createdAt\":\"2026-01-01\"}") — the framework's
-        // keyset cursor wire form, hand-crafted.
+        // base64("K_[\"java.util.LinkedHashMap\",{\"createdAt\":\"2026-01-01\"}]")
+        // — the framework's keyset cursor wire form, hand-crafted:
+        // JsonKeysetCursorStrategy serializes the keys map with Jackson
+        // default typing (WRAPPER_ARRAY), so a decodable keyset cursor
+        // carries the map's concrete type as the wrapper element — a plain
+        // JSON object is NOT the wire form and fails decode earlier.
         String keysetCursor = java.util.Base64.getEncoder()
-                .encodeToString("K_{\"createdAt\":\"2026-01-01\"}".getBytes());
+                .encodeToString("K_[\"java.util.LinkedHashMap\",{\"createdAt\":\"2026-01-01\"}]".getBytes());
 
         graphQlTester.document(CONNECTION_QUERY)
                 .variable("after", keysetCursor)

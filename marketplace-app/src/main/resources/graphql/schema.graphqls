@@ -12,10 +12,17 @@ type Query {
     # (Page is-a Slice — verified against spring-boot-graphql 4.1.1), and
     # `after` cursors are base64 ScrollPosition offsets produced by that same
     # adapter — decoded back by the auto-registered Subrange argument resolver.
-    # `first` defaults to the server's default page size (bounded, hard-capped);
-    # forward-only (last/before deliberately absent) with deterministic
-    # server-side ordering.
-    services(first: Int = 20, after: String): ServiceConnection!
+    # `first` carries no SDL literal default: graphql-java applies a field
+    # default at argument coercion whenever the argument is omitted, which
+    # would shadow the typed configuration
+    # (marketplace.graphql.pagination.default-page-size) — two sources of
+    # "default" that drift apart, the exact failure the first real
+    # integration run measured (property set to 3, the SDL literal
+    # answered 20). The server's configured default page size (bounded,
+    # hard-capped, fail-fast bound) is the single source; forward-only
+    # (last/before deliberately absent) with deterministic server-side
+    # ordering.
+    services(first: Int, after: String): ServiceConnection!
 }
 
 type Mutation {

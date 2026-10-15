@@ -15,5 +15,5 @@
 exceptions:
   - target: field Query.services
     ticket: GraphQL target design Phase 1 (docs/api/graphql-target-architecture.md §6 "Do not leave an unbounded legacy field indefinitely", PR feat/graphql-p0-bounded-foundation)
-    reason: The demo-era unbounded field services: [Service!]! (Pageable.unpaged() under it, no arguments, no page metadata) is REPLACED by the bounded relay connection services(first: Int = 20, after: String): ServiceConnection! — the consumer inventory measured zero contracted consumers (the repository's own tests are the only callers; the Android client is REST-only, grep-measured), which the design plan §6 names as the condition for direct replacement rather than parallel-field migration. No client migration exists to perform.
+    reason: The demo-era unbounded field services: [Service!]! (Pageable.unpaged() under it, no arguments, no page metadata) is REPLACED by the bounded relay connection services(first: Int, after: String): ServiceConnection! — the consumer inventory measured zero contracted consumers (the repository's own tests are the only callers; the Android client is REST-only, grep-measured), which the design plan §6 names as the condition for direct replacement rather than parallel-field migration. No client migration exists to perform.
     expiry: 2027-03-31
