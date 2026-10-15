@@ -394,6 +394,35 @@
 
     <build>
         <plugins>
+            <!-- Generate constants directly from the authoritative GraphQL SDL.
+                 Generated data types are intentionally disabled in this first
+                 Maven proof: ServiceInput carries repository-specific Jakarta
+                 Validation rules and remains hand-owned until mapping those
+                 annotations into codegen is proven. -->
+            <plugin>
+                <groupId>io.github.deweyjose</groupId>
+                <artifactId>graphqlcodegen-maven-plugin</artifactId>
+                <version>${graphql-codegen-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>generate-graphql-schema-constants</id>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <schemaPaths>
+                        <path>${project.basedir}/src/main/resources/graphql</path>
+                    </schemaPaths>
+                    <packageName>com.marketplace.app.graphql.generated</packageName>
+                    <generateDataTypes>false</generateDataTypes>
+                    <generateClientApi>false</generateClientApi>
+                    <generateDocs>false</generateDocs>
+                    <addGeneratedAnnotation>true</addGeneratedAnnotation>
+                    <disableDatesInGeneratedAnnotation>true</disableDatesInGeneratedAnnotation>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
