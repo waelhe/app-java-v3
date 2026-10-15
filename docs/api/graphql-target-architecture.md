@@ -4,6 +4,7 @@
 **Last repository inspection:** 2026-10-15  
 **Repository baseline:** waelhe/app-java-v3, Spring Boot 4.1.1, Java 25, Spring Modulith 2.1.1, modular monolith  
 **Scope:** GraphQL API in marketplace-app, its security/configuration/tests, and the module boundaries it must preserve.
+**Phase-0 baseline record:** `docs/api/graphql-baseline-2026-10.md` — versions, consumers, tests, and CI gates measured 2026-10-15 from GitHub (API + Actions artifacts + Maven Central; no local execution).
 
 > This is a target design and staged acceptance plan. It does not authorize a wholesale REST migration, an all-at-once schema expansion, or a change to anonymous/public access policy without the required product and security decisions. Implementation steps must remain incremental and reviewable.
 
@@ -253,11 +254,14 @@ The GraphQL work is not production-ready until all applicable gates below pass:
 ## 11. Staged path from current partial state to target
 
 ### Phase 0 — Baseline and decisions
-1. Inventory GraphQL consumers and operations (backend, Android roadmap, any deployed clients) before any breaking change.
-2. Resolve the anonymous-read policy for public catalogue/business/tourism discovery. Current CI expects anonymous /graphql to return 401; retain until the policy and field rules are ready.
-3. Confirm exact Spring GraphQL and GraphQL Java versions from the Boot 4.1.1 BOM/dependency tree.
-4. Measure whether GraphQL WebSocket subscriptions are used; no Subscription schema was found.
-5. Establish a baseline for request latency, response size and DB query count for existing operations.
+
+Measured results live in `docs/api/graphql-baseline-2026-10.md` (evidence gathered 2026-10-15 from the GitHub API, GitHub Actions runs/artifacts, and Maven Central — no local execution, per the owner's push-first directive; CI supplies the Redis service container the gates need).
+
+1. **Inventory GraphQL consumers and operations — measured, closed.** GitHub code search finds zero GraphQL references in the Android (Kotlin) client and no deployed clients; the 21 referencing Java files are all internal to this repository (controller package, its tests, the shared API contract layer, the security chain). The only consumers are this repository's own tests and the CI smoke contract (anonymous `/graphql` → 401). Compatibility gates must land before the first external client binds.
+2. **Anonymous-read policy — open decision, unchanged.** Current CI expects anonymous `/graphql` to return 401; retain until the policy and field rules are ready.
+3. **Exact versions — measured, closed.** Boot 4.1.1 BOM → spring-graphql 2.0.5 → graphql-java 25.0 → java-dataloader 6.0.0 (baseline §1; Maven Central POM chain cross-checked against `mvn dependency:tree`).
+4. **WebSocket subscription usage — measured, closed.** No Subscription root exists in the SDL and no consumer references the transport, while base `application.yml` still configures `spring.graphql.websocket.path`. Disable in Phase 1 unless a subscription use case is approved.
+5. **Baseline — partially measured.** CI gate timings and the GraphQL test suite are recorded (baseline §§4–5: 21 tests, 34.22 s, 0 failures; four green workflows). Request latency, response size, and DB query count are deliberately deferred to the executable Phase-1 gates (pagination and query-cost budgets) rather than recorded as estimates (baseline §6).
 
 ### Phase 1 — Secure and bounded foundation (P0)
 1. Replace or safely migrate the unbounded services field to a paginated bounded contract.
@@ -297,6 +301,8 @@ Perform an end-to-end review of important GraphQL journeys, schema compatibility
 ## 12. Official and community references
 
 Version/security note (checked 2026-10-15): the official Spring for GraphQL release page lists v2.0.5 as the latest stable release at this check. The v2.0.4 release notes explicitly list fixes for CVE-2026-41699, CVE-2026-41700, and CVE-2026-41856. Do not infer the application's resolved transitive GraphQL Java version from the Spring GraphQL release tag; confirm the exact resolved dependency tree with the project's Maven/BOM before wiring instrumentation or selecting a security remediation. Keep dependency versions BOM-managed unless the repository's measured dependency/security evidence requires a documented exception.
+
+Resolved-chain confirmation (measured 2026-10-15, baseline §1): the Boot 4.1.1 BOM manages spring-graphql 2.0.5 → graphql-java 25.0 → java-dataloader 6.0.0 (Maven Central POM chain cross-checked against `mvn dependency:tree`). The version question of this note is closed by measurement; versions remain BOM-managed.
 
 Version-specific references checked for this proposal:
 - Spring Boot 4.1.1 — Spring for GraphQL: https://docs.spring.io/spring-boot/4.1/reference/web/spring-graphql.html
