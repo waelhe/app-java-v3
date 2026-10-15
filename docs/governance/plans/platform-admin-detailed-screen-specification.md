@@ -2,6 +2,7 @@
 
 **Authority:** Supporting implementation detail for the [Platform Administration Operating System Product Charter](platform-admin-operating-system-product-charter.md).  
 **Status:** Product/UX specification; not implementation evidence.  
+**Structural screen layouts:** [Primary Screen Wireframes](platform-admin-primary-screen-wireframes.md) pins down the composition and action hierarchy of the homepage, work queue, incident room, capability-stop wizard, payment exception, official alert, configuration review and scoped access grant.  
 **Primary operator:** A platform manager who is not expected to know software, database, networking or cloud terminology.  
 **Default language:** Arabic RTL. English LTR must be fully supported.
 
