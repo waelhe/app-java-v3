@@ -2,6 +2,7 @@ package com.marketplace.institutions;
 
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.FeatureGatePort;
 import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.UrgentAlertPublishedEvent;
@@ -49,6 +50,24 @@ import java.util.stream.Collectors;
  * speak through). CMP-46's own rule holds everywhere: the level is text
  * on the way out, never a ranking weight — the only order is the
  * alert's own validity clock (freshest first).</p>
+ *
+ * <p><b>The channel's operational kill-switch (the console wave 4 gate
+ * — the Day-1 seed's fifth row):</b> the first line of {@link
+ * #activeAlerts} is {@code FeatureGatePort}'s external key {@code
+ * institutions.urgent.enabled} — and because EVERY promised path of
+ * the channel reads THIS one seam, the lever is effective end to end
+ * by construction: the public controller's read, the discovery rail's
+ * URGENT row and paged section (both through the port), AND the
+ * notification fan-out's routing-time validity re-check (the router
+ * resolves "still active" through the same port — a gated engine
+ * answers no card, so a publication published under a killed channel
+ * routes to NOBODY, the router's own honest skip). Off = silence on
+ * every surface BEFORE any repository interaction; an absent row keeps
+ * the built behavior through the caller's fallback (the two-half
+ * contract). The delegation machine's WRITE levers (the review queue,
+ * publish, withdraw) stay untouched by design — the operator's lever
+ * is the serving channel, the audit trail keeps recording every
+ * publication for the re-enabled channel to serve.</p>
  */
 @Service
 @Transactional
@@ -65,17 +84,20 @@ public class UrgentAlertService {
     private final UrgentAlertSourceRepository sourceRepository;
     private final UrgentAlertRepository alertRepository;
     private final GeoLookupPort geoLookupPort;
+    private final FeatureGatePort featureGate;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
     public UrgentAlertService(UrgentAlertSourceRepository sourceRepository,
                               UrgentAlertRepository alertRepository,
                               GeoLookupPort geoLookupPort,
+                              FeatureGatePort featureGate,
                               ApplicationEventPublisher eventPublisher,
                               Clock clock) {
         this.sourceRepository = sourceRepository;
         this.alertRepository = alertRepository;
         this.geoLookupPort = geoLookupPort;
+        this.featureGate = featureGate;
         this.eventPublisher = eventPublisher;
         this.clock = clock;
     }
@@ -226,9 +248,19 @@ public class UrgentAlertService {
      * only (AC-20-01 — a trusted source is a display precondition; an
      * UNVERIFIED/PENDING/REJECTED source's alerts answer silence,
      * deterministically). Empty locations never touch the source read.
+     *
+     * <p>The channel's kill-switch runs FIRST (the console wave 4 gate):
+     * the capability itself is off — the live-window query and the
+     * source-state filter answer nothing, on every surface the seam
+     * feeds, until the switch is back. The honest empty list is the
+     * port's own silence vocabulary ("a withdrawn alert answers silence
+     * HERE") — the lever reuses it verbatim.</p>
      */
     @Transactional(readOnly = true)
     public List<ActiveAlert> activeAlerts(UUID locationId, Instant now) {
+        if (!featureGate.isEnabled("institutions.urgent.enabled", true)) {
+            return List.of();
+        }
         List<UrgentAlert> live = alertRepository.findLiveByLocation(locationId, now);
         if (live.isEmpty()) {
             return List.of();

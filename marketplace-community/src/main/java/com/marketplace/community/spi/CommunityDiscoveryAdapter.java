@@ -9,6 +9,7 @@ import com.marketplace.community.NeighborhoodPostRepository;
 import com.marketplace.community.NeighborhoodPostSpecifications;
 import com.marketplace.community.PostCategory;
 import com.marketplace.shared.api.CommunityDiscoveryPort;
+import com.marketplace.shared.api.FeatureGatePort;
 import com.marketplace.shared.api.PagedRequest;
 import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.SpringPagination;
@@ -52,6 +53,22 @@ import java.util.UUID;
  * {@code hasLostFoundState(ACTIVE)} composed, the V173 partial index's
  * exact eligibility set).
  *
+ * <p><b>The lost-and-found rail's operational kill-switch (the console
+ * wave 4 gate — the Day-1 seed's fourth row):</b> the first line of
+ * {@link #findActiveLostFound} is {@code FeatureGatePort}'s external
+ * key {@code community.lost-found.enabled} — the data owner gates its
+ * own serving seam, so EVERY consumer of the port's leg (the discovery
+ * rail's home row and paged section alike) reads the same answer at
+ * one enforcement point. The consumption pattern differs from the
+ * boards' by design (wave 3's own documented scope): the lost-found
+ * capability's surface IS the discovery rail, not a board method of a
+ * single service — the gate rides the port implementation the same
+ * way the boards' gates ride their {@code getBoard} reads. Off = the
+ * honest empty page BEFORE any repository interaction; an absent row
+ * keeps the built behavior through the caller's fallback (the
+ * two-half contract — an environment without the seed serves exactly
+ * as it served before the board existed).
+ *
  * <p><b>The events rail is status-honest:</b> the board's own
  * {@code upcoming} floor — still-to-come AND not CANCELLED/POSTPONED —
  * so a withdrawn gathering never masquerades as upcoming, and the state
@@ -83,18 +100,32 @@ public class CommunityDiscoveryAdapter implements CommunityDiscoveryPort {
 
     private final NeighborhoodPostRepository postRepository;
     private final NeighborhoodEventRepository eventRepository;
+    private final FeatureGatePort featureGate;
     private final Clock clock;
 
     public CommunityDiscoveryAdapter(NeighborhoodPostRepository postRepository,
                                      NeighborhoodEventRepository eventRepository,
+                                     FeatureGatePort featureGate,
                                      Clock clock) {
         this.postRepository = postRepository;
         this.eventRepository = eventRepository;
+        this.featureGate = featureGate;
         this.clock = clock;
     }
 
     @Override
     public PagedResponse<DiscoveryPostCard> findActiveLostFound(UUID locationId, PagedRequest page) {
+        // The operational kill-switch — the console's registered lever for
+        // THIS capability (the Day-1 seed's row; an absent row keeps the
+        // built behavior through the fallback). The FIRST gate by design:
+        // the capability itself is off — the rail's eligibility set and
+        // the V173 index answer nothing until the switch is back. The
+        // honest empty page rides the port's own documented shape (the
+        // empty-whitelist precedent below: an empty answer is never a
+        // query).
+        if (!featureGate.isEnabled("community.lost-found.enabled", true)) {
+            return PagedResponse.empty(page);
+        }
         Page<NeighborhoodPost> result = postRepository.findAll(
                 NeighborhoodPostSpecifications.hasLocation(locationId)
                         .and(NeighborhoodPostSpecifications.isVisible())
