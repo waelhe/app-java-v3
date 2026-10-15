@@ -10,6 +10,11 @@
 
 ---
 
+
+## Administrative product experience — independent product target, not implementation
+
+The canonical target is [Platform Administration Operating System Product Charter](governance/plans/platform-admin-operating-system-product-charter.md). The required depth of each domain is defined in [Domain-Grade Administration Suites](governance/plans/platform-admin-domain-grade-suites.md); a top-level screen does not count as a completed management capability. The manager-centred IA is grounded in [Global Manager UX Research](governance/plans/platform-admin-global-manager-ux-research.md), including research of global products and open-source repositories. Implementation-level UX is defined by the [Detailed Screen Specification](governance/plans/platform-admin-detailed-screen-specification.md), [Primary Wireframes](governance/plans/platform-admin-primary-screen-wireframes.md), and [24 E2E Journey Recipes](governance/plans/platform-admin-e2e-journey-recipes.md). Current-code facts and gaps are in the [End-to-End Product and Gap Specification](governance/plans/platform-admin-end-to-end-product-spec.md). The UI is not limited by current endpoints or the existing console; no old frontend repository is selected as its foundation. Design only; implementation and replacement decisions remain separate gated work.
+
 ## 0. نقطة الانطلاق — مقيسة لا مفترضة
 
 كل الأدلة قيست هذه الجلسة (2026-10-05) على **رأس main `193ff248`** (دمج #496) وعلى **الإنتاج الحي `app-java-v3-production-59bf.up.railway.app`** (liveness 200 + api-docs 200 بـ**157 مسارًا** — قياس مباشر هذه الجلسة) وعلى **النموذج الحي للمالك** (PR #502) وعلى **مصادر الإطار الرسمية المحفوظة** (قائمة §0.3).

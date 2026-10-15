@@ -1,5 +1,10 @@
 # SYSTEM.md — الخريطة المرجعية لآلية عمل النظام
 
+## Platform administration product target
+
+Canonical product/UX authority: [Platform Administration Operating System Product Charter](docs/governance/plans/platform-admin-operating-system-product-charter.md). Manager-centred information architecture and market research: [Global Manager UX Research](docs/governance/plans/platform-admin-global-manager-ux-research.md). Domain-level depth and acceptance contract: [Domain-Grade Administration Suites](docs/governance/plans/platform-admin-domain-grade-suites.md). Required build details: [Detailed Screen Specification](docs/governance/plans/platform-admin-detailed-screen-specification.md), [Structural Wireframes](docs/governance/plans/platform-admin-primary-screen-wireframes.md), and [24 E2E Journey Recipes](docs/governance/plans/platform-admin-e2e-journey-recipes.md). Current backend evidence/gaps: [End-to-End Product and Gap Specification](docs/governance/plans/platform-admin-end-to-end-product-spec.md). These are **design/specifications only, not implementation completion**. The UI is independent of any backend; app-java-v3 is a replaceable adapter candidate, not the design ceiling.
+
+
 > **غرض هذا الملف:** المرجع الدائم لفهم «كيف يعمل نظامنا» — يُقرأ **أولاً** قبل أي تعمّق في أي طبقة، ويُحدَّث عند كل حقيقة جديدة موثَّقة. هو الثالث في عائلة ملفات الجذر: `AGENTS.md` (القواعد) / `PROJECT_MAP.md` (سجل الحالة والقرارات) / `SYSTEM.md` (الآلية والفهم).
 >
 > **قاعدة الذهب:** كل حقيقة هنا تحمل دليلها `ملف:سطر` من هذا المستودع أو من مصدر رسمي محفوظ. لا يُضاف ادعاء بلا دليل، ولا يُعدَّل دليل بلا إعادة تحقق من الكود.
