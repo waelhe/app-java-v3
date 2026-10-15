@@ -42,7 +42,7 @@ public class ServiceGraphQlController {
                 .toList();
     }
 
-    @MutationMapping
+    @MutationMapping(name = DgsConstants.MUTATION.CreateService)
     public ServiceResponse createService(@Argument @Valid ServiceInput input,
                                          Authentication authentication) {
         UUID providerId = currentUserProvider.getCurrentUserId(authentication);
