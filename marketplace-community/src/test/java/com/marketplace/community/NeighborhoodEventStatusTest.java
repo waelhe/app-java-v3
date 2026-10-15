@@ -63,14 +63,21 @@ class NeighborhoodEventStatusTest {
     @Mock
     private com.marketplace.shared.api.GeoLookupPort geoLookupPort;
 
+    @Mock
+    private com.marketplace.shared.api.FeatureGatePort featureGate;
+
     private final Clock clock = Clock.fixed(FIXED, ZoneOffset.UTC);
 
     private NeighborhoodEventService service;
 
     @BeforeEach
     void setUp() {
+        // The Day-1 lever's honest default (the built behavior) — the
+        // status tests exercise the board's own status axis.
+        org.mockito.Mockito.lenient()
+                .when(featureGate.isEnabled("community.events.enabled", true)).thenReturn(true);
         service = new NeighborhoodEventService(eventRepository, rsvpRepository,
-                membershipRepository, geoLookupPort, clock);
+                membershipRepository, geoLookupPort, featureGate, clock);
     }
 
     private UUID memberId = UUID.randomUUID();

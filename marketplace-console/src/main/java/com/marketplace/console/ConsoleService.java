@@ -1,6 +1,7 @@
 package com.marketplace.console;
 
 import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.FeatureGatePort;
 import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -33,7 +34,7 @@ import java.util.UUID;
  */
 @Service
 @Transactional
-public class ConsoleService {
+public class ConsoleService implements FeatureGatePort {
 
     private final FeatureFlagRepository flagRepository;
     private final RemoteConfigValueRepository configRepository;
@@ -69,6 +70,23 @@ public class ConsoleService {
         return flagRepository.findByKey(key)
                 .map(FeatureFlag::isEnabled)
                 .orElseGet(properties.flags()::defaultEnabled);
+    }
+
+    /**
+     * {@link FeatureGatePort} — the two-half gate the domain services
+     * call at request time (the cross-module seam, the GeoLookupPort
+     * precedent): a live row answers the row's state; an absent row
+     * answers the CALLER's fallback — the built behavior's own default,
+     * so an unseeded environment keeps serving exactly what the code
+     * built (the E2E-honest adoption), and the console's row is the
+     * operational override armed by the Day-1 seed.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isEnabled(String key, boolean fallback) {
+        return flagRepository.findByKey(key)
+                .map(FeatureFlag::isEnabled)
+                .orElse(fallback);
     }
 
     /**

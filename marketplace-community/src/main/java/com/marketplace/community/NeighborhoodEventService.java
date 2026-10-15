@@ -2,6 +2,7 @@ package com.marketplace.community;
 
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.FeatureGatePort;
 import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import io.micrometer.observation.annotation.Observed;
@@ -88,17 +89,20 @@ public class NeighborhoodEventService {
     private final EventRsvpRepository rsvpRepository;
     private final NeighborhoodMembershipRepository membershipRepository;
     private final GeoLookupPort geoLookupPort;
+    private final FeatureGatePort featureGate;
     private final Clock clock;
 
     public NeighborhoodEventService(NeighborhoodEventRepository eventRepository,
                                     EventRsvpRepository rsvpRepository,
                                     NeighborhoodMembershipRepository membershipRepository,
                                     GeoLookupPort geoLookupPort,
+                                    FeatureGatePort featureGate,
                                     Clock clock) {
         this.eventRepository = eventRepository;
         this.rsvpRepository = rsvpRepository;
         this.membershipRepository = membershipRepository;
         this.geoLookupPort = geoLookupPort;
+        this.featureGate = featureGate;
         this.clock = clock;
     }
 
@@ -167,6 +171,14 @@ public class NeighborhoodEventService {
     public Page<NeighborhoodEventView> getBoard(UUID callerId, EventCategory category,
                                                 NeighborhoodEventStatus status,
                                                 Pageable pageable) {
+        // The operational kill-switch — the console's registered lever for
+        // THIS capability (the Day-1 seed's row; an absent row keeps the
+        // built behavior through the fallback). The FIRST gate by design:
+        // the capability itself is off — the membership rule and the
+        // board's own filters answer nothing until the switch is back.
+        if (!featureGate.isEnabled("community.events.enabled", true)) {
+            return Page.empty(pageable);
+        }
         UUID locationId = requireMembership(callerId,
                 "Join a neighborhood before reading its events board (PUT /api/v1/me/neighborhood)")
                 .getLocationId();

@@ -2,6 +2,7 @@ package com.marketplace.community;
 
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.FeatureGatePort;
 import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import io.micrometer.observation.annotation.Observed;
@@ -113,17 +114,20 @@ public class NeighborhoodPollService {
     private final NeighborhoodPollVoteRepository voteRepository;
     private final NeighborhoodMembershipRepository membershipRepository;
     private final GeoLookupPort geoLookupPort;
+    private final FeatureGatePort featureGate;
 
     public NeighborhoodPollService(NeighborhoodPollRepository pollRepository,
                                    NeighborhoodPollOptionRepository optionRepository,
                                    NeighborhoodPollVoteRepository voteRepository,
                                    NeighborhoodMembershipRepository membershipRepository,
-                                   GeoLookupPort geoLookupPort) {
+                                   GeoLookupPort geoLookupPort,
+                                   FeatureGatePort featureGate) {
         this.pollRepository = pollRepository;
         this.optionRepository = optionRepository;
         this.voteRepository = voteRepository;
         this.membershipRepository = membershipRepository;
         this.geoLookupPort = geoLookupPort;
+        this.featureGate = featureGate;
     }
 
     /**
@@ -137,6 +141,14 @@ public class NeighborhoodPollService {
      */
     @Transactional(readOnly = true)
     public Page<NeighborhoodPollView> getBoard(UUID callerId, Pageable pageable) {
+        // The operational kill-switch — the console's registered lever for
+        // THIS capability (the Day-1 seed's row; an absent row keeps the
+        // built behavior through the fallback). The FIRST gate by design:
+        // the capability itself is off — the membership rule and the
+        // board's own assembly answer nothing until the switch is back.
+        if (!featureGate.isEnabled("community.polls.enabled", true)) {
+            return Page.empty(pageable);
+        }
         UUID locationId = requireMembership(callerId,
                 "Join a neighborhood before reading its polls board (PUT /api/v1/me/neighborhood)")
                 .getLocationId();

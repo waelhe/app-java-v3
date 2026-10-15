@@ -60,12 +60,19 @@ class NeighborhoodMarketItemServiceTest {
     @Mock
     private GeoLookupPort geoLookupPort;
 
+    @Mock
+    private com.marketplace.shared.api.FeatureGatePort featureGate;
+
     private NeighborhoodMarketItemService service;
 
     @BeforeEach
     void setUp() {
+        // The Day-1 lever's honest default (the built behavior) — the
+        // kill-switch's off-path has its own dedicated test below.
+        org.mockito.Mockito.lenient()
+                .when(featureGate.isEnabled("community.market.enabled", true)).thenReturn(true);
         service = new NeighborhoodMarketItemService(itemRepository, membershipRepository,
-                geoLookupPort);
+                geoLookupPort, featureGate);
     }
 
     private UUID authorId = UUID.randomUUID();
@@ -332,6 +339,20 @@ class NeighborhoodMarketItemServiceTest {
     }
 
     // ---------- getBoard ----------
+
+    @Test
+    void getBoard_whenTheConsoleSwitchIsOff_answersEmptyBeforeAnyOtherGate() {
+        // The Day-1 lever's off-path: the console's row says OFF — the
+        // board answers the honest empty page BEFORE the membership rule.
+        // No repository is stubbed: nothing else may run.
+        when(featureGate.isEnabled("community.market.enabled", true)).thenReturn(false);
+
+        Page<NeighborhoodMarketItemView> board = service.getBoard(authorId, null, null, false,
+                PageRequest.of(0, 20));
+
+        assertThat(board).isEmpty();
+        org.mockito.Mockito.verifyNoInteractions(membershipRepository, itemRepository);
+    }
 
     @Test
     void getBoard_noMembership_is403() {
