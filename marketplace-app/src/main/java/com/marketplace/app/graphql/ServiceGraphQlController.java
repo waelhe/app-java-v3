@@ -1,5 +1,6 @@
 package com.marketplace.app.graphql;
 
+import com.marketplace.app.graphql.generated.DgsConstants;
 import com.marketplace.catalog.spi.CatalogSpi;
 import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.security.CurrentUserProvider;
