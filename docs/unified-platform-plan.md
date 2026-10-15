@@ -11,9 +11,9 @@
 ---
 
 
-## Administrative product experience — target spec, not implementation
+## Administrative product experience — independent product target, not implementation
 
-Use [the platform administration product specification](governance/plans/platform-admin-end-to-end-product-spec.md) as the product/UX and cross-domain journey target. It defines role/scoped responsibilities, 30 end-to-end operator journeys, screen/IA requirements, proposed backend contracts, candidate admin records, technology decisions and gaps G01–G35. Existing controllers and the current console are evidence, not the design ceiling. The document is a design target: no implementation completeness is implied. Implementation must truth-sync current main, tests, schema and open PRs before each wave.
+The canonical target is [Platform Administration Operating System Product Charter](governance/plans/platform-admin-operating-system-product-charter.md), which defines a dedicated standalone admin product, 24 end-to-end operator journeys, independent frontend architecture and backend-replacement criteria. Supporting current-code truth and gaps are in [the End-to-End Product and Gap Specification](governance/plans/platform-admin-end-to-end-product-spec.md). The UI is not limited by current endpoints or the existing console; no old frontend repository is selected as its foundation. Design only; implementation and replacement decisions remain separate gated work.
 
 ## 0. نقطة الانطلاق — مقيسة لا مفترضة
 
