@@ -1,5 +1,6 @@
 package com.marketplace.config;
 
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -278,6 +279,55 @@ class ManagerConsoleWebSecurityIntegrationTest {
         assertThat(refusedBoard).contains("Unknown section code");
         // the trail still carries exactly the two revisions (1 seed + 1 publish)
         assertThat(refusedBoard).doesNotContain("نُشرت المراجعة رقم 3");
+    }
+
+    /**
+     * The queue boards' own contract (the #570 wave-2 boards): the page
+     * renders its four actionable queues for the admin (the honest empty
+     * states included — no fabricated rows), and a verdict POST through
+     * the real chain (CSRF honored) reaches the REAL service: an unknown
+     * review's id answers the service's own 404, mapped to the flash
+     * banner on the redirected board — the full wiring (login → CSRF →
+     * service → exception mapping → flash → redirect) pinned without
+     * seeding a single queue row.
+     */
+    @Test
+    void theQueueBoardsRenderAndAnUnknownVerdictAnswersTheServiceBanner() throws Exception {
+        // anonymous → the login redirect (the form-login chain's entry point)
+        mockMvc.perform(get("/console/queues"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/login"));
+
+        // the authenticated non-admin → the role gate
+        String userSession = loginForSession(USER_USERNAME);
+        mockMvc.perform(get("/console/queues").cookie(new Cookie("SESSION", userSession)))
+                .andExpect(status().isForbidden());
+
+        // the admin → the four boards render (their honest empty states)
+        String session = loginForSession(ADMIN_USERNAME);
+        String page = mockMvc.perform(get("/console/queues").cookie(new Cookie("SESSION", session)))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("طوابير المراجعة")))
+                .andExpect(content().string(containsString("توثيق الجوار")))
+                .andExpect(content().string(containsString("توثيق المؤسسات")))
+                .andExpect(content().string(containsString("إشراف المراجعات")))
+                .andExpect(content().string(containsString("إشراف المجتمع")))
+                .andReturn().getResponse().getContentAsString();
+
+        // the verdict POST: an unknown review answers the REAL service's 404
+        // through the banner (the CSRF token parsed from the rendered board)
+        String csrf = csrfOf(page);
+        mockMvc.perform(post("/console/queues/reviews/" + UUID.randomUUID() + "/moderate")
+                        .cookie(new Cookie("SESSION", session))
+                        .param("action", "APPROVE")
+                        .param("_csrf", csrf))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/console/queues"));
+
+        String after = mockMvc.perform(get("/console/queues").cookie(new Cookie("SESSION", session)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(after).contains("لا مراجعة بهذا المعرّف");
     }
 
     /**

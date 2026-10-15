@@ -146,6 +146,25 @@ class AdminModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.GroupLookupPort groupLookupPort;
 
+    // The console queue boards (wave 2): ConsoleQueuesWebController lives
+    // in THIS module and injects the four shared-api queue ports whose
+    // implementations (the data owners' spi adapters) live in the
+    // community, institutions, and reviews modules — outside this slice's
+    // closure — the same house @MockitoBean pattern as the other
+    // outside-slice ports above (the CI-measured round: without them the
+    // context boot fails on the controller's constructor).
+    @MockitoBean
+    com.marketplace.shared.api.NeighborhoodVerificationQueuePort neighborhoodVerificationQueuePort;
+
+    @MockitoBean
+    com.marketplace.shared.api.InstitutionReviewQueuePort institutionReviewQueuePort;
+
+    @MockitoBean
+    com.marketplace.shared.api.ReviewModerationQueuePort reviewModerationQueuePort;
+
+    @MockitoBean
+    com.marketplace.shared.api.ContentReportQueuePort contentReportQueuePort;
+
     @Autowired
     private RevisionService revisionService;
 
