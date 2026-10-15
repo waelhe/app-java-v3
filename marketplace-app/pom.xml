@@ -415,6 +415,9 @@
                     <schemaPaths>
                         <path>${project.basedir}/src/main/resources/graphql</path>
                     </schemaPaths>
+                    <!-- Keep CodeGen output separate from MapStruct's
+                         target/generated-sources/annotations directory. -->
+                    <outputDir>${project.build.directory}/generated-sources/graphql-codegen</outputDir>
                     <packageName>com.marketplace.app.graphql.generated</packageName>
                     <generateDataTypes>false</generateDataTypes>
                     <generateClientApi>false</generateClientApi>
