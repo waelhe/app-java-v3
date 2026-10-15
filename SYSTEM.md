@@ -2,7 +2,7 @@
 
 ## Platform administration product target
 
-Canonical product/UX authority: [Platform Administration Operating System Product Charter](docs/governance/plans/platform-admin-operating-system-product-charter.md). Supporting backend evidence and gap register: [End-to-End Product and Gap Specification](docs/governance/plans/platform-admin-end-to-end-product-spec.md). Both are **design only, not implementation completion**. The UI remains independent of any selected backend; current app-java-v3 is a replaceable adapter candidate, not the design ceiling.
+Canonical product/UX authority: [Platform Administration Operating System Product Charter](docs/governance/plans/platform-admin-operating-system-product-charter.md). Mandatory implementation-level UX: [Detailed Screen and Interaction Specification](docs/governance/plans/platform-admin-detailed-screen-specification.md) and [24 End-to-End Journey Recipes](docs/governance/plans/platform-admin-e2e-journey-recipes.md). Current backend evidence and gaps: [End-to-End Product and Gap Specification](docs/governance/plans/platform-admin-end-to-end-product-spec.md). All are **design/specification only, not implementation completion**. The UI remains independent of any backend; app-java-v3 is a replaceable adapter candidate, not the design ceiling.
 
 
 > **غرض هذا الملف:** المرجع الدائم لفهم «كيف يعمل نظامنا» — يُقرأ **أولاً** قبل أي تعمّق في أي طبقة، ويُحدَّث عند كل حقيقة جديدة موثَّقة. هو الثالث في عائلة ملفات الجذر: `AGENTS.md` (القواعد) / `PROJECT_MAP.md` (سجل الحالة والقرارات) / `SYSTEM.md` (الآلية والفهم).
