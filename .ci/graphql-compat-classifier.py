@@ -5,7 +5,10 @@ Compares a baseline (release-tag) runtime-printed SDL against the current
 runtime-printed SDL and classifies BREAKING vs NON-BREAKING schema changes
 — the GraphQL twin of the OpenAPI gate's openapi-diff leg. The breaking
 taxonomy follows the GraphQL target design §9 (the change classes that
-block an unreviewed merge):
+block an unreviewed merge), with nullability verdicts decided PER POSITION
+by verbatim ports of graphql-inspector's safeChangeForField /
+safeChangeForInputValue (the community-standard schema-diff verdicts):
+inputs are contravariant, outputs are covariant.
 
   BREAKING:
     - a named type disappeared
@@ -13,19 +16,29 @@ block an unreviewed merge):
     - a field disappeared from a type
     - an enum value disappeared
     - a union member disappeared
-    - an output field's type tightened nullability (T -> T!)
+    - an INPUT member's type tightened nullability (T -> T!, [T] -> [T!]):
+      arguments and input fields alike — existing operations that omit
+      them or send null stop validating
+    - an OUTPUT field's type widened nullability (T! -> T, [T!] -> [T]):
+      readers that assume non-null break
     - a field argument disappeared
-    - an argument's nullability tightened / became required (a: T -> a: T!)
-    - an argument's type changed
+    - an argument's type changed (in the non-safe direction)
     - a field's type changed (replacement is breaking by definition)
     - a REQUIRED addition: a new non-null argument without a default on
       an existing field, or a new non-null input field without a default —
       existing operations that omit them stop validating
+    - a defaulted non-null argument or input field LOST its default — the
+      removal twin of the required-addition class: omission stops
+      validating even though the declared type is unchanged
 
   NON-BREAKING (additive):
     - new types, new fields, new enum values, new union members, new
       optional arguments (nullable or defaulted), new input fields that
-      are nullable or defaulted, nullability WIDENING (T! -> T)
+      are nullable or defaulted
+    - an INPUT member's type widened nullability (T! -> T): more lenient —
+      every operation the old contract accepted still validates
+    - an OUTPUT field's type tightened nullability (T -> T!): a stricter
+      promise — every value the old contract permitted still satisfies it
 
 Breaking changes are cross-checked against .ci/graphql-compat-allowlist.yml
 (same lifecycle as the OpenAPI exceptions file: ticket + reason + expiry;
@@ -256,6 +269,53 @@ def strip_bang(t: str):
     return t.rstrip("!")
 
 
+def _wrapping(t: str):
+    """A wrapping type carries a list or non-null wrapper — a bare named
+    type ends with an identifier character, never ']' or '!'."""
+    return t.endswith("!") or t.endswith("]")
+
+
+def safe_change_for_field(old: str, new: str):
+    """True when an OUTPUT-position type change old -> new keeps every
+    existing reader working — a verbatim port of graphql-inspector's
+    safeChangeForField (packages/core/src/utils/graphql.ts, the
+    community-standard schema-diff verdict) from GraphQLType objects to
+    SDL type strings.
+
+    Outputs are covariant: the new type being non-null anywhere it wraps
+    ('T' -> 'T!', '[T]' -> '[T!]') is a STRICTER promise — every value the
+    old contract permitted still satisfies the new one — so it is safe;
+    widening ('T!' -> 'T') breaks readers that assume non-null, and any
+    name or wrapper-shape change is breaking.
+    """
+    if not _wrapping(old) and not _wrapping(new):
+        return old == new
+    if new.endswith("!"):
+        return safe_change_for_field(strip_bang(old), strip_bang(new))
+    if old.endswith("]"):
+        return new.endswith("]") and safe_change_for_field(old[1:-1], new[1:-1])
+    return False
+
+
+def safe_change_for_input_value(old: str, new: str):
+    """True when an INPUT-position type change old -> new keeps every
+    existing operation validating — a verbatim port of graphql-inspector's
+    safeChangeForInputValue, the input twin of safe_change_for_field.
+
+    Inputs are contravariant: widening ('T!' -> 'T') accepts everything
+    the old contract accepted, so it is safe; tightening ('T' -> 'T!')
+    makes existing operations that omit the member or send null stop
+    validating.
+    """
+    if not _wrapping(old) and not _wrapping(new):
+        return old == new
+    if old.endswith("]") and new.endswith("]"):
+        return safe_change_for_input_value(old[1:-1], new[1:-1])
+    if old.endswith("!"):
+        return safe_change_for_input_value(strip_bang(old), strip_bang(new))
+    return False
+
+
 def compare(baseline: dict, current: dict):
     breaking, additive = [], []
     for tname, tdef in baseline.items():
@@ -284,32 +344,70 @@ def compare(baseline: dict, current: dict):
                     breaking.append(("type", tname,
                                      f"union member removed from {tname}: {member}"))
             continue
-        for fname, (ftype, fargs, _) in tdef["fields"].items():
+        for fname, (ftype, fargs, fdefault) in tdef["fields"].items():
             if fname not in cdef["fields"]:
                 breaking.append(("field", f"{tname}.{fname}",
                                  f"field {tname}.{fname} removed"))
                 continue
-            ctype, cargs, _ = cdef["fields"][fname]
+            ctype, cargs, cdefault = cdef["fields"][fname]
+            if tdef["kind"] == "input" and fdefault is not None and cdefault is None \
+                    and not nullable(ctype):
+                # A defaulted member is an optional contract member even
+                # when its type is non-null (the distinction the
+                # required-addition taxonomy keys on); dropping the default
+                # makes omission stop validating — the removal twin of that
+                # class, and a fact independent of any concurrent type
+                # change on the same member.
+                breaking.append(("field", f"{tname}.{fname}",
+                                 f"input field {tname}.{fname} lost its default — now required"))
             if ftype != ctype:
-                if strip_bang(ftype) == strip_bang(ctype) \
-                        and nullable(ftype) and not nullable(ctype):
-                    breaking.append(("field", f"{tname}.{fname}",
-                                     f"field {tname}.{fname} nullability tightened: {ftype} -> {ctype}"))
+                # Nullability verdicts are position-aware, decided by the
+                # graphql-inspector ports: inputs are contravariant
+                # (tightening breaks, widening is lenient), outputs are
+                # covariant (tightening is a stricter promise, widening
+                # breaks readers that assume non-null).
+                if tdef["kind"] == "input":
+                    if safe_change_for_input_value(ftype, ctype):
+                        additive.append(("field", f"{tname}.{fname}",
+                                         f"input field {tname}.{fname} nullability widened — more lenient: {ftype} -> {ctype}"))
+                    elif strip_bang(ftype) == strip_bang(ctype):
+                        breaking.append(("field", f"{tname}.{fname}",
+                                         f"input field {tname}.{fname} nullability tightened — became required: {ftype} -> {ctype}"))
+                    else:
+                        breaking.append(("field", f"{tname}.{fname}",
+                                         f"field {tname}.{fname} type changed: {ftype} -> {ctype}"))
                 else:
-                    breaking.append(("field", f"{tname}.{fname}",
-                                     f"field {tname}.{fname} type changed: {ftype} -> {ctype}"))
-            for aname, (atype, _) in fargs.items():
+                    if safe_change_for_field(ftype, ctype):
+                        additive.append(("field", f"{tname}.{fname}",
+                                         f"field {tname}.{fname} nullability tightened — a stricter promise, safe for existing readers: {ftype} -> {ctype}"))
+                    elif strip_bang(ftype) == strip_bang(ctype):
+                        breaking.append(("field", f"{tname}.{fname}",
+                                         f"field {tname}.{fname} nullability widened — readers assuming non-null break: {ftype} -> {ctype}"))
+                    else:
+                        breaking.append(("field", f"{tname}.{fname}",
+                                         f"field {tname}.{fname} type changed: {ftype} -> {ctype}"))
+            for aname, (atype, adefault) in fargs.items():
                 if aname not in cargs:
                     breaking.append(("argument", f"{tname}.{fname}.{aname}",
                                      f"argument {tname}.{fname}({aname}) removed"))
                     continue
-                catype, _ = cargs[aname]
+                catype, cadefault = cargs[aname]
+                if adefault is not None and cadefault is None and not nullable(catype):
+                    # The argument twin of the input-field default loss:
+                    # omission stops validating even though the declared
+                    # type is unchanged — independent of any type change.
+                    breaking.append(("argument", f"{tname}.{fname}.{aname}",
+                                     f"argument {tname}.{fname}({aname}) lost its default — now required"))
                 if catype != atype:
-                    breaking.append(("argument", f"{tname}.{fname}.{aname}",
-                                     f"argument {tname}.{fname}({aname}) type changed: {atype} -> {catype}"))
-                elif nullable(atype) and not nullable(catype):
-                    breaking.append(("argument", f"{tname}.{fname}.{aname}",
-                                     f"argument {tname}.{fname}({aname}) became required: {atype} -> {catype}"))
+                    if safe_change_for_input_value(atype, catype):
+                        additive.append(("argument", f"{tname}.{fname}.{aname}",
+                                         f"argument {tname}.{fname}({aname}) became optional: {atype} -> {catype}"))
+                    elif strip_bang(atype) == strip_bang(catype):
+                        breaking.append(("argument", f"{tname}.{fname}.{aname}",
+                                         f"argument {tname}.{fname}({aname}) became required: {atype} -> {catype}"))
+                    else:
+                        breaking.append(("argument", f"{tname}.{fname}.{aname}",
+                                         f"argument {tname}.{fname}({aname}) type changed: {atype} -> {catype}"))
     for tname, tdef in current.items():
         if tname not in baseline:
             additive.append(("type", tname, f"type {tname} added"))
@@ -338,10 +436,7 @@ def compare(baseline: dict, current: dict):
                 else:
                     additive.append(("field", f"{tname}.{fname}", f"field {tname}.{fname} added"))
                 continue
-            btype, bargs, _ = bdef["fields"][fname]
-            if not nullable(btype) and nullable(ftype):
-                additive.append(("field", f"{tname}.{fname}",
-                                 f"field {tname}.{fname} nullability widened: {btype} -> {ftype}"))
+            _, bargs, _ = bdef["fields"][fname]
             for aname, (atype, adefault) in fargs.items():
                 if aname not in bargs:
                     if not nullable(atype) and adefault is None:
@@ -354,19 +449,45 @@ def compare(baseline: dict, current: dict):
                     else:
                         additive.append(("argument", f"{tname}.{fname}.{aname}",
                                          f"argument {tname}.{fname}({aname}) added"))
-                else:
-                    batype, _ = bargs[aname]
-                    if not nullable(batype) and nullable(atype):
-                        additive.append(("argument", f"{tname}.{fname}.{aname}",
-                                         f"argument {tname}.{fname}({aname}) became optional"))
+                # Members present in BOTH trees carry their nullability,
+                # default, and type-change verdicts in the baseline loop
+                # above — this side reports additions only, so no member is
+                # ever counted on both sides of the report (the old code
+                # reported argument widening as BREAKING "type changed"
+                # here AND additive "became optional" there).
     return breaking, additive
 
 
 # ------------------------------------------------------- allowlist (YAML-lite)
 
+def unquote_scalar(value: str):
+    """Resolves a YAML quoted scalar to its content (YAML 1.2 §7.3.2/7.3.3):
+    a double-quoted value resolves \" and \\ escapes; a single-quoted value
+    collapses '' to '; a plain scalar returns as-is. The ticket and reason
+    prose carries schema signatures with ': ' which plain scalars cannot
+    hold, so the allowlist quotes them — the same quoting the OpenAPI twin
+    applies to its own values, and the same quote-stripping its verifier
+    performs when reading them."""
+    if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+        body, out, i = value[1:-1], [], 0
+        while i < len(body):
+            if body[i] == "\\" and i + 1 < len(body) and body[i + 1] in ('"', "\\"):
+                out.append(body[i + 1])
+                i += 2
+            else:
+                out.append(body[i])
+                i += 1
+        return "".join(out)
+    if len(value) >= 2 and value[0] == "'" and value[-1] == "'":
+        return value[1:-1].replace("''", "'")
+    return value
+
+
 def parse_allowlist(path: str):
     """Reads the exceptions list without a YAML dependency (structured
-    entries: target + ticket + reason + expiry)."""
+    entries: target + ticket + reason + expiry). Values may be quoted the
+    way YAML requires for prose carrying ': ' — unquote_scalar resolves
+    them to their true content."""
     entries = {}
     if not Path(path).exists():
         return entries, ["allowlist file missing"]
@@ -379,7 +500,7 @@ def parse_allowlist(path: str):
             entries[current] = {}
         elif current and re.match(r"^\s+(ticket|reason|expiry):\s*.+", line):
             key, _, value = line.strip().partition(":")
-            entries[current][key.strip()] = value.strip()
+            entries[current][key.strip()] = unquote_scalar(value.strip())
     for target, meta in entries.items():
         for key in ("ticket", "reason", "expiry"):
             if key not in meta or not meta[key]:
