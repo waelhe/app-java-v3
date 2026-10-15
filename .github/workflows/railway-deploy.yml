@@ -14,13 +14,15 @@ name: Railway Deploy
 #   to this repository". The native path needs that user-owned connection
 # (Railway docs, GitHub autodeploys → Requirements).
 #
-# Deployment targets (Railway project successful-simplicity, production):
+# Deployment target (Railway project reasonable-presence, production — the
+# new account wael.he, migrated 2026-10-14):
 #   app-java-v3       — the main web marketplace service (root Dockerfile)
-#   app-java-v3-edge  — the edge unit (marketplace-edge/Dockerfile, PR #520)
-# Both deploy at the same verified commit, matching the measured manual
-# practice. If the project migrates accounts (runbook §10), these three IDs
-# move with it — update the env block below as part of the documented
-# migration checklist (same class as the cache-mount id rebind).
+# The edge unit is NOT migrated by the owner's measured directive
+# (backend-only scope: no edge, no frontend) — its step was removed here.
+# Per the documented migration checklist (runbook §10): the project /
+# environment / service IDs moved with the account — the env block below
+# carries the measured new IDs (GraphQL-verified 2026-10-14). The
+# RAILWAY_TOKEN secret must be a token scoped to the new project.
 
 on:
   workflow_dispatch:
@@ -36,10 +38,9 @@ concurrency:
 
 env:
   RAILWAY_API: https://backboard.railway.com/graphql/v2
-  RAILWAY_PROJECT_ID: bf8053b0-8021-4a13-af3a-45695223f5a2
-  RAILWAY_ENVIRONMENT_ID: 2f49b83a-ebe8-4c14-8e83-ba5678fce752
-  RAILWAY_SERVICE_APP: 221b33de-25ac-4df6-be61-911af3f9da18
-  RAILWAY_SERVICE_EDGE: ee9a69ef-16ee-43b6-9e1b-42e19de56b04
+  RAILWAY_PROJECT_ID: a218e156-0aa1-487a-855d-3f798856d5ef
+  RAILWAY_ENVIRONMENT_ID: 60fb0197-fc76-4e72-b18d-dca7532e343d
+  RAILWAY_SERVICE_APP: 3efcf70c-56d5-4d87-ada5-6bba32022229
 
 jobs:
   deploy:
@@ -128,18 +129,5 @@ jobs:
             -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
             -d '{"query":"mutation($serviceId: String!, $environmentId: String!, $commitSha: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId, commitSha: $commitSha) }","variables":{"serviceId":"'"$RAILWAY_SERVICE_APP"'","environmentId":"'"$RAILWAY_ENVIRONMENT_ID"'","commitSha":"'"${{ steps.gate.outputs.sha }}"'"}}')"
-          echo "$response"
-          echo "$response" | grep -q '"serviceInstanceDeployV2"'
-
-      - name: Deploy app-java-v3-edge (the edge unit)
-        if: steps.gate.outputs.deploy == 'true'
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          set -euo pipefail
-          response="$(curl -sSf -X POST "$RAILWAY_API" \
-            -H "Authorization: Bearer $RAILWAY_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '{"query":"mutation($serviceId: String!, $environmentId: String!, $commitSha: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId, commitSha: $commitSha) }","variables":{"serviceId":"'"$RAILWAY_SERVICE_EDGE"'","environmentId":"'"$RAILWAY_ENVIRONMENT_ID"'","commitSha":"'"${{ steps.gate.outputs.sha }}"'"}}')"
           echo "$response"
           echo "$response" | grep -q '"serviceInstanceDeployV2"'
