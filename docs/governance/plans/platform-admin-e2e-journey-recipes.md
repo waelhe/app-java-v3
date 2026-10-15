@@ -61,7 +61,7 @@ This is the reference journey that all other workflows reuse.
 ## 3. Twenty-four detailed task recipes
 
 ### J01 — Start the shift
-**Entry:** sign-in → “الرئيسية”.  
+**Entry:** sign-in → “اليوم”.  
 **Steps:** review environment/scope/freshness → rank “يتطلب تدخلك” → open signal evidence → check assigned/overdue work → review approvals → review ongoing operations → claim or assign work → record acknowledgement/defer reason and deadline.  
 **Alternate paths:** no active incidents: confirm data freshness and inspect routine work; missing telemetry: open a data-quality task; missing permission: delegate/request access.  
 **Success evidence:** every critical item is assigned, acknowledged or deferred with a reason; nothing critical disappears from the work queue.
@@ -85,19 +85,19 @@ This is the reference journey that all other workflows reuse.
 **Success:** measured journey improves and the containment is linked to evidence.
 
 ### J05 — Change configuration
-**Entry:** “الإعدادات والقواعد”.  
+**Entry:** “القواعد والأتمتة”.  
 **Steps:** select a named setting → review purpose/current scope/owner → edit a typed form → validate dependencies/ranges → see semantic diff → simulate affected groups → request approval or schedule → publish a revision → observe defined indicators → promote or restore via a new revision.  
 **Alternate paths:** stale draft requires diff/reconfirmation; missing dependency blocks publish; stale analytics blocks promotion when fresh evidence is mandatory.  
 **Success:** approved and active revision agree, effective value is observed, audit/case contains the result.
 
 ### J06 — Publish a mobile-app experience
-**Entry:** “تجربة التطبيق” → “تعديل ما يظهر للأعضاء”.  
+**Entry:** “تجربة الأعضاء” → “تعديل ما يظهر للأعضاء”.  
 **Steps:** choose platform/version/locale/device viewport → compose using supported components → bind real content sources → preview populated/loading/empty/error/denied states → run RTL/accessibility/contrast/device compatibility checks → compare with current view → preview audience → obtain review → stage release → watch critical journeys → promote or pause/restore.  
 **Alternate paths:** missing binding displays a designed empty state, not dummy content; unsupported version/device blocks compatibility claim; stale crash/usage data holds expansion.  
 **Success:** the intended version renders the approved layout and rollout effects are verified.
 
 ### J07 — Verify a member and handle an appeal
-**Entry:** “الأعضاء والثقة” → “بانتظار المراجعة”.  
+**Entry:** “الأعضاء والأحياء” → “بانتظار المراجعة”.  
 **Steps:** open claim and requested neighborhood → inspect evidence origin/date/validity → review relevant referral/source relations → compare policy criteria → select accept/request-more-proof/reject/escalate → preview member message → submit to membership owner → read back membership state → track delivery and appeal path.  
 **Alternate paths:** conflicting evidence gets second review; unauthorized operator retains draft but cannot decide; failed message delivery is tracked separately from the membership decision.  
 **Success:** authority, evidence, reason, state and required communication reconcile.
@@ -109,13 +109,13 @@ This is the reference journey that all other workflows reuse.
 **Success:** every target has a recorded outcome, rationale and permitted appeal history.
 
 ### J09 — Publish an official alert
-**Entry:** “الأخبار والتنبيهات الرسمية” → “إنشاء تنبيه”.  
+**Entry:** “المجتمع والثقة” → “التواصل الرسمي” → “إنشاء تنبيه”.  
 **Steps:** verify source institution/publisher authority → write message and choose urgency/timezone → select area/audience/languages/exclusions → preview phone experience in each language → inspect estimated reach/freshness → check duplicates/conflicts → obtain approval → schedule/publish exact approved payload → track per-channel delivery → retry safe failures or publish linked correction.  
 **Alternate paths:** unknown audience blocks broad publication unless a narrowly defined emergency policy authorizes it; expired source authority blocks publish; schedule timezone must be explicit.  
 **Success:** payload, approver, audience snapshot, publication state and delivered/failed/unknown receipts agree.
 
 ### J10 — Investigate payment mismatch or refund
-**Entry:** “السوق والأموال” → “مشكلات المدفوعات”.  
+**Entry:** “المال والنمو” → “مشكلات المدفوعات”.  
 **Steps:** inspect order/booking, expected amount/currency, provider response, platform financial record and last refresh → classify mismatch → inspect operation before any retry → preview reconciliation → or request refund amount/reason → require independent approval when necessary → execute through finance/payment owner → verify provider result and ledger → notify member only when outcome is known.  
 **Alternate paths:** unknown provider response blocks duplicate charge/refund; partial refund uses authoritative remaining amount; unresolved ledger mismatch stays as assigned finance work.  
 **Success:** member-facing state, provider response, amount/currency, approval and ledger agree—or a named unresolved case remains open.
@@ -139,7 +139,7 @@ This is the reference journey that all other workflows reuse.
 **Success:** selected count is accounted for by success/failure/skipped/unknown; unresolved results have owners.
 
 ### J14 — Run or stop an experiment
-**Entry:** “تجربة التطبيق” → “تجربة محدودة”.  
+**Entry:** “تجربة الأعضاء” → “تجربة محدودة”.  
 **Steps:** state hypothesis in plain language → define member journey and measurable outcome → choose eligible/excluded group and regions → set exposure cap/duration → define success and safety guardrails → simulate eligible population → review → stage smallest cohort → observe segments → auto-pause on defined harm threshold → expand/stop/restore with rationale.  
 **Alternate paths:** inadequate sample or missing baseline is disclosed; failed metric collection prevents a claim of success.  
 **Success:** exposure assignment/results are reproducible and approved stop criteria are enforced.
@@ -151,13 +151,13 @@ This is the reference journey that all other workflows reuse.
 **Success:** evaluation set, revision, affected cohorts and real discovery outcome are linked.
 
 ### J16 — Process a privacy request
-**Entry:** “الصلاحيات والخصوصية” → “طلبات بيانات الأعضاء”.  
+**Entry:** “إعدادات المنصة والفريق” → “الخصوصية” → “طلبات بيانات الأعضاء”.  
 **Steps:** verify identity/authority → identify relevant systems/data categories → explain retention/legal holds → choose export/correct/restrict/delete → preview scope/sensitive fields → obtain approval → run with per-system progress → review exceptions → deliver securely → provide receipt and audit.  
 **Alternate paths:** unverified identity pauses the request; legal hold explains which data is retained; partial system failure prevents claiming completion.  
 **Success:** every required system has a result or explicit exception and the output access is audited.
 
 ### J17 — Grant or revoke admin access
-**Entry:** “الصلاحيات والخصوصية” → “صلاحيات الفريق”.  
+**Entry:** “إعدادات المنصة والفريق” → “صلاحيات الفريق”.  
 **Steps:** select verified person → inspect existing grants → choose task permission and exact scope → simulate allowed/blocked actions → record reason/expiry → detect self-approval/conflict → obtain approval/step-up → grant/revoke → reload effective rights → test protected action → set access review/expiry reminder.  
 **Alternate paths:** temporary grant without expiry cannot save; self-grant cannot bypass dual control; current operations recheck revocation at execution.  
 **Success:** effective access matches request; temporary scope expires; actor/approver/reason are audited.
@@ -175,19 +175,19 @@ This is the reference journey that all other workflows reuse.
 **Success:** sources/model/tool versions are retained under policy and no action bypasses standard controls.
 
 ### J20 — Change a cross-country policy
-**Entry:** “الإعدادات والقواعد” → policy with global scope.  
+**Entry:** “القواعد والأتمتة” → policy with global scope.  
 **Steps:** choose rule/owner/reason → compare old/new behavior by country/city/language → expose exceptions and required regional/legal reviews → simulate representative cases → estimate affected population → obtain approvals for same immutable revision → stage by region → observe local guardrails → pause/restore affected region if needed.  
 **Alternate paths:** missing regional source blocks global promotion; exception with no owner/expiry remains an unresolved risk.  
 **Success:** every region has a known policy revision and traceable exception.
 
 ### J21 — Resolve conflicting metrics
-**Entry:** “البيانات والأداء” → disputed metric.  
+**Entry:** “اليوم” → “تقدّم أهدافي” → المؤشر المختلف عليه.  
 **Steps:** inspect human-language definition, numerator/denominator, timezone, filters and freshness → view source lineage and last update → compare calculation versions → sample authorized source records → create data-quality case → choose wait/fix-source/versioned-definition-change → notify dashboard consumers.  
 **Alternate paths:** missing denominator makes metric inconclusive; definition changes preserve old interpretation/history.  
 **Success:** corrected view includes owner, definition, time window and explanation; no silent override.
 
 ### J22 — Repair an external integration
-**Entry:** “صحة المنصة” → “اتصال متعثر”.  
+**Entry:** “إعدادات المنصة والفريق” → “صحة المنصة” → “اتصال متعثر”.  
 **Steps:** identify impacted journeys/regions and provider → see start time and confidence → inspect sanitized request summaries and recent changes → choose validate/rotate secret reference/use approved fallback/pause traffic → preview replay candidates and duplicate risk → repair with provider owner → run bounded test → replay only safe items → verify downstream records and restore monitoring.  
 **Alternate paths:** secrets never shown; unknown responses stay unknown; unsafe replay requires manual review.  
 **Success:** connection check passes, affected records reconcile and secret rotation is auditable.
@@ -199,7 +199,7 @@ This is the reference journey that all other workflows reuse.
 **Success:** authority, future schedule, past delivery and appeal states reconcile.
 
 ### J24 — Review product-journey performance
-**Entry:** “البيانات والأداء” → named member journey.  
+**Entry:** “اليوم” → “تقدّم أهدافي” → رحلة العضو.  
 **Steps:** select period and scope → verify freshness/denominator → compare success/failure/abandonment/recovery → segment by geography/version/member cohort where permitted → inspect linked cases and recent changes → create action/experiment with an owner → set baseline and recheck date → revisit result.  
 **Alternate paths:** incomplete data is labelled inconclusive; correlation is not presented as proven causation.  
 **Success:** the conclusion cites metric definition and data coverage; any action has a measurable follow-up.
