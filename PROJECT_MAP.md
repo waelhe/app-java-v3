@@ -1,5 +1,10 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
+## Platform administration product target (design PR)
+
+Target product spec: [platform-admin-end-to-end-product-spec.md](docs/governance/plans/platform-admin-end-to-end-product-spec.md) defines the intended global administrator product, 30 E2E journeys, backend contracts and G01–G35 gap register. **Design only, not implemented**; see the specification's truth-sync and delivery gates.
+
+
 ## B-16 — موجة المتجر M2 (C.8): أسئلة/أجوبة المنتج + ملخص البائع العام — مدموجة ومنشورة، والخطة المتوازية (PR #505) مكتملة الطرفين (2026-10-10 — أمر المستخدم: «افحص pr 538 مفتوح. وادمج، واستند للوثائق الرسمية للاطار مايفين وغيرهم، وتفعيل مراجعات CodeRabbit, فعل البروتوكول وأقرأ ملف system وAGENTS... لا تغييرات ترقيع ولا ديون — التصميم الرسمي حسب الاطار والنظام وحقائق الكود»)
 
 - **الحالة النهائية:** PR **#538** دُمج squash ⇒ main **`5549c5c332`** (2026-10-10T11:47:42Z بعد البوابات الثلاث المقيسة) ⇒ نشر القناة التلقائية «Railway Deploy» (سير #526) على الرأس المتحقق 14:24:45Z ⇒ البناء الجديد يخدم 14:28Z (قياس تحول api-docs ‏208→211) ⇒ دخان **11/11 ALL PASS** (المجسات الستة + سلوك أسطح B-16 الأربعة: 404 بوابة المنتج + 200 الصفر الصادق + 401 للكتابتين) ⇒ CI على main كل الفحوص نجاح (CI/Integration ~02:36h حتى 14:24Z) ⇒ جولة watchdog على الرأس الجديد نجاح (run 38059810054) ⇒ الإقلاع طبّق **V170** فالسلّم الحي عنده.
