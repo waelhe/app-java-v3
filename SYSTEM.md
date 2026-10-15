@@ -1,5 +1,10 @@
 # SYSTEM.md — الخريطة المرجعية لآلية عمل النظام
 
+## Platform administration product target
+
+Target product spec: [platform-admin-end-to-end-product-spec.md](docs/governance/plans/platform-admin-end-to-end-product-spec.md) defines the intended global administrator product, 30 E2E journeys, backend contracts and G01–G35 gap register. **Design only, not implemented**; see the specification's truth-sync and delivery gates.
+
+
 > **غرض هذا الملف:** المرجع الدائم لفهم «كيف يعمل نظامنا» — يُقرأ **أولاً** قبل أي تعمّق في أي طبقة، ويُحدَّث عند كل حقيقة جديدة موثَّقة. هو الثالث في عائلة ملفات الجذر: `AGENTS.md` (القواعد) / `PROJECT_MAP.md` (سجل الحالة والقرارات) / `SYSTEM.md` (الآلية والفهم).
 >
 > **قاعدة الذهب:** كل حقيقة هنا تحمل دليلها `ملف:سطر` من هذا المستودع أو من مصدر رسمي محفوظ. لا يُضاف ادعاء بلا دليل، ولا يُعدَّل دليل بلا إعادة تحقق من الكود.
