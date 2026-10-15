@@ -93,6 +93,10 @@
         <spring-ai-session.version>0.10.0</spring-ai-session.version>
         <!-- Official community extension for TypeSafe AI System One; opt-in via its profile and separate credential. -->
         <spring-ai-typesafe.version>0.4.0</spring-ai-typesafe.version>
+        <!-- Build-time GraphQL schema constants, generated from the SDL through
+             the community Maven port of Netflix DGS CodeGen. This plugin is
+             scoped to marketplace-app and adds no runtime dependency. -->
+        <graphql-codegen-plugin.version>3.10.1</graphql-codegen-plugin.version>
         <!-- Cloud train for the edge BFF (exception #14): single property,
              per-artifact versions stay managed by the BOM below. -->
         <spring-cloud.version>2025.1.3</spring-cloud.version>
