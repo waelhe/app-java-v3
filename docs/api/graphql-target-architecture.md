@@ -296,6 +296,8 @@ Perform an end-to-end review of important GraphQL journeys, schema compatibility
 
 ## 12. Official and community references
 
+Version/security note (checked 2026-10-15): the official Spring for GraphQL release page lists v2.0.5 as the latest stable release at this check. The v2.0.4 release notes explicitly list fixes for CVE-2026-41699, CVE-2026-41700, and CVE-2026-41856. Do not infer the application's resolved transitive GraphQL Java version from the Spring GraphQL release tag; confirm the exact resolved dependency tree with the project's Maven/BOM before wiring instrumentation or selecting a security remediation. Keep dependency versions BOM-managed unless the repository's measured dependency/security evidence requires a documented exception.
+
 Version-specific references checked for this proposal:
 - Spring Boot 4.1.1 — Spring for GraphQL: https://docs.spring.io/spring-boot/4.1/reference/web/spring-graphql.html
 - Spring Boot — auto-configured Spring GraphQL tests: https://docs.spring.io/spring-boot/4.1/reference/testing/spring-boot-applications.html
