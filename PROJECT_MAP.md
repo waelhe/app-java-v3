@@ -2,8 +2,7 @@
 
 ## Platform administration product target (design PR)
 
-Target product spec: [platform-admin-end-to-end-product-spec.md](docs/governance/plans/platform-admin-end-to-end-product-spec.md) defines the intended global administrator product, 30 E2E journeys, backend contracts and G01–G35 gap register. **Design only, not implemented**; see the specification's truth-sync and delivery gates.
-
+Canonical product/UX authority: [Platform Administration Operating System Product Charter](docs/governance/plans/platform-admin-operating-system-product-charter.md). Supporting evidence: [End-to-End Product and Gap Specification](docs/governance/plans/platform-admin-end-to-end-product-spec.md). Design only; no UI or backend replacement is implemented by this documentation change. No frontend repository is assumed, and the current backend is replaceable against the target contracts.
 
 ## B-16 — موجة المتجر M2 (C.8): أسئلة/أجوبة المنتج + ملخص البائع العام — مدموجة ومنشورة، والخطة المتوازية (PR #505) مكتملة الطرفين (2026-10-10 — أمر المستخدم: «افحص pr 538 مفتوح. وادمج، واستند للوثائق الرسمية للاطار مايفين وغيرهم، وتفعيل مراجعات CodeRabbit, فعل البروتوكول وأقرأ ملف system وAGENTS... لا تغييرات ترقيع ولا ديون — التصميم الرسمي حسب الاطار والنظام وحقائق الكود»)
 
