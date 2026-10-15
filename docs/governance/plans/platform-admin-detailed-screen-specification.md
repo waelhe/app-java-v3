@@ -70,27 +70,24 @@ Technical details may be expanded by authorized specialists, but must never be r
 
 ### 3.2 Default navigation (Arabic labels)
 
-1. الرئيسية
-2. العمل والقرارات
-3. البحث في المنصة
-4. الأعضاء والثقة
-5. المجتمع والسلامة
-6. الأخبار والتنبيهات الرسمية
-7. السوق والأموال
-8. تجربة التطبيق
-9. صحة المنصة
-10. الإعدادات والقواعد
-11. البيانات والأداء
-12. المساعد والمعرفة
-13. الصلاحيات والخصوصية
-14. حوكمة المنصة
+1. اليوم
+2. الأعضاء والأحياء
+3. المجتمع والثقة
+4. السوق والأعمال
+5. المال والنمو
+6. تجربة الأعضاء
+7. القواعد والأتمتة
+8. إعدادات المنصة والفريق
 
-The 14 workbenches are not a mandatory memorization exercise. Three task-oriented entry routes must also exist:
-- “أحتاج حل مشكلة”
-- “أريد مراجعة طلب”
-- “أريد تغيير شيء في المنصة”
+This is a manager-centred navigation, informed by the [global UX research](platform-admin-global-manager-ux-research.md), not a map of backend modules. Technical health and diagnostics live under “إعدادات المنصة والفريق” for the director's ordinary path and can expand for specialists when needed.
 
-Contextual shortcuts lead to the correct workspace without removing the full navigation.
+Persistent task launchers must also exist:
+- “أريد تغيير ما يراه الأعضاء”
+- “أريد تحسين تجربة أو نتيجة”
+- “أريد وضع قاعدة أو أتمتة عمل”
+- “أريد حل مشكلة في السوق أو الدفع”
+
+The user can always navigate directly, but new or non-technical managers can start from their intended outcome.
 
 ### 3.3 Common layout
 
