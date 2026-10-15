@@ -91,8 +91,11 @@ class ProductionWatchdogFilesTest {
     void watchdogProbesExactlyTheSixVerifiedPublicEndpoints() throws IOException {
         String yml = read(".github/workflows/watchdog.yml");
         assertThat(yml).as("BASE_URL must pin the live production channel "
-                        + "(SYSTEM.md §15)")
-                .contains("BASE_URL: https://app-java-v3-production-59bf.up.railway.app");
+                        + "(SYSTEM.md §15) - rebound to the v5 migration "
+                        + "account's measured domain 2026-10-15: the -59bf "
+                        + "domain belongs to the old account's frozen "
+                        + "deployment on a dying trial")
+                .contains("BASE_URL: https://app-java-v3-production.up.railway.app");
         assertThat(yml).as("liveness probe").contains("[\"/actuator/health/liveness\"]=\"200\"");
         assertThat(yml).as("readiness probe").contains("[\"/actuator/health/readiness\"]=\"200\"");
         assertThat(yml).as("auth keys probe").contains("[\"/oauth2/jwks\"]=\"200\"");
@@ -129,8 +132,12 @@ class ProductionWatchdogFilesTest {
         // take the age-bounded path until the 240m limit trips.
         assertThat(yml).as("the freshness probe reads Railway's own commit "
                         + "status on main HEAD - the live deployment "
-                        + "channel's telemetry (measured context)")
-                .contains("RAILWAY_STATUS_CONTEXT: \"app-java-v3 - app-java-v3\"");
+                        + "channel's telemetry (rebound to the v5 migration "
+                        + "account's measured context 2026-10-15: "
+                        + "reasonable-presence - app-java-v3, success on "
+                        + "main HEAD e8e272d - the v4-era context belongs "
+                        + "to the old account and nobody posts to it)")
+                .contains("RAILWAY_STATUS_CONTEXT: \"reasonable-presence - app-java-v3\"");
         assertThat(yml).as("the retired fork compare must be gone - the "
                         + "fork channel was decommissioned with the old "
                         + "account and its compare would fail forever")
