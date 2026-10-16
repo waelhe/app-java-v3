@@ -1,5 +1,6 @@
 package com.marketplace.app.graphql;
 
+import com.marketplace.app.graphql.generated.DgsConstants;
 import com.marketplace.catalog.spi.CatalogSpi;
 import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -45,6 +46,24 @@ import java.util.UUID;
  * instrumentations remain Spring beans wired into the DGS source
  * builder, and Boot still owns startup, auto-configuration, and the
  * property namespaces it manages.</p>
+ *
+ * <p><b>Schema-first field names (Phase 3 of the design, Maven-owned
+ * code generation):</b> the fetcher's field bindings reference
+ * {@code DgsConstants} — generated at build time by the community
+ * Maven adapter of Netflix DGS CodeGen (pinned in the root pom;
+ * Netflix's official CodeGen plugin is Gradle-only) directly from
+ * the authoritative SDL. The annotation attribute is the
+ * framework's own {@code field} — {@code @DgsQuery} and
+ * {@code @DgsMutation} alias it onto {@code @DgsData.field}, and an
+ * empty value resolves to the method name
+ * ({@code DgsSchemaProvider}: {@code getString("field").ifEmpty
+ * { method.name }}, measured from the dgs 12.1.0 source) — so the
+ * registration is byte-identical to the implicit-name form it
+ * replaces: the constant values ARE the schema's own field-name
+ * strings. The contract this buys: renaming or removing an SDL
+ * field now fails compilation HERE instead of drifting silently —
+ * the adapter's field names and the schema are one source of
+ * truth, not two.</p>
  */
 @DgsComponent
 public class ServiceDataFetcher {
@@ -121,7 +140,7 @@ public class ServiceDataFetcher {
      * {@code StringToUUIDConverter}) binds them to {@link UUID} — the same
      * target type the Spring binder produced before the migration.</p>
      */
-    @DgsQuery
+    @DgsQuery(field = DgsConstants.QUERY.Service)
     public ServiceResponse service(@InputArgument UUID id) {
         return serviceMapper.toResponse(catalogSpi.getActiveById(id));
     }
@@ -192,7 +211,7 @@ public class ServiceDataFetcher {
      * endpoint; per-subject caps are a later calibration decision per the
      * design's G-R6 model).</p>
      */
-    @DgsQuery
+    @DgsQuery(field = DgsConstants.QUERY.Services)
     @RateLimiter(name = "graphqlServiceQuery")
     public Page<ServiceResponse> services(@InputArgument Integer first,
                                           @InputArgument String after) {
@@ -245,7 +264,7 @@ public class ServiceDataFetcher {
      * principal this write path consumes — the same
      * {@code JwtAuthenticationToken} the Spring parameter received.</p>
      */
-    @DgsMutation
+    @DgsMutation(field = DgsConstants.MUTATION.CreateService)
     @RateLimiter(name = "graphqlCreateService")
     public ServiceResponse createService(@InputArgument ServiceInput input) {
         Set<ConstraintViolation<ServiceInput>> violations = validator.validate(input);
@@ -336,3 +355,4 @@ public class ServiceDataFetcher {
         }
     }
 }
+
