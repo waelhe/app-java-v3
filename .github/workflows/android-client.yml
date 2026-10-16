@@ -43,8 +43,10 @@ jobs:
         with:
           packages: "platform-tools platforms;android-35 platforms;android-36 build-tools;36.0.0"
 
-      - name: Validate release preflight script syntax
-        run: bash -n android/scripts/verify-passkey-release.sh
+      - name: Validate Android CI scripts syntax
+        run: |
+          bash -n android/scripts/verify-passkey-release.sh
+          bash -n android/scripts/run-android-instrumentation-with-diagnostics.sh
 
       - name: Run JVM tests
         working-directory: android
