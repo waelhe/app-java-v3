@@ -63,6 +63,7 @@ import com.marketplace.android.core.network.MarketItemDto
 import com.marketplace.android.core.network.NotificationDto
 import com.marketplace.android.core.network.EventDto
 import com.marketplace.android.core.network.GroupDto
+import com.marketplace.android.core.network.DiscoveryRowDto
 import com.marketplace.android.core.network.PollDto
 import com.marketplace.android.core.network.PostDto
 import com.marketplace.android.feature.AppUiState
@@ -102,7 +103,10 @@ internal fun SignedInScaffold(
     onDirectoryQuery: (String) -> Unit,
     onDirectoryMinRating: (Double?) -> Unit,
     onSearchDirectory: () -> Unit,
-    onOpenNeighborhoodMarket: () -> Unit
+    onOpenNeighborhoodMarket: () -> Unit,
+    onOpenDiscoveryRow: (String) -> Unit,
+    onBackFromDiscoveryRow: () -> Unit,
+    onLoadMoreDiscoveryRow: () -> Unit
 ) {
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -192,10 +196,22 @@ internal fun SignedInScaffold(
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             when (state.tab) {
-                MainTab.HOME -> FeedScreen(
-                    state, onRefresh, onLoadMore, onReact, onOpenComments, onUpdateLostFoundState,
-                    onCreate = { onBeginComposer(ComposerKind.POST) }
-                )
+                MainTab.HOME -> {
+                    if (state.selectedDiscoveryRow != null) {
+                        DiscoveryRowScreen(
+                            state = state,
+                            onBack = onBackFromDiscoveryRow,
+                            onRefresh = onRefresh,
+                            onLoadMore = onLoadMoreDiscoveryRow
+                        )
+                    } else {
+                        FeedScreen(
+                            state, onRefresh, onLoadMore, onReact, onOpenComments, onUpdateLostFoundState,
+                            onCreate = { onBeginComposer(ComposerKind.POST) },
+                            onOpenDiscoveryRow = onOpenDiscoveryRow
+                        )
+                    }
+                }
                 MainTab.EXPLORE -> ExploreScreen(
                     state, onSearchQuery, onSearch, onExploreMode, onReact, onOpenComments, onUpdateLostFoundState,
                     onRsvpEvent, onToggleGroup, onVotePoll, onWithdrawPollVote, onWithdrawMarketItem,
@@ -225,7 +241,8 @@ private fun FeedScreen(
     onReact: (PostDto) -> Unit,
     onOpenComments: (PostDto) -> Unit,
     onUpdateLostFoundState: (PostDto, String) -> Unit,
-    onCreate: () -> Unit
+    onCreate: () -> Unit,
+    onOpenDiscoveryRow: (String) -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -237,6 +254,16 @@ private fun FeedScreen(
                 Text("ما الذي يحدث حولك؟", fontSize = 25.sp, fontWeight = FontWeight.Bold)
                 Text("منشورات أعضاء الحي، مرتبة حسب الأحدث من المصدر.", color = Muted, fontSize = 13.sp)
             }
+        }
+        if (state.discoveryBusy && state.discoveryRows.isEmpty()) {
+            item { LoadingCard("نجهّز مسارات اكتشاف الحي…") }
+        } else if (state.discoveryError != null && state.discoveryRows.isEmpty()) {
+            item { ErrorCard(state.discoveryError, onRefresh) }
+        } else {
+            items(state.discoveryRows, key = { it.row }) { row ->
+                DiscoveryRail(row = row, onOpen = onOpenDiscoveryRow)
+            }
+            state.discoveryError?.let { error -> item { ErrorCard(error, onRefresh) } }
         }
         if (state.feedBusy && state.posts.isEmpty()) item { LoadingCard("نحمّل منشورات الحي…") }
         else if (state.feedError != null && state.posts.isEmpty()) item { ErrorCard(state.feedError, onRefresh) }
