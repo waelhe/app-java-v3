@@ -176,7 +176,10 @@ class MainActivity : ComponentActivity() {
                         onDirectoryQuery = viewModel::updateDirectoryQuery,
                         onDirectoryMinRating = viewModel::setDirectoryMinRating,
                         onSearchDirectory = viewModel::loadDirectoryListings,
-                        onOpenNeighborhoodMarket = viewModel::openNeighborhoodMarket
+                        onOpenNeighborhoodMarket = viewModel::openNeighborhoodMarket,
+                        onOpenDiscoveryRow = viewModel::openDiscoveryRow,
+                        onBackFromDiscoveryRow = viewModel::closeDiscoveryRow,
+                        onLoadMoreDiscoveryRow = viewModel::loadMoreDiscoveryRow
                     )
                 }
             }
