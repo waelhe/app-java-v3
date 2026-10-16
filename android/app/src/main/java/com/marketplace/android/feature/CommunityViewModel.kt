@@ -872,7 +872,14 @@ class CommunityViewModel(
     fun setCommentDraft(value: String) { _uiState.update { it.copy(commentDraft = value.take(2000)) } }
 
     fun selectExploreMode(mode: ExploreMode) {
-        _uiState.update { it.copy(exploreMode = mode, notice = null) }
+        _uiState.update {
+            it.copy(
+                exploreMode = mode,
+                selectedDiscoveryRow = if (mode == ExploreMode.DISCOVERY_ROW) it.selectedDiscoveryRow else null,
+                discoveryPreviewCard = null,
+                notice = null
+            )
+        }
         when (mode) {
             ExploreMode.POSTS -> Unit
             ExploreMode.EVENTS -> loadEvents()
@@ -1443,7 +1450,7 @@ class CommunityViewModel(
         val current = _uiState.value
         val row = current.selectedDiscoveryRow
         val scopeId = current.membership?.locationId
-        if (!current.authenticated || scopeId.isNullOrBlank() || row !in supportedDiscoveryRows) return
+        if (!current.authenticated || scopeId.isNullOrBlank() || row.isNullOrBlank() || row !in supportedDiscoveryRows) return
         if (!reset && (current.discoveryRowBusy || current.discoveryRowLast)) return
         if (!reset && current.discoveryScopeId != scopeId) return
         val pageNumber = if (reset) 0 else current.discoveryRowPage + 1
@@ -1460,7 +1467,7 @@ class CommunityViewModel(
                 } else it
             }
             try {
-                val page = repository.getDiscoveryRow(row!!, page = pageNumber, size = 20)
+                val page = repository.getDiscoveryRow(row, page = pageNumber, size = 20)
                 _uiState.update {
                     if (it.authenticated &&
                         it.membership?.locationId == scopeId &&
