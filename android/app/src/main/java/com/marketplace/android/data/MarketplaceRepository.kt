@@ -244,6 +244,9 @@ class MarketplaceRepository(
     suspend fun getMarket(page: Int = 0) = api.getMarket(page = page)
     suspend fun createMarketItem(request: CreateMarketItemRequest) = api.createMarketItem(request)
     suspend fun withdrawMarketItem(itemId: String) = api.withdrawMarketItem(itemId)
+    suspend fun getDiscoveryRows() = api.getDiscoveryRows()
+    suspend fun getDiscoveryRow(row: String, page: Int = 0) = api.getDiscoveryRow(row = row, page = page, size = 20)
+
     suspend fun getNotifications() = api.getNotifications()
     suspend fun markNotificationRead(id: String) = api.markNotificationRead(id)
 
