@@ -66,7 +66,6 @@ import com.marketplace.android.core.network.GroupDto
 import com.marketplace.android.core.network.PollDto
 import com.marketplace.android.core.network.PostDto
 import com.marketplace.android.core.network.DiscoveryCardDto
-import com.marketplace.android.core.network.DiscoveryRowDto
 import com.marketplace.android.core.network.UrgentAlertDto
 import com.marketplace.android.feature.AppUiState
 import com.marketplace.android.feature.ComposerKind
