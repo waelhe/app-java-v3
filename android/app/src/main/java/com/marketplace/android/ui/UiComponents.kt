@@ -73,6 +73,7 @@ import com.marketplace.android.core.network.CommentDto
 import com.marketplace.android.core.network.MarketItemDto
 import com.marketplace.android.core.network.NotificationDto
 import com.marketplace.android.core.network.PostDto
+import com.marketplace.android.core.network.UrgentAlertDto
 import com.marketplace.android.feature.AppUiState
 import com.marketplace.android.feature.ComposerKind
 import java.time.Duration
@@ -365,6 +366,85 @@ internal fun PostCard(
             }
         )
     }
+}
+
+@Composable
+internal fun OfficialAlertCard(
+    alert: UrgentAlertDto,
+    compact: Boolean = false
+) {
+    val highUrgency = alert.level.uppercase(Locale.ROOT) in setOf("CRITICAL", "SEVERE")
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = if (highUrgency) WarningCanvas else Sage
+        ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("تنبيه رسمي", fontWeight = FontWeight.Bold, color = if (highUrgency) Warning else Forest)
+                Text(
+                    urgentAlertLevelLabel(alert.level),
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (highUrgency) Warning else Forest,
+                    fontSize = 12.sp
+                )
+            }
+            Text(
+                alert.title,
+                fontWeight = FontWeight.Bold,
+                fontSize = if (compact) 17.sp else 20.sp,
+                lineHeight = 25.sp
+            )
+            Text(
+                "${alert.sourceName} · ${urgentAlertSourceTypeLabel(alert.sourceType)}",
+                color = Muted,
+                fontSize = 12.sp
+            )
+            Text(
+                alert.body,
+                color = Ink,
+                lineHeight = 22.sp,
+                maxLines = if (compact) 4 else Int.MAX_VALUE,
+                overflow = TextOverflow.Ellipsis
+            )
+            val validity = buildList {
+                if (alert.validFrom.isNotBlank()) add("بدأ السريان: ${formatDate(alert.validFrom)}")
+                add(
+                    alert.validUntil?.takeIf { it.isNotBlank() }
+                        ?.let { "ساري حتى: ${formatDate(it)}" }
+                        ?: "ساري حتى إشعار آخر"
+                )
+            }
+            validity.forEach { line -> Text(line, color = Muted, fontSize = 11.sp) }
+        }
+    }
+}
+
+private fun urgentAlertLevelLabel(code: String): String = when (code.uppercase(Locale.ROOT)) {
+    "CRITICAL" -> "حرج"
+    "SEVERE" -> "شديد"
+    "ADVISORY" -> "استرشادي"
+    else -> "المستوى غير متاح"
+}
+
+private fun urgentAlertSourceTypeLabel(code: String): String = when (code.uppercase(Locale.ROOT)) {
+    "MUNICIPALITY" -> "بلدية"
+    "CIVIL_DEFENSE" -> "الدفاع المدني"
+    "UTILITIES" -> "المرافق العامة"
+    "HEALTH_AUTHORITY" -> "جهة صحية"
+    "EDUCATION_AUTHORITY" -> "جهة تعليمية"
+    "OTHER_DELEGATED" -> "جهة رسمية مفوضة"
+    else -> "نوع الجهة غير متاح"
 }
 
 @Composable
