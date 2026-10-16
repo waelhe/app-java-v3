@@ -16,23 +16,13 @@ on:
     # only: PRs targeting main and push events are unaffected; the
     # remaining open PRs target main directly and gate through the
     # pull_request event.
-    # GraphQL phase-1 wave (2026-10-15): PR #584 is stacked on
-    # docs/graphql-target-architecture (PR #582 — the design doc), so that
-    # base rides the filter for the same measured reason the parallel-plan
-    # bases did: the stacked PR's gates — including this PR's own new
-    # GraphQL schema compatibility gate, whose 22 GraphQL integration legs
-    # have never executed anywhere yet — must run during review, not only
-    # after the #186-pattern unstack rebase onto main. Retire the entry
-    # with the wave once #582 merges and #584 is rebased.
-    # GraphQL phase-2 wave (2026-10-16): PR #586 (the DGS adoption) is
-    # stacked on feat/graphql-p0-bounded-foundation (PR #584 — the
-    # phase-1 bounded foundation), same measured reason: the DGS
-    # migration's gates — the whole phase-1 suite re-run under the DGS
-    # wiring plus the DGS-specific data-fetcher tests — must run during
-    # review, not only after the unstack rebase. Retire both wave entries
-    # with their waves (entry one when #584 merges and #586 is rebased
-    # onto main).
-    branches: [ main, docs/graphql-target-architecture, feat/graphql-p0-bounded-foundation ]
+    # GraphQL DGS wave (2026-10-16): #585/#584/#586 all merged and
+    # published; the stacked bases (docs/graphql-target-architecture,
+    # feat/graphql-p0-bounded-foundation) are deleted branches, so both
+    # entries retired with the wave in the post-merge truth-sync exactly
+    # as their own comments prescribed — inert weight otherwise. PRs
+    # targeting main gate through the pull_request event as before.
+    branches: [ main ]
 
 
 # One test round per ref: a newer push supersedes the older round and
