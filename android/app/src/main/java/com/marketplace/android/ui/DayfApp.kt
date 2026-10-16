@@ -147,9 +147,11 @@ fun DayfApp(
     onReact: (com.marketplace.android.core.network.PostDto) -> Unit,
     onOpenComments: (com.marketplace.android.core.network.PostDto) -> Unit,
     onUpdateLostFoundState: (com.marketplace.android.core.network.PostDto, String) -> Unit,
+    onReportPost: (com.marketplace.android.core.network.PostDto, String) -> Unit,
     onCloseComments: () -> Unit,
     onCommentDraft: (String) -> Unit,
     onSendComment: () -> Unit,
+    onReportComment: (com.marketplace.android.core.network.CommentDto, String) -> Unit,
     onMarkRead: (com.marketplace.android.core.network.NotificationDto) -> Unit,
     onRequestVerification: () -> Unit,
     onSignOutOnDevice: () -> Unit,
@@ -205,6 +207,7 @@ fun DayfApp(
             onReact = onReact,
             onOpenComments = onOpenComments,
             onUpdateLostFoundState = onUpdateLostFoundState,
+            onReportPost = onReportPost,
             onSearchQuery = onSearchQuery,
             onSearch = onSearch,
             onLoadMoreSearchResults = onLoadMoreSearchResults,
@@ -273,8 +276,12 @@ fun DayfApp(
             draft = state.commentDraft,
             sending = state.commentBusy,
             notice = state.notice,
+            currentUserId = state.membership?.userId.orEmpty(),
+            reportingContentKeys = state.reportingContentKeys,
+            reportedContentKeys = state.reportedContentKeys,
             onDraft = onCommentDraft,
             onSend = onSendComment,
+            onReportComment = onReportComment,
             onDismiss = onCloseComments
         )
     }

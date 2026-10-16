@@ -16,6 +16,7 @@ import com.marketplace.android.core.network.GeoNodeDto
 import com.marketplace.android.core.network.MarketItemDto
 import com.marketplace.android.core.network.MembershipDto
 import com.marketplace.android.core.network.NotificationDto
+import com.marketplace.android.core.network.UrgentAlertDto
 import com.marketplace.android.core.network.PostDto
 import com.marketplace.android.core.network.ListingSummaryDto
 import com.marketplace.android.data.MarketplaceRepository
@@ -31,7 +32,7 @@ import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
 enum class MainTab { HOME, MARKET, PROPERTY, DIRECTORY, EXPLORE, NOTIFICATIONS, PROFILE }
-enum class ExploreMode { POSTS, EVENTS, GROUPS, POLLS, MARKET }
+enum class ExploreMode { POSTS, EVENTS, GROUPS, POLLS, MARKET, OFFICIAL_ALERTS }
 enum class ComposerKind { POST, MARKET, EVENT, POLL }
 
 data class AppUiState(
@@ -92,6 +93,10 @@ data class AppUiState(
     val notifications: List<NotificationDto> = emptyList(),
     val notificationsBusy: Boolean = false,
     val notificationsError: String? = null,
+    val urgentAlerts: List<UrgentAlertDto> = emptyList(),
+    val urgentAlertsScopeId: String? = null,
+    val urgentAlertsBusy: Boolean = false,
+    val urgentAlertsError: String? = null,
     val propertyQuery: String = "",
     val propertyPurpose: String = "RENT",
     val propertyType: String = "APARTMENT",
@@ -129,7 +134,9 @@ data class AppUiState(
     val commentBusy: Boolean = false,
     val reactingPostIds: Set<String> = emptySet(),
     val lostFoundActionIds: Set<String> = emptySet(),
-    val notice: String? = null
+    val notice: String? = null,
+    val reportingContentKeys: Set<String> = emptySet(),
+    val reportedContentKeys: Set<String> = emptySet()
 )
 
 
@@ -340,7 +347,13 @@ class CommunityViewModel(
                 sessionRestoreAttempted = true,
                 silentReauthRequired = false,
                 authError = errorMessage,
-                authSuccess = if (errorMessage == null) "تم تسجيل الخروج وإنهاء جلسة الدخول." else null
+                authSuccess = if (errorMessage == null) "تم تسجيل الخروج وإنهاء جلسة الدخول." else null,
+                urgentAlerts = emptyList(),
+                urgentAlertsScopeId = null,
+                urgentAlertsBusy = false,
+                urgentAlertsError = null,
+                reportingContentKeys = emptySet(),
+                reportedContentKeys = emptySet()
             )
         }
     }
@@ -365,12 +378,23 @@ class CommunityViewModel(
                     )
                 }
                 loadFeed()
+                loadUrgentAlerts()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
                 if (error is HttpException && error.code() == 404) {
                     _uiState.update {
-                        it.copy(authenticated = true, loadingAccount = false, membership = null, membershipRequired = true, authError = null)
+                        it.copy(
+                            authenticated = true,
+                            loadingAccount = false,
+                            membership = null,
+                            membershipRequired = true,
+                            authError = null,
+                            urgentAlerts = emptyList(),
+                            urgentAlertsScopeId = null,
+                            urgentAlertsBusy = false,
+                            urgentAlertsError = null
+                        )
                     }
                 } else {
                     val message = failureMessage(error)
@@ -413,11 +437,14 @@ class CommunityViewModel(
                     it.copy(
                         membership = membership, scopeName = node.nameAr, membershipRequired = false,
                         locationBusy = false, locationResults = emptyList(), locationQuery = "",
+                        urgentAlerts = emptyList(), urgentAlertsScopeId = node.id,
+                        urgentAlertsBusy = true, urgentAlertsError = null,
                         tab = MainTab.HOME, notice = "انضممت إلى ${node.nameAr}."
                     )
                 }
                 loadFeed()
                 loadMarket()
+                loadUrgentAlerts()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -429,7 +456,10 @@ class CommunityViewModel(
     fun selectTab(tab: MainTab) {
         _uiState.update { it.copy(tab = tab, notice = null) }
         when (tab) {
-            MainTab.HOME -> loadFeed()
+            MainTab.HOME -> {
+                loadFeed()
+                loadUrgentAlerts()
+            }
             MainTab.MARKET -> Unit // Public product catalog/cart is not exposed by the current API.
             MainTab.PROPERTY -> loadPropertyListings()
             MainTab.DIRECTORY -> loadDirectoryListings()
@@ -441,7 +471,10 @@ class CommunityViewModel(
 
     fun refresh() {
         when (_uiState.value.tab) {
-            MainTab.HOME -> loadFeed()
+            MainTab.HOME -> {
+                loadFeed()
+                loadUrgentAlerts()
+            }
             MainTab.MARKET -> Unit
             MainTab.PROPERTY -> loadPropertyListings()
             MainTab.DIRECTORY -> loadDirectoryListings()
@@ -823,6 +856,7 @@ class CommunityViewModel(
             ExploreMode.GROUPS -> loadGroups()
             ExploreMode.POLLS -> loadPolls()
             ExploreMode.MARKET -> loadMarket()
+            ExploreMode.OFFICIAL_ALERTS -> loadUrgentAlerts()
         }
     }
 
@@ -833,6 +867,7 @@ class CommunityViewModel(
             ExploreMode.GROUPS -> loadGroups()
             ExploreMode.POLLS -> loadPolls()
             ExploreMode.MARKET -> loadMarket()
+            ExploreMode.OFFICIAL_ALERTS -> loadUrgentAlerts()
         }
     }
 
@@ -1237,6 +1272,68 @@ class CommunityViewModel(
         }
     }
 
+    /**
+     * Fetch only currently active, source-verified alerts for the member's
+     * exact level-3 neighborhood. If the user switches neighborhoods while
+     * the request is in flight, discard the stale response rather than leak
+     * the previous neighborhood's alert list into the new scope.
+     */
+    fun loadUrgentAlerts() {
+        val current = _uiState.value
+        val locationId = current.membership?.locationId
+        if (!current.authenticated || locationId.isNullOrBlank()) {
+            _uiState.update {
+                it.copy(
+                    urgentAlerts = emptyList(),
+                    urgentAlertsScopeId = null,
+                    urgentAlertsBusy = false,
+                    urgentAlertsError = null
+                )
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update {
+                if (it.authenticated && it.membership?.locationId == locationId) {
+                    it.copy(
+                        // Active/withdrawn is server-owned. Fail closed while refreshing:
+                        // never keep showing a previously active alert as current.
+                        urgentAlerts = emptyList(),
+                        urgentAlertsScopeId = locationId,
+                        urgentAlertsBusy = true,
+                        urgentAlertsError = null
+                    )
+                } else it
+            }
+            try {
+                val alerts = repository.getUrgentAlerts(locationId)
+                _uiState.update {
+                    if (it.authenticated && it.membership?.locationId == locationId) {
+                        it.copy(
+                            urgentAlerts = alerts,
+                            urgentAlertsScopeId = locationId,
+                            urgentAlertsBusy = false,
+                            urgentAlertsError = null
+                        )
+                    } else it
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _uiState.update {
+                    if (it.authenticated && it.membership?.locationId == locationId) {
+                        it.copy(
+                            urgentAlerts = emptyList(),
+                            urgentAlertsBusy = false,
+                            urgentAlertsError = failureMessage(error)
+                        )
+                    } else it
+                }
+            }
+        }
+    }
+
     fun markNotificationRead(notification: NotificationDto) {
         if (notification.read) return
         viewModelScope.launch {
@@ -1265,6 +1362,82 @@ class CommunityViewModel(
                 throw cancelled
             } catch (error: Exception) {
                 _uiState.update { it.copy(profileBusy = false, notice = failureMessage(error)) }
+            }
+        }
+    }
+
+    /**
+     * Reports are submitted only through the backend's closed POST/COMMENT
+     * contract. We do not send free-text notes or promise a moderation outcome
+     * because neither is part of the public report request.
+     */
+    fun reportPost(post: PostDto, reason: String) {
+        submitContentReport("POST", post.id, post.authorId, reason)
+    }
+
+    fun reportComment(comment: CommentDto, reason: String) {
+        submitContentReport("COMMENT", comment.id, comment.authorId, reason)
+    }
+
+    private fun submitContentReport(targetType: String, targetId: String, authorId: String, reason: String) {
+        val current = _uiState.value
+        val reporterId = current.membership?.userId
+        val key = "$targetType:$targetId"
+        if (!current.authenticated || reporterId.isNullOrBlank() || targetId.isBlank()) return
+        if (targetType !in setOf("POST", "COMMENT") ||
+            reason !in setOf("SPAM", "HARASSMENT", "INAPPROPRIATE", "OTHER")) {
+            _uiState.update { it.copy(notice = "اختر سببًا صالحًا للإبلاغ.") }
+            return
+        }
+        if (reporterId.equals(authorId, ignoreCase = true)) {
+            _uiState.update { it.copy(notice = "لا يمكنك الإبلاغ عن محتواك أنت.") }
+            return
+        }
+        if (key in current.reportingContentKeys || key in current.reportedContentKeys) return
+
+        viewModelScope.launch {
+            _uiState.update {
+                if (it.authenticated && it.membership?.userId?.equals(reporterId, ignoreCase = true) == true) {
+                    it.copy(reportingContentKeys = it.reportingContentKeys + key, notice = null)
+                } else it
+            }
+            if (_uiState.value.let {
+                    !it.authenticated || it.membership?.userId?.equals(reporterId, ignoreCase = true) != true
+                }) return@launch
+            try {
+                repository.reportContent(targetType, targetId, reason)
+                _uiState.update {
+                    if (it.authenticated && it.membership?.userId?.equals(reporterId, ignoreCase = true) == true) {
+                        it.copy(
+                            reportingContentKeys = it.reportingContentKeys - key,
+                            reportedContentKeys = it.reportedContentKeys + key,
+                            notice = "أُرسل البلاغ للمراجعة. لا يمكن الجزم بنتيجة المراجعة مسبقًا."
+                        )
+                    } else it
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (error is HttpException && error.code() == 409) {
+                    _uiState.update {
+                        if (it.authenticated && it.membership?.userId?.equals(reporterId, ignoreCase = true) == true) {
+                            it.copy(
+                                reportingContentKeys = it.reportingContentKeys - key,
+                                reportedContentKeys = it.reportedContentKeys + key,
+                                notice = "سبق أن أرسلت بلاغًا عن هذا المحتوى؛ لم يُنشأ بلاغ مكرر."
+                            )
+                        } else it
+                    }
+                } else {
+                    _uiState.update {
+                        if (it.authenticated && it.membership?.userId?.equals(reporterId, ignoreCase = true) == true) {
+                            it.copy(
+                                reportingContentKeys = it.reportingContentKeys - key,
+                                notice = failureMessage(error)
+                            )
+                        } else it
+                    }
+                }
             }
         }
     }
