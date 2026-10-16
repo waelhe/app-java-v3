@@ -1,5 +1,7 @@
 package com.marketplace.app.graphql;
 
+import com.marketplace.app.graphql.generated.types.Service;
+import com.marketplace.app.graphql.generated.types.ServiceStatus;
 import com.marketplace.catalog.CatalogService;
 import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -102,11 +104,11 @@ class ServiceDataFetcherTest {
         ProviderListingView listing = view(id, "Test", "Desc", 5000L, "ACTIVE");
         when(catalogService.getActiveById(id)).thenReturn(listing);
         when(serviceMapper.toResponse(listing)).thenReturn(
-                new ServiceResponse(id, "Test", "Desc", "general", 50.0, "SAR", "ACTIVE"));
+                new Service(id.toString(), "Test", "Desc", "general", 50.0, "SAR", ServiceStatus.ACTIVE));
 
-        ServiceResponse response = fetcher.service(id);
+        Service response = fetcher.service(id);
 
-        assertThat(response.name()).isEqualTo("Test");
+        assertThat(response.getName()).isEqualTo("Test");
     }
 
     /**
@@ -238,12 +240,12 @@ class ServiceDataFetcherTest {
         when(catalogService.create(eq(providerId), eq("New Svc"), eq("Desc"), eq("cat"), eq(3000L), isNull()))
                 .thenReturn(listing);
         when(serviceMapper.toResponse(listing)).thenReturn(
-                new ServiceResponse(UUID.randomUUID(), "New Svc", "Desc", "general", 30.0, "SAR", "ACTIVE"));
+                new Service(UUID.randomUUID().toString(), "New Svc", "Desc", "general", 30.0, "SAR", ServiceStatus.ACTIVE));
 
         var input = new ServiceInput("New Svc", "Desc", "cat", 3000L);
-        ServiceResponse response = fetcher.createService(input);
+        Service response = fetcher.createService(input);
 
-        assertThat(response.name()).isEqualTo("New Svc");
+        assertThat(response.getName()).isEqualTo("New Svc");
     }
 
     /**

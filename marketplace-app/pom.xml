@@ -418,8 +418,8 @@
     <build>
         <plugins>
             <!-- GraphQL DGS CodeGen (target architecture §11 Phase 3):
-                 schema-first constants generated from the authoritative
-                 SDL at build time, Maven-owned. The community adapter
+                 schema-first code generated from the authoritative SDL
+                 at build time, Maven-owned. The community adapter
                  (io.github.deweyjose — Netflix's official CodeGen plugin
                  is Gradle-only) is pinned in the ROOT pom per the plan's
                  provenance rule. Its `generate` goal binds to the
@@ -428,23 +428,37 @@
                  target/generated-sources/graphql-codegen — separate from
                  MapStruct's target/generated-sources/annotations —
                  added to the compile source roots automatically, never
-                 committed or hand-edited. Data types are intentionally
-                 OFF in this opening increment: ServiceInput stays
-                 hand-owned (its Jakarta Validation contract is not
-                 expressible in SDL without changing the schema contract
-                 — the plan's Phase 3.4 equivalence rule), and the
-                 response record stays this surface's wire DTO. What the
-                 increment does bind is the FETCHER's field names to the
-                 generated constants — the adapter boundary. Client API
-                 generation stays off (no server-to-server use case),
-                 no docs, no example fetchers. -->
+                 committed or hand-edited.
+                 Transport types ON (Phase 3.3/3.4 — the
+                 equivalence-proven half of the plan): the generated
+                 types.Service data type and types.ServiceStatus enum,
+                 straight from the SDL with the engine's documented
+                 scalar mapping (ID -> String, Float -> double —
+                 measured from the graphql-dgs-codegen 8.6.0 sources),
+                 are the adapter boundary's wire contract — the official
+                 docs' own intended use for generated data types ("return
+                 types for your datafetchers"). The hand-written
+                 ServiceResponse record is replaced, not paralleled: no
+                 second transport DTO. The root Query/Mutation types
+                 generate no data types (the engine excludes them by
+                 name), and client API generation stays off (no
+                 server-to-server use case), no docs, no example
+                 fetchers.
+                 Input types stay hand-owned: ServiceInput's Jakarta
+                 Validation contract is not expressible in SDL without
+                 changing the schema contract (the Phase 3.4 equivalence
+                 rule), so the adapter is told to USE the existing record
+                 through typeMapping instead of generating a duplicate —
+                 the engine's documented mechanism for existing classes
+                 (mapped types are skipped from generation; measured in
+                 the 8.6.0 source's shouldSkip). -->
             <plugin>
                 <groupId>io.github.deweyjose</groupId>
                 <artifactId>graphqlcodegen-maven-plugin</artifactId>
                 <version>${graphql-codegen-plugin.version}</version>
                 <executions>
                     <execution>
-                        <id>generate-graphql-schema-constants</id>
+                        <id>generate-graphql-schema-code</id>
                         <goals>
                             <goal>generate</goal>
                         </goals>
@@ -458,7 +472,22 @@
                          target/generated-sources/annotations directory. -->
                     <outputDir>${project.build.directory}/generated-sources/graphql-codegen</outputDir>
                     <packageName>com.marketplace.app.graphql.generated</packageName>
-                    <generateDataTypes>false</generateDataTypes>
+                    <!-- The hand-owned input record IS the surface's single
+                         input DTO: the engine skips generating a duplicate
+                         for mapped types and uses this class wherever the
+                         schema references ServiceInput. -->
+                    <typeMapping>
+                        <ServiceInput>com.marketplace.app.graphql.ServiceInput</ServiceInput>
+                    </typeMapping>
+                    <generateDataTypes>true</generateDataTypes>
+                    <!-- The adapter's Mojo default for the all-fields
+                         constructor deviates from the engine's documented
+                         shape (core default true; official docs: "POJOs
+                         with both a non-arg constructor, a constructor
+                         for all fields, and implementations for hashCode/
+                         equals/toString ... a builder class") — pin the
+                         documented shape explicitly. -->
+                    <javaGenerateAllConstructor>true</javaGenerateAllConstructor>
                     <generateClientApi>false</generateClientApi>
                     <generateDocs>false</generateDocs>
                     <addGeneratedAnnotation>true</addGeneratedAnnotation>
