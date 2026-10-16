@@ -26,6 +26,14 @@ import java.util.UUID;
 @Mapper(componentModel = "spring")
 public interface ServiceMapper {
 
+    /**
+     * The shared catalog view into the generated transport contract:
+     * the display-unit price expression and the {@code title} to
+     * {@code name} rename are declared here; the {@code id} and
+     * {@code status} legs run through the documented default-method
+     * conversions below; {@code description}, {@code category} and
+     * {@code currency} are same-name pass-throughs.
+     */
     @Mapping(target = "name", source = "title")
     @Mapping(target = "price", expression = "java(listing.priceCents() != null ? listing.priceCents().doubleValue() / 100.0 : 0.0)")
     Service toResponse(ProviderListingView listing);

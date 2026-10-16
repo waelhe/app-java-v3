@@ -38,6 +38,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class GraphQlSchemaCodegenTest {
 
+    /**
+     * The constants half of the Phase 3 contract: the generated
+     * field-name constants must equal the schema's own strings — the
+     * values the data fetcher binds through the {@code field}
+     * attribute.
+     */
     @Test
     void generatedConstantsMatchTheGraphQlSchemaContract() {
         assertThat(DgsConstants.QUERY.Service).isEqualTo("service");
@@ -71,6 +77,10 @@ class GraphQlSchemaCodegenTest {
                 .containsExactly("ACTIVE", "INACTIVE");
     }
 
+    /**
+     * Resolves a declared field's Java type, failing with a named
+     * assertion when the generated class lacks the field at all.
+     */
     private static Class<?> fieldType(Class<?> type, String field) {
         try {
             return type.getDeclaredField(field).getType();

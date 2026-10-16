@@ -23,6 +23,7 @@ class ServiceMapperTest {
 
     private final ServiceMapper mapper = Mappers.getMapper(ServiceMapper.class);
 
+    /** The full mapping: id rendering, rename, price conversion, enum typing. */
     @Test
     void toResponse_mapsActiveListing() {
         UUID id = UUID.randomUUID();
@@ -39,6 +40,7 @@ class ServiceMapperTest {
         assertEquals(ServiceStatus.ACTIVE, response.getStatus());
     }
 
+    /** Every non-ACTIVE domain state projects to the schema's INACTIVE value. */
     @Test
     void toResponse_mapsNonActiveAsInactive() {
         ProviderListingView listing = view(UUID.randomUUID(), "Draft", null, 3000L, "DRAFT");
@@ -49,6 +51,7 @@ class ServiceMapperTest {
         assertNull(response.getDescription());
     }
 
+    /** The ID conversion's null path: a view without an id stays null. */
     @Test
     void toResponse_mapsNullIdToNull() {
         ProviderListingView listing = view(null, "No id", null, 1000L, "ACTIVE");
@@ -58,6 +61,7 @@ class ServiceMapperTest {
         assertNull(response.getId());
     }
 
+    /** A minimal shared view with an explicit id, for the mapping legs. */
     private static ProviderListingView view(UUID id, String title, String description, Long priceCents, String status) {
         return new ProviderListingView(id, title, description, "cat", priceCents, "SAR",
                 UUID.randomUUID(), status, null, null, null);
