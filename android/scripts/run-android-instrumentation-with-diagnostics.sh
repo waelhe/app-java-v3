@@ -16,7 +16,7 @@ capture_android_diagnostics() {
   {
     echo "Captured at (UTC): $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
     echo "Gradle command: :app:connectedDebugAndroidTest"
-    echo "Emulator API requested: 35"
+    echo "Emulator API requested: 36"
     echo "Workspace root: ${workspace_root}"
   } > "${diagnostics_dir}/environment.txt"
 
