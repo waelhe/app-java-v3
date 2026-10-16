@@ -15,13 +15,19 @@ import jakarta.validation.constraints.NotNull;
  * contract contradiction. @Min(0) is the money-cents precedent already used
  * by CurrencyExchangeController amountCents.
  *
- * <p>Binding contract (spring-graphql {@code GraphQlArgumentBinder}): input
- * keys are matched to record component names <em>by name</em> — the schema
- * input field must therefore be {@code priceCents: Int!}. The previous
- * {@code price: Float!} schema field could never bind to this component, so
- * the {@code createService} mutation rejected every price (paid and free)
- * since the surface's origin — fixed together with the first end-to-end
- * mutation test (see ServiceGraphQlMutationIntegrationTest).
+ * <p>Binding contract (DGS {@code DefaultInputObjectMapper} — the
+ * Phase-2 programming model): input keys are matched to Java record
+ * components <em>by name</em>, the same by-name contract the
+ * spring-graphql {@code GraphQlArgumentBinder} enforced before the
+ * migration — the schema input field must therefore be
+ * {@code priceCents: Int!}. The previous {@code price: Float!} schema field
+ * could never bind to this component, so the {@code createService}
+ * mutation rejected every price (paid and free) since the surface's
+ * origin — fixed together with the first end-to-end mutation test (see
+ * ServiceGraphQlMutationIntegrationTest). The constraints below are
+ * enforced by the fetcher's explicit Jakarta validation (DGS has no
+ * {@code @Valid} argument hook) — the same record contract, the same
+ * VAL-001 taxonomy on violation.
  *
  * <p>Ceiling contract (CodeRabbit r1, adopted): the schema field is a GraphQL
  * {@code Int} — a signed 32-bit scalar per the GraphQL spec — so the transport

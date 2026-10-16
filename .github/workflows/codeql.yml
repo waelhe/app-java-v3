@@ -44,7 +44,16 @@ on:
     # longer, and PRs targeting main gate through the pull_request event
     # exactly as before (the filter entry is inert weight otherwise —
     # the same inertness the precedents above document).
-    branches: [ main ]
+    # GraphQL phase-2 wave (2026-10-16): PR #586 (the DGS adoption) is
+    # stacked on feat/graphql-p0-bounded-foundation (PR #584 — the
+    # phase-1 bounded foundation), so that base rides this filter the
+    # same measured way it rides ci.yml's: the phase-2 acceptance
+    # ("dependency convergence, security, Modulith, CI, integration and
+    # coverage gates stay green") must be proven DURING review — this
+    # gate included — not only after the #186-pattern unstack rebase
+    # onto main. Retire the entry with the wave once #584 merges and
+    # #586 is rebased onto main.
+    branches: [ main, feat/graphql-p0-bounded-foundation ]
   schedule:
     - cron: '27 5 * * 1'
 

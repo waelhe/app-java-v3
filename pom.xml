@@ -79,6 +79,45 @@
              with the gate report-format decision; keep on 3.1.0 until then. -->
         <springdoc.version>3.1.0</springdoc.version>
         <mapstruct.version>1.6.3</mapstruct.version>
+        <!-- Netflix DGS Framework (GraphQL target architecture Phase 2, the
+             DGS adoption — the corrected plan of PR #585): the single
+             GraphQL programming model over its official Spring for GraphQL
+             integration. 12.1.0 is the latest GA measured from Maven
+             Central's maven-metadata.xml (2026-10-16); "DGS 11+ is only
+             compatible with Spring Boot 4 and above" (the framework's own
+             version check, DgsSpringGraphQLEnvironmentPostProcessor) —
+             this project is Boot 4.1.1. The platform BOM (imported below)
+             manages ZERO org.springframework artifacts (measured from
+             graphql-dgs-platform-12.1.0.pom: DGS modules + graphql-java
+             25.0 + java-dataloader 6.0.0 + five non-Spring shared
+             libraries), and that graphql-java pair is IDENTICAL to the
+             Boot 4.1.1 chain (spring-boot-dependencies
+             graphql-java.version=25.0; spring-graphql 2.0.5's
+             java-dataloader 6.0.0) — no conflict there. The five shared
+             libraries are NOT identical to the Boot parent's management,
+             and because a child-level BOM import overrides the parent's
+             imported BOMs, CI round 1 (run 38827181251) measured the
+             collisions: reactor-core/reactor-test 3.8.0 vs the Boot
+             reactor-bom 2025.0.7 line 3.8.7 (RequireUpperBoundDeps
+             failure on marketplace-ai), context-propagation 1.2.0 vs the
+             micrometer-bom 1.17.1 line 1.2.1 (same failure), and
+             json-path 3.0.0 vs the Boot-managed 2.10.0 that every
+             module's spring-boot-starter-test classpath resolves (a
+             silent major-version drift). CI rounds 1-2 (runs 38827181251 /
+             38828342440) measured the full picture: the two downward
+             collisions are repaired by the restore pins under the import
+             below (direct child entries beat both child imports and parent
+             imports — the official precedence), org.jetbrains:annotations
+             arrives at two versions inside the DGS train itself (pinned
+             at the highest measured version, the #17b discipline), and
+             json-path is the DGS modules' OWN 3.0.0 major line —
+             deliberately accepted and documented at the #19a block
+             because the DGS runtime requires it; every Spring artifact
+             the DGS tree carries (spring-boot-starter-graphql 4.0.0,
+             spring-graphql 2.0.0, spring-web 7.0.1, kotlin-stdlib
+             2.2.20) resolves to the Boot/house versions the same way —
+             the enforcer's convergence rules stay the authority. -->
+        <dgs.version>12.1.0</dgs.version>
         <instancio.version>6.0.1</instancio.version>
         <!-- Track-B community tools (parallel execution plan §5.4 — CR-2, the
              foundation BOM drop): versions for the developer line ONLY, pinned
@@ -297,6 +336,115 @@
                 <version>${spring-cloud.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+
+            <!-- Exception #19: Netflix DGS platform BOM — Boot does not
+                 manage DGS. The official Spring-for-GraphQL-integrated
+                 GraphQL framework the target architecture selected as the
+                 single programming model (docs/api/graphql-target-
+                 architecture.md §11 Phase 2). Coordinates per the official
+                 getting-started recipe (netflix.github.io/dgs:
+                 com.netflix.graphql.dgs:graphql-dgs-platform-dependencies,
+                 type pom, scope import) which "aligns the versions of the
+                 individual modules and transitive dependencies of the
+                 framework". The BOM manages no Spring artifacts (measured
+                 from graphql-dgs-platform-12.1.0.pom) — Spring versions
+                 stay owned by the Boot parent; the overlapping
+                 graphql-java (25.0) and java-dataloader (6.0.0) entries
+                 are identical to the Boot 4.1.1-resolved chain, so
+                 import precedence has no effect here.
+                 Owner: platform maintainers (version-policy §8).
+                 Follow-up review: 2027-01-16 (quarterly minor cadence,
+                 version-policy §3; the Dependabot allow-list covers Boot +
+                 Modulith only, so DGS upgrades arrive via this review). -->
+            <dependency>
+                <groupId>com.netflix.graphql.dgs</groupId>
+                <artifactId>graphql-dgs-platform-dependencies</artifactId>
+                <version>${dgs.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Exception #19a: the DGS-BOM dependency-line repair pins —
+                 the measured convergence story of CI rounds 1-2. The DGS
+                 platform BOM is a child-level import, and a child import
+                 overrides the Boot parent's OWN imported BOMs for
+                 overlapping artifacts (the official Maven precedence);
+                 direct entries here beat both child imports and parent
+                 imports — the same official precedence, the same house
+                 mechanism as the gson/slf4j/checker-qual pins.
+                 Round 1 (run 38827181251, RequireUpperBoundDeps on
+                 marketplace-ai) measured two downward collisions, both
+                 repaired by restoring the Boot line:
+                 - io.projectreactor:reactor-core/reactor-test: the BOM's
+                   3.8.0 lost to the tree's 3.8.7 (Boot reactor-bom
+                   2025.0.7); pinned back to the Boot line.
+                 - io.micrometer:context-propagation: the BOM's 1.2.0 lost
+                   to spring-ai-commons' 1.2.1 (Boot micrometer-bom
+                   1.17.1); pinned back to the Boot line.
+                 Round 2 (run 38828342440) measured two more, one in each
+                 direction:
+                 - org.jetbrains:annotations: the DGS tree itself carries
+                   26.1.0 (graphql-dgs-spring-graphql, graphql-dgs) and
+                   23.0.0 (kotlinx-coroutines-core-jvm 1.10.2) — an
+                   internal convergence conflict inside the DGS train;
+                   pinned at the highest measured version, the #17b
+                   discipline (annotations-only artifact, zero behavioral
+                   surface).
+                 - com.jayway.jsonpath:json-path: the deliberate ACCEPTANCE
+                   of the 3.0.0 major line as a DIRECT pin. Round 3
+                   (run 38828981701) measured the true precedence picture:
+                   Boot's spring-boot-dependencies manages json-path
+                   DIRECTLY at 2.10.0, and a parent's direct entry beats a
+                   child's imported BOM — so the DGS BOM's 3.0.0 management
+                   never applied and the resolved 2.10.0 failed
+                   RequireUpperBoundDeps against the DGS modules' own
+                   json-path:3.0.0 declarations (graphql-dgs-client,
+                   graphql-dgs, graphql-dgs-json-api — all inside
+                   dgs-starter). The DGS starter requires the 3.x line, so
+                   the direct pin below adopts it explicitly (a direct
+                   child entry beats everything) — a MEASURED, DOCUMENTED
+                   major-line adoption for the whole repository's test
+                   classpath (the springdoc 3.1.0 lesson's honest twin: no
+                   SILENT drift — this one is declared here, in the PR
+                   body, and proven by the full test suite in CI).
+                 The remaining two BOM entries (log4j-api / log4j-to-slf4j
+                 2.26.1) are inert either way: Boot manages both DIRECTLY
+                 at 2.25.5 (parent-direct beats the child import), no
+                 current tree path pulls them (the stack is logback +
+                 slf4j; the DGS modules are slf4j), and nothing else
+                 declares them — measured inert, no pin needed.
+                 graphql-java (25.0) and java-dataloader (6.0.0) are
+                 identical on both sides — no pin needed. -->
+            <dependency>
+                <groupId>io.projectreactor</groupId>
+                <artifactId>reactor-core</artifactId>
+                <version>3.8.7</version>
+            </dependency>
+            <dependency>
+                <groupId>io.projectreactor</groupId>
+                <artifactId>reactor-test</artifactId>
+                <version>3.8.7</version>
+            </dependency>
+            <dependency>
+                <groupId>io.micrometer</groupId>
+                <artifactId>context-propagation</artifactId>
+                <version>1.2.1</version>
+            </dependency>
+            <dependency>
+                <groupId>org.jetbrains</groupId>
+                <artifactId>annotations</artifactId>
+                <version>26.1.0</version>
+            </dependency>
+            <!-- The measured precedence map this wave establishes (CI
+                 rounds 1-3): child direct > parent direct > child import
+                 > parent import. The json-path pin is child-direct on
+                 purpose — it is the ONLY level that beats Boot's own
+                 direct 2.10.0 management of the artifact. -->
+            <dependency>
+                <groupId>com.jayway.jsonpath</groupId>
+                <artifactId>json-path</artifactId>
+                <version>3.0.0</version>
             </dependency>
             <!-- Exception #15: WireMock test backend for the edge BFF relay IT
                  (plan Task 4) — managed by neither BOM (evidence in properties

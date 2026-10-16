@@ -3,21 +3,25 @@ package com.marketplace.app.graphql;
 import com.marketplace.catalog.spi.CatalogSpi;
 import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.security.CurrentUserProvider;
+import com.netflix.graphql.dgs.DgsComponent;
+import com.netflix.graphql.dgs.DgsMutation;
+import com.netflix.graphql.dgs.DgsQuery;
+import com.netflix.graphql.dgs.InputArgument;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
-import jakarta.validation.Valid;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Validator;
 import org.springframework.data.domain.OffsetScrollPosition;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.ScrollPosition;
 import org.springframework.data.domain.Sort;
-import org.springframework.graphql.data.method.annotation.Argument;
-import org.springframework.graphql.data.method.annotation.MutationMapping;
-import org.springframework.graphql.data.method.annotation.QueryMapping;
-import org.springframework.graphql.data.query.ScrollSubrange;
+import org.springframework.graphql.data.pagination.EncodingCursorStrategy;
 import org.springframework.security.core.Authentication;
-import org.springframework.stereotype.Controller;
+import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -26,9 +30,24 @@ import java.util.UUID;
  * (design §1: compose experiences, never mirror the database or duplicate
  * business rules). Every field delegates to the catalog module's declared
  * SPI; no JPA repository or entity crosses the module boundary.
+ *
+ * <p><b>Programming model (Phase 2 of the design, the DGS adoption):</b>
+ * this is a DGS data fetcher — {@code @DgsComponent} +
+ * {@code @DgsQuery}/{@code @DgsMutation}/{@code @InputArgument}, the
+ * single GraphQL programming model the corrected plan selected. The
+ * former Spring-annotation controller ({@code @Controller} +
+ * {@code @QueryMapping}/{@code @MutationMapping}) was the migration
+ * source, not the end state; the ArchitectureRulesTest single-model
+ * guard now forbids its resolver annotations repository-wide. What DGS
+ * does NOT own stays Spring's: the runtime is Spring for GraphQL through
+ * the DGS starter's official integration — the DGS-built schema is handed
+ * to Spring's {@code ExecutionGraphQlService}, the exception resolver and
+ * instrumentations remain Spring beans wired into the DGS source
+ * builder, and Boot still owns startup, auto-configuration, and the
+ * property namespaces it manages.</p>
  */
-@Controller
-public class ServiceGraphQlController {
+@DgsComponent
+public class ServiceDataFetcher {
 
     /**
      * Deterministic order for the services connection — the house
@@ -45,6 +64,8 @@ public class ServiceGraphQlController {
     private final CurrentUserProvider currentUserProvider;
     private final ServiceMapper serviceMapper;
     private final GraphQlProperties properties;
+    private final EncodingCursorStrategy<ScrollPosition> cursorStrategy;
+    private final Validator validator;
 
     /**
      * @param catalogSpi          the catalog module's declared SPI — the only
@@ -57,15 +78,36 @@ public class ServiceGraphQlController {
      * @param properties          the typed {@code marketplace.graphql.*}
      *                            binding — pagination bounds and limit
      *                            budgets, validated at startup
+     * @param cursorStrategy      the connection-cursor codec — the SAME
+     *                            Boot-auto-configured bean
+     *                            ({@code GraphQlDataAutoConfiguration#cursorStrategy}:
+     *                            {@code ScrollPositionCursorStrategy} with
+     *                            base64 encoding) that produced and consumed
+     *                            this surface's cursors before the DGS
+     *                            migration; the cursor wire format is the
+     *                            framework's own, never a hand-rolled string
+     * @param validator           Jakarta validator for the mutation input's
+     *                            Bean-Validation contract — DGS's argument
+     *                            resolver has no {@code @Valid} support
+     *                            (measured: zero {@code jakarta.validation}
+     *                            usage in dgs-framework 12.1.0), so the
+     *                            boundary validation is explicit and throws
+     *                            the same {@link ConstraintViolationException}
+     *                            the Spring {@code @Valid} path threw —
+     *                            identical taxonomy mapping downstream
      */
-    public ServiceGraphQlController(CatalogSpi catalogSpi,
-                                    CurrentUserProvider currentUserProvider,
-                                    ServiceMapper serviceMapper,
-                                    GraphQlProperties properties) {
+    public ServiceDataFetcher(CatalogSpi catalogSpi,
+                              CurrentUserProvider currentUserProvider,
+                              ServiceMapper serviceMapper,
+                              GraphQlProperties properties,
+                              EncodingCursorStrategy<ScrollPosition> cursorStrategy,
+                              Validator validator) {
         this.catalogSpi = catalogSpi;
         this.currentUserProvider = currentUserProvider;
         this.serviceMapper = serviceMapper;
         this.properties = properties;
+        this.cursorStrategy = cursorStrategy;
+        this.validator = validator;
     }
 
     /**
@@ -73,9 +115,14 @@ public class ServiceGraphQlController {
      * lookup and maps the shared view into the response contract. A missing
      * id surfaces as the SPI's not-found domain error, which the exception
      * resolver classifies to the canonical NF-001/RESOURCE pair.
+     *
+     * <p>{@code ID} arguments arrive as Strings from graphql-java's scalar;
+     * DGS's argument conversion ({@code DefaultConversionService} with
+     * {@code StringToUUIDConverter}) binds them to {@link UUID} — the same
+     * target type the Spring binder produced before the migration.</p>
      */
-    @QueryMapping
-    public ServiceResponse service(@Argument UUID id) {
+    @DgsQuery
+    public ServiceResponse service(@InputArgument UUID id) {
         return serviceMapper.toResponse(catalogSpi.getActiveById(id));
     }
 
@@ -84,32 +131,30 @@ public class ServiceGraphQlController {
      * of the design plan's first material gap: this field previously
      * resolved {@code Pageable.unpaged()}, an unbounded database read.
      *
-     * <p><b>The official pagination path end to end (all framework parts
-     * auto-registered by the Boot starter, measured in
-     * spring-boot-graphql 4.1.1):</b> the SDL declares the relay arguments
-     * {@code first}/{@code after}; the auto-registered
-     * {@code ScrollSubrangeMethodArgumentResolver} binds them into a
-     * {@code ScrollSubrange} (the {@code after} cursor decoded by
-     * the Boot-registered base64 {@code ScrollPositionCursorStrategy}); this
-     * method converts the subrange into a bounded Spring Data
-     * {@link Pageable}; the returned {@link Page} is adapted into the
-     * {@code ServiceConnection} envelope by the auto-registered
-     * {@code SliceConnectionAdapter} — which also produces the next page's
-     * {@code O_<offset>} cursors, so the cursor format stays the
-     * framework's own, never a hand-rolled string.</p>
-     *
-     * <p><b>The parameter carries no {@code @Argument} — a measured
-     * contract of the resolver chain (spring-graphql 2.0.5 sources):
-     * {@code AnnotatedControllerConfigurer} registers
-     * {@code ArgumentMethodArgumentResolver} ahead of the subrange
-     * resolver, so an {@code @Argument}-annotated parameter is claimed by
-     * name binding against a schema argument "subrange" that does not
-     * exist. The binder returns {@code null} for an omitted argument, the
-     * method fails internally, and the startup schema inspection reports
-     * the parameter as an unmapped argument. The exact
-     * {@code ScrollSubrange} type is what
-     * {@code ScrollSubrangeMethodArgumentResolver.supportsParameter}
-     * claims — the binding contract of this surface.</p>
+     * <p><b>The official pagination path end to end under the DGS
+     * programming model (all framework parts verified against the v12.1.0
+     * integration source):</b> the SDL declares the relay arguments
+     * {@code first}/{@code after}; DGS binds them onto this method's
+     * {@code @InputArgument} parameters (the Spring
+     * {@code ScrollSubrangeMethodArgumentResolver} is annotated-controller
+     * machinery — dgs-framework has zero references to it, so the fetcher
+     * binds the raw arguments itself and decodes the cursor through the
+     * injected Boot cursor strategy); this method converts them into a
+     * bounded Spring Data {@link Pageable}; the returned {@link Page} is
+     * adapted into the {@code ServiceConnection} envelope by Boot's
+     * {@code ConnectionFieldTypeVisitor} — which the DGS integration
+     * applies to the DGS-registered fetcher because
+     * {@code DgsSpringGraphQLAutoConfiguration#graphQlSource} runs every
+     * {@code GraphQlSourceBuilderCustomizer}, including Boot's
+     * {@code cursorStrategyCustomizer} — decorating this fetcher with the
+     * same {@code SliceConnectionAdapter} ({@code Page} is-a
+     * {@code Slice}) that produced the envelope before the migration. The
+     * Connection/Edge/PageInfo types themselves are generated into the
+     * DGS type registry by the integration's
+     * {@code DgsTypeDefinitionConfigurerBridge} applying the same
+     * {@code ConnectionTypeDefinitionConfigurer} Boot uses — identical
+     * schema types, identical envelope, identical base64
+     * {@code O_<offset>} cursors on the wire.</p>
      *
      * <p><b>Bounds (design §6):</b> {@code first} resolves against the
      * configured default when absent and is clamped to the configured hard
@@ -136,40 +181,78 @@ public class ServiceGraphQlController {
      * arguments"):</b> this field paginates by offset cursors only — a
      * keyset ({@code K_}) cursor is a foreign format for this contract and
      * is rejected as a validation error (VAL-001), and an offset beyond the
-     * addressable page space likewise.</p>
+     * addressable page space likewise. An undecodable cursor string is
+     * rejected by the strategy itself ({@code IllegalArgumentException}
+     * from the base64 or {@code O_}/{@code K_} prefix decoding — measured
+     * in spring-graphql 2.0.5's {@code ScrollPositionCursorStrategy}), the
+     * same VALIDATION taxonomy the resolver maps it to.</p>
      *
      * <p>Rate-limited at the house named-instance model (resilience4j
      * {@code graphqlServiceQuery}, same as every other high-impact
      * endpoint; per-subject caps are a later calibration decision per the
      * design's G-R6 model).</p>
      */
-    @QueryMapping
+    @DgsQuery
     @RateLimiter(name = "graphqlServiceQuery")
-    public Page<ServiceResponse> services(ScrollSubrange subrange) {
-        int requested = subrange.count().orElse(properties.pagination().defaultPageSize());
+    public Page<ServiceResponse> services(@InputArgument Integer first,
+                                          @InputArgument String after) {
+        int requested = (first == null)
+                ? properties.pagination().defaultPageSize()
+                : first;
         if (requested <= 0) {
             // Relay connection spec: a non-positive `first` asks for an
             // empty page — answer it honestly without database work.
             return Page.empty();
         }
         int pageSize = Math.min(requested, properties.pagination().maxPageSize());
-        int pageNumber = pageFor(subrange, pageSize);
+        int pageNumber = pageFor(after, pageSize);
         Pageable pageable = PageRequest.of(pageNumber, pageSize, SERVICES_ORDER);
         return catalogSpi.findAll(pageable).map(serviceMapper::toResponse);
     }
 
     /**
-     * The create command: the framework binds and validates the input
-     * ({@code @Argument} + {@code @Valid}), the caller is resolved to the
-     * owning provider, and the write delegates to the catalog SPI's single
-     * authoritative use case — the same business rule the REST surface
-     * invokes. Currency keeps the pre-B4 SAR house default. Rate-limited at
-     * the mutation budget ({@code graphqlCreateService}).
+     * The create command: DGS binds and converts the input record
+     * ({@code @InputArgument} — {@code DefaultInputObjectMapper} builds
+     * Java records from their record components by name), the boundary
+     * validation enforces the record's Bean-Validation contract, the
+     * caller is resolved to the owning provider, and the write delegates
+     * to the catalog SPI's single authoritative use case — the same
+     * business rule the REST surface invokes. Currency keeps the pre-B4
+     * SAR house default. Rate-limited at the mutation budget
+     * ({@code graphqlCreateService}).
+     *
+     * <p><b>Validation at the boundary, explicitly:</b> the Spring
+     * annotated-controller path ran the record's {@code @Valid} contract
+     * through {@code ValidationHelper} and surfaced
+     * {@link ConstraintViolationException}; DGS's argument resolver has no
+     * {@code @Valid} hook (measured: zero jakarta.validation usage in
+     * dgs-framework 12.1.0), so this method validates the bound record
+     * through the injected {@link Validator} and throws the SAME exception
+     * type on violation — the {@code GraphQlExceptionResolver} maps it to
+     * the identical VAL-001/validation taxonomy pair the mutation
+     * integration tests assert. The authoritative use case re-enforces the
+     * domain invariants either way; this is the boundary leg of the
+     * design's two-layer validation rule (§4: "Validate at both schema/
+     * binding and domain layers").</p>
+     *
+     * <p><b>The principal:</b> resolved from the request thread's
+     * {@link SecurityContextHolder} — the DGS method-invocation model has
+     * no {@code Authentication} parameter resolver (measured: no such
+     * argument resolver in dgs-framework 12.1.0), and the integration runs
+     * GraphQL data fetchers synchronously on the servlet request thread
+     * (async dispatch is explicitly defaulted OFF in the DGS integration
+     * guide), so the security chain's populated context is the authenticated
+     * principal this write path consumes — the same
+     * {@code JwtAuthenticationToken} the Spring parameter received.</p>
      */
-    @MutationMapping
+    @DgsMutation
     @RateLimiter(name = "graphqlCreateService")
-    public ServiceResponse createService(@Argument @Valid ServiceInput input,
-                                         Authentication authentication) {
+    public ServiceResponse createService(@InputArgument ServiceInput input) {
+        Set<ConstraintViolation<ServiceInput>> violations = validator.validate(input);
+        if (!violations.isEmpty()) {
+            throw new ConstraintViolationException(violations);
+        }
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         UUID providerId = currentUserProvider.getCurrentUserId(authentication);
         // GraphQL surface keeps the pre-B4 money contract: SAR house default
         // (the currency parameter is the REST catalog surface's extension).
@@ -180,19 +263,20 @@ public class ServiceGraphQlController {
     }
 
     /**
-     * Derives the zero-based page index from the subrange's cursor
-     * position. The exclusive-after semantics of the connection contract:
+     * Derives the zero-based page index from the {@code after} cursor
+     * string. The exclusive-after semantics of the connection contract:
      * the item at {@code offset} is excluded, so the page starts at
      * {@code offset + 1}; page-aligned cursors (every cursor this surface
      * emits) land exactly, and a misaligned one is rejected as a
      * client-contract violation — see {@link #pageIndex} for the measured
-     * framework rationale.
+     * framework rationale. An absent {@code after} is the first page.
      */
-    private int pageFor(ScrollSubrange subrange, int pageSize) {
-        return subrange.position()
-                .map(OffsetPosition::pageOf)
-                .map(offset -> pageIndex(offset, pageSize))
-                .orElse(0);
+    private int pageFor(String after, int pageSize) {
+        if (after == null) {
+            return 0;
+        }
+        ScrollPosition position = cursorStrategy.fromCursor(after);
+        return pageIndex(OffsetPosition.pageOf(position), pageSize);
     }
 
     /**

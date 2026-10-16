@@ -24,7 +24,15 @@ on:
     # have never executed anywhere yet — must run during review, not only
     # after the #186-pattern unstack rebase onto main. Retire the entry
     # with the wave once #582 merges and #584 is rebased.
-    branches: [ main, docs/graphql-target-architecture ]
+    # GraphQL phase-2 wave (2026-10-16): PR #586 (the DGS adoption) is
+    # stacked on feat/graphql-p0-bounded-foundation (PR #584 — the
+    # phase-1 bounded foundation), same measured reason: the DGS
+    # migration's gates — the whole phase-1 suite re-run under the DGS
+    # wiring plus the DGS-specific data-fetcher tests — must run during
+    # review, not only after the unstack rebase. Retire both wave entries
+    # with their waves (entry one when #584 merges and #586 is rebased
+    # onto main).
+    branches: [ main, docs/graphql-target-architecture, feat/graphql-p0-bounded-foundation ]
 
 
 # One test round per ref: a newer push supersedes the older round and

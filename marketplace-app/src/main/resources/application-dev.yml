@@ -40,9 +40,11 @@ spring:
     # local development"): GraphiQL's in-browser IDE and schema
     # introspection are developer tooling, so they ride the dev profile
     # only — the base stays safe-by-default and staging/production stay
-    # hardened.
-    graphiql:
-      enabled: true
+    # hardened. GraphiQL rides the DGS property namespace now (the
+    # official integration guide's overlapping-properties rule: use
+    # dgs.graphql.graphiql.enabled — see the base document's dgs: block);
+    # introspection stays on the Spring key the DGS integration itself
+    # reads directly.
     schema:
       introspection:
         enabled: true
@@ -51,6 +53,18 @@ spring:
     restart:
       enabled: true
     livereload:
+      enabled: true
+
+# The local-development GraphiQL opt-in, on the DGS-owned key the official
+# integration guide directs for the overlapping setting (use
+# dgs.graphql.graphiql.enabled). The base document's explicit false is the
+# safe default; this profile re-enables the in-browser IDE for local
+# development only. The DGS namespace otherwise inherits the base document
+# unchanged — the schema location, the federation-off decision, and no
+# WebSocket path.
+dgs:
+  graphql:
+    graphiql:
       enabled: true
 
 logging:
