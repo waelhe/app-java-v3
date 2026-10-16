@@ -64,12 +64,12 @@ class ApiModelsTest {
 
     @Test
     fun geoSuggestionParsesFlatNeighborhoodNode() {
-        val json = """{"id":"33333333-3333-4333-8333-333333333333","parentId":"city-1","level":3,"nameAr":"الميدان","nameEn":"Al Midan","slug":"al-midan"}"""
+        val json = """{"id":"33333333-3333-4333-8333-333333333333","parentId":"44444444-4444-4444-8444-444444444440","level":3,"nameAr":"الميدان","nameEn":"Al Midan","slug":"al-midan"}"""
         val node = moshi.adapter(GeoNodeDto::class.java).fromJson(json)!!
 
         assertEquals(3, node.level)
         assertEquals("الميدان", node.nameAr)
-        assertEquals("city-1", node.parentId)
+        assertEquals("44444444-4444-4444-8444-444444444440", node.parentId)
         assertTrue(node.children.isEmpty())
     }
 
@@ -203,11 +203,14 @@ class ApiModelsTest {
         assertFalse(json.contains("productId"))
 
         val signed = moshi.adapter(MediaUploadDto::class.java).fromJson(
-            """{"mediaId":"asset-1","objectKey":"posts/post-1/asset-1.jpg","uploadUrl":"https://storage.example.test/signed","urlLifetime":"PT15M"}"""
+            """{"mediaId":"33333333-3333-4333-8333-333333333333","objectKey":"posts/22222222-2222-4222-8222-222222222221/44444444-4444-4444-8444-444444444441.jpg","uploadUrl":"https://storage.example.test/signed","urlLifetime":"PT15M"}"""
         )!!
 
-        assertEquals("asset-1", signed.mediaId)
-        assertEquals("posts/post-1/asset-1.jpg", signed.objectKey)
+        assertEquals("33333333-3333-4333-8333-333333333333", signed.mediaId)
+        assertEquals(
+            "posts/22222222-2222-4222-8222-222222222221/44444444-4444-4444-8444-444444444441.jpg",
+            signed.objectKey
+        )
         assertEquals("https://storage.example.test/signed", signed.uploadUrl)
         assertEquals("PT15M", signed.urlLifetime)
     }

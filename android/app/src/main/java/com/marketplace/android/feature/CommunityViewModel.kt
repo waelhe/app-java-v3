@@ -385,9 +385,24 @@ class CommunityViewModel(
                     null
                 }
                 _uiState.update {
+                    val discoveryScopeChanged =
+                        it.membership?.locationId != membership.locationId ||
+                            it.discoveryScopeId != membership.locationId
                     it.copy(
                         authenticated = true, loadingAccount = false, membership = membership,
-                        scopeName = locationName, membershipRequired = false, authError = null, notice = null
+                        scopeName = locationName, membershipRequired = false, authError = null, notice = null,
+                        discoveryRows = if (discoveryScopeChanged) emptyList() else it.discoveryRows,
+                        discoveryScopeId = if (discoveryScopeChanged) null else it.discoveryScopeId,
+                        discoveryBusy = if (discoveryScopeChanged) false else it.discoveryBusy,
+                        discoveryError = if (discoveryScopeChanged) null else it.discoveryError,
+                        selectedDiscoveryRow = if (discoveryScopeChanged) null else it.selectedDiscoveryRow,
+                        discoveryRowCards = if (discoveryScopeChanged) emptyList() else it.discoveryRowCards,
+                        discoveryRowTotal = if (discoveryScopeChanged) 0 else it.discoveryRowTotal,
+                        discoveryRowPage = if (discoveryScopeChanged) -1 else it.discoveryRowPage,
+                        discoveryRowLast = if (discoveryScopeChanged) true else it.discoveryRowLast,
+                        discoveryRowBusy = if (discoveryScopeChanged) false else it.discoveryRowBusy,
+                        discoveryRowError = if (discoveryScopeChanged) null else it.discoveryRowError,
+                        discoveryPreviewCard = if (discoveryScopeChanged) null else it.discoveryPreviewCard
                     )
                 }
                 loadFeed()
@@ -397,7 +412,25 @@ class CommunityViewModel(
             } catch (error: Exception) {
                 if (error is HttpException && error.code() == 404) {
                     _uiState.update {
-                        it.copy(authenticated = true, loadingAccount = false, membership = null, membershipRequired = true, authError = null)
+                        it.copy(
+                            authenticated = true,
+                            loadingAccount = false,
+                            membership = null,
+                            membershipRequired = true,
+                            authError = null,
+                            discoveryRows = emptyList(),
+                            discoveryScopeId = null,
+                            discoveryBusy = false,
+                            discoveryError = null,
+                            selectedDiscoveryRow = null,
+                            discoveryRowCards = emptyList(),
+                            discoveryRowTotal = 0,
+                            discoveryRowPage = -1,
+                            discoveryRowLast = true,
+                            discoveryRowBusy = false,
+                            discoveryRowError = null,
+                            discoveryPreviewCard = null
+                        )
                     }
                 } else {
                     val message = failureMessage(error)
