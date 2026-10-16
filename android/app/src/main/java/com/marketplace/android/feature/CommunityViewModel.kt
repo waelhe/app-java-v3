@@ -16,6 +16,7 @@ import com.marketplace.android.core.network.GeoNodeDto
 import com.marketplace.android.core.network.MarketItemDto
 import com.marketplace.android.core.network.MembershipDto
 import com.marketplace.android.core.network.NotificationDto
+import com.marketplace.android.core.network.UrgentAlertDto
 import com.marketplace.android.core.network.PostDto
 import com.marketplace.android.core.network.ListingSummaryDto
 import com.marketplace.android.data.MarketplaceRepository
