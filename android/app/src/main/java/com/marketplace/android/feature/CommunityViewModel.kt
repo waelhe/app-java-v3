@@ -862,6 +862,7 @@ class CommunityViewModel(
             ExploreMode.GROUPS -> loadGroups()
             ExploreMode.POLLS -> loadPolls()
             ExploreMode.MARKET -> loadMarket()
+            ExploreMode.DISCOVERY_ROW -> loadDiscoveryRow(reset = true)
         }
     }
 
@@ -872,6 +873,7 @@ class CommunityViewModel(
             ExploreMode.GROUPS -> loadGroups()
             ExploreMode.POLLS -> loadPolls()
             ExploreMode.MARKET -> loadMarket()
+            ExploreMode.DISCOVERY_ROW -> loadDiscoveryRow(reset = true)
         }
     }
 
