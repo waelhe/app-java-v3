@@ -234,15 +234,16 @@ private fun FeedScreen(
     onOpenOfficialAlerts: () -> Unit,
     onCreate: () -> Unit
 ) {
+    val alertScopeMatches = state.urgentAlertsScopeId == state.membership?.locationId
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 110.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        if (state.urgentAlertsBusy && state.urgentAlerts.isEmpty()) {
+        if (alertScopeMatches && state.urgentAlertsBusy && state.urgentAlerts.isEmpty()) {
             item { Text("نحدّث التنبيهات الرسمية لحيّك…", color = Muted, fontSize = 12.sp) }
         }
-        if (state.urgentAlertsError != null && state.urgentAlerts.isEmpty()) {
+        if (alertScopeMatches && state.urgentAlertsError != null && state.urgentAlerts.isEmpty()) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     InfoBanner("تعذر تحميل التنبيهات الرسمية.", isError = true)
@@ -250,7 +251,7 @@ private fun FeedScreen(
                 }
             }
         }
-        state.urgentAlerts.firstOrNull()?.let { alert ->
+        if (alertScopeMatches) state.urgentAlerts.firstOrNull()?.let { alert ->
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     OfficialAlertCard(alert, compact = true)
@@ -498,8 +499,10 @@ private fun ExploreScreen(
                 modifier = Modifier.weight(1f)
             )
             ExploreMode.OFFICIAL_ALERTS -> {
+                val alertScopeMatches = state.urgentAlertsScopeId == state.membership?.locationId
                 Text("تنبيهات نشطة من جهات مفوضة وموثّقة، ضمن نطاق حيّك فقط.", color = Muted, fontSize = 13.sp)
                 when {
+                    !alertScopeMatches -> LoadingCard("نحدّث التنبيهات الرسمية لحيّك…")
                     state.urgentAlertsBusy && state.urgentAlerts.isEmpty() -> LoadingCard("نحمّل التنبيهات الرسمية…")
                     state.urgentAlertsError != null && state.urgentAlerts.isEmpty() -> ErrorCard(state.urgentAlertsError, onRefresh)
                     state.urgentAlerts.isEmpty() -> EmptyState(
