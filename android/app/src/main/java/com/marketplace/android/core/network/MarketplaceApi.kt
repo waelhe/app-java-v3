@@ -115,6 +115,9 @@ interface MarketplaceApi {
     @POST("api/v1/reports")
     suspend fun createContentReport(@Body request: CreateContentReportRequest): ContentReportDto
 
+    @GET("api/v1/urgent-alerts")
+    suspend fun getUrgentAlerts(@Query("locationId") locationId: String): List<UrgentAlertDto>
+
     @GET("api/v1/notifications")
     suspend fun getNotifications(@Query("page") page: Int = 0, @Query("size") size: Int = 30): ApiPage<NotificationDto>
 
