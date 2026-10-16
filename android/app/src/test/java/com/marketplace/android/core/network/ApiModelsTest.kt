@@ -245,6 +245,124 @@ class ApiModelsTest {
         assertEquals(18L, page.content.single().providerReviewCount)
     }
 
+
+    @Test
+    fun discoveryHomeAndTopicPagePreserveOriginalSourceIdentity() {
+        val row = moshi.adapter(DiscoveryRowDto::class.java).fromJson(
+            """
+            {
+              "row": "NEIGHBORHOOD_RECOMMENDATIONS",
+              "cards": [{
+                "sourceType": "NEIGHBORHOOD_POST",
+                "sourceId": "post-1",
+                "updatedAt": "2026-10-16T09:00:00Z",
+                "title": "توصية من الحي",
+                "snippet": "سباك موثوق",
+                "state": "VISIBLE",
+                "scopeLocationId": "neighborhood-1",
+                "reason": "توصية جيران في حيّك",
+                "paid": false
+              }],
+              "totalEligible": 17
+            }
+            """.trimIndent()
+        )!!
+
+        assertEquals("NEIGHBORHOOD_RECOMMENDATIONS", row.row)
+        assertEquals(17L, row.totalEligible)
+        assertEquals("NEIGHBORHOOD_POST", row.cards.single().sourceType)
+        assertEquals("post-1", row.cards.single().sourceId)
+        assertEquals("VISIBLE", row.cards.single().state)
+        assertEquals(false, row.cards.single().paid)
+
+        val pageType = Types.newParameterizedType(ApiPage::class.java, DiscoveryCardDto::class.java)
+        val page = moshi.adapter<ApiPage<DiscoveryCardDto>>(pageType).fromJson(
+            """
+            {
+              "content": [{
+                "sourceType": "NEIGHBORHOOD_EVENT",
+                "sourceId": "event-1",
+                "updatedAt": "2026-10-16T10:00:00Z",
+                "title": "لقاء الحي",
+                "snippet": "لقاء مفتوح للجيران",
+                "state": "ACTIVE",
+                "scopeLocationId": "neighborhood-1",
+                "reason": "فعالية قريبة",
+                "paid": false
+              }],
+              "pageNumber": 0,
+              "pageSize": 20,
+              "totalElements": 21,
+              "totalPages": 2,
+              "last": false
+            }
+            """.trimIndent()
+        )!!
+
+        assertEquals(0, page.pageNumber)
+        assertEquals(21L, page.totalElements)
+        assertEquals(2, page.totalPages)
+        assertFalse(page.last)
+        assertEquals("event-1", page.content.single().sourceId)
+    }
+
+    @Test
+    fun discoveryImpressionAndContentReportRequestsMatchExistingContracts() {
+        val impressionJson = moshi.adapter(DiscoveryImpressionRequest::class.java).toJson(
+            DiscoveryImpressionRequest(
+                row = "LOST_FOUND",
+                sourceType = "NEIGHBORHOOD_POST",
+                sourceId = "post-2"
+            )
+        )
+        assertEquals(
+            """{"row":"LOST_FOUND","sourceType":"NEIGHBORHOOD_POST","sourceId":"post-2"}""",
+            impressionJson
+        )
+
+        val reportJson = moshi.adapter(CreateContentReportRequest::class.java).toJson(
+            CreateContentReportRequest(
+                targetType = "COMMENT",
+                targetId = "comment-2",
+                reason = "SPAM"
+            )
+        )
+        assertEquals(
+            """{"targetType":"COMMENT","targetId":"comment-2","reason":"SPAM"}""",
+            reportJson
+        )
+    }
+
+    @Test
+    fun officialAlertContractExposesSourceAndValidityWithoutClientInference() {
+        val alert = moshi.adapter(UrgentAlertDto::class.java).fromJson(
+            """
+            {
+              "alertId": "alert-1",
+              "sourceId": "source-1",
+              "sourceName": "بلدية الحي",
+              "sourceType": "MUNICIPALITY",
+              "level": "SEVERE",
+              "title": "إغلاق طريق",
+              "body": "الطريق مغلق للصيانة",
+              "locationId": "neighborhood-1",
+              "validFrom": "2026-10-16T08:00:00Z",
+              "validUntil": null,
+              "updatedAt": "2026-10-16T08:00:00Z",
+              "withdrawn": false,
+              "withdrawnAt": null
+            }
+            """.trimIndent()
+        )!!
+
+        assertEquals("بلدية الحي", alert.sourceName)
+        assertEquals("MUNICIPALITY", alert.sourceType)
+        assertEquals("SEVERE", alert.level)
+        assertEquals("neighborhood-1", alert.locationId)
+        assertEquals(null, alert.validUntil)
+        assertFalse(alert.withdrawn)
+    }
+
     @Test
     fun passkeyWireDtosMatchSpringSecurityJsonContracts() {
         val optionsJson = """{"challenge":"YWJj","rpId":"example.com"}"""
