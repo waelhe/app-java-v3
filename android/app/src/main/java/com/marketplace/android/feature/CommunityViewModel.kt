@@ -877,6 +877,73 @@ class CommunityViewModel(
         }
     }
 
+
+    private val supportedDiscoveryRows = setOf(
+        "FOLLOWED_SOURCES",
+        "LOST_FOUND",
+        "NEIGHBORHOOD_RECOMMENDATIONS",
+        "EVENTS_AND_OPPORTUNITIES",
+        "FOR_YOU"
+    )
+
+    /** Load server-assembled rows only for the active membership. */
+    fun loadDiscoveryHome() {
+        val scopeId = _uiState.value.membership?.locationId
+        if (!_uiState.value.authenticated || scopeId.isNullOrBlank()) {
+            _uiState.update {
+                it.copy(discoveryRows = emptyList(), discoveryScopeId = null, discoveryBusy = false)
+            }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update {
+                if (it.authenticated && it.membership?.locationId == scopeId) {
+                    it.copy(discoveryRows = emptyList(), discoveryScopeId = scopeId, discoveryBusy = true, discoveryError = null)
+                } else it
+            }
+            try {
+                val rows = repository.getDiscoveryHome()
+                _uiState.update {
+                    if (it.authenticated && it.membership?.locationId == scopeId) {
+                        it.copy(discoveryRows = rows, discoveryScopeId = scopeId, discoveryBusy = false, discoveryError = null)
+                    } else it
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _uiState.update {
+                    if (it.authenticated && it.membership?.locationId == scopeId) {
+                        it.copy(discoveryRows = emptyList(), discoveryScopeId = scopeId, discoveryBusy = false, discoveryError = failureMessage(error))
+                    } else it
+                }
+            }
+        }
+    }
+
+    fun openDiscoveryRow(row: String) {
+        if (row !in supportedDiscoveryRows) return
+        val current = _uiState.value
+        val scopeId = current.membership?.locationId
+        if (!current.authenticated || scopeId.isNullOrBlank()) return
+        _uiState.update {
+            it.copy(
+                tab = MainTab.EXPLORE,
+                exploreMode = ExploreMode.DISCOVERY_ROW,
+                selectedDiscoveryRow = row,
+                discoveryRowCards = emptyList(),
+                discoveryRowTotal = 0,
+                discoveryRowPage = -1,
+                discoveryRowLast = true,
+                discoveryRowBusy = false,
+                discoveryRowError = null,
+                discoveryPreviewCard = null
+            )
+        }
+        loadDiscoveryRow(reset = true)
+    }
+
+    fun loadMoreDiscoveryRow() = loadDiscoveryRow(reset = false)
+
     fun loadEvents() {
         if (!_uiState.value.authenticated || _uiState.value.membership == null) return
         viewModelScope.launch {
