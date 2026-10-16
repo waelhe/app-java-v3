@@ -1,0 +1,1343 @@
+{
+ "name_only_history": {
+  "com.google.code.gson:gson": [
+   "GHSA-4jrv-ppp4-jm57"
+  ],
+  "com.google.protobuf:protobuf-java": [
+   "GHSA-4gg5-vx3j-xwc7",
+   "GHSA-735f-pc8j-v9w8",
+   "GHSA-g5ww-5jh7-63cx",
+   "GHSA-h4h5-3hr4-j3g2",
+   "GHSA-wrvw-hg22-4m67"
+  ],
+  "com.google.protobuf:protobuf-javalite": [
+   "GHSA-4gg5-vx3j-xwc7",
+   "GHSA-735f-pc8j-v9w8",
+   "GHSA-g5ww-5jh7-63cx",
+   "GHSA-h4h5-3hr4-j3g2"
+  ],
+  "com.squareup.okio:okio": [
+   "GHSA-w33c-445m-f8w7"
+  ],
+  "com.squareup.okio:okio-jvm": [
+   "GHSA-w33c-445m-f8w7"
+  ],
+  "com.squareup.moshi:moshi": [],
+  "joda-time:joda-time": [],
+  "org.jetbrains.kotlinx:kotlinx-serialization-core": [],
+  "org.jetbrains.kotlinx:kotlinx-serialization-json": [],
+  "io.ktor:ktor-client-core": [
+   "GHSA-xwgq-pcqx-hpmv"
+  ],
+  "io.ktor:ktor-client-okhttp": [],
+  "io.coil-kt.coil3:coil-compose": [],
+  "io.coil-kt.coil3:coil": [],
+  "io.getstream:stream-chat-android-client": [],
+  "io.getstream:stream-chat-android-ui-common": [],
+  "io.sentry:sentry": [],
+  "io.sentry:sentry-android": [
+   "GHSA-7cjh-xx4r-qh3f"
+  ],
+  "com.android.billingclient:billing": [],
+  "dev.zacsweers.metro:runtime": [],
+  "org.jetbrains.kotlin:kotlin-stdlib": [
+   "GHSA-2qp4-g3q3-f92w",
+   "GHSA-cqj8-47ch-rvvq"
+  ],
+  "org.chromium.net:cronet-embedded": [],
+  "androidx.media3:media3-exoplayer": [],
+  "androidx.webkit:webkit": [],
+  "com.google.firebase:firebase-analytics": [],
+  "com.google.android.gms:play-services-cronet": [],
+  "com.google.android.play:integrity": []
+ },
+ "details": {
+  "GHSA-2qp4-g3q3-f92w": {
+   "summary": "Improper Locking in JetBrains Kotlin",
+   "aliases": [
+    "CVE-2022-24329"
+   ],
+   "severity": "MODERATE",
+   "published": "2022-02-26T00:00:43Z",
+   "affected": [
+    {
+     "pkg": "org.jetbrains.kotlin:kotlin-stdlib",
+     "ranges": [
+      "ECOSYSTEM introduced=0 | fixed=1.6.0"
+     ],
+     "versions": [
+      "0.0.1-test-deploy",
+      "0.0.2-test-deploy",
+      "0.10.1316",
+      "0.10.195",
+      "0.10.4",
+      "0.10.709",
+      "0.10.770",
+      "0.11.91",
+      "0.11.91.1",
+      "0.11.91.2",
+      "0.11.91.4",
+      "0.12.1218"
+     ]
+    }
+   ]
+  },
+  "GHSA-4gg5-vx3j-xwc7": {
+   "summary": "Protobuf Java vulnerable to Uncontrolled Resource Consumption",
+   "aliases": [
+    "CVE-2022-3510"
+   ],
+   "severity": "HIGH",
+   "published": "2022-12-12T15:30:33Z",
+   "affected": [
+    {
+     "pkg": "com.google.protobuf:protobuf-java",
+     "ranges": [
+      "ECOSYSTEM introduced=3.0.0 | fixed=3.16.3"
+     ],
+     "versions": [
+      "3.0.0",
+      "3.0.2",
+      "3.1.0",
+      "3.10.0",
+      "3.10.0-rc-1",
+      "3.11.0",
+      "3.11.0-rc-1",
+      "3.11.0-rc-2",
+      "3.11.1",
+      "3.11.3",
+      "3.11.4",
+      "3.12.0"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-java",
+     "ranges": [
+      "ECOSYSTEM introduced=3.17.0 | fixed=3.19.6"
+     ],
+     "versions": [
+      "3.17.0",
+      "3.17.1",
+      "3.17.2",
+      "3.17.3",
+      "3.18.0",
+      "3.18.0-rc-1",
+      "3.18.0-rc-2",
+      "3.18.1",
+      "3.18.2",
+      "3.18.3",
+      "3.19.0",
+      "3.19.0-rc-1"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-java",
+     "ranges": [
+      "ECOSYSTEM introduced=3.20.0 | fixed=3.20.3"
+     ],
+     "versions": [
+      "3.20.0",
+      "3.20.1",
+      "3.20.1-rc-1",
+      "3.20.2"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-java",
+     "ranges": [
+      "ECOSYSTEM introduced=3.21.0 | fixed=3.21.7"
+     ],
+     "versions": [
+      "3.21.0",
+      "3.21.1",
+      "3.21.2",
+      "3.21.3",
+      "3.21.4",
+      "3.21.5",
+      "3.21.6"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-javalite",
+     "ranges": [
+      "ECOSYSTEM introduced=3.0.0 | fixed=3.16.3"
+     ],
+     "versions": [
+      "3.10.0",
+      "3.10.0-rc-1",
+      "3.11.0",
+      "3.11.0-rc-1",
+      "3.11.0-rc-2",
+      "3.11.1",
+      "3.11.3",
+      "3.11.4",
+      "3.12.0",
+      "3.12.0-rc-1",
+      "3.12.0-rc-2",
+      "3.12.1"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-javalite",
+     "ranges": [
+      "ECOSYSTEM introduced=3.17.0 | fixed=3.19.6"
+     ],
+     "versions": [
+      "3.17.0",
+      "3.17.1",
+      "3.17.2",
+      "3.17.3",
+      "3.18.0",
+      "3.18.0-rc-1",
+      "3.18.0-rc-2",
+      "3.18.1",
+      "3.18.2",
+      "3.18.3",
+      "3.19.0",
+      "3.19.0-rc-1"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-javalite",
+     "ranges": [
+      "ECOSYSTEM introduced=3.20.0 | fixed=3.20.3"
+     ],
+     "versions": [
+      "3.20.0",
+      "3.20.1",
+      "3.20.1-rc-1",
+      "3.20.2"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-javalite",
+     "ranges": [
+      "ECOSYSTEM introduced=3.21.0 | fixed=3.21.7"
+     ],
+     "versions": [
+      "3.21.0",
+      "3.21.1",
+      "3.21.2",
+      "3.21.3",
+      "3.21.4",
+      "3.21.5",
+      "3.21.6"
+     ]
+    }
+   ]
+  },
+  "GHSA-4jrv-ppp4-jm57": {
+   "summary": "Deserialization of Untrusted Data in Gson",
+   "aliases": [
+    "CVE-2022-25647",
+    "SNYK-JAVA-COMGOOGLECODEGSON-1730327"
+   ],
+   "severity": "HIGH",
+   "published": "2022-05-03T00:00:44Z",
+   "affected": [
+    {
+     "pkg": "com.google.code.gson:gson",
+     "ranges": [
+      "ECOSYSTEM introduced=0 | fixed=2.8.9"
+     ],
+     "versions": [
+      "1.1",
+      "1.4",
+      "1.5",
+      "1.6",
+      "1.7",
+      "1.7.1",
+      "1.7.2",
+      "2.0",
+      "2.1",
+      "2.2",
+      "2.2.1",
+      "2.2.2"
+     ]
+    }
+   ]
+  },
+  "GHSA-735f-pc8j-v9w8": {
+   "summary": "protobuf-java has potential Denial of Service issue",
+   "aliases": [
+    "CVE-2024-7254"
+   ],
+   "severity": "HIGH",
+   "published": "2024-09-19T16:06:03Z",
+   "affected": [
+    {
+     "pkg": "com.google.protobuf:protobuf-java",
+     "ranges": [
+      "ECOSYSTEM introduced=0 | fixed=3.25.5"
+     ],
+     "versions": [
+      "2.0.1",
+      "2.0.3",
+      "2.1.0",
+      "2.2.0",
+      "2.3.0",
+      "2.4.0a",
+      "2.4.1",
+      "2.5.0",
+      "2.6.0",
+      "2.6.1",
+      "3.0.0",
+      "3.0.0-alpha-2"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-javalite",
+     "ranges": [
+      "ECOSYSTEM introduced=0 | fixed=3.25.5"
+     ],
+     "versions": [
+      "3.10.0",
+      "3.10.0-rc-1",
+      "3.11.0",
+      "3.11.0-rc-1",
+      "3.11.0-rc-2",
+      "3.11.1",
+      "3.11.3",
+      "3.11.4",
+      "3.12.0",
+      "3.12.0-rc-1",
+      "3.12.0-rc-2",
+      "3.12.1"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-kotlin",
+     "ranges": [
+      "ECOSYSTEM introduced=0 | fixed=3.25.5"
+     ],
+     "versions": [
+      "3.17.0",
+      "3.17.0-rc-2",
+      "3.17.1",
+      "3.17.2",
+      "3.17.3",
+      "3.18.0",
+      "3.18.0-rc-1",
+      "3.18.0-rc-2",
+      "3.18.1",
+      "3.18.2",
+      "3.18.3",
+      "3.19.0"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-kotlin-lite",
+     "ranges": [
+      "ECOSYSTEM introduced=0 | fixed=3.25.5"
+     ],
+     "versions": [
+      "3.17.0",
+      "3.17.0-rc-2",
+      "3.17.1",
+      "3.17.2",
+      "3.17.3",
+      "3.18.0",
+      "3.18.0-rc-1",
+      "3.18.0-rc-2",
+      "3.18.1",
+      "3.18.2",
+      "3.18.3",
+      "3.19.0"
+     ]
+    },
+    {
+     "pkg": "google-protobuf",
+     "ranges": [
+      "ECOSYSTEM introduced=0 | fixed=3.25.5"
+     ],
+     "versions": [
+      "3.0.0",
+      "3.0.0.alpha.1.0",
+      "3.0.0.alpha.1.1",
+      "3.0.0.alpha.2.0",
+      "3.0.0.alpha.3",
+      "3.0.0.alpha.3.1.pre",
+      "3.0.0.alpha.4.0",
+      "3.0.0.alpha.5.0.3",
+      "3.0.0.alpha.5.0.4",
+      "3.0.0.alpha.5.0.5",
+      "3.0.0.alpha.5.0.5.1",
+      "3.0.2"
+     ]
+    },
+    {
+     "pkg": "google-protobuf",
+     "ranges": [
+      "ECOSYSTEM introduced=4.0.0.rc.1 | fixed=4.27.5"
+     ],
+     "versions": [
+      "4.26.0",
+      "4.26.0.rc.1",
+      "4.26.0.rc.2",
+      "4.26.0.rc.3",
+      "4.26.1",
+      "4.27.0",
+      "4.27.0.rc.1",
+      "4.27.0.rc.2",
+      "4.27.0.rc.3",
+      "4.27.1",
+      "4.27.2",
+      "4.27.3"
+     ]
+    },
+    {
+     "pkg": "google-protobuf",
+     "ranges": [
+      "ECOSYSTEM introduced=4.28.0.rc.1 | fixed=4.28.2"
+     ],
+     "versions": [
+      "4.28.0",
+      "4.28.0.rc.1",
+      "4.28.0.rc.2",
+      "4.28.0.rc.3",
+      "4.28.1"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-kotlin-lite",
+     "ranges": [
+      "ECOSYSTEM introduced=4.0.0-RC1 | fixed=4.27.5"
+     ],
+     "versions": [
+      "4.26.0",
+      "4.26.0-RC1",
+      "4.26.0-RC2",
+      "4.26.0-RC3",
+      "4.26.1",
+      "4.27.0",
+      "4.27.0-RC1",
+      "4.27.0-RC2",
+      "4.27.0-RC3",
+      "4.27.1",
+      "4.27.2",
+      "4.27.3"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-kotlin-lite",
+     "ranges": [
+      "ECOSYSTEM introduced=4.28.0-RC1 | fixed=4.28.2"
+     ],
+     "versions": [
+      "4.28.0",
+      "4.28.0-RC1",
+      "4.28.0-RC2",
+      "4.28.0-RC3",
+      "4.28.1"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-kotlin",
+     "ranges": [
+      "ECOSYSTEM introduced=4.0.0-RC1 | fixed=4.27.5"
+     ],
+     "versions": [
+      "4.26.0",
+      "4.26.0-RC1",
+      "4.26.0-RC2",
+      "4.26.0-RC3",
+      "4.26.1",
+      "4.27.0",
+      "4.27.0-RC1",
+      "4.27.0-RC2",
+      "4.27.0-RC3",
+      "4.27.1",
+      "4.27.2",
+      "4.27.3"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-kotlin",
+     "ranges": [
+      "ECOSYSTEM introduced=4.28.0-RC1 | fixed=4.28.2"
+     ],
+     "versions": [
+      "4.28.0",
+      "4.28.0-RC1",
+      "4.28.0-RC2",
+      "4.28.0-RC3",
+      "4.28.1"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-javalite",
+     "ranges": [
+      "ECOSYSTEM introduced=4.0.0-RC1 | fixed=4.27.5"
+     ],
+     "versions": [
+      "4.0.0-rc-1",
+      "4.0.0-rc-2",
+      "4.26.0",
+      "4.26.0-RC1",
+      "4.26.0-RC2",
+      "4.26.0-RC3",
+      "4.26.1",
+      "4.27.0",
+      "4.27.0-RC1",
+      "4.27.0-RC2",
+      "4.27.0-RC3",
+      "4.27.1"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-javalite",
+     "ranges": [
+      "ECOSYSTEM introduced=4.28.0-RC1 | fixed=4.28.2"
+     ],
+     "versions": [
+      "4.28.0",
+      "4.28.0-RC1",
+      "4.28.0-RC2",
+      "4.28.0-RC3",
+      "4.28.1"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-java",
+     "ranges": [
+      "ECOSYSTEM introduced=4.0.0-RC1 | fixed=4.27.5"
+     ],
+     "versions": [
+      "4.0.0-rc-1",
+      "4.0.0-rc-2",
+      "4.26.0",
+      "4.26.0-RC1",
+      "4.26.0-RC2",
+      "4.26.0-RC3",
+      "4.26.1",
+      "4.27.0",
+      "4.27.0-RC1",
+      "4.27.0-RC2",
+      "4.27.0-RC3",
+      "4.27.1"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-java",
+     "ranges": [
+      "ECOSYSTEM introduced=4.28.0-RC1 | fixed=4.28.2"
+     ],
+     "versions": [
+      "4.28.0",
+      "4.28.0-RC1",
+      "4.28.0-RC2",
+      "4.28.0-RC3",
+      "4.28.1"
+     ]
+    }
+   ]
+  },
+  "GHSA-7cjh-xx4r-qh3f": {
+   "summary": "sentry-android unmasked sensitive data in Android Session Replays for users of Jetpack Compose 1.8+",
+   "aliases": [],
+   "severity": "HIGH",
+   "published": "2025-06-20T13:28:26Z",
+   "affected": [
+    {
+     "pkg": "io.sentry:sentry-android",
+     "ranges": [
+      "ECOSYSTEM introduced=0 | fixed=8.14.0"
+     ],
+     "versions": [
+      "1.0.0",
+      "1.0.0-beta",
+      "1.0.0-beta2",
+      "1.0.0-beta3",
+      "1.1.0",
+      "1.2.0",
+      "1.2.1",
+      "1.2.2",
+      "1.3.0",
+      "1.3.1",
+      "1.4.0",
+      "1.5.0"
+     ]
+    },
+    {
+     "pkg": "io.sentry:sentry-android-replay",
+     "ranges": [
+      "ECOSYSTEM introduced=0 | fixed=8.14.0"
+     ],
+     "versions": [
+      "7.11.0-alpha.2",
+      "7.12.0",
+      "7.12.0-alpha.3",
+      "7.12.0-alpha.4",
+      "7.12.1",
+      "7.13.0",
+      "7.14.0",
+      "7.15.0",
+      "7.15.0-alpha.1",
+      "7.16.0",
+      "7.16.0-alpha.1",
+      "7.17.0"
+     ]
+    }
+   ]
+  },
+  "GHSA-cqj8-47ch-rvvq": {
+   "summary": "Incorrect Default Permissions in JetBrains Kotlin",
+   "aliases": [
+    "CVE-2020-29582"
+   ],
+   "severity": "MODERATE",
+   "published": "2022-05-24T17:40:48Z",
+   "affected": [
+    {
+     "pkg": "org.jetbrains.kotlin:kotlin-stdlib",
+     "ranges": [
+      "ECOSYSTEM introduced=0 | fixed=1.4.21"
+     ],
+     "versions": [
+      "0.0.1-test-deploy",
+      "0.0.2-test-deploy",
+      "0.10.1316",
+      "0.10.195",
+      "0.10.4",
+      "0.10.709",
+      "0.10.770",
+      "0.11.91",
+      "0.11.91.1",
+      "0.11.91.2",
+      "0.11.91.4",
+      "0.12.1218"
+     ]
+    }
+   ]
+  },
+  "GHSA-g5ww-5jh7-63cx": {
+   "summary": "Protobuf Java vulnerable to Uncontrolled Resource Consumption",
+   "aliases": [
+    "CVE-2022-3509"
+   ],
+   "severity": "HIGH",
+   "published": "2022-12-12T15:30:33Z",
+   "affected": [
+    {
+     "pkg": "com.google.protobuf:protobuf-java",
+     "ranges": [
+      "ECOSYSTEM introduced=3.0.0 | fixed=3.16.3"
+     ],
+     "versions": [
+      "3.0.0",
+      "3.0.2",
+      "3.1.0",
+      "3.10.0",
+      "3.10.0-rc-1",
+      "3.11.0",
+      "3.11.0-rc-1",
+      "3.11.0-rc-2",
+      "3.11.1",
+      "3.11.3",
+      "3.11.4",
+      "3.12.0"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-java",
+     "ranges": [
+      "ECOSYSTEM introduced=3.17.0 | fixed=3.19.6"
+     ],
+     "versions": [
+      "3.17.0",
+      "3.17.1",
+      "3.17.2",
+      "3.17.3",
+      "3.18.0",
+      "3.18.0-rc-1",
+      "3.18.0-rc-2",
+      "3.18.1",
+      "3.18.2",
+      "3.18.3",
+      "3.19.0",
+      "3.19.0-rc-1"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-java",
+     "ranges": [
+      "ECOSYSTEM introduced=3.20.0 | fixed=3.20.3"
+     ],
+     "versions": [
+      "3.20.0",
+      "3.20.1",
+      "3.20.1-rc-1",
+      "3.20.2"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-java",
+     "ranges": [
+      "ECOSYSTEM introduced=3.21.0 | fixed=3.21.7"
+     ],
+     "versions": [
+      "3.21.0",
+      "3.21.1",
+      "3.21.2",
+      "3.21.3",
+      "3.21.4",
+      "3.21.5",
+      "3.21.6"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-javalite",
+     "ranges": [
+      "ECOSYSTEM introduced=3.20.0 | fixed=3.20.3"
+     ],
+     "versions": [
+      "3.20.0",
+      "3.20.1",
+      "3.20.1-rc-1",
+      "3.20.2"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-javalite",
+     "ranges": [
+      "ECOSYSTEM introduced=3.21.0 | fixed=3.21.7"
+     ],
+     "versions": [
+      "3.21.0",
+      "3.21.1",
+      "3.21.2",
+      "3.21.3",
+      "3.21.4",
+      "3.21.5",
+      "3.21.6"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-javalite",
+     "ranges": [
+      "ECOSYSTEM introduced=3.0.0 | fixed=3.16.3"
+     ],
+     "versions": [
+      "3.10.0",
+      "3.10.0-rc-1",
+      "3.11.0",
+      "3.11.0-rc-1",
+      "3.11.0-rc-2",
+      "3.11.1",
+      "3.11.3",
+      "3.11.4",
+      "3.12.0",
+      "3.12.0-rc-1",
+      "3.12.0-rc-2",
+      "3.12.1"
+     ]
+    }
+   ]
+  },
+  "GHSA-h4h5-3hr4-j3g2": {
+   "summary": "protobuf-java has a potential Denial of Service issue",
+   "aliases": [
+    "CVE-2022-3171"
+   ],
+   "severity": "MODERATE",
+   "published": "2022-10-04T22:17:15Z",
+   "affected": [
+    {
+     "pkg": "com.google.protobuf:protobuf-java",
+     "ranges": [
+      "ECOSYSTEM introduced=3.21.0-rc-1 | fixed=3.21.7"
+     ],
+     "versions": [
+      "3.21.0",
+      "3.21.0-rc-1",
+      "3.21.0-rc-2",
+      "3.21.1",
+      "3.21.2",
+      "3.21.3",
+      "3.21.4",
+      "3.21.5",
+      "3.21.6"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-kotlin",
+     "ranges": [
+      "ECOSYSTEM introduced=3.21.0-rc-1 | fixed=3.21.7"
+     ],
+     "versions": [
+      "3.21.0",
+      "3.21.0-rc-1",
+      "3.21.0-rc-2",
+      "3.21.1",
+      "3.21.2",
+      "3.21.3",
+      "3.21.4",
+      "3.21.5",
+      "3.21.6"
+     ]
+    },
+    {
+     "pkg": "google-protobuf",
+     "ranges": [
+      "ECOSYSTEM introduced=3.21.0.rc.1 | fixed=3.21.7"
+     ],
+     "versions": [
+      "3.21.0",
+      "3.21.0.rc.1",
+      "3.21.0.rc.2",
+      "3.21.1",
+      "3.21.2",
+      "3.21.3",
+      "3.21.4",
+      "3.21.5",
+      "3.21.6"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-javalite",
+     "ranges": [
+      "ECOSYSTEM introduced=3.21.0-rc-1 | fixed=3.21.7"
+     ],
+     "versions": [
+      "3.21.0",
+      "3.21.0-rc-1",
+      "3.21.0-rc-2",
+      "3.21.1",
+      "3.21.2",
+      "3.21.3",
+      "3.21.4",
+      "3.21.5",
+      "3.21.6"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-kotlin-lite",
+     "ranges": [
+      "ECOSYSTEM introduced=3.21.0-rc-1 | fixed=3.21.7"
+     ],
+     "versions": [
+      "3.21.0",
+      "3.21.0-rc-1",
+      "3.21.0-rc-2",
+      "3.21.1",
+      "3.21.2",
+      "3.21.3",
+      "3.21.4",
+      "3.21.5",
+      "3.21.6"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-java",
+     "ranges": [
+      "ECOSYSTEM introduced=3.20.0-rc-1 | fixed=3.20.3"
+     ],
+     "versions": [
+      "3.20.0",
+      "3.20.0-rc-1",
+      "3.20.1",
+      "3.20.1-rc-1",
+      "3.20.2"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-java",
+     "ranges": [
+      "ECOSYSTEM introduced=3.17.0-rc-1 | fixed=3.19.6"
+     ],
+     "versions": [
+      "3.17.0",
+      "3.17.0-rc-1",
+      "3.17.0-rc-2",
+      "3.17.1",
+      "3.17.2",
+      "3.17.3",
+      "3.18.0",
+      "3.18.0-rc-1",
+      "3.18.0-rc-2",
+      "3.18.1",
+      "3.18.2",
+      "3.18.3"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-java",
+     "ranges": [
+      "ECOSYSTEM introduced=0 | fixed=3.16.3"
+     ],
+     "versions": [
+      "2.0.1",
+      "2.0.3",
+      "2.1.0",
+      "2.2.0",
+      "2.3.0",
+      "2.4.0a",
+      "2.4.1",
+      "2.5.0",
+      "2.6.0",
+      "2.6.1",
+      "3.0.0",
+      "3.0.0-alpha-2"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-kotlin",
+     "ranges": [
+      "ECOSYSTEM introduced=3.20.0-rc-1 | fixed=3.20.3"
+     ],
+     "versions": [
+      "3.20.0",
+      "3.20.0-rc-1",
+      "3.20.1",
+      "3.20.1-rc-1",
+      "3.20.2"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-kotlin",
+     "ranges": [
+      "ECOSYSTEM introduced=3.17.0-rc-1 | fixed=3.19.6"
+     ],
+     "versions": [
+      "3.17.0",
+      "3.17.0-rc-2",
+      "3.17.1",
+      "3.17.2",
+      "3.17.3",
+      "3.18.0",
+      "3.18.0-rc-1",
+      "3.18.0-rc-2",
+      "3.18.1",
+      "3.18.2",
+      "3.18.3",
+      "3.19.0"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-kotlin",
+     "ranges": [
+      "ECOSYSTEM introduced=0 | fixed=3.16.3"
+     ],
+     "versions": []
+    },
+    {
+     "pkg": "google-protobuf",
+     "ranges": [
+      "ECOSYSTEM introduced=3.20.0.rc.1 | fixed=3.20.3"
+     ],
+     "versions": [
+      "3.20.0",
+      "3.20.0.rc.1",
+      "3.20.0.rc.2",
+      "3.20.1",
+      "3.20.1.rc.1",
+      "3.20.2"
+     ]
+    },
+    {
+     "pkg": "google-protobuf",
+     "ranges": [
+      "ECOSYSTEM introduced=3.17.0.rc.1 | fixed=3.19.6"
+     ],
+     "versions": [
+      "3.17.0",
+      "3.17.0.rc.1",
+      "3.17.0.rc.2",
+      "3.17.1",
+      "3.17.2",
+      "3.17.3",
+      "3.18.0",
+      "3.18.0.rc.1",
+      "3.18.0.rc.2",
+      "3.18.1",
+      "3.18.2",
+      "3.18.3"
+     ]
+    },
+    {
+     "pkg": "google-protobuf",
+     "ranges": [
+      "ECOSYSTEM introduced=0 | fixed=3.16.3"
+     ],
+     "versions": [
+      "3.0.0",
+      "3.0.0.alpha.1.0",
+      "3.0.0.alpha.1.1",
+      "3.0.0.alpha.2.0",
+      "3.0.0.alpha.3",
+      "3.0.0.alpha.3.1.pre",
+      "3.0.0.alpha.4.0",
+      "3.0.0.alpha.5.0.3",
+      "3.0.0.alpha.5.0.4",
+      "3.0.0.alpha.5.0.5",
+      "3.0.0.alpha.5.0.5.1",
+      "3.0.2"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-javalite",
+     "ranges": [
+      "ECOSYSTEM introduced=3.20.0-rc-1 | fixed=3.20.3"
+     ],
+     "versions": [
+      "3.20.0",
+      "3.20.0-rc-1",
+      "3.20.1",
+      "3.20.1-rc-1",
+      "3.20.2"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-javalite",
+     "ranges": [
+      "ECOSYSTEM introduced=3.17.0-rc-1 | fixed=3.19.6"
+     ],
+     "versions": [
+      "3.17.0",
+      "3.17.0-rc-1",
+      "3.17.0-rc-2",
+      "3.17.1",
+      "3.17.2",
+      "3.17.3",
+      "3.18.0",
+      "3.18.0-rc-1",
+      "3.18.0-rc-2",
+      "3.18.1",
+      "3.18.2",
+      "3.18.3"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-javalite",
+     "ranges": [
+      "ECOSYSTEM introduced=0 | fixed=3.16.3"
+     ],
+     "versions": [
+      "3.10.0",
+      "3.10.0-rc-1",
+      "3.11.0",
+      "3.11.0-rc-1",
+      "3.11.0-rc-2",
+      "3.11.1",
+      "3.11.3",
+      "3.11.4",
+      "3.12.0",
+      "3.12.0-rc-1",
+      "3.12.0-rc-2",
+      "3.12.1"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-kotlin-lite",
+     "ranges": [
+      "ECOSYSTEM introduced=3.20.0-rc-1 | fixed=3.20.3"
+     ],
+     "versions": [
+      "3.20.0",
+      "3.20.0-rc-1",
+      "3.20.1",
+      "3.20.1-rc-1",
+      "3.20.2"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-kotlin-lite",
+     "ranges": [
+      "ECOSYSTEM introduced=3.17.0-rc-1 | fixed=3.19.6"
+     ],
+     "versions": [
+      "3.17.0",
+      "3.17.0-rc-2",
+      "3.17.1",
+      "3.17.2",
+      "3.17.3",
+      "3.18.0",
+      "3.18.0-rc-1",
+      "3.18.0-rc-2",
+      "3.18.1",
+      "3.18.2",
+      "3.18.3",
+      "3.19.0"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-kotlin-lite",
+     "ranges": [
+      "ECOSYSTEM introduced=0 | fixed=3.16.3"
+     ],
+     "versions": []
+    }
+   ]
+  },
+  "GHSA-w33c-445m-f8w7": {
+   "summary": "Okio Signed to Unsigned Conversion Error vulnerability",
+   "aliases": [
+    "CVE-2023-3635"
+   ],
+   "severity": "MODERATE",
+   "published": "2023-07-12T21:30:50Z",
+   "affected": [
+    {
+     "pkg": "com.squareup.okio:okio",
+     "ranges": [
+      "ECOSYSTEM introduced=2.0.0-RC1 | fixed=3.4.0"
+     ],
+     "versions": [
+      "2.0.0",
+      "2.0.0-RC1",
+      "2.1.0",
+      "2.10.0",
+      "2.2.0",
+      "2.2.1",
+      "2.2.2",
+      "2.3.0",
+      "2.4.0",
+      "2.4.1",
+      "2.4.2",
+      "2.4.3"
+     ]
+    },
+    {
+     "pkg": "com.squareup.okio:okio",
+     "ranges": [
+      "ECOSYSTEM introduced=0 | fixed=1.17.6"
+     ],
+     "versions": [
+      "0.5.0",
+      "0.6.0",
+      "0.6.1",
+      "0.7.0",
+      "0.8.0",
+      "0.9.0",
+      "1.0.0",
+      "1.0.1",
+      "1.1.0",
+      "1.10.0",
+      "1.11.0",
+      "1.12.0"
+     ]
+    },
+    {
+     "pkg": "com.squareup.okio:okio-jvm",
+     "ranges": [
+      "ECOSYSTEM introduced=2.0.0-RC1 | fixed=3.4.0"
+     ],
+     "versions": [
+      "3.0.0",
+      "3.0.0-alpha.10",
+      "3.0.0-alpha.11",
+      "3.1.0",
+      "3.2.0",
+      "3.3.0"
+     ]
+    }
+   ]
+  },
+  "GHSA-wrvw-hg22-4m67": {
+   "summary": "A potential Denial of Service issue in protobuf-java",
+   "aliases": [
+    "CVE-2021-22569"
+   ],
+   "severity": "HIGH",
+   "published": "2022-01-07T22:31:44Z",
+   "affected": [
+    {
+     "pkg": "com.google.protobuf:protobuf-java",
+     "ranges": [
+      "ECOSYSTEM introduced=0 | fixed=3.16.1"
+     ],
+     "versions": [
+      "2.0.1",
+      "2.0.3",
+      "2.1.0",
+      "2.2.0",
+      "2.3.0",
+      "2.4.0a",
+      "2.4.1",
+      "2.5.0",
+      "2.6.0",
+      "2.6.1",
+      "3.0.0",
+      "3.0.0-alpha-2"
+     ]
+    },
+    {
+     "pkg": "google-protobuf",
+     "ranges": [
+      "ECOSYSTEM introduced=0 | fixed=3.19.2"
+     ],
+     "versions": [
+      "3.0.0",
+      "3.0.0.alpha.1.0",
+      "3.0.0.alpha.1.1",
+      "3.0.0.alpha.2.0",
+      "3.0.0.alpha.3",
+      "3.0.0.alpha.3.1.pre",
+      "3.0.0.alpha.4.0",
+      "3.0.0.alpha.5.0.3",
+      "3.0.0.alpha.5.0.4",
+      "3.0.0.alpha.5.0.5",
+      "3.0.0.alpha.5.0.5.1",
+      "3.0.2"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-java",
+     "ranges": [
+      "ECOSYSTEM introduced=3.18.0 | fixed=3.18.2"
+     ],
+     "versions": [
+      "3.18.0",
+      "3.18.1"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-java",
+     "ranges": [
+      "ECOSYSTEM introduced=3.19.0 | fixed=3.19.2"
+     ],
+     "versions": [
+      "3.19.0",
+      "3.19.1"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-kotlin",
+     "ranges": [
+      "ECOSYSTEM introduced=3.18.0 | fixed=3.18.2"
+     ],
+     "versions": [
+      "3.18.0",
+      "3.18.1"
+     ]
+    },
+    {
+     "pkg": "com.google.protobuf:protobuf-kotlin",
+     "ranges": [
+      "ECOSYSTEM introduced=3.19.0 | fixed=3.19.2"
+     ],
+     "versions": [
+      "3.19.0",
+      "3.19.1"
+     ]
+    }
+   ]
+  },
+  "GHSA-xwgq-pcqx-hpmv": {
+   "summary": "URL Redirection to Untrusted Site (Open Redirect) in Ktor",
+   "aliases": [
+    "CVE-2019-19703"
+   ],
+   "severity": "MODERATE",
+   "published": "2020-02-12T18:45:50Z",
+   "affected": [
+    {
+     "pkg": "io.ktor:ktor-client-core",
+     "ranges": [
+      "ECOSYSTEM introduced=0 | fixed=1.3.0"
+     ],
+     "versions": [
+      "1.0.0",
+      "1.0.0-rc",
+      "1.0.1",
+      "1.1.0",
+      "1.1.1",
+      "1.1.2",
+      "1.1.3",
+      "1.1.4",
+      "1.1.5",
+      "1.2.0",
+      "1.2.0-rc",
+      "1.2.0-rc2"
+     ]
+    }
+   ]
+  }
+ },
+ "github": {
+  "com.squareup.okhttp3:okhttp": {
+   "http": 200,
+   "count": 2,
+   "ids": [
+    "GHSA-3cqm-mf7h-prrj",
+    "GHSA-4hc2-jh7r-wrc3"
+   ]
+  },
+  "com.google.code.gson:gson": {
+   "http": 200,
+   "count": 1,
+   "ids": [
+    "GHSA-4jrv-ppp4-jm57"
+   ]
+  },
+  "com.google.protobuf:protobuf-java": {
+   "http": 200,
+   "count": 6,
+   "ids": [
+    "GHSA-735f-pc8j-v9w8",
+    "GHSA-4gg5-vx3j-xwc7",
+    "GHSA-g5ww-5jh7-63cx",
+    "GHSA-h4h5-3hr4-j3g2",
+    "GHSA-77rm-9x9h-xj3g",
+    "GHSA-wrvw-hg22-4m67"
+   ]
+  },
+  "com.squareup.okio:okio": {
+   "http": 200,
+   "count": 1,
+   "ids": [
+    "GHSA-w33c-445m-f8w7"
+   ]
+  },
+  "com.squareup.moshi:moshi": {
+   "http": 200,
+   "count": 0,
+   "ids": []
+  },
+  "joda-time:joda-time": {
+   "http": 200,
+   "count": 0,
+   "ids": []
+  },
+  "io.ktor:ktor-client-core": {
+   "http": 200,
+   "count": 1,
+   "ids": [
+    "GHSA-xwgq-pcqx-hpmv"
+   ]
+  },
+  "io.getstream:stream-chat-android-client": {
+   "http": 200,
+   "count": 0,
+   "ids": []
+  },
+  "io.sentry:sentry": {
+   "http": 200,
+   "count": 0,
+   "ids": []
+  },
+  "com.android.billingclient:billing": {
+   "http": 200,
+   "count": 0,
+   "ids": []
+  },
+  "androidx.media3:media3-exoplayer": {
+   "http": 200,
+   "count": 0,
+   "ids": []
+  },
+  "org.jetbrains.kotlin:kotlin-stdlib": {
+   "http": 200,
+   "count": 2,
+   "ids": [
+    "GHSA-cqj8-47ch-rvvq",
+    "GHSA-2qp4-g3q3-f92w"
+   ]
+  },
+  "dev.zacsweers.metro:runtime": {
+   "http": 200,
+   "count": 0,
+   "ids": []
+  }
+ }
+}

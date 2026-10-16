@@ -1,0 +1,406 @@
+=== META-INF/*.version ===
+androidx.activity_activity-compose.version = 1.13.0
+androidx.activity_activity-ktx.version = 1.13.0
+androidx.activity_activity.version = 1.13.0
+androidx.annotation_annotation-experimental.version = 1.5.1
+androidx.appcompat_appcompat-resources.version = 1.8.0
+androidx.appcompat_appcompat.version = 1.8.0
+androidx.arch.core_core-runtime.version = task ':arch:core:core-runtime:writeVersionFile' property 'version'
+androidx.asynclayoutinflater_asynclayoutinflater.version = 1.0.0
+androidx.autofill_autofill.version = 1.1.0
+androidx.biometric_biometric.version = 1.1.0
+androidx.browser_browser.version = 1.10.0
+androidx.camera.featurecombinationquery_featurecombinationquery.version = 1.6.2
+androidx.camera.viewfinder_viewfinder-core.version = 1.5.1
+androidx.camera_camera-camera2-pipe.version = 1.6.2
+androidx.camera_camera-camera2.version = 1.6.2
+androidx.camera_camera-core.version = 1.6.2
+androidx.camera_camera-extensions.version = 1.6.2
+androidx.camera_camera-lifecycle.version = 1.6.2
+androidx.camera_camera-video.version = 1.6.2
+androidx.camera_camera-view.version = 1.6.2
+androidx.cardview_cardview.version = 1.0.0
+androidx.compose.animation_animation-core.version = 1.12.1
+androidx.compose.animation_animation.version = 1.12.1
+androidx.compose.foundation_foundation-layout.version = 1.12.1
+androidx.compose.foundation_foundation.version = 1.12.1
+androidx.compose.material3.adaptive_adaptive.version = 1.3.0
+androidx.compose.material3_material3.version = 1.4.0
+androidx.compose.material_material-ripple.version = 1.12.1
+androidx.compose.material_material.version = 1.12.1
+androidx.compose.runtime_runtime-annotation.version = 1.12.1
+androidx.compose.runtime_runtime-retain.version = 1.12.1
+androidx.compose.runtime_runtime-rxjava2.version = 1.12.1
+androidx.compose.runtime_runtime-saveable.version = 1.12.1
+androidx.compose.runtime_runtime.version = 1.12.1
+androidx.compose.ui_ui-geometry.version = 1.12.1
+androidx.compose.ui_ui-graphics.version = 1.12.1
+androidx.compose.ui_ui-text.version = 1.12.1
+androidx.compose.ui_ui-tooling-data.version = 1.12.1
+androidx.compose.ui_ui-tooling-preview.version = 1.12.1
+androidx.compose.ui_ui-tooling.version = 1.12.1
+androidx.compose.ui_ui-unit.version = 1.12.1
+androidx.compose.ui_ui-util.version = 1.12.1
+androidx.compose.ui_ui-viewbinding.version = 1.12.1
+androidx.compose.ui_ui.version = 1.12.1
+androidx.constraintlayout_constraintlayout-compose.version = 1.1.2
+androidx.constraintlayout_constraintlayout.version = 2.2.2
+androidx.coordinatorlayout_coordinatorlayout.version = 1.1.0
+androidx.core_core-backported-fixes.version = 1.0.0
+androidx.core_core-ktx.version = 1.19.1
+androidx.core_core-splashscreen.version = 1.2.0
+androidx.core_core-viewtree.version = 1.0.0
+androidx.core_core.version = 1.19.1
+androidx.credentials_credentials-play-services-auth.version = 1.6.0
+androidx.credentials_credentials.version = 1.6.0
+androidx.cursoradapter_cursoradapter.version = 1.0.0
+androidx.customview_customview-poolingcontainer.version = 1.0.0
+androidx.customview_customview.version = 1.2.0
+androidx.databinding_viewbinding.version = 9.4.1
+androidx.datastore_datastore-core.version = 1.2.1
+androidx.datastore_datastore-preferences-core.version = 1.2.1
+androidx.datastore_datastore-preferences.version = 1.2.1
+androidx.datastore_datastore.version = 1.2.1
+androidx.documentfile_documentfile.version = 1.0.0
+androidx.drawerlayout_drawerlayout.version = task ':drawerlayout:drawerlayout:writeVersionFile' property 'version'
+androidx.dynamicanimation_dynamicanimation.version = 1.1.0
+androidx.emoji2_emoji2-bundled.version = 1.7.0
+androidx.emoji2_emoji2-emojipicker.version = 1.7.0
+androidx.emoji2_emoji2-views-helper.version = 1.7.0
+androidx.emoji2_emoji2.version = 1.7.0
+androidx.exifinterface_exifinterface.version = 1.4.2
+androidx.fragment_fragment-compose.version = 1.9.1
+androidx.fragment_fragment-ktx.version = 1.9.1
+androidx.fragment_fragment.version = 1.9.1
+androidx.graphics_graphics-path.version = 1.0.1
+androidx.graphics_graphics-shapes.version = 1.0.1
+androidx.interpolator_interpolator.version = 1.0.0
+androidx.legacy_legacy-support-core-ui.version = 1.0.0
+androidx.legacy_legacy-support-core-utils.version = 1.0.0
+androidx.legacy_legacy-support-v4.version = 1.0.0
+androidx.lifecycle_lifecycle-livedata-core-ktx.version = 2.11.0
+androidx.lifecycle_lifecycle-livedata-core.version = 2.11.0
+androidx.lifecycle_lifecycle-livedata-ktx.version = 2.11.0
+androidx.lifecycle_lifecycle-livedata.version = 2.11.0
+androidx.lifecycle_lifecycle-process.version = 2.11.0
+androidx.lifecycle_lifecycle-runtime-compose.version = 2.11.0
+androidx.lifecycle_lifecycle-runtime-ktx.version = 2.11.0
+androidx.lifecycle_lifecycle-runtime.version = 2.11.0
+androidx.lifecycle_lifecycle-service.version = 2.11.0
+androidx.lifecycle_lifecycle-viewmodel-compose.version = 2.11.0
+androidx.lifecycle_lifecycle-viewmodel-ktx.version = 2.11.0
+androidx.lifecycle_lifecycle-viewmodel-savedstate.version = 2.11.0
+androidx.lifecycle_lifecycle-viewmodel.version = 2.11.0
+androidx.loader_loader.version = 1.1.0
+androidx.localbroadcastmanager_localbroadcastmanager.version = 1.1.0
+androidx.media_media.version = 1.0.0
+androidx.metrics_metrics-performance.version = 1.0.0
+androidx.navigation_navigation-common.version = 2.10.2
+androidx.navigation_navigation-compose.version = 2.10.2
+androidx.navigation_navigation-fragment.version = 2.10.2
+androidx.navigation_navigation-runtime.version = 2.10.2
+androidx.navigation_navigation-ui.version = 2.10.2
+androidx.navigationevent_navigationevent-compose.version = 1.1.2
+androidx.navigationevent_navigationevent.version = 1.1.2
+androidx.palette_palette.version = 1.0.0
+androidx.preference_preference-ktx.version = 1.2.1
+androidx.preference_preference.version = 1.2.1
+androidx.print_print.version = 1.0.0
+androidx.privacysandbox.ads_ads-adservices-java.version = 1.1.0-beta11
+androidx.privacysandbox.ads_ads-adservices.version = 1.1.0-beta11
+androidx.profileinstaller_profileinstaller.version = 1.4.1
+androidx.recyclerview_recyclerview.version = 1.4.0
+androidx.room_room-ktx.version = 2.8.5
+androidx.room_room-runtime.version = 2.8.5
+androidx.savedstate_savedstate-compose.version = 1.5.0
+androidx.savedstate_savedstate-ktx.version = 1.5.0
+androidx.savedstate_savedstate.version = 1.5.0
+androidx.security_security-crypto.version = 1.1.0
+androidx.slidingpanelayout_slidingpanelayout.version = 1.2.0
+androidx.sqlite_sqlite-framework.version = 2.6.2
+androidx.sqlite_sqlite.version = 2.6.2
+androidx.startup_startup-runtime.version = 1.2.0
+androidx.swiperefreshlayout_swiperefreshlayout.version = 1.0.0
+androidx.tracing_tracing-ktx.version = 2.0.3
+androidx.tracing_tracing.version = 2.0.3
+androidx.transition_transition.version = 1.5.0
+androidx.vectordrawable_vectordrawable-animated.version = 1.2.0
+androidx.vectordrawable_vectordrawable.version = 1.2.0
+androidx.versionedparcelable_versionedparcelable.version = 1.1.1
+androidx.viewpager2_viewpager2.version = 1.1.0
+androidx.viewpager_viewpager.version = 1.0.0
+androidx.webkit_webkit.version = 1.17.1
+androidx.window_window-core.version = 1.5.0
+androidx.window_window.version = 1.5.0
+androidx.work_work-runtime-ktx.version = 2.12.0
+androidx.work_work-runtime.version = 2.12.0
+com.google.android.material_material.version = 1.14.0
+com.google.dagger_dagger-android-support.version = 2.59.2
+com.google.dagger_dagger-android.version = 2.59.2
+com.google.dagger_dagger-lint-aar.version = 2.59.2
+com.google.dagger_dagger.version = 2.59.2
+kotlinx_coroutines_android.version = 1.11.0
+kotlinx_coroutines_core.version = 1.11.0
+kotlinx_coroutines_guava.version = 1.11.0
+kotlinx_coroutines_play_services.version = 1.11.0
+kotlinx_coroutines_reactive.version = 1.11.0
+kotlinx_coroutines_rx2.version = 1.11.0
+kotlinx_coroutines_slf4j.version = 1.11.0
+kotlinx_coroutines_test.version = 1.11.0
+
+=== *.properties (root) ===
+--- age-signals.properties ---
+version=0.0.3
+client=age-signals
+age-signals_client=0.0.3
+--- app-update-ktx.properties ---
+version=2.1.0
+client=app-update-ktx
+app-update-ktx_client=2.1.0
+--- app-update.properties ---
+version=2.1.0
+client=app-update
+app-update_client=2.1.0
+--- barcode-scanning-common.properties ---
+version=17.0.0
+client=barcode-scanning-common
+barcode-scanning-common_client=17.0.0
+--- common.properties ---
+version=18.11.0
+client=common
+common_client=18.11.0
+--- core-common.properties ---
+version=2.0.4
+client=core-common
+core-common_client=2.0.4
+--- engage-core.properties ---
+version=1.6.0
+client=engage-core
+engage-core_client=1.6.0
+--- feature-delivery-ktx.properties ---
+version=2.1.0
+client=feature-delivery-ktx
+feature-delivery-ktx_client=2.1.0
+--- feature-delivery.properties ---
+version=2.1.0
+client=feature-delivery
+feature-delivery_client=2.1.0
+--- firebase-analytics.properties ---
+version=23.2.0
+client=firebase-analytics
+firebase-analytics_client=23.2.0
+--- firebase-appindexing.properties ---
+version=20.0.0
+client=firebase-appindexing
+firebase-appindexing_client=20.0.0
+--- firebase-core.properties ---
+version=21.1.1
+client=firebase-core
+firebase-core_client=21.1.1
+--- firebase-encoders-json.properties ---
+version=18.0.0
+client=firebase-encoders-json
+firebase-encoders-json_client=18.0.0
+--- firebase-encoders-proto.properties ---
+version=16.0.0
+client=firebase-encoders-proto
+firebase-encoders-proto_client=16.0.0
+--- firebase-encoders.properties ---
+version=17.0.0
+client=firebase-encoders
+firebase-encoders_client=17.0.0
+--- firebase-iid-interop.properties ---
+version=17.1.0
+client=firebase-iid-interop
+firebase-iid-interop_client=17.1.0
+--- firebase-measurement-connector.properties ---
+version=19.0.0
+client=firebase-measurement-connector
+firebase-measurement-connector_client=19.0.0
+--- googleid.properties ---
+version=1.2.1
+client=googleid
+googleid_client=1.2.1
+--- hsdp.properties ---
+version=2.0.1
+client=hsdp
+hsdp_client=2.0.1
+--- image.properties ---
+version=1.0.0-beta1
+client=image
+image_client=1.0.0-beta1
+--- integrity.properties ---
+version=1.4.0
+client=integrity
+integrity_client=1.4.0
+--- language-id-common.properties ---
+version=16.1.0
+client=language-id-common
+language-id-common_client=16.1.0
+--- language-id.properties ---
+version=17.0.6
+client=language-id
+language-id_client=17.0.6
+--- places.properties ---
+version=5.3.0
+client=places
+places_client=5.3.0
+--- play-services-ads-api.properties ---
+version=25.4.0
+client=play-services-ads-api
+play-services-ads-api_client=25.4.0
+--- play-services-ads-identifier.properties ---
+version=18.3.0
+client=play-services-ads-identifier
+play-services-ads-identifier_client=18.3.0
+--- play-services-ads.properties ---
+version=25.4.0
+client=play-services-ads
+play-services-ads_client=25.4.0
+--- play-services-appset.properties ---
+version=16.1.0
+client=play-services-appset
+play-services-appset_client=16.1.0
+--- play-services-auth-api-phone.properties ---
+version=18.3.1
+client=play-services-auth-api-phone
+play-services-auth-api-phone_client=18.3.1
+--- play-services-auth-base.properties ---
+version=18.0.10
+client=play-services-auth-base
+play-services-auth-base_client=18.0.10
+--- play-services-auth-blockstore.properties ---
+version=16.4.0
+client=play-services-auth-blockstore
+play-services-auth-blockstore_client=16.4.0
+--- play-services-auth.properties ---
+version=21.6.0
+client=play-services-auth
+play-services-auth_client=21.6.0
+--- play-services-base.properties ---
+version=18.11.0
+client=play-services-base
+play-services-base_client=18.11.0
+--- play-services-basement.properties ---
+version=18.11.0
+client=play-services-basement
+play-services-basement_client=18.11.0
+--- play-services-cloud-messaging.properties ---
+version=17.4.0
+client=play-services-cloud-messaging
+play-services-cloud-messaging_client=17.4.0
+--- play-services-cronet.properties ---
+version=18.1.0
+client=play-services-cronet
+play-services-cronet_client=18.1.0
+--- play-services-fido.properties ---
+version=21.0.0
+client=play-services-fido
+play-services-fido_client=21.0.0
+--- play-services-identity-credentials.properties ---
+version=16.0.0-alpha08
+client=play-services-identity-credentials
+play-services-identity-credentials_client=16.0.0-alpha08
+--- play-services-location.properties ---
+version=21.4.0
+client=play-services-location
+play-services-location_client=21.4.0
+--- play-services-maps.properties ---
+version=19.2.0
+client=play-services-maps
+play-services-maps_client=19.2.0
+--- play-services-measurement-api.properties ---
+version=23.2.0
+client=play-services-measurement-api
+play-services-measurement-api_client=23.2.0
+--- play-services-measurement-base.properties ---
+version=23.2.0
+client=play-services-measurement-base
+play-services-measurement-base_client=23.2.0
+--- play-services-measurement-impl.properties ---
+version=23.2.0
+client=play-services-measurement-impl
+play-services-measurement-impl_client=23.2.0
+--- play-services-measurement-sdk-api.properties ---
+version=23.2.0
+client=play-services-measurement-sdk-api
+play-services-measurement-sdk-api_client=23.2.0
+--- play-services-measurement-sdk.properties ---
+version=23.2.0
+client=play-services-measurement-sdk
+play-services-measurement-sdk_client=23.2.0
+--- play-services-measurement.properties ---
+version=23.2.0
+client=play-services-measurement
+play-services-measurement_client=23.2.0
+--- play-services-mlkit-barcode-scanning.properties ---
+version=18.3.1
+client=play-services-mlkit-barcode-scanning
+play-services-mlkit-barcode-scanning_client=18.3.1
+--- play-services-mlkit-face-detection.properties ---
+version=17.1.0
+client=play-services-mlkit-face-detection
+play-services-mlkit-face-detection_client=17.1.0
+--- play-services-mlkit-text-recognition-common.properties ---
+version=19.1.0
+client=play-services-mlkit-text-recognition-common
+play-services-mlkit-text-recognition-common_client=19.1.0
+--- play-services-mlkit-text-recognition.properties ---
+version=19.0.1
+client=play-services-mlkit-text-recognition
+play-services-mlkit-text-recognition_client=19.0.1
+--- play-services-stats.properties ---
+version=17.0.2
+client=play-services-stats
+play-services-stats_client=17.0.2
+--- play-services-tasks.properties ---
+version=18.4.1
+client=play-services-tasks
+play-services-tasks_client=18.4.1
+--- review-ktx.properties ---
+version=2.0.2
+client=review-ktx
+review-ktx_client=2.0.2
+--- review.properties ---
+version=2.0.2
+client=review
+review_client=2.0.2
+--- translate.properties ---
+version=17.0.3
+client=translate
+translate_client=17.0.3
+--- user-messaging-platform.properties ---
+version=4.0.0
+client=user-messaging-platform
+user-messaging-platform_client=4.0.0
+--- vision-common.properties ---
+version=17.3.0
+client=vision-common
+vision-common_client=17.3.0
+--- vision-interfaces.properties ---
+version=16.3.0
+client=vision-interfaces
+vision-interfaces_client=16.3.0
+
+=== other manifest-ish ===
+META-INF/com/github/skydoves/landscapist/verification.properties
+META-INF/com/withpersona/sdk2/inquiry/verification.properties
+META-INF/common_release.kotlin_module
+META-INF/dev/zacsweers/metro/runtime/verification.properties
+META-INF/dev/zacsweers/metro/runtime-jvm/verification.properties
+META-INF/inquiry-dynamic-feature_release.kotlin_module
+META-INF/io/getstream/stream-chat-android-client/verification.properties
+META-INF/io/getstream/stream-chat-android-compose/verification.properties
+META-INF/io/sentry/sentry-android-replay/verification.properties
+META-INF/java.com.google.android.libraries.places.api.net.kotlin_kotlin_3p.kotlin_module
+META-INF/kotlin-reflection.kotlin_module
+META-INF/kotlin_release.kotlin_module
+META-INF/liblogger_release.kotlin_module
+META-INF/maps-sdk_release.kotlin_module
+META-INF/org/jetbrains/kotlinx/kotlinx-serialization-core-jvm/verification.properties
+META-INF/schemas_tracking-tracking_kotlin_library-lib.kotlin_module
+META-INF/sdk-base_release.kotlin_module
+META-INF/sdk_release.kotlin_module
+META-INF/stream-chat-android-client_release.kotlin_module
+META-INF/stream-chat-android-core.kotlin_module
+META-INF/stream-chat-android-previewdata_release.kotlin_module
