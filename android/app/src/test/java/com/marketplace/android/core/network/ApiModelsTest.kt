@@ -24,9 +24,9 @@ class ApiModelsTest {
         val json = """
             {
               "content": [{
-                "id": "post-1",
+                "id": "22222222-2222-4222-8222-222222222221",
                 "authorId": "member-1",
-                "locationId": "neighborhood-1",
+                "locationId": "33333333-3333-4333-8333-333333333333",
                 "category": "QUESTION",
                 "title": "من يعرف سباكًا؟",
                 "body": "أحتاج توصية من الحي",
@@ -64,7 +64,7 @@ class ApiModelsTest {
 
     @Test
     fun geoSuggestionParsesFlatNeighborhoodNode() {
-        val json = """{"id":"neighborhood-1","parentId":"city-1","level":3,"nameAr":"الميدان","nameEn":"Al Midan","slug":"al-midan"}"""
+        val json = """{"id":"33333333-3333-4333-8333-333333333333","parentId":"city-1","level":3,"nameAr":"الميدان","nameEn":"Al Midan","slug":"al-midan"}"""
         val node = moshi.adapter(GeoNodeDto::class.java).fromJson(json)!!
 
         assertEquals(3, node.level)
@@ -76,7 +76,7 @@ class ApiModelsTest {
     @Test
     fun lostFoundPostParsesLifecycleStateExposedByBackendView() {
         val post = moshi.adapter(PostDto::class.java).fromJson(
-            """{"id":"post-2","category":"LOST_FOUND","status":"VISIBLE","lostFoundState":"ACTIVE","media":[]}"""
+            """{"id":"55555555-5555-4555-8555-555555555552","category":"LOST_FOUND","status":"VISIBLE","lostFoundState":"ACTIVE","media":[]}"""
         )!!
 
         assertEquals("LOST_FOUND", post.category)
@@ -90,9 +90,9 @@ class ApiModelsTest {
         val event = moshi.adapter(EventDto::class.java).fromJson(
             """
             {
-              "id": "event-1",
+              "id": "44444444-4444-4444-8444-444444444441",
               "authorId": "member-1",
-              "locationId": "neighborhood-1",
+              "locationId": "33333333-3333-4333-8333-333333333333",
               "category": "SOCIAL",
               "title": "لقاء الحي",
               "description": "لقاء الجيران",
@@ -190,7 +190,7 @@ class ApiModelsTest {
     @Test
     fun postPhotoUploadRequestAndSignedResponseMatchMediaControllerContract() {
         val request = RequestPostMediaUpload(
-            postId = "post-1",
+            postId = "22222222-2222-4222-8222-222222222221",
             contentType = "image/jpeg",
             sizeBytes = 418381L
         )
@@ -254,12 +254,12 @@ class ApiModelsTest {
               "row": "NEIGHBORHOOD_RECOMMENDATIONS",
               "cards": [{
                 "sourceType": "NEIGHBORHOOD_POST",
-                "sourceId": "post-1",
+                "sourceId": "22222222-2222-4222-8222-222222222221",
                 "updatedAt": "2026-10-16T09:00:00Z",
                 "title": "توصية من الحي",
                 "snippet": "سباك موثوق",
                 "state": "VISIBLE",
-                "scopeLocationId": "neighborhood-1",
+                "scopeLocationId": "33333333-3333-4333-8333-333333333333",
                 "reason": "توصية جيران في حيّك",
                 "paid": false
               }],
@@ -271,7 +271,7 @@ class ApiModelsTest {
         assertEquals("NEIGHBORHOOD_RECOMMENDATIONS", row.row)
         assertEquals(17L, row.totalEligible)
         assertEquals("NEIGHBORHOOD_POST", row.cards.single().sourceType)
-        assertEquals("post-1", row.cards.single().sourceId)
+        assertEquals("22222222-2222-4222-8222-222222222221", row.cards.single().sourceId)
         assertEquals("VISIBLE", row.cards.single().state)
         assertEquals(false, row.cards.single().paid)
 
@@ -281,12 +281,12 @@ class ApiModelsTest {
             {
               "content": [{
                 "sourceType": "NEIGHBORHOOD_EVENT",
-                "sourceId": "event-1",
+                "sourceId": "44444444-4444-4444-8444-444444444441",
                 "updatedAt": "2026-10-16T10:00:00Z",
                 "title": "لقاء الحي",
                 "snippet": "لقاء مفتوح للجيران",
                 "state": "ACTIVE",
-                "scopeLocationId": "neighborhood-1",
+                "scopeLocationId": "33333333-3333-4333-8333-333333333333",
                 "reason": "فعالية قريبة",
                 "paid": false
               }],
@@ -303,7 +303,7 @@ class ApiModelsTest {
         assertEquals(21L, page.totalElements)
         assertEquals(2, page.totalPages)
         assertFalse(page.last)
-        assertEquals("event-1", page.content.single().sourceId)
+        assertEquals("44444444-4444-4444-8444-444444444441", page.content.single().sourceId)
     }
 
     @Test
@@ -312,12 +312,12 @@ class ApiModelsTest {
             DiscoveryImpressionRequest(
                 row = "LOST_FOUND",
                 sourceType = "NEIGHBORHOOD_POST",
-                sourceId = "post-2"
+                sourceId = "55555555-5555-4555-8555-555555555552"
             )
         )
 
         assertEquals(
-            """{"row":"LOST_FOUND","sourceType":"NEIGHBORHOOD_POST","sourceId":"post-2"}""",
+            """{"row":"LOST_FOUND","sourceType":"NEIGHBORHOOD_POST","sourceId":"55555555-5555-4555-8555-555555555552"}""",
             json
         )
     }
