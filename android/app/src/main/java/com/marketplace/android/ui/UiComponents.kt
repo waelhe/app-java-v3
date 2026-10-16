@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImage
@@ -56,6 +57,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -343,6 +349,28 @@ internal fun DiscoveryRail(
     onImpression: (String, DiscoveryCardDto) -> Unit
 ) {
     if (row.cards.isEmpty()) return
+    val listState = rememberLazyListState()
+    val seenInThisComposition = remember(row.row) { mutableSetOf<String>() }
+    val currentCards by rememberUpdatedState(row.cards)
+    val currentOnImpression by rememberUpdatedState(onImpression)
+
+    // A LazyRow may compose items just outside the viewport for prefetch.
+    // Count an impression only after the item is actually visible.
+    LaunchedEffect(row.row, listState) {
+        snapshotFlow {
+            listState.layoutInfo.visibleItemsInfo.mapNotNull { item ->
+                currentCards.getOrNull(item.index)
+            }
+        }.collect { visibleCards ->
+            visibleCards.forEach { card ->
+                val sourceKey = "${card.sourceType}:${card.sourceId}"
+                if (seenInThisComposition.add(sourceKey)) {
+                    currentOnImpression(row.row, card)
+                }
+            }
+        }
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -355,11 +383,11 @@ internal fun DiscoveryRail(
             }
             TextButton(onClick = { onOpenAll(row.row) }) { Text("عرض الكل") }
         }
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+        LazyRow(
+            state = listState,
+            horizontalArrangement = Arrangement.spacedBy(9.dp)
+        ) {
             items(items = row.cards, key = { "${row.row}:${it.sourceType}:${it.sourceId}" }) { card ->
-                LaunchedEffect(row.row, card.sourceType, card.sourceId) {
-                    onImpression(row.row, card)
-                }
                 DiscoveryCardTile(
                     card = card,
                     modifier = Modifier.width(264.dp),
