@@ -319,6 +319,45 @@ The directory needs dedicated collections and detail workspaces for business pro
 
 Profile changes use a member-facing preview; claims show ownership evidence and conflicts; review responses and removals require policy-aware workflows; local visibility reports break down geography, category, source and period. Detailed target and end-to-end acceptance: [Domain-Grade Administration Suites §6](platform-admin-domain-grade-suites.md). Reference: [Yelp for Business lead metrics](https://www.yelp-support.com/article/How-do-you-measure-User-Views-and-Customer-Leads-on-Yelp-for-Business?bui=null&l=en_GB).
 
+### S23 — شبكة التوصيل والشحن (خدمة مستقلة + تنفيذ طلبات السوق)
+
+This is a full operational workspace for the platform's delivery network, not only shipment tracking from an order. Its primary tabs distinguish **“طلبات توصيل مباشرة”** from **“شحن وتنفيذ طلبات السوق”**, while sharing provider, service-area, dispatch, tracking and exception tools.
+
+**Delivery request and shipment lists**
+- Search by request/order, sender, recipient, provider/seller, courier, locality, tracking reference, delivery mode and state.
+- Saved queues: “بانتظار إسناد مندوب”، “موعد معرض للتأخير”، “تعذّر الاستلام”، “توصيل متعثر”، “بانتظار إثبات التسليم”، “طلب إرجاع”، “نزاع/تعويض”، “مصروف/فاتورة شريك غير مطابق”.
+- Map/list split view with timestamp/freshness; map access to live courier location is restricted to operators with the proper job scope. Missing/stale location is explicit, never a fabricated point.
+- Filters and saved views by geography, service level, provider, fleet mode, scheduled window, risk, SLA, status and financial state. Bulk dispatch/reassignment/retry always previews eligibility and per-item effects.
+
+**Detail workspace**
+- Origin: standalone direct request or source order/service, with owner-resolved relationship.
+- Quote revision, price and currency, expiry, pickup/drop-off window, package declaration, serviceability/rate rule, provider quote, assignment history, authorized address/contact detail, pickup/delivery proofs, tracking timeline, communications, claims/cases and financial allocation.
+- Independent timelines for physical delivery state, source business state, payment state and ledger/settlement state. “Delivered” is not inferred from a payment success or an unverified client callback.
+- Actions: accept/decline, assign/reassign, request partner status, confirm pickup only with required evidence, record failed attempt/reason, initiate a permitted return, cancel only on a legal edge, request a source-owned refund/adjustment, escalate and verify final state.
+- Every consequential action shows target/scope, reason, financial or customer impact, approval requirements, idempotency/retry risk and the authoritative read-back used to prove its result.
+
+**Service configuration**
+- Service areas and route/zone eligibility; operating hours, capacity, cut-offs and blackout windows; package classes and restricted items; rate/fare rule versions; same-day/scheduled/parcel capability; pickup points; provider/carrier capabilities; partner integration status; driver onboarding/authorization.
+- Credentials stay in secret storage. UI shows connection state and last verified sync, never secret values.
+- If no carrier/courier is available or a provider's API capability is not enabled, the UI explains the blocker and gives the next safe alternative instead of accepting a delivery that cannot be fulfilled.
+
+### S24 — المدفوعات والعمليات المالية على مستوى المنصة
+
+This is the single finance operations workspace across all approved paid journeys; it is not an order-only tool. Current payment origins and target sources are listed in [Platform-Wide Payments and Delivery Network](../../architecture/platform-wide-payments-and-delivery.md).
+
+**Collection and reconciliation**
+- One search across booking, order, advertising, lending, delivery and any later approved payable origin; payment/provider references and filters by actor, payee, country, currency, method, state and time.
+- Each detail shows the authoritative source amount/currency, source business state, payment intent/operations, provider callback, ledger postings, allocations/transfers where configured, refund/dispute and settlement/payout state.
+- Distinguish “provider confirmed”, “platform recorded”, “ledger reconciled” and “business effect verified”. One green indicator cannot stand for all four.
+- Priority queues: “نتيجة دفع غير مؤكدة”، “مدفوع دون اكتمال أثر المجال”، “فشل تأكيد المزود”، “استرداد بانتظار مراجعة”، “تعارض الدفتر ومزود الدفع”، “تسوية بانتظار التنفيذ”، “تعذّر تحويل مستحق”، “اعتراض/مهلة شارفت على الانتهاء”.
+- Actions: inspect/retrieve authoritative provider state, request reconciliation, request a source-owned cancellation/refund, approve under the required separation of duties, reprocess an eligible failed event once, review payout/transfer reconciliation, and verify the final source/payment/ledger state.
+
+**Financial safety**
+- No direct amount override, balance edit or status mutation. Refund eligibility and current refundable amount come from the originating domain/payment contract; financial execution goes through the existing payments owner and ledger consequences are reconciled.
+- A timeout or unknown provider response blocks blind retry until the transaction is reconciled.
+- Refunds and transfer reversals are separate operations. Delivery/courier and seller allocations must show who bears the adjustment based on the approved policy.
+- Exports are permission-gated, scoped, redacted and audited; payment credentials/secrets and unnecessary personal data never appear in lists.
+
 ## 5. Universal impact preview
 
 Every material change previews, in this order:
