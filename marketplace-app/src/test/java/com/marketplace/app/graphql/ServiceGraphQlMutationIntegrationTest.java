@@ -36,15 +36,18 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * End-to-end proof of the {@code createService} mutation contract through the
- * REAL schema, the REAL spring-graphql argument binder
- * ({@code GraphQlArgumentBinder} binds input keys to constructor parameter
- * names <em>by name</em>), the REAL Jakarta validation path
- * ({@code ValidationHelper} — @Valid on the controller parameter), and the
- * REAL exception taxonomy resolver — the exact layer that was broken since the
- * surface's origin (#226): the schema input field {@code price: Float!} never
- * matched the record component {@code priceCents}, so the mutation rejected
- * every price (paid and free) before this fix.
+ * End-to-end proof of the {@code createService} mutation contract through
+ * the REAL schema, the REAL DGS argument binding (Phase 2:
+ * {@code DefaultInputObjectMapper} binds input keys to record components
+ * <em>by name</em> — the same by-name contract the spring-graphql binder
+ * enforced), the REAL Jakarta validation path (the DGS data fetcher's
+ * explicit {@code Validator} step — DGS has no @Valid argument hook, so
+ * the boundary validation throws the same ConstraintViolationException
+ * the Spring @Valid path threw), and the REAL exception taxonomy
+ * resolver — the exact layer that was broken since the surface's origin
+ * (#226): the schema input field {@code price: Float!} never matched the
+ * record component {@code priceCents}, so the mutation rejected every
+ * price (paid and free) before this fix.
  *
  * <p>Aligned contract (B3 family — same price rule on every surface): the
  * input speaks integer cents ({@code priceCents: Int!}), exactly like the REST

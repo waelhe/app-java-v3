@@ -289,6 +289,69 @@ spring:
   # staleness monitor run on Spring's task scheduler.
 
 
+# Netflix DGS Framework (GraphQL target architecture Phase 2 — the DGS
+# adoption) — the DGS-owned property namespace. The official integration
+# guide's overlapping-properties rule (netflix.github.io/dgs, Spring
+# GraphQL Integration, "DGS Configuration with Spring for GraphQL")
+# directs exactly which properties move to the dgs.* namespace and which
+# stay spring.graphql.*:
+#   - dgs.graphql.schema-locations replaces spring.graphql.schema.locations
+#     (the DGS schema source is authoritative; the SDL stays in the
+#     Spring-GraphQL-conventional classpath:graphql/ tree — the same tree
+#     Boot's @ConditionalOnGraphQlSchema condition measures).
+#   - dgs.graphql.graphiql.enabled replaces spring.graphql.graphiql.enabled
+#     — and MUST be set explicitly here: the integration's
+#     DgsSpringGraphQLEnvironmentPostProcessor maps it onto
+#     spring.graphql.graphiql.enabled with a default of TRUE (a backward-
+#     compatibility default), so an unset value would flip the base
+#     profile's safe-by-default posture to GraphiQL-ON. The explicit false
+#     keeps every environment that does not opt in (dev) safe; staging and
+#     production restate it under the same DGS key.
+#   - spring.graphql.schema.introspection.enabled STAYS on the Spring
+#     property: the DGS integration reads that exact key directly (its
+#     disableIntrospectionContextContributor conditional), and the
+#     post-processor's conflict guard FAILS STARTUP if both the spring
+#     property and dgs.graphql.introspection.enabled are set — so the
+#     dgs.* introspection key is deliberately absent from every profile.
+#   - dgs.graphql.federation.enabled: false — the design's no-federation
+#     decision (§9: one coherent schema for one Spring application, no
+#     subgraphs); the DGS default is true, which would add the
+#     _service/_entities/_Any federation surface to the runtime schema
+#     and drift the GraphQL schema compatibility gate's tagged baseline.
+#   - The GraphQL WebSocket transport stays unconfigured on BOTH
+#     namespaces (dgs.graphql.websocket.path maps onto
+#     spring.graphql.websocket.path only when set): no Subscription
+#     contract exists, so the transport stays off in every profile —
+#     the same §5.8 posture as before the migration.
+dgs:
+  graphql:
+    schema-locations: classpath*:graphql/**/*.graphql*
+    graphiql:
+      enabled: false
+    federation:
+      enabled: false
+  # The DGS integration's ExcludeAutoConfigurationsEnvironmentPostProcessor
+  # disables Boot's GraphQlObservationAutoConfiguration by default (the
+  # framework's own default for the Netflix environment), which would
+  # silently drop the graphql.request/graphql.datafetcher observations the
+  # GraphQL target design §8 demands as a measured fact — the phase-1
+  # observation gate. This re-enable restores Boot's
+  # GraphQlObservationInstrumentation bean, which the DGS graphQlSource
+  # then collects through the same ObjectProvider<Instrumentation>
+  # mechanism the limit instrumentations ride (verified against the
+  # dgs-framework v12.1.0 source: instrumentations.orderedStream() in the
+  # graphQlSource bean) — one observation chain, composed.
+  # The post-processor's twin exclusion (GraphQlWebMvcSecurityAuto-
+  # Configuration, whose only bean is SecurityDataFetcherExceptionResolver)
+  # deliberately stays disabled: the app's GraphQlExceptionResolver already
+  # maps AccessDeniedException to the canonical authz taxonomy (§7) with
+  # the machine-readable extensions pair, and the phase-1 security/error
+  # tests pass under the DGS wiring.
+  springgraphql:
+    autoconfiguration:
+      graphqlobservation:
+        enabled: true
+
 server:
   # PORT is the injected platform variable (Railway: "Railway will inject a PORT
   # environment variable that your application should listen on" — docs.railway.com,

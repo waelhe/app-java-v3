@@ -5,13 +5,18 @@ type Query {
     # it) is REPLACED, not paralleled — the consumer inventory measured zero
     # contracted consumers (the repo's own tests are the only callers; the
     # Android client is REST-only), which is the design plan §6 condition for
-    # direct replacement. The field is the official Spring for GraphQL relay
-    # Connection path: ServiceConnection/ServiceEdge/PageInfo are generated
-    # at startup by Boot's ConnectionTypeDefinitionConfigurer, the returned
-    # Spring Data Page is adapted by the auto-registered SliceConnectionAdapter
-    # (Page is-a Slice — verified against spring-boot-graphql 4.1.1), and
-    # `after` cursors are base64 ScrollPosition offsets produced by that same
-    # adapter — decoded back by the auto-registered Subrange argument resolver.
+    # direct replacement. The field keeps the official framework relay
+    # Connection path under the Phase-2 DGS programming model:
+    # ServiceConnection/ServiceEdge/PageInfo are generated at startup by the
+    # same ConnectionTypeDefinitionConfigurer — applied to the DGS type
+    # registry through the integration's DgsTypeDefinitionConfigurerBridge —
+    # the DGS data fetcher binds first/after via @InputArgument and decodes
+    # the cursor with the Boot-provided ScrollPositionCursorStrategy, and the
+    # returned Spring Data Page is still adapted by the SliceConnectionAdapter
+    # (Page is-a Slice) through Boot's ConnectionFieldTypeVisitor, which the
+    # DGS integration applies to the DGS-registered fetcher via the
+    # GraphQlSourceBuilderCustomizer chain — identical envelope, identical
+    # base64 `O_<offset>` ScrollPosition cursors on the wire.
     # `first` carries no SDL literal default: graphql-java applies a field
     # default at argument coercion whenever the argument is omitted, which
     # would shadow the typed configuration
@@ -46,12 +51,14 @@ enum ServiceStatus {
 
 # Input speaks integer cents — the domain money language of every write
 # surface (REST CreateListingRequest.priceCents, V2 price_cents >= 0,
-# BookingInfo). spring-graphql's GraphQlArgumentBinder binds input keys to
-# constructor parameter names BY NAME, so the field name must equal the
-# ServiceInput.priceCents record component. (The read side keeps display
-# units: Service.price — major units via ServiceMapper.) Int is a signed
-# 32-bit scalar per the GraphQL spec — the explicit shared ceiling
-# 2,147,483,647 is declared in ServiceInput via @Max.
+# BookingInfo). DGS's DefaultInputObjectMapper binds input keys to Java
+# record components BY NAME, so the field name must equal the
+# ServiceInput.priceCents record component (the same by-name contract the
+# spring-graphql binder enforced before the Phase-2 migration). (The read
+# side keeps display units: Service.price — major units via
+# ServiceMapper.) Int is a signed 32-bit scalar per the GraphQL spec —
+# the explicit shared ceiling 2,147,483,647 is declared in ServiceInput
+# via @Max and enforced by the fetcher's explicit Bean Validation.
 input ServiceInput {
     name: String!
     description: String

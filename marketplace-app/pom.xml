@@ -168,9 +168,21 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
+        <!-- The DGS starter — the official entry point for DGS on Spring
+             for GraphQL (netflix.github.io/dgs getting started:
+             "com.netflix.graphql.dgs:dgs-starter is a Spring Boot starter
+             that includes everything you need to get started building a
+             DGS that uses Spring GraphQL"). It brings
+             spring-boot-starter-graphql transitively — the starter's own
+             4.0.0 pin loses to the Boot parent's dependencyManagement
+             (the official precedence), so the effective version stays
+             4.1.1 — plus the DGS integration modules. The former explicit
+             spring-boot-starter-graphql dependency is REPLACED, not
+             paralleled: one configured path, no duplicated starter
+             configuration (target design §11 Phase 2 acceptance). -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-graphql</artifactId>
+            <groupId>com.netflix.graphql.dgs</groupId>
+            <artifactId>dgs-starter</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -301,6 +313,17 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- The DGS test starter — the official data-fetcher test recipe
+             (netflix.github.io/dgs testing: dgs-starter-test +
+             DgsQueryExecutor / @EnableDgsTest). Provides the Spring-for-
+             GraphQL flavor of the DgsQueryExecutor over the real DGS
+             wiring; spring-graphql-test below stays the HttpGraphQlTester
+             transport-test client — one test dependency per test layer. -->
+        <dependency>
+            <groupId>com.netflix.graphql.dgs</groupId>
+            <artifactId>dgs-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

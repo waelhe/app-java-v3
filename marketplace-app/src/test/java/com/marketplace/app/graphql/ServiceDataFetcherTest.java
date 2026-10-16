@@ -3,6 +3,10 @@ package com.marketplace.app.graphql;
 import com.marketplace.catalog.CatalogService;
 import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.security.CurrentUserProvider;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
+import jakarta.validation.ConstraintViolationException;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -11,8 +15,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.ScrollPosition;
-import org.springframework.graphql.data.query.ScrollSubrange;
+import org.springframework.graphql.data.pagination.CursorEncoder;
+import org.springframework.graphql.data.pagination.CursorStrategy;
+import org.springframework.graphql.data.pagination.EncodingCursorStrategy;
+import org.springframework.graphql.data.query.ScrollPositionCursorStrategy;
 import org.springframework.security.authentication.TestingAuthenticationToken;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.List;
 import java.util.Map;
@@ -29,7 +38,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class ServiceGraphQlControllerTest {
+class ServiceDataFetcherTest {
 
     @Mock
     private CatalogService catalogService;
@@ -40,7 +49,7 @@ class ServiceGraphQlControllerTest {
     @Mock
     private ServiceMapper serviceMapper;
 
-    private ServiceGraphQlController controller;
+    private ServiceDataFetcher fetcher;
 
     private final GraphQlProperties properties = new GraphQlProperties(
             new GraphQlProperties.Errors(false),
@@ -48,14 +57,34 @@ class ServiceGraphQlControllerTest {
             new GraphQlProperties.Limits(10, 200));
 
     /**
-     * Instantiates the controller under test with the mocked SPI and
-     * principal provider plus the real mapper and the production-shaped
-     * properties (20/100 pagination, 10/200 budgets).
+     * The connection-cursor codec under test — the exact construction the
+     * Boot auto-configuration performs ({@code GraphQlDataAutoConfiguration#
+     * cursorStrategy}: {@code CursorStrategy.withEncoder(new
+     * ScrollPositionCursorStrategy(), CursorEncoder.base64())}), so the
+     * unit-level cursor assertions exercise the same wire format the
+     * integration tests drive over HTTP.
+     */
+    private final EncodingCursorStrategy<ScrollPosition> cursorStrategy =
+            CursorStrategy.withEncoder(new ScrollPositionCursorStrategy(), CursorEncoder.base64());
+
+    private final Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
+
+    /**
+     * Instantiates the data fetcher under test with the mocked SPI and
+     * principal provider plus the real mapper, the production-shaped
+     * properties (20/100 pagination, 10/200 budgets), the framework's own
+     * cursor codec, and the default Jakarta validator.
      */
     @BeforeEach
-    void setUpController() {
-        controller = new ServiceGraphQlController(catalogService, currentUserProvider,
-                serviceMapper, properties);
+    void setUpFetcher() {
+        fetcher = new ServiceDataFetcher(catalogService, currentUserProvider,
+                serviceMapper, properties, cursorStrategy, validator);
+    }
+
+    /** The mutation path reads the principal from the (test-populated) security context. */
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
     }
 
     private static ProviderListingView view(UUID id, String title, String description, Long priceCents, String status) {
@@ -75,7 +104,7 @@ class ServiceGraphQlControllerTest {
         when(serviceMapper.toResponse(listing)).thenReturn(
                 new ServiceResponse(id, "Test", "Desc", "general", 50.0, "SAR", "ACTIVE"));
 
-        ServiceResponse response = controller.service(id);
+        ServiceResponse response = fetcher.service(id);
 
         assertThat(response.name()).isEqualTo("Test");
     }
@@ -92,7 +121,7 @@ class ServiceGraphQlControllerTest {
         when(catalogService.findAll(any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(l1, l2)));
 
-        controller.services(ScrollSubrange.create(null, null, true));
+        fetcher.services(null, null);
 
         verify(catalogService).findAll(argThat((Pageable pageable) ->
                 pageable.getPageSize() == 20
@@ -109,7 +138,7 @@ class ServiceGraphQlControllerTest {
         when(catalogService.findAll(any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
 
-        controller.services(ScrollSubrange.create(null, 5_000, true));
+        fetcher.services(5_000, null);
 
         verify(catalogService).findAll(argThat((Pageable pageable) ->
                 pageable.getPageSize() == 100));
@@ -121,7 +150,7 @@ class ServiceGraphQlControllerTest {
      */
     @Test
     void servicesAnswersNonPositiveFirstWithAnEmptyPageWithoutReading() {
-        var page = controller.services(ScrollSubrange.create(null, 0, true));
+        var page = fetcher.services(0, null);
 
         assertThat(page.getContent()).isEmpty();
         verifyNoInteractions(catalogService);
@@ -131,7 +160,8 @@ class ServiceGraphQlControllerTest {
      * The cursor round trip: an offset cursor carries the absolute item
      * position; exclusive-after semantics put the next page at
      * {@code (offset + 1) / size} — the page-aligned cursors this surface
-     * emits land exactly.
+     * emits land exactly. The cursor string is produced by the same
+     * framework codec the runtime injects.
      */
     @Test
     void servicesFollowsAnOffsetCursorToTheExactNextPage() {
@@ -139,7 +169,8 @@ class ServiceGraphQlControllerTest {
                 .thenReturn(new PageImpl<>(List.of()));
 
         // The terminal cursor of page 0 with size 20 is item offset 19.
-        controller.services(ScrollSubrange.create(ScrollPosition.offset(19), 20, true));
+        String endCursor = cursorStrategy.toCursor(ScrollPosition.offset(19));
+        fetcher.services(20, endCursor);
 
         verify(catalogService).findAll(argThat((Pageable pageable) ->
                 pageable.getPageNumber() == 1 && pageable.getPageSize() == 20));
@@ -153,11 +184,25 @@ class ServiceGraphQlControllerTest {
      */
     @Test
     void servicesRejectsAKeysetCursorAsAValidationError() {
-        ScrollPosition keyset = ScrollPosition.forward(Map.of("createdAt", "2026-01-01"));
+        String keysetCursor = cursorStrategy.toCursor(
+                ScrollPosition.forward(Map.of("createdAt", "2026-01-01")));
 
-        assertThatThrownBy(() -> controller.services(ScrollSubrange.create(keyset, 20, true)))
+        assertThatThrownBy(() -> fetcher.services(20, keysetCursor))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("offset cursors");
+        verifyNoInteractions(catalogService);
+    }
+
+    /**
+     * An undecodable cursor string is rejected by the framework codec
+     * itself (IllegalArgumentException from the base64/prefix decoding —
+     * the same exception family the resolver maps to VAL-001) — the
+     * unit-level twin of the garbage-cursor integration leg.
+     */
+    @Test
+    void servicesRejectsAnUndecodableCursorAsAValidationError() {
+        assertThatThrownBy(() -> fetcher.services(20, "not-a-cursor-at-all"))
+                .isInstanceOf(IllegalArgumentException.class);
         verifyNoInteractions(catalogService);
     }
 
@@ -167,22 +212,27 @@ class ServiceGraphQlControllerTest {
      */
     @Test
     void servicesRejectsAnOffsetBeyondThePaginableRange() {
-        assertThatThrownBy(() ->
-                controller.services(ScrollSubrange.create(ScrollPosition.offset(Long.MAX_VALUE - 1), 20, true)))
+        String tampered = cursorStrategy.toCursor(ScrollPosition.offset(Long.MAX_VALUE - 1));
+
+        assertThatThrownBy(() -> fetcher.services(20, tampered))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("outside the paginable range");
         verifyNoInteractions(catalogService);
     }
 
     /**
-     * createService resolves the authenticated caller into the owning
-     * provider id and delegates the write to the SPI's create use case —
-     * the same authoritative business rule the REST surface invokes.
+     * createService resolves the authenticated caller from the security
+     * context into the owning provider id and delegates the write to the
+     * SPI's create use case — the same authoritative business rule the
+     * REST surface invokes.
      */
     @Test
     void shouldCreateServiceWhenAdmin() {
         UUID providerId = UUID.randomUUID();
         var auth = new TestingAuthenticationToken("admin", "pass", "ROLE_ADMIN");
+        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+        securityContext.setAuthentication(auth);
+        SecurityContextHolder.setContext(securityContext);
         when(currentUserProvider.getCurrentUserId(auth)).thenReturn(providerId);
         ProviderListingView listing = view(UUID.randomUUID(), "New Svc", "Desc", 3000L, "ACTIVE");
         when(catalogService.create(eq(providerId), eq("New Svc"), eq("Desc"), eq("cat"), eq(3000L), isNull()))
@@ -191,8 +241,25 @@ class ServiceGraphQlControllerTest {
                 new ServiceResponse(UUID.randomUUID(), "New Svc", "Desc", "general", 30.0, "SAR", "ACTIVE"));
 
         var input = new ServiceInput("New Svc", "Desc", "cat", 3000L);
-        ServiceResponse response = controller.createService(input, auth);
+        ServiceResponse response = fetcher.createService(input);
 
         assertThat(response.name()).isEqualTo("New Svc");
+    }
+
+    /**
+     * The boundary Bean-Validation contract the DGS path enforces
+     * explicitly: a negative price violates the record's {@code @Min(0)}
+     * and surfaces as {@link ConstraintViolationException} — the same
+     * exception type (and therefore the same VAL-001/validation mapping)
+     * the Spring {@code @Valid} path produced before the migration. The
+     * write never reaches the SPI.
+     */
+    @Test
+    void createServiceRejectsANegativePriceAtTheBoundary() {
+        var input = new ServiceInput("Bad Price", "Negative price", "cat", -1L);
+
+        assertThatThrownBy(() -> fetcher.createService(input))
+                .isInstanceOf(ConstraintViolationException.class);
+        verifyNoInteractions(catalogService);
     }
 }

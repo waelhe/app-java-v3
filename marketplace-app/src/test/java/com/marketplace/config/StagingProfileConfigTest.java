@@ -57,7 +57,11 @@ class StagingProfileConfigTest {
                 .isEqualTo("false");
         assertThat(property("application-staging.yml", "spring.cache.type"))
                 .isEqualTo("redis");
-        assertThat(property("application-staging.yml", "spring.graphql.graphiql.enabled"))
+        // The sandbox's GraphiQL-off posture, on the DGS-owned key since
+        // the Phase-2 DGS adoption (the official integration guide's
+        // overlapping-properties rule: use dgs.graphql.graphiql.enabled;
+        // the former spring key is absent by design — one owner per key).
+        assertThat(property("application-staging.yml", "dgs.graphql.graphiql.enabled"))
                 .isEqualTo("false");
         // The Modulith staleness monitor must run in the sandbox — the
         // production property names measured and documented in

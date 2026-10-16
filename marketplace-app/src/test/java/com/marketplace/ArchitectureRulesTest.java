@@ -10,6 +10,7 @@ import java.lang.annotation.Annotation;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.domain.JavaModifier;
+import com.netflix.graphql.dgs.DgsComponent;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
@@ -164,6 +165,53 @@ class ArchitectureRulesTest {
                             "com.marketplace.messaging..",
                             "com.marketplace.search..")
                     .because("platform-infra must remain a leaf module with no dependency on domain modules");
+
+
+    /**
+     * GraphQL Phase 2 (the DGS adoption, target design §11 Phase 2 item 7
+     * — "Add a test/build guard that the final GraphQL adapter uses one
+     * resolver programming model"): the Spring GraphQL resolver-annotation
+     * model is RETIRED — no class may depend on
+     * org.springframework.graphql.data.method.annotation (the package of
+     * @QueryMapping/@MutationMapping/@SchemaMapping/@Argument and the
+     * annotated-controller machinery). The official DGS integration guide
+     * is explicit ("we recommend sticking with the DGS programming model
+     * … to maintain consistency in the codebase"), and the corrected
+     * target plan made one model the architecture: no mixed
+     * @QueryMapping/@DgsQuery end state, ever again. 0 usages at adoption
+     * (the Phase-2 migration removed the last: ServiceGraphQlController
+     * became ServiceDataFetcher).
+     */
+    @ArchTest
+    static final ArchRule graphQlResolverAnnotationsAreRetired =
+            noClasses().that().resideInAPackage("com.marketplace..")
+                    .should().dependOnClassesThat().resideInAPackage(
+                            "org.springframework.graphql.data.method.annotation..")
+                    .because("the GraphQL surface has exactly one resolver programming model — "
+                            + "Netflix DGS (@DgsComponent/@DgsQuery/@DgsMutation/@InputArgument) "
+                            + "over the official Spring for GraphQL integration; the Spring "
+                            + "resolver annotations are the migration source, not an alternative "
+                            + "(target design §11 Phase 2; the DGS integration guide's "
+                            + "no-mixing recommendation). 0 usages measured at adoption.");
+
+    /**
+     * GraphQL Phase 2 (target design §11 Phase 2 item 5 — "Keep DGS data
+     * fetchers only in marketplace-app"): DGS components are composition-
+     * root artifacts. They call owning modules' declared SPIs and
+     * application use cases; no domain module may grow GraphQL surface of
+     * its own — the Modulith boundary the ApplicationModules.verify() gate
+     * already polices, made explicit for the DGS annotation that travels
+     * with a @Component meta-annotation a plain import check would miss.
+     */
+    @ArchTest
+    static final ArchRule dgsComponentsLiveInTheCompositionRootOnly =
+            classes().that().areAnnotatedWith(DgsComponent.class)
+                    .should().resideInAPackage("com.marketplace.app..")
+                    .because("DGS data fetchers are composition-root adapters (marketplace-app); "
+                            + "domains own their state and logic and expose declared SPIs — "
+                            + "no domain module grows a GraphQL surface (target design §2.3 "
+                            + "boundary rules + §11 Phase 2). 1 component at adoption "
+                            + "(ServiceDataFetcher).");
 
     private static JavaClasses importProductionClasses() {
         return new ClassFileImporter()

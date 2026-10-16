@@ -32,8 +32,6 @@ spring:
     clean-disabled: true
 
   graphql:
-    graphiql:
-      enabled: false
     schema:
       introspection:
         enabled: false
@@ -82,6 +80,16 @@ spring:
         # D6 parity: the issuer must be the sandbox's public origin, never the
         # base-profile default.
         issuer: ${AUTH_SERVER_ISSUER}
+
+# The hardened-profile restatement on the DGS-owned key the official
+# integration guide directs (use dgs.graphql.graphiql.enabled) — the
+# in-browser IDE stays off outside local development. The DGS namespace
+# otherwise inherits the base document: the schema location, the
+# federation-off decision, and no WebSocket path.
+dgs:
+  graphql:
+    graphiql:
+      enabled: false
 
 server:
   shutdown: graceful
