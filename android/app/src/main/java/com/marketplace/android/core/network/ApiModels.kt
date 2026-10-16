@@ -255,3 +255,20 @@ data class CreateContentReportRequest(
     val targetId: String,
     val reason: String
 )
+
+@JsonClass(generateAdapter = false)
+data class UrgentAlertDto(
+    val alertId: String = "",
+    val sourceId: String = "",
+    val sourceName: String = "",
+    val sourceType: String = "",
+    val level: String = "",
+    val title: String = "",
+    val body: String = "",
+    val locationId: String = "",
+    val validFrom: String = "",
+    val validUntil: String? = null,
+    val updatedAt: String = "",
+    val withdrawn: Boolean = false,
+    val withdrawnAt: String? = null
+)
