@@ -492,6 +492,10 @@ private fun ExploreScreen(
             )
 
             ExploreMode.DISCOVERY_ROW -> {
+                // A row page belongs to the membership scope it was loaded for.
+                // Do not render cached cards while the current scope is changing.
+                val discoveryScopeMatches =
+                    state.membership?.locationId?.let { state.discoveryScopeId == it } == true
                 val selectedRow = state.selectedDiscoveryRow
                 val selectedLabel = when (selectedRow) {
                     "URGENT_ALERTS" -> "تنبيهات رسمية"
@@ -514,6 +518,7 @@ private fun ExploreScreen(
                     TextButton(onClick = { onMode(ExploreMode.POSTS) }) { Text("عودة") }
                 }
                 when {
+                    !discoveryScopeMatches -> LoadingCard("نحدّث صفوف الاكتشاف لحيّك…")
                     selectedRow == null -> EmptyState("لم يتم اختيار صف", "عد إلى الحي واختر صفًا لعرض جميع عناصره.")
                     state.discoveryRowBusy && state.discoveryRowCards.isEmpty() -> LoadingCard("نحمّل عناصر الصف…")
                     state.discoveryRowError != null && state.discoveryRowCards.isEmpty() -> ErrorCard(state.discoveryRowError, onRefresh)
