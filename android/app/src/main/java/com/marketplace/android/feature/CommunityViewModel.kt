@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.marketplace.android.core.network.CommentDto
+import com.marketplace.android.core.network.DiscoveryCardDto
+import com.marketplace.android.core.network.DiscoveryRowDto
 import com.marketplace.android.core.network.CreateMarketItemRequest
 import com.marketplace.android.core.network.CreatePostRequest
 import com.marketplace.android.core.network.CreateEventRequest
@@ -31,7 +33,7 @@ import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
 enum class MainTab { HOME, MARKET, PROPERTY, DIRECTORY, EXPLORE, NOTIFICATIONS, PROFILE }
-enum class ExploreMode { POSTS, EVENTS, GROUPS, POLLS, MARKET }
+enum class ExploreMode { POSTS, EVENTS, GROUPS, POLLS, MARKET, DISCOVERY_ROW }
 enum class ComposerKind { POST, MARKET, EVENT, POLL }
 
 data class AppUiState(
@@ -92,6 +94,18 @@ data class AppUiState(
     val notifications: List<NotificationDto> = emptyList(),
     val notificationsBusy: Boolean = false,
     val notificationsError: String? = null,
+    val discoveryRows: List<DiscoveryRowDto> = emptyList(),
+    val discoveryScopeId: String? = null,
+    val discoveryBusy: Boolean = false,
+    val discoveryError: String? = null,
+    val selectedDiscoveryRow: String? = null,
+    val discoveryRowCards: List<DiscoveryCardDto> = emptyList(),
+    val discoveryRowTotal: Long = 0,
+    val discoveryRowPage: Int = -1,
+    val discoveryRowLast: Boolean = true,
+    val discoveryRowBusy: Boolean = false,
+    val discoveryRowError: String? = null,
+    val discoveryPreviewCard: DiscoveryCardDto? = null,
     val propertyQuery: String = "",
     val propertyPurpose: String = "RENT",
     val propertyType: String = "APARTMENT",
