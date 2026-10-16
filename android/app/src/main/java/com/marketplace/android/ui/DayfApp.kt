@@ -147,6 +147,11 @@ fun DayfApp(
     onReact: (com.marketplace.android.core.network.PostDto) -> Unit,
     onOpenComments: (com.marketplace.android.core.network.PostDto) -> Unit,
     onUpdateLostFoundState: (com.marketplace.android.core.network.PostDto, String) -> Unit,
+    onOpenDiscoveryRow: (String) -> Unit,
+    onLoadMoreDiscoveryRow: () -> Unit,
+    onPreviewDiscoveryCard: (com.marketplace.android.core.network.DiscoveryCardDto) -> Unit,
+    onRecordDiscoveryImpression: (String, com.marketplace.android.core.network.DiscoveryCardDto) -> Unit,
+    onDismissDiscoveryPreview: () -> Unit,
     onCloseComments: () -> Unit,
     onCommentDraft: (String) -> Unit,
     onSendComment: () -> Unit,
@@ -205,6 +210,10 @@ fun DayfApp(
             onReact = onReact,
             onOpenComments = onOpenComments,
             onUpdateLostFoundState = onUpdateLostFoundState,
+            onOpenDiscoveryRow = onOpenDiscoveryRow,
+            onLoadMoreDiscoveryRow = onLoadMoreDiscoveryRow,
+            onPreviewDiscoveryCard = onPreviewDiscoveryCard,
+            onRecordDiscoveryImpression = onRecordDiscoveryImpression,
             onSearchQuery = onSearchQuery,
             onSearch = onSearch,
             onLoadMoreSearchResults = onLoadMoreSearchResults,
@@ -277,6 +286,9 @@ fun DayfApp(
             onSend = onSendComment,
             onDismiss = onCloseComments
         )
+    }
+    state.discoveryPreviewCard?.let { card ->
+        DiscoveryCardPreviewDialog(card = card, onDismiss = onDismissDiscoveryPreview)
     }
     if (state.notice != null && state.composer == null && state.commentsPost == null && state.authenticated) {
         AlertDialog(
