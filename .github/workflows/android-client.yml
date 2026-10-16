@@ -73,7 +73,7 @@ jobs:
           profile: pixel_2
           disable-animations: true
           script: |
-            set -Eeuo pipefail
+            set -eu
             cd android
             diagnostics_dir="$GITHUB_WORKSPACE/android/android-ci-diagnostics"
             mkdir -p "$diagnostics_dir"
@@ -117,7 +117,13 @@ jobs:
             }
             trap capture_android_diagnostics EXIT
 
-            ./gradlew :app:connectedDebugAndroidTest -PoidcClientId=android-community-native -PoidcRedirectUri=com.marketplace.android:/oauth2redirect --stacktrace --console=plain 2>&1 | tee "$diagnostics_dir/connectedDebugAndroidTest.log"
+            if ./gradlew :app:connectedDebugAndroidTest -PoidcClientId=android-community-native -PoidcRedirectUri=com.marketplace.android:/oauth2redirect --stacktrace --console=plain > "$diagnostics_dir/connectedDebugAndroidTest.log" 2>&1; then
+  gradle_status=0
+else
+  gradle_status=$?
+fi
+cat "$diagnostics_dir/connectedDebugAndroidTest.log"
+exit "$gradle_status"
 
       # Fallback for failures before the emulator action reaches its script.
       # Do not overwrite evidence captured by the EXIT trap.
