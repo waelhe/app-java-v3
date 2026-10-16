@@ -118,6 +118,24 @@
              2.2.20) resolves to the Boot/house versions the same way —
              the enforcer's convergence rules stay the authority. -->
         <dgs.version>12.1.0</dgs.version>
+        <!-- GraphQL DGS CodeGen (target architecture §11 Phase 3): the
+             community Maven adapter io.github.deweyjose:
+             graphqlcodegen-maven-plugin. Netflix publishes its official
+             CodeGen plugin for Gradle only, so this is the conscious
+             tool-source trade-off the corrected plan tracks (§11 Phase 3
+             item 5: pin centrally, inspect the dependency graph, isolate
+             the output, enforce clean-build CI — never calling the
+             adapter official). Version measured from repo1.maven.org
+             maven-metadata.xml (2026-10-16): 3.10.1 is the latest GA —
+             the search API's index lags at 3.5.0. The plugin's own
+             dependency graph (3.10.1 POM, measured) wraps the official
+             com.netflix.graphql.dgs.codegen:graphql-dgs-codegen-core
+             8.6.0 + graphql-java 25.0 — the SAME graphql-java line the
+             runtime chain resolves (Boot 4.1.1 BOM -> spring-graphql
+             2.0.5 -> graphql-java 25.0) — and all of it stays inside
+             the plugin class realm: a build plugin only, zero runtime
+             dependencies, invisible to the enforcer's project graph. -->
+        <graphql-codegen-plugin.version>3.10.1</graphql-codegen-plugin.version>
         <instancio.version>6.0.1</instancio.version>
         <!-- Track-B community tools (parallel execution plan §5.4 — CR-2, the
              foundation BOM drop): versions for the developer line ONLY, pinned

@@ -417,6 +417,54 @@
 
     <build>
         <plugins>
+            <!-- GraphQL DGS CodeGen (target architecture §11 Phase 3):
+                 schema-first constants generated from the authoritative
+                 SDL at build time, Maven-owned. The community adapter
+                 (io.github.deweyjose — Netflix's official CodeGen plugin
+                 is Gradle-only) is pinned in the ROOT pom per the plan's
+                 provenance rule. Its `generate` goal binds to the
+                 generate-sources phase (the plugin's documented default),
+                 and the output lands isolated under
+                 target/generated-sources/graphql-codegen — separate from
+                 MapStruct's target/generated-sources/annotations —
+                 added to the compile source roots automatically, never
+                 committed or hand-edited. Data types are intentionally
+                 OFF in this opening increment: ServiceInput stays
+                 hand-owned (its Jakarta Validation contract is not
+                 expressible in SDL without changing the schema contract
+                 — the plan's Phase 3.4 equivalence rule), and the
+                 response record stays this surface's wire DTO. What the
+                 increment does bind is the FETCHER's field names to the
+                 generated constants — the adapter boundary. Client API
+                 generation stays off (no server-to-server use case),
+                 no docs, no example fetchers. -->
+            <plugin>
+                <groupId>io.github.deweyjose</groupId>
+                <artifactId>graphqlcodegen-maven-plugin</artifactId>
+                <version>${graphql-codegen-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>generate-graphql-schema-constants</id>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <schemaPaths>
+                        <path>${project.basedir}/src/main/resources/graphql</path>
+                    </schemaPaths>
+                    <!-- Keep CodeGen output separate from MapStruct's
+                         target/generated-sources/annotations directory. -->
+                    <outputDir>${project.build.directory}/generated-sources/graphql-codegen</outputDir>
+                    <packageName>com.marketplace.app.graphql.generated</packageName>
+                    <generateDataTypes>false</generateDataTypes>
+                    <generateClientApi>false</generateClientApi>
+                    <generateDocs>false</generateDocs>
+                    <addGeneratedAnnotation>true</addGeneratedAnnotation>
+                    <disableDatesInGeneratedAnnotation>true</disableDatesInGeneratedAnnotation>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
@@ -469,3 +517,4 @@
         </plugins>
     </build>
 </project>
+
