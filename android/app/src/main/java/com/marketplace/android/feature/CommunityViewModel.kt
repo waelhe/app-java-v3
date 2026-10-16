@@ -1013,10 +1013,30 @@ class CommunityViewModel(
         }
     }
 
+    private fun isCurrentDiscoveryCard(current: AppUiState, row: String, card: DiscoveryCardDto): Boolean {
+        val locationId = current.membership?.locationId ?: return false
+        if (current.discoveryScopeId != locationId) return false
+        if (card.scopeLocationId != null && card.scopeLocationId != locationId) return false
+
+        val visibleCards = if (
+            current.exploreMode == ExploreMode.DISCOVERY_ROW &&
+            current.selectedDiscoveryRow == row
+        ) {
+            current.discoveryRowCards
+        } else {
+            current.discoveryRows.firstOrNull { it.row == row }?.cards.orEmpty()
+        }
+        return visibleCards.any { it.sourceType == card.sourceType && it.sourceId == card.sourceId }
+    }
+
     fun previewDiscoveryCard(card: DiscoveryCardDto) {
         val current = _uiState.value
-        val scopeId = current.membership?.locationId
-        if (current.authenticated && !scopeId.isNullOrBlank() && current.discoveryScopeId == scopeId) {
+        val row = if (current.exploreMode == ExploreMode.DISCOVERY_ROW) {
+            current.selectedDiscoveryRow
+        } else {
+            current.discoveryRows.firstOrNull { row -> row.cards.any { it.sourceType == card.sourceType && it.sourceId == card.sourceId } }?.row
+        }
+        if (current.authenticated && !row.isNullOrBlank() && isCurrentDiscoveryCard(current, row, card)) {
             _uiState.update { it.copy(discoveryPreviewCard = card) }
         }
     }
@@ -1028,10 +1048,10 @@ class CommunityViewModel(
     fun recordDiscoveryImpression(row: String, card: DiscoveryCardDto) {
         val current = _uiState.value
         if (!current.authenticated ||
-            current.membership?.locationId.isNullOrBlank() ||
             row !in supportedDiscoveryRows ||
             card.sourceType !in setOf("NEIGHBORHOOD_POST", "NEIGHBORHOOD_EVENT", "JOB", "URGENT_ALERT", "PROVIDER_LISTING") ||
-            card.sourceId.isBlank()) return
+            card.sourceId.isBlank() ||
+            !isCurrentDiscoveryCard(current, row, card)) return
         viewModelScope.launch {
             try {
                 repository.recordDiscoveryImpression(row, card)
