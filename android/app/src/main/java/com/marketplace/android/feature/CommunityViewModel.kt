@@ -31,7 +31,7 @@ import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
 enum class MainTab { HOME, MARKET, PROPERTY, DIRECTORY, EXPLORE, NOTIFICATIONS, PROFILE }
-enum class ExploreMode { POSTS, EVENTS, GROUPS, POLLS, MARKET }
+enum class ExploreMode { POSTS, EVENTS, GROUPS, POLLS, MARKET, OFFICIAL_ALERTS }
 enum class ComposerKind { POST, MARKET, EVENT, POLL }
 
 data class AppUiState(
@@ -92,6 +92,9 @@ data class AppUiState(
     val notifications: List<NotificationDto> = emptyList(),
     val notificationsBusy: Boolean = false,
     val notificationsError: String? = null,
+    val urgentAlerts: List<UrgentAlertDto> = emptyList(),
+    val urgentAlertsBusy: Boolean = false,
+    val urgentAlertsError: String? = null,
     val propertyQuery: String = "",
     val propertyPurpose: String = "RENT",
     val propertyType: String = "APARTMENT",
@@ -367,6 +370,7 @@ class CommunityViewModel(
                     )
                 }
                 loadFeed()
+                loadUrgentAlerts()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -420,6 +424,7 @@ class CommunityViewModel(
                 }
                 loadFeed()
                 loadMarket()
+                loadUrgentAlerts()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -431,7 +436,10 @@ class CommunityViewModel(
     fun selectTab(tab: MainTab) {
         _uiState.update { it.copy(tab = tab, notice = null) }
         when (tab) {
-            MainTab.HOME -> loadFeed()
+            MainTab.HOME -> {
+                loadFeed()
+                loadUrgentAlerts()
+            }
             MainTab.MARKET -> Unit // Public product catalog/cart is not exposed by the current API.
             MainTab.PROPERTY -> loadPropertyListings()
             MainTab.DIRECTORY -> loadDirectoryListings()
@@ -443,7 +451,10 @@ class CommunityViewModel(
 
     fun refresh() {
         when (_uiState.value.tab) {
-            MainTab.HOME -> loadFeed()
+            MainTab.HOME -> {
+                loadFeed()
+                loadUrgentAlerts()
+            }
             MainTab.MARKET -> Unit
             MainTab.PROPERTY -> loadPropertyListings()
             MainTab.DIRECTORY -> loadDirectoryListings()
@@ -825,6 +836,7 @@ class CommunityViewModel(
             ExploreMode.GROUPS -> loadGroups()
             ExploreMode.POLLS -> loadPolls()
             ExploreMode.MARKET -> loadMarket()
+            ExploreMode.OFFICIAL_ALERTS -> loadUrgentAlerts()
         }
     }
 
@@ -835,6 +847,7 @@ class CommunityViewModel(
             ExploreMode.GROUPS -> loadGroups()
             ExploreMode.POLLS -> loadPolls()
             ExploreMode.MARKET -> loadMarket()
+            ExploreMode.OFFICIAL_ALERTS -> loadUrgentAlerts()
         }
     }
 
@@ -1235,6 +1248,42 @@ class CommunityViewModel(
                 throw cancelled
             } catch (error: Exception) {
                 _uiState.update { it.copy(notificationsBusy = false, notificationsError = failureMessage(error)) }
+            }
+        }
+    }
+
+    /**
+     * Fetch only currently active, source-verified alerts for the member's
+     * exact level-3 neighborhood. If the user switches neighborhoods while
+     * the request is in flight, discard the stale response rather than leak
+     * the previous neighborhood's alert list into the new scope.
+     */
+    fun loadUrgentAlerts() {
+        val current = _uiState.value
+        val locationId = current.membership?.locationId
+        if (!current.authenticated || locationId.isNullOrBlank()) return
+
+        viewModelScope.launch {
+            _uiState.update {
+                if (it.membership?.locationId == locationId) {
+                    it.copy(urgentAlertsBusy = true, urgentAlertsError = null)
+                } else it
+            }
+            try {
+                val alerts = repository.getUrgentAlerts(locationId)
+                _uiState.update {
+                    if (it.membership?.locationId == locationId) {
+                        it.copy(urgentAlerts = alerts, urgentAlertsBusy = false, urgentAlertsError = null)
+                    } else it
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _uiState.update {
+                    if (it.membership?.locationId == locationId) {
+                        it.copy(urgentAlertsBusy = false, urgentAlertsError = failureMessage(error))
+                    } else it
+                }
             }
         }
     }
