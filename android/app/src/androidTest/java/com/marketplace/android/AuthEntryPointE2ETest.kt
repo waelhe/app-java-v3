@@ -1,5 +1,6 @@
 package com.marketplace.android
 
+import android.os.Build
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -21,7 +22,11 @@ class AuthEntryPointE2ETest {
 
     @Test
     fun unauthenticatedScreenOffersPasskeyAndPkceFallback() {
-        composeRule.onNodeWithText("المتابعة بمفتاح المرور").assertIsDisplayed()
-        composeRule.onNodeWithText("تسجيل الدخول الآمن").assertIsDisplayed()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            composeRule.onNodeWithText("المتابعة بمفتاح المرور").assertIsDisplayed()
+            composeRule.onNodeWithText("الدخول بالطريقة التقليدية").assertIsDisplayed()
+        } else {
+            composeRule.onNodeWithText("تسجيل الدخول الآمن").assertIsDisplayed()
+        }
     }
 }
