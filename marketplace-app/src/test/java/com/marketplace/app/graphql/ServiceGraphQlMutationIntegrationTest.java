@@ -238,4 +238,41 @@ class ServiceGraphQlMutationIntegrationTest {
 
         verify(catalogService, never()).create(any(), anyString(), any(), anyString(), any(), any());
     }
+
+    /**
+     * Phase 4 (target design §11-Phase-4 — Spring Security: "enforce
+     * ownership … in the owning use-case/service boundary"): the mutation's
+     * ownership is SERVER-DERIVED — {@code ServiceInput} carries no provider
+     * field (measured against the SDL), so the only provider id that can
+     * ever reach the owning use case is the one
+     * {@code CurrentUserProvider} resolves from the authenticated
+     * principal. This leg pins the delegation argument verbatim: the first
+     * argument of {@code catalogService.create} IS the programmed principal
+     * id — there is no client-supplied ownership path to regress into,
+     * because this test would fail the moment one appears.
+     */
+    @Test
+    void createServiceOwnershipIsDerivedFromTheAuthenticatedPrincipal() {
+        UUID principalId = UUID.randomUUID();
+        when(currentUserProvider.getCurrentUserId(any())).thenReturn(principalId);
+        ProviderListingView listing =
+                view(UUID.randomUUID(), "Owned", "Delegation leg", "general", 0L, "ACTIVE");
+        when(catalogService.create(any(), eq("Owned"), eq("Delegation leg"),
+                eq("general"), eq(0L), isNull()))
+                .thenReturn(listing);
+
+        graphQlTester.document("""
+                        mutation($input: ServiceInput!) {
+                            createService(input: $input) { name }
+                        }
+                        """)
+                .variable("input", input("Owned", "Delegation leg", 0))
+                .execute()
+                .errors()
+                .verify()
+                .path("createService.name").entity(String.class).isEqualTo("Owned");
+
+        verify(catalogService).create(eq(principalId), eq("Owned"), eq("Delegation leg"),
+                eq("general"), eq(0L), isNull());
+    }
 }

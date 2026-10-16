@@ -213,6 +213,30 @@ class ArchitectureRulesTest {
                             + "boundary rules + §11 Phase 2). 1 component at adoption "
                             + "(ServiceDataFetcher).");
 
+    /**
+     * GraphQL Phase 4 (target design §11 Phase 4 — Transactions and
+     * Modulith events: "GraphQL must not introduce resolver-side
+     * transaction chains"): the DGS component layer is the composition
+     * root's web adapter — the same web layer the controller transaction
+     * prohibition above covers for REST. The owning use case's
+     * transaction remains the only transaction boundary a mutation
+     * crosses; a {@code @Transactional} on a data fetcher would open a
+     * second, resolver-scoped chain that bypasses the use case's own
+     * event-publication/outbox conventions (Modulith
+     * {@code @ApplicationModuleListener} with AFTER_COMMIT semantics).
+     * 0 usages measured at adoption (ServiceDataFetcher).
+     */
+    @ArchTest
+    static final ArchRule dgsComponentsMustNotOwnTransactions =
+            classes().that().areAnnotatedWith(DgsComponent.class)
+                    .should(notUseTransactionalAnywhere())
+                    .because("@Transactional on a DGS data fetcher opens a resolver-side "
+                            + "transaction chain — the owning use case's transaction is the "
+                            + "authoritative boundary and its AFTER_COMMIT event legs depend "
+                            + "on it (target design §11 Phase 4; the same CODING_STANDARDS.md "
+                            + "§3.2 web-layer prohibition the controller rule above enforces "
+                            + "for REST). 0 usages measured at adoption.");
+
     private static JavaClasses importProductionClasses() {
         return new ClassFileImporter()
                 .withImportOption(new ImportOption.DoNotIncludeTests())
