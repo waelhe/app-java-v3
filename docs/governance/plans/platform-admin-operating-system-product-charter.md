@@ -201,6 +201,8 @@ A top-level destination is not a complete domain UX. The authoritative scope is 
 - Business directory: Yelp for Business-level profile claims, verification, reviews and replies, local visibility, leads and outcome reporting.
 - Members/geography, official reach, money/growth, member experience and team governance must each meet the equivalent explicit breadth defined in the suite specification.
 
+**Two cross-domain capabilities are first-class product domains:** the platform-wide payment/financial system handles collection, provider outcomes, refunds, reconciliation and approved seller/courier settlement across all payable sources; the delivery network supports both standalone direct-delivery service and order-linked shipping/fulfillment. They share contracts and operations without transferring each source's business state machine into a generic engine. The implementation target and source boundaries are documented in [Platform-Wide Payments and Delivery Network](../../architecture/platform-wide-payments-and-delivery.md).
+
 **A domain cannot pass acceptance because its entry in the main navigation exists.** It must have its own operational home, all applicable management workspaces, searchable collection screens, detailed records, full create/edit and lifecycle flows, exception queues, domain settings, permissions, audit, reports and complete End-to-End journeys. The Experience Studio and Change Centre complement these domain tools; they do not replace them.
 
 ## 5. The universal command lifecycle
