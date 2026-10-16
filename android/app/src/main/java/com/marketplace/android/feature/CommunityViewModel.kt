@@ -354,7 +354,19 @@ class CommunityViewModel(
                 sessionRestoreAttempted = true,
                 silentReauthRequired = false,
                 authError = errorMessage,
-                authSuccess = if (errorMessage == null) "تم تسجيل الخروج وإنهاء جلسة الدخول." else null
+                authSuccess = if (errorMessage == null) "تم تسجيل الخروج وإنهاء جلسة الدخول." else null,
+                discoveryRows = emptyList(),
+                discoveryScopeId = null,
+                discoveryBusy = false,
+                discoveryError = null,
+                selectedDiscoveryRow = null,
+                discoveryRowCards = emptyList(),
+                discoveryRowTotal = 0,
+                discoveryRowPage = -1,
+                discoveryRowLast = true,
+                discoveryRowBusy = false,
+                discoveryRowError = null,
+                discoveryPreviewCard = null
             )
         }
     }
@@ -379,6 +391,7 @@ class CommunityViewModel(
                     )
                 }
                 loadFeed()
+                loadDiscoveryHome()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -427,11 +440,17 @@ class CommunityViewModel(
                     it.copy(
                         membership = membership, scopeName = node.nameAr, membershipRequired = false,
                         locationBusy = false, locationResults = emptyList(), locationQuery = "",
+                        discoveryRows = emptyList(), discoveryScopeId = node.id,
+                        discoveryBusy = true, discoveryError = null,
+                        selectedDiscoveryRow = null, discoveryRowCards = emptyList(),
+                        discoveryRowTotal = 0, discoveryRowPage = -1, discoveryRowLast = true,
+                        discoveryPreviewCard = null,
                         tab = MainTab.HOME, notice = "انضممت إلى ${node.nameAr}."
                     )
                 }
                 loadFeed()
                 loadMarket()
+                loadDiscoveryHome()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -443,7 +462,10 @@ class CommunityViewModel(
     fun selectTab(tab: MainTab) {
         _uiState.update { it.copy(tab = tab, notice = null) }
         when (tab) {
-            MainTab.HOME -> loadFeed()
+            MainTab.HOME -> {
+                loadFeed()
+                loadDiscoveryHome()
+            }
             MainTab.MARKET -> Unit // Public product catalog/cart is not exposed by the current API.
             MainTab.PROPERTY -> loadPropertyListings()
             MainTab.DIRECTORY -> loadDirectoryListings()
@@ -455,7 +477,10 @@ class CommunityViewModel(
 
     fun refresh() {
         when (_uiState.value.tab) {
-            MainTab.HOME -> loadFeed()
+            MainTab.HOME -> {
+                loadFeed()
+                loadDiscoveryHome()
+            }
             MainTab.MARKET -> Unit
             MainTab.PROPERTY -> loadPropertyListings()
             MainTab.DIRECTORY -> loadDirectoryListings()
