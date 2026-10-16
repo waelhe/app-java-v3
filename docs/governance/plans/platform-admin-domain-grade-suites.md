@@ -231,7 +231,7 @@ Dedicated settings workspaces for:
 - Communication templates for order/booking states.
 - Integration health in human language, with technical detail restricted to specialist diagnostics.
 
-Changing these controls requires an impact simulation against example orders/markets and must never silently rewrite historical orders.
+Changing these controls requires an impact simulation against example orders/markets and must never silently rewrite historical orders. These are market-scoped configuration surfaces only: payment execution/reconciliation across all domains belongs to Section 8's platform-wide financial suite, and standalone courier dispatch/operations belongs to the delivery network described in [Platform-Wide Payments and Delivery Network](../../architecture/platform-wide-payments-and-delivery.md). Avoid creating a separate market-only payment or delivery engine.
 
 ### 4.14 Reviews, quality, search and merchandising
 
