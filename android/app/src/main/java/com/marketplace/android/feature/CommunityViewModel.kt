@@ -93,6 +93,7 @@ data class AppUiState(
     val notificationsBusy: Boolean = false,
     val notificationsError: String? = null,
     val urgentAlerts: List<UrgentAlertDto> = emptyList(),
+    val urgentAlertsScopeId: String? = null,
     val urgentAlertsBusy: Boolean = false,
     val urgentAlertsError: String? = null,
     val propertyQuery: String = "",
@@ -419,6 +420,8 @@ class CommunityViewModel(
                     it.copy(
                         membership = membership, scopeName = node.nameAr, membershipRequired = false,
                         locationBusy = false, locationResults = emptyList(), locationQuery = "",
+                        urgentAlerts = emptyList(), urgentAlertsScopeId = node.id,
+                        urgentAlertsBusy = true, urgentAlertsError = null,
                         tab = MainTab.HOME, notice = "انضممت إلى ${node.nameAr}."
                     )
                 }
@@ -1266,14 +1269,24 @@ class CommunityViewModel(
         viewModelScope.launch {
             _uiState.update {
                 if (it.membership?.locationId == locationId) {
-                    it.copy(urgentAlertsBusy = true, urgentAlertsError = null)
+                    it.copy(
+                        urgentAlerts = if (it.urgentAlertsScopeId == locationId) it.urgentAlerts else emptyList(),
+                        urgentAlertsScopeId = locationId,
+                        urgentAlertsBusy = true,
+                        urgentAlertsError = null
+                    )
                 } else it
             }
             try {
                 val alerts = repository.getUrgentAlerts(locationId)
                 _uiState.update {
                     if (it.membership?.locationId == locationId) {
-                        it.copy(urgentAlerts = alerts, urgentAlertsBusy = false, urgentAlertsError = null)
+                        it.copy(
+                            urgentAlerts = alerts,
+                            urgentAlertsScopeId = locationId,
+                            urgentAlertsBusy = false,
+                            urgentAlertsError = null
+                        )
                     } else it
                 }
             } catch (cancelled: CancellationException) {
