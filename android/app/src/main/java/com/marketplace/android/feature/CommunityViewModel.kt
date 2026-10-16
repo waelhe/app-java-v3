@@ -855,7 +855,14 @@ class CommunityViewModel(
     fun setCommentDraft(value: String) { _uiState.update { it.copy(commentDraft = value.take(2000)) } }
 
     fun selectExploreMode(mode: ExploreMode) {
-        _uiState.update { it.copy(exploreMode = mode, notice = null) }
+        _uiState.update {
+            it.copy(
+                exploreMode = mode,
+                selectedDiscoveryRow = if (mode == ExploreMode.DISCOVERY_ROW) it.selectedDiscoveryRow else null,
+                discoveryPreviewCard = null,
+                notice = null
+            )
+        }
         when (mode) {
             ExploreMode.POSTS -> Unit
             ExploreMode.EVENTS -> loadEvents()
@@ -879,6 +886,7 @@ class CommunityViewModel(
 
 
     private val supportedDiscoveryRows = setOf(
+        "URGENT_ALERTS",
         "FOLLOWED_SOURCES",
         "LOST_FOUND",
         "NEIGHBORHOOD_RECOMMENDATIONS",
@@ -891,7 +899,20 @@ class CommunityViewModel(
         val scopeId = _uiState.value.membership?.locationId
         if (!_uiState.value.authenticated || scopeId.isNullOrBlank()) {
             _uiState.update {
-                it.copy(discoveryRows = emptyList(), discoveryScopeId = null, discoveryBusy = false)
+                it.copy(
+                    discoveryRows = emptyList(),
+                    discoveryScopeId = null,
+                    discoveryBusy = false,
+                    discoveryError = null,
+                    selectedDiscoveryRow = null,
+                    discoveryRowCards = emptyList(),
+                    discoveryRowTotal = 0,
+                    discoveryRowPage = -1,
+                    discoveryRowLast = true,
+                    discoveryRowBusy = false,
+                    discoveryRowError = null,
+                    discoveryPreviewCard = null
+                )
             }
             return
         }
