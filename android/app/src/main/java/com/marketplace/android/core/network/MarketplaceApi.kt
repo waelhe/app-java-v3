@@ -112,6 +112,16 @@ interface MarketplaceApi {
     @DELETE("api/v1/neighborhood/market/{itemId}")
     suspend fun withdrawMarketItem(@Path("itemId") itemId: String)
 
+    @GET("api/v1/discovery")
+    suspend fun getDiscoveryRows(): List<DiscoveryRowDto>
+
+    @GET("api/v1/discovery/rows/{row}")
+    suspend fun getDiscoveryRow(
+        @Path("row") row: String,
+        @Query("page") page: Int = 0,
+        @Query("size") size: Int = 20
+    ): ApiPage<DiscoveryCardDto>
+
     @GET("api/v1/notifications")
     suspend fun getNotifications(@Query("page") page: Int = 0, @Query("size") size: Int = 30): ApiPage<NotificationDto>
 
