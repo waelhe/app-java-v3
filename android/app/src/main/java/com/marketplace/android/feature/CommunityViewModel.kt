@@ -361,7 +361,23 @@ class CommunityViewModel(
                 sessionRestoreAttempted = true,
                 silentReauthRequired = false,
                 authError = errorMessage,
-                authSuccess = if (errorMessage == null) "تم تسجيل الخروج وإنهاء جلسة الدخول." else null
+                authSuccess = if (errorMessage == null) "تم تسجيل الخروج وإنهاء جلسة الدخول." else null,
+                urgentAlerts = emptyList(),
+                urgentAlertsScopeId = null,
+                urgentAlertsBusy = false,
+                urgentAlertsError = null,
+                discoveryRows = emptyList(),
+                discoveryScopeId = null,
+                discoveryBusy = false,
+                discoveryError = null,
+                selectedDiscoveryRow = null,
+                discoveryRowCards = emptyList(),
+                discoveryRowTotal = 0,
+                discoveryRowPage = -1,
+                discoveryRowLast = true,
+                discoveryRowBusy = false,
+                discoveryRowError = null,
+                discoveryPreviewCard = null
             )
         }
     }
@@ -387,6 +403,7 @@ class CommunityViewModel(
                 }
                 loadFeed()
                 loadUrgentAlerts()
+                loadDiscoveryHome()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -437,12 +454,18 @@ class CommunityViewModel(
                         locationBusy = false, locationResults = emptyList(), locationQuery = "",
                         urgentAlerts = emptyList(), urgentAlertsScopeId = node.id,
                         urgentAlertsBusy = true, urgentAlertsError = null,
+                        discoveryRows = emptyList(), discoveryScopeId = node.id,
+                        discoveryBusy = true, discoveryError = null,
+                        selectedDiscoveryRow = null, discoveryRowCards = emptyList(),
+                        discoveryRowPage = -1, discoveryRowLast = true,
+                        discoveryPreviewCard = null,
                         tab = MainTab.HOME, notice = "انضممت إلى ${node.nameAr}."
                     )
                 }
                 loadFeed()
                 loadMarket()
                 loadUrgentAlerts()
+                loadDiscoveryHome()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -457,6 +480,7 @@ class CommunityViewModel(
             MainTab.HOME -> {
                 loadFeed()
                 loadUrgentAlerts()
+                loadDiscoveryHome()
             }
             MainTab.MARKET -> Unit // Public product catalog/cart is not exposed by the current API.
             MainTab.PROPERTY -> loadPropertyListings()
@@ -472,6 +496,7 @@ class CommunityViewModel(
             MainTab.HOME -> {
                 loadFeed()
                 loadUrgentAlerts()
+                loadDiscoveryHome()
             }
             MainTab.MARKET -> Unit
             MainTab.PROPERTY -> loadPropertyListings()
@@ -855,6 +880,7 @@ class CommunityViewModel(
             ExploreMode.POLLS -> loadPolls()
             ExploreMode.MARKET -> loadMarket()
             ExploreMode.OFFICIAL_ALERTS -> loadUrgentAlerts()
+            ExploreMode.DISCOVERY_ROW -> loadDiscoveryRow(reset = true)
         }
     }
 
@@ -866,6 +892,7 @@ class CommunityViewModel(
             ExploreMode.POLLS -> loadPolls()
             ExploreMode.MARKET -> loadMarket()
             ExploreMode.OFFICIAL_ALERTS -> loadUrgentAlerts()
+            ExploreMode.DISCOVERY_ROW -> loadDiscoveryRow(reset = true)
         }
     }
 
@@ -1318,6 +1345,183 @@ class CommunityViewModel(
                         )
                     } else it
                 }
+            }
+        }
+    }
+
+
+    private val supportedDiscoveryRows = setOf(
+        "FOLLOWED_SOURCES",
+        "LOST_FOUND",
+        "NEIGHBORHOOD_RECOMMENDATIONS",
+        "EVENTS_AND_OPPORTUNITIES",
+        "FOR_YOU"
+    )
+
+    /**
+     * Loads the server-assembled rails for the authenticated member's active
+     * neighborhood. Rows are source projections, not duplicated content.
+     * A response is discarded if the membership changes while in flight.
+     */
+    fun loadDiscoveryHome() {
+        val current = _uiState.value
+        val scopeId = current.membership?.locationId
+        if (!current.authenticated || scopeId.isNullOrBlank()) {
+            _uiState.update {
+                it.copy(discoveryRows = emptyList(), discoveryScopeId = null, discoveryBusy = false)
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update {
+                if (it.authenticated && it.membership?.locationId == scopeId) {
+                    it.copy(
+                        discoveryRows = emptyList(),
+                        discoveryScopeId = scopeId,
+                        discoveryBusy = true,
+                        discoveryError = null
+                    )
+                } else it
+            }
+            try {
+                val rows = repository.getDiscoveryHome()
+                _uiState.update {
+                    if (it.authenticated && it.membership?.locationId == scopeId) {
+                        it.copy(
+                            discoveryRows = rows,
+                            discoveryScopeId = scopeId,
+                            discoveryBusy = false,
+                            discoveryError = null
+                        )
+                    } else it
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _uiState.update {
+                    if (it.authenticated && it.membership?.locationId == scopeId) {
+                        it.copy(
+                            discoveryRows = emptyList(),
+                            discoveryScopeId = scopeId,
+                            discoveryBusy = false,
+                            discoveryError = failureMessage(error)
+                        )
+                    } else it
+                }
+            }
+        }
+    }
+
+    fun openDiscoveryRow(row: String) {
+        if (row !in supportedDiscoveryRows) return
+        val current = _uiState.value
+        val scopeId = current.membership?.locationId
+        if (!current.authenticated || scopeId.isNullOrBlank()) return
+        _uiState.update {
+            it.copy(
+                tab = MainTab.EXPLORE,
+                exploreMode = ExploreMode.DISCOVERY_ROW,
+                selectedDiscoveryRow = row,
+                discoveryRowCards = emptyList(),
+                discoveryRowTotal = 0,
+                discoveryRowPage = -1,
+                discoveryRowLast = true,
+                discoveryRowBusy = false,
+                discoveryRowError = null,
+                discoveryPreviewCard = null
+            )
+        }
+        loadDiscoveryRow(reset = true)
+    }
+
+    fun loadMoreDiscoveryRow() {
+        loadDiscoveryRow(reset = false)
+    }
+
+    private fun loadDiscoveryRow(reset: Boolean) {
+        val current = _uiState.value
+        val row = current.selectedDiscoveryRow
+        val scopeId = current.membership?.locationId
+        if (!current.authenticated || scopeId.isNullOrBlank() || row !in supportedDiscoveryRows) return
+        if (!reset && (current.discoveryRowBusy || current.discoveryRowLast)) return
+        if (!reset && current.discoveryScopeId != scopeId) return
+        val pageNumber = if (reset) 0 else current.discoveryRowPage + 1
+
+        viewModelScope.launch {
+            _uiState.update {
+                if (it.authenticated && it.membership?.locationId == scopeId && it.selectedDiscoveryRow == row) {
+                    it.copy(
+                        discoveryRowBusy = true,
+                        discoveryRowError = null,
+                        discoveryRowCards = if (reset) emptyList() else it.discoveryRowCards,
+                        discoveryRowPage = if (reset) -1 else it.discoveryRowPage
+                    )
+                } else it
+            }
+            try {
+                val page = repository.getDiscoveryRow(row!!, page = pageNumber, size = 20)
+                _uiState.update {
+                    if (it.authenticated &&
+                        it.membership?.locationId == scopeId &&
+                        it.selectedDiscoveryRow == row) {
+                        val merged = if (reset) page.content else (it.discoveryRowCards + page.content)
+                        val distinct = merged.distinctBy { card -> "${card.sourceType}:${card.sourceId}" }
+                        it.copy(
+                            discoveryRowCards = distinct,
+                            discoveryRowTotal = page.totalElements,
+                            discoveryRowPage = page.pageNumber,
+                            discoveryRowLast = page.last,
+                            discoveryRowBusy = false,
+                            discoveryRowError = null,
+                            discoveryScopeId = scopeId
+                        )
+                    } else it
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _uiState.update {
+                    if (it.authenticated &&
+                        it.membership?.locationId == scopeId &&
+                        it.selectedDiscoveryRow == row) {
+                        it.copy(discoveryRowBusy = false, discoveryRowError = failureMessage(error))
+                    } else it
+                }
+            }
+        }
+    }
+
+    fun previewDiscoveryCard(card: DiscoveryCardDto) {
+        val current = _uiState.value
+        val scopeId = current.membership?.locationId
+        if (!current.authenticated || scopeId.isNullOrBlank()) return
+        val inCurrentScope = current.discoveryScopeId == scopeId
+        if (inCurrentScope) _uiState.update { it.copy(discoveryPreviewCard = card) }
+    }
+
+    fun dismissDiscoveryPreview() {
+        _uiState.update { it.copy(discoveryPreviewCard = null) }
+    }
+
+    /** Best effort only: impression failures must never fail discovery browsing. */
+    fun recordDiscoveryImpression(row: String, card: DiscoveryCardDto) {
+        val current = _uiState.value
+        if (!current.authenticated ||
+            current.membership?.locationId.isNullOrBlank() ||
+            row !in supportedDiscoveryRows ||
+            card.sourceType !in setOf(
+                "NEIGHBORHOOD_POST", "NEIGHBORHOOD_EVENT", "JOB", "URGENT_ALERT", "PROVIDER_LISTING"
+            ) ||
+            card.sourceId.isBlank()) return
+
+        viewModelScope.launch {
+            try {
+                repository.recordDiscoveryImpression(row, card)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // The backend defines impressions as non-blocking bookkeeping.
             }
         }
     }
