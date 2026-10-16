@@ -196,7 +196,7 @@ class ApiModelsTest {
         )
         val json = moshi.adapter(RequestPostMediaUpload::class.java).toJson(request)
 
-        assertTrue(json.contains("\"postId\":\"post-1\""))
+        assertTrue(json.contains("\"postId\":\"22222222-2222-4222-8222-222222222221\""))
         assertTrue(json.contains("\"contentType\":\"image/jpeg\""))
         assertTrue(json.contains("\"sizeBytes\":418381"))
         assertFalse(json.contains("listingId"))
