@@ -118,12 +118,12 @@ jobs:
             trap capture_android_diagnostics EXIT
 
             if ./gradlew :app:connectedDebugAndroidTest -PoidcClientId=android-community-native -PoidcRedirectUri=com.marketplace.android:/oauth2redirect --stacktrace --console=plain > "$diagnostics_dir/connectedDebugAndroidTest.log" 2>&1; then
-  gradle_status=0
-else
-  gradle_status=$?
-fi
-cat "$diagnostics_dir/connectedDebugAndroidTest.log"
-exit "$gradle_status"
+              gradle_status=0
+            else
+              gradle_status=$?
+            fi
+            cat "$diagnostics_dir/connectedDebugAndroidTest.log"
+            exit "$gradle_status"
 
       # Fallback for failures before the emulator action reaches its script.
       # Do not overwrite evidence captured by the EXIT trap.
