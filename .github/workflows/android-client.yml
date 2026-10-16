@@ -41,7 +41,7 @@ jobs:
       - name: Set up stable Android SDK
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         with:
-          packages: "platform-tools platforms;android-35 platforms;android-36 build-tools;36.0.0"
+          packages: "platform-tools platforms;android-36 build-tools;36.0.0"
 
       - name: Validate Android CI scripts syntax
         run: |
@@ -85,12 +85,12 @@ jobs:
         if: always()
         run: mkdir -p android/android-ci-diagnostics
 
-      # API 35 is retained for now; collect evidence before changing emulator configuration again.
+      # Run the instrumentation smoke test on API 36, matching the app target SDK.
       # The EXIT trap runs inside the emulator action, while ADB can still reach the device.
       - name: Run Android auth-entry instrumentation test
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
         with:
-          api-level: 35
+          api-level: 36
           target: google_apis
           arch: x86_64
           profile: pixel_2
