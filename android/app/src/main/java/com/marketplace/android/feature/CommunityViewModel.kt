@@ -1018,25 +1018,25 @@ class CommunityViewModel(
         if (current.discoveryScopeId != locationId) return false
         if (card.scopeLocationId != null && card.scopeLocationId != locationId) return false
 
-        val visibleCards = if (
-            current.exploreMode == ExploreMode.DISCOVERY_ROW &&
-            current.selectedDiscoveryRow == row
-        ) {
-            current.discoveryRowCards
-        } else {
-            current.discoveryRows.firstOrNull { it.row == row }?.cards.orEmpty()
-        }
-        return visibleCards.any { it.sourceType == card.sourceType && it.sourceId == card.sourceId }
+        val inHomeRow = current.discoveryRows.firstOrNull { it.row == row }?.cards
+            ?.any { it.sourceType == card.sourceType && it.sourceId == card.sourceId } == true
+        val inTopicPage = current.selectedDiscoveryRow == row &&
+            current.discoveryRowCards.any { it.sourceType == card.sourceType && it.sourceId == card.sourceId }
+        return inHomeRow || inTopicPage
     }
 
     fun previewDiscoveryCard(card: DiscoveryCardDto) {
         val current = _uiState.value
-        val row = if (current.exploreMode == ExploreMode.DISCOVERY_ROW) {
-            current.selectedDiscoveryRow
-        } else {
-            current.discoveryRows.firstOrNull { row -> row.cards.any { it.sourceType == card.sourceType && it.sourceId == card.sourceId } }?.row
+        val topicRow = current.selectedDiscoveryRow?.takeIf { row ->
+            current.discoveryRowCards.any { it.sourceType == card.sourceType && it.sourceId == card.sourceId } &&
+                isCurrentDiscoveryCard(current, row, card)
         }
-        if (current.authenticated && !row.isNullOrBlank() && isCurrentDiscoveryCard(current, row, card)) {
+        val homeRow = current.discoveryRows.firstOrNull { row ->
+            row.cards.any { it.sourceType == card.sourceType && it.sourceId == card.sourceId } &&
+                isCurrentDiscoveryCard(current, row.row, card)
+        }?.row
+        val row = topicRow ?: homeRow
+        if (current.authenticated && !row.isNullOrBlank()) {
             _uiState.update { it.copy(discoveryPreviewCard = card) }
         }
     }
