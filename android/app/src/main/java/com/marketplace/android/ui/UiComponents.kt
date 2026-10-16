@@ -418,10 +418,10 @@ internal fun OfficialAlertCard(
                 overflow = TextOverflow.Ellipsis
             )
             val validity = buildList {
-                if (alert.validFrom.isNotBlank()) add("بدأ السريان: ${formatDate(alert.validFrom)}")
+                if (alert.validFrom.isNotBlank()) add("بدأ السريان: ${formatAbsoluteTime(alert.validFrom)}")
                 add(
                     alert.validUntil?.takeIf { it.isNotBlank() }
-                        ?.let { "ساري حتى: ${formatDate(it)}" }
+                        ?.let { "ساري حتى: ${formatAbsoluteTime(it)}" }
                         ?: "ساري حتى إشعار آخر"
                 )
             }
@@ -436,6 +436,12 @@ private fun urgentAlertLevelLabel(code: String): String = when (code.uppercase(L
     "ADVISORY" -> "استرشادي"
     else -> "المستوى غير متاح"
 }
+
+private fun formatAbsoluteTime(value: String): String = runCatching {
+    DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm", Locale("ar"))
+        .withZone(java.time.ZoneId.systemDefault())
+        .format(Instant.parse(value))
+}.getOrDefault("الوقت غير متاح")
 
 private fun urgentAlertSourceTypeLabel(code: String): String = when (code.uppercase(Locale.ROOT)) {
     "MUNICIPALITY" -> "بلدية"
