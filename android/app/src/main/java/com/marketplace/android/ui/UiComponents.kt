@@ -55,6 +55,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -65,6 +66,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.marketplace.android.core.network.CommentDto
+import com.marketplace.android.core.network.DiscoveryCardDto
+import com.marketplace.android.core.network.DiscoveryRowDto
 import com.marketplace.android.core.network.MarketItemDto
 import com.marketplace.android.core.network.NotificationDto
 import com.marketplace.android.core.network.PostDto
@@ -329,6 +332,145 @@ internal fun PostCard(
             }
         }
     }
+}
+
+
+@Composable
+internal fun DiscoveryRail(
+    row: DiscoveryRowDto,
+    onOpenAll: (String) -> Unit,
+    onOpenPreview: (DiscoveryCardDto) -> Unit,
+    onImpression: (String, DiscoveryCardDto) -> Unit
+) {
+    if (row.cards.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(discoveryRowLabel(row.row), fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Ink)
+                Text("${row.totalEligible} عنصرًا متاحًا", color = Muted, fontSize = 11.sp)
+            }
+            TextButton(onClick = { onOpenAll(row.row) }) { Text("عرض الكل") }
+        }
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+            items(items = row.cards, key = { "${row.row}:${it.sourceType}:${it.sourceId}" }) { card ->
+                LaunchedEffect(row.row, card.sourceType, card.sourceId) {
+                    onImpression(row.row, card)
+                }
+                DiscoveryCardTile(
+                    card = card,
+                    modifier = Modifier.width(264.dp),
+                    onClick = { onOpenPreview(card) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun DiscoveryCardTile(
+    card: DiscoveryCardDto,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    ElevatedCard(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(17.dp),
+        colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(discoverySourceLabel(card.sourceType), fontSize = 11.sp, color = Forest, fontWeight = FontWeight.SemiBold)
+                if (card.paid == true) {
+                    Text("محتوى مدفوع", fontSize = 10.sp, color = Warning, fontWeight = FontWeight.SemiBold)
+                }
+            }
+            Text(
+                card.title.ifBlank { "عنصر من الحي" },
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                lineHeight = 21.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (card.snippet.isNotBlank()) {
+                Text(card.snippet, color = Muted, fontSize = 12.sp, lineHeight = 18.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            }
+            if (card.reason.isNotBlank()) {
+                Text(card.reason, color = Forest, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            card.state?.takeIf { it.isNotBlank() }?.let { code ->
+                Text("الحالة: ${discoveryStateLabel(code)}", color = Muted, fontSize = 10.sp)
+            }
+        }
+    }
+}
+
+@Composable
+internal fun DiscoveryCardPreviewDialog(card: DiscoveryCardDto, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(discoverySourceLabel(card.sourceType), fontSize = 12.sp, color = Forest, fontWeight = FontWeight.SemiBold)
+                Text(card.title.ifBlank { "عنصر من الحي" }, fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(card.snippet.ifBlank { "لا يتوفر مقتطف إضافي لهذا العنصر." })
+                if (card.reason.isNotBlank()) Text("سبب الظهور: ${card.reason}", color = Forest, fontSize = 12.sp)
+                card.state?.takeIf { it.isNotBlank() }?.let {
+                    Text("الحالة عند إنشاء الملخص: ${discoveryStateLabel(it)}", color = Muted, fontSize = 12.sp)
+                }
+                if (card.paid == true) Text("إفصاح: هذا موضع مدفوع، وليس توصية عضوية.", color = Warning, fontSize = 12.sp)
+                Text(
+                    "هذه بطاقة اكتشاف مختصرة وليست صفحة المصدر الأصلية. لا ننفّذ تفاعلًا أو معاملة من هذا الملخص؛ فتح تفاصيل المصدر يتطلب عقده الخاص.",
+                    color = Muted,
+                    fontSize = 12.sp
+                )
+                if (card.updatedAt.isNotBlank()) Text("آخر تحديث مسجل: ${formatDate(card.updatedAt)}", color = Muted, fontSize = 11.sp)
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("إغلاق") } }
+    )
+}
+
+private fun discoveryRowLabel(code: String): String = when (code.uppercase(Locale.ROOT)) {
+    "URGENT_ALERTS" -> "تنبيهات رسمية"
+    "FOLLOWED_SOURCES" -> "من مصادر تتابعها"
+    "LOST_FOUND" -> "مفقودات الحي"
+    "NEIGHBORHOOD_RECOMMENDATIONS" -> "توصيات الجيران"
+    "EVENTS_AND_OPPORTUNITIES" -> "فعاليات وفرص"
+    "FOR_YOU" -> "اكتشف لك"
+    else -> "اكتشاف الحي"
+}
+
+private fun discoverySourceLabel(code: String): String = when (code.uppercase(Locale.ROOT)) {
+    "NEIGHBORHOOD_POST" -> "منشور من الحي"
+    "NEIGHBORHOOD_EVENT" -> "فعالية"
+    "JOB" -> "فرصة عمل"
+    "URGENT_ALERT" -> "تنبيه رسمي"
+    "PROVIDER_LISTING" -> "عرض من مقدم خدمة"
+    else -> "عنصر استكشاف"
+}
+
+private fun discoveryStateLabel(code: String): String = when (code.uppercase(Locale.ROOT)) {
+    "ACTIVE" -> "نشط"
+    "FOUND" -> "تم العثور عليه"
+    "RESOLVED" -> "أُغلق"
+    "CANCELLED" -> "أُلغي"
+    "POSTPONED" -> "مؤجل"
+    "OPEN" -> "متاح"
+    else -> code
 }
 
 @Composable
