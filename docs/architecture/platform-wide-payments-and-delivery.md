@@ -2,7 +2,7 @@
 
 **Status:** Target-state product and backend architecture proposal; not implementation evidence.  
 **Repository baseline inspected:** `waelhe/app-java-v3`, main as inspected 2026-10-17.  
-**Related work:** [Saleor Commerce Backend Fit-Gap Study](../research/saleor-commerce-backend-fit-gap.md) and [Platform Administration Domain-Grade Suites](../governance/plans/platform-admin-domain-grade-suites.md).  
+**Related work:** [Saleor Commerce Backend Fit-Gap Study](https://github.com/waelhe/app-java-v3/blob/docs/saleor-commerce-backend-study/docs/research/saleor-commerce-backend-fit-gap.md) and [Platform Administration Domain-Grade Suites](../governance/plans/platform-admin-domain-grade-suites.md).  
 **Authority:** The platform owner defines product/commercial policies. Technical implementation follows `AGENTS.md`, `docs/official-compliance-plan.md`, the current source, and official Spring documentation. The official Saleor/Stripe/carrier references below are behavioral and integration references, not a mandate to copy their internal architecture.
 
 ## 1. Decision
@@ -242,7 +242,7 @@ The following are based on source inspection, not a fresh full test run.
 | Geography and capacity | Geo and availability modules exist | Define delivery-specific serviceability/operating capacity through explicit ports, not duplicated geo/slot state |
 | Native product journeys | The target platform is Android-first and has member/provider journeys | Specify member direct-delivery request/tracking, merchant handoff, courier/driver job workflow, and support recovery; no browser-only provider flow is assumed |
 
-Related baseline: [ADR-0002](../adr/ADR-0002-commerce-fit-gap.md) defines the single catalog/orders/payments ownership; [ADR-0010](../adr/ADR-0010-multi-seller-cart-split.md) defines atomic mixed-seller order splitting; [the Saleor study](../research/saleor-commerce-backend-fit-gap.md) maps the merchandise-specific gaps.
+Related baseline: [ADR-0002](../adr/ADR-0002-commerce-fit-gap.md) defines the single catalog/orders/payments ownership; [ADR-0010](../adr/ADR-0010-multi-seller-cart-split.md) defines atomic mixed-seller order splitting; [the Saleor study](https://github.com/waelhe/app-java-v3/blob/docs/saleor-commerce-backend-study/docs/research/saleor-commerce-backend-fit-gap.md) maps the merchandise-specific gaps.
 
 ## 6. Owner decisions required before financial or delivery production rollout
 
