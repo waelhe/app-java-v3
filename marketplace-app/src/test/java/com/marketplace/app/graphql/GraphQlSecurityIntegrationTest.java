@@ -137,9 +137,13 @@ class GraphQlSecurityIntegrationTest {
         mockMvc.perform(get("/graphql"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().contentType("application/problem+json"))
+                .andExpect(jsonPath("$.type").value("https://marketplace.com/errors/unauthorized"))
+                .andExpect(jsonPath("$.title").value("Unauthorized"))
+                .andExpect(jsonPath("$.status").value(401))
                 .andExpect(jsonPath("$.errorCode").value("AUTHN-001"))
                 .andExpect(jsonPath("$.category").value("authz"))
                 .andExpect(jsonPath("$.instance").value("/graphql"))
+                .andExpect(jsonPath("$.traceId").exists())
                 .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE,
                         "Bearer realm=\"marketplace\""))
                 .andExpect(header().exists("X-Correlation-ID"));
@@ -158,9 +162,16 @@ class GraphQlSecurityIntegrationTest {
                         .content("{not-json"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().contentType("application/problem+json"))
+                .andExpect(jsonPath("$.type").value("https://marketplace.com/errors/unauthorized"))
+                .andExpect(jsonPath("$.title").value("Unauthorized"))
+                .andExpect(jsonPath("$.status").value(401))
                 .andExpect(jsonPath("$.errorCode").value("AUTHN-001"))
+                .andExpect(jsonPath("$.category").value("authz"))
+                .andExpect(jsonPath("$.instance").value("/graphql"))
+                .andExpect(jsonPath("$.traceId").exists())
                 .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE,
-                        "Bearer realm=\"marketplace\""));
+                        "Bearer realm=\"marketplace\""))
+                .andExpect(header().exists("X-Correlation-ID"));
     }
 
     /**
