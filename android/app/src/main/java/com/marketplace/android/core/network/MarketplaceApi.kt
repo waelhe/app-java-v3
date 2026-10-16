@@ -112,6 +112,9 @@ interface MarketplaceApi {
     @DELETE("api/v1/neighborhood/market/{itemId}")
     suspend fun withdrawMarketItem(@Path("itemId") itemId: String)
 
+    @POST("api/v1/reports")
+    suspend fun createContentReport(@Body request: CreateContentReportRequest): ContentReportDto
+
     @GET("api/v1/notifications")
     suspend fun getNotifications(@Query("page") page: Int = 0, @Query("size") size: Int = 30): ApiPage<NotificationDto>
 
