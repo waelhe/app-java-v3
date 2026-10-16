@@ -195,6 +195,10 @@ internal fun SignedInScaffold(
             when (state.tab) {
                 MainTab.HOME -> FeedScreen(
                     state, onRefresh, onLoadMore, onReact, onOpenComments, onUpdateLostFoundState, onReportPost,
+                    onOpenOfficialAlerts = {
+                        onSelectTab(MainTab.EXPLORE)
+                        onExploreMode(ExploreMode.OFFICIAL_ALERTS)
+                    },
                     onCreate = { onBeginComposer(ComposerKind.POST) }
                 )
                 MainTab.EXPLORE -> ExploreScreen(
@@ -227,6 +231,7 @@ private fun FeedScreen(
     onOpenComments: (PostDto) -> Unit,
     onUpdateLostFoundState: (PostDto, String) -> Unit,
     onReportPost: (PostDto, String) -> Unit,
+    onOpenOfficialAlerts: () -> Unit,
     onCreate: () -> Unit
 ) {
     LazyColumn(
@@ -234,6 +239,36 @@ private fun FeedScreen(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 110.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        if (state.urgentAlertsBusy && state.urgentAlerts.isEmpty()) {
+            item { Text("نحدّث التنبيهات الرسمية لحيّك…", color = Muted, fontSize = 12.sp) }
+        }
+        if (state.urgentAlertsError != null && state.urgentAlerts.isEmpty()) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    InfoBanner("تعذر تحميل التنبيهات الرسمية.", isError = true)
+                    TextButton(onClick = onRefresh) { Text("إعادة المحاولة") }
+                }
+            }
+        }
+        state.urgentAlerts.firstOrNull()?.let { alert ->
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OfficialAlertCard(alert, compact = true)
+                    TextButton(
+                        onClick = onOpenOfficialAlerts,
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text(
+                            if (state.urgentAlerts.size > 1) {
+                                "عرض كل التنبيهات الرسمية (${state.urgentAlerts.size})"
+                            } else {
+                                "تفاصيل التنبيهات الرسمية"
+                            }
+                        )
+                    }
+                }
+            }
+        }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text("ما الذي يحدث حولك؟", fontSize = 25.sp, fontWeight = FontWeight.Bold)
@@ -310,7 +345,8 @@ private fun ExploreScreen(
                 ExploreMode.EVENTS to "فعاليات",
                 ExploreMode.GROUPS to "مجموعات",
                 ExploreMode.POLLS to "استطلاعات",
-                ExploreMode.MARKET to "حراج الحي"
+                ExploreMode.MARKET to "حراج الحي",
+                ExploreMode.OFFICIAL_ALERTS to "تنبيهات رسمية"
             ).forEach { (mode, label) ->
                 AssistChip(
                     onClick = { onMode(mode) },
@@ -461,6 +497,27 @@ private fun ExploreScreen(
                 onCreate = { onBeginComposer(ComposerKind.MARKET) },
                 modifier = Modifier.weight(1f)
             )
+            ExploreMode.OFFICIAL_ALERTS -> {
+                Text("تنبيهات نشطة من جهات مفوضة وموثّقة، ضمن نطاق حيّك فقط.", color = Muted, fontSize = 13.sp)
+                when {
+                    state.urgentAlertsBusy && state.urgentAlerts.isEmpty() -> LoadingCard("نحمّل التنبيهات الرسمية…")
+                    state.urgentAlertsError != null && state.urgentAlerts.isEmpty() -> ErrorCard(state.urgentAlertsError, onRefresh)
+                    state.urgentAlerts.isEmpty() -> EmptyState(
+                        "لا توجد تنبيهات رسمية نشطة",
+                        "لا نعرض تنبيهات منتهية أو مسحوبة أو صادرة عن مصدر غير موثّق."
+                    )
+                    else -> LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(bottom = 95.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(state.urgentAlerts, key = { it.alertId }) { alert ->
+                            OfficialAlertCard(alert)
+                        }
+                        state.urgentAlertsError?.let { error -> item { ErrorCard(error, onRefresh) } }
+                    }
+                }
+            }
         }
     }
 }
