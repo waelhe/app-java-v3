@@ -305,7 +305,7 @@ The navigation opens a full suite, not a market summary card. Required sub-works
 
 Each collection provides search, configurable columns, filters, sorting, saved views, pagination, multi-select and previewed bulk actions. Each record has a dedicated detail workspace with lifecycle, related records, media/evidence, timeline, scoped actions, audit and outcome. Editors must support draft, field validation, member-facing preview, conflicts, publication state and restore semantics. Variants and physical stock use SKU/location concepts where applicable; service listings use coverage, capacity, calendars/slots, provider assignment and service-specific cancellation rules instead of fake retail fields.
 
-Before accepting the market suite, demonstrate end-to-end catalog creation, taxonomy change, multi-location inventory correction, local-service onboarding, channel-specific price/availability, promotion eligibility, order completion and safe refund. Evidence and detailed screen families: [Domain-Grade Administration Suites §4](platform-admin-domain-grade-suites.md). Official reference: [Saleor product model](https://docs.saleor.io/developer/products/overview) and [channel model](https://docs.saleor.io/developer/channels/overview).
+Before accepting the market suite, demonstrate end-to-end catalog creation, taxonomy change, multi-location inventory correction, local-service onboarding, channel-specific price/availability, promotion eligibility, order completion and safe refund. S20 owns delivery details linked to an order; standalone delivery booking, dispatch, courier/carrier operations and delivery-service configuration are handled in **S23**. Global payment collection, payout/settlement and reconciliation across orders, bookings, ads, lending and delivery are handled in **S24**; S20 shows only the transaction context needed to operate a market record. Evidence and detailed screen families: [Domain-Grade Administration Suites §4](platform-admin-domain-grade-suites.md). Official reference: [Saleor product model](https://docs.saleor.io/developer/products/overview) and [channel model](https://docs.saleor.io/developer/channels/overview).
 
 ### S21 — جناح المجتمع والثقة (Discourse-level domain suite)
 
@@ -322,6 +322,8 @@ Profile changes use a member-facing preview; claims show ownership evidence and 
 ### S23 — شبكة التوصيل والشحن (خدمة مستقلة + تنفيذ طلبات السوق)
 
 This is a full operational workspace for the platform's delivery network, not only shipment tracking from an order. Its primary tabs distinguish **“طلبات توصيل مباشرة”** from **“شحن وتنفيذ طلبات السوق”**, while sharing provider, service-area, dispatch, tracking and exception tools.
+
+Entry points: “السوق والأعمال” → “التوصيل والشحن”; an authorized operator can create/find a standalone delivery request without an order, or open the delivery job linked from an order's detail workspace.
 
 **Delivery request and shipment lists**
 - Search by request/order, sender, recipient, provider/seller, courier, locality, tracking reference, delivery mode and state.
