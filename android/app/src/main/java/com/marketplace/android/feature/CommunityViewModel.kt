@@ -129,7 +129,9 @@ data class AppUiState(
     val commentBusy: Boolean = false,
     val reactingPostIds: Set<String> = emptySet(),
     val lostFoundActionIds: Set<String> = emptySet(),
-    val notice: String? = null
+    val notice: String? = null,
+    val reportingContentKeys: Set<String> = emptySet(),
+    val reportedContentKeys: Set<String> = emptySet()
 )
 
 
@@ -1265,6 +1267,71 @@ class CommunityViewModel(
                 throw cancelled
             } catch (error: Exception) {
                 _uiState.update { it.copy(profileBusy = false, notice = failureMessage(error)) }
+            }
+        }
+    }
+
+    /**
+     * Reports are submitted only through the backend's closed POST/COMMENT
+     * contract. We do not send free-text notes or promise a moderation outcome
+     * because neither is part of the public report request.
+     */
+    fun reportPost(post: PostDto, reason: String) {
+        submitContentReport("POST", post.id, post.authorId, reason)
+    }
+
+    fun reportComment(comment: CommentDto, reason: String) {
+        submitContentReport("COMMENT", comment.id, comment.authorId, reason)
+    }
+
+    private fun submitContentReport(targetType: String, targetId: String, authorId: String, reason: String) {
+        val current = _uiState.value
+        val reporterId = current.membership?.userId
+        val key = "$targetType:$targetId"
+        if (!current.authenticated || reporterId.isNullOrBlank() || targetId.isBlank()) return
+        if (targetType !in setOf("POST", "COMMENT") ||
+            reason !in setOf("SPAM", "HARASSMENT", "INAPPROPRIATE", "OTHER")) {
+            _uiState.update { it.copy(notice = "اختر سببًا صالحًا للإبلاغ.") }
+            return
+        }
+        if (reporterId.equals(authorId, ignoreCase = true)) {
+            _uiState.update { it.copy(notice = "لا يمكنك الإبلاغ عن محتواك أنت.") }
+            return
+        }
+        if (key in current.reportingContentKeys || key in current.reportedContentKeys) return
+
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(reportingContentKeys = it.reportingContentKeys + key, notice = null)
+            }
+            try {
+                repository.reportContent(targetType, targetId, reason)
+                _uiState.update {
+                    it.copy(
+                        reportingContentKeys = it.reportingContentKeys - key,
+                        reportedContentKeys = it.reportedContentKeys + key,
+                        notice = "أُرسل البلاغ للمراجعة. لا يمكن الجزم بنتيجة المراجعة مسبقًا."
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (error is HttpException && error.code() == 409) {
+                    _uiState.update {
+                        it.copy(
+                            reportingContentKeys = it.reportingContentKeys - key,
+                            reportedContentKeys = it.reportedContentKeys + key,
+                            notice = "سبق أن أرسلت بلاغًا عن هذا المحتوى؛ لم يُنشأ بلاغ مكرر."
+                        )
+                    }
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            reportingContentKeys = it.reportingContentKeys - key,
+                            notice = failureMessage(error)
+                        )
+                    }
+                }
             }
         }
     }
