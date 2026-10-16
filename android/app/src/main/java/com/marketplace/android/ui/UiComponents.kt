@@ -53,8 +53,13 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -229,10 +234,14 @@ internal fun PostCard(
     reacting: Boolean,
     isOwnPost: Boolean,
     lostFoundBusy: Boolean,
+    reporting: Boolean,
+    reported: Boolean,
     onUpdateLostFoundState: (String) -> Unit,
     onReact: () -> Unit,
-    onComments: () -> Unit
+    onComments: () -> Unit,
+    onReport: (String) -> Unit
 ) {
+    var showReportDialog by rememberSaveable(post.id) { mutableStateOf(false) }
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
@@ -327,7 +336,34 @@ internal fun PostCard(
                     Text("التعليقات", color = Ink)
                 }
             }
+            if (!isOwnPost) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(
+                        onClick = { showReportDialog = true },
+                        enabled = !reporting && !reported
+                    ) {
+                        Text(
+                            when {
+                                reporting -> "جارٍ إرسال البلاغ…"
+                                reported -> "تم الإبلاغ"
+                                else -> "إبلاغ عن المنشور"
+                            },
+                            color = Muted
+                        )
+                    }
+                }
+            }
         }
+    }
+    if (showReportDialog) {
+        ContentReportDialog(
+            targetLabel = "المنشور",
+            onDismiss = { showReportDialog = false },
+            onSubmit = { reason ->
+                showReportDialog = false
+                onReport(reason)
+            }
+        )
     }
 }
 
@@ -557,10 +593,15 @@ internal fun CommentsSheet(
     draft: String,
     sending: Boolean,
     notice: String?,
+    currentUserId: String,
+    reportingContentKeys: Set<String>,
+    reportedContentKeys: Set<String>,
     onDraft: (String) -> Unit,
     onSend: () -> Unit,
+    onReportComment: (CommentDto, String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    var reportCommentTargetId by rememberSaveable { mutableStateOf<String?>(null) }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = WarmCanvas) {
         Column(
             modifier = Modifier.fillMaxWidth().imePadding().padding(horizontal = 18.dp).padding(bottom = 24.dp),
@@ -578,6 +619,23 @@ internal fun CommentsSheet(
                             Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                                 Text("عضو من الحي · ${formatDate(comment.createdAt)}", color = Muted, fontSize = 11.sp)
                                 Text(comment.body, lineHeight = 20.sp)
+                                if (!comment.authorId.equals(currentUserId, ignoreCase = true)) {
+                                    val key = "COMMENT:${comment.id}"
+                                    TextButton(
+                                        onClick = { reportCommentTargetId = comment.id },
+                                        enabled = key !in reportingContentKeys && key !in reportedContentKeys
+                                    ) {
+                                        Text(
+                                            when {
+                                                key in reportingContentKeys -> "جارٍ إرسال البلاغ…"
+                                                key in reportedContentKeys -> "تم الإبلاغ"
+                                                else -> "إبلاغ عن التعليق"
+                                            },
+                                            color = Muted,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -597,7 +655,62 @@ internal fun CommentsSheet(
                 else Text("إرسال التعليق")
             }
         }
+        val targetComment = reportCommentTargetId?.let { id -> comments.firstOrNull { it.id == id } }
+        if (targetComment != null) {
+            ContentReportDialog(
+                targetLabel = "التعليق",
+                onDismiss = { reportCommentTargetId = null },
+                onSubmit = { reason ->
+                    reportCommentTargetId = null
+                    onReportComment(targetComment, reason)
+                }
+            )
+        }
     }
+}
+
+@Composable
+private fun ContentReportDialog(
+    targetLabel: String,
+    onDismiss: () -> Unit,
+    onSubmit: (String) -> Unit
+) {
+    var selectedReason by rememberSaveable(targetLabel) { mutableStateOf("SPAM") }
+    val reasons = listOf(
+        "SPAM" to "محتوى مزعج أو متكرر",
+        "HARASSMENT" to "مضايقة أو إساءة",
+        "INAPPROPRIATE" to "محتوى غير مناسب",
+        "OTHER" to "سبب آخر"
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("إبلاغ عن $targetLabel") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("اختر السبب الأقرب. يُرسل البلاغ إلى مسار المراجعة ولا يضمن نتيجة محددة.")
+                reasons.forEach { (code, label) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedReason = code },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = selectedReason == code,
+                            onClick = { selectedReason = code }
+                        )
+                        Text(label)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSubmit(selectedReason) }) { Text("إرسال البلاغ") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("إلغاء") }
+        }
+    )
 }
 
 private fun lostFoundStateLabel(code: String?): String = when (code?.uppercase(Locale.ROOT)) {
