@@ -14,6 +14,26 @@ data class ApiPage<T>(
 )
 
 @JsonClass(generateAdapter = false)
+data class DiscoveryRowDto(
+    val row: String = "",
+    val cards: List<DiscoveryCardDto> = emptyList(),
+    val totalEligible: Long = 0
+)
+
+@JsonClass(generateAdapter = false)
+data class DiscoveryCardDto(
+    val sourceType: String = "",
+    val sourceId: String = "",
+    val updatedAt: String? = null,
+    val title: String? = null,
+    val snippet: String? = null,
+    val state: String? = null,
+    val scopeLocationId: String? = null,
+    val reason: String? = null,
+    val paid: Boolean? = null
+)
+
+@JsonClass(generateAdapter = false)
 data class PostDto(
     val id: String = "",
     val authorId: String = "",
