@@ -234,3 +234,24 @@ data class CreateEventRequest(
 data class CreatePollRequest(val locationId: String, val question: String, val authorLabel: String, val options: List<String>)
 data class VoteRequest(val optionId: String)
 data class UpdateLostFoundStateRequest(val state: String)
+
+@JsonClass(generateAdapter = false)
+data class ContentReportDto(
+    val id: String = "",
+    val reporterId: String = "",
+    val targetType: String = "",
+    val targetId: String = "",
+    val reason: String = "",
+    val status: String = "OPEN",
+    val resolutionNote: String? = null,
+    val resolvedBy: String? = null,
+    val resolvedAt: String? = null,
+    val createdAt: String = "",
+    val updatedAt: String = ""
+)
+
+data class CreateContentReportRequest(
+    val targetType: String,
+    val targetId: String,
+    val reason: String
+)
