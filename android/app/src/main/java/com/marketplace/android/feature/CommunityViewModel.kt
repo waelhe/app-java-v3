@@ -347,7 +347,13 @@ class CommunityViewModel(
                 sessionRestoreAttempted = true,
                 silentReauthRequired = false,
                 authError = errorMessage,
-                authSuccess = if (errorMessage == null) "تم تسجيل الخروج وإنهاء جلسة الدخول." else null
+                authSuccess = if (errorMessage == null) "تم تسجيل الخروج وإنهاء جلسة الدخول." else null,
+                urgentAlerts = emptyList(),
+                urgentAlertsScopeId = null,
+                urgentAlertsBusy = false,
+                urgentAlertsError = null,
+                reportingContentKeys = emptySet(),
+                reportedContentKeys = emptySet()
             )
         }
     }
@@ -378,7 +384,17 @@ class CommunityViewModel(
             } catch (error: Exception) {
                 if (error is HttpException && error.code() == 404) {
                     _uiState.update {
-                        it.copy(authenticated = true, loadingAccount = false, membership = null, membershipRequired = true, authError = null)
+                        it.copy(
+                            authenticated = true,
+                            loadingAccount = false,
+                            membership = null,
+                            membershipRequired = true,
+                            authError = null,
+                            urgentAlerts = emptyList(),
+                            urgentAlertsScopeId = null,
+                            urgentAlertsBusy = false,
+                            urgentAlertsError = null
+                        )
                     }
                 } else {
                     val message = failureMessage(error)
@@ -1265,11 +1281,21 @@ class CommunityViewModel(
     fun loadUrgentAlerts() {
         val current = _uiState.value
         val locationId = current.membership?.locationId
-        if (!current.authenticated || locationId.isNullOrBlank()) return
+        if (!current.authenticated || locationId.isNullOrBlank()) {
+            _uiState.update {
+                it.copy(
+                    urgentAlerts = emptyList(),
+                    urgentAlertsScopeId = null,
+                    urgentAlertsBusy = false,
+                    urgentAlertsError = null
+                )
+            }
+            return
+        }
 
         viewModelScope.launch {
             _uiState.update {
-                if (it.membership?.locationId == locationId) {
+                if (it.authenticated && it.membership?.locationId == locationId) {
                     it.copy(
                         // Active/withdrawn is server-owned. Fail closed while refreshing:
                         // never keep showing a previously active alert as current.
@@ -1283,7 +1309,7 @@ class CommunityViewModel(
             try {
                 val alerts = repository.getUrgentAlerts(locationId)
                 _uiState.update {
-                    if (it.membership?.locationId == locationId) {
+                    if (it.authenticated && it.membership?.locationId == locationId) {
                         it.copy(
                             urgentAlerts = alerts,
                             urgentAlertsScopeId = locationId,
@@ -1296,7 +1322,7 @@ class CommunityViewModel(
                 throw cancelled
             } catch (error: Exception) {
                 _uiState.update {
-                    if (it.membership?.locationId == locationId) {
+                    if (it.authenticated && it.membership?.locationId == locationId) {
                         it.copy(
                             urgentAlerts = emptyList(),
                             urgentAlertsBusy = false,
@@ -1371,34 +1397,45 @@ class CommunityViewModel(
 
         viewModelScope.launch {
             _uiState.update {
-                it.copy(reportingContentKeys = it.reportingContentKeys + key, notice = null)
+                if (it.authenticated && it.membership?.userId?.equals(reporterId, ignoreCase = true) == true) {
+                    it.copy(reportingContentKeys = it.reportingContentKeys + key, notice = null)
+                } else it
             }
+            if (_uiState.value.let {
+                    !it.authenticated || it.membership?.userId?.equals(reporterId, ignoreCase = true) != true
+                }) return@launch
             try {
                 repository.reportContent(targetType, targetId, reason)
                 _uiState.update {
-                    it.copy(
-                        reportingContentKeys = it.reportingContentKeys - key,
-                        reportedContentKeys = it.reportedContentKeys + key,
-                        notice = "أُرسل البلاغ للمراجعة. لا يمكن الجزم بنتيجة المراجعة مسبقًا."
-                    )
+                    if (it.authenticated && it.membership?.userId?.equals(reporterId, ignoreCase = true) == true) {
+                        it.copy(
+                            reportingContentKeys = it.reportingContentKeys - key,
+                            reportedContentKeys = it.reportedContentKeys + key,
+                            notice = "أُرسل البلاغ للمراجعة. لا يمكن الجزم بنتيجة المراجعة مسبقًا."
+                        )
+                    } else it
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
                 if (error is HttpException && error.code() == 409) {
                     _uiState.update {
-                        it.copy(
-                            reportingContentKeys = it.reportingContentKeys - key,
-                            reportedContentKeys = it.reportedContentKeys + key,
-                            notice = "سبق أن أرسلت بلاغًا عن هذا المحتوى؛ لم يُنشأ بلاغ مكرر."
-                        )
+                        if (it.authenticated && it.membership?.userId?.equals(reporterId, ignoreCase = true) == true) {
+                            it.copy(
+                                reportingContentKeys = it.reportingContentKeys - key,
+                                reportedContentKeys = it.reportedContentKeys + key,
+                                notice = "سبق أن أرسلت بلاغًا عن هذا المحتوى؛ لم يُنشأ بلاغ مكرر."
+                            )
+                        } else it
                     }
                 } else {
                     _uiState.update {
-                        it.copy(
-                            reportingContentKeys = it.reportingContentKeys - key,
-                            notice = failureMessage(error)
-                        )
+                        if (it.authenticated && it.membership?.userId?.equals(reporterId, ignoreCase = true) == true) {
+                            it.copy(
+                                reportingContentKeys = it.reportingContentKeys - key,
+                                notice = failureMessage(error)
+                            )
+                        } else it
                     }
                 }
             }
