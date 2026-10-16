@@ -65,6 +65,7 @@ import com.marketplace.android.core.network.EventDto
 import com.marketplace.android.core.network.GroupDto
 import com.marketplace.android.core.network.PollDto
 import com.marketplace.android.core.network.PostDto
+import com.marketplace.android.core.network.DiscoveryCardDto
 import com.marketplace.android.feature.AppUiState
 import com.marketplace.android.feature.ComposerKind
 import com.marketplace.android.feature.MainTab
@@ -81,6 +82,10 @@ internal fun SignedInScaffold(
     onReact: (PostDto) -> Unit,
     onOpenComments: (PostDto) -> Unit,
     onUpdateLostFoundState: (PostDto, String) -> Unit,
+    onOpenDiscoveryRow: (String) -> Unit,
+    onLoadMoreDiscoveryRow: () -> Unit,
+    onPreviewDiscoveryCard: (DiscoveryCardDto) -> Unit,
+    onRecordDiscoveryImpression: (String, DiscoveryCardDto) -> Unit,
     onSearchQuery: (String) -> Unit,
     onSearch: () -> Unit,
     onLoadMoreSearchResults: () -> Unit,
@@ -194,12 +199,16 @@ internal fun SignedInScaffold(
             when (state.tab) {
                 MainTab.HOME -> FeedScreen(
                     state, onRefresh, onLoadMore, onReact, onOpenComments, onUpdateLostFoundState,
+                    onOpenDiscoveryRow = onOpenDiscoveryRow,
+                    onPreviewDiscoveryCard = onPreviewDiscoveryCard,
+                    onRecordDiscoveryImpression = onRecordDiscoveryImpression,
                     onCreate = { onBeginComposer(ComposerKind.POST) }
                 )
                 MainTab.EXPLORE -> ExploreScreen(
                     state, onSearchQuery, onSearch, onExploreMode, onReact, onOpenComments, onUpdateLostFoundState,
                     onRsvpEvent, onToggleGroup, onVotePoll, onWithdrawPollVote, onWithdrawMarketItem,
-                    onBeginComposer, onRefresh, onLoadMoreSearchResults
+                    onBeginComposer, onRefresh, onLoadMoreSearchResults,
+                    onLoadMoreDiscoveryRow, onPreviewDiscoveryCard, onRecordDiscoveryImpression
                 )
                 MainTab.MARKET -> StorefrontScreen(onOpenNeighborhoodMarket = onOpenNeighborhoodMarket)
                 MainTab.PROPERTY -> PropertySearchScreen(
@@ -225,13 +234,35 @@ private fun FeedScreen(
     onReact: (PostDto) -> Unit,
     onOpenComments: (PostDto) -> Unit,
     onUpdateLostFoundState: (PostDto, String) -> Unit,
+    onOpenDiscoveryRow: (String) -> Unit,
+    onPreviewDiscoveryCard: (DiscoveryCardDto) -> Unit,
+    onRecordDiscoveryImpression: (String, DiscoveryCardDto) -> Unit,
     onCreate: () -> Unit
 ) {
+    val discoveryScopeMatches = state.membership?.locationId?.let { state.discoveryScopeId == it } == true
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 110.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        if (discoveryScopeMatches && state.discoveryBusy && state.discoveryRows.isEmpty()) {
+            item { Text("نحدّث صفوف اكتشاف الحي…", color = Muted, fontSize = 12.sp) }
+        }
+        if (discoveryScopeMatches && state.discoveryError != null && state.discoveryRows.isEmpty()) {
+            item { ErrorCard(state.discoveryError, onRefresh) }
+        }
+        if (discoveryScopeMatches) {
+            state.discoveryRows.forEach { row ->
+                item(key = "discovery-${row.row}") {
+                    DiscoveryRail(
+                        row = row,
+                        onOpenAll = onOpenDiscoveryRow,
+                        onOpenPreview = onPreviewDiscoveryCard,
+                        onImpression = onRecordDiscoveryImpression
+                    )
+                }
+            }
+        }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text("ما الذي يحدث حولك؟", fontSize = 25.sp, fontWeight = FontWeight.Bold)
@@ -287,7 +318,10 @@ private fun ExploreScreen(
     onWithdrawMarketItem: (MarketItemDto) -> Unit,
     onBeginComposer: (ComposerKind) -> Unit,
     onRefresh: () -> Unit,
-    onLoadMoreSearchResults: () -> Unit
+    onLoadMoreSearchResults: () -> Unit,
+    onLoadMoreDiscoveryRow: () -> Unit,
+    onPreviewDiscoveryCard: (DiscoveryCardDto) -> Unit,
+    onRecordDiscoveryImpression: (String, DiscoveryCardDto) -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -299,13 +333,17 @@ private fun ExploreScreen(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            listOf(
+            val modes = listOf(
                 ExploreMode.POSTS to "منشورات",
                 ExploreMode.EVENTS to "فعاليات",
                 ExploreMode.GROUPS to "مجموعات",
                 ExploreMode.POLLS to "استطلاعات",
                 ExploreMode.MARKET to "حراج الحي"
-            ).forEach { (mode, label) ->
+            ).toMutableList()
+            if (state.exploreMode == ExploreMode.DISCOVERY_ROW) {
+                modes += ExploreMode.DISCOVERY_ROW to "صف الاكتشاف"
+            }
+            modes.forEach { (mode, label) ->
                 AssistChip(
                     onClick = { onMode(mode) },
                     label = { Text(label) },
@@ -452,6 +490,71 @@ private fun ExploreScreen(
                 onCreate = { onBeginComposer(ComposerKind.MARKET) },
                 modifier = Modifier.weight(1f)
             )
+
+            ExploreMode.DISCOVERY_ROW -> {
+                val selectedRow = state.selectedDiscoveryRow
+                val selectedLabel = when (selectedRow) {
+                    "URGENT_ALERTS" -> "تنبيهات رسمية"
+                    "FOLLOWED_SOURCES" -> "من مصادر تتابعها"
+                    "LOST_FOUND" -> "مفقودات الحي"
+                    "NEIGHBORHOOD_RECOMMENDATIONS" -> "توصيات الجيران"
+                    "EVENTS_AND_OPPORTUNITIES" -> "فعاليات وفرص"
+                    "FOR_YOU" -> "اكتشف لك"
+                    else -> "صف الاكتشاف"
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(selectedLabel, fontWeight = FontWeight.Bold, fontSize = 19.sp)
+                        Text("${state.discoveryRowTotal} عنصرًا في هذا الصف", color = Muted, fontSize = 12.sp)
+                    }
+                    TextButton(onClick = { onMode(ExploreMode.POSTS) }) { Text("عودة") }
+                }
+                when {
+                    selectedRow == null -> EmptyState("لم يتم اختيار صف", "عد إلى الحي واختر صفًا لعرض جميع عناصره.")
+                    state.discoveryRowBusy && state.discoveryRowCards.isEmpty() -> LoadingCard("نحمّل عناصر الصف…")
+                    state.discoveryRowError != null && state.discoveryRowCards.isEmpty() -> ErrorCard(state.discoveryRowError, onRefresh)
+                    state.discoveryRowCards.isEmpty() -> EmptyState("لا توجد عناصر في هذا الصف", "لا نعرض بطاقات تجريبية أو عناصر غير مؤهلة.")
+                    else -> LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(bottom = 95.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(
+                            items = state.discoveryRowCards,
+                            key = { "${it.sourceType}:${it.sourceId}" }
+                        ) { card ->
+                            selectedRow?.let { rowName ->
+                                androidx.compose.runtime.LaunchedEffect(rowName, card.sourceType, card.sourceId) {
+                                    onRecordDiscoveryImpression(rowName, card)
+                                }
+                            }
+                            DiscoveryCardTile(
+                                card = card,
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = { onPreviewDiscoveryCard(card) }
+                            )
+                        }
+                        if (!state.discoveryRowLast) {
+                            item {
+                                OutlinedButton(
+                                    onClick = onLoadMoreDiscoveryRow,
+                                    enabled = !state.discoveryRowBusy,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(14.dp)
+                                ) {
+                                    Text(if (state.discoveryRowBusy) "نحمّل عناصر أخرى…" else "عرض عناصر أخرى")
+                                }
+                            }
+                        }
+                        if (state.discoveryRowBusy) item { LoadingCard("نحمّل المزيد…") }
+                        state.discoveryRowError?.let { message -> item { ErrorCard(message, onRefresh) } }
+                    }
+                }
+            }
         }
     }
 }
