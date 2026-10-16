@@ -1,5 +1,7 @@
 package com.marketplace.app.graphql;
 
+import com.marketplace.app.graphql.generated.types.Service;
+import com.marketplace.app.graphql.generated.types.ServiceStatus;
 import com.marketplace.shared.api.ProviderListingView;
 import org.junit.jupiter.api.Test;
 import org.mapstruct.factory.Mappers;
@@ -8,33 +10,60 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+/**
+ * The mechanical mapping from the catalog SPI's shared view into the
+ * generated transport contract — the Phase 3.3/3.4 increment's
+ * equivalence legs at the unit level: same field values as the
+ * hand-written record produced, with the {@code ID} rendered to its
+ * wire string and the domain status vocabulary typed into the schema's
+ * generated enum (the wire-level proof is the integration suite's,
+ * which runs unchanged against the generated type).
+ */
 class ServiceMapperTest {
 
     private final ServiceMapper mapper = Mappers.getMapper(ServiceMapper.class);
 
+    /** The full mapping: id rendering, rename, price conversion, enum typing. */
     @Test
     void toResponse_mapsActiveListing() {
-        ProviderListingView listing = view("Service Title", "Desc", 5000L, "ACTIVE");
+        UUID id = UUID.randomUUID();
+        ProviderListingView listing = view(id, "Service Title", "Desc", 5000L, "ACTIVE");
 
-        ServiceResponse response = mapper.toResponse(listing);
+        Service response = mapper.toResponse(listing);
 
-        assertEquals("Service Title", response.name());
-        assertEquals("Desc", response.description());
-        assertEquals(50.0, response.price());
-        assertEquals("ACTIVE", response.status());
+        assertEquals(id.toString(), response.getId());
+        assertEquals("Service Title", response.getName());
+        assertEquals("Desc", response.getDescription());
+        assertEquals("cat", response.getCategory());
+        assertEquals(50.0, response.getPrice());
+        assertEquals("SAR", response.getCurrency());
+        assertEquals(ServiceStatus.ACTIVE, response.getStatus());
     }
 
+    /** Every non-ACTIVE domain state projects to the schema's INACTIVE value. */
     @Test
     void toResponse_mapsNonActiveAsInactive() {
-        ProviderListingView listing = view("Draft", null, 3000L, "DRAFT");
+        ProviderListingView listing = view(UUID.randomUUID(), "Draft", null, 3000L, "DRAFT");
 
-        ServiceResponse response = mapper.toResponse(listing);
+        Service response = mapper.toResponse(listing);
 
-        assertEquals("INACTIVE", response.status());
+        assertEquals(ServiceStatus.INACTIVE, response.getStatus());
+        assertNull(response.getDescription());
     }
 
-    private static ProviderListingView view(String title, String description, Long priceCents, String status) {
-        return new ProviderListingView(UUID.randomUUID(), title, description, "cat", priceCents, "SAR",
+    /** The ID conversion's null path: a view without an id stays null. */
+    @Test
+    void toResponse_mapsNullIdToNull() {
+        ProviderListingView listing = view(null, "No id", null, 1000L, "ACTIVE");
+
+        Service response = mapper.toResponse(listing);
+
+        assertNull(response.getId());
+    }
+
+    /** A minimal shared view with an explicit id, for the mapping legs. */
+    private static ProviderListingView view(UUID id, String title, String description, Long priceCents, String status) {
+        return new ProviderListingView(id, title, description, "cat", priceCents, "SAR",
                 UUID.randomUUID(), status, null, null, null);
     }
 }

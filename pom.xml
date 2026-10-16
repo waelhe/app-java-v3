@@ -1046,6 +1046,16 @@
                         <exclude>**/shared/config/**</exclude>
                         <exclude>**/shared/email/EmailSendException.*</exclude>
                         <exclude>**/shared/security/CurrentUserProvider.*</exclude>
+                        <!-- DGS CodeGen output (GraphQL Phase 3): the generated
+                             transport types and constants are build artifacts of
+                             the pinned community adapter, not authored surface —
+                             the generator's own boilerplate (builder/equals/
+                             hashCode/toString) is engine code. Their contract is
+                             asserted where it lives: the schema-shape guard
+                             (GraphQlSchemaCodegenTest), the MapStruct mapping
+                             tests, and the full GraphQL integration suite over
+                             the wire. -->
+                        <exclude>com/marketplace/app/graphql/generated/**</exclude>
                     </excludes>
                 </configuration>
                 <executions>

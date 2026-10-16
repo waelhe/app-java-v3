@@ -29,6 +29,14 @@ import jakarta.validation.constraints.NotNull;
  * {@code @Valid} argument hook) — the same record contract, the same
  * VAL-001 taxonomy on violation.
  *
+ * <p>Codegen linkage (Phase 3.4's no-duplicate rule, enforced at the
+ * build): the marketplace-app build's {@code typeMapping} maps the
+ * schema's {@code ServiceInput} to THIS record — the DGS CodeGen
+ * engine's documented mechanism for existing classes — so the
+ * generator skips the input type entirely (measured in the 8.6.0
+ * source: mapped types are excluded from generation) and this record
+ * remains the surface's single input DTO.</p>
+ *
  * <p>Ceiling contract (CodeRabbit r1, adopted): the schema field is a GraphQL
  * {@code Int} — a signed 32-bit scalar per the GraphQL spec — so the transport
  * ceiling for this surface is {@code 2,147,483,647} cents. That ceiling is

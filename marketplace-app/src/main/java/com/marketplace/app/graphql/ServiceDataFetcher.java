@@ -1,6 +1,7 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.app.graphql.generated.DgsConstants;
+import com.marketplace.app.graphql.generated.types.Service;
 import com.marketplace.catalog.spi.CatalogSpi;
 import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -64,6 +65,26 @@ import java.util.UUID;
  * field now fails compilation HERE instead of drifting silently —
  * the adapter's field names and the schema are one source of
  * truth, not two.</p>
+ *
+ * <p><b>Generated transport types (Phase 3's equivalence-proven
+ * increment):</b> every field on this adapter returns the
+ * {@code generated.types.Service} data type the same build-time
+ * generation derives from the authoritative SDL — the official docs'
+ * own intended use for generated data types ("return types for your
+ * datafetchers"). The hand-written ServiceResponse record was
+ * replaced, not paralleled: the generated type's field set IS the
+ * schema contract (the engine's documented scalar mapping — ID
+ * renders as String and Float as double, measured from the
+ * graphql-dgs-codegen 8.6.0 sources — with the status field typed by
+ * the generated ServiceStatus enum), graphql-java's GraphQLID
+ * serializes a UUID and its toString identically, and enums serialize
+ * by name, so the wire contract is byte-identical — the full
+ * phase-1/2 integration suite proves it unchanged. The input side
+ * stays hand-owned: ServiceInput's Jakarta Validation contract cannot
+ * be proven equivalent from SDL (§11-Phase-3.4), so the build's
+ * typeMapping points the generator at the existing record and no
+ * duplicate input type is ever generated (the engine skips mapped
+ * types — measured in its 8.6.0 source).</p>
  */
 @DgsComponent
 public class ServiceDataFetcher {
@@ -141,7 +162,7 @@ public class ServiceDataFetcher {
      * target type the Spring binder produced before the migration.</p>
      */
     @DgsQuery(field = DgsConstants.QUERY.Service)
-    public ServiceResponse service(@InputArgument UUID id) {
+    public Service service(@InputArgument UUID id) {
         return serviceMapper.toResponse(catalogSpi.getActiveById(id));
     }
 
@@ -213,7 +234,7 @@ public class ServiceDataFetcher {
      */
     @DgsQuery(field = DgsConstants.QUERY.Services)
     @RateLimiter(name = "graphqlServiceQuery")
-    public Page<ServiceResponse> services(@InputArgument Integer first,
+    public Page<Service> services(@InputArgument Integer first,
                                           @InputArgument String after) {
         int requested = (first == null)
                 ? properties.pagination().defaultPageSize()
@@ -266,7 +287,7 @@ public class ServiceDataFetcher {
      */
     @DgsMutation(field = DgsConstants.MUTATION.CreateService)
     @RateLimiter(name = "graphqlCreateService")
-    public ServiceResponse createService(@InputArgument ServiceInput input) {
+    public Service createService(@InputArgument ServiceInput input) {
         Set<ConstraintViolation<ServiceInput>> violations = validator.validate(input);
         if (!violations.isEmpty()) {
             throw new ConstraintViolationException(violations);
