@@ -27,6 +27,7 @@ data class DiscoveryRowDto(
     val totalEligible: Long = 0
 )
 
+@JsonClass(generateAdapter = false)
 data class DiscoveryImpressionRequest(
     val row: String,
     val sourceType: String,
