@@ -41,7 +41,7 @@ jobs:
       - name: Set up stable Android SDK
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         with:
-          packages: "platform-tools platforms;android-36 build-tools;36.0.0"
+          packages: "platform-tools platforms;android-35 platforms;android-36 build-tools;36.0.0"
 
       - name: Validate release preflight script syntax
         run: bash -n android/scripts/verify-passkey-release.sh
@@ -58,13 +58,16 @@ jobs:
         run: |
           ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest -PoidcClientId="${OAUTH_PUBLIC_CLIENT_ID}" -PoidcRedirectUri=com.marketplace.android:/oauth2redirect
 
+      # API 35 with a smaller AVD keeps this UI-only auth-entry smoke test
+      # lightweight on GitHub-hosted runners where KVM acceleration may be absent.
+      # The app still compiles against SDK 36; the test does not exercise API-36-only behavior.
       - name: Run Android auth-entry instrumentation test
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
         with:
-          api-level: 36
+          api-level: 35
           target: google_apis
           arch: x86_64
-          profile: pixel_6
+          profile: pixel_2
           disable-animations: true
           script: |
             cd android && ./gradlew :app:connectedDebugAndroidTest -PoidcClientId=android-community-native -PoidcRedirectUri=com.marketplace.android:/oauth2redirect
