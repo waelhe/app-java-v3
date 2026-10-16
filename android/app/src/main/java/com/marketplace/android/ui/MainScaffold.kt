@@ -81,6 +81,7 @@ internal fun SignedInScaffold(
     onReact: (PostDto) -> Unit,
     onOpenComments: (PostDto) -> Unit,
     onUpdateLostFoundState: (PostDto, String) -> Unit,
+    onReportPost: (PostDto, String) -> Unit,
     onSearchQuery: (String) -> Unit,
     onSearch: () -> Unit,
     onLoadMoreSearchResults: () -> Unit,
@@ -193,11 +194,11 @@ internal fun SignedInScaffold(
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             when (state.tab) {
                 MainTab.HOME -> FeedScreen(
-                    state, onRefresh, onLoadMore, onReact, onOpenComments, onUpdateLostFoundState,
+                    state, onRefresh, onLoadMore, onReact, onOpenComments, onUpdateLostFoundState, onReportPost,
                     onCreate = { onBeginComposer(ComposerKind.POST) }
                 )
                 MainTab.EXPLORE -> ExploreScreen(
-                    state, onSearchQuery, onSearch, onExploreMode, onReact, onOpenComments, onUpdateLostFoundState,
+                    state, onSearchQuery, onSearch, onExploreMode, onReact, onOpenComments, onUpdateLostFoundState, onReportPost,
                     onRsvpEvent, onToggleGroup, onVotePoll, onWithdrawPollVote, onWithdrawMarketItem,
                     onBeginComposer, onRefresh, onLoadMoreSearchResults
                 )
@@ -225,6 +226,7 @@ private fun FeedScreen(
     onReact: (PostDto) -> Unit,
     onOpenComments: (PostDto) -> Unit,
     onUpdateLostFoundState: (PostDto, String) -> Unit,
+    onReportPost: (PostDto, String) -> Unit,
     onCreate: () -> Unit
 ) {
     LazyColumn(
@@ -254,9 +256,12 @@ private fun FeedScreen(
                     isOwnPost = state.membership?.userId?.equals(post.authorId, ignoreCase = true) == true,
                     lostFoundBusy = post.id in state.lostFoundActionIds,
                     onUpdateLostFoundState = { targetState -> onUpdateLostFoundState(post, targetState) },
+                    reporting = "POST:${post.id}" in state.reportingContentKeys,
+                    reported = "POST:${post.id}" in state.reportedContentKeys,
                     reacting = post.id in state.reactingPostIds,
                     onReact = { onReact(post) },
-                    onComments = { onOpenComments(post) }
+                    onComments = { onOpenComments(post) },
+                    onReport = { reason -> onReportPost(post, reason) }
                 )
             }
             if (state.feedBusy) item { LoadingCard("نحمّل المزيد…") }
@@ -280,6 +285,7 @@ private fun ExploreScreen(
     onReact: (PostDto) -> Unit,
     onOpenComments: (PostDto) -> Unit,
     onUpdateLostFoundState: (PostDto, String) -> Unit,
+    onReportPost: (PostDto, String) -> Unit,
     onRsvpEvent: (EventDto) -> Unit,
     onToggleGroup: (GroupDto) -> Unit,
     onVotePoll: (PollDto, String) -> Unit,
@@ -352,9 +358,12 @@ private fun ExploreScreen(
                                 isOwnPost = state.membership?.userId?.equals(post.authorId, ignoreCase = true) == true,
                                 lostFoundBusy = post.id in state.lostFoundActionIds,
                                 onUpdateLostFoundState = { targetState -> onUpdateLostFoundState(post, targetState) },
+                                reporting = "POST:${post.id}" in state.reportingContentKeys,
+                                reported = "POST:${post.id}" in state.reportedContentKeys,
                                 reacting = post.id in state.reactingPostIds,
                                 onReact = { onReact(post) },
-                                onComments = { onOpenComments(post) }
+                                onComments = { onOpenComments(post) },
+                                onReport = { reason -> onReportPost(post, reason) }
                             )
                         }
                         if (state.searchResultsQuery == state.searchQuery.trim() && !state.searchLast) {
