@@ -82,6 +82,12 @@ class ServiceGraphQlMutationIntegrationTest {
 
     private HttpGraphQlTester graphQlTester;
 
+    /**
+     * Boots the real HTTP transport against the test containers with an
+     * authenticated PROVIDER Jwt and the catalog service mocked at the
+     * use-case boundary — the mutation tests exercise the integrated
+     binding/validation/execution path over the real SDL.
+     */
     @BeforeEach
     void setUpGraphQlTester() {
         Jwt testJwt = Jwt.withTokenValue("test-token")
@@ -105,6 +111,12 @@ class ServiceGraphQlMutationIntegrationTest {
                 UUID.randomUUID(), status, null, null, null);
     }
 
+    /**
+     * Builds the mutation input map with the house category and an
+     * optional {@code priceCents} — omitting the key entirely is the
+     * missing-price leg; a present value exercises the validation
+     * boundaries (zero, positive, negative).
+     */
     private static Map<String, Object> input(String name, String description, Object priceCents) {
         Map<String, Object> input = new HashMap<>();
         input.put("name", name);
@@ -197,8 +209,8 @@ class ServiceGraphQlMutationIntegrationTest {
                 .satisfy(errors -> {
                     assertThat(errors).isNotEmpty();
                     var error = errors.getFirst();
-                    assertThat(error.getExtensions()).containsEntry("errorCode", "VALIDATION_ERROR");
-                    assertThat(error.getExtensions()).containsEntry("category", "VALIDATION");
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
+                    assertThat(error.getExtensions()).containsEntry("category", "validation");
                 });
 
         verify(catalogService, never()).create(any(), anyString(), any(), anyString(), any(), any());

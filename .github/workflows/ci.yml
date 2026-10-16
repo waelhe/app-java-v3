@@ -16,7 +16,15 @@ on:
     # only: PRs targeting main and push events are unaffected; the
     # remaining open PRs target main directly and gate through the
     # pull_request event.
-    branches: [ main ]
+    # GraphQL phase-1 wave (2026-10-15): PR #584 is stacked on
+    # docs/graphql-target-architecture (PR #582 — the design doc), so that
+    # base rides the filter for the same measured reason the parallel-plan
+    # bases did: the stacked PR's gates — including this PR's own new
+    # GraphQL schema compatibility gate, whose 22 GraphQL integration legs
+    # have never executed anywhere yet — must run during review, not only
+    # after the #186-pattern unstack rebase onto main. Retire the entry
+    # with the wave once #582 merges and #584 is rebased.
+    branches: [ main, docs/graphql-target-architecture ]
 
 
 # One test round per ref: a newer push supersedes the older round and
@@ -425,6 +433,79 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # The GraphQL schema compatibility gate (the GraphQL target design §9 /
+  # Phase 1 item 7 — the OpenAPI gate's exact shape for the SDL contract):
+  # baseline-first on the release tag's own runtime schema, current second
+  # on the fresh database, breaking changes (type/field/enum-value removal,
+  # nullability tightening, argument removal/requirement) fail unless
+  # documented in .ci/graphql-compat-allowlist.yml with ticket, reason and
+  # expiry — the same temporary-exception lifecycle as the OpenAPI file.
+  # Runs in parallel with `build` for the same reason the OpenAPI gate does:
+  # it builds its own trees and needs no maven-artifacts upload.
+  graphql-schema-gate:
+    name: GraphQL Schema Compatibility Gate
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:18-3.6-alpine
+        env:
+          POSTGRES_DB: marketplace
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v6
+        with:
+          java-version: "25"
+          distribution: temurin
+          cache: maven
+
+      - name: Fetch git tags for GraphQL schema baseline
+        run: git fetch --force --tags
+
+      - name: GraphQL schema backward compatibility gate
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/marketplace
+          SPRING_DATASOURCE_USERNAME: test
+          SPRING_DATASOURCE_PASSWORD: test
+          SPRING_DATA_REDIS_HOST: localhost
+          SPRING_DATA_REDIS_PORT: 6379
+          GOOGLE_GENAI_API_KEY: test-key
+          MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: false
+          MANAGEMENT_HEALTH_MAIL_ENABLED: false
+          MANAGEMENT_TRACING_ENABLED: false
+        run: ./.ci/check-graphql-compat.sh
+
+      - name: Upload GraphQL gate logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: graphql-schema-gate-logs
+          path: .ci/graphql-compat/
+          retention-days: 7
+          if-no-files-found: ignore
+
   # The app bundle's coverage gate, reconstituted on MERGED data: the 9
   # partial .exec files (8 IT shards + the unit pass) combine through the
   # jacoco merge mojo (the root pom's ci-coverage-merge profile — the
@@ -476,12 +557,12 @@ jobs:
   # "Build & Test (JDK 25)" — the documented matrix-summary pattern (a
   # final job over needs.*.result) keeps that exact check name while the
   # work fans out. It is green ONLY when build, all 8 shards, the modules
-  # suite, the OpenAPI gate, AND the coverage gate are green — strictly
-  # more enforcement than the old single job (which could not even
-  # distinguish a shard failure from a flake retry).
+  # suite, the OpenAPI gate, the GraphQL schema gate, AND the coverage gate
+  # are green — strictly more enforcement than the old single job (which
+  # could not even distinguish a shard failure from a flake retry).
   build-test:
     name: Build & Test (JDK 25)
-    needs: [ build, test-app, test-modules, openapi-gate, coverage ]
+    needs: [ build, test-app, test-modules, openapi-gate, graphql-schema-gate, coverage ]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:

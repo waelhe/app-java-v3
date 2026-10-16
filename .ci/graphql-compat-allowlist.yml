@@ -1,0 +1,30 @@
+# Documented temporary exceptions for backward-incompatible GraphQL schema
+# changes — the GraphQL twin of .ci/openapi-compat-allowlist.yml, consumed
+# by .ci/graphql-compat-classifier.py via .ci/check-graphql-compat.sh.
+#
+# Lifecycle (the OpenAPI gate's own design, verbatim): an entry exists only
+# while the change is NOT yet part of a release baseline tag; when the next
+# release tag is cut, the baseline regenerates from it, the entry turns
+# STALE (the gate fails main until it is removed), and the re-baseline PR
+# must delete it — the mechanism that keeps this list temporary.
+#
+# A `target` names the schema object the exception covers, in the formats
+# the classifier's findings actually use: a type ("type X" — covers every
+# finding under it), a field ("field X.y" — covers its
+# type/nullability/argument findings), an enum value ("enum-value X.v"),
+# or an argument ("argument X.y.a" — the dotted object path of the
+# argument finding, e.g. argument Query.services.first).
+#
+# ticket/reason prose carries schema signatures with ': ' (e.g.
+# services: [Service!]!) which YAML plain scalars cannot hold — quote such
+# values (double-quoted style, embedded double quotes escaped as \"), the
+# same quoting the OpenAPI twin applies to its own values.
+exceptions:
+  - target: field Query.services
+    ticket: "GraphQL target design Phase 1 (docs/api/graphql-target-architecture.md §6 \"Do not leave an unbounded legacy field indefinitely\", PR feat/graphql-p0-bounded-foundation)"
+    reason: "The demo-era unbounded field services: [Service!]! (Pageable.unpaged() under it, no arguments, no page metadata) is REPLACED by the bounded relay connection services(first: Int, after: String): ServiceConnection! — the consumer inventory measured zero contracted consumers (the repository's own tests are the only callers; the Android client is REST-only, grep-measured), which the design plan §6 names as the condition for direct replacement rather than parallel-field migration. No client migration exists to perform."
+    expiry: 2027-03-31
+  - target: type ServiceInput
+    ticket: "GraphQL gate introduction (PR feat/graphql-p0-bounded-foundation) — the input money-contract correction predates the gate: schema price: Float! vs the record's priceCents was the documented schema-money debt of the #255/#259 wave, and the SDL input was corrected to priceCents: Int! on main with no GraphQL compatibility gate in existence to catch it."
+    reason: "The demo-era input field price: Float! (major display units) was corrected on main — after the v0.1.0 release tag — to the domain money language priceCents: Int! (integer cents, the explicit @Max(2,147,483,647) ceiling, every write surface's contract: REST CreateListingRequest.priceCents, V2 price_cents >= 0). This gate introduced by the current PR is the first measurement of that change: it is breaking twice over (a field removed AND a non-null field added without a default) and is documented here per the gate's own lifecycle. Zero contracted consumers measured (the phase-0 inventory: the repository's own tests are the only callers; the Android client is REST-only), so no client migration exists to perform."
+    expiry: 2027-03-31

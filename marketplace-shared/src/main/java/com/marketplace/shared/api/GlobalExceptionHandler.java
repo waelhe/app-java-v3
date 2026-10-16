@@ -195,13 +195,13 @@ public class GlobalExceptionHandler {
     /**
      * Maps an {@link IllegalArgumentException} to the VALIDATION taxonomy
      * (400, RFC 7807) — A5: an illegal argument is a client-contract
-     * violation, never a 500, mirroring the GraphQL resolver's
-     * VALIDATION_ERROR mapping.
+     * violation, never a 500, mirroring the GraphQL resolver's VAL-001
+     * mapping.
      */
     @ExceptionHandler(IllegalArgumentException.class)
     public ProblemDetail handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {
         // A5: an illegal argument is a client-contract violation (400), matching
-        // the GraphQL resolver's VALIDATION_ERROR mapping — never a 500.
+        // the GraphQL resolver's VAL-001 mapping — never a 500.
         ProblemDetail pd = problem(ApiErrorTaxonomy.VALIDATION, ex.getMessage(), request, null, "detail");
         // §5 contract completeness (the same discipline the body-validation and
         // method-validation legs already answer): a BARE VAL-001 hides the
@@ -216,12 +216,12 @@ public class GlobalExceptionHandler {
      * Maps an {@link IllegalStateException} to the CONFLICT taxonomy
      * (409, RFC 7807) — A5: an illegal state raised by a well-formed
      * request is a domain conflict, mirroring the GraphQL resolver's
-     * DOMAIN_CONFLICT mapping.
+     * CONFLICT-001 mapping.
      */
     @ExceptionHandler(IllegalStateException.class)
     public ProblemDetail handleIllegalState(IllegalStateException ex, HttpServletRequest request) {
         // A5: an illegal state in a well-formed request is a domain conflict (409),
-        // matching the GraphQL resolver's DOMAIN_CONFLICT mapping — never a 500.
+        // matching the GraphQL resolver's CONFLICT-001 mapping — never a 500.
         return problem(ApiErrorTaxonomy.CONFLICT, ex.getMessage(), request, null, "detail");
     }
 

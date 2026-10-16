@@ -3,6 +3,7 @@ package com.marketplace.app.graphql;
 import test.config.IntegrationContainers;
 
 import com.marketplace.catalog.CatalogService;
+import com.marketplace.shared.api.ApiErrorTaxonomy;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -53,6 +54,12 @@ class GraphQlErrorIntegrationTest {
     @MockitoBean
     private JwtDecoder jwtDecoder;
 
+    /**
+     * Boots the real HTTP transport against the test containers with an
+     * authenticated PROVIDER Jwt — the same stateless security chain the
+     * production endpoint runs, so every envelope test below exercises the
+     * integrated stack rather than the resolver in isolation.
+     */
     @BeforeEach
     void setUpGraphQlTester() {
         Jwt testJwt = Jwt.withTokenValue("test-token")
@@ -69,6 +76,12 @@ class GraphQlErrorIntegrationTest {
                 .build();
     }
 
+    /**
+     * A not-found read maps to the canonical NOT_FOUND pair (NF-001 /
+     * RESOURCE) with the domain's designated-safe message — and, with the
+     * trace-id policy enabled for the test profile, the correlation id
+     * rides the extensions exactly as the contract documents.
+     */
     @Test
     void shouldMapNotFoundError() {
         UUID id = UUID.randomUUID();
@@ -84,12 +97,20 @@ class GraphQlErrorIntegrationTest {
                 .satisfy(errors -> {
                     var error = errors.getFirst();
                     org.assertj.core.api.Assertions.assertThat(error.getMessage()).contains("Listing not found");
-                    org.assertj.core.api.Assertions.assertThat(error.getExtensions()).containsEntry("errorCode", "NOT_FOUND");
-                    org.assertj.core.api.Assertions.assertThat(error.getExtensions()).containsEntry("category", "RESOURCE");
+                    org.assertj.core.api.Assertions.assertThat(error.getExtensions())
+                            .containsEntry("errorCode", ApiErrorTaxonomy.NOT_FOUND.errorCode());
+                    org.assertj.core.api.Assertions.assertThat(error.getExtensions())
+                            .containsEntry("category", ApiErrorTaxonomy.NOT_FOUND.category());
                     org.assertj.core.api.Assertions.assertThat(error.getExtensions()).containsEntry("traceId", "trace-not-found");
                 });
     }
 
+    /**
+     * A domain conflict (IllegalStateException from the use case) maps to
+     * the canonical CONFLICT pair with the domain message — the same
+     * semantics the REST ProblemDetail surface emits for the same
+     * exception.
+     */
     @Test
     void shouldMapDomainConflictError() {
         UUID id = UUID.randomUUID();
@@ -102,11 +123,18 @@ class GraphQlErrorIntegrationTest {
                 .satisfy(errors -> {
                     var error = errors.getFirst();
                     org.assertj.core.api.Assertions.assertThat(error.getMessage()).isEqualTo("Listing status conflict");
-                    org.assertj.core.api.Assertions.assertThat(error.getExtensions()).containsEntry("errorCode", "DOMAIN_CONFLICT");
-                    org.assertj.core.api.Assertions.assertThat(error.getExtensions()).containsEntry("category", "DOMAIN");
+                    org.assertj.core.api.Assertions.assertThat(error.getExtensions())
+                            .containsEntry("errorCode", ApiErrorTaxonomy.CONFLICT.errorCode());
+                    org.assertj.core.api.Assertions.assertThat(error.getExtensions())
+                            .containsEntry("category", ApiErrorTaxonomy.CONFLICT.category());
                 });
     }
 
+    /**
+     * An unknown failure is masked: the generic internal sentence and the
+     * canonical INTERNAL pair — the exception's own message, stack trace,
+     * and any persistence detail never reach the client.
+     */
     @Test
     void shouldHideInternalErrorDetails() {
         UUID id = UUID.randomUUID();
@@ -120,8 +148,10 @@ class GraphQlErrorIntegrationTest {
                     var error = errors.getFirst();
                     org.assertj.core.api.Assertions.assertThat(error.getMessage()).isEqualTo("An unexpected error occurred");
                     org.assertj.core.api.Assertions.assertThat(error.getMessage()).doesNotContain("sensitive");
-                    org.assertj.core.api.Assertions.assertThat(error.getExtensions()).containsEntry("errorCode", "INTERNAL_ERROR");
-                    org.assertj.core.api.Assertions.assertThat(error.getExtensions()).containsEntry("category", "INTERNAL");
+                    org.assertj.core.api.Assertions.assertThat(error.getExtensions())
+                            .containsEntry("errorCode", ApiErrorTaxonomy.INTERNAL.errorCode());
+                    org.assertj.core.api.Assertions.assertThat(error.getExtensions())
+                            .containsEntry("category", ApiErrorTaxonomy.INTERNAL.category());
                 });
     }
 }

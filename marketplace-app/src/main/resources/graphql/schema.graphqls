@@ -1,6 +1,28 @@
 type Query {
     service(id: ID!): Service
-    services: [Service!]!
+    # The bounded collection contract (GraphQL target design Phase 1): the
+    # unbounded demo field `services: [Service!]!` (Pageable.unpaged() under
+    # it) is REPLACED, not paralleled — the consumer inventory measured zero
+    # contracted consumers (the repo's own tests are the only callers; the
+    # Android client is REST-only), which is the design plan §6 condition for
+    # direct replacement. The field is the official Spring for GraphQL relay
+    # Connection path: ServiceConnection/ServiceEdge/PageInfo are generated
+    # at startup by Boot's ConnectionTypeDefinitionConfigurer, the returned
+    # Spring Data Page is adapted by the auto-registered SliceConnectionAdapter
+    # (Page is-a Slice — verified against spring-boot-graphql 4.1.1), and
+    # `after` cursors are base64 ScrollPosition offsets produced by that same
+    # adapter — decoded back by the auto-registered Subrange argument resolver.
+    # `first` carries no SDL literal default: graphql-java applies a field
+    # default at argument coercion whenever the argument is omitted, which
+    # would shadow the typed configuration
+    # (marketplace.graphql.pagination.default-page-size) — two sources of
+    # "default" that drift apart, the exact failure the first real
+    # integration run measured (property set to 3, the SDL literal
+    # answered 20). The server's configured default page size (bounded,
+    # hard-capped, fail-fast bound) is the single source; forward-only
+    # (last/before deliberately absent) with deterministic server-side
+    # ordering.
+    services(first: Int, after: String): ServiceConnection!
 }
 
 type Mutation {
