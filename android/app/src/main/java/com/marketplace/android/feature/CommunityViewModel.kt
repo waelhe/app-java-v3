@@ -1270,7 +1270,9 @@ class CommunityViewModel(
             _uiState.update {
                 if (it.membership?.locationId == locationId) {
                     it.copy(
-                        urgentAlerts = if (it.urgentAlertsScopeId == locationId) it.urgentAlerts else emptyList(),
+                        // Active/withdrawn is server-owned. Fail closed while refreshing:
+                        // never keep showing a previously active alert as current.
+                        urgentAlerts = emptyList(),
                         urgentAlertsScopeId = locationId,
                         urgentAlertsBusy = true,
                         urgentAlertsError = null
@@ -1294,7 +1296,11 @@ class CommunityViewModel(
             } catch (error: Exception) {
                 _uiState.update {
                     if (it.membership?.locationId == locationId) {
-                        it.copy(urgentAlertsBusy = false, urgentAlertsError = failureMessage(error))
+                        it.copy(
+                            urgentAlerts = emptyList(),
+                            urgentAlertsBusy = false,
+                            urgentAlertsError = failureMessage(error)
+                        )
                     } else it
                 }
             }
