@@ -161,7 +161,10 @@ fun DayfApp(
     onDirectoryQuery: (String) -> Unit,
     onDirectoryMinRating: (Double?) -> Unit,
     onSearchDirectory: () -> Unit,
-    onOpenNeighborhoodMarket: () -> Unit
+    onOpenNeighborhoodMarket: () -> Unit,
+    onOpenDiscoveryRow: (String) -> Unit,
+    onBackFromDiscoveryRow: () -> Unit,
+    onLoadMoreDiscoveryRow: () -> Unit
 ) {
     when {
         state.sessionRestoring -> CenterState(
@@ -226,7 +229,10 @@ fun DayfApp(
             onDirectoryQuery = onDirectoryQuery,
             onDirectoryMinRating = onDirectoryMinRating,
             onSearchDirectory = onSearchDirectory,
-            onOpenNeighborhoodMarket = onOpenNeighborhoodMarket
+            onOpenNeighborhoodMarket = onOpenNeighborhoodMarket,
+            onOpenDiscoveryRow = onOpenDiscoveryRow,
+            onBackFromDiscoveryRow = onBackFromDiscoveryRow,
+            onLoadMoreDiscoveryRow = onLoadMoreDiscoveryRow
         )
     }
 
