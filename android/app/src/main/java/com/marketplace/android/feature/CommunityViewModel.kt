@@ -9,6 +9,8 @@ import com.marketplace.android.core.network.CreateMarketItemRequest
 import com.marketplace.android.core.network.CreatePostRequest
 import com.marketplace.android.core.network.CreateEventRequest
 import com.marketplace.android.core.network.CreatePollRequest
+import com.marketplace.android.core.network.DiscoveryCardDto
+import com.marketplace.android.core.network.DiscoveryRowDto
 import com.marketplace.android.core.network.EventDto
 import com.marketplace.android.core.network.GroupDto
 import com.marketplace.android.core.network.PollDto
@@ -79,6 +81,16 @@ data class AppUiState(
     val feedError: String? = null,
     val feedPage: Int = 0,
     val feedLast: Boolean = true,
+    val discoveryRows: List<DiscoveryRowDto> = emptyList(),
+    val discoveryBusy: Boolean = false,
+    val discoveryError: String? = null,
+    val selectedDiscoveryRow: String? = null,
+    val discoveryPage: List<DiscoveryCardDto> = emptyList(),
+    val discoveryPageBusy: Boolean = false,
+    val discoveryPageError: String? = null,
+    val discoveryPageNumber: Int = 0,
+    val discoveryPageLast: Boolean = true,
+    val discoveryPageTotal: Long = 0,
     val searchQuery: String = "",
     val searchResults: List<PostDto> = emptyList(),
     val searchResultsQuery: String = "",
@@ -365,6 +377,7 @@ class CommunityViewModel(
                     )
                 }
                 loadFeed()
+                loadDiscovery()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -417,6 +430,7 @@ class CommunityViewModel(
                     )
                 }
                 loadFeed()
+                loadDiscovery()
                 loadMarket()
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -427,9 +441,12 @@ class CommunityViewModel(
     }
 
     fun selectTab(tab: MainTab) {
-        _uiState.update { it.copy(tab = tab, notice = null) }
+        _uiState.update { it.copy(tab = tab, selectedDiscoveryRow = null, notice = null) }
         when (tab) {
-            MainTab.HOME -> loadFeed()
+            MainTab.HOME -> {
+                loadFeed()
+                loadDiscovery()
+            }
             MainTab.MARKET -> Unit // Public product catalog/cart is not exposed by the current API.
             MainTab.PROPERTY -> loadPropertyListings()
             MainTab.DIRECTORY -> loadDirectoryListings()
@@ -440,8 +457,16 @@ class CommunityViewModel(
     }
 
     fun refresh() {
-        when (_uiState.value.tab) {
-            MainTab.HOME -> loadFeed()
+        val current = _uiState.value
+        if (current.tab == MainTab.HOME && current.selectedDiscoveryRow != null) {
+            loadDiscoveryRowPage(current.selectedDiscoveryRow, 0, append = false)
+            return
+        }
+        when (current.tab) {
+            MainTab.HOME -> {
+                loadFeed()
+                loadDiscovery()
+            }
             MainTab.MARKET -> Unit
             MainTab.PROPERTY -> loadPropertyListings()
             MainTab.DIRECTORY -> loadDirectoryListings()
@@ -588,6 +613,94 @@ class CommunityViewModel(
                 }
             }
         }
+    }
+
+    fun loadDiscovery() {
+        val current = _uiState.value
+        if (!current.authenticated || current.membership == null) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(discoveryBusy = true, discoveryError = null) }
+            try {
+                val rows = repository.getDiscoveryRows()
+                _uiState.update { it.copy(discoveryRows = rows, discoveryBusy = false, discoveryError = null) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _uiState.update { it.copy(discoveryBusy = false, discoveryError = failureMessage(error)) }
+            }
+        }
+    }
+
+    fun openDiscoveryRow(row: String) {
+        if (row !in DISCOVERY_ROW_TYPES) return
+        _uiState.update {
+            it.copy(
+                selectedDiscoveryRow = row,
+                discoveryPage = emptyList(),
+                discoveryPageBusy = true,
+                discoveryPageError = null,
+                discoveryPageNumber = 0,
+                discoveryPageLast = true,
+                discoveryPageTotal = 0
+            )
+        }
+        loadDiscoveryRowPage(row, 0, append = false)
+    }
+
+    fun closeDiscoveryRow() {
+        _uiState.update {
+            it.copy(
+                selectedDiscoveryRow = null,
+                discoveryPage = emptyList(),
+                discoveryPageBusy = false,
+                discoveryPageError = null,
+                discoveryPageNumber = 0,
+                discoveryPageLast = true,
+                discoveryPageTotal = 0
+            )
+        }
+    }
+
+    fun loadMoreDiscoveryRow() {
+        val current = _uiState.value
+        val row = current.selectedDiscoveryRow ?: return
+        if (current.discoveryPageBusy || current.discoveryPageLast) return
+        loadDiscoveryRowPage(row, current.discoveryPageNumber + 1, append = true)
+    }
+
+    private fun loadDiscoveryRowPage(row: String, pageNumber: Int, append: Boolean) {
+        if (row !in DISCOVERY_ROW_TYPES || !_uiState.value.authenticated || _uiState.value.membership == null) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(discoveryPageBusy = true, discoveryPageError = null) }
+            try {
+                val page = repository.getDiscoveryRow(row, pageNumber)
+                _uiState.update { current ->
+                    if (current.selectedDiscoveryRow != row) current
+                    else current.copy(
+                        discoveryPage = if (append) current.discoveryPage + page.content else page.content,
+                        discoveryPageBusy = false,
+                        discoveryPageError = null,
+                        discoveryPageNumber = page.pageNumber,
+                        discoveryPageLast = page.last,
+                        discoveryPageTotal = page.totalElements
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _uiState.update { current ->
+                    if (current.selectedDiscoveryRow != row) current
+                    else current.copy(discoveryPageBusy = false, discoveryPageError = failureMessage(error))
+                }
+            }
+        }
+    }
+
+    private companion object {
+        val DISCOVERY_ROW_TYPES = setOf(
+            "URGENT_ALERTS", "FOLLOWED_SOURCES", "LOST_FOUND",
+            "NEIGHBORHOOD_RECOMMENDATIONS", "EVENTS_AND_OPPORTUNITIES", "FOR_YOU"
+        )
     }
 
     fun loadFeed() {
