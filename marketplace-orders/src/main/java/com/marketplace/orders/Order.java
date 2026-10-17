@@ -59,6 +59,29 @@ public class Order extends BaseEntity {
     @Column(name = "total_amount_minor", nullable = false)
     private Long totalAmountMinor;
 
+    /**
+     * The Saleor fit-gap study's Phase 3 (PR #602 §7-Phase-3): the order's
+     * frozen SUBTOTAL — the sum of the re-priced lines BEFORE the commercial
+     * rules (promotions, vouchers, taxes). Nullable for the pre-V223 orders:
+     * their total is the whole recorded agreement exactly as frozen at THEIR
+     * placement (the snapshot is never back-filled — history is not edited).
+     */
+    @Column(name = "subtotal_amount_minor")
+    private Long subtotalAmountMinor;
+
+    /** The frozen promotion + voucher discount (the components' sum). */
+    @Column(name = "discount_amount_minor")
+    private Long discountAmountMinor;
+
+    /**
+     * The frozen tax component. INCLUSIVE jurisdictions: the component
+     * contained INSIDE the agreed amounts (the total already carries it);
+     * EXCLUSIVE: the component ADDED on top. Either way the order records
+     * the explicit tax fact at placement (the study's §5 rule).
+     */
+    @Column(name = "tax_amount_minor")
+    private Long taxAmountMinor;
+
     @NotBlank
     @Column(name = "currency", nullable = false, length = 3)
     private String currency;
@@ -108,6 +131,26 @@ public class Order extends BaseEntity {
 
     public static Order placed(UUID consumerId, Long totalAmountMinor, String currency, UUID sellerId) {
         return new Order(UUID.randomUUID(), consumerId, totalAmountMinor, currency, sellerId);
+    }
+
+    /**
+     * The Phase-3 placement factory: the order carries its COMMERCIAL
+     * BREAKDOWN — subtotal (the re-priced lines), discount (promotion +
+     * voucher, itemized in {@code order_price_components}), tax (the
+     * jurisdiction's explicit policy), and the TOTAL (the buyer's
+     * agreement: subtotal − discount + tax when EXCLUSIVE, the discounted
+     * subtotal when INCLUSIVE). One placement, one frozen breakdown.
+     */
+    public static Order placedWithBreakdown(UUID consumerId, String currency, UUID sellerId,
+                                            long subtotalMinor, long discountMinor,
+                                            long taxMinor, boolean taxInclusive) {
+        long total = taxInclusive ? subtotalMinor - discountMinor
+                : subtotalMinor - discountMinor + taxMinor;
+        Order order = new Order(UUID.randomUUID(), consumerId, total, currency, sellerId);
+        order.subtotalAmountMinor = subtotalMinor;
+        order.discountAmountMinor = discountMinor;
+        order.taxAmountMinor = taxMinor;
+        return order;
     }
 
     public void confirm(Instant at) {
@@ -173,6 +216,18 @@ public class Order extends BaseEntity {
 
     public Long getTotalAmountMinor() {
         return totalAmountMinor;
+    }
+
+    public Long getSubtotalAmountMinor() {
+        return subtotalAmountMinor;
+    }
+
+    public Long getDiscountAmountMinor() {
+        return discountAmountMinor;
+    }
+
+    public Long getTaxAmountMinor() {
+        return taxAmountMinor;
     }
 
     public String getCurrency() {

@@ -51,7 +51,10 @@ public final class OrderResponses {
             @Schema(description = "The order's id") UUID id,
             @Schema(description = "The machine state: PLACED → CONFIRMED → FULFILLED, with CANCELLED from the open states") OrderStatus status,
             @Schema(description = "The order's frozen lines") List<OrderItemResponse> items,
-            @Schema(description = "The derived total in minor units (sum of the frozen lines — never caller-supplied)") long totalAmountMinor,
+            @Schema(description = "The derived total in minor units (never caller-supplied)") long totalAmountMinor,
+            @Schema(description = "The Phase-3 frozen subtotal — the re-priced lines BEFORE the commercial rules (null for pre-V223 orders: their total is the whole recorded agreement)") Long subtotalAmountMinor,
+            @Schema(description = "The Phase-3 frozen promotion + voucher discount (null for pre-V223 orders)") Long discountAmountMinor,
+            @Schema(description = "The Phase-3 frozen tax component (null for pre-V223 orders)") Long taxAmountMinor,
             @Schema(description = "ISO-4217 currency code") String currency,
             @Schema(description = "When the order was placed") Instant placedAt,
             @Schema(description = "When the merchant confirmed it (null while PLACED)") Instant confirmedAt,
@@ -70,7 +73,10 @@ public final class OrderResponses {
         static OrderResponse of(Order order, List<OrderItem> items) {
             return new OrderResponse(order.getId(), order.getStatus(),
                     items.stream().map(OrderItemResponse::of).toList(),
-                    order.getTotalAmountMinor(), order.getCurrency(),
+                    order.getTotalAmountMinor(),
+                    order.getSubtotalAmountMinor(), order.getDiscountAmountMinor(),
+                    order.getTaxAmountMinor(),
+                    order.getCurrency(),
                     order.getPlacedAt(), order.getConfirmedAt(), order.getFulfilledAt(),
                     order.getCancelledAt(), order.getCancelReason(), order.getDeliveryRequestId(), List.of());
         }
@@ -85,9 +91,38 @@ public final class OrderResponses {
             OrderResponse primary = of(placed.get(0));
             List<OrderResponse> additional = placed.stream().skip(1).map(OrderResponse::of).toList();
             return new OrderResponse(primary.id(), primary.status(), primary.items(),
-                    primary.totalAmountMinor(), primary.currency(),
+                    primary.totalAmountMinor(), primary.subtotalAmountMinor(),
+                    primary.discountAmountMinor(), primary.taxAmountMinor(), primary.currency(),
                     primary.placedAt(), primary.confirmedAt(), primary.fulfilledAt(),
                     primary.cancelledAt(), primary.cancelReason(), primary.deliveryRequestId(), additional);
+        }
+    }
+
+    /**
+     * The Phase-3 checkout preview — one seller group's breakdown exactly
+     * as the placement would freeze it (the service's own
+     * {@code PlacementPreview} projected for the wire).
+     */
+    public record PlacementPreviewResponse(
+            @Schema(description = "The seller group this breakdown belongs to") UUID sellerId,
+            @Schema(description = "The re-priced subtotal (minor units)") long subtotalMinor,
+            @Schema(description = "The best single applicable promotion's discount (0 when none applies)") long promotionDiscountMinor,
+            @Schema(description = "The promotion's name (null when none applies)") String promotionName,
+            @Schema(description = "The voucher's discount (0 when no code was supplied)") long voucherDiscountMinor,
+            @Schema(description = "The voucher's normalized code (null when none)") String voucherCode,
+            @Schema(description = "The jurisdiction's tax component") long taxMinor,
+            @Schema(description = "The tax policy's country (null when no policy is configured)") String taxCountry,
+            @Schema(description = "Whether the tax is INCLUSIVE (contained in the agreed prices)") boolean taxInclusive,
+            @Schema(description = "The tax policy's rate in basis points") int taxRateBps,
+            @Schema(description = "The buyer's would-be agreement: subtotal − discounts + (tax when EXCLUSIVE)") long totalMinor,
+            @Schema(description = "ISO-4217 currency code") String currency) {
+
+        static PlacementPreviewResponse of(OrdersService.PlacementPreview preview) {
+            var b = preview.breakdown();
+            return new PlacementPreviewResponse(preview.sellerId(), b.subtotalMinor(),
+                    b.promotionDiscountMinor(), b.promotionName(), b.voucherDiscountMinor(),
+                    b.voucherCode(), b.taxMinor(), b.taxCountry(), b.taxInclusive(),
+                    b.taxRateBps(), b.totalMinor(), preview.currency());
         }
     }
 }

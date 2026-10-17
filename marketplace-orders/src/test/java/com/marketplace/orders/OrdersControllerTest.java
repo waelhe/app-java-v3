@@ -62,11 +62,12 @@ class OrdersControllerTest {
     @Test
     void placeAnswersCreatedWithTheDerivedTotal() {
         Order order = Order.placed(caller, 17400L, "SAR", null);
-        when(ordersService.place(caller)).thenReturn(List.of(new OrderDetail(order, List.of(
+        when(ordersService.place(caller, null)).thenReturn(List.of(new OrderDetail(order, List.of(
                 OrderItem.snapshotOf(order.getId(),
                         CartItem.of(Cart.activeFor(caller).getId(), UUID.randomUUID(), null, 2, 8700L, "SAR"))))));
 
-        ResponseEntity<OrderResponses.OrderResponse> result = controller.place(authentication);
+        ResponseEntity<OrderResponses.OrderResponse> result =
+                controller.place(null, authentication);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         OrderResponses.OrderResponse body = result.getBody();
@@ -124,11 +125,50 @@ class OrdersControllerTest {
 
     @Test
     void theEmptyCartSurfacesTheServices409Untouched() {
-        when(ordersService.place(caller))
+        when(ordersService.place(caller, null))
                 .thenThrow(new ConflictException("Cannot place an order from an empty cart"));
 
-        assertThatThrownBy(() -> controller.place(authentication))
+        assertThatThrownBy(() -> controller.place(null, authentication))
                 .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void placeWithAVoucherCodeCarriesItToTheService() {
+        when(ordersService.place(caller, "RAMADAN10")).thenReturn(List.of(new OrderDetail(
+                Order.placedWithBreakdown(caller, "SAR", null, 3000L, 800L, 287L, true),
+                List.of())));
+
+        ResponseEntity<OrderResponses.OrderResponse> result = controller.place(
+                new OrdersController.PlaceOrderRequest("RAMADAN10"), authentication);
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(result.getBody().totalAmountMinor()).isEqualTo(2200L);
+        assertThat(result.getBody().subtotalAmountMinor()).isEqualTo(3000L);
+        assertThat(result.getBody().discountAmountMinor()).isEqualTo(800L);
+        assertThat(result.getBody().taxAmountMinor()).isEqualTo(287L);
+        verify(ordersService).place(caller, "RAMADAN10");
+    }
+
+    @Test
+    void theCheckoutPreviewAnswersThePerSellerBreakdown() {
+        var breakdown = new com.marketplace.shared.api.CommercialPricingPort.CommercialBreakdown(
+                3000L, 300L, UUID.randomUUID(), "Ramadan 10%", 0, null, null,
+                287L, "SA", true, 1500, 2700L);
+        when(ordersService.previewPlacement(caller, "RAMADAN10")).thenReturn(List.of(
+                new OrdersService.PlacementPreview(UUID.randomUUID(), "SAR", breakdown)));
+
+        ResponseEntity<java.util.List<OrderResponses.PlacementPreviewResponse>> result =
+                controller.previewPlacement(new OrdersController.PlaceOrderRequest("RAMADAN10"),
+                        authentication);
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(result.getBody()).hasSize(1);
+        OrderResponses.PlacementPreviewResponse preview = result.getBody().get(0);
+        assertThat(preview.subtotalMinor()).isEqualTo(3000L);
+        assertThat(preview.promotionDiscountMinor()).isEqualTo(300L);
+        assertThat(preview.taxRateBps()).isEqualTo(1500);
+        assertThat(preview.totalMinor()).isEqualTo(2700L);
+        assertThat(preview.currency()).isEqualTo("SAR");
     }
 
     @Test

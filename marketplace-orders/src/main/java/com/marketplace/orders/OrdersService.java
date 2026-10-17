@@ -1,6 +1,7 @@
 package com.marketplace.orders;
 
 import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.api.CommercialPricingPort;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.OrderCancelledEvent;
 import com.marketplace.shared.api.OrderConfirmedEvent;
@@ -83,6 +84,8 @@ public class OrdersService implements OrderDeliveryPort {
     private final ProductPricingPort productPricingPort;
     private final ProductStockPort productStockPort;
     private final OrderPaymentPort orderPaymentPort;
+    private final CommercialPricingPort commercialPricingPort;
+    private final OrderPriceComponentRepository orderPriceComponentRepository;
 
     public OrdersService(CartRepository cartRepository,
                          CartItemRepository cartItemRepository,
@@ -92,7 +95,9 @@ public class OrdersService implements OrderDeliveryPort {
                          ApplicationEventPublisher eventPublisher,
                          ProductPricingPort productPricingPort,
                          ProductStockPort productStockPort,
-                         OrderPaymentPort orderPaymentPort) {
+                         OrderPaymentPort orderPaymentPort,
+                         CommercialPricingPort commercialPricingPort,
+                         OrderPriceComponentRepository orderPriceComponentRepository) {
         this.cartRepository = cartRepository;
         this.cartItemRepository = cartItemRepository;
         this.orderRepository = orderRepository;
@@ -102,6 +107,8 @@ public class OrdersService implements OrderDeliveryPort {
         this.productPricingPort = productPricingPort;
         this.productStockPort = productStockPort;
         this.orderPaymentPort = orderPaymentPort;
+        this.commercialPricingPort = commercialPricingPort;
+        this.orderPriceComponentRepository = orderPriceComponentRepository;
     }
 
     // ------------------------------------------------------------------
@@ -233,9 +240,29 @@ public class OrdersService implements OrderDeliveryPort {
      * in the groups' first-seen order (the first order is the placement's
      * primary; the wire carries the rest in {@code additionalOrders}).
      */
+    /**
+     * Cart to order(S) — the pre-Phase-3 shape (no commercial policies):
+     * delegates to {@link #place(UUID, String)} with no voucher (the legacy
+     * callers' contract, byte-compatible).
+     */
     @Transactional
     @Observed(name = "order.place")
     public List<OrderDetail> place(UUID consumerId) {
+        return place(consumerId, null);
+    }
+
+    /**
+     * Cart to order(S): the placement transaction — the order row(S), every
+     * snapshot line, the frozen COMMERCIAL BREAKDOWN, and the cart's
+     * CHECKED_OUT tombstone commit together, or nothing does. The total is
+     * derived (never caller-supplied): the frozen lines' subtotal minus the
+     * promotion/voucher discounts plus the exclusive tax — the pricing
+     * module's explicit policies, resolved through {@link CommercialPricingPort}
+     * and FROZEN on the order (the Saleor fit-gap study's Phase 3).
+     */
+    @Transactional
+    @Observed(name = "order.place")
+    public List<OrderDetail> place(UUID consumerId, String voucherCode) {
         Cart cart = cartRepository.findByConsumerIdAndStatus(consumerId, CartStatus.ACTIVE)
                 .orElseThrow(() -> new ConflictException(
                         "No active cart to place: the buyer's draft is empty"));
@@ -247,55 +274,43 @@ public class OrdersService implements OrderDeliveryPort {
         if (lines.isEmpty()) {
             throw new ConflictException("Cannot place an order from an empty cart");
         }
-        // ADR-0012 (the cart-integration slice): the re-pricing walk is
-        // variant-aware — a variant line re-resolves through the VARIANT's
-        // own authoritative record (both shelf states gate it), a
-        // product-level line keeps the product's own record exactly as
-        // before. The reserved maps split the same way, so the whole-cart
-        // all-or-nothing reservation spans BOTH the product shelves and
-        // the variant shelves (a refusal of either rolls the WHOLE
-        // placement back — no order row in ANY group, no partial hold).
+        // The Phase-3 re-pricing walk: the pricing policy layer resolves
+        // each line's EFFECTIVE unit (the catalog's own record — identity,
+        // both shelf states, base price — with an active price-list entry
+        // OVERRIDING the amount). The reserved maps split the same way, so
+        // the whole-cart all-or-nothing reservation spans BOTH the product
+        // shelves and the variant shelves (a refusal of either rolls the
+        // WHOLE placement back — no order row in ANY group, no partial hold).
         java.util.Map<UUID, List<CartItem>> groups = new java.util.LinkedHashMap<>();
         java.util.List<ProductStockPort.StockLine> productStockLines = new java.util.ArrayList<>();
         java.util.List<ProductStockPort.StockLine> variantStockLines = new java.util.ArrayList<>();
         for (CartItem line : lines) {
             final UUID sellerId;
-            final String authoritativeCurrency;
-            final long authoritativePriceMinor;
+            final String effectiveCurrency;
+            final long effectivePriceMinor;
+            CommercialPricingPort.ResolvedUnitPrice resolved =
+                    commercialPricingPort.resolveUnitPrice(line.getProductId(), line.getVariantId());
+            if (!resolved.purchasable()) {
+                throw new ConflictException("Cart line " + line.getId() + " is no longer "
+                        + "purchasable — " + resolved.refusal());
+            }
+            sellerId = resolved.providerId();
+            effectiveCurrency = resolved.currency();
+            effectivePriceMinor = resolved.priceMinor();
             if (line.getVariantId() != null) {
-                ProductPricingPort.VariantPrice variant =
-                        productPricingPort.priceOfVariant(line.getVariantId());
-                if (!variant.purchasable()) {
-                    throw new ConflictException("Variant " + line.getVariantId() + " is not "
-                            + "purchasable — product " + line.getProductId() + " is "
-                            + variant.productStorefront() + ", variant is "
-                            + variant.variantStorefront() + " — the cart line is no longer "
-                            + "purchasable");
-                }
-                sellerId = variant.providerId();
-                authoritativeCurrency = variant.currency();
-                authoritativePriceMinor = variant.priceMinor();
                 variantStockLines.add(new ProductStockPort.StockLine(
                         line.getVariantId(), line.getQuantity()));
             } else {
-                ProductPricingPort.ProductPrice price = productPricingPort.priceOf(line.getProductId());
-                if (price.storefront() != ProductPricingPort.StorefrontState.ACTIVE) {
-                    throw new ConflictException("Product " + line.getProductId() + " is "
-                            + price.storefront() + " — the cart line is no longer purchasable");
-                }
-                sellerId = price.providerId();
-                authoritativeCurrency = price.currency();
-                authoritativePriceMinor = price.priceMinor();
                 productStockLines.add(new ProductStockPort.StockLine(
                         line.getProductId(), line.getQuantity()));
             }
-            if (!line.getCurrency().equals(authoritativeCurrency)) {
+            if (!line.getCurrency().equals(effectiveCurrency)) {
                 throw new ConflictException("Cart line " + line.getId() + " carries "
                         + line.getCurrency() + " but the purchasable unit now prices in "
-                        + authoritativeCurrency + " — re-add the line before placing");
+                        + effectiveCurrency + " — re-add the line before placing");
             }
-            if (authoritativePriceMinor != line.getUnitAmountMinor()) {
-                line.updateUnitAmountMinor(authoritativePriceMinor);
+            if (effectivePriceMinor != line.getUnitAmountMinor()) {
+                line.updateUnitAmountMinor(effectivePriceMinor);
             }
             groups.computeIfAbsent(sellerId, k -> new java.util.ArrayList<>()).add(line);
         }
@@ -322,21 +337,46 @@ public class OrdersService implements OrderDeliveryPort {
             productStockPort.reserveVariants(ProductStockPort.StockLine.asMap(variantStockLines));
         }
         List<OrderDetail> placed = new java.util.ArrayList<>(groups.size());
+        boolean primaryGroup = true;
         for (java.util.Map.Entry<UUID, List<CartItem>> group : groups.entrySet()) {
             UUID sellerId = group.getKey();
             List<CartItem> groupLines = group.getValue();
-            long total = 0;
+            long subtotal = 0;
             for (CartItem line : groupLines) {
-                total += line.lineTotalMinor();
+                subtotal += line.lineTotalMinor();
             }
-            Order order = orderRepository.save(
-                    Order.placed(consumerId, total, groupLines.get(0).getCurrency(), sellerId));
+            String groupCurrency = groupLines.get(0).getCurrency();
+            // The Phase-3 breakdown: the pricing module's explicit policies
+            // computed for THIS order and FROZEN here — promotion (best
+            // single applicable), the ONE voucher (the PRIMARY order only:
+            // a placement redeems its voucher exactly once, never per
+            // sibling — the single-redemption law), and the jurisdiction's
+            // tax component. computeBreakdown is a read; the voucher's
+            // redemption (the locked write) follows the order row below.
+            String groupVoucher = primaryGroup ? voucherCode : null;
+            CommercialPricingPort.CommercialBreakdown breakdown = commercialPricingPort
+                    .computeBreakdown(consumerId, subtotal, groupCurrency, groupVoucher);
+            Order order = orderRepository.save(Order.placedWithBreakdown(
+                    consumerId, groupCurrency, sellerId,
+                    breakdown.subtotalMinor(),
+                    breakdown.promotionDiscountMinor() + breakdown.voucherDiscountMinor(),
+                    breakdown.taxMinor(), breakdown.taxInclusive()));
+            freezePriceComponents(order, breakdown);
+            // The voucher settlement — INSIDE this placement transaction:
+            // the redemption re-validates under the voucher row's
+            // pessimistic lock and a refusal rolls the WHOLE placement back
+            // (no order row in ANY group survives an over-limit voucher).
+            if (groupVoucher != null && !groupVoucher.isBlank()) {
+                commercialPricingPort.settleVoucher(order.getId(), consumerId, groupVoucher,
+                        breakdown.voucherDiscountMinor(), groupCurrency);
+            }
             List<OrderItem> frozen = new java.util.ArrayList<>(groupLines.size());
             for (CartItem line : groupLines) {
                 frozen.add(orderItemRepository.save(OrderItem.snapshotOf(order.getId(), line)));
             }
             order.markStockReserved();
             placed.add(new OrderDetail(order, List.copyOf(frozen)));
+            primaryGroup = false;
         }
         cart.checkOut(Instant.now());
         cartRepository.save(cart);
@@ -344,6 +384,35 @@ public class OrdersService implements OrderDeliveryPort {
         // listener); the machine's cross-boundary information begins at
         // CONFIRMED (and the cancellation edge's OrderCancelledEvent).
         return List.copyOf(placed);
+    }
+
+    /**
+     * The Phase-3 freeze: the breakdown's itemized components written once
+     * beside their order (the study's §3.4 auditable monetary breakdown —
+     * every rule that touched the agreement leaves its reference and its
+     * amount). Zero-amount components are still recorded (the explicit
+     * absence of a rule is itself an auditable fact: an INCLUSIVE 0% tax
+     * policy froze the tax at zero).
+     */
+    private void freezePriceComponents(Order order,
+                                       CommercialPricingPort.CommercialBreakdown breakdown) {
+        String currency = order.getCurrency();
+        if (breakdown.promotionId() != null) {
+            orderPriceComponentRepository.save(OrderPriceComponent.promotionOf(
+                    order.getId(), breakdown.promotionId(), breakdown.promotionName(),
+                    breakdown.promotionDiscountMinor(), currency));
+        }
+        if (breakdown.voucherId() != null) {
+            orderPriceComponentRepository.save(OrderPriceComponent.voucherOf(
+                    order.getId(), breakdown.voucherId(), breakdown.voucherCode(),
+                    breakdown.voucherDiscountMinor(), currency));
+        }
+        if (breakdown.taxCountry() != null) {
+            orderPriceComponentRepository.save(OrderPriceComponent.taxOf(
+                    order.getId(), breakdown.taxCountry(),
+                    breakdown.taxInclusive() ? "INCLUSIVE" : "EXCLUSIVE",
+                    breakdown.taxRateBps(), breakdown.taxMinor(), currency));
+        }
     }
 
     /**
@@ -561,6 +630,54 @@ public class OrdersService implements OrderDeliveryPort {
     // ------------------------------------------------------------------
     // Reads (the privacy contract: the buyer or ADMIN, an honest 404 otherwise)
     // ------------------------------------------------------------------
+
+    /**
+     * The Phase-3 checkout preview: the buyer's active cart re-priced and
+     * broken down EXACTLY as the placement would freeze it — one breakdown
+     * per seller group (the primary group carries the voucher), with NO
+     * write anywhere (no stock reservation, no redemption, no tombstone).
+     * The buyer sees the commercial agreement before committing; the
+     * placement re-computes at ITS instant (the frozen record is the
+     * placement-instant agreement, never this preview).
+     */
+    @Transactional(readOnly = true)
+    public List<PlacementPreview> previewPlacement(UUID consumerId, String voucherCode) {
+        Cart cart = cartRepository.findByConsumerIdAndStatus(consumerId, CartStatus.ACTIVE)
+                .orElseThrow(() -> new ConflictException("No active cart to preview"));
+        List<CartItem> lines = cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId());
+        if (lines.isEmpty()) {
+            throw new ConflictException("Cannot preview an order from an empty cart");
+        }
+        java.util.Map<UUID, Long> subtotals = new java.util.LinkedHashMap<>();
+        java.util.Map<UUID, String> currencies = new java.util.LinkedHashMap<>();
+        for (CartItem line : lines) {
+            CommercialPricingPort.ResolvedUnitPrice resolved =
+                    commercialPricingPort.resolveUnitPrice(line.getProductId(), line.getVariantId());
+            if (!resolved.purchasable()) {
+                throw new ConflictException("Cart line " + line.getId() + " is no longer "
+                        + "purchasable — " + resolved.refusal());
+            }
+            subtotals.merge(resolved.providerId(), line.getQuantity() * resolved.priceMinor(),
+                    Long::sum);
+            currencies.putIfAbsent(resolved.providerId(), resolved.currency());
+        }
+        boolean primary = true;
+        List<PlacementPreview> previews = new java.util.ArrayList<>(subtotals.size());
+        for (java.util.Map.Entry<UUID, Long> group : subtotals.entrySet()) {
+            String groupVoucher = primary ? voucherCode : null;
+            String groupCurrency = currencies.get(group.getKey());
+            previews.add(new PlacementPreview(group.getKey(), groupCurrency,
+                    commercialPricingPort.computeBreakdown(
+                            consumerId, group.getValue(), groupCurrency, groupVoucher)));
+            primary = false;
+        }
+        return previews;
+    }
+
+    /** One seller group's preview — the breakdown the placement would freeze. */
+    public record PlacementPreview(UUID sellerId, String currency,
+                                   CommercialPricingPort.CommercialBreakdown breakdown) {
+    }
 
     @Transactional(readOnly = true)
     public OrderDetail getOrderDetailForUser(UUID orderId, Authentication authentication) {
