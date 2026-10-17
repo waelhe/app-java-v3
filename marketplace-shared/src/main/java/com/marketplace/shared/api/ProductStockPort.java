@@ -48,6 +48,30 @@ public interface ProductStockPort {
     void commit(Map<UUID, Integer> quantities);
 
     /**
+     * ADR-0012 (the cart-integration slice): the variant twins of the
+     * three atomic writes — identical contracts, keyed by VARIANT id (the
+     * variant's own shelf and reserved counters, the V219 columns). The
+     * placement calls {@link #reserve} and {@link #reserveVariants} in
+     * the SAME transaction (the whole-cart all-or-nothing reservation
+     * spans both maps — a refusal of either rolls the placement back);
+     * cancellation and fulfillment release and commit both maps the same
+     * paired way.
+     *
+     * @param quantities variant id → quantity (all ≥ 1)
+     * @throws com.marketplace.shared.api.ConflictException when any
+     *         variant is not ACTIVE or lacks the free stock for its
+     *         quantity (reserve), or the reserved set is short
+     *         (release/commit)
+     */
+    void reserveVariants(Map<UUID, Integer> quantities);
+
+    /** The variant twin of {@link #release} — the cancellation's write. */
+    void releaseVariants(Map<UUID, Integer> quantities);
+
+    /** The variant twin of {@link #commit} — the fulfillment's write. */
+    void commitVariants(Map<UUID, Integer> quantities);
+
+    /**
      * The line quantities of one placement, in port-carrier form — the
      * adapter-friendly shape the machine passes back on release/commit.
      *

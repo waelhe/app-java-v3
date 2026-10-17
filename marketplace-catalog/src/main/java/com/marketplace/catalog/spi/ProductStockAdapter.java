@@ -1,6 +1,7 @@
 package com.marketplace.catalog.spi;
 
 import com.marketplace.catalog.ProductRepository;
+import com.marketplace.catalog.ProductVariantRepository;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ProductStockPort;
 import org.springframework.stereotype.Component;
@@ -26,9 +27,12 @@ import java.util.Map;
 public class ProductStockAdapter implements ProductStockPort {
 
     private final ProductRepository productRepository;
+    private final ProductVariantRepository variantRepository;
 
-    public ProductStockAdapter(ProductRepository productRepository) {
+    public ProductStockAdapter(ProductRepository productRepository,
+                               ProductVariantRepository variantRepository) {
         this.productRepository = productRepository;
+        this.variantRepository = variantRepository;
     }
 
     @Override
@@ -59,6 +63,45 @@ public class ProductStockAdapter implements ProductStockPort {
         quantities.forEach((productId, qty) -> {
             if (productRepository.commit(productId, qty) == 0) {
                 throw new ConflictException("Product " + productId
+                        + " cannot commit " + qty + " — the reserved set is short");
+            }
+        });
+    }
+
+    // ---- ADR-0012 (the cart-integration slice): the variant twins — the
+    // same REQUIRED propagation (the placement's ONE transaction spans the
+    // product and variant maps; a refusal of either rolls the whole
+    // placement back), the same one-conditional-UPDATE-per-line write,
+    // the same house 409 on the first zero-updated row.
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void reserveVariants(Map<java.util.UUID, Integer> quantities) {
+        quantities.forEach((variantId, qty) -> {
+            if (variantRepository.reserve(variantId, qty) == 0) {
+                throw new ConflictException("ProductVariant " + variantId
+                        + " cannot reserve " + qty + " — not ACTIVE or the free stock is short");
+            }
+        });
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void releaseVariants(Map<java.util.UUID, Integer> quantities) {
+        quantities.forEach((variantId, qty) -> {
+            if (variantRepository.release(variantId, qty) == 0) {
+                throw new ConflictException("ProductVariant " + variantId
+                        + " cannot release " + qty + " — the reserved set is short");
+            }
+        });
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void commitVariants(Map<java.util.UUID, Integer> quantities) {
+        quantities.forEach((variantId, qty) -> {
+            if (variantRepository.commit(variantId, qty) == 0) {
+                throw new ConflictException("ProductVariant " + variantId
                         + " cannot commit " + qty + " — the reserved set is short");
             }
         });

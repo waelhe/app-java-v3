@@ -155,8 +155,9 @@ class ProductInventoryServiceTest {
     @Test
     void theStockAdapterRefusesTheWholeMapOnTheFirstShortRow() {
         ProductRepository repository = org.mockito.Mockito.mock(ProductRepository.class);
+        ProductVariantRepository variantRepository = org.mockito.Mockito.mock(ProductVariantRepository.class);
         com.marketplace.catalog.spi.ProductStockAdapter adapter =
-                new com.marketplace.catalog.spi.ProductStockAdapter(repository);
+                new com.marketplace.catalog.spi.ProductStockAdapter(repository, variantRepository);
         UUID id = UUID.randomUUID();
         when(repository.reserve(id, 2)).thenReturn(0);
 

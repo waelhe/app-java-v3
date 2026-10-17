@@ -20,28 +20,30 @@ public final class OrderResponses {
     public record CartItemResponse(
             @Schema(description = "The cart line's id") UUID id,
             @Schema(description = "The store product the line refers to (opaque reference — the product root arrives with M1/A-17)") UUID productId,
-            @Schema(description = "Quantity of the product in the cart") int quantity,
+            @Schema(description = "ADR-0012: the purchasable variant the line carries — null for the product-level line") UUID variantId,
+            @Schema(description = "Quantity of the purchasable unit in the cart") int quantity,
             @Schema(description = "The per-unit amount in minor units (cents) as the buyer currently sees it") long unitAmountMinor,
             @Schema(description = "ISO-4217 currency code") String currency,
             @Schema(description = "The line's total in minor units") long lineTotalMinor) {
 
         static CartItemResponse of(CartItem item) {
-            return new CartItemResponse(item.getId(), item.getProductId(), item.getQuantity(),
-                    item.getUnitAmountMinor(), item.getCurrency(), item.lineTotalMinor());
+            return new CartItemResponse(item.getId(), item.getProductId(), item.getVariantId(),
+                    item.getQuantity(), item.getUnitAmountMinor(), item.getCurrency(), item.lineTotalMinor());
         }
     }
 
     public record OrderItemResponse(
             @Schema(description = "The order line's id") UUID id,
             @Schema(description = "The store product the line froze at placement time") UUID productId,
+            @Schema(description = "ADR-0012: the variant the line froze at placement — null for the product-level line") UUID variantId,
             @Schema(description = "Quantity frozen at placement") int quantity,
             @Schema(description = "The per-unit amount frozen at placement (minor units)") long unitAmountMinor,
             @Schema(description = "ISO-4217 currency code frozen at placement") String currency,
             @Schema(description = "The line's total in minor units") long lineTotalMinor) {
 
         static OrderItemResponse of(OrderItem item) {
-            return new OrderItemResponse(item.getId(), item.getProductId(), item.getQuantity(),
-                    item.getUnitAmountMinor(), item.getCurrency(), item.lineTotalMinor());
+            return new OrderItemResponse(item.getId(), item.getProductId(), item.getVariantId(),
+                    item.getQuantity(), item.getUnitAmountMinor(), item.getCurrency(), item.lineTotalMinor());
         }
     }
 

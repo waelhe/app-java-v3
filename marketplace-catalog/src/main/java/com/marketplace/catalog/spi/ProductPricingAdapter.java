@@ -3,6 +3,8 @@ package com.marketplace.catalog.spi;
 import com.marketplace.catalog.Product;
 import com.marketplace.catalog.ProductRepository;
 import com.marketplace.catalog.ProductStatus;
+import com.marketplace.catalog.ProductVariant;
+import com.marketplace.catalog.ProductVariantRepository;
 import com.marketplace.shared.api.ProductPricingPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import org.springframework.stereotype.Component;
@@ -23,9 +25,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProductPricingAdapter implements ProductPricingPort {
 
     private final ProductRepository productRepository;
+    private final ProductVariantRepository variantRepository;
 
-    public ProductPricingAdapter(ProductRepository productRepository) {
+    public ProductPricingAdapter(ProductRepository productRepository,
+                                 ProductVariantRepository variantRepository) {
         this.productRepository = productRepository;
+        this.variantRepository = variantRepository;
     }
 
     @Override
@@ -35,6 +40,27 @@ public class ProductPricingAdapter implements ProductPricingPort {
                 .orElseThrow(() -> new ResourceNotFoundException("Product", productId));
         return new ProductPrice(product.getId(), product.getProviderId(),
                 product.getPriceMinor(), product.getCurrency(), toState(product.getStatus()));
+    }
+
+    /**
+     * ADR-0012 (the cart-integration slice): the variant's authoritative
+     * pricing read — the variant row PLUS its owning product, in the
+     * caller's transaction (the cart's add and the placement's freshness
+     * check ride the same unit the product read does). The carrier keeps
+     * BOTH shelf states separate so the refusing 409 names the shelf that
+     * hid the purchase; the currency is the variant's own column (copied
+     * from the product at the variant's creation — never client-supplied).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public VariantPrice priceOfVariant(java.util.UUID variantId) {
+        ProductVariant variant = variantRepository.findById(variantId)
+                .orElseThrow(() -> new ResourceNotFoundException("ProductVariant", variantId));
+        Product product = productRepository.findById(variant.getProductId())
+                .orElseThrow(() -> new ResourceNotFoundException("Product", variant.getProductId()));
+        return new VariantPrice(variant.getId(), product.getId(), product.getProviderId(),
+                variant.getPriceMinor(), variant.getCurrency(),
+                toState(product.getStatus()), toState(variant.getStatus()));
     }
 
     private StorefrontState toState(ProductStatus status) {
