@@ -103,6 +103,10 @@ class HomeGraphQlIntegrationTest {
     @MockitoBean
     private JwtDecoder jwtDecoder;
 
+    /** The principal seam — the fetchers consume its resolution; mocked so the synthetic member exists. */
+    @MockitoBean
+    private com.marketplace.shared.security.CurrentUserProvider currentUserProvider;
+
     private HttpGraphQlTester graphQlTester;
 
     private static final UUID CALLER_ID = UUID.nameUUIDFromBytes("home-caller".getBytes());
@@ -137,6 +141,7 @@ class HomeGraphQlIntegrationTest {
                 .claim("roles", List.of("USER"))
                 .build();
         when(jwtDecoder.decode(anyString())).thenReturn(testJwt);
+        when(currentUserProvider.getCurrentUserId(any())).thenReturn(CALLER_ID);
 
         graphQlTester = HttpGraphQlTester.builder(WebTestClient.bindToServer()
                         .baseUrl("http://localhost:" + port + "/graphql")
@@ -301,7 +306,7 @@ class HomeGraphQlIntegrationTest {
     @Test
     void anAnonymousCallerIsRejectedBeforeAnyAdapterRuns() {
         WebTestClient anonymous = WebTestClient.bindToServer()
-                .baseUrl("http://localhost:" + port + "/graphql")
+                .baseUrl("http://localhost:" + port)
                 .build();
         anonymous.post().uri("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -332,7 +337,7 @@ class HomeGraphQlIntegrationTest {
                         "Join a neighborhood before reading its feed (PUT /api/v1/me/neighborhood)"));
 
         WebTestClient.bindToServer()
-                .baseUrl("http://localhost:" + port + "/graphql")
+                .baseUrl("http://localhost:" + port)
                 .defaultHeader("Authorization", "Bearer test-token")
                 .build()
                 .post().uri("/graphql")

@@ -76,6 +76,9 @@ class HomeDgsDataFetcherTest {
     private DgsQueryExecutor dgsQueryExecutor;
 
     @MockitoBean
+    private com.marketplace.catalog.spi.CatalogSpi catalogSpi;
+
+    @MockitoBean
     private DiscoverySpi discoverySpi;
 
     @MockitoBean

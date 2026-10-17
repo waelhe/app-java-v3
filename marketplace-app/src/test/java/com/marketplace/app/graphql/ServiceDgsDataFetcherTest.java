@@ -79,6 +79,16 @@ class ServiceDgsDataFetcherTest {
     @MockitoBean
     private CatalogSpi catalogSpi;
 
+    // Phase 6 — the home journey's fetcher is now in the SAME scanned
+    // package (the slice is the package as one unit): its two owning
+    // seams join the outside-slice mocking set, exactly the way the
+    // catalog seam above does.
+    @MockitoBean
+    private com.marketplace.discovery.spi.DiscoverySpi discoverySpi;
+
+    @MockitoBean
+    private com.marketplace.community.spi.NeighborhoodFeedPort neighborhoodFeedPort;
+
     @MockitoBean
     private CurrentUserProvider currentUserProvider;
 
