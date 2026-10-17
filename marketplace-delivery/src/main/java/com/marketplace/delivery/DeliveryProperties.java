@@ -28,4 +28,6 @@ public record DeliveryProperties(
         @DefaultValue("0") long courierBaseCompensationMinor,
         @DefaultValue("0") long courierCompensationPerKilometerMinor,
         @DefaultValue("120") long courierLocationMaxAgeSeconds,
-        @DefaultValue("25") int dispatchBatchSize) { }
+        @DefaultValue("25") int dispatchBatchSize,
+        /** The V229 at-risk multiplier: a leg is at risk when its creation + route duration × this multiplier passed. */
+        @DefaultValue("3") long atRiskDurationMultiplier) { }

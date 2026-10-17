@@ -37,7 +37,7 @@ class DeliveryDispatchSchedulerTest {
 
     private DeliveryProperties enabled() {
         return new DeliveryProperties(true, "SAR", 100, 50, 20_000, 900,
-                "https://routing.example.invalid", 50, 25, 120, 25);
+                "https://routing.example.invalid", 50, 25, 120, 25, 3L);
     }
 
     private DeliveryRequest pendingRequest(UUID id) {
@@ -58,7 +58,7 @@ class DeliveryDispatchSchedulerTest {
     @Test
     void disabledFeatureNeverSweeps() {
         DeliveryProperties disabled = new DeliveryProperties(false, "SAR", 0, 0, 0, 900,
-                "", 0, 0, 120, 25);
+                "", 0, 0, 120, 25, 3L);
 
         scheduler(disabled).dispatchReadyRequests();
 
@@ -185,7 +185,7 @@ class DeliveryDispatchSchedulerTest {
     @Test
     void theSweepHonorsTheConfiguredBatchSize() {
         DeliveryProperties smallBatch = new DeliveryProperties(true, "SAR", 100, 50, 20_000, 900,
-                "https://routing.example.invalid", 50, 25, 120, 2);
+                "https://routing.example.invalid", 50, 25, 120, 2, 3L);
         when(requests.findByStatusOrderByCreatedAtAscIdAsc(
                 eq(DeliveryRequestStatus.READY_FOR_DISPATCH), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));

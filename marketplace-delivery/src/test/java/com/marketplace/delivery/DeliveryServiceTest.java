@@ -37,12 +37,12 @@ class DeliveryServiceTest {
 
     private DeliveryProperties enabledProperties() {
         return new DeliveryProperties(true, "SAR", 100, 50, 20000, 900,
-                "https://routing.example.invalid", 50, 25, 120, 25);
+                "https://routing.example.invalid", 50, 25, 120, 25, 3L);
     }
 
     private DeliveryProperties disabledProperties() {
         return new DeliveryProperties(false, "SAR", 0, 0, 0, 900,
-                "", 0, 0, 120, 25);
+                "", 0, 0, 120, 25, 3L);
     }
 
     @Test
@@ -127,7 +127,7 @@ class DeliveryServiceTest {
     @Test
     void refusesToQuoteWhenCompensationConsumesTheEntireFare() {
         DeliveryProperties properties = new DeliveryProperties(true, "SAR", 100, 50, 20000, 900,
-                "https://routing.example.invalid", 1000, 50, 120, 25);
+                "https://routing.example.invalid", 1000, 50, 120, 25, 3L);
         when(routes.route(0, 0, 0, 0.1)).thenReturn(new DeliveryRouteMetrics(12_500, 1_020));
 
         assertThrows(ServiceUnavailableException.class, () -> service(properties).createQuote(UUID.randomUUID(),
