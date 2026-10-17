@@ -51,7 +51,7 @@ jobs:
       # checkout-stored header, so a token never appears in a push URL or
       # the logs.
       - name: Checkout the exact commit CI validated
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
@@ -59,7 +59,7 @@ jobs:
       # github-token pattern (actions/download-artifact); the artifact
       # belongs to the CI run that just completed on main.
       - name: Download the run's runtime schema dump
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: graphql-runtime-schema
           run-id: ${{ github.event.workflow_run.id }}
