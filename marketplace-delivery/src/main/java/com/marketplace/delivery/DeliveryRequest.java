@@ -83,6 +83,15 @@ public class DeliveryRequest extends BaseEntity {
     @Column(name = "failure_reason", length = 500)
     private String failureReason;
 
+    /**
+     * The V226 carrier column: WHICH carrier executes this leg — the
+     * platform's own fleet (the ADR-0013 D4 launch mode) or an external
+     * carrier's code (arriving behind the CarrierChannel adapter
+     * boundary). The platform fleet stays the default by construction.
+     */
+    @Column(name = "carrier", nullable = false, length = 40)
+    private String carrier = "PLATFORM";
+
     @Column(name = "delivered_at")
     private Instant deliveredAt;
 
@@ -129,6 +138,7 @@ public class DeliveryRequest extends BaseEntity {
     public DeliveryRequestStatus getStatus() { return status; }
     public UUID getCourierUserId() { return courierUserId; }
     public String getFailureReason() { return failureReason; }
+    public String getCarrier() { return carrier; }
     public Instant getDeliveredAt() { return deliveredAt; }
 
     public void attachPaymentIntent(UUID paymentIntentId) {

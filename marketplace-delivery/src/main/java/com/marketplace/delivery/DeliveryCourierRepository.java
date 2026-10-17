@@ -23,4 +23,8 @@ public interface DeliveryCourierRepository extends JpaRepository<DeliveryCourier
                      c.lastAssignedAt asc, c.userId asc
             """)
     Page<DeliveryCourier> findAvailableForDispatch(@Param("freshAfter") Instant freshAfter, Pageable pageable);
+
+    /** The V226 operator's roster — the couriers board, newest first. */
+    org.springframework.data.domain.Page<DeliveryCourier> findAllByOrderByUpdatedAtDesc(
+            org.springframework.data.domain.Pageable pageable);
 }

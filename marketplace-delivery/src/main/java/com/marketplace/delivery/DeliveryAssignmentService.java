@@ -43,7 +43,8 @@ public class DeliveryAssignmentService {
             return false;
         }
         DeliveryCourier courier = couriers.findByUserIdForUpdate(courierUserId).orElse(null);
-        if (courier == null || !courier.isAvailable() || courier.getCurrentDeliveryRequestId() != null
+        if (courier == null || courier.getStatus() == CourierStatus.SUSPENDED
+                || !courier.isAvailable() || courier.getCurrentDeliveryRequestId() != null
                 || courier.getLocationUpdatedAt() == null
                 || !courier.getLocationUpdatedAt().plusSeconds(properties.courierLocationMaxAgeSeconds()).isAfter(now)) {
             return false;
