@@ -181,6 +181,11 @@ public class NotificationService {
                         text.compose("notification.PAYMENT_STATE.order", platform, stateWord, intent.orderId()));
                 return;
             }
+            if (!intent.isBookingOrigin()) {
+                log.warn("Skipping payment notification for unsupported origin: paymentIntentId={}, origin={}",
+                        intent.paymentIntentId(), intent.origin());
+                return;
+            }
             BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
             String message = text.compose("notification.PAYMENT_STATE.booking", platform, stateWord, intent.bookingId());
             // L22: the in-app channel is always on (see onBookingCreated).
