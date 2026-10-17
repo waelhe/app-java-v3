@@ -20,7 +20,7 @@ import java.time.Instant;
 import java.util.List;
 
 /**
- * The V226 delivery OPERATIONS surface (the architecture §4.2's delivery
+ * The V229 delivery OPERATIONS surface (the architecture §4.2's delivery
  * and shipping workbench — the four measured pieces): the dispatch
  * board's queues, the courier roster and lifecycle, the carrier
  * registry, and the settlement reconciliation. Every command answers its

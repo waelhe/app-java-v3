@@ -21,7 +21,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * The V226 operations controller's tests — the domain-module house pattern
+ * The V229 operations controller's tests — the domain-module house pattern
  * (direct invocation with the services mocked): every command answers its
  * read-back, every family answers its board, and the reconciliation window
  * carries both instants to the service verbatim.

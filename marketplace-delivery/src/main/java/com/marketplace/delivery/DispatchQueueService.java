@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The V226 dispatch board (the architecture §4.2: «Dispatch queue/map,
+ * The V229 dispatch board (the architecture §4.2: «Dispatch queue/map,
  * failed or delayed jobs, unassigned jobs, at-risk promises»): the
  * per-state counts, the state-filtered queue pages, and the at-risk
  * exception count — the operational reads the dispatcher's workbench is

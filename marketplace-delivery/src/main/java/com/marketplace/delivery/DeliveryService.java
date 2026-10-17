@@ -62,6 +62,17 @@ public class DeliveryService {
         if (order.activeDeliveryRequestId() != null) {
             throw new ConflictException("This order already has a delivery request");
         }
+        // The V224 guard: an order whose fulfillment was selected at
+        // checkout never buys a second delivery — its fee is already inside
+        // the order's agreement and its legs are created by the confirmation
+        // listener. The manual add-on path serves the legacy (method-less)
+        // orders only.
+        com.marketplace.shared.api.OrderFulfillmentSelection selection =
+                orders.requireOrderFulfillment(orderId, buyerId);
+        if (selection.platformDelivery()) {
+            throw new ConflictException(
+                    "This order's delivery was selected at checkout — its legs are created by confirmation");
+        }
         if (order.currency() == null || properties.currency() == null
                 || !order.currency().equalsIgnoreCase(properties.currency().trim())) {
             throw new ConflictException("Delivery fare is not configured for order currency " + order.currency());
@@ -301,6 +312,149 @@ public class DeliveryService {
 
     private DeliveryRequest require(UUID id) {
         return requests.findById(id).orElseThrow(() -> new ResourceNotFoundException("Delivery request not found"));
+    }
+
+    /**
+     * The V224 confirmation edge (the architecture §3.2 Mode B step 4): the
+     * checkout-selected platform delivery becomes its operational leg(s)
+     * AFTER the order confirms — created from the FROZEN selection, never
+     * re-quoted for the buyer (the fee froze at placement and already rode
+     * the order's ONE payment intent). Idempotent by the existing-active
+     * leg check: a redelivered {@code OrderConfirmedEvent} finds the leg it
+     * already created and returns it — the Modulith events contract's
+     * recoverable, idempotent consumer.
+     */
+    @Observed(name = "delivery.order.leg.create")
+    public DeliveryRequestResponse createOrderLegFromFulfillment(
+            com.marketplace.shared.api.OrderFulfillmentSelection selection) {
+        DeliveryRequest existing = requests.findByOrderIdOrderByCreatedAtAscIdAsc(
+                selection.orderId()).stream()
+                .filter(r -> r.getStatus() != DeliveryRequestStatus.CANCELLED
+                        && r.getStatus() != DeliveryRequestStatus.FAILED
+                        && r.getStatus() != DeliveryRequestStatus.RETURNED)
+                .findFirst().orElse(null);
+        if (existing != null) {
+            return DeliveryRequestResponse.from(existing, null);
+        }
+        ensureConfigured();
+        ProviderFulfillmentLocation pickup = fulfillmentLocations
+                .findVerifiedLocation(selection.sellerId())
+                .orElseThrow(() -> new ConflictException(
+                        "The verified seller must configure a private pickup location before delivery can run"));
+        DeliveryRouteMetrics route = routes.route(pickup.latitude(), pickup.longitude(),
+                selection.shipToLatitude(), selection.shipToLongitude());
+        if (route.distanceMeters() > properties.maxDistanceMeters()) {
+            throw new ConflictException(
+                    "The frozen destination is outside the configured delivery area");
+        }
+        long km = Math.max(1, (route.distanceMeters() + 999L) / 1000L);
+        long compensation = multiplyAndAdd(properties.courierBaseCompensationMinor(),
+                properties.courierCompensationPerKilometerMinor(), km,
+                "Courier compensation overflow");
+        long amount = selection.shippingAmountMinor();
+        if (compensation <= 0 || compensation >= amount) {
+            throw new ServiceUnavailableException(
+                    "Delivery fare must cover positive courier compensation and platform margin");
+        }
+        String proofCode = proofCode();
+        DeliveryRequest leg = requests.save(DeliveryRequest.fromCheckout(
+                UUID.randomUUID(), selection.orderId(), selection.buyerId(),
+                amount, compensation, selection.currency(),
+                route.distanceMeters(), route.durationSeconds(),
+                pickup.address(), pickup.latitude(), pickup.longitude(),
+                selection.shipToAddress(), selection.shipToLatitude(),
+                selection.shipToLongitude(),
+                "Order " + selection.orderId() + " checkout delivery",
+                sha256(proofCode)));
+        // the FIRST leg is the order's primary link (the V218 column); the
+        // multi-leg additions ride beside it (delivery_requests.order_id is
+        // deliberately not unique — one order, several packages)
+        orders.attachDeliveryRequest(selection.orderId(), selection.buyerId(), leg.getId());
+        record(leg, null, null, leg.getStatus(), "Leg created from the checkout selection");
+        return DeliveryRequestResponse.from(leg, proofCode);
+    }
+
+    /**
+     * The V224 multi-leg operator command (ADMIN): splits a confirmed
+     * order's platform delivery into an ADDITIONAL package — the operator
+     * states the package's description and its share of the FROZEN
+     * shipping fee. The frozen-fee ceiling holds BY CONSTRUCTION: the
+     * split CARVES the new leg's share out of the primary leg (the legs'
+     * shipping sum stays exactly what the buyer paid at placement), the
+     * primary keeps at least its own courier compensation, and the new
+     * leg's share must cover its own compensation — both edges atomic in
+     * one transaction.
+     */
+    @Transactional
+    @Observed(name = "delivery.order.leg.split")
+    public DeliveryRequestResponse addLegForOrder(UUID orderId, String packageDescription,
+                                                  long amountMinor) {
+        java.util.List<DeliveryRequest> legs =
+                requests.findByOrderIdOrderByCreatedAtAscIdAsc(orderId);
+        if (legs.isEmpty()) {
+            throw new ConflictException("Order " + orderId + " has no delivery legs to split");
+        }
+        DeliveryRequest first = legs.get(0);
+        com.marketplace.shared.api.OrderFulfillmentSelection selection =
+                orders.requireOrderFulfillment(orderId, first.getRequesterId());
+        if (!selection.platformDelivery()) {
+            // the #604 legacy shape (no checkout selection): its legs are
+            // quote-backed and paid on their own — an unpaid add-on leg
+            // would go out for dispatch with no payment behind it
+            throw new ConflictException(
+                    "Only a checkout-selected platform delivery can be split");
+        }
+        // the honest split ceiling, BY CONSTRUCTION: the split carves the
+        // new leg's share out of the primary leg — the legs' shipping sum
+        // stays the buyer's frozen agreement (never a minor unit above
+        // it), and the primary keeps at least its own courier
+        // compensation (the platform never pays margin out of pocket)
+        if (amountMinor <= 0
+                || amountMinor >= first.getAmountMinor() - first.getCourierCompensationMinor()) {
+            throw new ConflictException("A split leg requires a positive share the primary "
+                    + "leg's margin can carve — the buyer's frozen fee is the ceiling");
+        }
+        ensureConfigured();
+        ProviderFulfillmentLocation pickup = fulfillmentLocations
+                .findVerifiedLocation(selection.sellerId())
+                .orElseThrow(() -> new ConflictException(
+                        "The verified seller must configure a private pickup location"));
+        DeliveryRouteMetrics route = routes.route(pickup.latitude(), pickup.longitude(),
+                first.getDropoffLatitude(), first.getDropoffLongitude());
+        if (route.distanceMeters() > properties.maxDistanceMeters()) {
+            throw new ConflictException("The frozen destination is outside the configured delivery area");
+        }
+        long km = Math.max(1, (route.distanceMeters() + 999L) / 1000L);
+        long compensation = multiplyAndAdd(properties.courierBaseCompensationMinor(),
+                properties.courierCompensationPerKilometerMinor(), km,
+                "Courier compensation overflow");
+        if (compensation <= 0 || compensation >= amountMinor) {
+            throw new ConflictException(
+                    "A split leg's share must cover positive courier compensation");
+        }
+        // the redistribution itself: the primary's share gives up what
+        // the new leg takes (one atomic transaction with the leg's insert)
+        first.carveShare(amountMinor);
+        String proofCode = proofCode();
+        DeliveryRequest leg = requests.save(DeliveryRequest.fromCheckout(
+                UUID.randomUUID(), orderId, first.getRequesterId(),
+                amountMinor, compensation, first.getCurrency(),
+                route.distanceMeters(), route.durationSeconds(),
+                pickup.address(), pickup.latitude(), pickup.longitude(),
+                first.getDropoffAddress(), first.getDropoffLatitude(),
+                first.getDropoffLongitude(),
+                packageDescription == null || packageDescription.isBlank()
+                        ? "Order " + orderId + " split package" : packageDescription.strip(),
+                sha256(proofCode)));
+        record(leg, null, null, leg.getStatus(), "Split leg added by the operator");
+        return DeliveryRequestResponse.from(leg, proofCode);
+    }
+
+    /** The order's legs — the operator's multi-leg read. */
+    @Transactional(readOnly = true)
+    public java.util.List<DeliveryRequestResponse> listOrderLegs(UUID orderId) {
+        return requests.findByOrderIdOrderByCreatedAtAscIdAsc(orderId).stream()
+                .map(r -> DeliveryRequestResponse.from(r, null)).toList();
     }
 
     private void record(DeliveryRequest r, UUID actor, DeliveryRequestStatus from, DeliveryRequestStatus to,

@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The V226 settlement reconciliation (the architecture §4.2: «Reconciliation
+ * The V229 settlement reconciliation (the architecture §4.2: «Reconciliation
  * of quoted charge vs. collected amount vs. partner invoice/courier
  * compensation/platform fee; correction is an audited financial
  * operation»): the OPERATIONAL read over a time window — per currency,

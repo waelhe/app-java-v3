@@ -11,7 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.UUID;
 
 /**
- * The V226 courier management (the architecture §4.2: «Courier/driver
+ * The V229 courier management (the architecture §4.2: «Courier/driver
  * onboarding and scoped role, assignment, availability, incident
  * reporting and job history» — this slice lands the OPERATIONAL
  * lifecycle): the roster read, the operator's suspension, and the

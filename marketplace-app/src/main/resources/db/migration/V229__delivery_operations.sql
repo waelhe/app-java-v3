@@ -1,4 +1,4 @@
--- V226 — the delivery OPERATIONS layer (the platform-wide payments and
+-- V229 — the delivery OPERATIONS layer (the platform-wide payments and
 -- delivery architecture §7-Phase-4: «rate/service-area/capacity controls,
 -- dispatch queues, courier management, exception handling, claims/returns,
 -- carrier adapters and settlement reconciliation» — this slice lands the

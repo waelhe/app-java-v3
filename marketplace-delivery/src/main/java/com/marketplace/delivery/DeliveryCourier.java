@@ -39,7 +39,7 @@ public class DeliveryCourier extends BaseEntity {
     private Instant lastAssignedAt;
 
     /**
-     * The V226 OPERATIONAL lifecycle (the dispatcher's verdict, not the
+     * The V229 OPERATIONAL lifecycle (the dispatcher's verdict, not the
      * courier's own live signal): a SUSPENDED courier disappears from
      * dispatch eligibility — {@link #assign} refuses, whatever the
      * availability flag says. Suspending a courier mid-job does not tear

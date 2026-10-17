@@ -20,7 +20,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * The V226 delivery-operations tests (the architecture §7-Phase-4): the
+ * The V229 delivery-operations tests (the architecture §7-Phase-4): the
  * dispatch board's snapshot and queues, the courier lifecycle's verdicts,
  * the carrier registry's boundary, and the settlement reconciliation's
  * two leg families kept honestly apart.

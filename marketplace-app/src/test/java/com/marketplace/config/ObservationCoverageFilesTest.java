@@ -177,9 +177,37 @@ class ObservationCoverageFilesTest {
             // ADR-0009: the loan-dispute seam is its own observed command —
             // the freeze path's write (the commands-not-reads policy holds).
             Map.entry("marketplace-delivery", List.of(
-                    "delivery.courier.availability", "delivery.dispatch.claim", "delivery.dispatch.sweep",
-                    "delivery.job.transition", "delivery.order.quote.create", "delivery.payment.settle",
-                    "delivery.quote.create", "delivery.request.cancel", "delivery.request.create")),
+                    // scan-sorted alphabetically — the pin must match the
+                    // scan's order exactly. V224 (the checkout fulfillment
+                    // wave): order.leg.create/split — the confirmation edge's
+                    // leg from the frozen selection and the operator's
+                    // multi-leg split, the commands-not-reads discipline.
+                    // V229 (the operations layer, 603 Phase 4): courier
+                    // suspend/reactivate (the operator's lifecycle commands)
+                    // plus two documented exceptions to reads-stay-out, both
+                    // riding established pin precedents: the dispatch board's
+                    // queue snapshot feeds the dispatcher's claim decisions —
+                    // an administrative decision surface, the moderation
+                    // queue's documented exception family; and the settlement
+                    // reconciliation window is a heavyweight per-currency
+                    // computation like pricing.calculate.window (the pinned
+                    // L26 day-sliced precedent). The queue page read and the
+                    // couriers/carriers list reads stay unobserved.
+                    "delivery.courier.availability",
+                    "delivery.courier.reactivate",
+                    "delivery.courier.suspend",
+                    "delivery.dispatch.claim",
+                    "delivery.dispatch.queues",
+                    "delivery.dispatch.sweep",
+                    "delivery.job.transition",
+                    "delivery.order.leg.create",
+                    "delivery.order.leg.split",
+                    "delivery.order.quote.create",
+                    "delivery.payment.settle",
+                    "delivery.quote.create",
+                    "delivery.reconciliation.window",
+                    "delivery.request.cancel",
+                    "delivery.request.create")),
             Map.entry("marketplace-disputes", List.of("dispute.open", "dispute.open.loan", "dispute.resolve")),
             // phase 1 (D-03 + §6.5): the role-assignment and trust
             // -attestation commands join under the same discipline —
