@@ -116,6 +116,10 @@ public class LedgerPaymentEventListener {
                     intent.currency(), intent.paymentIntentId());
             return;
         }
+        if (!intent.isBookingOrigin()) {
+            throw new IllegalStateException(
+                    "Unsupported payment origin for ledger credit: " + intent.origin());
+        }
         BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
         long priceCents = bookingInfo.priceCents();
         // R9 (comprehensive-review-ar-fix plan §4/R9 — the ledger's
@@ -175,6 +179,10 @@ public class LedgerPaymentEventListener {
                             + "mirrors its settlement credit (intent {})",
                     intent.amountCents(), intent.currency(), ownerId, intent.paymentIntentId());
             return;
+        }
+        if (!intent.isBookingOrigin()) {
+            throw new IllegalStateException(
+                    "Unsupported payment origin for ledger refund: " + intent.origin());
         }
         BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
         long priceCents = bookingInfo.priceCents();
