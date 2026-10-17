@@ -116,23 +116,42 @@ public class LedgerPaymentEventListener {
                     intent.currency(), intent.paymentIntentId());
             return;
         }
-        BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
-        long priceCents = bookingInfo.priceCents();
-        // R9 (comprehensive-review-ar-fix plan §4/R9 — the ledger's
-        // currency): the booking's currency rides EVERY money call — the
-        // field was there all along (BookingInfo's own validated member;
-        // the pre-fix listener was measured to ignore it), and the balances
-        // are keyed (provider, currency) now, so the credit, the commission
-        // and the refund all move the payment's own currency.
-        String currency = bookingInfo.currency();
-        ledgerService.creditFromPayment(bookingInfo.providerId(), intent.paymentIntentId(), priceCents, currency);
-        long commissionCents = BigDecimal.valueOf(priceCents)
-                .multiply(BigDecimal.valueOf(commissionRate))
-                .setScale(0, RoundingMode.HALF_UP)
-                .longValue();
-        ledgerService.debitFromCommission(bookingInfo.providerId(), intent.paymentIntentId(), commissionCents, currency);
-        log.info("Ledger processed: credited {} {} to provider {}, debited {} {} as commission",
-                priceCents, currency, bookingInfo.providerId(), commissionCents, currency);
+        // The booking settlement — an EXPLICIT named branch, not the silent
+        // fallback (the payment/ledger source audit's critical finding, PR
+        // #603): the origin dispatch must be exhaustive, so the booking
+        // path reads like its AD/ORDER/LOAN twins and an origin this
+        // consumer does not know can never fall through to a booking
+        // lookup that would book the WRONG settlement.
+        if (intent.isBookingOrigin()) {
+            BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
+            long priceCents = bookingInfo.priceCents();
+            // R9 (comprehensive-review-ar-fix plan §4/R9 — the ledger's
+            // currency): the booking's currency rides EVERY money call — the
+            // field was there all along (BookingInfo's own validated member;
+            // the pre-fix listener was measured to ignore it), and the balances
+            // are keyed (provider, currency) now, so the credit, the commission
+            // and the refund all move the payment's own currency.
+            String currency = bookingInfo.currency();
+            ledgerService.creditFromPayment(bookingInfo.providerId(), intent.paymentIntentId(), priceCents, currency);
+            long commissionCents = BigDecimal.valueOf(priceCents)
+                    .multiply(BigDecimal.valueOf(commissionRate))
+                    .setScale(0, RoundingMode.HALF_UP)
+                    .longValue();
+            ledgerService.debitFromCommission(bookingInfo.providerId(), intent.paymentIntentId(), commissionCents, currency);
+            log.info("Ledger processed: credited {} {} to provider {}, debited {} {} as commission",
+                    priceCents, currency, bookingInfo.providerId(), commissionCents, currency);
+            return;
+        }
+        // Fail closed: an origin this consumer does not know is a defect,
+        // never a booking — the listener's REQUIRES_NEW unit rolls back (no
+        // ledger movement at all), the publication stays incomplete in the
+        // registry for resubmission once the owning implementation lands,
+        // and monitoring sees the explicit refusal instead of a misleading
+        // getBookingInfo(null) (the audit's DELIVERY example verbatim).
+        throw new IllegalStateException("Ledger payment listener received an unsupported "
+                + "payment origin '" + intent.origin() + "' (intent " + intent.paymentIntentId()
+                + ") — no ledger movement was booked; add the origin's explicit branch "
+                + "before widening the database origin constraint");
     }
 
     private void processRefundDebit(PaymentIntentDetails intent) {
@@ -176,13 +195,24 @@ public class LedgerPaymentEventListener {
                     intent.amountCents(), intent.currency(), ownerId, intent.paymentIntentId());
             return;
         }
-        BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
-        long priceCents = bookingInfo.priceCents();
-        // R9: the refund mirrors the ORIGINAL credit — same amount, same
-        // currency — so the debit lands on the balance the credit moved.
-        String currency = bookingInfo.currency();
-        ledgerService.debitFromRefund(bookingInfo.providerId(), intent.paymentIntentId(), priceCents, currency);
-        log.info("Ledger processed: debited {} {} from provider {} — the refund mirrors the original credit",
-                priceCents, currency, bookingInfo.providerId());
+        // The booking refund — the explicit named branch (the completion
+        // path's twin; the audit's exhaustive-dispatch finding, PR #603).
+        if (intent.isBookingOrigin()) {
+            BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
+            long priceCents = bookingInfo.priceCents();
+            // R9: the refund mirrors the ORIGINAL credit — same amount, same
+            // currency — so the debit lands on the balance the credit moved.
+            String currency = bookingInfo.currency();
+            ledgerService.debitFromRefund(bookingInfo.providerId(), intent.paymentIntentId(), priceCents, currency);
+            log.info("Ledger processed: debited {} {} from provider {} — the refund mirrors the original credit",
+                    priceCents, currency, bookingInfo.providerId());
+            return;
+        }
+        // Fail closed — the completion path's twin: no debit, the explicit
+        // refusal, the recoverable publication.
+        throw new IllegalStateException("Ledger payment listener received an unsupported "
+                + "payment origin '" + intent.origin() + "' (intent " + intent.paymentIntentId()
+                + ") — no refund debit was booked; add the origin's explicit branch "
+                + "before widening the database origin constraint");
     }
 }
