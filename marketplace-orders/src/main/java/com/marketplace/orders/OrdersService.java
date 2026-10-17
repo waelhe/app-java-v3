@@ -198,7 +198,7 @@ public class OrdersService {
     @Transactional(readOnly = true)
     public List<CartItem> getActiveCartItems(UUID consumerId) {
         return cartRepository.findByConsumerIdAndStatus(consumerId, CartStatus.ACTIVE)
-                .map(cart -> cartItemRepository.findByCartId(cart.getId()))
+                .map(cart -> cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
                 .orElse(List.of());
     }
 
@@ -237,7 +237,11 @@ public class OrdersService {
         Cart cart = cartRepository.findByConsumerIdAndStatus(consumerId, CartStatus.ACTIVE)
                 .orElseThrow(() -> new ConflictException(
                         "No active cart to place: the buyer's draft is empty"));
-        List<CartItem> lines = cartItemRepository.findByCartId(cart.getId());
+        // The lines read in their TOTAL ORDER (the R4 pattern): the
+        // grouping's first entry — and with it the response's PRIMARY
+        // order — is the earliest-added line's seller, deterministically,
+        // never whichever way a planner chose to scan the rows.
+        List<CartItem> lines = cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId());
         if (lines.isEmpty()) {
             throw new ConflictException("Cannot place an order from an empty cart");
         }
