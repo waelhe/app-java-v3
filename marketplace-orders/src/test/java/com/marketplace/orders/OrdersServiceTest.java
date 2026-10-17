@@ -108,7 +108,7 @@ class OrdersServiceTest {
                         ProductPricingPort.StorefrontState.ACTIVE));
         when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
                 .thenReturn(Optional.of(cart));
-        when(cartItemRepository.findByCartId(cart.getId())).thenReturn(List.of(line, line2));
+        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId())).thenReturn(List.of(line, line2));
         when(orderRepository.save(any(Order.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         when(orderItemRepository.save(any(OrderItem.class)))
@@ -147,7 +147,7 @@ class OrdersServiceTest {
                 .thenReturn(Optional.of(cart));
         java.util.UUID productId = java.util.UUID.randomUUID();
         priceActive(productId);
-        when(cartItemRepository.findByCartId(cart.getId()))
+        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
                 .thenReturn(List.of(CartItem.of(cart.getId(), productId, null, 1, 100L, "SAR")));
         when(orderRepository.save(any(Order.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
@@ -168,7 +168,7 @@ class OrdersServiceTest {
         Cart cart = Cart.activeFor(consumer);
         when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
                 .thenReturn(Optional.of(cart));
-        when(cartItemRepository.findByCartId(cart.getId())).thenReturn(List.of());
+        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId())).thenReturn(List.of());
 
         assertThatThrownBy(() -> service.place(consumer))
                 .isInstanceOf(ConflictException.class);
@@ -193,7 +193,7 @@ class OrdersServiceTest {
         java.util.UUID productId = java.util.UUID.randomUUID();
         when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
                 .thenReturn(Optional.of(cart));
-        when(cartItemRepository.findByCartId(cart.getId())).thenReturn(List.of(
+        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId())).thenReturn(List.of(
                 CartItem.of(cart.getId(), productId, null, 1, 100L, "SAR")));
         when(productPricingPort.priceOf(productId)).thenReturn(
                 new ProductPricingPort.ProductPrice(productId, seller, 100L, "USD",
@@ -220,7 +220,7 @@ class OrdersServiceTest {
         java.util.UUID sellerB = UUID.randomUUID();
         when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
                 .thenReturn(Optional.of(cart));
-        when(cartItemRepository.findByCartId(cart.getId())).thenReturn(List.of(
+        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId())).thenReturn(List.of(
                 CartItem.of(cart.getId(), p1, null, 2, 1500L, "SAR"),
                 CartItem.of(cart.getId(), p2, null, 1, 9900L, "SAR")));
         when(productPricingPort.priceOf(p1)).thenReturn(
@@ -271,7 +271,7 @@ class OrdersServiceTest {
         java.util.UUID sellerA = UUID.randomUUID();
         when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
                 .thenReturn(Optional.of(cart));
-        when(cartItemRepository.findByCartId(cart.getId())).thenReturn(List.of(
+        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId())).thenReturn(List.of(
                 CartItem.of(cart.getId(), p1, null, 1, 100L, "SAR"),
                 CartItem.of(cart.getId(), p2, null, 1, 100L, "USD")));
         when(productPricingPort.priceOf(p1)).thenReturn(
@@ -295,7 +295,7 @@ class OrdersServiceTest {
         priceActive(productId);
         when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
                 .thenReturn(Optional.of(cart));
-        when(cartItemRepository.findByCartId(cart.getId()))
+        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
                 .thenReturn(List.of(CartItem.of(cart.getId(), productId, null, 2, 1500L, "SAR")));
         when(orderRepository.save(any(Order.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
@@ -320,7 +320,7 @@ class OrdersServiceTest {
         priceActive(productId);
         when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
                 .thenReturn(Optional.of(cart));
-        when(cartItemRepository.findByCartId(cart.getId()))
+        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
                 .thenReturn(List.of(CartItem.of(cart.getId(), productId, null, 2, 1500L, "SAR")));
         org.mockito.Mockito.doThrow(new ConflictException("cannot reserve"))
                 .when(productStockPort).reserve(any());
@@ -753,7 +753,7 @@ class OrdersServiceTest {
         CartItem line = CartItem.of(cart.getId(), product, variant, 2, 1700L, "SAR");
         when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
                 .thenReturn(Optional.of(cart));
-        when(cartItemRepository.findByCartId(cart.getId())).thenReturn(List.of(line));
+        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId())).thenReturn(List.of(line));
         when(productPricingPort.priceOfVariant(variant)).thenReturn(
                 new ProductPricingPort.VariantPrice(variant, product, seller, 1750L, "SAR",
                         ProductPricingPort.StorefrontState.ACTIVE,
