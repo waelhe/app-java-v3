@@ -2,9 +2,11 @@ package com.marketplace.pricing;
 
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,6 +31,12 @@ import java.util.UUID;
  * contract and a way for the UI to verify the final state»). Every write
  * answers the created row; every family answers its list — the operator's
  * verification is the response itself, never a silent accept.
+ *
+ * <p>Promotions and vouchers are DENOMINATED: the request carries the
+ * policy's ISO-4217 currency, and the resolution never applies a policy
+ * to an order of another currency. The tax-rate surface accepts the
+ * domain's full 0..10000 basis-point range — a zero-rated jurisdiction is
+ * a legal explicit policy, not a validation error.
  */
 @RestController
 @RequestMapping(value = ApiConstants.PRICING, version = "1.0")
@@ -85,15 +93,16 @@ public class CommercialPricingAdminController {
     // ---------------- promotions ----------------
 
     @PostMapping("/promotions")
-    @Operation(summary = "Create a promotion", description = "An order-level discount policy: "
-            + "PERCENTAGE (basis points 1..10000) or FIXED (minor units), an optional minimum "
-            + "spend and window. The BEST single applicable promotion applies per order — "
+    @Operation(summary = "Create a promotion", description = "An order-level discount policy "
+            + "denominated in one ISO-4217 currency: PERCENTAGE (basis points 1..10000) or "
+            + "FIXED (minor units of that currency), an optional minimum spend and window. The "
+            + "BEST single applicable promotion of the order's currency applies per order — "
             + "promotions never stack with each other.")
     public ResponseEntity<PromotionResponse> createPromotion(
             @Valid @RequestBody CreatePromotionRequest request) {
-        Promotion saved = service.createPromotion(request.name(), request.discountType(),
-                request.discountValue(), request.minSpendMinor(), request.startsAt(),
-                request.endsAt(), request.active());
+        Promotion saved = service.createPromotion(request.name(), request.currency(),
+                request.discountType(), request.discountValue(), request.minSpendMinor(),
+                request.startsAt(), request.endsAt(), request.active());
         return ResponseEntity.status(org.springframework.http.HttpStatus.CREATED)
                 .body(PromotionResponse.of(saved));
     }
@@ -108,12 +117,13 @@ public class CommercialPricingAdminController {
     // ---------------- vouchers ----------------
 
     @PostMapping("/vouchers")
-    @Operation(summary = "Create a voucher", description = "A code-keyed discount with usage "
-            + "limits (global and per-user) and a window. Redeemed at most once per order; "
-            + "the code is stored normalized (trimmed, upper-cased).")
+    @Operation(summary = "Create a voucher", description = "A code-keyed discount denominated in "
+            + "one ISO-4217 currency, with usage limits (global and per-user) and a window. "
+            + "Redeemed at most once per order; the code is stored normalized (trimmed, "
+            + "upper-cased); a voucher never applies to an order of another currency.")
     public ResponseEntity<VoucherResponse> createVoucher(
             @Valid @RequestBody CreateVoucherRequest request) {
-        Voucher saved = service.createVoucher(request.code(), request.name(),
+        Voucher saved = service.createVoucher(request.code(), request.name(), request.currency(),
                 request.discountType(), request.discountValue(), request.minSpendMinor(),
                 request.startsAt(), request.endsAt(), request.maxRedemptions(),
                 request.maxRedemptionsPerUser(), request.active());
@@ -132,9 +142,10 @@ public class CommercialPricingAdminController {
 
     @PostMapping("/tax-rates")
     @Operation(summary = "Create a tax rate", description = "One jurisdiction's tax policy: a "
-            + "2-letter country, basis points 0..10000, and INCLUSIVE (the component inside "
-            + "the displayed price) or EXCLUSIVE (added on top). One ACTIVE row per country — "
-            + "activating a new rate deactivates the previous one (history is never edited).")
+            + "2-letter country, basis points 0..10000 (a zero-rated jurisdiction is a legal "
+            + "explicit policy), and INCLUSIVE (the component inside the displayed price) or "
+            + "EXCLUSIVE (added on top). One ACTIVE row per country — activating a new rate "
+            + "deactivates the previous one (history is never edited).")
     public ResponseEntity<TaxRateResponse> createTaxRate(
             @Valid @RequestBody CreateTaxRateRequest request) {
         TaxRate saved = service.createTaxRate(request.countryCode(), request.name(),
@@ -169,6 +180,7 @@ public class CommercialPricingAdminController {
 
     public record CreatePromotionRequest(
             @NotBlank @Size(max = 120) String name,
+            @NotBlank @Size(min = 3, max = 3) String currency,
             @NotNull Promotion.DiscountType discountType,
             @Positive long discountValue,
             Long minSpendMinor,
@@ -180,6 +192,7 @@ public class CommercialPricingAdminController {
     public record CreateVoucherRequest(
             @NotBlank @Size(min = 4, max = 64) String code,
             @Size(max = 120) String name,
+            @NotBlank @Size(min = 3, max = 3) String currency,
             @NotNull Voucher.DiscountType discountType,
             @Positive long discountValue,
             Long minSpendMinor,
@@ -193,7 +206,7 @@ public class CommercialPricingAdminController {
     public record CreateTaxRateRequest(
             @NotBlank @Size(min = 2, max = 2) String countryCode,
             @NotBlank @Size(max = 120) String name,
-            @Positive int rateBps,
+            @PositiveOrZero @Max(10000) int rateBps,
             @NotNull TaxRate.TaxMode taxMode,
             Boolean active) {
     }
@@ -214,24 +227,26 @@ public class CommercialPricingAdminController {
         }
     }
 
-    public record PromotionResponse(UUID id, String name, Promotion.DiscountType discountType,
+    public record PromotionResponse(UUID id, String name, String currency,
+                                    Promotion.DiscountType discountType,
                                     long discountValue, long minSpendMinor,
                                     Instant startsAt, Instant endsAt, boolean active) {
         static PromotionResponse of(Promotion p) {
-            return new PromotionResponse(p.getId(), p.getName(), p.getDiscountType(),
-                    p.getDiscountValue(), p.getMinSpendMinor(), p.getStartsAt(), p.getEndsAt(),
-                    p.isActive());
+            return new PromotionResponse(p.getId(), p.getName(), p.getCurrency(),
+                    p.getDiscountType(), p.getDiscountValue(), p.getMinSpendMinor(),
+                    p.getStartsAt(), p.getEndsAt(), p.isActive());
         }
     }
 
-    public record VoucherResponse(UUID id, String code, String name,
+    public record VoucherResponse(UUID id, String code, String name, String currency,
                                   Voucher.DiscountType discountType, long discountValue,
                                   long minSpendMinor, Instant startsAt, Instant endsAt,
                                   Long maxRedemptions, Long maxRedemptionsPerUser, boolean active) {
         static VoucherResponse of(Voucher v) {
-            return new VoucherResponse(v.getId(), v.getCode(), v.getName(), v.getDiscountType(),
-                    v.getDiscountValue(), v.getMinSpendMinor(), v.getStartsAt(), v.getEndsAt(),
-                    v.getMaxRedemptions(), v.getMaxRedemptionsPerUser(), v.isActive());
+            return new VoucherResponse(v.getId(), v.getCode(), v.getName(), v.getCurrency(),
+                    v.getDiscountType(), v.getDiscountValue(), v.getMinSpendMinor(),
+                    v.getStartsAt(), v.getEndsAt(), v.getMaxRedemptions(),
+                    v.getMaxRedemptionsPerUser(), v.isActive());
         }
     }
 

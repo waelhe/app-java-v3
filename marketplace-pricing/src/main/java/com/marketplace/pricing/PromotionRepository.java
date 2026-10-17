@@ -15,9 +15,15 @@ import java.util.UUID;
  */
 public interface PromotionRepository extends JpaRepository<Promotion, UUID> {
 
-    /** Every ACTIVE, in-window promotion — the best-applicable selection reads all and picks. */
-    @Query("select p from Promotion p where p.active = true"
+    /**
+     * Every ACTIVE, in-window promotion of the currency — the
+     * best-applicable selection reads all and picks. The currency filter
+     * is the policy row's own denomination scoping: a FIXED amount and a
+     * minor-unit minimum spend are authored FOR one currency and must
+     * never apply to an order of another currency.
+     */
+    @Query("select p from Promotion p where p.active = true and p.currency = :currency"
             + " and (p.startsAt is null or p.startsAt <= :at) and (p.endsAt is null or p.endsAt > :at)"
             + " order by p.createdAt asc, p.id asc")
-    List<Promotion> findActiveCovering(@Param("at") Instant at);
+    List<Promotion> findActiveCovering(@Param("currency") String currency, @Param("at") Instant at);
 }

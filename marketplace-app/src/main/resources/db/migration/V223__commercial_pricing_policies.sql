@@ -106,11 +106,16 @@ CREATE INDEX idx_price_list_entries_product ON price_list_entries(product_id)
     WHERE is_deleted = FALSE;
 
 -- ------------------------------------------------------------------
--- Promotions (order-level; one applies per order — the no-stacking law)
+-- Promotions (order-level; one applies per order — the no-stacking law).
+-- DENOMINATED: every minor-unit fact (the FIXED amount, the minimum
+-- spend) is authored FOR the row's currency — the resolution filters by
+-- the order's single currency; a SAR-authored amount never discounts a
+-- USD order.
 -- ------------------------------------------------------------------
 CREATE TABLE promotions (
     id              UUID PRIMARY KEY,
     name            VARCHAR(120) NOT NULL,
+    currency        CHAR(3)      NOT NULL,
     discount_type   VARCHAR(12)  NOT NULL,
     discount_value  BIGINT       NOT NULL,
     min_spend_minor BIGINT       NOT NULL DEFAULT 0,
@@ -141,6 +146,7 @@ CREATE TABLE promotions_aud (
     rev             INTEGER NOT NULL,
     revtype         SMALLINT NOT NULL,
     name            VARCHAR(120),
+    currency        CHAR(3),
     discount_type   VARCHAR(12),
     discount_value  BIGINT,
     min_spend_minor BIGINT,
@@ -163,6 +169,7 @@ CREATE TABLE vouchers (
     id                        UUID PRIMARY KEY,
     code                      VARCHAR(64)  NOT NULL,
     name                      VARCHAR(120),
+    currency                  CHAR(3)      NOT NULL,
     discount_type             VARCHAR(12)  NOT NULL,
     discount_value            BIGINT       NOT NULL,
     min_spend_minor           BIGINT       NOT NULL DEFAULT 0,
@@ -203,6 +210,7 @@ CREATE TABLE vouchers_aud (
     revtype                   SMALLINT NOT NULL,
     code                      VARCHAR(64),
     name                      VARCHAR(120),
+    currency                  CHAR(3),
     discount_type             VARCHAR(12),
     discount_value            BIGINT,
     min_spend_minor           BIGINT,
