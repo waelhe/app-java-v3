@@ -41,7 +41,7 @@
 - [قناة FCM](https://github.com/waelhe/app-java-v3/blob/6dbbf5e9607d39891607f6ba6de6bd9515f1dd7e/marketplace-notifications/src/main/java/com/marketplace/notifications/push/FcmHttpV1PushAdapter.java)
 - [واجهة الأخبار](https://github.com/waelhe/app-java-v3/blob/6dbbf5e9607d39891607f6ba6de6bd9515f1dd7e/marketplace-knowledge/src/main/java/com/marketplace/knowledge/NewsController.java)
 - [واجهة الرد على المراجعة](https://github.com/waelhe/app-java-v3/blob/6dbbf5e9607d39891607f6ba6de6bd9515f1dd7e/marketplace-reviews/src/main/java/com/marketplace/reviews/ReviewsController.java)
-- [القراءة المالية الإدارية](https://github.com/waelhe/app-java-v3/blob/6dbbf5e9607d39891607f6ba6de6bd9515f1dd7e/marketplace-app/src/main/java/com/marketplace/config/AdminController.java)
+- [القراءة المالية الإدارية](https://github.com/waelhe/app-java-v3/blob/6dbbf5e9607d39891607f6ba6de6bd9515f1dd7e/marketplace-app/src/main/java/com/marketplace/admin/AdminController.java)
 - [سجل الوحدات الحالي](https://github.com/waelhe/app-java-v3/blob/6dbbf5e9607d39891607f6ba6de6bd9515f1dd7e/pom.xml)
 
 ## 3. مصفوفة التغطية حسب تجربة المستخدم
@@ -174,7 +174,7 @@
 - [FCM HTTP v1 adapter](https://github.com/waelhe/app-java-v3/blob/6dbbf5e9607d39891607f6ba6de6bd9515f1dd7e/marketplace-notifications/src/main/java/com/marketplace/notifications/push/FcmHttpV1PushAdapter.java)
 - [NewsController.java](https://github.com/waelhe/app-java-v3/blob/6dbbf5e9607d39891607f6ba6de6bd9515f1dd7e/marketplace-knowledge/src/main/java/com/marketplace/knowledge/NewsController.java)
 - [ReviewsController.java](https://github.com/waelhe/app-java-v3/blob/6dbbf5e9607d39891607f6ba6de6bd9515f1dd7e/marketplace-reviews/src/main/java/com/marketplace/reviews/ReviewsController.java)
-- [AdminController.java](https://github.com/waelhe/app-java-v3/blob/6dbbf5e9607d39891607f6ba6de6bd9515f1dd7e/marketplace-app/src/main/java/com/marketplace/config/AdminController.java)
+- [AdminController.java](https://github.com/waelhe/app-java-v3/blob/6dbbf5e9607d39891607f6ba6de6bd9515f1dd7e/marketplace-app/src/main/java/com/marketplace/admin/AdminController.java)
 
 ### وثائق تصميم يجب التعامل معها بحسب حالتها
 - [تصميم الدفع والتوصيل على مستوى المنصة](https://github.com/waelhe/app-java-v3/blob/6dbbf5e9607d39891607f6ba6de6bd9515f1dd7e/docs/architecture/platform-wide-payments-and-delivery.md) — تصميم هدف لا دليل تنفيذ كامل.
