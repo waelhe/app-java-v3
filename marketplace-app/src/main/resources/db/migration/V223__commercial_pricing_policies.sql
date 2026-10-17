@@ -72,13 +72,18 @@ CREATE TABLE price_list_entries (
     updated_by    VARCHAR(200),
     updated_at    TIMESTAMPTZ NOT NULL,
     is_deleted    BOOLEAN NOT NULL DEFAULT FALSE,
-    CONSTRAINT price_list_entries_amount_chk CHECK (amount_minor > 0),
-    -- one entry per purchasable unit per list (the V222 COALESCE union key:
-    -- NULL variant maps to the zero UUID so product-level entries stay unique)
-    CONSTRAINT uq_price_list_entries_unit UNIQUE (
-        price_list_id, product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid)
-    )
+    CONSTRAINT price_list_entries_amount_chk CHECK (amount_minor > 0)
 );
+
+-- one entry per purchasable unit per list — the V222 COALESCE union key:
+-- NULL variant maps to the zero UUID so product-level entries stay unique.
+-- PostgreSQL allows expressions ONLY in unique INDEXES, never in
+-- table-level UNIQUE constraints (the V222 precedent verbatim).
+CREATE UNIQUE INDEX uq_price_list_entries_unit
+    ON price_list_entries(
+        price_list_id, product_id,
+        COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid)
+    ) WHERE is_deleted = FALSE;
 
 CREATE TABLE price_list_entries_aud (
     id            UUID,
