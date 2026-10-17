@@ -5,6 +5,7 @@ import com.marketplace.catalog.spi.CatalogSpi;
 import com.marketplace.identity.spi.IdentitySpi;
 import com.marketplace.payments.spi.PaymentsSpi;
 import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.LedgerAllocationPort;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -55,6 +56,9 @@ class AdminControllerWebMvcTest {
     private PaymentsSpi paymentsSpi;
 
     @MockitoBean
+    private LedgerAllocationPort ledgerAllocationPort;
+
+    @MockitoBean
     private RevisionService revisionService;
 
     @MockitoBean
@@ -102,10 +106,34 @@ class AdminControllerWebMvcTest {
 
     @Test
     void listPayments_returnsOk() throws Exception {
-        when(paymentsSpi.listIntentsSummaries(any())).thenReturn(org.springframework.data.domain.Page.empty());
+        when(paymentsSpi.searchIntentsSummaries(any(), any()))
+                .thenReturn(org.springframework.data.domain.Page.empty());
 
         mockMvc.perform(get("/api/v1/admin/payments"))
                 .andExpect(status().isOk());
+        verify(paymentsSpi).searchIntentsSummaries(any(), any());
+    }
+
+    @Test
+    void searchPayments_withFilters_returnsOk() throws Exception {
+        when(paymentsSpi.searchIntentsSummaries(any(), any()))
+                .thenReturn(org.springframework.data.domain.Page.empty());
+
+        mockMvc.perform(get("/api/v1/admin/payments")
+                        .param("origin", "ORDER")
+                        .param("status", "SUCCEEDED")
+                        .param("subjectId", UUID.randomUUID().toString())
+                        .param("consumerId", UUID.randomUUID().toString())
+                        .param("createdAfter", "2026-01-01T00:00:00Z")
+                        .param("createdBefore", "2026-02-01T00:00:00Z"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    void searchPayments_withUserRole_returnsForbidden() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/payments"))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -115,6 +143,24 @@ class AdminControllerWebMvcTest {
 
         mockMvc.perform(get("/api/v1/admin/payments/{id}", id))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void getFinancialFacts_returnsOk() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(paymentsSpi.getIntentSummary(any())).thenReturn(null);
+        when(ledgerAllocationPort.findByPaymentIntentId(any()))
+                .thenReturn(LedgerAllocationPort.LedgerAllocation.empty());
+
+        mockMvc.perform(get("/api/v1/admin/payments/{id}/financial-facts", id))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    void getFinancialFacts_withUserRole_returnsForbidden() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/payments/{id}/financial-facts", UUID.randomUUID()))
+                .andExpect(status().isForbidden());
     }
 
     @Test
