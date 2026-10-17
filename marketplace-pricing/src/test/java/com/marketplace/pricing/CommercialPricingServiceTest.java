@@ -6,6 +6,7 @@ import com.marketplace.shared.api.ProductPricingPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -17,6 +18,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -24,11 +26,13 @@ import static org.mockito.Mockito.when;
 
 /**
  * The Saleor fit-gap study's Phase 3 engine tests — the commercial rules
- * as EXPLICIT policies: the price-list override precedence, the promotion
- * selection (best single applicable — no stacking), the voucher
- * validation and locked settlement (idempotency + limits), and the tax
- * modes (INCLUSIVE extracts / EXCLUSIVE adds). Each test pins one rule of
- * the documented resolution law.
+ * as EXPLICIT policies: the price-list override precedence (the exact
+ * variant entry first, then the product-level fallback), the promotion
+ * selection (best single applicable of the order's currency — no
+ * stacking), the voucher validation and locked settlement (idempotency +
+ * limits + the denomination refusal), and the tax modes (INCLUSIVE
+ * extracts / EXCLUSIVE adds; a zero-rated jurisdiction is a legal
+ * policy). Each test pins one rule of the documented resolution law.
  */
 @ExtendWith(MockitoExtension.class)
 class CommercialPricingServiceTest {
@@ -97,6 +101,54 @@ class CommercialPricingServiceTest {
     }
 
     @Test
+    void theVariantLineFallsBackToTheProductLevelEntry() {
+        UUID variant = UUID.randomUUID();
+        when(productPricingPort.priceOfVariant(variant)).thenReturn(
+                new ProductPricingPort.VariantPrice(variant, product, seller, 1500L, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE,
+                        ProductPricingPort.StorefrontState.ACTIVE));
+        PriceList list = PriceList.of("Ramadan list", "SAR", true, null, null);
+        activeList(list);
+        // only the PRODUCT-level entry exists — the variant line still reads it
+        when(priceListEntries.findByProductIdAndPriceListIdIn(product, List.of(list.getId())))
+                .thenReturn(List.of(PriceListEntry.of(list.getId(), product, null, 1200L)));
+
+        CommercialPricingPort.ResolvedUnitPrice resolved =
+                service.resolveUnitPrice(product, variant);
+
+        assertThat(resolved.priceMinor()).isEqualTo(1200L);
+        assertThat(resolved.priceListId()).isEqualTo(list.getId());
+    }
+
+    @Test
+    void theExactVariantEntryOutranksTheProductLevelFallback() {
+        UUID variant = UUID.randomUUID();
+        when(productPricingPort.priceOfVariant(variant)).thenReturn(
+                new ProductPricingPort.VariantPrice(variant, product, seller, 1500L, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE,
+                        ProductPricingPort.StorefrontState.ACTIVE));
+        PriceList firstList = PriceList.of("First list", "SAR", true, null, null);
+        PriceList secondList = PriceList.of("Second list", "SAR", true, null, null);
+        when(priceLists.findActiveCovering(org.mockito.ArgumentMatchers.eq("SAR"),
+                org.mockito.ArgumentMatchers.any(Instant.class)))
+                .thenReturn(List.of(firstList, secondList));
+        // the FIRST list carries only the product-level entry; the SECOND
+        // list carries the variant's own exact entry — the port's documented
+        // precedence: exactness outranks list order.
+        when(priceListEntries.findByProductIdAndPriceListIdIn(product,
+                List.of(firstList.getId(), secondList.getId())))
+                .thenReturn(List.of(
+                        PriceListEntry.of(firstList.getId(), product, null, 1100L),
+                        PriceListEntry.of(secondList.getId(), product, variant, 1300L)));
+
+        CommercialPricingPort.ResolvedUnitPrice resolved =
+                service.resolveUnitPrice(product, variant);
+
+        assertThat(resolved.priceMinor()).isEqualTo(1300L);
+        assertThat(resolved.priceListId()).isEqualTo(secondList.getId());
+    }
+
+    @Test
     void aSuspendedProductHidesItsPriceListToo() {
         when(productPricingPort.priceOf(product)).thenReturn(
                 new ProductPricingPort.ProductPrice(product, seller, 1500L, "SAR",
@@ -129,11 +181,12 @@ class CommercialPricingServiceTest {
 
     @Test
     void theBestSingleApplicablePromotionAppliesAndPromotionsNeverStack() {
-        when(promotions.findActiveCovering(org.mockito.ArgumentMatchers.any(Instant.class)))
+        when(promotions.findActiveCovering(org.mockito.ArgumentMatchers.eq("SAR"),
+                org.mockito.ArgumentMatchers.any(Instant.class)))
                 .thenReturn(List.of(
-                        Promotion.of("Small 5%", Promotion.DiscountType.PERCENTAGE, 500, 0,
+                        Promotion.of("Small 5%", "SAR", Promotion.DiscountType.PERCENTAGE, 500, 0,
                                 null, null, true),
-                        Promotion.of("Big 10%", Promotion.DiscountType.PERCENTAGE, 1000, 0,
+                        Promotion.of("Big 10%", "SAR", Promotion.DiscountType.PERCENTAGE, 1000, 0,
                                 null, null, true)));
         // the voucher is absent; no tax policy
 
@@ -148,9 +201,20 @@ class CommercialPricingServiceTest {
     }
 
     @Test
+    void thePromotionSelectionReadsTheOrdersCurrencyOnly() {
+        // the repository IS the currency scope — the service must pass the
+        // order's single currency through, never a policy default
+        service.computeBreakdown(consumer, 10000L, "USD", null);
+
+        verify(promotions).findActiveCovering(org.mockito.ArgumentMatchers.eq("USD"),
+                any(Instant.class));
+    }
+
+    @Test
     void aBelowMinimumSpendPromotionDoesNotApply() {
-        when(promotions.findActiveCovering(org.mockito.ArgumentMatchers.any(Instant.class)))
-                .thenReturn(List.of(Promotion.of("Big spenders", Promotion.DiscountType.FIXED,
+        when(promotions.findActiveCovering(org.mockito.ArgumentMatchers.eq("SAR"),
+                org.mockito.ArgumentMatchers.any(Instant.class)))
+                .thenReturn(List.of(Promotion.of("Big spenders", "SAR", Promotion.DiscountType.FIXED,
                         2000L, 20000L, null, null, true)));
 
         CommercialPricingPort.CommercialBreakdown breakdown =
@@ -162,8 +226,9 @@ class CommercialPricingServiceTest {
 
     @Test
     void aFixedDiscountCapsAtTheSubtotal() {
-        when(promotions.findActiveCovering(org.mockito.ArgumentMatchers.any(Instant.class)))
-                .thenReturn(List.of(Promotion.of("Everything free", Promotion.DiscountType.FIXED,
+        when(promotions.findActiveCovering(org.mockito.ArgumentMatchers.eq("SAR"),
+                org.mockito.ArgumentMatchers.any(Instant.class)))
+                .thenReturn(List.of(Promotion.of("Everything free", "SAR", Promotion.DiscountType.FIXED,
                         999999L, 0, null, null, true)));
 
         assertThat(service.computeBreakdown(consumer, 100L, "SAR", null)
@@ -172,10 +237,11 @@ class CommercialPricingServiceTest {
 
     @Test
     void theVoucherEvaluatesOnThePostPromotionSubtotal() {
-        when(promotions.findActiveCovering(org.mockito.ArgumentMatchers.any(Instant.class)))
-                .thenReturn(List.of(Promotion.of("10%", Promotion.DiscountType.PERCENTAGE,
+        when(promotions.findActiveCovering(org.mockito.ArgumentMatchers.eq("SAR"),
+                org.mockito.ArgumentMatchers.any(Instant.class)))
+                .thenReturn(List.of(Promotion.of("10%", "SAR", Promotion.DiscountType.PERCENTAGE,
                         1000, 0, null, null, true)));
-        Voucher voucher = Voucher.of("SAVE500", "Save 500", Voucher.DiscountType.FIXED,
+        Voucher voucher = Voucher.of("SAVE500", "Save 500", "SAR", Voucher.DiscountType.FIXED,
                 500L, 2000L, null, null, null, null, true);
         when(vouchers.findByCode("SAVE500")).thenReturn(Optional.of(voucher));
 
@@ -190,6 +256,20 @@ class CommercialPricingServiceTest {
     }
 
     @Test
+    void aVoucherOfAnotherCurrencyIsRefusedWithTheHonest409() {
+        // a USD-authored voucher must never discount a SAR order — its
+        // amount and minimum spend are authored for their own denomination
+        Voucher voucher = Voucher.of("USDONLY", null, "USD", Voucher.DiscountType.FIXED,
+                500L, 0, null, null, null, null, true);
+        when(vouchers.findByCode("USDONLY")).thenReturn(Optional.of(voucher));
+
+        assertThatThrownBy(() -> service.computeBreakdown(consumer, 10000L, "SAR", "USDONLY"))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("denominated in USD")
+                .hasMessageContaining("order is in SAR");
+    }
+
+    @Test
     void anUnrecognizedVoucherCodeAnswersTheHonest409() {
         when(vouchers.findByCode("NOPE")).thenReturn(Optional.empty());
 
@@ -200,7 +280,7 @@ class CommercialPricingServiceTest {
 
     @Test
     void aBelowMinimumSpendVoucherAnswersTheHonest409() {
-        Voucher voucher = Voucher.of("BIGSPENDER", null, Voucher.DiscountType.FIXED,
+        Voucher voucher = Voucher.of("BIGSPENDER", null, "SAR", Voucher.DiscountType.FIXED,
                 500L, 50000L, null, null, null, null, true);
         when(vouchers.findByCode("BIGSPENDER")).thenReturn(Optional.of(voucher));
 
@@ -211,7 +291,7 @@ class CommercialPricingServiceTest {
 
     @Test
     void anExhaustedVoucherAnswersTheHonest409() {
-        Voucher voucher = Voucher.of("ONCE", null, Voucher.DiscountType.FIXED,
+        Voucher voucher = Voucher.of("ONCE", null, "SAR", Voucher.DiscountType.FIXED,
                 500L, 0, null, null, 1L, null, true);
         when(vouchers.findByCode("ONCE")).thenReturn(Optional.of(voucher));
         when(redemptions.countByVoucherId(voucher.getId())).thenReturn(1L);
@@ -223,7 +303,7 @@ class CommercialPricingServiceTest {
 
     @Test
     void anExhaustedPerUserVoucherLimitAnswersTheHonest409() {
-        Voucher voucher = Voucher.of("ONCEPERUSER", null, Voucher.DiscountType.FIXED,
+        Voucher voucher = Voucher.of("ONCEPERUSER", null, "SAR", Voucher.DiscountType.FIXED,
                 500L, 0, null, null, null, 1L, true);
         when(vouchers.findByCode("ONCEPERUSER")).thenReturn(Optional.of(voucher));
         when(redemptions.countByVoucherIdAndConsumerId(voucher.getId(), consumer)).thenReturn(1L);
@@ -265,9 +345,25 @@ class CommercialPricingServiceTest {
     }
 
     @Test
+    void aZeroRatedJurisdictionIsALegalExplicitPolicy() {
+        // 0 bps is inside the domain (0..10000) — the surface must accept it,
+        // never answer a validation 400 for a zero rate
+        when(taxRates.findByCountryCodeAndActiveTrue("SA")).thenReturn(Optional.of(
+                TaxRate.of("SA", "Zero-rated", 0, TaxRate.TaxMode.EXCLUSIVE, true)));
+
+        CommercialPricingPort.CommercialBreakdown breakdown =
+                service.computeBreakdown(consumer, 10000L, "SAR", null);
+
+        assertThat(breakdown.taxMinor()).isZero();
+        assertThat(breakdown.taxRateBps()).isZero();
+        assertThat(breakdown.totalMinor()).isEqualTo(10000L);
+    }
+
+    @Test
     void theTaxComputesOnTheDiscountedSubtotal() {
-        when(promotions.findActiveCovering(org.mockito.ArgumentMatchers.any(Instant.class)))
-                .thenReturn(List.of(Promotion.of("10%", Promotion.DiscountType.PERCENTAGE,
+        when(promotions.findActiveCovering(org.mockito.ArgumentMatchers.eq("SAR"),
+                org.mockito.ArgumentMatchers.any(Instant.class)))
+                .thenReturn(List.of(Promotion.of("10%", "SAR", Promotion.DiscountType.PERCENTAGE,
                         1000, 0, null, null, true)));
         when(taxRates.findByCountryCodeAndActiveTrue("SA")).thenReturn(Optional.of(
                 TaxRate.of("SA", "KSA VAT", 1500, TaxRate.TaxMode.EXCLUSIVE, true)));
@@ -286,7 +382,7 @@ class CommercialPricingServiceTest {
 
     @Test
     void settleVoucherRecordsTheRedemptionUnderTheRowsLock() {
-        Voucher voucher = Voucher.of("SAVE500", null, Voucher.DiscountType.FIXED,
+        Voucher voucher = Voucher.of("SAVE500", null, "SAR", Voucher.DiscountType.FIXED,
                 500L, 0, null, null, 10L, null, true);
         when(vouchers.findByCodeForUpdate("SAVE500")).thenReturn(Optional.of(voucher));
         when(redemptions.findByVoucherIdAndOrderId(org.mockito.ArgumentMatchers.eq(voucher.getId()), any(UUID.class)))
@@ -300,8 +396,22 @@ class CommercialPricingServiceTest {
     }
 
     @Test
+    void settleVoucherRefusesAMismatchedDenomination() {
+        Voucher voucher = Voucher.of("USDONLY", null, "USD", Voucher.DiscountType.FIXED,
+                500L, 0, null, null, 10L, null, true);
+        when(vouchers.findByCodeForUpdate("USDONLY")).thenReturn(Optional.of(voucher));
+        when(redemptions.findByVoucherIdAndOrderId(org.mockito.ArgumentMatchers.eq(voucher.getId()), any(UUID.class)))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.settleVoucher(UUID.randomUUID(), consumer, "USDONLY",
+                500L, "SAR"))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("denominated in USD");
+    }
+
+    @Test
     void aReplayedSettleForTheSameOrderIsALoggedNoOp() {
-        Voucher voucher = Voucher.of("SAVE500", null, Voucher.DiscountType.FIXED,
+        Voucher voucher = Voucher.of("SAVE500", null, "SAR", Voucher.DiscountType.FIXED,
                 500L, 0, null, null, 10L, null, true);
         when(vouchers.findByCodeForUpdate("SAVE500")).thenReturn(Optional.of(voucher));
         UUID order = UUID.randomUUID();
@@ -316,7 +426,7 @@ class CommercialPricingServiceTest {
 
     @Test
     void aSettlePastTheGlobalLimitRefusesAndRollsThePlacementBack() {
-        Voucher voucher = Voucher.of("ONCE", null, Voucher.DiscountType.FIXED,
+        Voucher voucher = Voucher.of("ONCE", null, "SAR", Voucher.DiscountType.FIXED,
                 500L, 0, null, null, 1L, null, true);
         when(vouchers.findByCodeForUpdate("ONCE")).thenReturn(Optional.of(voucher));
         when(redemptions.findByVoucherIdAndOrderId(org.mockito.ArgumentMatchers.eq(voucher.getId()), any(UUID.class)))
@@ -338,13 +448,35 @@ class CommercialPricingServiceTest {
         TaxRate old = TaxRate.of("SA", "Old VAT", 500, TaxRate.TaxMode.INCLUSIVE, true);
         when(taxRates.findByCountryCodeAndActiveTrue("SA")).thenReturn(Optional.of(old));
         when(taxRates.save(any(TaxRate.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(taxRates.saveAndFlush(any(TaxRate.class))).thenAnswer(inv -> inv.getArgument(0));
 
         TaxRate created = service.createTaxRate("SA", "New VAT", 1500,
                 TaxRate.TaxMode.INCLUSIVE, true);
 
         assertThat(created.isActive()).isTrue();
         assertThat(created.getRateBps()).isEqualTo(1500);
-        // history is never edited — the old row is DEACTIVATED, not mutated
+        // history is never edited — the old row is DEACTIVATED, not mutated,
+        // and the deactivation UPDATE is FLUSHED before the new row's INSERT
+        // (Hibernate's ActionQueue runs inserts first — the flush order the
+        // partial unique index demands)
+        assertThat(old.isActive()).isFalse();
+        InOrder order = inOrder(taxRates);
+        order.verify(taxRates).saveAndFlush(old);
+        order.verify(taxRates).save(created);
+    }
+
+    @Test
+    void theSupersedingLookupRidesTheNormalizedCountryCode() {
+        // "sa" must find the "SA" row — TaxRate.of normalizes, the lookup
+        // rides the normalized form, never the raw input
+        TaxRate old = TaxRate.of("SA", "Old VAT", 500, TaxRate.TaxMode.INCLUSIVE, true);
+        when(taxRates.findByCountryCodeAndActiveTrue("SA")).thenReturn(Optional.of(old));
+        when(taxRates.save(any(TaxRate.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(taxRates.saveAndFlush(any(TaxRate.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.createTaxRate("sa", "New VAT", 1500, TaxRate.TaxMode.INCLUSIVE, true);
+
+        verify(taxRates).findByCountryCodeAndActiveTrue("SA");
         assertThat(old.isActive()).isFalse();
     }
 
@@ -352,9 +484,20 @@ class CommercialPricingServiceTest {
     void voucherCodesAreNormalizedToUpperTrimmed() {
         when(vouchers.save(any(Voucher.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Voucher created = service.createVoucher("  Ramadan-10  ", "Ramadan",
+        Voucher created = service.createVoucher("  Ramadan-10  ", "Ramadan", "sar",
                 Voucher.DiscountType.PERCENTAGE, 1000L, 0L, null, null, null, null, true);
 
         assertThat(created.getCode()).isEqualTo("RAMADAN-10");
+        assertThat(created.getCurrency()).isEqualTo("SAR");
+    }
+
+    @Test
+    void promotionsNormalizeTheirCurrency() {
+        when(promotions.save(any(Promotion.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Promotion created = service.createPromotion("Ramadan", "sar",
+                Promotion.DiscountType.PERCENTAGE, 1000L, 0L, null, null, true);
+
+        assertThat(created.getCurrency()).isEqualTo("SAR");
     }
 }
