@@ -176,6 +176,10 @@ class ObservationCoverageFilesTest {
                     "community.rule.toggle", "community.rule.update")),
             // ADR-0009: the loan-dispute seam is its own observed command —
             // the freeze path's write (the commands-not-reads policy holds).
+            Map.entry("marketplace-delivery", List.of(
+                    "delivery.courier.availability", "delivery.dispatch.claim", "delivery.dispatch.sweep",
+                    "delivery.job.transition", "delivery.order.quote.create", "delivery.payment.settle",
+                    "delivery.quote.create", "delivery.request.cancel", "delivery.request.create")),
             Map.entry("marketplace-disputes", List.of("dispute.open", "dispute.open.loan", "dispute.resolve")),
             // phase 1 (D-03 + §6.5): the role-assignment and trust
             // -attestation commands join under the same discipline —
@@ -232,7 +236,7 @@ class ObservationCoverageFilesTest {
                     "job.application.create", "job.application.move",
                     "job.application.withdraw", "job.close", "job.create")),
             Map.entry("marketplace-ledger", List.of(
-                    "ledger.credit.payment", "ledger.debit.ads", "ledger.debit.commission", "ledger.debit.refund")),
+                    "ledger.credit.payment", "ledger.debit.ads", "ledger.debit.commission", "ledger.debit.refund", "ledger.delivery.payment.capture", "ledger.delivery.payment.refund", "ledger.delivery.revenue.recognize")),
             // ADR-0009 (stage 8): the lending workflow's four commands —
             // offer.publish is the owner's terms write, request/approve/cancel
             // are the loan machine's gates (alphabetical — the scan's order).
@@ -256,7 +260,14 @@ class ObservationCoverageFilesTest {
                     // is its own business entry that gates on the same machine
                     // edge; the seller reads (sales page, seller order detail)
                     // stay unobserved per the same commands-not-reads policy.
-                    "order.cancel", "order.confirm", "order.fulfill",
+                    // PR #604 (the delivery vertical slice): the three
+                    // delivery-linking commands on the order surface — the
+                    // attach/clear pair for the shipment link and the
+                    // delivery-driven fulfillment edge. Alphabetical: the
+                    // scan sorts and the pin must match it exactly.
+                    "order.cancel", "order.confirm",
+                    "order.delivery.attach", "order.delivery.clear",
+                    "order.fulfill", "order.fulfill.delivery",
                     "order.payment-intent", "order.place",
                     "order.seller.cancel", "order.seller.confirm",
                     "order.seller.fulfill")),
@@ -271,7 +282,7 @@ class ObservationCoverageFilesTest {
                     "notification.preferences.topics.update",
                     "notification.preferences.update")),
             Map.entry("marketplace-payments", List.of(
-                    "payment.cancel", "payment.confirm", "payment.fail", "payment.process",
+                    "payment.cancel", "payment.confirm", "payment.delivery-intent.create", "payment.delivery.refund", "payment.fail", "payment.process",
                     "payment.psp.create", "payment.psp.refund", "payment.psp.webhook")),
             Map.entry("marketplace-pricing", List.of(
                     "pricing.calculate", "pricing.calculate.window",
@@ -285,7 +296,7 @@ class ObservationCoverageFilesTest {
                     "pricing.rule.create", "pricing.rule.deactivate",
                     "pricing.rule.delete")),
             Map.entry("marketplace-provider", List.of(
-                    "provider.business-hours.replace", "provider.create",
+                    "provider.business-hours.replace", "provider.create", "provider.fulfillment-location.update",
                     "provider.rating.stats", "provider.service-areas.add",
                     "provider.service-areas.remove", "provider.services.add",
                     "provider.services.move", "provider.services.remove",

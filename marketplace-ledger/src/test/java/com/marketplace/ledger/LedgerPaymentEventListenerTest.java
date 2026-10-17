@@ -352,7 +352,7 @@ class LedgerPaymentEventListenerTest {
         UUID paymentIntentId = UUID.randomUUID();
         var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
         var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
-                "COMPLETED", "DELIVERY", 6200L, "SAR", null, null, null);
+                "COMPLETED", "UNKNOWN", 6200L, "SAR", null, null, null);
 
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
 
@@ -371,7 +371,7 @@ class LedgerPaymentEventListenerTest {
         UUID paymentIntentId = UUID.randomUUID();
         var event = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
         var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
-                "REFUNDED", "DELIVERY", 6200L, "SAR", null, null, null);
+                "REFUNDED", "UNKNOWN", 6200L, "SAR", null, null, null);
 
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
 
@@ -381,4 +381,33 @@ class LedgerPaymentEventListenerTest {
         verify(ledgerService, never()).debitFromRefund(any(), any(), anyLong(), any());
         verify(ledgerService, never()).creditFromPayment(any(), any(), anyLong(), any());
     }
+
+    @Test
+    void deliveryCompletionIsLeftToTheDedicatedJournal() {
+        UUID paymentIntentId = UUID.randomUUID();
+        var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
+                "COMPLETED", "DELIVERY", 6200L, "SAR", null, null);
+
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+        listener.onPaymentCompleted(event);
+
+        verifyNoInteractions(ledgerService, bookingParticipantProvider, orderSellerPort, loanOwnerPort);
+    }
+
+    @Test
+    void deliveryRefundIsLeftToTheDedicatedJournal() {
+        UUID paymentIntentId = UUID.randomUUID();
+        var event = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
+                "REFUNDED", "DELIVERY", 6200L, "SAR", null, null);
+
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+        listener.onPaymentCompleted(event);
+
+        verifyNoInteractions(ledgerService, bookingParticipantProvider, orderSellerPort, loanOwnerPort);
+    }
+
 }

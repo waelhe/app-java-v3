@@ -187,6 +187,12 @@ public class NotificationService {
             // own templates, so an unknown origin skips with a visible warn
             // until its owning template lands (a cosmetic gap, not a money
             // defect — the publication is still acknowledged normally).
+            if (intent.isDeliveryOrigin()) {
+                deliverSinglePayerState(intent, platform, stateWord,
+                        text.compose("notification.PAYMENT_STATE.delivery", platform, stateWord,
+                                intent.deliveryRequestId()));
+                return;
+            }
             if (!intent.isBookingOrigin()) {
                 log.warn("Skipping payment notification for unsupported origin: paymentIntentId={}, origin={}",
                         intent.paymentIntentId(), intent.origin());

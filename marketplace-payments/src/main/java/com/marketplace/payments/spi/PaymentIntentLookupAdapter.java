@@ -24,6 +24,6 @@ public class PaymentIntentLookupAdapter implements PaymentIntentLookupPort {
         return paymentIntentRepository.findById(paymentIntentId)
                 .map(i -> new PaymentIntentDetails(i.getId(), i.getBookingId(), i.getConsumerId(), i.getAdCampaignId(),
                         i.getStatus().name(), i.getOrigin(), i.getAmountCents(), i.getCurrency(), i.getOrderId(),
-                        i.getLoanId(), i.getCommissionRate()));
+                        i.getLoanId(), i.getCommissionRate(), i.getDeliveryRequestId(), i.getRefundedAmountCents()));
     }
 }

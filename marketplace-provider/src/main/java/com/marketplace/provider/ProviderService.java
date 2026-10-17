@@ -1,6 +1,7 @@
 package com.marketplace.provider;
 
 import com.marketplace.shared.api.CacheInvalidationRequested;
+import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ReviewStats;
 import com.marketplace.shared.api.ReviewStatsPort;
@@ -88,6 +89,21 @@ public class ProviderService {
         verifyOwnership(provider, authentication);
         provider.update(displayName, bio, actorType, agencyName, licenseNumber);
         eventPublisher.publishEvent(new CacheInvalidationRequested(PROVIDER_CACHE_NAMES, id));
+        return provider;
+    }
+
+    @Observed(name = "provider.fulfillment-location.update")
+    @PreAuthorize("hasRole('PROVIDER')")
+    public ProviderProfile updateMyFulfillmentLocation(String address, double latitude, double longitude,
+                                                        Authentication authentication) {
+        UUID userId = currentUserProvider.getCurrentUserId(authentication);
+        ProviderProfile provider = providerRepository.findByUserIdForUpdate(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Verified provider profile not found"));
+        if (provider.getStatus() != ProviderStatus.VERIFIED) {
+            throw new ConflictException("Only a verified provider can enable marketplace delivery");
+        }
+        provider.updateFulfillmentLocation(address, latitude, longitude);
+        eventPublisher.publishEvent(new CacheInvalidationRequested(PROVIDER_CACHE_NAMES, provider.getId()));
         return provider;
     }
 

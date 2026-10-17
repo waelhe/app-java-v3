@@ -36,6 +36,12 @@ import java.util.UUID;
  *                        and on pre-freeze test fixtures; carried here so
  *                        the settlement never needs a second lookup (the
  *                        record's own founding rule, applied to the rate).
+ * @param deliveryRequestId the direct-delivery request this intent
+ *                        collects (DELIVERY origin only; null for every
+ *                        other origin — the pairing CHECK pins it)
+ * @param refundedAmountCents the refund history the delivery journal
+ *                        mirrors on partial refunds (0 while nothing
+ *                        has come back)
  */
 public record PaymentIntentDetails(
         UUID paymentIntentId,
@@ -48,8 +54,33 @@ public record PaymentIntentDetails(
         String currency,
         UUID orderId,
         UUID loanId,
-        BigDecimal commissionRate
+        BigDecimal commissionRate,
+        UUID deliveryRequestId,
+        long refundedAmountCents
 ) {
+    /**
+     * The pre-delivery fixture shape (the base record's own ten): no frozen
+     * rate, no delivery pairing, no refund history — the honest zeros for
+     * every fixture that predates both widenings.
+     */
+    public PaymentIntentDetails(UUID paymentIntentId, UUID bookingId, UUID consumerId, UUID adCampaignId,
+                                String status, String origin, long amountCents, String currency,
+                                UUID orderId, UUID loanId) {
+        this(paymentIntentId, bookingId, consumerId, adCampaignId, status, origin, amountCents,
+                currency, orderId, loanId, null, null, 0L);
+    }
+
+    /**
+     * The commission-freeze shape (ADR-0013 D2's full form): the frozen
+     * rate rides, the delivery pairing and the refund history stay at
+     * their honest zeros — every non-delivery caller's canonical form.
+     */
+    public PaymentIntentDetails(UUID paymentIntentId, UUID bookingId, UUID consumerId, UUID adCampaignId,
+                                String status, String origin, long amountCents, String currency,
+                                UUID orderId, UUID loanId, BigDecimal commissionRate) {
+        this(paymentIntentId, bookingId, consumerId, adCampaignId, status, origin, amountCents,
+                currency, orderId, loanId, commissionRate, null, 0L);
+    }
 
     /** The verified path's origin — the whole pre-W5 table. */
     public static final String ORIGIN_BOOKING = "BOOKING";
@@ -63,6 +94,9 @@ public record PaymentIntentDetails(
     /** Stage 8 (ADR-0004): the loan-fee origin — the payer is the borrower, the subject is the loan. */
     public static final String ORIGIN_LOAN = "LOAN";
 
+    /** The direct-delivery origin (the platform-wide payments plan): the payer is the requesting member, the subject is the delivery request. */
+    public static final String ORIGIN_DELIVERY = "DELIVERY";
+
     public boolean isAdOrigin() {
         return ORIGIN_AD.equals(origin);
     }
@@ -75,6 +109,10 @@ public record PaymentIntentDetails(
     /** Stage 8 (ADR-0004): the loan-fee settlement branch's own test. */
     public boolean isLoanOrigin() {
         return ORIGIN_LOAN.equals(origin);
+    }
+
+    public boolean isDeliveryOrigin() {
+        return ORIGIN_DELIVERY.equals(origin);
     }
 
     /**

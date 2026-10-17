@@ -61,6 +61,8 @@ public interface PaymentIntentRepository extends JpaRepository<PaymentIntent, UU
      */
     Optional<PaymentIntent> findByLoanId(UUID loanId);
 
+    Optional<PaymentIntent> findByDeliveryRequestId(UUID deliveryRequestId);
+
     Page<PaymentIntentSummaryView> findAllSummariesBy(Pageable pageable);
 }
 

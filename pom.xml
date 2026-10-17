@@ -46,6 +46,8 @@
         <module>marketplace-discovery</module>
         <!-- A-11 (compliance plan wave C: C.1) — the store's order flow -->
         <module>marketplace-orders</module>
+        <!-- Platform-owned direct delivery bounded context. -->
+        <module>marketplace-delivery</module>
         <!-- Stage 8 (plan D-09, ADR-0004) — the lending workflow -->
         <module>marketplace-lending</module>
         <module>marketplace-app</module>
@@ -844,6 +846,7 @@
                 <artifactId>marketplace-orders</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <dependency><groupId>com.marketplace</groupId><artifactId>marketplace-delivery</artifactId><version>${project.version}</version></dependency>
             <!-- Stage 8 (plan D-09, ADR-0004) — the lending module's managed
                  version: the aggregating app declares it bare, the management
                  entry supplies ${project.version} (the house pattern every

@@ -58,6 +58,7 @@ public final class OrderResponses {
             @Schema(description = "When fulfillment completed (null until FULFILLED)") Instant fulfilledAt,
             @Schema(description = "When it was cancelled (null unless CANCELLED)") Instant cancelledAt,
             @Schema(description = "The cancellation reason (null unless CANCELLED)") String cancelReason,
+            @Schema(description = "Linked marketplace delivery request, when shipping was requested") UUID deliveryRequestId,
             @Schema(description = "ADR-0010: the other orders this placement created when the cart mixed "
                     + "sellers (one order per seller) — empty for the single-seller placement and "
                     + "for every other read") List<OrderResponse> additionalOrders) {
@@ -71,7 +72,7 @@ public final class OrderResponses {
                     items.stream().map(OrderItemResponse::of).toList(),
                     order.getTotalAmountMinor(), order.getCurrency(),
                     order.getPlacedAt(), order.getConfirmedAt(), order.getFulfilledAt(),
-                    order.getCancelledAt(), order.getCancelReason(), List.of());
+                    order.getCancelledAt(), order.getCancelReason(), order.getDeliveryRequestId(), List.of());
         }
 
         /**
@@ -86,7 +87,7 @@ public final class OrderResponses {
             return new OrderResponse(primary.id(), primary.status(), primary.items(),
                     primary.totalAmountMinor(), primary.currency(),
                     primary.placedAt(), primary.confirmedAt(), primary.fulfilledAt(),
-                    primary.cancelledAt(), primary.cancelReason(), additional);
+                    primary.cancelledAt(), primary.cancelReason(), primary.deliveryRequestId(), additional);
         }
     }
 }

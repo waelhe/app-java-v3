@@ -268,6 +268,28 @@ class NotificationServiceTest {
     }
 
     @Test
+    void onPaymentStateChangedDeliversSinglePayerNotificationForDeliveryOrigin() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.empty());
+
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID deliveryRequestId = UUID.randomUUID();
+        PaymentIntentDetails intent = new PaymentIntentDetails(paymentIntentId, null, CONSUMER_ID, null,
+                "COMPLETED", "DELIVERY", 1200L, "SAR", null, null, null, deliveryRequestId, 0L);
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+        service.onPaymentStateChanged(paymentIntentId, "COMPLETED");
+
+        verify(repository).save(any(Notification.class));
+        verifyNoInteractions(bookingProvider);
+    }
+
+    @Test
     void onPaymentStateChangedSuppressesEmailForUnsubscribedConsumer() {
         // L22 acceptance criterion 1: the consumer unsubscribed from EMAIL
         // for PAYMENT_STATE => the in-app notification is created, WS is
