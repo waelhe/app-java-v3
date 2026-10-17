@@ -1,5 +1,6 @@
 package com.marketplace.shared.api;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
@@ -27,6 +28,14 @@ import java.util.UUID;
  * @param origin          BOOKING (the whole pre-W5 table) or AD
  * @param amountCents     the money the intent collects
  * @param currency        the money's ISO 4217 code
+ * @param commissionRate  ADR-0013 (D2): the announced commission rate
+ *                        frozen at THIS intent's creation — the ledger
+ *                        posts THIS value, never a live recomputation.
+ *                        Null on pre-V220 rows (the ledger's legacy
+ *                        fallback reads the live configuration for them)
+ *                        and on pre-freeze test fixtures; carried here so
+ *                        the settlement never needs a second lookup (the
+ *                        record's own founding rule, applied to the rate).
  */
 public record PaymentIntentDetails(
         UUID paymentIntentId,
@@ -38,7 +47,8 @@ public record PaymentIntentDetails(
         long amountCents,
         String currency,
         UUID orderId,
-        UUID loanId
+        UUID loanId,
+        BigDecimal commissionRate
 ) {
 
     /** The verified path's origin — the whole pre-W5 table. */

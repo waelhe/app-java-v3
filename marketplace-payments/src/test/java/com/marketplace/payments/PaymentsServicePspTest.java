@@ -56,11 +56,11 @@ class PaymentsServicePspTest {
                 eventPublisher, currentUserProvider, bookingParticipantProvider, webhookSecurity,
                 recorder,
                 new PaymentIntentSettlementService(intentRepository, paymentRepository, eventPublisher, recorder),
-                channel);
+                channel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)));
     }
 
     private PaymentIntent ownedIntent() {
-        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, "key-1");
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, "key-1", null);
         UUID consumerId = intent.getConsumerId();
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumerId);
         when(intentRepository.findById(intent.getId())).thenReturn(Optional.of(intent));
@@ -119,7 +119,7 @@ class PaymentsServicePspTest {
         when(webhookEventRepository.findByProviderAndEventId("stripe", "evt_9")).thenReturn(Optional.empty());
         when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
-        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null);
         UUID intentId = intent.getId();
         when(pspChannel.verifyWebhook("payload", "t=1,v1=sig"))
                 .thenReturn(new PspChannel.VerifiedWebhook("evt_9", "payment_intent.succeeded",
@@ -141,7 +141,7 @@ class PaymentsServicePspTest {
         when(webhookEventRepository.findByProviderAndEventId("stripe", "evt_10")).thenReturn(Optional.empty());
         when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
-        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null);
         UUID intentId = intent.getId();
         when(pspChannel.verifyWebhook("payload", "t=1,v1=sig"))
                 .thenReturn(new PspChannel.VerifiedWebhook("evt_10", "payment_intent.succeeded",
@@ -226,7 +226,7 @@ class PaymentsServicePspTest {
 
     @Test
     void assignPspIntentId_repeatedSameLink_isIdempotent_conflictRejected() {
-        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 100L, null);
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 100L, null, null, null);
         intent.assignPspIntentId("pi_a");
         intent.assignPspIntentId("pi_a");
         assertEquals("pi_a", intent.getPspIntentId());
@@ -242,7 +242,7 @@ class PaymentsServicePspTest {
         when(webhookEventRepository.findByProviderAndEventId("stripe", "evt_14")).thenReturn(Optional.empty());
         when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
-        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null);
         UUID intentId = intent.getId();
         intent.markProcessing();
         Payment payment = Payment.create(intentId, 5000L);
@@ -268,7 +268,7 @@ class PaymentsServicePspTest {
         when(webhookEventRepository.findByProviderAndEventId("stripe", "evt_15")).thenReturn(Optional.empty());
         when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
-        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null);
         UUID intentId = intent.getId();
         intent.markProcessing();
         intent.markSucceeded();
@@ -298,7 +298,7 @@ class PaymentsServicePspTest {
         when(webhookEventRepository.findByProviderAndEventId("stripe", "evt_16")).thenReturn(Optional.empty());
         when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
-        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null);
         UUID intentId = intent.getId();
         intent.markProcessing();
         intent.markSucceeded();
@@ -323,7 +323,7 @@ class PaymentsServicePspTest {
     /** Acceptance 2: one remote refund call with the derived idempotency key. */
     @Test
     void refundPayment_boundChannelAndLinkedIntent_callsRemoteRefundOnceWithDerivedKey() {
-        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null);
         intent.markProcessing();
         intent.markSucceeded();
         intent.assignPspIntentId("pi_remote_r1");
@@ -347,7 +347,7 @@ class PaymentsServicePspTest {
     /** Acceptance 3: the remote cumulative wins over the local sum (divergence case). */
     @Test
     void refundPayment_partialRefundAppliesRemoteCumulative() {
-        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null);
         intent.markProcessing();
         intent.markSucceeded();
         intent.assignPspIntentId("pi_remote_r2");
@@ -371,7 +371,7 @@ class PaymentsServicePspTest {
     /** Acceptance 4 mirror: channel bound but intent unlinked — internal path, no remote call. */
     @Test
     void refundPayment_unlinkedIntent_keepsInternalPath() {
-        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null);
         intent.markProcessing();
         intent.markSucceeded();
         Payment payment = Payment.create(intent.getId(), 5000L);
@@ -391,7 +391,7 @@ class PaymentsServicePspTest {
     /** Acceptance 2 + CodeRabbit round 1: a PENDING remote refund moves no money yet — books untouched. */
     @Test
     void refundPayment_pendingRemoteRefund_leavesLocalBooksUntouched() {
-        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null);
         intent.markProcessing();
         intent.markSucceeded();
         intent.assignPspIntentId("pi_remote_r4");
@@ -414,7 +414,7 @@ class PaymentsServicePspTest {
     /** A non-succeeded/non-pending remote status is a loud conflict — no silent local advance. */
     @Test
     void refundPayment_failedRemoteRefundStatus_throwsConflict() {
-        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null);
         intent.markProcessing();
         intent.markSucceeded();
         intent.assignPspIntentId("pi_remote_r5");
@@ -441,7 +441,7 @@ class PaymentsServicePspTest {
         when(webhookEventRepository.findByProviderAndEventId("stripe", "evt_17")).thenReturn(Optional.empty());
         when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
-        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null);
         UUID intentId = intent.getId();
         intent.markProcessing();
         intent.markSucceeded();
@@ -478,7 +478,7 @@ class PaymentsServicePspTest {
         when(webhookEventRepository.findByProviderAndEventId("stripe", "evt_inbox_1")).thenReturn(Optional.empty());
         when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
-        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null);
         UUID intentId = intent.getId();
         intent.markProcessing();
         intent.markSucceeded();
@@ -536,7 +536,7 @@ class PaymentsServicePspTest {
     @Test
     void autoRefundByBooking_linkedIntent_refundsThroughTheChannelOnceWithDerivedKey() {
         UUID bookingId = UUID.randomUUID();
-        PaymentIntent intent = PaymentIntent.create(bookingId, UUID.randomUUID(), 5000L, null);
+        PaymentIntent intent = PaymentIntent.create(bookingId, UUID.randomUUID(), 5000L, null, null, null);
         intent.markProcessing();
         intent.markSucceeded();
         intent.assignPspIntentId("pi_remote_a1");
@@ -574,7 +574,7 @@ class PaymentsServicePspTest {
     @Test
     void autoRefundByBooking_channelFailure_leavesIntentUnrefundedAndRetryable() {
         UUID bookingId = UUID.randomUUID();
-        PaymentIntent intent = PaymentIntent.create(bookingId, UUID.randomUUID(), 5000L, null);
+        PaymentIntent intent = PaymentIntent.create(bookingId, UUID.randomUUID(), 5000L, null, null, null);
         intent.markProcessing();
         intent.markSucceeded();
         intent.assignPspIntentId("pi_remote_a2");
@@ -605,7 +605,7 @@ class PaymentsServicePspTest {
     @Test
     void autoRefundByBooking_pendingRemoteRefund_completesCleanlyAndWaitsForWebhook() {
         UUID bookingId = UUID.randomUUID();
-        PaymentIntent intent = PaymentIntent.create(bookingId, UUID.randomUUID(), 5000L, null);
+        PaymentIntent intent = PaymentIntent.create(bookingId, UUID.randomUUID(), 5000L, null, null, null);
         intent.markProcessing();
         intent.markSucceeded();
         intent.assignPspIntentId("pi_remote_a3");
@@ -634,7 +634,7 @@ class PaymentsServicePspTest {
     @Test
     void autoRefundByBooking_unlinkedIntent_keepsTheInertLocalPath() {
         UUID bookingId = UUID.randomUUID();
-        PaymentIntent intent = PaymentIntent.create(bookingId, UUID.randomUUID(), 5000L, null);
+        PaymentIntent intent = PaymentIntent.create(bookingId, UUID.randomUUID(), 5000L, null, null, null);
         intent.markProcessing();
         intent.markSucceeded();
         Payment payment = Payment.create(intent.getId(), 5000L);
@@ -660,7 +660,7 @@ class PaymentsServicePspTest {
     @Test
     void autoRefundByBooking_noPaymentRow_marksTheIntentLevelRefund() {
         UUID bookingId = UUID.randomUUID();
-        PaymentIntent intent = PaymentIntent.create(bookingId, UUID.randomUUID(), 5000L, null);
+        PaymentIntent intent = PaymentIntent.create(bookingId, UUID.randomUUID(), 5000L, null, null, null);
         intent.markProcessing();
         intent.markSucceeded();
         when(intentRepository.findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(

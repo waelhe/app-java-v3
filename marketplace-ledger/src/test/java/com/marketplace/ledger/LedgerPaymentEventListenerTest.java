@@ -57,7 +57,7 @@ class LedgerPaymentEventListenerTest {
         UUID providerId = UUID.randomUUID();
         long priceCents = 5000L;
         var event = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
-        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "REFUNDED", "BOOKING", 25000L, "SAR", null, null);
+        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "REFUNDED", "BOOKING", 25000L, "SAR", null, null, null);
         var bookingInfo = new BookingInfo(providerId, UUID.randomUUID(), "CONFIRMED",
                 priceCents, "USD", Instant.now(), Instant.now());
 
@@ -78,7 +78,7 @@ class LedgerPaymentEventListenerTest {
         UUID providerId = UUID.randomUUID();
         long priceCents = 5000L;
         var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
-        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "COMPLETED", "BOOKING", 25000L, "SAR", null, null);
+        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "COMPLETED", "BOOKING", 25000L, "SAR", null, null, null);
         var bookingInfo = new BookingInfo(providerId, UUID.randomUUID(), "CONFIRMED",
                 priceCents, "USD", Instant.now(), Instant.now());
 
@@ -103,7 +103,7 @@ class LedgerPaymentEventListenerTest {
         UUID paymentIntentId = UUID.randomUUID();
         UUID bookingId = UUID.randomUUID();
         var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
-        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "COMPLETED", "BOOKING", 25000L, "SAR", null, null);
+        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "COMPLETED", "BOOKING", 25000L, "SAR", null, null, null);
 
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenThrow(new RuntimeException("lookup failed"));
@@ -120,7 +120,7 @@ class LedgerPaymentEventListenerTest {
         UUID providerId = UUID.randomUUID();
         long priceCents = 5000L;
         var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
-        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "COMPLETED", "BOOKING", 25000L, "SAR", null, null);
+        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "COMPLETED", "BOOKING", 25000L, "SAR", null, null, null);
         var bookingInfo = new BookingInfo(providerId, UUID.randomUUID(), "CONFIRMED",
                 priceCents, "USD", Instant.now(), Instant.now());
 
@@ -146,7 +146,7 @@ class LedgerPaymentEventListenerTest {
         UUID providerId = UUID.randomUUID();
         var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
         var intent = new PaymentIntentDetails(paymentIntentId, null, providerId, UUID.randomUUID(), "COMPLETED",
-                "AD", 7500L, "SAR", null, null);
+                "AD", 7500L, "SAR", null, null, null);
 
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
 
@@ -171,7 +171,7 @@ class LedgerPaymentEventListenerTest {
         UUID sellerId = UUID.randomUUID();
         var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
         var intent = new PaymentIntentDetails(paymentIntentId, null, buyerId, null, "COMPLETED",
-                "ORDER", 17400L, "SAR", orderId, null);
+                "ORDER", 17400L, "SAR", orderId, null, null);
         when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
 
@@ -197,7 +197,7 @@ class LedgerPaymentEventListenerTest {
         UUID sellerId = UUID.randomUUID();
         var event = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
         var intent = new PaymentIntentDetails(paymentIntentId, null, buyerId, null, "REFUNDED",
-                "ORDER", 17400L, "SAR", orderId, null);
+                "ORDER", 17400L, "SAR", orderId, null, null);
         when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
 
@@ -220,7 +220,7 @@ class LedgerPaymentEventListenerTest {
         UUID ownerId = UUID.randomUUID();
         var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
         var intent = new PaymentIntentDetails(paymentIntentId, null, borrowerId, null, "COMPLETED",
-                "LOAN", 9000L, "SAR", null, loanId);
+                "LOAN", 9000L, "SAR", null, loanId, null);
         when(loanOwnerPort.ownerOf(loanId)).thenReturn(ownerId);
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
 
@@ -246,7 +246,7 @@ class LedgerPaymentEventListenerTest {
         UUID ownerId = UUID.randomUUID();
         var event = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
         var intent = new PaymentIntentDetails(paymentIntentId, null, borrowerId, null, "REFUNDED",
-                "LOAN", 9000L, "SAR", null, loanId);
+                "LOAN", 9000L, "SAR", null, loanId, null);
         when(loanOwnerPort.ownerOf(loanId)).thenReturn(ownerId);
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
 
@@ -255,6 +255,66 @@ class LedgerPaymentEventListenerTest {
         verify(ledgerService).debitFromRefund(ownerId, paymentIntentId, 9000L, "SAR");
         verify(ledgerService, never()).creditFromPayment(any(), any(), anyLong(), any());
         verifyNoInteractions(bookingParticipantProvider, orderSellerPort);
+    }
+
+    // ---- ADR-0013 (D2): the commission freeze proofs ----
+
+    @Test
+    void postsTheFrozenCommissionRateNotTheLiveConfiguration() {
+        // ADR-0013 D2's own required proof: the rate that posts is the one
+        // FROZEN on the intent at creation — the listener was constructed
+        // with a LIVE rate of 0.10 (a config change after placement), the
+        // intent carries the frozen 0.05 the parties agreed to at creation,
+        // and the posted commission is the FROZEN value. Stripe's rule:
+        // application_fee_amount is fixed at charge creation, never
+        // recomputed at settlement.
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        java.math.BigDecimal frozenRate = new java.math.BigDecimal("0.05");
+        var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
+                "COMPLETED", "ORDER", 20000L, "SAR", orderId, null, frozenRate);
+        when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+        listener.onPaymentCompleted(event);
+
+        verify(ledgerService).creditFromPayment(sellerId, paymentIntentId, 20000L, "SAR");
+        verify(ledgerService).debitFromCommission(sellerId, paymentIntentId,
+                BigDecimal.valueOf(20000L)
+                        .multiply(frozenRate)
+                        .setScale(0, RoundingMode.HALF_UP)
+                        .longValue(),
+                "SAR");
+    }
+
+    @Test
+    void fallsBackToTheLiveRateOnlyForLegacyPreFreezeIntents() {
+        // The pre-V220 rows carry no frozen rate (their creation-time rate
+        // is unknowable after the fact) — the live configuration remains
+        // their settlement's source, the ADR's interim rule made structural.
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID bookingId = UUID.randomUUID();
+        UUID providerId = UUID.randomUUID();
+        long priceCents = 5000L;
+        var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
+        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null,
+                "COMPLETED", "BOOKING", 25000L, "SAR", null, null, null);
+        var bookingInfo = new BookingInfo(providerId, UUID.randomUUID(), "CONFIRMED",
+                priceCents, "USD", Instant.now(), Instant.now());
+
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+        when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
+
+        listener.onPaymentCompleted(event);
+
+        verify(ledgerService).debitFromCommission(providerId, paymentIntentId,
+                BigDecimal.valueOf(priceCents)
+                        .multiply(BigDecimal.valueOf(COMMISSION_RATE))
+                        .setScale(0, RoundingMode.HALF_UP)
+                        .longValue(),
+                "USD");
     }
 
     @Test
@@ -269,7 +329,7 @@ class LedgerPaymentEventListenerTest {
         UUID providerId = UUID.randomUUID();
         var event = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
         var intent = new PaymentIntentDetails(paymentIntentId, null, providerId, UUID.randomUUID(), "REFUNDED",
-                "AD", 7500L, "SAR", null, null);
+                "AD", 7500L, "SAR", null, null, null);
 
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
 
@@ -292,7 +352,7 @@ class LedgerPaymentEventListenerTest {
         UUID paymentIntentId = UUID.randomUUID();
         var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
         var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
-                "COMPLETED", "DELIVERY", 6200L, "SAR", null, null);
+                "COMPLETED", "DELIVERY", 6200L, "SAR", null, null, null);
 
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
 
@@ -311,7 +371,50 @@ class LedgerPaymentEventListenerTest {
         UUID paymentIntentId = UUID.randomUUID();
         var event = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
         var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
-                "REFUNDED", "DELIVERY", 6200L, "SAR", null, null);
+                "REFUNDED", "DELIVERY", 6200L, "SAR", null, null, null);
+
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+        assertThrows(IllegalStateException.class, () -> listener.onPaymentCompleted(event));
+
+        verifyNoInteractions(bookingParticipantProvider, orderSellerPort, loanOwnerPort);
+        verify(ledgerService, never()).debitFromRefund(any(), any(), anyLong(), any());
+        verify(ledgerService, never()).creditFromPayment(any(), any(), anyLong(), any());
+    }
+
+    // ---- The payment/ledger source audit's critical finding (PR #603):
+    //      the exhaustive, fail-closed origin dispatch ----
+
+    @Test
+    void failsClosedOnAnUnknownOriginCompletion() {
+        // The audit's DELIVERY example: an origin this consumer does not
+        // know must NEVER fall through to the booking branch (the
+        // pre-fix code would have called getBookingInfo(null)). The
+        // explicit refusal: no credit, no commission, no booking lookup —
+        // the publication stays recoverable for the owning implementation.
+        UUID paymentIntentId = UUID.randomUUID();
+        var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
+                "COMPLETED", "DELIVERY", 6200L, "SAR", null, null, null);
+
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+        assertThrows(IllegalStateException.class, () -> listener.onPaymentCompleted(event));
+
+        verifyNoInteractions(bookingParticipantProvider, orderSellerPort, loanOwnerPort);
+        verify(ledgerService, never()).creditFromPayment(any(), any(), anyLong(), any());
+        verify(ledgerService, never()).debitFromCommission(any(), any(), anyLong(), any());
+        verify(ledgerService, never()).debitFromRefund(any(), any(), anyLong(), any());
+    }
+
+    @Test
+    void failsClosedOnAnUnknownOriginRefund() {
+        // The refund path's twin: an unknown origin debits nothing — the
+        // explicit refusal, never a mirrored-booking debit.
+        UUID paymentIntentId = UUID.randomUUID();
+        var event = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
+                "REFUNDED", "DELIVERY", 6200L, "SAR", null, null, null);
 
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
 

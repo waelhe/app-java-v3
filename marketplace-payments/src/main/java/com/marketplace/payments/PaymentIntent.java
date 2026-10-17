@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import org.hibernate.envers.Audited;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 @Entity
@@ -80,6 +81,25 @@ public class PaymentIntent extends BaseEntity {
     @Column(name = "currency", nullable = false, length = 3)
     private String currency = "SAR";
 
+    /**
+     * ADR-0013 (D2 — the commission freeze): the announced commission rate
+     * frozen at THIS intent's creation — Stripe's application-fee model:
+     * {@code application_fee_amount} is fixed at PaymentIntent creation and
+     * never recomputed at settlement, so the fee the parties agreed to is
+     * the fee collected. The ledger's completion listener posts THIS value;
+     * a rate change affects new intents only.
+     *
+     * <p>NULL carries two honest meanings: the pre-V220 rows (their
+     * creation-time rate is unknowable after the fact — a DEFAULT would lie
+     * about history exactly the way V82 rejected a currency DEFAULT) and
+     * test fixtures that predate the freeze. Every intent the runtime
+     * creates through the factories below carries a frozen value; the
+     * ledger falls back to the live configuration only for the NULL
+     * legacy rows (the ADR's own interim rule, made structural).
+     */
+    @Column(name = "commission_rate", precision = 5, scale = 4)
+    private BigDecimal commissionRate;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     private PaymentIntentStatus status = PaymentIntentStatus.CREATED;
@@ -104,32 +124,36 @@ public class PaymentIntent extends BaseEntity {
 
     public PaymentIntent(UUID id, UUID bookingId, UUID consumerId,
                          Long amountCents, String idempotencyKey) {
-        this(id, bookingId, consumerId, amountCents, null, idempotencyKey);
+        this(id, bookingId, consumerId, amountCents, null, idempotencyKey, null);
     }
 
     PaymentIntent(UUID id, UUID bookingId, UUID consumerId,
-                  Long amountCents, String currency, String idempotencyKey) {
+                  Long amountCents, String currency, String idempotencyKey,
+                  BigDecimal commissionRate) {
         this.id = id;
         this.bookingId = bookingId;
         this.consumerId = consumerId;
         this.amountCents = amountCents;
         this.currency = Currencies.normalizeOrDefault(currency, "SAR");
         this.idempotencyKey = idempotencyKey;
-    }
-
-    public static PaymentIntent create(UUID bookingId, UUID consumerId,
-                                        Long amountCents, String idempotencyKey) {
-        return create(bookingId, consumerId, amountCents, null, idempotencyKey);
+        this.commissionRate = commissionRate;
     }
 
     /**
      * Creates an intent denominated in the booking's ISO 4217 currency
      * (roadmap B4) — the money snapshot the PSP charge will carry. Blank/null
      * keeps the house default SAR, exactly the pre-existing behavior.
+     *
+     * <p>ADR-0013 (D2): {@code commissionRate} is the announced rate frozen
+     * at THIS creation — the caller (the payments service) reads it from the
+     * {@code app.commission} configuration; the ledger posts the frozen
+     * value, never a recomputation.
      */
     public static PaymentIntent create(UUID bookingId, UUID consumerId,
-                                        Long amountCents, String currency, String idempotencyKey) {
-        return new PaymentIntent(UUID.randomUUID(), bookingId, consumerId, amountCents, currency, idempotencyKey);
+                                        Long amountCents, String currency, String idempotencyKey,
+                                        BigDecimal commissionRate) {
+        return new PaymentIntent(UUID.randomUUID(), bookingId, consumerId, amountCents, currency,
+                idempotencyKey, commissionRate);
     }
 
     /**
@@ -143,9 +167,10 @@ public class PaymentIntent extends BaseEntity {
      * it, the column's UNIQUE index rejects the replay.
      */
     public static PaymentIntent createForAds(UUID providerId, UUID campaignId,
-                                              Long amountCents, String currency, String idempotencyKey) {
+                                              Long amountCents, String currency, String idempotencyKey,
+                                              BigDecimal commissionRate) {
         PaymentIntent intent = new PaymentIntent(UUID.randomUUID(), null, providerId,
-                amountCents, currency, idempotencyKey);
+                amountCents, currency, idempotencyKey, commissionRate);
         intent.origin = ORIGIN_AD;
         intent.adCampaignId = campaignId;
         return intent;
@@ -159,9 +184,10 @@ public class PaymentIntent extends BaseEntity {
      * {@code order-{orderId}} — the engine deduplicates on it.
      */
     public static PaymentIntent createForOrder(UUID orderId, UUID consumerId,
-                                               Long amountCents, String currency, String idempotencyKey) {
+                                               Long amountCents, String currency, String idempotencyKey,
+                                               BigDecimal commissionRate) {
         PaymentIntent intent = new PaymentIntent(UUID.randomUUID(), null, consumerId,
-                amountCents, currency, idempotencyKey);
+                amountCents, currency, idempotencyKey, commissionRate);
         intent.origin = ORIGIN_ORDER;
         intent.orderId = orderId;
         return intent;
@@ -174,9 +200,10 @@ public class PaymentIntent extends BaseEntity {
      * {@code loan-{loanId}}.
      */
     public static PaymentIntent createForLoan(UUID loanId, UUID borrowerId,
-                                              Long amountCents, String currency, String idempotencyKey) {
+                                              Long amountCents, String currency, String idempotencyKey,
+                                              BigDecimal commissionRate) {
         PaymentIntent intent = new PaymentIntent(UUID.randomUUID(), null, borrowerId,
-                amountCents, currency, idempotencyKey);
+                amountCents, currency, idempotencyKey, commissionRate);
         intent.origin = ORIGIN_LOAN;
         intent.loanId = loanId;
         return intent;
@@ -192,6 +219,9 @@ public class PaymentIntent extends BaseEntity {
     public UUID getAdCampaignId() { return adCampaignId; }
     public Long getAmountCents() { return amountCents; }
     public String getCurrency() { return currency; }
+
+    /** ADR-0013 (D2): the frozen rate — null on pre-V220 rows and pre-freeze fixtures. */
+    public BigDecimal getCommissionRate() { return commissionRate; }
     public PaymentIntentStatus getStatus() { return status; }
     public Long getRefundedAmountCents() { return refundedAmountCents; }
     public String getIdempotencyKey() { return idempotencyKey; }

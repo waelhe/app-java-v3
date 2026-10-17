@@ -58,7 +58,7 @@ class BookingPaymentEventListenerTest {
             UUID paymentIntentId = UUID.randomUUID();
             PaymentIntentDetails intent = new PaymentIntentDetails(
                     paymentIntentId, null, UUID.randomUUID(), null,
-                    "COMPLETED", origin, 25000L, "SAR", null, null);
+                    "COMPLETED", origin, 25000L, "SAR", null, null, null);
             when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
 
             listener.onPaymentCompleted(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED"));
@@ -73,7 +73,7 @@ class BookingPaymentEventListenerTest {
         UUID paymentIntentId = UUID.randomUUID();
         PaymentStateChangedEvent event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
 
-        PaymentIntentDetails intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "COMPLETED", "BOOKING", 25000L, "SAR", null, null);
+        PaymentIntentDetails intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "COMPLETED", "BOOKING", 25000L, "SAR", null, null, null);
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
         doThrow(new RuntimeException("Database error")).when(bookingService).autoConfirm(bookingId);
 
@@ -87,5 +87,20 @@ class BookingPaymentEventListenerTest {
                 "onPaymentCompleted", PaymentStateChangedEvent.class);
         ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
         assertNotNull(ann);
+    }
+
+    @Test
+    void onPaymentCompleted_doesNotConfirmForNonBookingOrigins() {
+        for (String origin : new String[]{"AD", "ORDER", "LOAN", "UNKNOWN"}) {
+            UUID paymentIntentId = UUID.randomUUID();
+            PaymentIntentDetails intent = new PaymentIntentDetails(
+                    paymentIntentId, null, UUID.randomUUID(), null,
+                    "COMPLETED", origin, 25000L, "SAR", null, null, null);
+            when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+            listener.onPaymentCompleted(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED"));
+        }
+
+        verifyNoInteractions(bookingService);
     }
 }

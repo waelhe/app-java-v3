@@ -47,7 +47,8 @@ class OrderIntentContractTest {
     private final PaymentsService service = new PaymentsService(
             intentRepository, paymentRepository, webhookEventRepository, eventPublisher,
             currentUserProvider, bookingParticipantProvider, webhookSecurity,
-            webhookEventRecorder, settlementService, pspChannel);
+            webhookEventRecorder, settlementService, pspChannel,
+            new CommissionProperties(java.math.BigDecimal.valueOf(0.10)));
 
     @Test
     void createOrderIntent_savesTheOrderOriginIntentWithTheDeterministicKey() {
@@ -72,7 +73,7 @@ class OrderIntentContractTest {
     void createOrderIntent_replaysTheSameIntentForTheSameOrder() {
         UUID orderId = UUID.randomUUID();
         UUID buyer = UUID.randomUUID();
-        PaymentIntent existing = PaymentIntent.createForOrder(orderId, buyer, 17400L, "SAR", "order-" + orderId);
+        PaymentIntent existing = PaymentIntent.createForOrder(orderId, buyer, 17400L, "SAR", "order-" + orderId, null);
         when(intentRepository.findByIdempotencyKey("order-" + orderId)).thenReturn(Optional.of(existing));
 
         PaymentIntent replayed = service.createOrderIntent(orderId, buyer, 17400L, "SAR");
@@ -85,7 +86,7 @@ class OrderIntentContractTest {
     void createOrderIntent_refusesAForeignPayerReplay() {
         UUID orderId = UUID.randomUUID();
         PaymentIntent existing = PaymentIntent.createForOrder(orderId, UUID.randomUUID(),
-                17400L, "SAR", "order-" + orderId);
+                17400L, "SAR", "order-" + orderId, null);
         when(intentRepository.findByIdempotencyKey("order-" + orderId)).thenReturn(Optional.of(existing));
 
         assertThatThrownBy(() -> service.createOrderIntent(orderId, UUID.randomUUID(), 17400L, "SAR"))
@@ -106,7 +107,7 @@ class OrderIntentContractTest {
     void autoRefundByOrder_cancelsTheUnpaidIntent() {
         UUID orderId = UUID.randomUUID();
         PaymentIntent unpaid = PaymentIntent.createForOrder(orderId, UUID.randomUUID(),
-                100L, "SAR", "order-" + orderId);
+                100L, "SAR", "order-" + orderId, null);
         when(intentRepository.findByOrderId(orderId)).thenReturn(Optional.of(unpaid));
 
         service.autoRefundByOrder(orderId);
@@ -120,7 +121,7 @@ class OrderIntentContractTest {
     void autoRefundByOrder_refundsTheCollectedIntentInFull() {
         UUID orderId = UUID.randomUUID();
         UUID buyer = UUID.randomUUID();
-        PaymentIntent paid = PaymentIntent.createForOrder(orderId, buyer, 100L, "SAR", "order-" + orderId);
+        PaymentIntent paid = PaymentIntent.createForOrder(orderId, buyer, 100L, "SAR", "order-" + orderId, null);
         // The stage-8 machine's own edges: CREATED -> PROCESSING -> SUCCEEDED
         // (a direct CREATED -> SUCCEEDED jump is the ConflictException).
         paid.markProcessing();

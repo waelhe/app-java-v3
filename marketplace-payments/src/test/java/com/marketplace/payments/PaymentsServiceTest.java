@@ -52,7 +52,8 @@ class PaymentsServiceTest {
             webhookSecurity,
             webhookEventRecorder,
             settlementService,
-            pspChannel
+            pspChannel,
+            new CommissionProperties(java.math.BigDecimal.valueOf(0.10))
     );
 
     @Test
@@ -76,6 +77,48 @@ class PaymentsServiceTest {
         assertEquals(PaymentIntentStatus.CREATED, intent.getStatus());
         assertEquals(bookingId, intent.getBookingId());
         assertEquals(5000L, intent.getAmountCents());
+        // ADR-0013 (D2): the announced rate froze onto the intent at creation.
+        org.assertj.core.api.Assertions.assertThat(intent.getCommissionRate())
+                .isEqualByComparingTo("0.10");
+    }
+
+    @Test
+    void createIntent_freezesTheAnnouncedCommissionRateAtCreation() {
+        // ADR-0013 (D2): the freeze is the SERVICE's own read of the
+        // announced rate (never caller-supplied) — a service constructed
+        // with a non-default rate freezes THAT rate onto every intent it
+        // creates; the ledger will post the frozen value, never the live
+        // configuration (the listener's own tests prove the posting side).
+        UUID bookingId = create(UUID.class);
+        UUID consumerId = create(UUID.class);
+        BookingInfo bookingInfo = of(BookingInfo.class)
+                .set(field(BookingInfo::consumerId), consumerId)
+                .set(field(BookingInfo::status), "CONFIRMED")
+                .set(field(BookingInfo::priceCents), 5000L)
+                .set(field(BookingInfo::currency), "SAR")
+                .create();
+        PaymentsService quarterRate = new PaymentsService(
+                intentRepository,
+                paymentRepository,
+                webhookEventRepository,
+                eventPublisher,
+                currentUserProvider,
+                bookingParticipantProvider,
+                webhookSecurity,
+                webhookEventRecorder,
+                settlementService,
+                pspChannel,
+                new CommissionProperties(java.math.BigDecimal.valueOf(0.25)));
+
+        when(intentRepository.findByIdempotencyKey(null)).thenReturn(Optional.empty());
+        when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        PaymentIntent intent = quarterRate.createIntent(bookingId, consumerId, null);
+
+        org.assertj.core.api.Assertions.assertThat(intent.getCommissionRate())
+                .as("the frozen rate is the announced one at creation, never caller-supplied")
+                .isEqualByComparingTo("0.25");
     }
 
     @Test

@@ -258,7 +258,7 @@ class NotificationServiceTest {
 
         UUID paymentIntentId = UUID.randomUUID();
         PaymentIntentDetails intent = new PaymentIntentDetails(paymentIntentId, null, CONSUMER_ID, null,
-                "COMPLETED", "UNKNOWN", 1000L, "SAR", null, null);
+                "COMPLETED", "UNKNOWN", 1000L, "SAR", null, null, null);
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
 
         service.onPaymentStateChanged(paymentIntentId, "COMPLETED");

@@ -143,7 +143,7 @@ class AuditedWritesIntegrationTest {
     void auditedPaymentWritesSurviveOnTheFlywaySchema() {
         UUID intentId = transactionTemplate.execute(status -> {
             PaymentIntent intent = PaymentIntent.create(bookingId, CONSUMER_ID, 5000L,
-                    "audit-" + UUID.randomUUID());
+                    null, "audit-" + UUID.randomUUID(), null);
             intent = paymentIntentRepository.save(intent);
             Payment payment = Payment.create(intent.getId(), intent.getAmountCents());
             paymentRepository.save(payment);
@@ -169,7 +169,7 @@ class AuditedWritesIntegrationTest {
     @Test
     void auditedPaymentWriteCarriesThePspLinkColumn() {
         UUID intentId = transactionTemplate.execute(status -> {
-            PaymentIntent intent = PaymentIntent.create(bookingId, CONSUMER_ID, 1000L, null);
+            PaymentIntent intent = PaymentIntent.create(bookingId, CONSUMER_ID, 1000L, null, null, null);
             return paymentIntentRepository.save(intent).getId();
         });
 
@@ -188,7 +188,7 @@ class AuditedWritesIntegrationTest {
         SecurityContextHolder.getContext().setAuthentication(consumer);
         try {
             UUID intentId = transactionTemplate.execute(status -> {
-                PaymentIntent intent = PaymentIntent.create(bookingId, CONSUMER_ID, 2500L, null);
+                PaymentIntent intent = PaymentIntent.create(bookingId, CONSUMER_ID, 2500L, null, null, null);
                 return paymentIntentRepository.save(intent).getId();
             });
 

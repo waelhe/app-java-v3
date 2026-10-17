@@ -23,7 +23,7 @@ class PaymentMapperTest {
         Payment payment = Payment.create(intentId, 5000L);
         payment.markCompleted("evt_mapper");
         payment.markRefunded();
-        PaymentIntent intent = PaymentIntent.create(intentId, UUID.randomUUID(), 5000L, "USD", null);
+        PaymentIntent intent = PaymentIntent.create(intentId, UUID.randomUUID(), 5000L, "USD", null, null);
 
         PaymentResponse response = mapper.toResponse(new PaymentsService.RefundedPayment(payment, intent));
 

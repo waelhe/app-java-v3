@@ -156,7 +156,7 @@ class WebhookInboxRecoveryIntegrationTest {
         // The intent is mid-flight (PROCESSING) with its payment row — the
         // state the lost settlement was supposed to transition.
         PaymentIntent intent = paymentIntentRepository.save(
-                PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null));
+                PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null));
         intent.markProcessing();
         intent = paymentIntentRepository.save(intent);
         Payment payment = paymentRepository.save(Payment.create(intent.getId(), 5000L));
@@ -199,7 +199,7 @@ class WebhookInboxRecoveryIntegrationTest {
     @Test
     void settledRowsAreNeverReDelivered() {
         PaymentIntent intent = paymentIntentRepository.save(
-                PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null));
+                PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null));
         intent.markProcessing();
         intent = paymentIntentRepository.save(intent);
 
@@ -221,7 +221,7 @@ class WebhookInboxRecoveryIntegrationTest {
         // admin command) while the crashed delivery's row sat RECEIVED: the
         // event's transition can no longer apply legally.
         PaymentIntent intent = paymentIntentRepository.save(
-                PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null));
+                PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null));
         intent.markProcessing();
         intent.markSucceeded();
         intent = paymentIntentRepository.save(intent);
@@ -249,7 +249,7 @@ class WebhookInboxRecoveryIntegrationTest {
     @Test
     void chargeRefundedReDeliveryReplaysTheStoredSnapshot() {
         PaymentIntent intent = paymentIntentRepository.save(
-                PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null));
+                PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null));
         intent.markProcessing();
         intent.markSucceeded();
         intent = paymentIntentRepository.save(intent);
@@ -276,7 +276,7 @@ class WebhookInboxRecoveryIntegrationTest {
     @Test
     void purgeRemovesOnlySettledRowsOlderThanTheRetention() {
         PaymentIntent intent = paymentIntentRepository.save(
-                PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null));
+                PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null));
 
         PaymentWebhookEvent settledOld = strandedRow("payment_intent.processing", intent.getId(), null, null);
         settledOld.markSettled();
@@ -302,7 +302,7 @@ class WebhookInboxRecoveryIntegrationTest {
     @Test
     void freshReceivedRowsAreLeftAlone() {
         PaymentIntent intent = paymentIntentRepository.save(
-                PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null));
+                PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null));
         intent.markProcessing();
         intent = paymentIntentRepository.save(intent);
 

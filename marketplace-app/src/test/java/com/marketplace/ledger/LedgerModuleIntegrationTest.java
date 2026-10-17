@@ -141,7 +141,7 @@ class LedgerModuleIntegrationTest {
         long commissionCents = 500L; // app.commission.rate = 0.10 (test profile)
 
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(
-                new PaymentIntentDetails(paymentIntentId, bookingId, consumerId, null, "COMPLETED", "BOOKING", 25000L, "SAR", null, null)));
+                new PaymentIntentDetails(paymentIntentId, bookingId, consumerId, null, "COMPLETED", "BOOKING", 25000L, "SAR", null, null, null)));
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(new BookingInfo(
                 providerId, consumerId, "CONFIRMED", priceCents, "SAR",
                 Instant.now(), Instant.now()));
@@ -190,6 +190,57 @@ class LedgerModuleIntegrationTest {
                 .extracting(LedgerEntry::getId)
                 .containsExactlyInAnyOrder(
                         pageOne.getContent().get(0).getId(), pageTwo.getContent().get(0).getId());
+    }
+
+    /**
+     * ADR-0013 (D2 — the commission freeze): the COMPLETED settlement of
+     * an intent that froze a NON-default rate posts the FROZEN commission,
+     * not the live configuration — the module-slice proof on the real
+     * listener chain (the unit proof lives in LedgerPaymentEventListenerTest;
+     * this one runs the actual @ApplicationModuleListener dispatch). The
+     * intent carries the frozen 0.05 while the test profile's live
+     * configuration stays 0.10 — the balance must land the 5% fee.
+     */
+    @Test
+    void paymentCompletedEvent_postsTheFrozenCommissionRateNotTheLiveConfiguration() {
+        UUID providerId = UUID.randomUUID();
+        UUID bookingId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID consumerId = UUID.randomUUID();
+        long priceCents = 5000L;
+        long frozenCommissionCents = 250L; // 0.05 frozen at creation, NOT the live 0.10
+
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(
+                new PaymentIntentDetails(paymentIntentId, bookingId, consumerId, null, "COMPLETED",
+                        "BOOKING", 25000L, "SAR", null, null, new java.math.BigDecimal("0.05"))));
+        when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(new BookingInfo(
+                providerId, consumerId, "CONFIRMED", priceCents, "SAR",
+                Instant.now(), Instant.now()));
+        // The guarded reads must be authorized (the existing journey's own
+        // CodeRabbit #248 discipline): the owner mapping is stubbed so the
+        // statement read below passes the AuthHelper ownership gate.
+        when(currentUserProvider.getCurrentUserId(any())).thenReturn(consumerId);
+        when(providerLookupPort.findByUserId(providerId)).thenReturn(Optional.of(
+                new ProviderSummary(providerId, "Frozen-Rate Provider", "VERIFIED", consumerId)));
+
+        transactions.executeWithoutResult(tx ->
+                events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED")));
+
+        awaitBalance(providerId, priceCents - frozenCommissionCents);
+
+        var balances = ledgerService.getBalances(providerId);
+        assertThat(balances).hasSize(1);
+        assertThat(balances.get(0).availableCents())
+                .as("the frozen 0.05 posts, not the live 0.10")
+                .isEqualTo(priceCents - frozenCommissionCents);
+        Page<LedgerEntry> statement = ledgerService.getStatementForOwner(providerId, PageRequest.of(0, 10));
+        assertThat(statement.getContent())
+                .extracting(LedgerEntry::getSourceId, LedgerEntry::getEntryType, LedgerEntry::getAmountCents)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple(paymentIntentId, LedgerEntryType.PAYMENT_CREDIT, priceCents),
+                        org.assertj.core.groups.Tuple.tuple(
+                                UUID.nameUUIDFromBytes(("commission-" + paymentIntentId).getBytes()),
+                                LedgerEntryType.COMMISSION_DEBIT, frozenCommissionCents));
     }
 
     /**

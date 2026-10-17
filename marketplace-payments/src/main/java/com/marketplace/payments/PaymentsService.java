@@ -54,6 +54,7 @@ public class PaymentsService implements PaymentsSpi {
     private final WebhookEventRecorder webhookEventRecorder;
     private final PaymentIntentSettlementService paymentIntentSettlementService;
     private final ObjectProvider<PspChannel> pspChannel;
+    private final CommissionProperties commissionProperties;
 
     public PaymentsService(PaymentIntentRepository paymentIntentRepository,
                            PaymentRepository paymentRepository,
@@ -64,7 +65,8 @@ public class PaymentsService implements PaymentsSpi {
                            PaymentWebhookSecurity paymentWebhookSecurity,
                            WebhookEventRecorder webhookEventRecorder,
                            PaymentIntentSettlementService paymentIntentSettlementService,
-                           ObjectProvider<PspChannel> pspChannel) {
+                           ObjectProvider<PspChannel> pspChannel,
+                           CommissionProperties commissionProperties) {
         this.paymentIntentRepository = paymentIntentRepository;
         this.paymentRepository = paymentRepository;
         this.webhookEventRepository = webhookEventRepository;
@@ -75,6 +77,7 @@ public class PaymentsService implements PaymentsSpi {
         this.webhookEventRecorder = webhookEventRecorder;
         this.paymentIntentSettlementService = paymentIntentSettlementService;
         this.pspChannel = pspChannel;
+        this.commissionProperties = commissionProperties;
     }
 
     public boolean processWebhookEvent(String provider, String eventId, String eventType, String signature) {
@@ -392,7 +395,7 @@ public class PaymentsService implements PaymentsSpi {
                 });
 
         PaymentIntent intent = PaymentIntent.create(bookingId, consumerId, bookingInfo.priceCents(),
-                bookingInfo.currency(), idempotencyKey);
+                bookingInfo.currency(), idempotencyKey, commissionProperties.rate());
         PaymentIntent saved = paymentIntentRepository.save(intent);
         eventPublisher.publishEvent(new PaymentStateChangedEvent(saved.getId(), "INITIATED"));
         return saved;
@@ -432,7 +435,7 @@ public class PaymentsService implements PaymentsSpi {
             throw new ConflictException("An ad bill intent requires a positive amount: " + amountCents + " cents");
         }
         PaymentIntent intent = PaymentIntent.createForAds(providerId, campaignId,
-                amountCents, currency, idempotencyKey);
+                amountCents, currency, idempotencyKey, commissionProperties.rate());
         PaymentIntent saved = paymentIntentRepository.save(intent);
         eventPublisher.publishEvent(new PaymentStateChangedEvent(saved.getId(), "INITIATED"));
         return saved;
@@ -460,7 +463,7 @@ public class PaymentsService implements PaymentsSpi {
             throw new ConflictException("An order intent requires a positive amount: " + amountCents + " cents");
         }
         PaymentIntent intent = PaymentIntent.createForOrder(orderId, consumerId,
-                amountCents, currency, idempotencyKey);
+                amountCents, currency, idempotencyKey, commissionProperties.rate());
         PaymentIntent saved = paymentIntentRepository.save(intent);
         eventPublisher.publishEvent(new PaymentStateChangedEvent(saved.getId(), "INITIATED"));
         return saved;
@@ -485,7 +488,7 @@ public class PaymentsService implements PaymentsSpi {
             throw new ConflictException("A loan intent requires a positive amount: " + amountCents + " cents");
         }
         PaymentIntent intent = PaymentIntent.createForLoan(loanId, borrowerId,
-                amountCents, currency, idempotencyKey);
+                amountCents, currency, idempotencyKey, commissionProperties.rate());
         PaymentIntent saved = paymentIntentRepository.save(intent);
         eventPublisher.publishEvent(new PaymentStateChangedEvent(saved.getId(), "INITIATED"));
         return saved;

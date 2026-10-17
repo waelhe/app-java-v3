@@ -144,7 +144,7 @@ class PaymentsModuleIntegrationTest {
     @Test
     void webhook_paymentFailed_flipsIntentAndPaymentToFailed() {
         PaymentIntent intent = paymentIntentRepository.save(
-                PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null));
+                PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null));
         intent.markProcessing();
         intent = paymentIntentRepository.save(intent);
         Payment payment = paymentRepository.save(Payment.create(intent.getId(), 5000L));
@@ -170,7 +170,7 @@ class PaymentsModuleIntegrationTest {
     @Test
     void stripeWebhook_paymentFailed_flipsIntentToFailed() {
         PaymentIntent intent = paymentIntentRepository.save(
-                PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null));
+                PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null));
         intent.markProcessing();
         intent.assignPspIntentId("pi_fail_route");
         intent = paymentIntentRepository.save(intent);
@@ -199,7 +199,7 @@ class PaymentsModuleIntegrationTest {
      */
     @Test
     void stripeWebhook_chargeRefunded_syncsLocalBooksToRemoteActual() {
-        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null);
         intent.markProcessing();
         intent.markSucceeded();
         intent.assignPspIntentId("pi_refund_route");
@@ -240,7 +240,7 @@ class PaymentsModuleIntegrationTest {
     @Test
     void webhookConfirm_survivesRollbackOnlyCarrier_settlesIndependently() {
         PaymentIntent intent = paymentIntentRepository.save(
-                PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null));
+                PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null));
         intent.markProcessing();
         PaymentIntent seeded = paymentIntentRepository.save(intent);
         Payment payment = paymentRepository.save(Payment.create(seeded.getId(), 5000L));

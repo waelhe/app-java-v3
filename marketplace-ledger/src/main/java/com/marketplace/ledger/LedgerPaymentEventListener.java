@@ -16,6 +16,23 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.stereotype.Component;
 
+/**
+ * ADR-0013 (D2 — the commission freeze): the commission that posts is the
+ * one FROZEN on the intent at its creation (Stripe's application-fee rule:
+ * {@code application_fee_amount} is fixed at PaymentIntent creation and
+ * never recomputed at settlement). The pre-freeze defect this closes was
+ * measured by the payment-source audit: the listener read the rate at ITS
+ * construction and computed at event-processing time, so a configuration
+ * change between placement and settlement would rewrite the posted fee.
+ *
+ * <p>The live configuration ({@code app.commission.rate}) survives in
+ * exactly two roles, both documented by the ADR: the LEGACY fallback for
+ * pre-V220 rows ({@code commission_rate IS NULL} — their creation-time
+ * rate is unknowable after the fact) and the single announced rate the
+ * intent-creation path itself freezes ({@code CommissionProperties} in
+ * marketplace-payments reads the same key — one rate, two readers, zero
+ * drift). A rate change affects NEW intents only, by construction.
+ */
 @Component
 public class LedgerPaymentEventListener {
 
@@ -26,6 +43,7 @@ public class LedgerPaymentEventListener {
     private final BookingParticipantProvider bookingParticipantProvider;
     private final OrderSellerPort orderSellerPort;
     private final LoanOwnerPort loanOwnerPort;
+    /** ADR-0013 (D2): the LIVE announced rate — the LEGACY fallback for pre-freeze rows only. */
     private final double commissionRate;
 
     public LedgerPaymentEventListener(LedgerService ledgerService,
@@ -87,10 +105,7 @@ public class LedgerPaymentEventListener {
             java.util.UUID sellerId = orderSellerPort.sellerOf(intent.orderId());
             ledgerService.creditFromPayment(sellerId, intent.paymentIntentId(),
                     intent.amountCents(), intent.currency());
-            long commissionCents = BigDecimal.valueOf(intent.amountCents())
-                    .multiply(BigDecimal.valueOf(commissionRate))
-                    .setScale(0, RoundingMode.HALF_UP)
-                    .longValue();
+            long commissionCents = commissionCents(intent.amountCents(), intent);
             ledgerService.debitFromCommission(sellerId, intent.paymentIntentId(), commissionCents, intent.currency());
             log.info("Ledger processed: credited {} {} to seller {}, debited {} {} as commission — "
                             + "the order settlement (intent {})",
@@ -105,10 +120,7 @@ public class LedgerPaymentEventListener {
             java.util.UUID ownerId = loanOwnerPort.ownerOf(intent.loanId());
             ledgerService.creditFromPayment(ownerId, intent.paymentIntentId(),
                     intent.amountCents(), intent.currency());
-            long commissionCents = BigDecimal.valueOf(intent.amountCents())
-                    .multiply(BigDecimal.valueOf(commissionRate))
-                    .setScale(0, RoundingMode.HALF_UP)
-                    .longValue();
+            long commissionCents = commissionCents(intent.amountCents(), intent);
             ledgerService.debitFromCommission(ownerId, intent.paymentIntentId(), commissionCents, intent.currency());
             log.info("Ledger processed: credited {} {} to owner {}, debited {} {} as commission — "
                             + "the loan-fee settlement (intent {})",
@@ -133,10 +145,7 @@ public class LedgerPaymentEventListener {
             // and the refund all move the payment's own currency.
             String currency = bookingInfo.currency();
             ledgerService.creditFromPayment(bookingInfo.providerId(), intent.paymentIntentId(), priceCents, currency);
-            long commissionCents = BigDecimal.valueOf(priceCents)
-                    .multiply(BigDecimal.valueOf(commissionRate))
-                    .setScale(0, RoundingMode.HALF_UP)
-                    .longValue();
+            long commissionCents = commissionCents(priceCents, intent);
             ledgerService.debitFromCommission(bookingInfo.providerId(), intent.paymentIntentId(), commissionCents, currency);
             log.info("Ledger processed: credited {} {} to provider {}, debited {} {} as commission",
                     priceCents, currency, bookingInfo.providerId(), commissionCents, currency);
@@ -214,5 +223,31 @@ public class LedgerPaymentEventListener {
                 + "payment origin '" + intent.origin() + "' (intent " + intent.paymentIntentId()
                 + ") — no refund debit was booked; add the origin's explicit branch "
                 + "before widening the database origin constraint");
+    }
+
+    /**
+     * ADR-0013 (D2 — the commission freeze): the rate that posts is the
+     * FROZEN one — the intent's own creation-time value. The live
+     * configuration answers ONLY for the pre-V220 legacy rows whose
+     * {@code commission_rate} is NULL (their creation-time rate is
+     * unknowable after the fact — the ADR's interim rule made structural:
+     * only NULL-rate rows depend on the live value).
+     */
+    private BigDecimal effectiveCommissionRate(PaymentIntentDetails intent) {
+        return intent.commissionRate() != null
+                ? intent.commissionRate()
+                : BigDecimal.valueOf(commissionRate);
+    }
+
+    /**
+     * The posted commission in minor units — the amount times the
+     * EFFECTIVE rate, HALF_UP at scale 0 (the exact arithmetic the three
+     * commission branches always used; only the rate's source changed).
+     */
+    private long commissionCents(long amountCents, PaymentIntentDetails intent) {
+        return BigDecimal.valueOf(amountCents)
+                .multiply(effectiveCommissionRate(intent))
+                .setScale(0, RoundingMode.HALF_UP)
+                .longValue();
     }
 }
