@@ -41,6 +41,19 @@ class PaymentsServiceSecurityTest {
      */
     @org.springframework.context.annotation.Configuration
     static class TestConfig {
+        /**
+         * ADR-0013 (D2 — the commission freeze): the announced rate the
+         * service freezes onto every intent it creates — the production
+         * default (the same value application.yml and the test profile
+         * carry), supplied as a plain bean because this security slice
+         * boots the service WITHOUT the channel config that registers
+         * the properties binding.
+         */
+        @org.springframework.context.annotation.Bean
+        CommissionProperties commissionProperties() {
+            return new CommissionProperties(java.math.BigDecimal.valueOf(0.10));
+        }
+
         @org.springframework.context.annotation.Bean
         WebhookEventRecorder webhookEventRecorder(PaymentWebhookEventRepository repository) {
             return new WebhookEventRecorder(repository);
@@ -147,7 +160,7 @@ class PaymentsServiceSecurityTest {
     void processIntent_whenConsumer_thenInvokes() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         UUID consumerId = UUID.randomUUID();
-        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), consumerId, 1000L, null);
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), consumerId, 1000L, null, null, null);
         when(paymentIntentRepository.findById(intent.getId())).thenReturn(Optional.of(intent));
         when(currentUserProvider.getCurrentUserId(any(Authentication.class))).thenReturn(consumerId);
         when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -161,7 +174,7 @@ class PaymentsServiceSecurityTest {
     @Test
     @WithMockUser(roles = "ADMIN", username = "admin")
     void confirmIntent_whenAdmin_thenInvokes() {
-        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 1000L, null);
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 1000L, null, null, null);
         intent.markProcessing();
         when(paymentIntentRepository.findById(intent.getId())).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intent.getId())).thenReturn(Optional.empty());
@@ -176,7 +189,7 @@ class PaymentsServiceSecurityTest {
     void cancelIntent_whenConsumer_thenInvokes() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         UUID consumerId = UUID.randomUUID();
-        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), consumerId, 1000L, null);
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), consumerId, 1000L, null, null, null);
         when(paymentIntentRepository.findById(intent.getId())).thenReturn(Optional.of(intent));
         when(currentUserProvider.getCurrentUserId(any(Authentication.class))).thenReturn(consumerId);
 
@@ -188,7 +201,7 @@ class PaymentsServiceSecurityTest {
     @Test
     @WithMockUser(roles = "ADMIN", username = "admin")
     void refundPayment_whenAdmin_thenInvokes() {
-        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 1000L, null);
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 1000L, null, null, null);
         intent.markProcessing();
         intent.markSucceeded();
         Payment payment = Payment.create(intent.getId(), 1000L);
@@ -207,7 +220,7 @@ class PaymentsServiceSecurityTest {
     @Test
     @WithMockUser(roles = "ADMIN", username = "admin")
     void refundPaymentAmount_whenAdmin_thenInvokes() {
-        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 1000L, null);
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 1000L, null, null, null);
         intent.markProcessing();
         intent.markSucceeded();
         Payment payment = Payment.create(intent.getId(), 1000L);

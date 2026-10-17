@@ -177,7 +177,7 @@ class WebhookSettlementRetryIntegrationTest {
     @Test
     void webhookConfirm_firstAttemptFailsThenRetries_settlementCommits() {
         PaymentIntent intent = paymentIntentRepository.save(
-                PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null));
+                PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null));
         intent.markProcessing();
         intent = paymentIntentRepository.save(intent);
         Payment payment = paymentRepository.save(Payment.create(intent.getId(), 5000L));

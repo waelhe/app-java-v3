@@ -169,7 +169,7 @@ class LendingServiceTest {
         UUID intentId = UUID.randomUUID();
         when(loanPaymentPort.createForLoan(loan.getId(), borrower, 1500L, "SAR")).thenReturn(
                 new PaymentIntentDetails(intentId, null, borrower, null, "CREATED", "LOAN",
-                        1500L, "SAR", null, loan.getId()));
+                        1500L, "SAR", null, loan.getId(), null));
 
         Loan approved = service.approve(loan.getId(), authentication);
 

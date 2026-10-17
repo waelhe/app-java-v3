@@ -29,6 +29,7 @@ public class LoanPaymentAdapter implements LoanPaymentPort {
         PaymentIntent intent = paymentsService.createLoanIntent(loanId, borrowerId, amountMinor, currency);
         return new PaymentIntentDetails(intent.getId(), intent.getBookingId(), intent.getConsumerId(),
                 intent.getAdCampaignId(), intent.getStatus().name(), intent.getOrigin(),
-                intent.getAmountCents(), intent.getCurrency(), intent.getOrderId(), intent.getLoanId());
+                intent.getAmountCents(), intent.getCurrency(), intent.getOrderId(), intent.getLoanId(),
+                intent.getCommissionRate());
     }
 }

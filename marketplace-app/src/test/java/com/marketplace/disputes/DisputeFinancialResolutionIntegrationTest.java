@@ -159,7 +159,7 @@ class DisputeFinancialResolutionIntegrationTest {
         // CREATED -> PROCESSING, then the REAL confirm path (markSucceeded +
         // payment COMPLETED + the COMPLETED event).
         PaymentIntent intent = paymentIntentRepository.save(PaymentIntent.create(
-                bookingId, consumerId, PRICE_CENTS, "SAR", "l24-" + UUID.randomUUID()));
+                bookingId, consumerId, PRICE_CENTS, "SAR", "l24-" + UUID.randomUUID(), null));
         intent.markProcessing();
         paymentIntentRepository.save(intent);
         Payment payment = paymentRepository.save(Payment.create(intent.getId(), PRICE_CENTS));
@@ -236,7 +236,7 @@ class DisputeFinancialResolutionIntegrationTest {
                 Instant.now(), Instant.now()));
 
         PaymentIntent intent = paymentIntentRepository.save(PaymentIntent.create(
-                bookingId, consumerId, PRICE_CENTS, "SAR", "l24-rel-" + UUID.randomUUID()));
+                bookingId, consumerId, PRICE_CENTS, "SAR", "l24-rel-" + UUID.randomUUID(), null));
         intent.markProcessing();
         paymentIntentRepository.save(intent);
         Payment payment = paymentRepository.save(Payment.create(intent.getId(), PRICE_CENTS));
