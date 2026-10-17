@@ -36,8 +36,125 @@ directive @specifiedBy(
     url: String!
   ) on SCALAR
 
+"""
+ One source record rendered as an exploratory card — never a content
+ copy. state is String DELIBERATELY: the lifecycle vocabulary is
+ per-source-type heterogeneous (LOST_FOUND posts carry
+ ACTIVE/RESOLVED/FOUND, events ACTIVE/CANCELLED/POSTPONED, jobs OPEN,
+ listings ACTIVE/INACTIVE — and the urgent-alert cards carry none at
+ all, measured from the assembler: the alert mapping passes null) — a
+ single enum would lie about one shared vocabulary that does not
+ exist; String is the honest type for the heterogeneous per-source
+ state, exactly as the shared DiscoveryCardView carries it. updatedAt
+ is the ISO-8601 instant (java.time.Instant.toString) — the GraphQL
+ spec has no temporal scalar and this surface adds none (zero new
+ dependencies on the locked Boot 4.1.1 → spring-graphql 2.0.5 →
+ graphql-java 25.0 chain; a typed DateTime scalar stays a deliberate
+ future decision behind a measured need, never a silent drift — the
+ same discipline that keeps every version in this tree pinned).
+ scopeLocationId is null for user-scoped sources; paid is null for
+ organic (the disclosure contract: null never masquerades as either
+ answer, AC-20-08); reason carries the human-explainable appearance
+ reason (never empty on the FOR_YOU rail, AC-20-06/AC-20-11).
+"""
+type DiscoveryCard {
+  paid: Boolean
+  reason: String
+  scopeLocationId: ID
+  snippet: String
+  sourceId: ID!
+  sourceType: DiscoverySource!
+  state: String
+  title: String!
+  updatedAt: String!
+}
+
+"""
+ =====================================================================
+ Phase 6 — the first composite journey's projection types (the
+ corrected plan §11-Phase-6 + the inventory #599 §7 stage 4). Every
+ type below is a BOUNDED READ PROJECTION of an owning module's
+ contract (the plan's own words: "add bounded read projections") —
+ the GraphQL surface owns no business rule (REST and GraphQL invoke
+ the same use cases through the same declared SPIs, #599 §8).
+ =====================================================================
+ One discovery rail as rendered — the discovery projection's own
+ contract (Wave D-1): the rail, its eligible cards (deduped by the
+ (sourceType, sourceId) pair, bounded at the assembler's home card
+ limit), and the source-side total so "عرض الكل" (the REST topic
+ page, UJ-261) can state the real size before the user commits to
+ navigating. totalEligible is a scoped per-rail count — Int's signed
+ 32-bit ceiling (2,147,483,647) is the documented bound, the exact
+ priceCents house pattern.
+"""
+type DiscoveryRow {
+  cards: [DiscoveryCard!]!
+  row: DiscoveryRail!
+  totalEligible: Int!
+}
+
 type Mutation {
   createService(input: ServiceInput!): Service!
+}
+
+"""
+ The feed node — the REST feed view's own field set (the same-journey
+ comparison #599's gate demands: the home composite serves the SAME
+ data the REST feed serves, nothing narrower, nothing wider). The
+ author stays an opaque id (the identity seams own resolution —
+ GraphQL never widens it); category/status/lostFoundState are the
+ domain's closed vocabularies mirrored here as typed enums (the SDL
+ is the typed boundary — the conversion lives in the surface's
+ mapper, and the schema compatibility gate guards the values);
+ lostFoundState rides ONLY LOST_FOUND posts (null for every other
+ category — V171's own documented shape); reactionsCount is Int! with
+ the documented 32-bit ceiling (a live grouped count, the priceCents
+ pattern); media are the presigned display URLs (thumbUrl null until
+ background processing has run — the L28 contract); the instants are
+ ISO-8601 strings (the same deliberate no-new-scalar decision as
+ DiscoveryCard.updatedAt).
+"""
+type NeighborhoodPost {
+  authorId: ID!
+  body: String!
+  category: PostCategory!
+  createdAt: String!
+  declaredCommercial: Boolean!
+  id: ID!
+  locationId: ID!
+  lostFoundState: LostFoundState
+  media: [NeighborhoodPostMedia!]!
+  reactedByMe: Boolean!
+  reactionsCount: Int!
+  status: PostStatus!
+  title: String!
+  updatedAt: String!
+}
+
+type NeighborhoodPostConnection {
+  edges: [NeighborhoodPostEdge]
+  pageInfo: PageInfo!
+}
+
+type NeighborhoodPostEdge {
+  cursor: String!
+  node: NeighborhoodPost!
+}
+
+"""
+ One photo of a feed post as the home read carries it — the L48 media
+ projection: a display URL pair and the position order; the object
+ key, the status and every storage fact stay the media module's
+ private concern. url is the time-limited presigned GET the media
+ module computed for THIS read (always present); thumbUrl is null
+ until background processing has run (clients fall back to url).
+"""
+type NeighborhoodPostMedia {
+  contentType: String
+  mediaId: ID!
+  position: Int!
+  thumbUrl: String
+  url: String!
 }
 
 type PageInfo {
@@ -48,6 +165,37 @@ type PageInfo {
 }
 
 type Query {
+  """
+   The caller's home discovery rails — the deterministic §1.4
+   assembler's bounded projection (each rail ≤ 10 cards; the full
+   filtered list lives on the REST topic page GET /discovery/rows/
+   {row}, UJ-261). The membership IS the scope: no active membership
+   answers the honest EMPTY list, never a widened one (AC-02-02); an
+   ineligible/quiet rail is ABSENT entirely (AC-20-07 — the empty
+   state is the client's honest rendering of absence, never a
+   fabricated placeholder card). No arguments: the server owns
+   eligibility, ordering and geo scope (#599 §8) — there is no
+   client-side scope or filter axis on the home read.
+  """
+  discovery: [DiscoveryRow!]!
+  """
+   The connection is NULLABLE deliberately (unlike services): the
+   feed's owning use case answers an explicit denial — the REST
+   feed's own 403 (no active membership, G-N3) — and on a NON-NULL
+   root field a GraphQL field error propagates the null up to the
+   root, destroying the WHOLE composite's data (discovery included —
+   measured against the GraphQL spec's null propagation; strictly
+   worse than the REST journey it replaces). The nullable envelope
+   carries the owner's denial exactly the way the platform's error
+   contract intends: the field resolves to null WITH one AUTHZ-
+   classified error in errors[], while discovery still resolves its
+   honest empty list — the composite never bends either owner's
+   rules and never destroys the sibling section. The connection
+   types (NeighborhoodPostConnection/Edge/PageInfo) are generated at
+   startup by the same ConnectionTypeDefinitionConfigurer — never
+   hand-declared here.
+  """
+  neighborhoodFeed(after: String, first: Int): NeighborhoodPostConnection
   service(id: ID!): Service
   """
    The bounded collection contract (GraphQL target design Phase 1): the
@@ -99,6 +247,37 @@ type ServiceConnection {
 type ServiceEdge {
   cursor: String!
   node: Service!
+}
+
+"""
+ The closed vocabulary of the home rails — the domain
+ DiscoveryRowType mirrored (the render order §1.4 fixed: the enum's
+ own numbering; URGENT_ALERTS above the ordinary rails, never ranked
+ by popularity or a learned ordering, AC-20-06). The schema
+ compatibility gate guards these values against unreviewed removals.
+"""
+enum DiscoveryRail {
+  EVENTS_AND_OPPORTUNITIES
+  FOLLOWED_SOURCES
+  FOR_YOU
+  LOST_FOUND
+  NEIGHBORHOOD_RECOMMENDATIONS
+  URGENT_ALERTS
+}
+
+"""
+ The card's source-type vocabulary — the projection's closed five
+ (a card NEVER carries a copy of its source: every card resolves
+ back to its source record — the projection contract
+ sourceId + sourceType + version/updatedAt, re-validated at open
+ time by the owning module, AC-20-10).
+"""
+enum DiscoverySource {
+  JOB
+  NEIGHBORHOOD_EVENT
+  NEIGHBORHOOD_POST
+  PROVIDER_LISTING
+  URGENT_ALERT
 }
 
 enum ErrorDetail {
@@ -346,6 +525,43 @@ enum ErrorType {
   HTTP Mapping: 520 Unknown Error
   """
   UNKNOWN
+}
+
+"""
+ A LOST_FOUND post's lifecycle state — the domain LostFoundState
+ mirrored (present only on LOST_FOUND posts; a resolved or recovered
+ report never masquerades as an active one anywhere, JT-20).
+"""
+enum LostFoundState {
+  ACTIVE
+  FOUND
+  RESOLVED
+}
+
+"""
+ The feed post's category — the domain PostCategory mirrored (the
+ feed's one filter axis on the REST side; the home read serves the
+ whole feed, so this type carries no argument).
+"""
+enum PostCategory {
+  CLASSIFIED
+  GENERAL
+  LOST_FOUND
+  QUESTION
+  RECOMMENDATION
+  REQUEST
+}
+
+"""
+ The feed post's moderation status — the domain PostStatus mirrored.
+ The feed read answers VISIBLE only (a hidden post is absent — the
+ honest 404/absence the REST feed already carries); the full
+ vocabulary stays declared so the contract is the domain's, not a
+ subset invented by the projection.
+"""
+enum PostStatus {
+  HIDDEN_BY_MODERATOR
+  VISIBLE
 }
 
 enum ServiceStatus {

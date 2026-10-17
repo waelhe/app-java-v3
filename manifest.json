@@ -1,7 +1,7 @@
 {
-  "version": 1,
-  "publishedAt": "2026-10-17T00:21:08Z",
-  "sourceCommit": "d891edb1e6001f3417fc0126efdd3995cc1655f1",
-  "sourceRun": "https://github.com/waelhe/app-java-v3/actions/runs/38984950319",
-  "schemaSha256": "69e47fb1bf9222de3ce0f94bbcc076e31742462c9b43e15dae85d41fa0aa5ca2"
+  "version": 2,
+  "publishedAt": "2026-10-17T09:05:17Z",
+  "sourceCommit": "9a95ea4636b644a5e54acd6a7766b74b46cd3a11",
+  "sourceRun": "https://github.com/waelhe/app-java-v3/actions/runs/39018653573",
+  "schemaSha256": "fbfaeaaa1cbd100959a83ee28009eb9ea5449f9d74a27a5a1b847a106649ef70"
 }
