@@ -3,6 +3,7 @@ package com.marketplace.pricing;
 import test.config.IntegrationContainers;
 import test.config.ModuleTestConfig;
 import com.marketplace.shared.api.ListingPriceProvider;
+import com.marketplace.shared.api.ProductPricingPort;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
@@ -31,7 +32,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * have implementations OUTSIDE the pricing module's direct dependencies,
  * so they are {@code @MockitoBean} stand-ins — the {@code
  * BookingModuleIntegrationTest} convention for module slices that grew a
- * port-consuming service.
+ * port-consuming service. V223 grows the slice once more: {@code
+ * CommercialPricingService} consumes the catalog's authoritative pricing
+ * seam ({@link ProductPricingPort} — the Phase-3 price-list layer reads
+ * the catalog's own record beneath it), so it joins the same stand-in
+ * family.
  */
 @ApplicationModuleTest(mode = ApplicationModuleTest.BootstrapMode.DIRECT_DEPENDENCIES)
 @ActiveProfiles("test")
@@ -59,15 +64,22 @@ class PricingModuleIntegrationTest {
     @MockitoBean
     ListingPriceProvider listingPriceProvider;
 
+    @MockitoBean
+    ProductPricingPort productPricingPort;
+
     @Autowired
     private PricingService pricingService;
 
     @Autowired
     private ListingPriceCalendarService calendarService;
 
+    @Autowired
+    private CommercialPricingService commercialPricingService;
+
     @Test
     void contextLoads() {
         assertThat(calendarService).isNotNull();
+        assertThat(commercialPricingService).isNotNull();
     }
 
     @Test
