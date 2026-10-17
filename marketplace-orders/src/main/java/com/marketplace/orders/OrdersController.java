@@ -61,7 +61,7 @@ public class OrdersController {
             + "primary order, the jurisdiction's explicit tax) frozen on each order — and "
             + "tombstones the cart, one atomic transaction. An empty or absent cart answers 409.")
     public ResponseEntity<OrderResponses.OrderResponse> place(
-            @org.springframework.lang.Nullable @RequestBody(required = false) PlaceOrderRequest request,
+            @org.springframework.lang.Nullable @Valid @RequestBody(required = false) PlaceOrderRequest request,
             Authentication authentication) {
         UUID caller = currentUserProvider.getCurrentUserId(authentication);
         java.util.List<OrderDetail> placed = ordersService.place(caller,
@@ -85,7 +85,7 @@ public class OrdersController {
             + "jurisdiction's tax component. A refused voucher answers 409 BEFORE any money or "
             + "stock moves.")
     public ResponseEntity<java.util.List<OrderResponses.PlacementPreviewResponse>> previewPlacement(
-            @org.springframework.lang.Nullable @RequestBody(required = false) PlaceOrderRequest request,
+            @org.springframework.lang.Nullable @Valid @RequestBody(required = false) PlaceOrderRequest request,
             Authentication authentication) {
         UUID caller = currentUserProvider.getCurrentUserId(authentication);
         return ResponseEntity.ok(ordersService.previewPlacement(caller,
