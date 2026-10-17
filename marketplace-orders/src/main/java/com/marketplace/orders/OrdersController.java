@@ -154,7 +154,12 @@ public class OrdersController {
     /** The Phase-3 placement command: the optional voucher code. */
     public record PlaceOrderRequest(
             @Size(max = 64) String voucherCode,
-            FulfillmentRequest fulfillment) {
+            // @Valid reaches INSIDE the nested selection (Jakarta Bean
+            // Validation does not cascade without it — the review's
+            // finding): a null method or an over-250 address answers the
+            // honest 400 at the boundary, never a legacy-shaped order or
+            // a 500 from the column's length on insert.
+            @Valid FulfillmentRequest fulfillment) {
     }
 
     /**

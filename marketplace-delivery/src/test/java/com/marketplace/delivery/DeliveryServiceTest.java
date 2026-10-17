@@ -13,6 +13,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -782,5 +783,85 @@ class DeliveryServiceTest {
                 buyer, orderId,
                 new CreateOrderDeliveryQuoteRequest("Buyer address", 38.0, -121.0, "Small parcel")));
         verifyNoInteractions(routes, quotes);
+    }
+
+    @Test
+    void aSplitCarvesThePrimaryShareAndNeverExceedsTheFrozenFee() {
+        UUID orderId = UUID.randomUUID();
+        UUID buyer = UUID.randomUUID();
+        UUID sellerUserId = UUID.randomUUID();
+        UUID primaryId = UUID.randomUUID();
+        // the frozen agreement: 1500 minor shipping, the primary leg carries
+        // it all with a 100 compensation
+        DeliveryRequest primary = DeliveryRequest.fromCheckout(primaryId, orderId, buyer,
+                1500L, 100L, "SAR", 12_500L, 1_020L,
+                "Seller depot", 37.0, -122.0, "Buyer address", 38.0, -121.0,
+                "first package", "hash");
+        when(requests.findByOrderIdOrderByCreatedAtAscIdAsc(orderId))
+                .thenReturn(java.util.List.of(primary));
+        when(orders.requireOrderFulfillment(orderId, buyer))
+                .thenReturn(new com.marketplace.shared.api.OrderFulfillmentSelection(
+                        orderId, buyer, sellerUserId, "SAR", "PLATFORM_DELIVERY",
+                        "Buyer address", 38.0, -121.0, 1500L, null));
+        when(fulfillmentLocations.findVerifiedLocation(sellerUserId))
+                .thenReturn(Optional.of(new ProviderFulfillmentLocation(sellerUserId,
+                        "Seller depot", 37.0, -122.0)));
+        when(routes.route(37.0, -122.0, 38.0, -121.0))
+                .thenReturn(new DeliveryRouteMetrics(12_500, 1_020));
+        when(requests.save(any(DeliveryRequest.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        DeliveryRequestResponse split = service(enabledProperties())
+                .addLegForOrder(orderId, "second package", 400L);
+
+        // the redistribution law: the new leg carries its 400 share, the
+        // primary keeps 1100 — the legs' sum stays the buyer's frozen 1500
+        assertThat(split.amountMinor()).isEqualTo(400L);
+        assertThat(primary.getAmountMinor()).isEqualTo(1100L);
+        assertThat(primary.getCourierCompensationMinor()).isEqualTo(100L);
+    }
+
+    @Test
+    void aSplitRefusesTheLegacyQuotedOrder() {
+        UUID orderId = UUID.randomUUID();
+        UUID buyer = UUID.randomUUID();
+        DeliveryRequest primary = DeliveryRequest.fromCheckout(UUID.randomUUID(), orderId, buyer,
+                1500L, 100L, "SAR", 12_500L, 1_020L,
+                "Seller depot", 37.0, -122.0, "Buyer address", 38.0, -121.0,
+                "first package", "hash");
+        when(requests.findByOrderIdOrderByCreatedAtAscIdAsc(orderId))
+                .thenReturn(java.util.List.of(primary));
+        // the legacy #604 shape: no checkout selection — its legs are
+        // quote-backed; an unpaid add-on leg must never go out for dispatch
+        when(orders.requireOrderFulfillment(orderId, buyer))
+                .thenReturn(new com.marketplace.shared.api.OrderFulfillmentSelection(
+                        orderId, buyer, UUID.randomUUID(), "SAR", null,
+                        null, null, null, 0, null));
+
+        assertThrows(ConflictException.class, () ->
+                service(enabledProperties()).addLegForOrder(orderId, "second package", 400L));
+        verifyNoInteractions(routes);
+    }
+
+    @Test
+    void aSplitRefusesAShareThePrimaryMarginCannotCarve() {
+        UUID orderId = UUID.randomUUID();
+        UUID buyer = UUID.randomUUID();
+        UUID sellerUserId = UUID.randomUUID();
+        DeliveryRequest primary = DeliveryRequest.fromCheckout(UUID.randomUUID(), orderId, buyer,
+                1500L, 100L, "SAR", 12_500L, 1_020L,
+                "Seller depot", 37.0, -122.0, "Buyer address", 38.0, -121.0,
+                "first package", "hash");
+        when(requests.findByOrderIdOrderByCreatedAtAscIdAsc(orderId))
+                .thenReturn(java.util.List.of(primary));
+        when(orders.requireOrderFulfillment(orderId, buyer))
+                .thenReturn(new com.marketplace.shared.api.OrderFulfillmentSelection(
+                        orderId, buyer, sellerUserId, "SAR", "PLATFORM_DELIVERY",
+                        "Buyer address", 38.0, -121.0, 1500L, null));
+
+        // 1450 leaves the primary 50 — below its own 100 compensation: the
+        // platform never pays margin out of pocket
+        assertThrows(ConflictException.class, () ->
+                service(enabledProperties()).addLegForOrder(orderId, "greedy split", 1450L));
+        verifyNoInteractions(routes);
     }
 }
