@@ -53,6 +53,24 @@ fi
 git config user.name "github-actions[bot]"
 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+# Stale-run guard (CodeRabbit round 1 on PR #605, adopted 2026-10-17):
+# workflow_run deliveries are not guaranteed to arrive in commit order, and
+# the concurrency group serializes by TRIGGER order, not commit order — a
+# delayed run of an OLDER main commit could otherwise overwrite the contract
+# published by a newer merge with an older SDL (a contract regression that
+# would stand until the next merge). The guard: publish only when SOURCE_SHA
+# is the CURRENT main head. Skipping a stale run loses nothing: the newer
+# run's tree descends from it and already carries its schema changes, and
+# every merge to main runs its own push-event CI (the ruleset demands green
+# checks before merge), so every main state is still published by its own
+# run. A failed fetch of main also skips — never publish an unverified
+# currency state.
+MAIN_HEAD=$(git fetch origin main --depth=1 2>/dev/null && git rev-parse origin/main)
+if [[ -z "${MAIN_HEAD:-}" || "$SOURCE_SHA" != "$MAIN_HEAD" ]]; then
+  echo "Stale publication run: SOURCE_SHA $SOURCE_SHA is not the current main head (${MAIN_HEAD:-unavailable}). A newer run already advanced the contract past this commit's tree — skipping."
+  exit 0
+fi
+
 # The published contract, if the channel exists yet (bootstrap: first ever
 # run creates the branch as an orphan root).
 PUBLISHED_SCHEMA="$WORK_DIR/published-schema.graphqls"

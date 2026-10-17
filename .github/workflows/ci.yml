@@ -586,9 +586,16 @@ jobs:
     needs: [ graphql-schema-gate ]
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # CodeRabbit round 1 (adopted 2026-10-17): the gate only reads the
+    # repository and consumes a same-run artifact — no Git authentication,
+    # no write scopes, no credential persistence (zizmor artipacked).
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up JDK 17
         uses: actions/setup-java@v6

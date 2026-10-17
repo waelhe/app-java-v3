@@ -55,6 +55,16 @@ jobs:
       # .github/workflows/graphql-contract.yml from the schema CI booted
       # and gated — fetching the PUBLISHED contract, never the production
       # server, never a hand copy (the file is gitignored in the tree).
+      # Deliberate design (CodeRabbit round-1, rejected-with-measurement):
+      # this workflow builds against the PUBLISHED contract, not the PR's
+      # own dump — the per-PR schema validation lives in the REQUIRED
+      # "Android GraphQL Contract Gate" (CI's android-graphql job, same-run
+      # dump); this workflow is not a required check, so enforcement must
+      # not move here. Known signal: a PR adding an SDL field + updated
+      # operations reds here while the required gate stays green (the APK
+      # cannot embed an operation the published contract does not carry
+      # yet) — it resolves when the merge advances the contract. See
+      # android/README.md — GraphQL contract consumption.
       - name: Fetch the published GraphQL contract schema
         shell: bash
         run: |
