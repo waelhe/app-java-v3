@@ -380,7 +380,8 @@ public class OrdersService implements OrderDeliveryPort {
         Instant at = Instant.now();
         order.fulfill(at);
         if (order.isStockReserved()) {
-            productStockPort.commit(stockMapOf(order.getId()));
+            productStockPort.commit(productStockMapOf(order.getId()));
+            productStockPort.commitVariants(variantStockMapOf(order.getId()));
             order.markStockReleased();
         }
         orderRepository.save(order);
