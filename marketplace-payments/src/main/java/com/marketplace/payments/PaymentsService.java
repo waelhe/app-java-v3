@@ -1,6 +1,8 @@
 package com.marketplace.payments;
 
+import com.marketplace.payments.spi.PaymentIntentSearch;
 import com.marketplace.payments.spi.PaymentsSpi;
+import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.CacheInvalidationRequested;
@@ -21,6 +23,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.resilience.annotation.ConcurrencyLimit;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -330,15 +333,52 @@ public class PaymentsService implements PaymentsSpi {
         return paymentIntentRepository.findAllSummariesBy(pageable).map(this::toPaymentSummaryFromView);
     }
 
+    /**
+     * The unified finance-operator read model's search (payments plan
+     * Phase 1 — "investigate any origin by a single search"): the AND of
+     * every present field, over the specification mechanism the repository
+     * already exposes. The neutral search is the plain list — the caller
+     * decides which surface it answers, this method only composes
+     * predicates.
+     */
+    @Transactional(readOnly = true)
+    @Override
+    public Page<PaymentSummary> searchIntentsSummaries(PaymentIntentSearch search, Pageable pageable) {
+        if (search == null || search.isNeutral()) {
+            return listIntentsSummaries(pageable);
+        }
+        // The status word is validated by the vocabulary's owner — a typo
+        // answers the house 400, never a silent zero-match page (the
+        // seam carries words; the enum stays inside the module).
+        if (search.status() != null) {
+            try {
+                PaymentIntentStatus.valueOf(search.status());
+            } catch (IllegalArgumentException unknownWord) {
+                throw new BadRequestException("Unknown payment status: " + search.status()
+                        + " — the state machine's vocabulary is: " + java.util.Arrays.toString(
+                                PaymentIntentStatus.values()));
+            }
+        }
+        Specification<PaymentIntent> spec = PaymentIntentSpecifications.fromSearch(search);
+        return paymentIntentRepository.findAll(spec, pageable)
+                .map(this::toPaymentSummary);
+    }
+
     private PaymentSummary toPaymentSummaryFromView(PaymentIntentSummaryView view) {
         return new PaymentSummary(
                 view.getId(),
                 view.getBookingId(),
+                view.getAdCampaignId(),
+                view.getOrderId(),
+                view.getLoanId(),
                 view.getConsumerId(),
                 view.getAmountCents(),
                 view.getCurrency(),
+                view.getOrigin(),
                 view.getStatus().name(),
                 view.getRefundedAmountCents(),
+                view.getCommissionRate(),
+                view.getPspIntentId(),
                 view.getCreatedAt(),
                 view.getUpdatedAt()
         );
@@ -580,7 +620,13 @@ public class PaymentsService implements PaymentsSpi {
     @PreAuthorize("hasRole('ADMIN')")
     @Retry(name = "paymentProcessing")
     public RefundedPayment refundPayment(UUID paymentId) {
-        return refundPayment(paymentId, null);
+        return refundPayment(paymentId, null, null);
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @Retry(name = "paymentProcessing")
+    public RefundedPayment refundPayment(UUID paymentId, @Min(1) Long amountCents) {
+        return refundPayment(paymentId, amountCents, null);
     }
 
     /**
@@ -592,9 +638,21 @@ public class PaymentsService implements PaymentsSpi {
      */
     public record RefundedPayment(Payment payment, PaymentIntent intent) {}
 
+    /**
+     * The V230 return-scoped refund edge (the review's Major finding): a
+     * completing RETURN passes its own id as the idempotency key's STABLE
+     * scope. The state-derived key (payment + refunded-so-far + amount)
+     * drifts when a sibling return's refund advances the cumulative total
+     * between a rollback and its retry — the retry then derives a NEW key
+     * and the PSP refunds the same return twice. The return-scoped key is
+     * stable across that window: one return, one remote refund, replayed
+     * safely on retry. The dispute twin and the full-refund path keep the
+     * state-derived key (null scope) — their own scopes are single-shot.
+     */
     @PreAuthorize("hasRole('ADMIN')")
     @Retry(name = "paymentProcessing")
-    public RefundedPayment refundPayment(UUID paymentId, @Min(1) Long amountCents) {
+    public RefundedPayment refundPayment(UUID paymentId, @Min(1) Long amountCents,
+                                         UUID idempotencyScope) {
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found: " + paymentId));
         PaymentIntent intent = paymentIntentRepository.findById(payment.getPaymentIntentId())
@@ -619,7 +677,7 @@ public class PaymentsService implements PaymentsSpi {
         // stays byte-compatible. The booking-cancellation listener's full
         // refund (refundFully) routes through the SAME contract — one
         // behavior for one financial operation, no dual paths.
-        RemoteRefundOutcome outcome = refundThroughChannel(payment, intent, amountCents);
+        RemoteRefundOutcome outcome = refundThroughChannel(payment, intent, amountCents, idempotencyScope);
         switch (outcome) {
             case PENDING_AT_PROVIDER -> {
                 // Remote refund created but not completed: local books await
@@ -678,6 +736,20 @@ public class PaymentsService implements PaymentsSpi {
     static String refundIdempotencyKey(UUID paymentId, long alreadyRefundedCents, Long amountCents) {
         String amount = amountCents == null ? "full" : amountCents.toString();
         return "marketplace-refund-" + paymentId + "-" + alreadyRefundedCents + "-" + amount;
+    }
+
+    /**
+     * The V230 return-scoped key (the review's Major finding): derived from
+     * the payment, the RETURN's id, and the frozen amount — deliberately
+     * NOT from the refunded-so-far state. One completing return owns exactly
+     * one remote refund: its retried completion (after a rollback whose
+     * sibling refund advanced the cumulative total) re-derives the SAME key
+     * and replays the same refund at the PSP instead of creating a second
+     * one — the official idempotency-key contract, scoped to the RMA edge.
+     */
+    static String returnScopedRefundIdempotencyKey(UUID paymentId, UUID returnId, Long amountCents) {
+        String amount = amountCents == null ? "full" : amountCents.toString();
+        return "marketplace-refund-" + paymentId + "-return-" + returnId + "-" + amount;
     }
 
     /**
@@ -895,13 +967,16 @@ public class PaymentsService implements PaymentsSpi {
      * Anything else from the provider is a loud conflict with no local state
      * change (CodeRabbit #249 round 1).
      */
-    private RemoteRefundOutcome refundThroughChannel(Payment payment, PaymentIntent intent, Long amountCents) {
+    private RemoteRefundOutcome refundThroughChannel(Payment payment, PaymentIntent intent, Long amountCents,
+                                                    UUID idempotencyScope) {
         PspChannel channel = pspChannel.getIfAvailable();
         if (channel == null || intent.getPspIntentId() == null) {
             return RemoteRefundOutcome.NO_CHANNEL;
         }
-        String idempotencyKey = refundIdempotencyKey(
-                payment.getId(), payment.getRefundedAmountCents(), amountCents);
+        String idempotencyKey = idempotencyScope != null
+                ? returnScopedRefundIdempotencyKey(payment.getId(), idempotencyScope, amountCents)
+                : refundIdempotencyKey(
+                        payment.getId(), payment.getRefundedAmountCents(), amountCents);
         PspChannel.RemoteRefund remote = channel.createRemoteRefund(
                 intent.getPspIntentId(), amountCents, idempotencyKey);
         if ("pending".equals(remote.status())) {
@@ -939,7 +1014,7 @@ public class PaymentsService implements PaymentsSpi {
                     intent.getId());
             return;
         }
-        RemoteRefundOutcome outcome = refundThroughChannel(payment, intent, null);
+        RemoteRefundOutcome outcome = refundThroughChannel(payment, intent, null, null);
         switch (outcome) {
             case SYNCED -> {
                 paymentIntentRepository.save(intent);
@@ -992,11 +1067,17 @@ public class PaymentsService implements PaymentsSpi {
         return new PaymentSummary(
                 paymentIntent.getId(),
                 paymentIntent.getBookingId(),
+                paymentIntent.getAdCampaignId(),
+                paymentIntent.getOrderId(),
+                paymentIntent.getLoanId(),
                 paymentIntent.getConsumerId(),
                 paymentIntent.getAmountCents(),
                 paymentIntent.getCurrency(),
+                paymentIntent.getOrigin(),
                 paymentIntent.getStatus().name(),
                 paymentIntent.getRefundedAmountCents(),
+                paymentIntent.getCommissionRate(),
+                paymentIntent.getPspIntentId(),
                 paymentIntent.getCreatedAt(),
                 paymentIntent.getUpdatedAt()
         );

@@ -21,6 +21,13 @@ import java.util.UUID;
  * accounting is COUNTED from the redemption rows under the voucher row's
  * pessimistic lock at settle time — never a read-modify-written counter
  * (the house {@code findByIdForUpdate} discipline).
+ *
+ * <p><b>Currency scoping (the policy row's own denomination):</b> the
+ * voucher's FIXED amount and its minor-unit minimum spend are authored
+ * FOR the row's ISO-4217 currency — a voucher of another currency than
+ * the order's is refused with the honest 409 before any money moves
+ * ({@code CommercialPricingService.computeBreakdown}), never silently
+ * re-denominated.
  */
 @Entity
 @Table(name = "vouchers")
@@ -37,6 +44,9 @@ public class Voucher extends BaseEntity {
 
     @Column(name = "name", length = 120)
     private String name;
+
+    @Column(name = "currency", nullable = false, length = 3)
+    private String currency;
 
     @Column(name = "discount_type", nullable = false, length = 12)
     private DiscountType discountType;
@@ -65,12 +75,13 @@ public class Voucher extends BaseEntity {
     protected Voucher() {
     }
 
-    private Voucher(UUID id, String code, String name, DiscountType discountType, long discountValue,
-                    long minSpendMinor, Instant startsAt, Instant endsAt,
+    private Voucher(UUID id, String code, String name, String currency, DiscountType discountType,
+                    long discountValue, long minSpendMinor, Instant startsAt, Instant endsAt,
                     Long maxRedemptions, Long maxRedemptionsPerUser, boolean active) {
         this.id = id;
         this.code = code;
         this.name = name;
+        this.currency = currency;
         this.discountType = discountType;
         this.discountValue = discountValue;
         this.minSpendMinor = minSpendMinor;
@@ -81,8 +92,8 @@ public class Voucher extends BaseEntity {
         this.active = active;
     }
 
-    public static Voucher of(String code, String name, DiscountType discountType, long discountValue,
-                             long minSpendMinor, Instant startsAt, Instant endsAt,
+    public static Voucher of(String code, String name, String currency, DiscountType discountType,
+                             long discountValue, long minSpendMinor, Instant startsAt, Instant endsAt,
                              Long maxRedemptions, Long maxRedemptionsPerUser, boolean active) {
         String normalized = code == null ? "" : code.strip().toUpperCase(java.util.Locale.ROOT);
         if (normalized.length() < 4 || normalized.length() > 64) {
@@ -90,6 +101,10 @@ public class Voucher extends BaseEntity {
         }
         if (!normalized.matches("[A-Z0-9-]+")) {
             throw new IllegalArgumentException("A voucher code is uppercase letters, digits and dashes");
+        }
+        String normalizedCurrency = currency == null ? "" : currency.strip().toUpperCase(java.util.Locale.ROOT);
+        if (!normalizedCurrency.matches("[A-Z]{3}")) {
+            throw new IllegalArgumentException("A voucher is denominated in a 3-letter ISO-4217 currency");
         }
         if (discountType == null) {
             throw new IllegalArgumentException("A voucher requires a discount type");
@@ -113,8 +128,8 @@ public class Voucher extends BaseEntity {
             throw new IllegalArgumentException("A voucher's per-user limit is positive or null");
         }
         return new Voucher(UUID.randomUUID(), normalized,
-                name == null ? null : name.strip(), discountType, discountValue, minSpendMinor,
-                startsAt, endsAt, maxRedemptions, maxRedemptionsPerUser, active);
+                name == null ? null : name.strip(), normalizedCurrency, discountType, discountValue,
+                minSpendMinor, startsAt, endsAt, maxRedemptions, maxRedemptionsPerUser, active);
     }
 
     public boolean covers(Instant at) {
@@ -124,10 +139,15 @@ public class Voucher extends BaseEntity {
         return endsAt == null || at.isBefore(endsAt);
     }
 
-    /** The discount on the given amount, capped at that amount. */
+    /**
+     * The discount on the given amount, capped at that amount. The
+     * percentage path is exact integer arithmetic ({@link ExactPercentMath})
+     * — the double division drifted a minor unit on large amounts (the
+     * review's measured finding).
+     */
     public long discountOn(long amountMinor) {
         long raw = discountType == DiscountType.PERCENTAGE
-                ? Math.round(amountMinor * discountValue / 10000.0)
+                ? ExactPercentMath.roundHalfUpScaled(amountMinor, discountValue, 10000L)
                 : discountValue;
         return Math.min(raw, amountMinor);
     }
@@ -151,6 +171,10 @@ public class Voucher extends BaseEntity {
 
     public String getName() {
         return name;
+    }
+
+    public String getCurrency() {
+        return currency;
     }
 
     public DiscountType getDiscountType() {

@@ -23,7 +23,8 @@ import java.util.UUID;
  * one entry per purchasable unit per list — a product-level entry and a
  * variant entry of the SAME product legally coexist (the variant's own
  * entry wins for variant lines, the product entry serves product-level
- * lines).
+ * lines AND variant lines as the documented fallback —
+ * {@link #serves(UUID, UUID)}).
  */
 @Entity
 @Table(name = "price_list_entries")
@@ -67,10 +68,27 @@ public class PriceListEntry extends BaseEntity {
         return new PriceListEntry(UUID.randomUUID(), priceListId, productId, variantId, amountMinor);
     }
 
-    /** The exact-match rule: this entry serves a line asking for this unit. */
-    public boolean matches(UUID productId, UUID variantId) {
+    /**
+     * The precedence rule (the port's documented contract): a VARIANT line
+     * is served by its own exact entry first, then the product-level
+     * entry; a product-level line only by the product-level entry. The
+     * union key lets a variant entry and the product entry of the same
+     * product coexist in one list — the variant's own entry wins for
+     * variant lines.
+     */
+    public boolean serves(UUID productId, UUID variantId) {
         return this.productId.equals(productId)
-                && java.util.Objects.equals(this.variantId, variantId);
+                && (java.util.Objects.equals(this.variantId, variantId)
+                    || (variantId != null && this.variantId == null));
+    }
+
+    /**
+     * 0 = the exact entry for the line's unit (the variant's own entry on
+     * a variant line); 1 = the product-level fallback. Only meaningful
+     * among entries {@link #serves(UUID, UUID)} already accepted.
+     */
+    public int precedenceRank(UUID variantId) {
+        return variantId != null && this.variantId != null ? 0 : 1;
     }
 
     public void updateAmount(long newAmountMinor) {

@@ -61,7 +61,7 @@ public class OrdersController {
             + "primary order, the jurisdiction's explicit tax) frozen on each order — and "
             + "tombstones the cart, one atomic transaction. An empty or absent cart answers 409.")
     public ResponseEntity<OrderResponses.OrderResponse> place(
-            @org.springframework.lang.Nullable @RequestBody(required = false) PlaceOrderRequest request,
+            @org.springframework.lang.Nullable @Valid @RequestBody(required = false) PlaceOrderRequest request,
             Authentication authentication) {
         UUID caller = currentUserProvider.getCurrentUserId(authentication);
         java.util.List<OrderDetail> placed = ordersService.place(caller,
@@ -87,7 +87,7 @@ public class OrdersController {
             + "jurisdiction's tax component. A refused voucher answers 409 BEFORE any money or "
             + "stock moves.")
     public ResponseEntity<java.util.List<OrderResponses.PlacementPreviewResponse>> previewPlacement(
-            @org.springframework.lang.Nullable @RequestBody(required = false) PlaceOrderRequest request,
+            @org.springframework.lang.Nullable @Valid @RequestBody(required = false) PlaceOrderRequest request,
             Authentication authentication) {
         UUID caller = currentUserProvider.getCurrentUserId(authentication);
         return ResponseEntity.ok(ordersService.previewPlacement(caller,
@@ -154,7 +154,12 @@ public class OrdersController {
     /** The Phase-3 placement command: the optional voucher code. */
     public record PlaceOrderRequest(
             @Size(max = 64) String voucherCode,
-            FulfillmentRequest fulfillment) {
+            // @Valid reaches INSIDE the nested selection (Jakarta Bean
+            // Validation does not cascade without it — the review's
+            // finding): a null method or an over-250 address answers the
+            // honest 400 at the boundary, never a legacy-shaped order or
+            // a 500 from the column's length on insert.
+            @Valid FulfillmentRequest fulfillment) {
     }
 
     /**

@@ -44,7 +44,20 @@ public class CheckoutDeliveryAdapter implements CheckoutDeliveryPort {
 
     @Override
     public DeliveryFareOption fareFor(UUID sellerId, double dropoffLatitude, double dropoffLongitude) {
-        if (!properties.enabled()) {
+        // The parity law (the review's Major finding, root-caused): the
+        // checkout's serviceability answer must agree with what leg
+        // creation will accept AFTER the buyer pays — a configuration
+        // leg creation refuses (createOrderLegFromFulfillment's own
+        // ensureConfigured margin rules) must be refused HERE, before the
+        // money moves, or every OrderConfirmedEvent retry fails on a paid
+        // order with no delivery leg ever created.
+        if (!properties.enabled()
+                || properties.baseFeeMinor() <= 0 || properties.perKilometerMinor() < 0
+                || properties.maxDistanceMeters() <= 0
+                || properties.currency() == null
+                || !properties.currency().trim().matches("[A-Za-z]{3}")
+                || properties.courierBaseCompensationMinor() <= 0
+                || properties.courierCompensationPerKilometerMinor() < 0) {
             return DeliveryFareOption.unserviceable("the delivery service is not enabled");
         }
         var pickup = fulfillmentLocations.findVerifiedLocation(sellerId).orElse(null);
@@ -65,11 +78,22 @@ public class CheckoutDeliveryAdapter implements CheckoutDeliveryPort {
         }
         long km = Math.max(1, (route.distanceMeters() + 999L) / 1000L);
         long fee;
+        long compensation;
         try {
             fee = Math.addExact(properties.baseFeeMinor(),
                     Math.multiplyExact(properties.perKilometerMinor(), km));
+            compensation = Math.addExact(properties.courierBaseCompensationMinor(),
+                    Math.multiplyExact(properties.courierCompensationPerKilometerMinor(), km));
         } catch (ArithmeticException ex) {
             return DeliveryFareOption.unserviceable("the fare policy overflows this route");
+        }
+        if (compensation <= 0 || compensation >= fee) {
+            // the same margin rule leg creation enforces: a fare the
+            // courier's compensation consumes leaves the platform no
+            // margin — unserviceable at the checkout, never a paid order
+            // that cannot create its delivery legs
+            return DeliveryFareOption.unserviceable(
+                    "the fare policy does not cover courier compensation on this route");
         }
         return new DeliveryFareOption(true, fee, route.durationSeconds(),
                 properties.currency().trim().toUpperCase(java.util.Locale.ROOT), null);

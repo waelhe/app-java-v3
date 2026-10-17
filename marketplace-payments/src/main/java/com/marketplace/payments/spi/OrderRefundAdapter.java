@@ -42,7 +42,7 @@ public class OrderRefundAdapter implements OrderRefundPort {
     }
 
     @Override
-    public RefundOutcome refundForOrder(UUID orderId, long amountMinor) {
+    public RefundOutcome refundForOrder(UUID orderId, UUID returnId, long amountMinor) {
         var intent = paymentIntentRepository.findByOrderId(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Order " + orderId + " has no payment intent to refund"));
@@ -50,7 +50,7 @@ public class OrderRefundAdapter implements OrderRefundPort {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Order " + orderId + " has no collected payment to refund"));
         PaymentsService.RefundedPayment refunded =
-                paymentsService.refundPayment(payment.getId(), amountMinor);
+                paymentsService.refundPayment(payment.getId(), amountMinor, returnId);
         return new RefundOutcome(refunded.payment().getId(),
                 refunded.payment().getRefundedAmountCents());
     }

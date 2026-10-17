@@ -22,6 +22,15 @@ import java.util.UUID;
  * discount applies on the order's subtotal when the subtotal meets
  * {@code minSpendMinor}, and CAPS at the subtotal (a discount can never
  * turn an order negative).
+ *
+ * <p><b>Currency scoping (the policy row's own denomination):</b> every
+ * minor-unit fact on the row — the FIXED amount and the minimum spend —
+ * is authored FOR the row's ISO-4217 currency, so only promotions whose
+ * currency equals the order's single currency participate in the
+ * breakdown: a SAR-authored amount must never discount a USD order. (A
+ * PERCENTAGE value is currency-free arithmetic, but the row's minimum
+ * spend is not — the whole row rides one currency, the same explicit
+ * policy form the price list itself takes.)
  */
 @Entity
 @Table(name = "promotions")
@@ -36,6 +45,9 @@ public class Promotion extends BaseEntity {
 
     @Column(name = "name", nullable = false, length = 120)
     private String name;
+
+    @Column(name = "currency", nullable = false, length = 3)
+    private String currency;
 
     @Column(name = "discount_type", nullable = false, length = 12)
     private DiscountType discountType;
@@ -58,10 +70,11 @@ public class Promotion extends BaseEntity {
     protected Promotion() {
     }
 
-    private Promotion(UUID id, String name, DiscountType discountType, long discountValue,
+    private Promotion(UUID id, String name, String currency, DiscountType discountType, long discountValue,
                       long minSpendMinor, Instant startsAt, Instant endsAt, boolean active) {
         this.id = id;
         this.name = name;
+        this.currency = currency;
         this.discountType = discountType;
         this.discountValue = discountValue;
         this.minSpendMinor = minSpendMinor;
@@ -70,10 +83,14 @@ public class Promotion extends BaseEntity {
         this.active = active;
     }
 
-    public static Promotion of(String name, DiscountType discountType, long discountValue,
+    public static Promotion of(String name, String currency, DiscountType discountType, long discountValue,
                                long minSpendMinor, Instant startsAt, Instant endsAt, boolean active) {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("A promotion requires a name");
+        }
+        String normalizedCurrency = currency == null ? "" : currency.strip().toUpperCase(java.util.Locale.ROOT);
+        if (!normalizedCurrency.matches("[A-Z]{3}")) {
+            throw new IllegalArgumentException("A promotion is denominated in a 3-letter ISO-4217 currency");
         }
         if (discountType == null) {
             throw new IllegalArgumentException("A promotion requires a discount type");
@@ -90,8 +107,8 @@ public class Promotion extends BaseEntity {
         if (startsAt != null && endsAt != null && !startsAt.isBefore(endsAt)) {
             throw new IllegalArgumentException("A promotion window requires startsAt before endsAt");
         }
-        return new Promotion(UUID.randomUUID(), name.strip(), discountType, discountValue,
-                minSpendMinor, startsAt, endsAt, active);
+        return new Promotion(UUID.randomUUID(), name.strip(), normalizedCurrency, discountType,
+                discountValue, minSpendMinor, startsAt, endsAt, active);
     }
 
     /** Eligibility at an instant: active, in window, and the spend meets the minimum. */
@@ -106,10 +123,15 @@ public class Promotion extends BaseEntity {
         return endsAt == null || at.isBefore(endsAt);
     }
 
-    /** The discount on the subtotal, capped at the subtotal. */
+    /**
+     * The discount on the subtotal, capped at the subtotal. The percentage
+     * path is exact integer arithmetic ({@link ExactPercentMath}) — the
+     * double division drifted a minor unit on large subtotals (the
+     * review's measured finding).
+     */
     public long discountOn(long subtotalMinor) {
         long raw = discountType == DiscountType.PERCENTAGE
-                ? Math.round(subtotalMinor * discountValue / 10000.0)
+                ? ExactPercentMath.roundHalfUpScaled(subtotalMinor, discountValue, 10000L)
                 : discountValue;
         return Math.min(raw, subtotalMinor);
     }
@@ -129,6 +151,10 @@ public class Promotion extends BaseEntity {
 
     public String getName() {
         return name;
+    }
+
+    public String getCurrency() {
+        return currency;
     }
 
     public DiscountType getDiscountType() {

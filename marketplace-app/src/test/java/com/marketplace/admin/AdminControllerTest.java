@@ -4,6 +4,7 @@ import com.marketplace.booking.spi.BookingSpi;
 import com.marketplace.catalog.spi.CatalogSpi;
 import com.marketplace.identity.spi.IdentitySpi;
 import com.marketplace.payments.spi.PaymentsSpi;
+import com.marketplace.shared.api.LedgerAllocationPort;
 import com.marketplace.shared.api.PagedResponse;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -40,6 +41,9 @@ class AdminControllerTest {
 
     @Mock
     private PaymentsSpi paymentsSpi;
+
+    @Mock
+    private LedgerAllocationPort ledgerAllocationPort;
 
     @Mock
     private RevisionService revisionService;
@@ -124,9 +128,10 @@ class AdminControllerTest {
     @Test
     void listPaymentIntents_returnsPage() {
         PageRequest pageable = PageRequest.of(0, 10);
-        when(paymentsSpi.listIntentsSummaries(pageable)).thenReturn(new PageImpl<>(List.of()));
+        when(paymentsSpi.searchIntentsSummaries(any(), any())).thenReturn(new PageImpl<>(List.of()));
 
-        ResponseEntity<PagedResponse<com.marketplace.shared.api.PaymentSummary>> result = controller.listPaymentIntents(pageable);
+        ResponseEntity<PagedResponse<com.marketplace.shared.api.PaymentSummary>> result =
+                controller.searchPaymentIntents(pageable, null, null, null, null, null, null);
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
     }

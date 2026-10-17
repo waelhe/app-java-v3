@@ -342,4 +342,50 @@ class OrdersDeliveryPortTest {
                 .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
                 .hasMessageContaining("in-flight platform delivery");
     }
+
+    @Test
+    void theNonPrimaryLegCompletesTheOrderWhenItIsTheLastOne() {
+        Order order = Order.placedWithFulfillment(buyerId, "SAR", sellerId,
+                3000L, 0, 0, true, FulfillmentMethod.PLATFORM_DELIVERY,
+                "Riyadh downtown", 24.7136, 46.6753, 1500L);
+        order.confirm(Instant.now());
+        UUID primaryLeg = UUID.randomUUID();
+        UUID splitLeg = UUID.randomUUID();
+        order.attachDeliveryRequest(primaryLeg);
+        order.markStockReserved();
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of());
+        // the primary was delivered first and the SPLIT leg is the last one —
+        // its id never rode the order's primary link (the review's Major
+        // finding: the link equality must not rule the platform path)
+        when(checkoutDeliveryPort.remainingActiveLegs(order.getId())).thenReturn(0L);
+
+        service().fulfillFromDelivery(order.getId(), splitLeg);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.FULFILLED);
+        verify(productStockPort).commit(java.util.Map.of());
+        verify(productStockPort).commitVariants(java.util.Map.of());
+    }
+
+    @Test
+    void aLegCompletionAfterThePrimaryWasCancelledFulfillsTheOrder() {
+        Order order = Order.placedWithFulfillment(buyerId, "SAR", sellerId,
+                3000L, 0, 0, true, FulfillmentMethod.PLATFORM_DELIVERY,
+                "Riyadh downtown", 24.7136, 46.6753, 1500L);
+        order.confirm(Instant.now());
+        order.markStockReserved();
+        // the primary's cancellation cleared the link (clearDeliveryRequest
+        // nulls it) — the sibling leg's DELIVERED event is the order's last
+        // one; the partial-cancellation law: the order completes for its
+        // remaining legs, never stuck CONFIRMED on a dangling link check
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of());
+        when(checkoutDeliveryPort.remainingActiveLegs(order.getId())).thenReturn(0L);
+
+        service().fulfillFromDelivery(order.getId(), UUID.randomUUID());
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.FULFILLED);
+    }
 }

@@ -378,10 +378,14 @@ public class DeliveryService {
      * The V224 multi-leg operator command (ADMIN): splits a confirmed
      * order's platform delivery into an ADDITIONAL package — the operator
      * states the package's description and its share of the FROZEN
-     * shipping fee; the command refuses a split that would exceed the
-     * frozen agreement (the shipping sum of the order's legs can never
-     * pass what the buyer paid at placement).
+     * shipping fee. The frozen-fee ceiling holds BY CONSTRUCTION: the
+     * split CARVES the new leg's share out of the primary leg (the legs'
+     * shipping sum stays exactly what the buyer paid at placement), the
+     * primary keeps at least its own courier compensation, and the new
+     * leg's share must cover its own compensation — both edges atomic in
+     * one transaction.
      */
+    @Transactional
     @Observed(name = "delivery.order.leg.split")
     public DeliveryRequestResponse addLegForOrder(UUID orderId, String packageDescription,
                                                   long amountMinor) {
@@ -391,25 +395,46 @@ public class DeliveryService {
             throw new ConflictException("Order " + orderId + " has no delivery legs to split");
         }
         DeliveryRequest first = legs.get(0);
-        long frozenShipping = first.getAmountMinor() + legs.stream().skip(1)
-                .mapToLong(DeliveryRequest::getAmountMinor).sum();
-        if (amountMinor <= 0 || frozenShipping + amountMinor > Long.MAX_VALUE) {
-            throw new ConflictException("A split leg requires a positive amount");
+        com.marketplace.shared.api.OrderFulfillmentSelection selection =
+                orders.requireOrderFulfillment(orderId, first.getRequesterId());
+        if (!selection.platformDelivery()) {
+            // the #604 legacy shape (no checkout selection): its legs are
+            // quote-backed and paid on their own — an unpaid add-on leg
+            // would go out for dispatch with no payment behind it
+            throw new ConflictException(
+                    "Only a checkout-selected platform delivery can be split");
         }
-        // the honest split ceiling: the legs' shipping sum may never pass
-        // the frozen fee — the buyer's agreement is the ceiling, not the
-        // operator's discretion
+        // the honest split ceiling, BY CONSTRUCTION: the split carves the
+        // new leg's share out of the primary leg — the legs' shipping sum
+        // stays the buyer's frozen agreement (never a minor unit above
+        // it), and the primary keeps at least its own courier
+        // compensation (the platform never pays margin out of pocket)
+        if (amountMinor <= 0
+                || amountMinor >= first.getAmountMinor() - first.getCourierCompensationMinor()) {
+            throw new ConflictException("A split leg requires a positive share the primary "
+                    + "leg's margin can carve — the buyer's frozen fee is the ceiling");
+        }
         ensureConfigured();
         ProviderFulfillmentLocation pickup = fulfillmentLocations
-                .findVerifiedLocation(orders.requireOrderFulfillment(orderId, first.getRequesterId()).sellerId())
+                .findVerifiedLocation(selection.sellerId())
                 .orElseThrow(() -> new ConflictException(
                         "The verified seller must configure a private pickup location"));
         DeliveryRouteMetrics route = routes.route(pickup.latitude(), pickup.longitude(),
                 first.getDropoffLatitude(), first.getDropoffLongitude());
+        if (route.distanceMeters() > properties.maxDistanceMeters()) {
+            throw new ConflictException("The frozen destination is outside the configured delivery area");
+        }
         long km = Math.max(1, (route.distanceMeters() + 999L) / 1000L);
         long compensation = multiplyAndAdd(properties.courierBaseCompensationMinor(),
                 properties.courierCompensationPerKilometerMinor(), km,
                 "Courier compensation overflow");
+        if (compensation <= 0 || compensation >= amountMinor) {
+            throw new ConflictException(
+                    "A split leg's share must cover positive courier compensation");
+        }
+        // the redistribution itself: the primary's share gives up what
+        // the new leg takes (one atomic transaction with the leg's insert)
+        first.carveShare(amountMinor);
         String proofCode = proofCode();
         DeliveryRequest leg = requests.save(DeliveryRequest.fromCheckout(
                 UUID.randomUUID(), orderId, first.getRequesterId(),

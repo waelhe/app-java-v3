@@ -156,7 +156,13 @@ public class OrderReturnsController {
             @NotNull UUID orderId,
             @NotNull OrderReturn.ReturnType type,
             @NotBlank @Size(max = 500) String reason,
-            @NotNull @Size(min = 1, max = 50) List<ReturnLineRequest> lines) {
+            // @Valid cascades INTO the elements (Jakarta Bean Validation does
+            // not validate container elements without it — the review's
+            // finding): a line with quantity 0 or a null orderItemId answers
+            // the honest 400 at the boundary instead of the service's
+            // IllegalArgumentException surfacing as a 500 after the return
+            // row was already saved.
+            @NotNull @Size(min = 1, max = 50) List<@Valid ReturnLineRequest> lines) {
 
         public List<ReturnLineRequest> lines() {
             var seen = new LinkedHashMap<UUID, ReturnLineRequest>();

@@ -178,7 +178,14 @@ class ObservationCoverageFilesTest {
             // the freeze path's write (the commands-not-reads policy holds).
             Map.entry("marketplace-delivery", List.of(
                     "delivery.courier.availability", "delivery.dispatch.claim", "delivery.dispatch.sweep",
-                    "delivery.job.transition", "delivery.order.quote.create", "delivery.payment.settle",
+                    "delivery.job.transition",
+                    // V224 (the checkout fulfillment wave): the two new business
+                    // commands — the confirmation edge's leg from the frozen
+                    // selection and the operator's multi-leg split — the same
+                    // commands-not-reads discipline (the legs read and the fare
+                    // resolution stay unobserved reads).
+                    "delivery.order.leg.create", "delivery.order.leg.split",
+                    "delivery.order.quote.create", "delivery.payment.settle",
                     "delivery.quote.create", "delivery.request.cancel", "delivery.request.create")),
             Map.entry("marketplace-disputes", List.of("dispute.open", "dispute.open.loan", "dispute.resolve")),
             // phase 1 (D-03 + §6.5): the role-assignment and trust
@@ -269,6 +276,15 @@ class ObservationCoverageFilesTest {
                     "order.delivery.attach", "order.delivery.clear",
                     "order.fulfill", "order.fulfill.delivery",
                     "order.payment-intent", "order.place",
+                    // V230 (the RMA lifecycle): the return/exchange edges' six
+                    // commands — the buyer's request/cancel, the operational
+                    // approve/reject/receive, and the terminal complete
+                    // (the refund itself rides the payments module's own
+                    // observed refund path; the reads stay unobserved per
+                    // the commands-not-reads policy).
+                    "order.return.approve", "order.return.cancel",
+                    "order.return.complete", "order.return.receive",
+                    "order.return.reject", "order.return.request",
                     "order.seller.cancel", "order.seller.confirm",
                     "order.seller.fulfill")),
             Map.entry("marketplace-notifications", List.of(

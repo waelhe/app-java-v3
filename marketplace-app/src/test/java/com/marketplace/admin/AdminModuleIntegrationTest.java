@@ -51,6 +51,14 @@ class AdminModuleIntegrationTest {
     @MockitoBean
     PaymentIntentLookupPort paymentIntentLookupPort;
 
+    // PR #620 (the finance-operator read model): the admin slice's
+    // controller composes the ledger's allocation port — its only
+    // implementation (LedgerAllocationAdapter) lives in the ledger module,
+    // outside this slice. The same house pattern as every outside-slice
+    // port above.
+    @MockitoBean
+    com.marketplace.shared.api.LedgerAllocationPort ledgerAllocationPort;
+
     @MockitoBean
     BookingParticipantProvider bookingParticipantProvider;
 

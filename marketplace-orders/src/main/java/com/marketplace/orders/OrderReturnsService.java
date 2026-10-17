@@ -77,15 +77,20 @@ public class OrderReturnsService {
     /**
      * Opens a return/exchange request against a FULFILLED order — the
      * buyer's own order (the honest 404 otherwise), lines that belong to
-     * it, quantities the frozen lines cover, and no overlapping OPEN
-     * return for the same item (REQUESTED/APPROVED/RECEIVED block a
-     * second request for their items — the terminal states do not).
+     * it, quantities the frozen lines cover, and no overlapping return for
+     * the same item (the PR objective's limit: COMPLETED and OPEN returns
+     * both count — a completed return's units are already refunded, so its
+     * quantity stays consumed; REQUESTED/APPROVED/RECEIVED likewise block
+     * a second request for their items). The order row is locked
+     * PESSIMISTIC_WRITE for the whole guard+insert: two concurrent requests
+     * serialize on the row instead of both reading the same open-return
+     * total before either inserts its lines (the review's finding).
      */
     @Transactional
     @Observed(name = "order.return.request")
     public OrderReturn request(UUID orderId, UUID buyerId, OrderReturn.ReturnType type,
                                String reason, Map<UUID, Integer> lineRequests) {
-        Order order = orderRepository.findById(orderId)
+        Order order = orderRepository.findByIdForUpdate(orderId)
                 .filter(o -> o.getConsumerId().equals(buyerId))
                 .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
         if (order.getStatus() != OrderStatus.FULFILLED) {
@@ -98,7 +103,7 @@ public class OrderReturnsService {
         List<OrderItem> frozenLines = orderItemRepository.findByOrderId(orderId);
         List<OrderReturn> open = returns.findByOrderIdAndStatusIn(orderId, List.of(
                 OrderReturn.ReturnStatus.REQUESTED, OrderReturn.ReturnStatus.APPROVED,
-                OrderReturn.ReturnStatus.RECEIVED));
+                OrderReturn.ReturnStatus.RECEIVED, OrderReturn.ReturnStatus.COMPLETED));
         Map<UUID, Integer> alreadyRequested = new HashMap<>();
         for (OrderReturn openReturn : open) {
             for (OrderReturnLine line : returnLines.findByOrderReturnId(openReturn.getId())) {
@@ -162,17 +167,24 @@ public class OrderReturnsService {
      * through the ONE refund contract; an EXCHANGE creates the replacement
      * order (same seller, same lines, zero payment — the buyer already
      * paid) and links it. Idempotent by the state guard — a retried
-     * completion of an already-COMPLETED return is a no-op read.
+     * completion of an already-COMPLETED return is a no-op read. The return
+     * row loads under PESSIMISTIC_WRITE (the review's Major finding): two
+     * concurrent completes serialize on the row — the second finds
+     * COMPLETED and no-ops instead of both observing the pre-terminal
+     * state and both reaching the refund port. The refund rides the
+     * return-scoped PSP idempotency key (stable across a rollback+retry —
+     * see {@code OrderRefundPort}).
      */
     @Transactional
     @Observed(name = "order.return.complete")
     public OrderReturn complete(UUID returnId) {
-        OrderReturn r = require(returnId);
+        OrderReturn r = returns.findByIdForUpdate(returnId)
+                .orElseThrow(() -> new ResourceNotFoundException("Return", returnId));
         if (r.getStatus() == OrderReturn.ReturnStatus.COMPLETED) {
             return r;
         }
         if (r.getReturnType() == OrderReturn.ReturnType.RETURN) {
-            orderRefundPort.refundForOrder(r.getOrderId(), r.getRefundAmountMinor());
+            orderRefundPort.refundForOrder(r.getOrderId(), r.getId(), r.getRefundAmountMinor());
             r.complete(null, Instant.now());
             return returns.save(r);
         }
@@ -180,7 +192,8 @@ public class OrderReturnsService {
         Order order = orderRepository.findById(r.getOrderId())
                 .orElseThrow(() -> new ResourceNotFoundException("Order", r.getOrderId()));
         List<OrderItem> originals = orderItemRepository.findByOrderId(r.getOrderId());
-        Map<UUID, Integer> quantities = new HashMap<>();
+        Map<UUID, Integer> productQuantities = new HashMap<>();
+        Map<UUID, Integer> variantQuantities = new HashMap<>();
         Order replacement = orderRepository.save(Order.placedWithBreakdown(
                 order.getConsumerId(), order.getCurrency(), order.getSellerId(),
                 0, 0, 0, true));
@@ -191,11 +204,23 @@ public class OrderReturnsService {
                     .orElseThrow(() -> new ResourceNotFoundException("OrderItem", line.getOrderItemId()));
             orderItemRepository.save(OrderItem.snapshotOfReturn(replacement.getId(), original,
                     line.getQuantity()));
-            quantities.merge(original.getProductId(), line.getQuantity(), Integer::sum);
+            // the restock path's own split (the review's Major finding): a
+            // variant line reserves on the VARIANT's own shelf — the
+            // product-level counter alone would leave the shelf
+            // under-reserved and the later commit would fail with the
+            // honest conflict instead of shipping the replacement
+            if (line.getVariantId() != null) {
+                variantQuantities.merge(line.getVariantId(), line.getQuantity(), Integer::sum);
+            } else {
+                productQuantities.merge(original.getProductId(), line.getQuantity(), Integer::sum);
+            }
         }
         // the replacement needs its own shelf reservation — the goods ship again
-        if (!quantities.isEmpty()) {
-            productStockPort.reserve(quantities);
+        if (!productQuantities.isEmpty()) {
+            productStockPort.reserve(productQuantities);
+        }
+        if (!variantQuantities.isEmpty()) {
+            productStockPort.reserveVariants(variantQuantities);
         }
         replacement.markStockReserved();
         orderRepository.save(replacement);
@@ -274,9 +299,20 @@ public class OrderReturnsService {
         }
         long discountedGoods = subtotal - discount;
         long share = Math.round(goodsValue * (double) discountedGoods / subtotal);
+        // the tax-mode witness: the frozen total MINUS any shipping the
+        // placement froze equals the discounted goods PLUS tax only in an
+        // EXCLUSIVE jurisdiction — an INCLUSIVE order's total already
+        // contains its tax inside the discounted goods value. The prior
+        // shape (subtotal + tax − discount > discountedGoods) reduced to
+        // tax > 0 and misclassified every positive-tax INCLUSIVE order,
+        // double-counting its contained tax on top of the share (the
+        // review's Major finding).
+        long totalExcludingShipping = order.getTotalAmountMinor() == null ? 0 : order.getTotalAmountMinor()
+                - (order.getShippingAmountMinor() == null ? 0 : order.getShippingAmountMinor());
+        boolean exclusiveJurisdiction = order.getTaxAmountMinor() != null && order.getTaxAmountMinor() > 0
+                && totalExcludingShipping == discountedGoods + order.getTaxAmountMinor();
         // the exclusive-tax share rides the goods share proportionally
-        if (order.getTaxAmountMinor() != null && order.getTaxAmountMinor() > 0
-                && subtotal + order.getTaxAmountMinor() - discount > discountedGoods) {
+        if (exclusiveJurisdiction) {
             // EXCLUSIVE jurisdictions: the tax added on top of the goods
             long exclusiveTax = order.getTaxAmountMinor();
             long goodsRatio = Math.round(exclusiveTax * (double) goodsValue / subtotal);

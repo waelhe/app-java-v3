@@ -1,4 +1,4 @@
--- V225 — the return/exchange (RMA) lifecycle, modeled SEPARATELY from
+-- V230 — the return/exchange (RMA) lifecycle, modeled SEPARATELY from
 -- payment refunds (the Saleor fit-gap study §7-Phase-3 item 4: «Model
 -- returns/exchanges separately from payment refunds and disputes»): a
 -- payment refund is a money movement; a RETURN is goods coming back —

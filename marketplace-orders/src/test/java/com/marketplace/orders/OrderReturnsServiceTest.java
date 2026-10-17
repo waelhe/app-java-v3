@@ -87,7 +87,7 @@ class OrderReturnsServiceTest {
     void aBuyerOpensAReturnAgainstTheirFulfilledOrder() {
         Order order = fulfilledOrder();
         OrderItem item = itemOf(order, UUID.randomUUID(), 2, 3_000L);
-        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
         when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
         when(returns.findByOrderIdAndStatusIn(org.mockito.ArgumentMatchers.eq(order.getId()), any())).thenReturn(List.of());
 
@@ -102,7 +102,7 @@ class OrderReturnsServiceTest {
     @Test
     void aNonFulfilledOrderRefusesTheReturn() {
         Order order = Order.placed(buyer, 5_000L, "SAR", seller);
-        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
 
         assertThatThrownBy(() -> service.request(order.getId(), buyer,
                 OrderReturn.ReturnType.RETURN, "changed mind", Map.of(UUID.randomUUID(), 1)))
@@ -113,7 +113,7 @@ class OrderReturnsServiceTest {
     @Test
     void anotherBuyersOrderAnswersTheHonest404() {
         UUID orderId = UUID.randomUUID();
-        when(orderRepository.findById(orderId)).thenReturn(Optional.empty());
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.request(orderId, buyer,
                 OrderReturn.ReturnType.RETURN, "no", Map.of(UUID.randomUUID(), 1)))
@@ -124,7 +124,7 @@ class OrderReturnsServiceTest {
     void quantitiesBeyondTheFrozenLinePlusOpenReturnsRefuse() {
         Order order = fulfilledOrder();
         OrderItem item = itemOf(order, UUID.randomUUID(), 2, 3_000L);
-        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
         when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
         OrderReturn open = OrderReturn.requested(order.getId(), buyer,
                 OrderReturn.ReturnType.RETURN, "first", "SAR", Instant.now());
@@ -154,6 +154,58 @@ class OrderReturnsServiceTest {
 
         // goods 3000 × (10000−1000)/10000 = 2700 — the discounted share, frozen
         assertThat(approved.getStatus()).isEqualTo(OrderReturn.ReturnStatus.APPROVED);
+        assertThat(approved.getRefundAmountMinor()).isEqualTo(2_700L);
+    }
+
+    @Test
+    void completedReturnsCountTowardTheQuantityGuard() {
+        // the PR objective's limit (the review's Major finding): a COMPLETED
+        // return's units are already refunded — its quantity stays consumed,
+        // so a second return for the same units cannot pass the guard and
+        // double-refund the same goods
+        Order order = fulfilledOrder();
+        OrderItem item = itemOf(order, UUID.randomUUID(), 2, 3_000L);
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
+        OrderReturn completed = OrderReturn.requested(order.getId(), buyer,
+                OrderReturn.ReturnType.RETURN, "first", "SAR", Instant.now());
+        completed.approve(2_700L, Instant.now());
+        completed.receive(Instant.now());
+        completed.complete(null, Instant.now());
+        when(returns.findByOrderIdAndStatusIn(org.mockito.ArgumentMatchers.eq(order.getId()), any()))
+                .thenReturn(List.of(completed));
+        when(returnLines.findByOrderReturnId(completed.getId())).thenReturn(List.of(
+                OrderReturnLine.of(completed.getId(), item, 2)));
+
+        assertThatThrownBy(() -> service.request(order.getId(), buyer,
+                OrderReturn.ReturnType.RETURN, "second", Map.of(item.getId(), 2)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("already in open returns");
+    }
+
+    @Test
+    void anInclusiveOrderWithPositiveTaxTakesNoExtraTaxShare() {
+        // the review's Major finding: the prior witness (tax > 0) added the
+        // exclusive-tax ratio to INCLUSIVE orders whose tax is already
+        // contained in the discounted goods — the frozen total is the only
+        // honest mode witness
+        Order order = Order.placedWithBreakdown(buyer, "SAR", seller,
+                10_000L, 1_000L, 500L, true); // INCLUSIVE: total 9000 = goods, tax inside
+        order.confirm(Instant.now());
+        order.fulfill(Instant.now());
+        OrderItem item = itemOf(order, UUID.randomUUID(), 2, 3_000L);
+        OrderReturn r = OrderReturn.requested(order.getId(), buyer,
+                OrderReturn.ReturnType.RETURN, "wrong size", "SAR", Instant.now());
+        when(returns.findById(r.getId())).thenReturn(Optional.of(r));
+        when(returnLines.findByOrderReturnId(r.getId())).thenReturn(List.of(
+                OrderReturnLine.of(r.getId(), item, 1)));
+        when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+
+        OrderReturn approved = service.approve(r.getId());
+
+        // goods 3000 × (10000−1000)/10000 = 2700 — the contained tax adds
+        // NOTHING on top (an INCLUSIVE order's goods value already carries it)
         assertThat(approved.getRefundAmountMinor()).isEqualTo(2_700L);
     }
 
@@ -210,14 +262,14 @@ class OrderReturnsServiceTest {
                 OrderReturn.ReturnType.RETURN, "wrong size", "SAR", Instant.now());
         r.approve(2_700L, Instant.now());
         r.receive(Instant.now());
-        when(returns.findById(r.getId())).thenReturn(Optional.of(r));
-        when(orderRefundPort.refundForOrder(order.getId(), 2_700L)).thenReturn(
+        when(returns.findByIdForUpdate(r.getId())).thenReturn(Optional.of(r));
+        when(orderRefundPort.refundForOrder(order.getId(), r.getId(), 2_700L)).thenReturn(
                 new RefundOutcome(UUID.randomUUID(), 2_700L));
 
         OrderReturn completed = service.complete(r.getId());
 
         assertThat(completed.getStatus()).isEqualTo(OrderReturn.ReturnStatus.COMPLETED);
-        verify(orderRefundPort).refundForOrder(order.getId(), 2_700L);
+        verify(orderRefundPort).refundForOrder(order.getId(), r.getId(), 2_700L);
     }
 
     @Test
@@ -228,7 +280,7 @@ class OrderReturnsServiceTest {
                 OrderReturn.ReturnType.EXCHANGE, "different size", "SAR", Instant.now());
         r.approve(2_700L, Instant.now());
         r.receive(Instant.now());
-        when(returns.findById(r.getId())).thenReturn(Optional.of(r));
+        when(returns.findByIdForUpdate(r.getId())).thenReturn(Optional.of(r));
         when(returnLines.findByOrderReturnId(r.getId())).thenReturn(List.of(
                 OrderReturnLine.of(r.getId(), item, 2)));
         when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
@@ -251,7 +303,7 @@ class OrderReturnsServiceTest {
         assertThat(saved.isStockReserved()).isTrue();
         verify(productStockPort).reserve(Map.of(item.getProductId(), 2));
         // an exchange never moves money
-        verify(orderRefundPort, never()).refundForOrder(any(), anyLong());
+        verify(orderRefundPort, never()).refundForOrder(any(), any(), anyLong());
     }
 
     @Test
@@ -262,12 +314,12 @@ class OrderReturnsServiceTest {
         r.approve(2_700L, Instant.now());
         r.receive(Instant.now());
         r.complete(null, Instant.now());
-        when(returns.findById(r.getId())).thenReturn(Optional.of(r));
+        when(returns.findByIdForUpdate(r.getId())).thenReturn(Optional.of(r));
 
         OrderReturn completed = service.complete(r.getId());
 
         assertThat(completed.getStatus()).isEqualTo(OrderReturn.ReturnStatus.COMPLETED);
-        verify(orderRefundPort, never()).refundForOrder(any(), anyLong());
+        verify(orderRefundPort, never()).refundForOrder(any(), any(), anyLong());
     }
 
     @Test

@@ -473,21 +473,30 @@ public class OrdersService implements OrderDeliveryPort {
     public void fulfillFromDelivery(UUID orderId, UUID deliveryRequestId) {
         Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
+        // The multi-leg law's completion edge (the review's Major finding,
+        // root-caused): on a checkout-selected platform delivery ANY leg
+        // of the order may be the last one — split legs never ride the
+        // order's primary link, and a cancelled primary clears it, so the
+        // link equality only rules the manual #604 path (where the leg IS
+        // the order's one delivery). The idempotency follows the same
+        // law: a redelivered event for ANY leg of a fulfilled platform
+        // order is the no-op it always was for the primary.
+        boolean platformDelivery =
+                order.getFulfillmentMethod() == FulfillmentMethod.PLATFORM_DELIVERY;
         if (order.getStatus() == OrderStatus.FULFILLED
-                && deliveryRequestId.equals(order.getDeliveryRequestId())) {
+                && (platformDelivery || deliveryRequestId.equals(order.getDeliveryRequestId()))) {
             return;
         }
         if (order.getStatus() != OrderStatus.CONFIRMED) {
             throw new ConflictException("Delivery completion does not match the confirmed linked order");
         }
         // A leg completing beside still-active siblings: the order waits —
-        // the multi-leg law (the primary-link check stays for the manual
-        // #604 path where the leg IS the order's one delivery).
-        if (order.getFulfillmentMethod() == FulfillmentMethod.PLATFORM_DELIVERY
-                && checkoutDeliveryPort.remainingActiveLegs(orderId) > 0) {
-            return;
-        }
-        if (!deliveryRequestId.equals(order.getDeliveryRequestId())) {
+        // the multi-leg law.
+        if (platformDelivery) {
+            if (checkoutDeliveryPort.remainingActiveLegs(orderId) > 0) {
+                return;
+            }
+        } else if (!deliveryRequestId.equals(order.getDeliveryRequestId())) {
             throw new ConflictException("Delivery completion does not match the confirmed linked order");
         }
         Instant at = Instant.now();
@@ -723,6 +732,13 @@ public class OrdersService implements OrderDeliveryPort {
     @Transactional(readOnly = true)
     public List<PlacementPreview> previewPlacement(UUID consumerId, String voucherCode,
                                                    FulfillmentSelection fulfillment) {
+        // The same destination gate the placement runs BEFORE any fare
+        // walk (the review's finding): an incomplete destination answers
+        // the honest 400 here too — never the unboxing NPE of a null
+        // coordinate reaching fareFor's double parameters as a 500.
+        if (fulfillment != null && fulfillment.method() == FulfillmentMethod.PLATFORM_DELIVERY) {
+            fulfillment.requireDestination();
+        }
         Cart cart = cartRepository.findByConsumerIdAndStatus(consumerId, CartStatus.ACTIVE)
                 .orElseThrow(() -> new ConflictException("No active cart to preview"));
         List<CartItem> lines = cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId());
