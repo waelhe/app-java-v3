@@ -27,14 +27,13 @@ public class BookingPaymentEventListener {
             return;
         }
         paymentIntentLookupPort.findById(event.paymentIntentId()).ifPresent(intent -> {
-            // W5 (yelp-level plan §5 — G24): an ad bill's completion settles
-            // the provider's ad spend — there is no booking to confirm (the
-            // origin pairing guarantees bookingId is null). Skipping keeps
-            // this listener's retry loop out of a payment that is not its.
-            if (intent.isAdOrigin()) {
-                log.info("Payment completion is an ad bill — no booking to confirm "
-                        + "(paymentIntentId={}, campaign={})",
-                        intent.paymentIntentId(), intent.adCampaignId());
+            // This listener owns only the BOOKING source. Other payment
+            // origins must never be interpreted as a booking merely because
+            // this listener receives the shared payment-state event.
+            if (!intent.isBookingOrigin()) {
+                log.info("Ignoring payment completion for non-booking origin: "
+                                + "paymentIntentId={}, origin={}",
+                        intent.paymentIntentId(), intent.origin());
                 return;
             }
             bookingService.autoConfirm(intent.bookingId());
