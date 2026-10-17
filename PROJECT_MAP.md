@@ -1985,3 +1985,5 @@ Plus new `RevisionService` in `marketplace-admin` package for unified audit quer
 - Tomcat access log enabled with `%{ms}T` pattern (milliseconds) via `server.tomcat.accesslog.*`
 
 - `marketplace-delivery` — platform-owned direct delivery requests, quote snapshots, guarded physical delivery state, operator assignment, tracking timeline; disabled by default; see [delivery vertical slice](docs/architecture/delivery-direct-service-vertical-slice.md).
+
+- `GET /api/v1/admin/payments` — the finance operator's single search over every payable origin (ADR-0013 + payments plan Phase 1): origin/status/consumer/window filters AND-composed, plus the ORIGIN-AGNOSTIC `subjectId` (a booking/ad/order/loan id matches whichever subject column the intent carries); rows carry the frozen `commissionRate` (D2) and the PSP linkage. `GET /api/v1/admin/payments/{id}/financial-facts` composes the payments summary with the ledger's own allocation read (`LedgerAllocationPort` — the three intent-keyed postings + provider balances + per-currency net). The status word is validated inside marketplace-payments (the vocabulary owner): a typo answers the house 400.
