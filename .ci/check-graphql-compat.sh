@@ -1,3 +1,4 @@
+
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -19,14 +20,19 @@ set -euo pipefail
 #
 # Bootstrap semantics (honest, same spirit as the OpenAPI gate's no-tag
 # skip — but decided from the tag's OWN tree, never from a run failure):
-# the gate skips ONLY when the baseline tag carries no GraphQL surface at
-# all — no src/main/resources/graphql/*.graphqls file anywhere in the
-# tag's tree, so there is no schema to compare against yet. A tag that
-# HAS a GraphQL surface must produce its dump: a baseline-side dump
-# failure (compile error, boot failure, dependency download failure under
-# -U, an unavailable database) FAILS the gate — a missing-baseline skip
-# must never mask a broken baseline. The current side MUST always dump;
-# a current-side failure is a gate failure.
+# the gate skips the BASELINE/COMPARISON only when there is no baseline to
+# compare against — no release tag at all, or a tag without any
+# src/main/resources/graphql/*.graphqls file in its tree. Since the Phase-5
+# contract channel (PR #605, CodeRabbit round 3 adopted 2026-10-17) made the
+# ci.yml job upload current-schema.graphqls unconditionally, the current
+# side now ALWAYS boots and dumps on these paths too — aligning the code
+# with this header's own standing invariant ("the current side MUST always
+# dump; a current-side failure is a gate failure") and with the channel's
+# need (every green round publishes the current runtime SDL, baseline or
+# not). A tag that HAS a GraphQL surface must produce its baseline dump: a
+# baseline-side dump failure (compile error, boot failure, dependency
+# download failure under -U, an unavailable database) FAILS the gate — a
+# missing-baseline skip must never mask a broken baseline.
 #
 # Environment (mirrors the OpenAPI gate job):
 #   SPRING_DATASOURCE_URL / USERNAME / PASSWORD, SPRING_DATA_REDIS_* —
@@ -43,21 +49,28 @@ mkdir -p "$WORK_DIR"
 LATEST_TAG="${GRAPHQL_BASELINE_TAG:-$(git tag --sort=-creatordate | head -n1)}"
 CURRENT_SHA="$(git rev-parse HEAD)"
 
+# 1 = no baseline to compare against (no tag, or tag without a GraphQL
+# surface): skip the baseline/comparison phases only — the current side
+# still boots and dumps below (see the header's bootstrap semantics).
+BOOTSTRAP=0
 if [[ -z "$LATEST_TAG" ]]; then
-  echo "No release tag found. Skipping GraphQL schema compatibility gate."
-  exit 0
+  echo "No release tag found. No GraphQL schema baseline to compare against — the current runtime schema is still dumped and uploaded."
+  BOOTSTRAP=1
+else
+  echo "Using GraphQL schema baseline tag: $LATEST_TAG"
 fi
-echo "Using GraphQL schema baseline tag: $LATEST_TAG"
 
 # The tag's own surface inventory, measured from the tag object itself
 # before any checkout: a tree without src/main/resources/graphql/*.graphqls
 # has no GraphQL schema to baseline against — the one true bootstrap case.
 # Everything else (a surface-carrying tag whose dump fails) is a broken
 # baseline and fails the gate below.
-TAG_TREE_FILES="$(git ls-tree -r --name-only "$LATEST_TAG")"
-if [[ "$TAG_TREE_FILES" != *"src/main/resources/graphql/"*".graphqls"* ]]; then
-  echo "NOTICE: baseline tag $LATEST_TAG carries no GraphQL schema (no src/main/resources/graphql/*.graphqls in its tree) — no baseline to compare against yet. Gate passes; see .ci/check-graphql-compat.sh header for the bootstrap semantics."
-  exit 0
+if [[ "$BOOTSTRAP" -eq 0 ]]; then
+  TAG_TREE_FILES="$(git ls-tree -r --name-only "$LATEST_TAG")"
+  if [[ "$TAG_TREE_FILES" != *"src/main/resources/graphql/"*".graphqls"* ]]; then
+    echo "NOTICE: baseline tag $LATEST_TAG carries no GraphQL schema (no src/main/resources/graphql/*.graphqls in its tree) — no baseline to compare against. The current runtime schema is still dumped and uploaded. See .ci/check-graphql-compat.sh header for the bootstrap semantics."
+    BOOTSTRAP=1
+  fi
 fi
 
 # The self-contained dump test — compiled into whichever tree is checked
@@ -115,27 +128,29 @@ remove_dump_test() {
 }
 
 # ------------------------------------------------------------- baseline phase
-git checkout -q "$LATEST_TAG"
-write_dump_test
-# `clean` is load-bearing (the OpenAPI gate's measured lesson): the two
-# phases build different trees through the same target/ — a stale
-# incremental copy would ship the previous phase's classes.
-if ! ./mvnw -U -q -pl marketplace-app -am clean test -Dtest=GraphQlSchemaDumpGate \
-      -Dsurefire.failIfNoSpecifiedTests=false -DskipITs \
-      > "$WORK_DIR/baseline-maven.log" 2>&1; then
+if [[ "$BOOTSTRAP" -eq 0 ]]; then
+  git checkout -q "$LATEST_TAG"
+  write_dump_test
+  # `clean` is load-bearing (the OpenAPI gate's measured lesson): the two
+  # phases build different trees through the same target/ — a stale
+  # incremental copy would ship the previous phase's classes.
+  if ! ./mvnw -U -q -pl marketplace-app -am clean test -Dtest=GraphQlSchemaDumpGate \
+        -Dsurefire.failIfNoSpecifiedTests=false -DskipITs \
+        > "$WORK_DIR/baseline-maven.log" 2>&1; then
+    remove_dump_test
+    git checkout -q "$CURRENT_SHA"
+    echo "FAIL: baseline tag $LATEST_TAG carries a GraphQL schema but its dump run failed — the baseline is broken, not absent. See .ci/graphql-compat/baseline-maven.log (uploaded as a workflow artifact on failure)."
+    exit 1
+  fi
+  if [[ ! -f "$DUMP_FILE" ]]; then
+    remove_dump_test
+    git checkout -q "$CURRENT_SHA"
+    echo "FAIL: baseline tag $LATEST_TAG produced no schema dump despite carrying a GraphQL schema. See .ci/graphql-compat/baseline-maven.log."
+    exit 1
+  fi
+  cp "$DUMP_FILE" "$WORK_DIR/baseline-schema.graphqls"
   remove_dump_test
-  git checkout -q "$CURRENT_SHA"
-  echo "FAIL: baseline tag $LATEST_TAG carries a GraphQL schema but its dump run failed — the baseline is broken, not absent. See .ci/graphql-compat/baseline-maven.log (uploaded as a workflow artifact on failure)."
-  exit 1
 fi
-if [[ ! -f "$DUMP_FILE" ]]; then
-  remove_dump_test
-  git checkout -q "$CURRENT_SHA"
-  echo "FAIL: baseline tag $LATEST_TAG produced no schema dump despite carrying a GraphQL schema. See .ci/graphql-compat/baseline-maven.log."
-  exit 1
-fi
-cp "$DUMP_FILE" "$WORK_DIR/baseline-schema.graphqls"
-remove_dump_test
 
 # ------------------------------------------------------------- current phase
 git checkout -q "$CURRENT_SHA"
@@ -150,6 +165,11 @@ write_dump_test
 cp "$DUMP_FILE" "$WORK_DIR/current-schema.graphqls"
 remove_dump_test
 
+if [[ "$BOOTSTRAP" -eq 1 ]]; then
+  echo "No GraphQL baseline available — the current runtime schema dump is ready and uploaded; comparison skipped (bootstrap)."
+  exit 0
+fi
+
 # ------------------------------------------------------------- classification
 exit_code=0
 python3 "$ROOT_DIR/.ci/graphql-compat-classifier.py" \
@@ -163,3 +183,4 @@ if [[ "$exit_code" -ne 0 ]]; then
   echo "=== current SDL ==="; cat "$WORK_DIR/current-schema.graphqls"
 fi
 exit "$exit_code"
+
