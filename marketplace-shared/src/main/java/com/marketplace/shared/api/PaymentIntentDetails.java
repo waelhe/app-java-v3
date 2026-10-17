@@ -53,6 +53,10 @@ public record PaymentIntentDetails(
     /** Stage 8 (ADR-0004): the loan-fee origin — the payer is the borrower, the subject is the loan. */
     public static final String ORIGIN_LOAN = "LOAN";
 
+    public boolean isBookingOrigin() {
+        return ORIGIN_BOOKING.equals(origin);
+    }
+
     public boolean isAdOrigin() {
         return ORIGIN_AD.equals(origin);
     }
