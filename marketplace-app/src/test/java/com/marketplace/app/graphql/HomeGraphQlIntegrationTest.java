@@ -346,7 +346,7 @@ class HomeGraphQlIntegrationTest {
                 .jsonPath("$.errors[0].path[0]").isEqualTo("neighborhoodFeed")
                 .jsonPath("$.data.discovery").isArray()
                 .jsonPath("$.data.discovery.length()").isEqualTo(0)
-                .jsonPath("$.data.neighborhoodFeed").isEqualTo(null);
+                .jsonPath("$.data.neighborhoodFeed").isEmpty();
     }
 
     // ------------------------------------------------------------------
