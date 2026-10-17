@@ -1,5 +1,6 @@
 package com.marketplace.orders;
 
+import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.OrderCancelledEvent;
 import com.marketplace.shared.api.OrderConfirmedEvent;
@@ -117,34 +118,71 @@ public class OrdersService {
     }
 
     /**
-     * Adds a line (or raises the quantity when the product is already in
-     * the cart — the unique {@code (cart_id, product_id)} key collapses the
-     * duplicate add into the quantity bump).
+     * Adds a line (or raises the quantity when the SAME purchasable unit
+     * is already in the cart — the union key collapses the duplicate add
+     * into the quantity bump: the product-level line for a product, the
+     * variant's own line for a variant).
      *
      * <p><b>The amount-source boundary (ADR-0002 — the closure of the
      * documented TODO):</b> the line's amount is the store's authoritative
-     * product pricing, resolved through {@link ProductPricingPort} INSIDE
-     * this transaction — no caller-supplied amount exists on the write
-     * path. A non-ACTIVE product (suspended/archived/deleted) answers the
-     * house 409: the storefront read already hides it, and the write path
+     * pricing, resolved through {@link ProductPricingPort} INSIDE this
+     * transaction — no caller-supplied amount exists on the write path.
+     * A non-ACTIVE product (suspended/archived/deleted) answers the house
+     * 409: the storefront read already hides it, and the write path
      * re-checks the state at its own boundary.
+     *
+     * <p><b>ADR-0012 (the cart-integration slice): the variant line.</b>
+     * A non-null {@code variantId} buys the VARIANT under the product:
+     * the amount is the VARIANT's own authoritative price, and the
+     * purchasability is BOTH shelf states (the parent's and the variant's
+     * — Saleor's publication rule: a suspended product hides its
+     * variants). The service resolves the variant's OWN parent and
+     * validates it IS the request's product — a mismatch is a client
+     * inconsistency that answers 400, never a silent re-point (the same
+     * never-trust-caller-input boundary the amount fields obey). A null
+     * {@code variantId} keeps the zero-variant rule untouched: the
+     * product-level price and shelf stay the authoritative record.
      */
     @Transactional
-    public CartItem addCartItem(UUID consumerId, UUID productId, int quantity) {
-        ProductPricingPort.ProductPrice price = productPricingPort.priceOf(productId);
-        if (price.storefront() != ProductPricingPort.StorefrontState.ACTIVE) {
-            throw new ConflictException("Product " + productId + " is " + price.storefront()
-                    + " — only ACTIVE products are purchasable");
+    public CartItem addCartItem(UUID consumerId, UUID productId, UUID variantId, int quantity) {
+        final long unitAmountMinor;
+        final String currency;
+        if (variantId != null) {
+            ProductPricingPort.VariantPrice variant = productPricingPort.priceOfVariant(variantId);
+            if (!variant.productId().equals(productId)) {
+                throw new BadRequestException("Variant " + variantId + " belongs to product "
+                        + variant.productId() + ", not " + productId
+                        + " — the line's product must be the variant's own parent");
+            }
+            if (!variant.purchasable()) {
+                throw new ConflictException("Variant " + variantId + " is not purchasable — product "
+                        + productId + " is " + variant.productStorefront()
+                        + ", variant is " + variant.variantStorefront()
+                        + " (both must be ACTIVE)");
+            }
+            unitAmountMinor = variant.priceMinor();
+            currency = variant.currency();
+        } else {
+            ProductPricingPort.ProductPrice price = productPricingPort.priceOf(productId);
+            if (price.storefront() != ProductPricingPort.StorefrontState.ACTIVE) {
+                throw new ConflictException("Product " + productId + " is " + price.storefront()
+                        + " — only ACTIVE products are purchasable");
+            }
+            unitAmountMinor = price.priceMinor();
+            currency = price.currency();
         }
         Cart cart = getOrCreateActiveCart(consumerId);
-        return cartItemRepository.findByCartIdAndProductId(cart.getId(), productId)
-                .map(existing -> {
-                    existing.updateQuantity(existing.getQuantity() + quantity);
-                    return existing;
+        java.util.Optional<CartItem> existing = variantId != null
+                ? cartItemRepository.findByCartIdAndProductIdAndVariantId(cart.getId(), productId, variantId)
+                : cartItemRepository.findByCartIdAndProductIdAndVariantIdIsNull(cart.getId(), productId);
+        return existing
+                .map(line -> {
+                    line.updateQuantity(line.getQuantity() + quantity);
+                    return line;
                 })
                 .orElseGet(() -> cartItemRepository.save(
-                        CartItem.of(cart.getId(), productId, quantity,
-                                price.priceMinor(), price.currency())));
+                        CartItem.of(cart.getId(), productId, variantId, quantity,
+                                unitAmountMinor, currency)));
     }
 
     @Transactional
@@ -203,22 +241,57 @@ public class OrdersService {
         if (lines.isEmpty()) {
             throw new ConflictException("Cannot place an order from an empty cart");
         }
+        // ADR-0012 (the cart-integration slice): the re-pricing walk is
+        // variant-aware — a variant line re-resolves through the VARIANT's
+        // own authoritative record (both shelf states gate it), a
+        // product-level line keeps the product's own record exactly as
+        // before. The reserved maps split the same way, so the whole-cart
+        // all-or-nothing reservation spans BOTH the product shelves and
+        // the variant shelves (a refusal of either rolls the WHOLE
+        // placement back — no order row in ANY group, no partial hold).
         java.util.Map<UUID, List<CartItem>> groups = new java.util.LinkedHashMap<>();
+        java.util.List<ProductStockPort.StockLine> productStockLines = new java.util.ArrayList<>();
+        java.util.List<ProductStockPort.StockLine> variantStockLines = new java.util.ArrayList<>();
         for (CartItem line : lines) {
-            ProductPricingPort.ProductPrice price = productPricingPort.priceOf(line.getProductId());
-            if (price.storefront() != ProductPricingPort.StorefrontState.ACTIVE) {
-                throw new ConflictException("Product " + line.getProductId() + " is "
-                        + price.storefront() + " — the cart line is no longer purchasable");
+            final UUID sellerId;
+            final String authoritativeCurrency;
+            final long authoritativePriceMinor;
+            if (line.getVariantId() != null) {
+                ProductPricingPort.VariantPrice variant =
+                        productPricingPort.priceOfVariant(line.getVariantId());
+                if (!variant.purchasable()) {
+                    throw new ConflictException("Variant " + line.getVariantId() + " is not "
+                            + "purchasable — product " + line.getProductId() + " is "
+                            + variant.productStorefront() + ", variant is "
+                            + variant.variantStorefront() + " — the cart line is no longer "
+                            + "purchasable");
+                }
+                sellerId = variant.providerId();
+                authoritativeCurrency = variant.currency();
+                authoritativePriceMinor = variant.priceMinor();
+                variantStockLines.add(new ProductStockPort.StockLine(
+                        line.getVariantId(), line.getQuantity()));
+            } else {
+                ProductPricingPort.ProductPrice price = productPricingPort.priceOf(line.getProductId());
+                if (price.storefront() != ProductPricingPort.StorefrontState.ACTIVE) {
+                    throw new ConflictException("Product " + line.getProductId() + " is "
+                            + price.storefront() + " — the cart line is no longer purchasable");
+                }
+                sellerId = price.providerId();
+                authoritativeCurrency = price.currency();
+                authoritativePriceMinor = price.priceMinor();
+                productStockLines.add(new ProductStockPort.StockLine(
+                        line.getProductId(), line.getQuantity()));
             }
-            if (!line.getCurrency().equals(price.currency())) {
+            if (!line.getCurrency().equals(authoritativeCurrency)) {
                 throw new ConflictException("Cart line " + line.getId() + " carries "
-                        + line.getCurrency() + " but the product now prices in " + price.currency()
-                        + " — re-add the line before placing");
+                        + line.getCurrency() + " but the purchasable unit now prices in "
+                        + authoritativeCurrency + " — re-add the line before placing");
             }
-            if (price.priceMinor() != line.getUnitAmountMinor()) {
-                line.updateUnitAmountMinor(price.priceMinor());
+            if (authoritativePriceMinor != line.getUnitAmountMinor()) {
+                line.updateUnitAmountMinor(authoritativePriceMinor);
             }
-            groups.computeIfAbsent(price.providerId(), k -> new java.util.ArrayList<>()).add(line);
+            groups.computeIfAbsent(sellerId, k -> new java.util.ArrayList<>()).add(line);
         }
         // One currency per order: a seller group whose re-priced lines
         // carry mixed currencies cannot freeze into one order — the honest
@@ -233,10 +306,15 @@ public class OrdersService {
         }
         // The whole-cart atomic reservation — a zero row anywhere answers
         // 409 and rolls the WHOLE placement back (no order row in ANY
-        // group, no partial hold).
-        productStockPort.reserve(ProductStockPort.StockLine.asMap(lines.stream()
-                .map(line -> new ProductStockPort.StockLine(line.getProductId(), line.getQuantity()))
-                .toList()));
+        // group, no partial hold). ADR-0012: the reservation spans BOTH
+        // the product-level lines and the variant lines — two calls, ONE
+        // transaction, so the all-or-nothing law crosses the shelves.
+        if (!productStockLines.isEmpty()) {
+            productStockPort.reserve(ProductStockPort.StockLine.asMap(productStockLines));
+        }
+        if (!variantStockLines.isEmpty()) {
+            productStockPort.reserveVariants(ProductStockPort.StockLine.asMap(variantStockLines));
+        }
         List<OrderDetail> placed = new java.util.ArrayList<>(groups.size());
         for (java.util.Map.Entry<UUID, List<CartItem>> group : groups.entrySet()) {
             UUID sellerId = group.getKey();
@@ -290,7 +368,8 @@ public class OrdersService {
         requireStatus(order, OrderStatus.CONFIRMED, "fulfill");
         order.fulfill(Instant.now());
         if (order.isStockReserved()) {
-            productStockPort.commit(stockMapOf(order.getId()));
+            productStockPort.commit(productStockMapOf(order.getId()));
+            productStockPort.commitVariants(variantStockMapOf(order.getId()));
             order.markStockReleased();
         }
         Order saved = orderRepository.save(order);
@@ -321,7 +400,8 @@ public class OrdersService {
         }
         order.cancel(reason, Instant.now());
         if (order.isStockReserved()) {
-            productStockPort.release(stockMapOf(order.getId()));
+            productStockPort.release(productStockMapOf(order.getId()));
+            productStockPort.releaseVariants(variantStockMapOf(order.getId()));
             order.markStockReleased();
         }
         Order saved = orderRepository.save(order);
@@ -371,10 +451,27 @@ public class OrdersService {
                         });
     }
 
-    /** The lines' product→quantity map, one hop, for the stock seams. */
-    private java.util.Map<UUID, Integer> stockMapOf(UUID orderId) {
+    /**
+     * The frozen lines' product→quantity map, one hop, for the stock
+     * seams — the PRODUCT-level lines only (ADR-0012: the variant lines
+     * ride their own map beside it; an empty map is the port's no-op).
+     */
+    private java.util.Map<UUID, Integer> productStockMapOf(UUID orderId) {
         return ProductStockPort.StockLine.asMap(orderItemRepository.findByOrderId(orderId).stream()
+                .filter(item -> item.getVariantId() == null)
                 .map(item -> new ProductStockPort.StockLine(item.getProductId(), item.getQuantity()))
+                .toList());
+    }
+
+    /**
+     * ADR-0012 (the cart-integration slice): the frozen lines' VARIANT→quantity
+     * map — the variant shelves' own release/commit carrier, the
+     * product map's twin one hop away.
+     */
+    private java.util.Map<UUID, Integer> variantStockMapOf(UUID orderId) {
+        return ProductStockPort.StockLine.asMap(orderItemRepository.findByOrderId(orderId).stream()
+                .filter(item -> item.getVariantId() != null)
+                .map(item -> new ProductStockPort.StockLine(item.getVariantId(), item.getQuantity()))
                 .toList());
     }
 

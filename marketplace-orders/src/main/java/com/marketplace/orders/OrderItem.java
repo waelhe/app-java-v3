@@ -32,6 +32,10 @@ public class OrderItem extends BaseEntity {
     @Column(name = "product_id", nullable = false)
     private UUID productId;
 
+    /** ADR-0012: the variant this line froze — NULL for the product-level line. */
+    @Column(name = "variant_id")
+    private UUID variantId;
+
     @Column(name = "quantity", nullable = false)
     private Integer quantity;
 
@@ -45,11 +49,12 @@ public class OrderItem extends BaseEntity {
         // JPA
     }
 
-    private OrderItem(UUID id, UUID orderId, UUID productId, Integer quantity,
+    private OrderItem(UUID id, UUID orderId, UUID productId, UUID variantId, Integer quantity,
                       Long unitAmountMinor, String currency) {
         this.id = id;
         this.orderId = orderId;
         this.productId = productId;
+        this.variantId = variantId;
         this.quantity = quantity;
         this.unitAmountMinor = unitAmountMinor;
         this.currency = currency;
@@ -57,7 +62,8 @@ public class OrderItem extends BaseEntity {
 
     public static OrderItem snapshotOf(UUID orderId, CartItem cartLine) {
         return new OrderItem(UUID.randomUUID(), orderId, cartLine.getProductId(),
-                cartLine.getQuantity(), cartLine.getUnitAmountMinor(), cartLine.getCurrency());
+                cartLine.getVariantId(), cartLine.getQuantity(),
+                cartLine.getUnitAmountMinor(), cartLine.getCurrency());
     }
 
     @Override
@@ -71,6 +77,10 @@ public class OrderItem extends BaseEntity {
 
     public UUID getProductId() {
         return productId;
+    }
+
+    public UUID getVariantId() {
+        return variantId;
     }
 
     public Integer getQuantity() {

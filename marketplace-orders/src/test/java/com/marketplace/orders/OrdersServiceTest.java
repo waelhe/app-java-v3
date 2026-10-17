@@ -100,8 +100,8 @@ class OrdersServiceTest {
     @Test
     void placementFreezesTheCartLinesIntoTheOrderAndTombstonesTheCart() {
         Cart cart = Cart.activeFor(consumer);
-        CartItem line = CartItem.of(cart.getId(), UUID.randomUUID(), 2, 1500L, "SAR");
-        CartItem line2 = CartItem.of(cart.getId(), UUID.randomUUID(), 1, 9900L, "SAR");
+        CartItem line = CartItem.of(cart.getId(), UUID.randomUUID(), null, 2, 1500L, "SAR");
+        CartItem line2 = CartItem.of(cart.getId(), UUID.randomUUID(), null, 1, 9900L, "SAR");
         priceActive(line.getProductId());
         when(productPricingPort.priceOf(line2.getProductId())).thenReturn(
                 new ProductPricingPort.ProductPrice(line2.getProductId(), seller, 9900L, "SAR",
@@ -148,7 +148,7 @@ class OrdersServiceTest {
         java.util.UUID productId = java.util.UUID.randomUUID();
         priceActive(productId);
         when(cartItemRepository.findByCartId(cart.getId()))
-                .thenReturn(List.of(CartItem.of(cart.getId(), productId, 1, 100L, "SAR")));
+                .thenReturn(List.of(CartItem.of(cart.getId(), productId, null, 1, 100L, "SAR")));
         when(orderRepository.save(any(Order.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         when(orderItemRepository.save(any(OrderItem.class)))
@@ -194,7 +194,7 @@ class OrdersServiceTest {
         when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
                 .thenReturn(Optional.of(cart));
         when(cartItemRepository.findByCartId(cart.getId())).thenReturn(List.of(
-                CartItem.of(cart.getId(), productId, 1, 100L, "SAR")));
+                CartItem.of(cart.getId(), productId, null, 1, 100L, "SAR")));
         when(productPricingPort.priceOf(productId)).thenReturn(
                 new ProductPricingPort.ProductPrice(productId, seller, 100L, "USD",
                         ProductPricingPort.StorefrontState.ACTIVE));
@@ -221,8 +221,8 @@ class OrdersServiceTest {
         when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
                 .thenReturn(Optional.of(cart));
         when(cartItemRepository.findByCartId(cart.getId())).thenReturn(List.of(
-                CartItem.of(cart.getId(), p1, 2, 1500L, "SAR"),
-                CartItem.of(cart.getId(), p2, 1, 9900L, "SAR")));
+                CartItem.of(cart.getId(), p1, null, 2, 1500L, "SAR"),
+                CartItem.of(cart.getId(), p2, null, 1, 9900L, "SAR")));
         when(productPricingPort.priceOf(p1)).thenReturn(
                 new ProductPricingPort.ProductPrice(p1, sellerA, 1500L, "SAR",
                         ProductPricingPort.StorefrontState.ACTIVE));
@@ -272,8 +272,8 @@ class OrdersServiceTest {
         when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
                 .thenReturn(Optional.of(cart));
         when(cartItemRepository.findByCartId(cart.getId())).thenReturn(List.of(
-                CartItem.of(cart.getId(), p1, 1, 100L, "SAR"),
-                CartItem.of(cart.getId(), p2, 1, 100L, "USD")));
+                CartItem.of(cart.getId(), p1, null, 1, 100L, "SAR"),
+                CartItem.of(cart.getId(), p2, null, 1, 100L, "USD")));
         when(productPricingPort.priceOf(p1)).thenReturn(
                 new ProductPricingPort.ProductPrice(p1, sellerA, 100L, "SAR",
                         ProductPricingPort.StorefrontState.ACTIVE));
@@ -296,7 +296,7 @@ class OrdersServiceTest {
         when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
                 .thenReturn(Optional.of(cart));
         when(cartItemRepository.findByCartId(cart.getId()))
-                .thenReturn(List.of(CartItem.of(cart.getId(), productId, 2, 1500L, "SAR")));
+                .thenReturn(List.of(CartItem.of(cart.getId(), productId, null, 2, 1500L, "SAR")));
         when(orderRepository.save(any(Order.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         when(orderItemRepository.save(any(OrderItem.class)))
@@ -321,7 +321,7 @@ class OrdersServiceTest {
         when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
                 .thenReturn(Optional.of(cart));
         when(cartItemRepository.findByCartId(cart.getId()))
-                .thenReturn(List.of(CartItem.of(cart.getId(), productId, 2, 1500L, "SAR")));
+                .thenReturn(List.of(CartItem.of(cart.getId(), productId, null, 2, 1500L, "SAR")));
         org.mockito.Mockito.doThrow(new ConflictException("cannot reserve"))
                 .when(productStockPort).reserve(any());
 
@@ -528,7 +528,7 @@ class OrdersServiceTest {
     void listSoldByCallerAssemblesThePageWithOneItemsHop() {
         Order order = soldOrder();
         OrderItem line = OrderItem.snapshotOf(order.getId(),
-                CartItem.of(Cart.activeFor(consumer).getId(), UUID.randomUUID(), 1, 5000L, "SAR"));
+                CartItem.of(Cart.activeFor(consumer).getId(), UUID.randomUUID(), null, 1, 5000L, "SAR"));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         when(orderRepository.findBySellerIdOrderByPlacedAtDescIdDesc(
                 seller, Pageable.ofSize(10)))
@@ -648,20 +648,134 @@ class OrdersServiceTest {
     void addingAnExistingProductRaisesItsQuantityInsteadOfASecondLine() {
         Cart cart = Cart.activeFor(consumer);
         UUID product = UUID.randomUUID();
-        CartItem existing = CartItem.of(cart.getId(), product, 1, 500L, "SAR");
+        CartItem existing = CartItem.of(cart.getId(), product, null, 1, 500L, "SAR");
         when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
                 .thenReturn(Optional.of(cart));
-        when(cartItemRepository.findByCartIdAndProductId(cart.getId(), product))
+        when(cartItemRepository.findByCartIdAndProductIdAndVariantIdIsNull(cart.getId(), product))
                 .thenReturn(Optional.of(existing));
 
         when(productPricingPort.priceOf(product)).thenReturn(
                 new ProductPricingPort.ProductPrice(product, seller, 500L, "SAR",
                         ProductPricingPort.StorefrontState.ACTIVE));
 
-        CartItem result = service.addCartItem(consumer, product, 2);
+        CartItem result = service.addCartItem(consumer, product, null, 2);
 
         assertThat(result.getQuantity()).isEqualTo(3);
         verify(cartItemRepository, never()).save(any());
+    }
+
+    // ------------------------------------------------------------------
+    // ADR-0012 (the cart-integration slice): the variant lines' unit gates
+    // ------------------------------------------------------------------
+
+    @Test
+    void addingAVariantLinePricesFromTheVariantsOwnAuthoritativeRecord() {
+        Cart cart = Cart.activeFor(consumer);
+        UUID product = UUID.randomUUID();
+        UUID variant = UUID.randomUUID();
+        when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
+                .thenReturn(Optional.of(cart));
+        when(productPricingPort.priceOfVariant(variant)).thenReturn(
+                new ProductPricingPort.VariantPrice(variant, product, seller, 1750L, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE,
+                        ProductPricingPort.StorefrontState.ACTIVE));
+        when(cartItemRepository.findByCartIdAndProductIdAndVariantId(cart.getId(), product, variant))
+                .thenReturn(Optional.empty());
+        when(cartItemRepository.save(any(CartItem.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CartItem line = service.addCartItem(consumer, product, variant, 1);
+
+        assertThat(line.getVariantId()).isEqualTo(variant);
+        assertThat(line.getProductId()).isEqualTo(product);
+        assertThat(line.getUnitAmountMinor()).isEqualTo(1750L);
+        assertThat(line.getCurrency()).isEqualTo("SAR");
+        // the product-level pricing read is never consulted for a variant line
+        verify(productPricingPort, never()).priceOf(any());
+    }
+
+    @Test
+    void addingAVariantFromAnotherProductAnswersTheHonest400() {
+        UUID product = UUID.randomUUID();
+        UUID foreignVariant = UUID.randomUUID();
+        when(productPricingPort.priceOfVariant(foreignVariant)).thenReturn(
+                new ProductPricingPort.VariantPrice(foreignVariant, UUID.randomUUID(), seller,
+                        100L, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE,
+                        ProductPricingPort.StorefrontState.ACTIVE));
+
+        assertThatThrownBy(() -> service.addCartItem(consumer, product, foreignVariant, 1))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class)
+                .hasMessageContaining("belongs to product");
+        verify(cartItemRepository, never()).save(any());
+    }
+
+    @Test
+    void addingASuspendedVariantUnderAnActiveProductAnswersTheHouse409() {
+        UUID product = UUID.randomUUID();
+        UUID variant = UUID.randomUUID();
+        when(productPricingPort.priceOfVariant(variant)).thenReturn(
+                new ProductPricingPort.VariantPrice(variant, product, seller, 100L, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE,
+                        ProductPricingPort.StorefrontState.SUSPENDED));
+
+        assertThatThrownBy(() -> service.addCartItem(consumer, product, variant, 1))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("not purchasable");
+        verify(cartItemRepository, never()).save(any());
+    }
+
+    @Test
+    void addingTheSameVariantAgainRaisesItsQuantityInsteadOfASecondLine() {
+        Cart cart = Cart.activeFor(consumer);
+        UUID product = UUID.randomUUID();
+        UUID variant = UUID.randomUUID();
+        CartItem existing = CartItem.of(cart.getId(), product, variant, 1, 1750L, "SAR");
+        when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
+                .thenReturn(Optional.of(cart));
+        when(productPricingPort.priceOfVariant(variant)).thenReturn(
+                new ProductPricingPort.VariantPrice(variant, product, seller, 1750L, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE,
+                        ProductPricingPort.StorefrontState.ACTIVE));
+        when(cartItemRepository.findByCartIdAndProductIdAndVariantId(cart.getId(), product, variant))
+                .thenReturn(Optional.of(existing));
+
+        CartItem result = service.addCartItem(consumer, product, variant, 2);
+
+        assertThat(result.getQuantity()).isEqualTo(3);
+        verify(cartItemRepository, never()).save(any());
+    }
+
+    @Test
+    void placementFreezesTheVariantLineAndReservesTheVariantShelf() {
+        Cart cart = Cart.activeFor(consumer);
+        UUID product = UUID.randomUUID();
+        UUID variant = UUID.randomUUID();
+        CartItem line = CartItem.of(cart.getId(), product, variant, 2, 1700L, "SAR");
+        when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
+                .thenReturn(Optional.of(cart));
+        when(cartItemRepository.findByCartId(cart.getId())).thenReturn(List.of(line));
+        when(productPricingPort.priceOfVariant(variant)).thenReturn(
+                new ProductPricingPort.VariantPrice(variant, product, seller, 1750L, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE,
+                        ProductPricingPort.StorefrontState.ACTIVE));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(orderItemRepository.save(any(OrderItem.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        List<OrderDetail> placed = service.place(consumer);
+
+        // the placement-instant re-pricing: the frozen line carries the
+        // variant's CURRENT price, not the add-instant copy
+        assertThat(placed).hasSize(1);
+        assertThat(line.getUnitAmountMinor()).isEqualTo(1750L);
+        ArgumentCaptor<OrderItem> frozen = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemRepository).save(frozen.capture());
+        assertThat(frozen.getValue().getVariantId()).isEqualTo(variant);
+        assertThat(frozen.getValue().getUnitAmountMinor()).isEqualTo(1750L);
+        assertThat(placed.get(0).order().getTotalAmountMinor()).isEqualTo(3500L);
+        // the reservation spans the VARIANT shelf only (no product-level
+        // line exists in this cart) — the all-or-nothing law crossed over
+        verify(productStockPort).reserveVariants(java.util.Map.of(variant, 2));
+        verify(productStockPort, never()).reserve(any());
     }
 
     private Order placedOrder() {

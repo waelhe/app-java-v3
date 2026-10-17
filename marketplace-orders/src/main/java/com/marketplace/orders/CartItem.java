@@ -27,6 +27,19 @@ import java.util.UUID;
  * the buyer agreed to at placement time is what the order forever carries)
  * is pinned by tests from day one and the M1 integration only replaces the
  * SOURCE of the amounts, never their path.
+ *
+ * <p><b>ADR-0012 (the cart-integration slice): the {@code variantId}
+ * reference.</b> A line may carry the purchasable VARIANT under the
+ * product — NULL keeps the zero-variant rule (the product-level price and
+ * shelf stay the authoritative record, exactly as today; no fake variant
+ * is ever invented for a unique item). The column is as opaque as
+ * {@code productId} beside it (the V32 cross-module no-FK rule — V222
+ * documents the widened union key: the V113 index's
+ * {@code (cart_id, product_id)} collapses product-level duplicates into
+ * the quantity bump; under variants the key becomes
+ * {@code (cart_id, product_id, COALESCE(variant_id, zero-uuid))} so two
+ * variants of one product coexist while the product-level line keeps
+ * collapsing — the union semantics preserved exactly).
  */
 @Entity
 @Table(name = "cart_items", uniqueConstraints = @UniqueConstraint(
@@ -43,6 +56,10 @@ public class CartItem extends BaseEntity {
     @Column(name = "product_id", nullable = false)
     private UUID productId;
 
+    /** ADR-0012: the purchasable variant this line carries — NULL for the product-level line. */
+    @Column(name = "variant_id")
+    private UUID variantId;
+
     @Min(1)
     @Column(name = "quantity", nullable = false)
     private Integer quantity;
@@ -58,19 +75,21 @@ public class CartItem extends BaseEntity {
         // JPA
     }
 
-    private CartItem(UUID id, UUID cartId, UUID productId, Integer quantity,
+    private CartItem(UUID id, UUID cartId, UUID productId, UUID variantId, Integer quantity,
                      Long unitAmountMinor, String currency) {
         this.id = id;
         this.cartId = cartId;
         this.productId = productId;
+        this.variantId = variantId;
         this.quantity = quantity;
         this.unitAmountMinor = unitAmountMinor;
         this.currency = currency;
     }
 
-    public static CartItem of(UUID cartId, UUID productId, Integer quantity,
+    public static CartItem of(UUID cartId, UUID productId, UUID variantId, Integer quantity,
                               Long unitAmountMinor, String currency) {
-        return new CartItem(UUID.randomUUID(), cartId, productId, quantity, unitAmountMinor, currency);
+        return new CartItem(UUID.randomUUID(), cartId, productId, variantId, quantity,
+                unitAmountMinor, currency);
     }
 
     public void updateQuantity(Integer quantity) {
@@ -99,6 +118,10 @@ public class CartItem extends BaseEntity {
 
     public UUID getProductId() {
         return productId;
+    }
+
+    public UUID getVariantId() {
+        return variantId;
     }
 
     public Integer getQuantity() {

@@ -64,7 +64,7 @@ class OrdersControllerTest {
         Order order = Order.placed(caller, 17400L, "SAR", null);
         when(ordersService.place(caller)).thenReturn(List.of(new OrderDetail(order, List.of(
                 OrderItem.snapshotOf(order.getId(),
-                        CartItem.of(Cart.activeFor(caller).getId(), UUID.randomUUID(), 2, 8700L, "SAR"))))));
+                        CartItem.of(Cart.activeFor(caller).getId(), UUID.randomUUID(), null, 2, 8700L, "SAR"))))));
 
         ResponseEntity<OrderResponses.OrderResponse> result = controller.place(authentication);
 
@@ -134,7 +134,7 @@ class OrdersControllerTest {
     @Test
     void getCartAnswersTheLinesWithTheirTotals() {
         Cart cart = Cart.activeFor(caller);
-        CartItem line = CartItem.of(cart.getId(), UUID.randomUUID(), 2, 1500L, "SAR");
+        CartItem line = CartItem.of(cart.getId(), UUID.randomUUID(), null, 2, 1500L, "SAR");
         when(ordersService.getActiveCartItems(caller)).thenReturn(List.of(line));
 
         ResponseEntity<List<OrderResponses.CartItemResponse>> result =
@@ -151,14 +151,14 @@ class OrdersControllerTest {
     void addCartItemAnswersCreatedAndDelegatesTheUnion() {
         UUID product = UUID.randomUUID();
         Cart cart = Cart.activeFor(caller);
-        CartItem line = CartItem.of(cart.getId(), product, 2, 1500L, "SAR");
-        when(ordersService.addCartItem(caller, product, 2)).thenReturn(line);
+        CartItem line = CartItem.of(cart.getId(), product, null, 2, 1500L, "SAR");
+        when(ordersService.addCartItem(caller, product, null, 2)).thenReturn(line);
 
         ResponseEntity<OrderResponses.CartItemResponse> result = cartController.addItem(
-                new CartController.AddCartItemRequest(product, 2, 1500L, "SAR"), authentication);
+                new CartController.AddCartItemRequest(product, null, 2, 1500L, "SAR"), authentication);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(result.getBody().productId()).isEqualTo(product);
-        verify(ordersService).addCartItem(caller, product, 2);
+        verify(ordersService).addCartItem(caller, product, null, 2);
     }
 }

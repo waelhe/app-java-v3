@@ -15,6 +15,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -49,8 +50,11 @@ class CartControllerWebSliceTest {
         UUID product = UUID.randomUUID();
         UUID caller = UUID.randomUUID();
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(caller);
-        when(ordersService.addCartItem(eq(caller), eq(product), anyInt()))
-                .thenReturn(CartItem.of(UUID.randomUUID(), product, 5, 1500L, "SAR"));
+        // ADR-0012: the absent variantId binds to null through the real
+        // web leg (the additive optional field), and the stub mirrors the
+        // widened service seam.
+        when(ordersService.addCartItem(eq(caller), eq(product), isNull(), anyInt()))
+                .thenReturn(CartItem.of(UUID.randomUUID(), product, null, 5, 1500L, "SAR"));
 
         String body = """
                 {"productId":"%s","quantity":3}"""

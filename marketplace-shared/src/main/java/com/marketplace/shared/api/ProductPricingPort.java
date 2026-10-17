@@ -27,6 +27,24 @@ public interface ProductPricingPort {
     ProductPrice priceOf(UUID productId);
 
     /**
+     * ADR-0012 (the merchandise model's variant depth — the
+     * cart-integration slice): resolves the VARIANT's authoritative price
+     * and BOTH shelf states — the variant's own and its owning product's.
+     * The parent's state gates the child's purchasability exactly the way
+     * Saleor's publication model does: a suspended or archived product
+     * hides every variant under it, whatever the variant's own state; a
+     * suspended variant is buyer-invisible under an ACTIVE product (the
+     * storefront read's own rule, re-checked here at the write boundary).
+     *
+     * @param variantId the catalog module's variant id
+     * @return the variant pricing carrier (both ids, the seller, minor
+     *         units, ISO-4217 currency, both shelf states)
+     * @throws com.marketplace.shared.api.ResourceNotFoundException when the
+     *         variant does not exist
+     */
+    VariantPrice priceOfVariant(UUID variantId);
+
+    /**
      * The pricing carrier — the minimal facts the cart's add path reads.
      *
      * @param productId     the product's own id
@@ -38,6 +56,40 @@ public interface ProductPricingPort {
      */
     record ProductPrice(UUID productId, UUID providerId, long priceMinor, String currency,
                         StorefrontState storefront) {
+    }
+
+    /**
+     * ADR-0012 (the cart-integration slice): the variant's pricing
+     * carrier — the minimal facts the cart's add path and the placement's
+     * re-pricing read. The purchasability test is BOTH states ACTIVE
+     * ({@link #purchasable()}); the two states stay separate fields so
+     * the refusing 409 can NAME the shelf that hid the purchase (a
+     * suspended product and a suspended variant are different operator
+     * facts, and the buyer's remedy differs with them).
+     *
+     * @param variantId         the variant's own id
+     * @param productId         the OWNING product's id (the variant's
+     *                          parent — the line's product identity)
+     * @param providerId        the owning product's seller (the seller
+     *                          grouping's and the SKU namespace's source
+     *                          fact)
+     * @param priceMinor        the variant's authoritative unit price in
+     *                          minor units
+     * @param currency          the variant's denomination (the product's
+     *                          own, copied at the variant's creation —
+     *                          never client-supplied)
+     * @param productStorefront the OWNING product's display lifecycle
+     * @param variantStorefront the variant's own availability lifecycle
+     */
+    record VariantPrice(UUID variantId, UUID productId, UUID providerId,
+                        long priceMinor, String currency,
+                        StorefrontState productStorefront, StorefrontState variantStorefront) {
+
+        /** The Saleor publication rule: the parent must be ACTIVE and so must the variant. */
+        public boolean purchasable() {
+            return productStorefront == StorefrontState.ACTIVE
+                    && variantStorefront == StorefrontState.ACTIVE;
+        }
     }
 
     /**
