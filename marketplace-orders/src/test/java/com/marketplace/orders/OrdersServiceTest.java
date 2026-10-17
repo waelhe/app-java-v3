@@ -478,6 +478,169 @@ class OrdersServiceTest {
     }
 
     // ------------------------------------------------------------------
+    // The merchant surface (the Saleor study's Phase-1 slice — the
+    // seller scope, the honest 404, and the post-command read-back)
+    // ------------------------------------------------------------------
+
+    @Test
+    void theSellerReadsTheirOwnOrderDetailAndTheAdminToo() {
+        Order order = soldOrder();
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of());
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+
+        OrderDetail detail = service.getOrderDetailForSeller(order.getId(), authentication);
+        assertThat(detail.order()).isSameAs(order);
+
+        UUID admin = UUID.randomUUID();
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(admin);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(true);
+        assertThat(service.getOrderDetailForSeller(order.getId(), authentication).order())
+                .isSameAs(order);
+    }
+
+    @Test
+    void theBuyerAndTheStrangerGetTheHonest404OnTheSellerSurface() {
+        Order order = soldOrder();
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        // The BUYER is not the seller: the merchant surface is not theirs.
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumer);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.getOrderDetailForSeller(order.getId(), authentication))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void aLegacySellerlessOrderAuthorizesAdminOnly() {
+        Order order = placedOrder(); // sellerId = null — the V184 legacy row
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumer);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.getOrderDetailForSeller(order.getId(), authentication))
+                .as("a null-seller row has no seller to authorize — not even the buyer")
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void listSoldByCallerAssemblesThePageWithOneItemsHop() {
+        Order order = soldOrder();
+        OrderItem line = OrderItem.snapshotOf(order.getId(),
+                CartItem.of(Cart.activeFor(consumer).getId(), UUID.randomUUID(), 1, 5000L, "SAR"));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
+        when(orderRepository.findBySellerIdOrderByPlacedAtDescIdDesc(
+                seller, Pageable.ofSize(10)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(order)));
+        when(orderItemRepository.findByOrderIdIn(List.of(order.getId())))
+                .thenReturn(List.of(line));
+
+        org.springframework.data.domain.Page<OrderDetail> page =
+                service.listSoldByCaller(authentication, Pageable.ofSize(10));
+
+        assertThat(page.getContent()).hasSize(1);
+        assertThat(page.getContent().get(0).items()).containsExactly(line);
+    }
+
+    @Test
+    void listSoldByCallerAnswersTheHonestEmptyPage() {
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
+        when(orderRepository.findBySellerIdOrderByPlacedAtDescIdDesc(
+                seller, Pageable.ofSize(10)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of()));
+
+        assertThat(service.listSoldByCaller(authentication, Pageable.ofSize(10)).getContent())
+                .isEmpty();
+    }
+
+    @Test
+    void confirmForSellerMovesTheMachineAndAnswersTheReadBack() {
+        Order order = soldOrder();
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
+        // No isAdmin stub: the seller match short-circuits the gate — the
+        // admin branch never runs for the matching seller (strict stubs).
+        when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of());
+
+        OrderDetail confirmed = service.confirmForSeller(order.getId(), authentication);
+
+        assertThat(confirmed.order().getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(confirmed.order().getConfirmedAt()).isNotNull();
+        verify(eventPublisher).publishEvent(new OrderConfirmedEvent(order.getId(), consumer));
+    }
+
+    @Test
+    void fulfillForSellerCommitsTheStockAndAnswersTheReadBack() {
+        Order order = soldOrder();
+        order.confirm(java.time.Instant.now());
+        order.markStockReserved(); // the placement's own flag (the place() edge sets it)
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
+        // No isAdmin stub: the seller match short-circuits the gate.
+        when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of());
+
+        OrderDetail fulfilled = service.fulfillForSeller(order.getId(), authentication);
+
+        assertThat(fulfilled.order().getStatus()).isEqualTo(OrderStatus.FULFILLED);
+        verify(productStockPort).commit(any());
+        verify(eventPublisher).publishEvent(new OrderFulfilledEvent(order.getId(), consumer));
+    }
+
+    @Test
+    void cancelForSellerReleasesTheStockAndPublishesWithTheReason() {
+        Order order = soldOrder();
+        order.markStockReserved(); // the placement's own flag (the place() edge sets it)
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
+        // No isAdmin stub: the seller match short-circuits the gate.
+        when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of());
+
+        OrderDetail cancelled = service.cancelForSeller(order.getId(), "out of stock", authentication);
+
+        assertThat(cancelled.order().getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(cancelled.order().getCancelReason()).isEqualTo("out of stock");
+        verify(productStockPort).release(any());
+        verify(eventPublisher).publishEvent(
+                new OrderCancelledEvent(order.getId(), consumer, "out of stock"));
+    }
+
+    @Test
+    void aForeignCallerCannotPullTheMerchantLevers() {
+        Order order = soldOrder();
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(UUID.randomUUID());
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.confirmForSeller(order.getId(), authentication))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> service.fulfillForSeller(order.getId(), authentication))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> service.cancelForSeller(order.getId(), "no", authentication))
+                .isInstanceOf(ResourceNotFoundException.class);
+        // The guard fired BEFORE the machine: no save, no event, no stock.
+        verify(orderRepository, never()).save(any());
+        verify(eventPublisher, never()).publishEvent(any());
+        verify(productStockPort, never()).release(any());
+    }
+
+    @Test
+    void theIllegalMerchantEdgesAnswerTheHouse409() {
+        Order order = soldOrder();
+        order.confirm(java.time.Instant.now()); // CONFIRMED: confirm is illegal now
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
+        // No isAdmin stub: the seller match short-circuits the gate — the
+        // 409 comes from the machine's own edge, past the scope check.
+
+        assertThatThrownBy(() -> service.confirmForSeller(order.getId(), authentication))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    // ------------------------------------------------------------------
     // The cart union semantics
     // ------------------------------------------------------------------
 
@@ -506,5 +669,12 @@ class OrdersServiceTest {
         // reflection needed; the helper exists for the one read that
         // matters: a fresh PLACED machine state.
         return Order.placed(consumer, 5000L, "SAR", null);
+    }
+
+    private Order soldOrder() {
+        // The merchant surface's fixture: the same fresh PLACED machine
+        // state, placed under THIS test's seller (the A1 space — the
+        // users.id the seller-scope gate compares the caller against).
+        return Order.placed(consumer, 5000L, "SAR", seller);
     }
 }

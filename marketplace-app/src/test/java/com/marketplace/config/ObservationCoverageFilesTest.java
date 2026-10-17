@@ -246,8 +246,15 @@ class ObservationCoverageFilesTest {
                     // ADR-0010: the multi-seller split's intent creation is its
                     // own observed command (order.payment-intent rides the
                     // per-seller place loop — alphabetical, the scan's order).
+                    // PR #607 (Saleor plan phase 1, A-17): the merchant order
+                    // surface's three command wrappers — each seller command
+                    // is its own business entry that gates on the same machine
+                    // edge; the seller reads (sales page, seller order detail)
+                    // stay unobserved per the same commands-not-reads policy.
                     "order.cancel", "order.confirm", "order.fulfill",
-                    "order.payment-intent", "order.place")),
+                    "order.payment-intent", "order.place",
+                    "order.seller.cancel", "order.seller.confirm",
+                    "order.seller.fulfill")),
             Map.entry("marketplace-notifications", List.of(
                     "notification.delete", "notification.mark.all.read",
                     "notification.mark.read",

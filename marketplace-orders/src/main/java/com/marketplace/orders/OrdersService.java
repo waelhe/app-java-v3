@@ -442,6 +442,114 @@ public class OrdersService {
                 byOrder.getOrDefault(order.getId(), List.of())));
     }
 
+    // ------------------------------------------------------------------
+    // The merchant surface (the Saleor study's Phase-1 slice, PR #602 —
+    // the C.7/M1 A-17 promise the buyer surface documented on day one)
+    // ------------------------------------------------------------------
+
+    /**
+     * The seller's order detail: the same frozen snapshot the buyer reads,
+     * scoped to the order's own seller (or ADMIN). The privacy contract is
+     * the module's law verbatim — an honest 404 to anyone else, because
+     * existence itself is private (the A-03 precedent; the buyer's
+     * {@code getOrderDetailForUser} twin).
+     */
+    @Transactional(readOnly = true)
+    public OrderDetail getOrderDetailForSeller(UUID orderId, Authentication authentication) {
+        Order order = requireSellerOrder(orderId, authentication);
+        return new OrderDetail(order, orderItemRepository.findByOrderId(orderId));
+    }
+
+    /**
+     * The seller's sold-order history: the caller's own sales, newest-first
+     * — the buyer's {@code listByConsumer(caller, ...)} twin. A caller with
+     * no sales reads an honest empty page (a user who never sold carries
+     * no rows — the same answer {@code listMine} gives a buyer without
+     * orders).
+     */
+    @Transactional(readOnly = true)
+    public Page<OrderDetail> listSoldByCaller(Authentication authentication, Pageable pageable) {
+        UUID caller = currentUserProvider.getCurrentUserId(authentication);
+        Page<Order> page = orderRepository.findBySellerIdOrderByPlacedAtDescIdDesc(caller, pageable);
+        if (page.isEmpty()) {
+            return page.map(order -> new OrderDetail(order, List.of()));
+        }
+        // ONE items hop for the whole page, grouped per order — no N+1
+        // (the listByConsumer assembly verbatim).
+        java.util.Map<UUID, List<OrderItem>> byOrder = orderItemRepository
+                .findByOrderIdIn(page.getContent().stream().map(Order::getId).toList())
+                .stream()
+                .collect(java.util.stream.Collectors.groupingBy(OrderItem::getOrderId));
+        return page.map(order -> new OrderDetail(order,
+                byOrder.getOrDefault(order.getId(), List.of())));
+    }
+
+    /**
+     * The merchant's acceptance edge: PLACED → CONFIRMED, guarded by the
+     * seller scope, answering the machine's new state as the read-back
+     * (the command's own body is the proof — the study's "post-command
+     * read-back" requirement). The machine's {@link #confirm} edge and its
+     * event stay the single load-bearing machinery.
+     */
+    @Transactional
+    @Observed(name = "order.seller.confirm")
+    public OrderDetail confirmForSeller(UUID orderId, Authentication authentication) {
+        requireSellerOrder(orderId, authentication);
+        Order confirmed = confirm(orderId);
+        return new OrderDetail(confirmed, orderItemRepository.findByOrderId(orderId));
+    }
+
+    /**
+     * The merchant's completion edge: CONFIRMED → FULFILLED (terminal) —
+     * the stock's commit edge (ADR-0002) rides the machine's own
+     * {@link #fulfill}; the guard is the seller scope and the read-back is
+     * the command's own body.
+     */
+    @Transactional
+    @Observed(name = "order.seller.fulfill")
+    public OrderDetail fulfillForSeller(UUID orderId, Authentication authentication) {
+        requireSellerOrder(orderId, authentication);
+        Order fulfilled = fulfill(orderId);
+        return new OrderDetail(fulfilled, orderItemRepository.findByOrderId(orderId));
+    }
+
+    /**
+     * The merchant's administrative cancel: the same guarded machine edge
+     * the buyer's escape hatch rides (PLACED/CONFIRMED → CANCELLED, stock
+     * released once, money settled through the existing engine's
+     * {@code OrderCancelledEvent}) — one edge, two authorized callers, the
+     * seller scope deciding who.
+     */
+    @Transactional
+    @Observed(name = "order.seller.cancel")
+    public OrderDetail cancelForSeller(UUID orderId, String reason, Authentication authentication) {
+        requireSellerOrder(orderId, authentication);
+        Order cancelled = cancel(orderId, reason);
+        return new OrderDetail(cancelled, orderItemRepository.findByOrderId(orderId));
+    }
+
+    /**
+     * The seller-scope gate (the A1 convention — the
+     * {@code verifyProviderOwnership} pattern the booking and reverse-review
+     * surfaces established): {@code orders.seller_id} physically carries the
+     * provider's {@code users.id} (the placement copied catalog's
+     * {@code Product.providerId} — the A1 space), so the ruling is read
+     * from the row itself and compared directly against the caller's user
+     * id — NO profile resolution. A legacy order with no seller (V184:
+     * {@code seller_id} is nullable for rows that predate the invariant)
+     * has no seller to authorize: ADMIN only. Anyone else reads the
+     * module's honest 404 — existence itself is private.
+     */
+    private Order requireSellerOrder(UUID orderId, Authentication authentication) {
+        Order order = requireOrder(orderId);
+        UUID caller = currentUserProvider.getCurrentUserId(authentication);
+        boolean seller = order.getSellerId() != null && order.getSellerId().equals(caller);
+        if (!seller && !currentUserProvider.isAdmin(authentication)) {
+            throw new ResourceNotFoundException("Order", orderId);
+        }
+        return order;
+    }
+
     private Order requireOrder(UUID orderId) {
         return orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
