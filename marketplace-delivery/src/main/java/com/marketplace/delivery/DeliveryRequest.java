@@ -22,7 +22,13 @@ public class DeliveryRequest extends BaseEntity {
     @Id
     private UUID id;
 
-    @Column(name = "quote_id", nullable = false, unique = true)
+    // V224: nullable with NO inline unique — checkout-created legs carry no
+    // quote (the fee froze at placement); the partial unique index
+    // (V227, WHERE quote_id IS NOT NULL) keeps the #604 quoted path's
+    // one-request-per-quote law. The mapping mirrors the schema exactly
+    // (the review's finding: nullable=false + unique=true contradicted
+    // both the factory and V224).
+    @Column(name = "quote_id")
     private UUID quoteId;
 
     @Column(name = "order_id")
@@ -109,12 +115,67 @@ public class DeliveryRequest extends BaseEntity {
         this.status = DeliveryRequestStatus.AWAITING_PAYMENT;
     }
 
+    /**
+     * The V224 checkout-created leg (the architecture §3.2 Mode B step 4):
+     * born from the order's FROZEN fulfillment selection after
+     * confirmation — NO quote (the fee froze at placement, not here), NO
+     * payment intent of its own (the fee already rode the order's ONE
+     * intent), and READY_FOR_DISPATCH immediately (the payment already
+     * happened). The courier's compensation computes from the fresh route
+     * at creation (an operational fact, never the buyer's agreement).
+     */
+    public static DeliveryRequest fromCheckout(UUID id, UUID orderId, UUID requesterId,
+                                               long amountMinor, long courierCompensationMinor,
+                                               String currency, long distanceMeters,
+                                               long routeDurationSeconds,
+                                               String pickupAddress, double pickupLatitude,
+                                               double pickupLongitude, String dropoffAddress,
+                                               double dropoffLatitude, double dropoffLongitude,
+                                               String packageDescription, String proofCodeHash) {
+        DeliveryRequest request = new DeliveryRequest();
+        request.id = id;
+        request.orderId = orderId;
+        request.requesterId = requesterId;
+        request.amountMinor = amountMinor;
+        request.courierCompensationMinor = courierCompensationMinor;
+        request.currency = currency;
+        request.distanceMeters = distanceMeters;
+        request.routeDurationSeconds = routeDurationSeconds;
+        request.pickupAddress = pickupAddress;
+        request.pickupLatitude = pickupLatitude;
+        request.pickupLongitude = pickupLongitude;
+        request.dropoffAddress = dropoffAddress;
+        request.dropoffLatitude = dropoffLatitude;
+        request.dropoffLongitude = dropoffLongitude;
+        request.packageDescription = packageDescription;
+        request.proofCodeHash = proofCodeHash;
+        request.status = DeliveryRequestStatus.READY_FOR_DISPATCH;
+        return request;
+    }
+
     @Override public UUID getId() { return id; }
     public UUID getQuoteId() { return quoteId; }
     public UUID getOrderId() { return orderId; }
     public UUID getRequesterId() { return requesterId; }
     public UUID getPaymentIntentId() { return paymentIntentId; }
     public long getAmountMinor() { return amountMinor; }
+
+    /**
+     * The split edge (V224's multi-leg law): carves the new leg's share
+     * out of THIS leg's amount — the frozen-fee redistribution the
+     * operator's split command owns. The share must be positive and
+     * leave this leg a positive remainder; the split command itself
+     * enforces the stricter margin rule (the remainder never dips below
+     * this leg's own courier compensation).
+     */
+    void carveShare(long shareMinor) {
+        if (shareMinor <= 0 || shareMinor >= amountMinor) {
+            throw new IllegalArgumentException(
+                    "A carve requires a positive share below the leg's amount");
+        }
+        this.amountMinor -= shareMinor;
+    }
+
     public long getCourierCompensationMinor() { return courierCompensationMinor; }
     public String getCurrency() { return currency; }
     public long getDistanceMeters() { return distanceMeters; }

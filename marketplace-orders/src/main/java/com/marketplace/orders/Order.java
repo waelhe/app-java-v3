@@ -82,6 +82,33 @@ public class Order extends BaseEntity {
     @Column(name = "tax_amount_minor")
     private Long taxAmountMinor;
 
+    /**
+     * The V224 checkout fulfillment selection (the architecture §3.2
+     * Mode B): PICKUP, PLATFORM_DELIVERY, or NULL (the pre-V224 legacy
+     * agreement — its total stays the whole recorded agreement).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fulfillment_method", length = 16)
+    private FulfillmentMethod fulfillmentMethod;
+
+    /**
+     * The frozen platform-delivery fee — present exactly when the method
+     * is PLATFORM_DELIVERY, and ALREADY INSIDE {@code totalAmountMinor}
+     * (the order's ONE payment intent carries it; no second charge).
+     */
+    @Column(name = "shipping_amount_minor")
+    private Long shippingAmountMinor;
+
+    /** The destination snapshot — the address the platform delivers to. */
+    @Column(name = "ship_to_address", length = 250)
+    private String shipToAddress;
+
+    @Column(name = "ship_to_latitude")
+    private Double shipToLatitude;
+
+    @Column(name = "ship_to_longitude")
+    private Double shipToLongitude;
+
     @NotBlank
     @Column(name = "currency", nullable = false, length = 3)
     private String currency;
@@ -150,6 +177,40 @@ public class Order extends BaseEntity {
         order.subtotalAmountMinor = subtotalMinor;
         order.discountAmountMinor = discountMinor;
         order.taxAmountMinor = taxMinor;
+        return order;
+    }
+
+    /**
+     * The V224 checkout placement factory — the commercial breakdown PLUS
+     * the frozen fulfillment selection: the shipping fee (platform
+     * delivery) joins the total; the destination snapshot freezes beside
+     * it. PICKUP records the method with no destination and no fee (the
+     * V224 shape law).
+     */
+    public static Order placedWithFulfillment(UUID consumerId, String currency, UUID sellerId,
+                                              long subtotalMinor, long discountMinor,
+                                              long taxMinor, boolean taxInclusive,
+                                              FulfillmentMethod method,
+                                              String shipToAddress,
+                                              Double shipToLatitude, Double shipToLongitude,
+                                              long shippingMinor) {
+        Order order = placedWithBreakdown(consumerId, currency, sellerId, subtotalMinor,
+                discountMinor, taxMinor, taxInclusive);
+        order.fulfillmentMethod = method;
+        if (method == FulfillmentMethod.PLATFORM_DELIVERY) {
+            if (shipToAddress == null || shipToAddress.isBlank()
+                    || shipToLatitude == null || shipToLongitude == null || shippingMinor <= 0) {
+                throw new IllegalArgumentException(
+                        "A platform-delivery selection requires a destination and a positive fee");
+            }
+            order.shipToAddress = shipToAddress.strip();
+            order.shipToLatitude = shipToLatitude;
+            order.shipToLongitude = shipToLongitude;
+            order.shippingAmountMinor = shippingMinor;
+            order.totalAmountMinor += shippingMinor;
+        } else {
+            order.shippingAmountMinor = 0L;
+        }
         return order;
     }
 
@@ -228,6 +289,26 @@ public class Order extends BaseEntity {
 
     public Long getTaxAmountMinor() {
         return taxAmountMinor;
+    }
+
+    public FulfillmentMethod getFulfillmentMethod() {
+        return fulfillmentMethod;
+    }
+
+    public Long getShippingAmountMinor() {
+        return shippingAmountMinor;
+    }
+
+    public String getShipToAddress() {
+        return shipToAddress;
+    }
+
+    public Double getShipToLatitude() {
+        return shipToLatitude;
+    }
+
+    public Double getShipToLongitude() {
+        return shipToLongitude;
     }
 
     public String getCurrency() {
