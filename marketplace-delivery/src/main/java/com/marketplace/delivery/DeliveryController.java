@@ -66,6 +66,29 @@ public class DeliveryController {
         return ResponseEntity.ok(service.get(id, users.getCurrentUserId(authentication), users.isAdmin(authentication)));
     }
 
+    /**
+     * The V224 multi-leg operator surface: an order's delivery legs (the
+     * checkout-created leg plus any operator splits) and the split command.
+     */
+    @GetMapping("/admin/orders/{orderId}/legs")
+    @org.springframework.web.bind.annotation.ResponseBody
+    @PreAuthorize("hasRole('ADMIN')")
+    public org.springframework.http.ResponseEntity<java.util.List<DeliveryRequestResponse>> listOrderLegs(
+            @org.springframework.web.bind.annotation.PathVariable java.util.UUID orderId) {
+        return org.springframework.http.ResponseEntity.ok(service.listOrderLegs(orderId));
+    }
+
+    @PostMapping("/admin/orders/{orderId}/legs")
+    @PreAuthorize("hasRole('ADMIN')")
+    public org.springframework.http.ResponseEntity<DeliveryRequestResponse> addOrderLeg(
+            @org.springframework.web.bind.annotation.PathVariable java.util.UUID orderId,
+            @jakarta.validation.Valid @org.springframework.web.bind.annotation.RequestBody
+            SplitLegRequest request) {
+        return org.springframework.http.ResponseEntity.status(org.springframework.http.HttpStatus.CREATED)
+                .body(service.addLegForOrder(orderId, request.packageDescription(),
+                        request.amountMinor()));
+    }
+
     @GetMapping("/admin/requests")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PagedResponse<DeliveryRequestResponse>> queue(Pageable pageable) {
@@ -109,5 +132,11 @@ public class DeliveryController {
             Authentication authentication) {
         return ResponseEntity.ok(service.transition(id, users.getCurrentUserId(authentication),
                 request.targetStatus(), request.reason(), request.proofCode()));
+    }
+
+    /** The V224 split command: the package's description and its share of the frozen shipping fee. */
+    public record SplitLegRequest(
+            @jakarta.validation.constraints.Size(max = 500) String packageDescription,
+            @jakarta.validation.constraints.Positive long amountMinor) {
     }
 }

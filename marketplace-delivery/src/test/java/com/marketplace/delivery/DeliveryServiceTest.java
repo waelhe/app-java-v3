@@ -79,6 +79,11 @@ class DeliveryServiceTest {
         UUID sellerUserId = UUID.randomUUID();
         when(orders.requireConfirmedOrderForDelivery(orderId, buyer))
                 .thenReturn(new OrderDeliveryDetails(orderId, buyer, sellerUserId, "SAR", null));
+        // the V224 guard's read: this legacy order carries no checkout
+        // selection — the manual add-on quoting path stays open for it
+        when(orders.requireOrderFulfillment(orderId, buyer))
+                .thenReturn(new com.marketplace.shared.api.OrderFulfillmentSelection(
+                        orderId, buyer, sellerUserId, "SAR", null, null, null, null, 0, null));
         when(fulfillmentLocations.findVerifiedLocation(sellerUserId))
                 .thenReturn(Optional.of(new ProviderFulfillmentLocation(sellerUserId,
                         "Seller depot", 37.0, -122.0)));
@@ -106,6 +111,11 @@ class DeliveryServiceTest {
         UUID sellerUserId = UUID.randomUUID();
         when(orders.requireConfirmedOrderForDelivery(orderId, buyer))
                 .thenReturn(new OrderDeliveryDetails(orderId, buyer, sellerUserId, "SAR", null));
+        // the V224 guard's read: this legacy order carries no checkout
+        // selection — the manual add-on quoting path stays open for it
+        when(orders.requireOrderFulfillment(orderId, buyer))
+                .thenReturn(new com.marketplace.shared.api.OrderFulfillmentSelection(
+                        orderId, buyer, sellerUserId, "SAR", null, null, null, null, 0, null));
         when(fulfillmentLocations.findVerifiedLocation(sellerUserId)).thenReturn(Optional.empty());
 
         assertThrows(ConflictException.class, () -> service(enabledProperties()).createOrderQuote(buyer,
@@ -754,5 +764,23 @@ class DeliveryServiceTest {
         } catch (java.security.NoSuchAlgorithmException ex) {
             throw new IllegalStateException(ex);
         }
+    }
+
+    @Test
+    void aCheckoutSelectedOrderRefusesTheManualAddOnQuote() {
+        UUID buyer = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID sellerUserId = UUID.randomUUID();
+        when(orders.requireConfirmedOrderForDelivery(orderId, buyer))
+                .thenReturn(new OrderDeliveryDetails(orderId, buyer, sellerUserId, "SAR", null));
+        when(orders.requireOrderFulfillment(orderId, buyer))
+                .thenReturn(new com.marketplace.shared.api.OrderFulfillmentSelection(
+                        orderId, buyer, sellerUserId, "SAR", "PLATFORM_DELIVERY",
+                        "Riyadh downtown", 24.7136, 46.6753, 1500, null));
+
+        assertThrows(ConflictException.class, () -> service(enabledProperties()).createOrderQuote(
+                buyer, orderId,
+                new CreateOrderDeliveryQuoteRequest("Buyer address", 38.0, -121.0, "Small parcel")));
+        verifyNoInteractions(routes, quotes);
     }
 }

@@ -71,6 +71,8 @@ class OrdersServiceTest {
     @Mock
     private OrderPriceComponentRepository orderPriceComponentRepository;
     @Mock
+    private com.marketplace.shared.api.CheckoutDeliveryPort checkoutDeliveryPort;
+    @Mock
     private Authentication authentication;
 
     private OrdersService service;
@@ -124,7 +126,7 @@ class OrdersServiceTest {
         service = new OrdersService(cartRepository, cartItemRepository,
                 orderRepository, orderItemRepository, currentUserProvider, eventPublisher,
                 productPricingPort, productStockPort, orderPaymentPort,
-                commercialPricingPort, orderPriceComponentRepository);
+                commercialPricingPort, orderPriceComponentRepository, checkoutDeliveryPort);
         org.mockito.Mockito.lenient()
                 .when(commercialPricingPort.computeBreakdown(org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.anyLong(),
@@ -465,6 +467,94 @@ class OrdersServiceTest {
         assertThatThrownBy(() -> service.place(consumer, "EXPIRED"))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("redemption limit");
+    }
+
+    // ------------------------------------------------------------------
+    // The V224 checkout fulfillment selection (the frozen agreement)
+    // ------------------------------------------------------------------
+
+    @Test
+    void aPlatformDeliverySelectionFreezesTheFareAndTheDestinationIntoTheOrder() {
+        Cart cart = Cart.activeFor(consumer);
+        java.util.UUID productId = java.util.UUID.randomUUID();
+        priceActive(productId);
+        when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
+                .thenReturn(Optional.of(cart));
+        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
+                .thenReturn(List.of(CartItem.of(cart.getId(), productId, null, 2, 1500L, "SAR")));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(orderItemRepository.save(any(OrderItem.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(cartRepository.save(any(Cart.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(checkoutDeliveryPort.fareFor(seller, 24.7136, 46.6753)).thenReturn(
+                new com.marketplace.shared.api.CheckoutDeliveryPort.DeliveryFareOption(
+                        true, 1500L, 1800L, "SAR", null));
+
+        List<OrderDetail> placed = service.place(consumer, null, new OrdersService.FulfillmentSelection(
+                FulfillmentMethod.PLATFORM_DELIVERY, "Riyadh downtown", 24.7136, 46.6753));
+
+        Order order = placed.get(0).order();
+        // the frozen selection: method, fee INSIDE the total, destination
+        assertThat(order.getFulfillmentMethod()).isEqualTo(FulfillmentMethod.PLATFORM_DELIVERY);
+        assertThat(order.getShippingAmountMinor()).isEqualTo(1500L);
+        assertThat(order.getShipToAddress()).isEqualTo("Riyadh downtown");
+        // subtotal 3000 (2 × 1500) + shipping 1500 = 4500
+        assertThat(order.getTotalAmountMinor()).isEqualTo(4500L);
+        verify(checkoutDeliveryPort).fareFor(seller, 24.7136, 46.6753);
+    }
+
+    @Test
+    void anUnserviceableSellerGroupRefusesTheWholePlacement() {
+        Cart cart = Cart.activeFor(consumer);
+        java.util.UUID productId = java.util.UUID.randomUUID();
+        priceActive(productId);
+        when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
+                .thenReturn(Optional.of(cart));
+        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
+                .thenReturn(List.of(CartItem.of(cart.getId(), productId, null, 2, 1500L, "SAR")));
+        when(checkoutDeliveryPort.fareFor(seller, 40.0, 50.0)).thenReturn(
+                com.marketplace.shared.api.CheckoutDeliveryPort.DeliveryFareOption
+                        .unserviceable("the route is outside the configured delivery area"));
+
+        assertThatThrownBy(() -> service.place(consumer, null, new OrdersService.FulfillmentSelection(
+                FulfillmentMethod.PLATFORM_DELIVERY, "Far away", 40.0, 50.0)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("no platform delivery");
+        verify(orderRepository, never()).save(any());
+        verify(productStockPort, never()).reserve(any());
+    }
+
+    @Test
+    void aPickupSelectionFreezesTheMethodWithNoFeeOrDestination() {
+        Cart cart = Cart.activeFor(consumer);
+        java.util.UUID productId = java.util.UUID.randomUUID();
+        priceActive(productId);
+        when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
+                .thenReturn(Optional.of(cart));
+        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
+                .thenReturn(List.of(CartItem.of(cart.getId(), productId, null, 1, 1500L, "SAR")));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(orderItemRepository.save(any(OrderItem.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(cartRepository.save(any(Cart.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        List<OrderDetail> placed = service.place(consumer, null,
+                new OrdersService.FulfillmentSelection(FulfillmentMethod.PICKUP, null, null, null));
+
+        Order order = placed.get(0).order();
+        assertThat(order.getFulfillmentMethod()).isEqualTo(FulfillmentMethod.PICKUP);
+        assertThat(order.getShippingAmountMinor()).isZero();
+        assertThat(order.getShipToAddress()).isNull();
+        assertThat(order.getTotalAmountMinor()).isEqualTo(1500L);
+        verify(checkoutDeliveryPort, never()).fareFor(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyDouble(),
+                org.mockito.ArgumentMatchers.anyDouble());
+    }
+
+    @Test
+    void aPlatformDeliveryWithoutADestinationAnswersTheHonest400() {
+        assertThatThrownBy(() -> service.place(consumer, null, new OrdersService.FulfillmentSelection(
+                FulfillmentMethod.PLATFORM_DELIVERY, null, null, null)))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class)
+                .hasMessageContaining("complete destination");
     }
 
     // ------------------------------------------------------------------

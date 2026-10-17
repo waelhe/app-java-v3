@@ -86,6 +86,7 @@ public class OrdersService implements OrderDeliveryPort {
     private final OrderPaymentPort orderPaymentPort;
     private final CommercialPricingPort commercialPricingPort;
     private final OrderPriceComponentRepository orderPriceComponentRepository;
+    private final com.marketplace.shared.api.CheckoutDeliveryPort checkoutDeliveryPort;
 
     public OrdersService(CartRepository cartRepository,
                          CartItemRepository cartItemRepository,
@@ -97,7 +98,8 @@ public class OrdersService implements OrderDeliveryPort {
                          ProductStockPort productStockPort,
                          OrderPaymentPort orderPaymentPort,
                          CommercialPricingPort commercialPricingPort,
-                         OrderPriceComponentRepository orderPriceComponentRepository) {
+                         OrderPriceComponentRepository orderPriceComponentRepository,
+                         com.marketplace.shared.api.CheckoutDeliveryPort checkoutDeliveryPort) {
         this.cartRepository = cartRepository;
         this.cartItemRepository = cartItemRepository;
         this.orderRepository = orderRepository;
@@ -109,6 +111,7 @@ public class OrdersService implements OrderDeliveryPort {
         this.orderPaymentPort = orderPaymentPort;
         this.commercialPricingPort = commercialPricingPort;
         this.orderPriceComponentRepository = orderPriceComponentRepository;
+        this.checkoutDeliveryPort = checkoutDeliveryPort;
     }
 
     // ------------------------------------------------------------------
@@ -216,53 +219,45 @@ public class OrdersService implements OrderDeliveryPort {
     // ------------------------------------------------------------------
 
     /**
-     * Cart to order(S): the placement transaction — the order row(S), every
-     * snapshot line, and the cart's CHECKED_OUT tombstone commit together,
-     * or nothing does. The total is derived (never caller-supplied): the
-     * sum of the frozen lines.
-     *
-     * <p><b>Stage 6 (ADR-0002):</b> placement (1) re-resolves every line's
-     * authoritative price and state — a product that left the ACTIVE shelf
-     * or changed its price since the add re-prices the line here (the
-     * frozen record is the placement-instant agreement), (2) reserves the
-     * lines' stock through {@link ProductStockPort} — the whole-map atomic
-     * write whose refusal rolls the whole placement back.
-     *
-     * <p><b>ADR-0010 (the ADR-0002 deferral opened — the multi-seller
-     * split):</b> the placement groups the cart by its sellers (first-seen
-     * order preserved) and creates ONE ORDER PER SELLER — each with its own
-     * derived total, its own single currency (a group carrying mixed
-     * currencies answers the honest 409), its own frozen lines, and its
-     * own payment/ledger settlement (the {@code orders.seller_id}
-     * single-value invariant stands per order). The reserve stays ONE
-     * all-or-nothing whole-cart call, the cart tombstones ONCE, and the
-     * machine's PLACED-no-event discipline is untouched. Returns the views
-     * in the groups' first-seen order (the first order is the placement's
-     * primary; the wire carries the rest in {@code additionalOrders}).
-     */
-    /**
-     * Cart to order(S) — the pre-Phase-3 shape (no commercial policies):
-     * delegates to {@link #place(UUID, String)} with no voucher (the legacy
-     * callers' contract, byte-compatible).
+     * Cart to order(S) — the Phase-3 shape (no fulfillment selection):
+     * delegates with no voucher and no method (the legacy contract).
      */
     @Transactional
     @Observed(name = "order.place")
     public List<OrderDetail> place(UUID consumerId) {
-        return place(consumerId, null);
+        return place(consumerId, null, null);
+    }
+    @Transactional
+    @Observed(name = "order.place")
+    public List<OrderDetail> place(UUID consumerId, String voucherCode) {
+        return place(consumerId, voucherCode, null);
     }
 
     /**
      * Cart to order(S): the placement transaction — the order row(S), every
-     * snapshot line, the frozen COMMERCIAL BREAKDOWN, and the cart's
-     * CHECKED_OUT tombstone commit together, or nothing does. The total is
-     * derived (never caller-supplied): the frozen lines' subtotal minus the
-     * promotion/voucher discounts plus the exclusive tax — the pricing
-     * module's explicit policies, resolved through {@link CommercialPricingPort}
-     * and FROZEN on the order (the Saleor fit-gap study's Phase 3).
+     * snapshot line, the frozen COMMERCIAL BREAKDOWN, the frozen FULFILLMENT
+     * SELECTION, and the cart's CHECKED_OUT tombstone commit together, or
+     * nothing does.
+     *
+     * <p><b>The V224 checkout selection (the architecture §3.2 Mode B):</b>
+     * a PLATFORM_DELIVERY selection resolves EVERY seller group's fare
+     * through {@link com.marketplace.shared.api.CheckoutDeliveryPort}
+     * INSIDE this transaction — the fee is a synchronous prerequisite of
+     * the agreement (exactly like stock), an unserviceable group refuses
+     * the whole placement with the honest 409, and the frozen amount joins
+     * the order's total (its ONE payment intent carries it — the delivery
+     * legs created after confirmation never charge again). PICKUP freezes
+     * the method with no destination and no fee. A null selection keeps
+     * the legacy shape (the #604 manual add-on path stays available for
+     * exactly these orders).
      */
     @Transactional
     @Observed(name = "order.place")
-    public List<OrderDetail> place(UUID consumerId, String voucherCode) {
+    public List<OrderDetail> place(UUID consumerId, String voucherCode,
+                                   FulfillmentSelection fulfillment) {
+        if (fulfillment != null && fulfillment.method() == FulfillmentMethod.PLATFORM_DELIVERY) {
+            fulfillment.requireDestination();
+        }
         Cart cart = cartRepository.findByConsumerIdAndStatus(consumerId, CartStatus.ACTIVE)
                 .orElseThrow(() -> new ConflictException(
                         "No active cart to place: the buyer's draft is empty"));
@@ -325,6 +320,30 @@ public class OrdersService implements OrderDeliveryPort {
                         + " — one currency per order (re-add the lines before placing)");
             }
         }
+        // The V224 fare walk — BEFORE any stock moves (the fee is a
+        // synchronous prerequisite of the agreement, exactly like the
+        // price walk above it): every seller group resolves its own
+        // platform-delivery fee inside this transaction; an unserviceable
+        // group refuses the whole placement with the stock untouched.
+        java.util.Map<UUID, Long> shippingBySeller = new java.util.LinkedHashMap<>();
+        if (fulfillment != null && fulfillment.method() == FulfillmentMethod.PLATFORM_DELIVERY) {
+            for (UUID sellerId : groups.keySet()) {
+                var option = checkoutDeliveryPort.fareFor(sellerId,
+                        fulfillment.destinationLatitude(), fulfillment.destinationLongitude());
+                if (!option.serviceable()) {
+                    throw new ConflictException("Seller " + sellerId + " has no platform "
+                            + "delivery to this destination — " + option.refusal()
+                            + " (remove the seller's lines or choose pickup)");
+                }
+                String groupCurrency = groups.get(sellerId).get(0).getCurrency();
+                if (!groupCurrency.equalsIgnoreCase(option.currency())) {
+                    throw new ConflictException("Delivery fare is configured in "
+                            + option.currency() + " but the order prices in " + groupCurrency
+                            + " — delivery cannot join this order's agreement");
+                }
+                shippingBySeller.put(sellerId, option.feeMinor());
+            }
+        }
         // The whole-cart atomic reservation — a zero row anywhere answers
         // 409 and rolls the WHOLE placement back (no order row in ANY
         // group, no partial hold). ADR-0012: the reservation spans BOTH
@@ -356,11 +375,17 @@ public class OrdersService implements OrderDeliveryPort {
             String groupVoucher = primaryGroup ? voucherCode : null;
             CommercialPricingPort.CommercialBreakdown breakdown = commercialPricingPort
                     .computeBreakdown(consumerId, subtotal, groupCurrency, groupVoucher);
-            Order order = orderRepository.save(Order.placedWithBreakdown(
+            long shippingMinor = shippingBySeller.getOrDefault(sellerId, 0L);
+            Order order = orderRepository.save(Order.placedWithFulfillment(
                     consumerId, groupCurrency, sellerId,
                     breakdown.subtotalMinor(),
                     breakdown.promotionDiscountMinor() + breakdown.voucherDiscountMinor(),
-                    breakdown.taxMinor(), breakdown.taxInclusive()));
+                    breakdown.taxMinor(), breakdown.taxInclusive(),
+                    fulfillment == null ? null : fulfillment.method(),
+                    fulfillment == null ? null : fulfillment.destinationAddress(),
+                    fulfillment == null ? null : fulfillment.destinationLatitude(),
+                    fulfillment == null ? null : fulfillment.destinationLongitude(),
+                    shippingMinor));
             freezePriceComponents(order, breakdown);
             // The voucher settlement — INSIDE this placement transaction:
             // the redemption re-validates under the voucher row's
@@ -435,6 +460,12 @@ public class OrdersService implements OrderDeliveryPort {
      * CONFIRMED → FULFILLED (terminal). The delivery completion — and the
      * stock's commit edge (ADR-0002): the reservation becomes a real
      * deduction, exactly once (the machine's guard is the idempotency).
+     *
+     * <p><b>The V224 multi-leg law:</b> a leg's DELIVERED event fulfills
+     * the order only when it was the LAST active leg — an order split
+     * into several packages fulfills when EVERY package reaches its
+     * terminal state; a completing non-final leg is a logged no-op (the
+     * event's redelivery stays safe by the same state guard).
      */
     @Override
     @Transactional
@@ -446,8 +477,17 @@ public class OrdersService implements OrderDeliveryPort {
                 && deliveryRequestId.equals(order.getDeliveryRequestId())) {
             return;
         }
-        if (order.getStatus() != OrderStatus.CONFIRMED
-                || !deliveryRequestId.equals(order.getDeliveryRequestId())) {
+        if (order.getStatus() != OrderStatus.CONFIRMED) {
+            throw new ConflictException("Delivery completion does not match the confirmed linked order");
+        }
+        // A leg completing beside still-active siblings: the order waits —
+        // the multi-leg law (the primary-link check stays for the manual
+        // #604 path where the leg IS the order's one delivery).
+        if (order.getFulfillmentMethod() == FulfillmentMethod.PLATFORM_DELIVERY
+                && checkoutDeliveryPort.remainingActiveLegs(orderId) > 0) {
+            return;
+        }
+        if (!deliveryRequestId.equals(order.getDeliveryRequestId())) {
             throw new ConflictException("Delivery completion does not match the confirmed linked order");
         }
         Instant at = Instant.now();
@@ -473,6 +513,32 @@ public class OrdersService implements OrderDeliveryPort {
         }
         return new OrderDeliveryDetails(order.getId(), order.getConsumerId(), order.getSellerId(),
                 order.getCurrency(), order.getDeliveryRequestId());
+    }
+
+    /**
+     * The V224 checkout-integration read: the CONFIRMED order's frozen
+     * fulfillment selection — the delivery module's leg-creation listener
+     * and the manual add-on guard consume it. The legacy shape (a NULL
+     * method) answers the selection with a null method — the caller
+     * decides what that means (the manual quoting path stays open for it).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public com.marketplace.shared.api.OrderFulfillmentSelection requireOrderFulfillment(
+            UUID orderId, UUID buyerId) {
+        Order order = requireOrder(orderId);
+        if (!order.getConsumerId().equals(buyerId)) {
+            throw new ResourceNotFoundException("Order", orderId);
+        }
+        if (order.getStatus() != OrderStatus.CONFIRMED || order.getSellerId() == null) {
+            throw new ConflictException("Only a confirmed order with a known seller can be delivered");
+        }
+        return new com.marketplace.shared.api.OrderFulfillmentSelection(
+                order.getId(), order.getConsumerId(), order.getSellerId(), order.getCurrency(),
+                order.getFulfillmentMethod() == null ? null : order.getFulfillmentMethod().name(),
+                order.getShipToAddress(), order.getShipToLatitude(), order.getShipToLongitude(),
+                order.getShippingAmountMinor() == null ? 0 : order.getShippingAmountMinor(),
+                order.getDeliveryRequestId());
     }
 
     @Override
@@ -545,6 +611,15 @@ public class OrdersService implements OrderDeliveryPort {
                 .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
         if (order.getDeliveryRequestId() != null) {
             throw new ConflictException("An order linked to an active delivery must be cancelled through its delivery lifecycle");
+        }
+        // The V224 multi-leg guard: a checkout-selected platform delivery
+        // blocks the order's cancellation while ANY leg is in flight — the
+        // primary link alone is not the whole truth when the order split
+        // into several packages (a cancelled primary with live siblings
+        // must not let the order — and its money — slip away).
+        if (order.getFulfillmentMethod() == FulfillmentMethod.PLATFORM_DELIVERY
+                && checkoutDeliveryPort.remainingActiveLegs(orderId) > 0) {
+            throw new ConflictException("An order with an in-flight platform delivery cannot be cancelled — cancel its delivery legs first");
         }
         if (order.getStatus() != OrderStatus.PLACED && order.getStatus() != OrderStatus.CONFIRMED) {
             throw new ConflictException("Order " + orderId + " is " + order.getStatus()
@@ -642,6 +717,12 @@ public class OrdersService implements OrderDeliveryPort {
      */
     @Transactional(readOnly = true)
     public List<PlacementPreview> previewPlacement(UUID consumerId, String voucherCode) {
+        return previewPlacement(consumerId, voucherCode, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<PlacementPreview> previewPlacement(UUID consumerId, String voucherCode,
+                                                   FulfillmentSelection fulfillment) {
         Cart cart = cartRepository.findByConsumerIdAndStatus(consumerId, CartStatus.ACTIVE)
                 .orElseThrow(() -> new ConflictException("No active cart to preview"));
         List<CartItem> lines = cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId());
@@ -666,9 +747,19 @@ public class OrdersService implements OrderDeliveryPort {
         for (java.util.Map.Entry<UUID, Long> group : subtotals.entrySet()) {
             String groupVoucher = primary ? voucherCode : null;
             String groupCurrency = currencies.get(group.getKey());
+            // The V224 option beside the breakdown: a platform-delivery
+            // selection previews EVERY seller group's fare (the honest
+            // unserviceable option surfaces here — the buyer sees «no
+            // platform delivery» before committing).
+            var option = fulfillment != null
+                    && fulfillment.method() == FulfillmentMethod.PLATFORM_DELIVERY
+                    ? checkoutDeliveryPort.fareFor(group.getKey(),
+                            fulfillment.destinationLatitude(), fulfillment.destinationLongitude())
+                    : null;
             previews.add(new PlacementPreview(group.getKey(), groupCurrency,
                     commercialPricingPort.computeBreakdown(
-                            consumerId, group.getValue(), groupCurrency, groupVoucher)));
+                            consumerId, group.getValue(), groupCurrency, groupVoucher),
+                    option));
             primary = false;
         }
         return previews;
@@ -676,7 +767,36 @@ public class OrdersService implements OrderDeliveryPort {
 
     /** One seller group's preview — the breakdown the placement would freeze. */
     public record PlacementPreview(UUID sellerId, String currency,
-                                   CommercialPricingPort.CommercialBreakdown breakdown) {
+                                   CommercialPricingPort.CommercialBreakdown breakdown,
+                                   com.marketplace.shared.api.CheckoutDeliveryPort.DeliveryFareOption deliveryOption) {
+    }
+
+    /**
+     * The V224 checkout fulfillment selection — the buyer's placement
+     * command: the method (PICKUP or PLATFORM_DELIVERY) and, for a platform
+     * delivery, the destination snapshot (the address the platform delivers
+     * to). The placement resolves every seller group's fare from the
+     * destination INSIDE its transaction.
+     */
+    public record FulfillmentSelection(FulfillmentMethod method,
+                                       String destinationAddress,
+                                       Double destinationLatitude,
+                                       Double destinationLongitude) {
+
+        /** A platform delivery requires the whole destination snapshot. */
+        void requireDestination() {
+            if (method != FulfillmentMethod.PLATFORM_DELIVERY) {
+                return;
+            }
+            if (destinationAddress == null || destinationAddress.isBlank()
+                    || destinationLatitude == null || destinationLongitude == null
+                    || destinationLatitude < -90 || destinationLatitude > 90
+                    || destinationLongitude < -180 || destinationLongitude > 180) {
+                throw new com.marketplace.shared.api.BadRequestException(
+                        "A platform-delivery selection requires a complete destination "
+                                + "(address, latitude, longitude)");
+            }
+        }
     }
 
     @Transactional(readOnly = true)

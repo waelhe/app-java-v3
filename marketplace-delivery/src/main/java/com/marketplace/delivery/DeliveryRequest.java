@@ -109,6 +109,44 @@ public class DeliveryRequest extends BaseEntity {
         this.status = DeliveryRequestStatus.AWAITING_PAYMENT;
     }
 
+    /**
+     * The V224 checkout-created leg (the architecture §3.2 Mode B step 4):
+     * born from the order's FROZEN fulfillment selection after
+     * confirmation — NO quote (the fee froze at placement, not here), NO
+     * payment intent of its own (the fee already rode the order's ONE
+     * intent), and READY_FOR_DISPATCH immediately (the payment already
+     * happened). The courier's compensation computes from the fresh route
+     * at creation (an operational fact, never the buyer's agreement).
+     */
+    public static DeliveryRequest fromCheckout(UUID id, UUID orderId, UUID requesterId,
+                                               long amountMinor, long courierCompensationMinor,
+                                               String currency, long distanceMeters,
+                                               long routeDurationSeconds,
+                                               String pickupAddress, double pickupLatitude,
+                                               double pickupLongitude, String dropoffAddress,
+                                               double dropoffLatitude, double dropoffLongitude,
+                                               String packageDescription, String proofCodeHash) {
+        DeliveryRequest request = new DeliveryRequest();
+        request.id = id;
+        request.orderId = orderId;
+        request.requesterId = requesterId;
+        request.amountMinor = amountMinor;
+        request.courierCompensationMinor = courierCompensationMinor;
+        request.currency = currency;
+        request.distanceMeters = distanceMeters;
+        request.routeDurationSeconds = routeDurationSeconds;
+        request.pickupAddress = pickupAddress;
+        request.pickupLatitude = pickupLatitude;
+        request.pickupLongitude = pickupLongitude;
+        request.dropoffAddress = dropoffAddress;
+        request.dropoffLatitude = dropoffLatitude;
+        request.dropoffLongitude = dropoffLongitude;
+        request.packageDescription = packageDescription;
+        request.proofCodeHash = proofCodeHash;
+        request.status = DeliveryRequestStatus.READY_FOR_DISPATCH;
+        return request;
+    }
+
     @Override public UUID getId() { return id; }
     public UUID getQuoteId() { return quoteId; }
     public UUID getOrderId() { return orderId; }

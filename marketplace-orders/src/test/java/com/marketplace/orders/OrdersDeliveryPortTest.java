@@ -44,6 +44,7 @@ class OrdersDeliveryPortTest {
     @Mock private OrderPaymentPort orderPaymentPort;
     @Mock private com.marketplace.shared.api.CommercialPricingPort commercialPricingPort;
     @Mock private OrderPriceComponentRepository orderPriceComponentRepository;
+    @Mock private com.marketplace.shared.api.CheckoutDeliveryPort checkoutDeliveryPort;
     @Mock private Authentication authentication;
 
     private final UUID buyerId = UUID.randomUUID();
@@ -53,7 +54,7 @@ class OrdersDeliveryPortTest {
     private OrdersService service() {
         return new OrdersService(cartRepository, cartItemRepository, orderRepository, orderItemRepository,
                 currentUserProvider, eventPublisher, productPricingPort, productStockPort, orderPaymentPort,
-                commercialPricingPort, orderPriceComponentRepository);
+                commercialPricingPort, orderPriceComponentRepository, checkoutDeliveryPort);
     }
 
     private Order confirmedOrder() {
@@ -267,4 +268,78 @@ class OrdersDeliveryPortTest {
         verify(orderRepository, never()).save(any(Order.class));
     }
 
+
+    // ------------------------------------------------------------------
+    // The V224 checkout-integration reads (requireOrderFulfillment + gates)
+    // ------------------------------------------------------------------
+
+    @Test
+    void requireOrderFulfillmentAnswersTheFrozenSelectionOfAConfirmedOrder() {
+        Order order = Order.placedWithFulfillment(buyerId, "SAR", sellerId,
+                3000L, 0, 0, true, FulfillmentMethod.PLATFORM_DELIVERY,
+                "Riyadh downtown", 24.7136, 46.6753, 1500L);
+        order.confirm(Instant.now());
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+
+        com.marketplace.shared.api.OrderFulfillmentSelection selection =
+                service().requireOrderFulfillment(order.getId(), buyerId);
+
+        assertThat(selection.platformDelivery()).isTrue();
+        assertThat(selection.shippingAmountMinor()).isEqualTo(1500L);
+        assertThat(selection.shipToAddress()).isEqualTo("Riyadh downtown");
+        assertThat(selection.currency()).isEqualTo("SAR");
+    }
+
+    @Test
+    void aCompletingNonFinalLegHoldsTheOrderOpen() {
+        Order order = Order.placedWithFulfillment(buyerId, "SAR", sellerId,
+                3000L, 0, 0, true, FulfillmentMethod.PLATFORM_DELIVERY,
+                "Riyadh downtown", 24.7136, 46.6753, 1500L);
+        order.confirm(Instant.now());
+        UUID leg = UUID.randomUUID();
+        order.attachDeliveryRequest(leg);
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(checkoutDeliveryPort.remainingActiveLegs(order.getId())).thenReturn(1L);
+
+        service().fulfillFromDelivery(order.getId(), leg);
+
+        // the multi-leg law: a sibling leg still flies — the order waits
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    @Test
+    void theLastCompletingLegFulfillsTheOrder() {
+        Order order = Order.placedWithFulfillment(buyerId, "SAR", sellerId,
+                3000L, 0, 0, true, FulfillmentMethod.PLATFORM_DELIVERY,
+                "Riyadh downtown", 24.7136, 46.6753, 1500L);
+        order.confirm(Instant.now());
+        UUID leg = UUID.randomUUID();
+        order.attachDeliveryRequest(leg);
+        order.markStockReserved();
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of());
+        when(checkoutDeliveryPort.remainingActiveLegs(order.getId())).thenReturn(0L);
+
+        service().fulfillFromDelivery(order.getId(), leg);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.FULFILLED);
+        verify(productStockPort).commit(java.util.Map.of());
+        verify(productStockPort).commitVariants(java.util.Map.of());
+    }
+
+    @Test
+    void anInFlightPlatformDeliveryBlocksTheOrderCancellation() {
+        Order order = Order.placedWithFulfillment(buyerId, "SAR", sellerId,
+                3000L, 0, 0, true, FulfillmentMethod.PLATFORM_DELIVERY,
+                "Riyadh downtown", 24.7136, 46.6753, 1500L);
+        order.confirm(Instant.now());
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(checkoutDeliveryPort.remainingActiveLegs(order.getId())).thenReturn(2L);
+
+        assertThatThrownBy(() -> service().cancel(order.getId(), "changed mind"))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("in-flight platform delivery");
+    }
 }

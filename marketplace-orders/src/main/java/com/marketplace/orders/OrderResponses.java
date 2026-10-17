@@ -55,6 +55,9 @@ public final class OrderResponses {
             @Schema(description = "The Phase-3 frozen subtotal — the re-priced lines BEFORE the commercial rules (null for pre-V223 orders: their total is the whole recorded agreement)") Long subtotalAmountMinor,
             @Schema(description = "The Phase-3 frozen promotion + voucher discount (null for pre-V223 orders)") Long discountAmountMinor,
             @Schema(description = "The Phase-3 frozen tax component (null for pre-V223 orders)") Long taxAmountMinor,
+            @Schema(description = "The V224 frozen fulfillment method (PICKUP / PLATFORM_DELIVERY; null for pre-V224 orders)") FulfillmentMethod fulfillmentMethod,
+            @Schema(description = "The V224 frozen platform-delivery fee — already inside the total (null for pre-V224 orders)") Long shippingAmountMinor,
+            @Schema(description = "The V224 destination snapshot the platform delivers to (null unless platform delivery)") String shipToAddress,
             @Schema(description = "ISO-4217 currency code") String currency,
             @Schema(description = "When the order was placed") Instant placedAt,
             @Schema(description = "When the merchant confirmed it (null while PLACED)") Instant confirmedAt,
@@ -76,6 +79,8 @@ public final class OrderResponses {
                     order.getTotalAmountMinor(),
                     order.getSubtotalAmountMinor(), order.getDiscountAmountMinor(),
                     order.getTaxAmountMinor(),
+                    order.getFulfillmentMethod(), order.getShippingAmountMinor(),
+                    order.getShipToAddress(),
                     order.getCurrency(),
                     order.getPlacedAt(), order.getConfirmedAt(), order.getFulfilledAt(),
                     order.getCancelledAt(), order.getCancelReason(), order.getDeliveryRequestId(), List.of());
@@ -92,7 +97,9 @@ public final class OrderResponses {
             List<OrderResponse> additional = placed.stream().skip(1).map(OrderResponse::of).toList();
             return new OrderResponse(primary.id(), primary.status(), primary.items(),
                     primary.totalAmountMinor(), primary.subtotalAmountMinor(),
-                    primary.discountAmountMinor(), primary.taxAmountMinor(), primary.currency(),
+                    primary.discountAmountMinor(), primary.taxAmountMinor(),
+                    primary.fulfillmentMethod(), primary.shippingAmountMinor(),
+                    primary.shipToAddress(), primary.currency(),
                     primary.placedAt(), primary.confirmedAt(), primary.fulfilledAt(),
                     primary.cancelledAt(), primary.cancelReason(), primary.deliveryRequestId(), additional);
         }
@@ -115,14 +122,32 @@ public final class OrderResponses {
             @Schema(description = "Whether the tax is INCLUSIVE (contained in the agreed prices)") boolean taxInclusive,
             @Schema(description = "The tax policy's rate in basis points") int taxRateBps,
             @Schema(description = "The buyer's would-be agreement: subtotal − discounts + (tax when EXCLUSIVE)") long totalMinor,
-            @Schema(description = "ISO-4217 currency code") String currency) {
+            @Schema(description = "ISO-4217 currency code") String currency,
+            @Schema(description = "The V224 platform-delivery fare for this seller group — null when no delivery selection was supplied; serviceable=false carries the honest refusal") DeliveryOptionResponse deliveryOption) {
 
         static PlacementPreviewResponse of(OrdersService.PlacementPreview preview) {
             var b = preview.breakdown();
             return new PlacementPreviewResponse(preview.sellerId(), b.subtotalMinor(),
                     b.promotionDiscountMinor(), b.promotionName(), b.voucherDiscountMinor(),
                     b.voucherCode(), b.taxMinor(), b.taxCountry(), b.taxInclusive(),
-                    b.taxRateBps(), b.totalMinor(), preview.currency());
+                    b.taxRateBps(), b.totalMinor(), preview.currency(),
+                    preview.deliveryOption() == null ? null
+                            : DeliveryOptionResponse.of(preview.deliveryOption()));
+        }
+    }
+
+    /** One seller group's platform-delivery fare — the checkout's honest option. */
+    public record DeliveryOptionResponse(
+            @Schema(description = "Whether the platform can deliver this seller's group to the destination") boolean serviceable,
+            @Schema(description = "The delivery fee in minor units (0 when unserviceable)") long feeMinor,
+            @Schema(description = "The expected travel time in seconds (0 when unserviceable)") long etaSeconds,
+            @Schema(description = "ISO-4217 currency code of the fare") String currency,
+            @Schema(description = "The honest non-serviceability reason (null when serviceable)") String refusal) {
+
+        static DeliveryOptionResponse of(
+                com.marketplace.shared.api.CheckoutDeliveryPort.DeliveryFareOption option) {
+            return new DeliveryOptionResponse(option.serviceable(), option.feeMinor(),
+                    option.etaSeconds(), option.currency(), option.refusal());
         }
     }
 }

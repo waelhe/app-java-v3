@@ -65,7 +65,9 @@ public class OrdersController {
             Authentication authentication) {
         UUID caller = currentUserProvider.getCurrentUserId(authentication);
         java.util.List<OrderDetail> placed = ordersService.place(caller,
-                request == null ? null : request.voucherCode());
+                request == null ? null : request.voucherCode(),
+                request == null || request.fulfillment() == null ? null
+                        : request.fulfillment().toSelection());
         return ResponseEntity.status(org.springframework.http.HttpStatus.CREATED)
                 .body(OrderResponses.OrderResponse.ofPlacement(placed));
     }
@@ -89,7 +91,9 @@ public class OrdersController {
             Authentication authentication) {
         UUID caller = currentUserProvider.getCurrentUserId(authentication);
         return ResponseEntity.ok(ordersService.previewPlacement(caller,
-                        request == null ? null : request.voucherCode()).stream()
+                        request == null ? null : request.voucherCode(),
+                        request == null || request.fulfillment() == null ? null
+                                : request.fulfillment().toSelection()).stream()
                 .map(OrderResponses.PlacementPreviewResponse::of).toList());
     }
 
@@ -149,6 +153,23 @@ public class OrdersController {
 
     /** The Phase-3 placement command: the optional voucher code. */
     public record PlaceOrderRequest(
-            @Size(max = 64) String voucherCode) {
+            @Size(max = 64) String voucherCode,
+            FulfillmentRequest fulfillment) {
+    }
+
+    /**
+     * The V224 checkout selection — the method and (for a platform
+     * delivery) the destination snapshot.
+     */
+    public record FulfillmentRequest(
+            @jakarta.validation.constraints.NotNull FulfillmentMethod method,
+            @Size(max = 250) String destinationAddress,
+            Double destinationLatitude,
+            Double destinationLongitude) {
+
+        OrdersService.FulfillmentSelection toSelection() {
+            return new OrdersService.FulfillmentSelection(
+                    method, destinationAddress, destinationLatitude, destinationLongitude);
+        }
     }
 }

@@ -62,7 +62,7 @@ class OrdersControllerTest {
     @Test
     void placeAnswersCreatedWithTheDerivedTotal() {
         Order order = Order.placed(caller, 17400L, "SAR", null);
-        when(ordersService.place(caller, null)).thenReturn(List.of(new OrderDetail(order, List.of(
+        when(ordersService.place(caller, null, null)).thenReturn(List.of(new OrderDetail(order, List.of(
                 OrderItem.snapshotOf(order.getId(),
                         CartItem.of(Cart.activeFor(caller).getId(), UUID.randomUUID(), null, 2, 8700L, "SAR"))))));
 
@@ -125,7 +125,7 @@ class OrdersControllerTest {
 
     @Test
     void theEmptyCartSurfacesTheServices409Untouched() {
-        when(ordersService.place(caller, null))
+        when(ordersService.place(caller, null, null))
                 .thenThrow(new ConflictException("Cannot place an order from an empty cart"));
 
         assertThatThrownBy(() -> controller.place(null, authentication))
@@ -134,19 +134,21 @@ class OrdersControllerTest {
 
     @Test
     void placeWithAVoucherCodeCarriesItToTheService() {
-        when(ordersService.place(caller, "RAMADAN10")).thenReturn(List.of(new OrderDetail(
+        when(ordersService.place(org.mockito.ArgumentMatchers.eq(caller),
+                org.mockito.ArgumentMatchers.eq("RAMADAN10"),
+                org.mockito.ArgumentMatchers.isNull())).thenReturn(List.of(new OrderDetail(
                 Order.placedWithBreakdown(caller, "SAR", null, 3000L, 800L, 287L, true),
                 List.of())));
 
         ResponseEntity<OrderResponses.OrderResponse> result = controller.place(
-                new OrdersController.PlaceOrderRequest("RAMADAN10"), authentication);
+                new OrdersController.PlaceOrderRequest("RAMADAN10", null), authentication);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(result.getBody().totalAmountMinor()).isEqualTo(2200L);
         assertThat(result.getBody().subtotalAmountMinor()).isEqualTo(3000L);
         assertThat(result.getBody().discountAmountMinor()).isEqualTo(800L);
         assertThat(result.getBody().taxAmountMinor()).isEqualTo(287L);
-        verify(ordersService).place(caller, "RAMADAN10");
+        verify(ordersService).place(caller, "RAMADAN10", null);
     }
 
     @Test
@@ -154,11 +156,15 @@ class OrdersControllerTest {
         var breakdown = new com.marketplace.shared.api.CommercialPricingPort.CommercialBreakdown(
                 3000L, 300L, UUID.randomUUID(), "Ramadan 10%", 0, null, null,
                 287L, "SA", true, 1500, 2700L);
-        when(ordersService.previewPlacement(caller, "RAMADAN10")).thenReturn(List.of(
-                new OrdersService.PlacementPreview(UUID.randomUUID(), "SAR", breakdown)));
+        when(ordersService.previewPlacement(org.mockito.ArgumentMatchers.eq(caller),
+                org.mockito.ArgumentMatchers.eq("RAMADAN10"),
+                org.mockito.ArgumentMatchers.any())).thenReturn(List.of(
+                new OrdersService.PlacementPreview(UUID.randomUUID(), "SAR", breakdown,
+                        new com.marketplace.shared.api.CheckoutDeliveryPort.DeliveryFareOption(
+                                true, 1500L, 1800L, "SAR", null))));
 
         ResponseEntity<java.util.List<OrderResponses.PlacementPreviewResponse>> result =
-                controller.previewPlacement(new OrdersController.PlaceOrderRequest("RAMADAN10"),
+                controller.previewPlacement(new OrdersController.PlaceOrderRequest("RAMADAN10", null),
                         authentication);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
