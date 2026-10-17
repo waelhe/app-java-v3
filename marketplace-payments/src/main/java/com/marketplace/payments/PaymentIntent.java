@@ -29,6 +29,7 @@ public class PaymentIntent extends BaseEntity {
 
     /** Stage 8 (ADR-0004): the loan-fee origin — the payer is the borrower, the subject is the loan. */
     static final String ORIGIN_LOAN = "LOAN";
+    static final String ORIGIN_DELIVERY = "DELIVERY";
 
     @Id
     private UUID id;
@@ -71,6 +72,9 @@ public class PaymentIntent extends BaseEntity {
      */
     @Column(name = "loan_id")
     private UUID loanId;
+
+    @Column(name = "delivery_request_id")
+    private UUID deliveryRequestId;
 
     @Column(name = "consumer_id", nullable = false)
     private UUID consumerId;
@@ -209,11 +213,35 @@ public class PaymentIntent extends BaseEntity {
         return intent;
     }
 
+    /**
+     * The direct-delivery origin (the platform-wide payments plan): the
+     * payer is the requesting member, the subject is the delivery request,
+     * and the deterministic {@code delivery-{deliveryRequestId}} key is
+     * the engine's deduplication — the four siblings' pattern verbatim.
+     *
+     * <p>ADR-0013 (D2) freezes the announced commission rate at creation
+     * for every intent the platform creates — for THIS origin the frozen
+     * value is honestly NULL: the platform-operated delivery mode (D4)
+     * books the courier's payable in the dedicated delivery journal, not
+     * a provider-allocation commission debit, so there is no announced
+     * commission to freeze. The ledger's delivery branch never reads the
+     * rate — the same fail-closed rule the origin dispatch enforces.
+     */
+    public static PaymentIntent createForDelivery(UUID deliveryRequestId, UUID requesterId,
+                                                  Long amountMinor, String currency, String idempotencyKey) {
+        PaymentIntent intent = new PaymentIntent(UUID.randomUUID(), null, requesterId, amountMinor, currency,
+                idempotencyKey, null);
+        intent.origin = ORIGIN_DELIVERY;
+        intent.deliveryRequestId = deliveryRequestId;
+        return intent;
+    }
+
     @Override
     public UUID getId() { return id; }
     public UUID getBookingId() { return bookingId; }
     public UUID getOrderId() { return orderId; }
     public UUID getLoanId() { return loanId; }
+    public UUID getDeliveryRequestId() { return deliveryRequestId; }
     public UUID getConsumerId() { return consumerId; }
     public String getOrigin() { return origin; }
     public UUID getAdCampaignId() { return adCampaignId; }

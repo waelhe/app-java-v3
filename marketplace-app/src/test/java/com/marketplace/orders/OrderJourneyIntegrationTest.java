@@ -232,8 +232,10 @@ class OrderJourneyIntegrationTest {
 
         // (4) The events DELIVER — the AFTER_COMMIT listener wrote the
         // buyer's notification rows on the real chain (the registry + the
-        // late-lander crossing, measured as rows).
-        awaitNotificationRows(orderId, 2);
+        // late-lander crossing, measured as rows). The wait is TYPED to
+        // the rows the assertions below read (the helper's own record).
+        awaitTypedNotificationRows(orderId, "ORDER_CONFIRMED", 1);
+        awaitTypedNotificationRows(orderId, "ORDER_FULFILLED", 1);
         Integer confirmedRows = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM notifications WHERE recipient_id = ("
                         + "SELECT consumer_id FROM orders WHERE id = ?) AND type = 'ORDER_CONFIRMED'"
@@ -435,7 +437,7 @@ class OrderJourneyIntegrationTest {
         assertThat(objectMapper.readTree(cancellation.body()).path("status").asString())
                 .isEqualTo("CANCELLED");
 
-        awaitNotificationRows(orderId, 1);
+        awaitTypedNotificationRows(orderId, "ORDER_CANCELLED", 1);
         Integer cancelledRows = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM notifications WHERE recipient_id = ("
                         + "SELECT consumer_id FROM orders WHERE id = ?) AND type = 'ORDER_CANCELLED'"
@@ -548,14 +550,29 @@ class OrderJourneyIntegrationTest {
      * publishing transaction commits — on a loaded CI runner that hop is
      * not instantaneous, so the row assertion waits for it (bounded, the
      * house polling shape: 200ms steps, 10s ceiling).
+     *
+     * <p><b>The wait is EXACT and TYPED</b>: it polls the very count the
+     * assertion will read — recipient-scoped, type-filtered,
+     * order-named. The previous minimum-based shape ("any N rows mentioning
+     * the order") was a satisfiable-by-proxy race, CI-measured under the
+     * delivery vertical's added payment-event listener load: this journey
+     * creates a payment intent, and the intent's own PAYMENT_STATE row
+     * satisfied the minimum while the ORDER_FULFILLED row was still in its
+     * asynchronous hop — the immediate count then read zero against a
+     * journey that had, in fact, delivered. The typed wait is the only
+     * honest synchronization for a typed assertion, under any present or
+     * future event-listener load.
      */
-    private void awaitNotificationRows(UUID orderId, int minimum) throws InterruptedException {
+    private void awaitTypedNotificationRows(UUID orderId, String type, int expected)
+            throws InterruptedException {
         long deadline = System.currentTimeMillis() + 10_000;
         while (System.currentTimeMillis() < deadline) {
             Integer rows = jdbcTemplate.queryForObject(
-                    "SELECT count(*) FROM notifications WHERE message LIKE '%' || ? || '%'",
-                    Integer.class, orderId);
-            if (rows != null && rows >= minimum) {
+                    "SELECT count(*) FROM notifications WHERE recipient_id = ("
+                            + "SELECT consumer_id FROM orders WHERE id = ?) AND type = ?"
+                            + " AND message LIKE '%' || ? || '%'",
+                    Integer.class, orderId, type, orderId);
+            if (rows != null && rows >= expected) {
                 return;
             }
             Thread.sleep(200);

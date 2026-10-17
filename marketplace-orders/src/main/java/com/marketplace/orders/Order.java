@@ -88,6 +88,10 @@ public class Order extends BaseEntity {
     @Column(name = "stock_reserved", nullable = false)
     private boolean stockReserved;
 
+    /** Delivery handoff is owned by marketplace-delivery through a shared port. */
+    @Column(name = "delivery_request_id", unique = true)
+    private UUID deliveryRequestId;
+
     protected Order() {
         // JPA
     }
@@ -186,4 +190,24 @@ public class Order extends BaseEntity {
     public boolean isStockReserved() {
         return stockReserved;
     }
+
+    public UUID getDeliveryRequestId() {
+        return deliveryRequestId;
+    }
+
+    public void attachDeliveryRequest(UUID requestId) {
+        if (requestId == null) throw new IllegalArgumentException("Delivery request id is required");
+        if (deliveryRequestId != null && !deliveryRequestId.equals(requestId)) {
+            throw new IllegalStateException("Order already has a delivery request");
+        }
+        deliveryRequestId = requestId;
+    }
+
+    public void clearDeliveryRequest(UUID requestId) {
+        if (requestId != null && requestId.equals(deliveryRequestId)) {
+            deliveryRequestId = null;
+        }
+    }
+
+
 }

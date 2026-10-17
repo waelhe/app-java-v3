@@ -22,7 +22,7 @@
 
 ## 1. Executive Summary
 
-The Marketplace Backend is a **modular monolith** built on **Spring Boot 4.1.1 + Java 25 LTS** with **Spring Modulith 2.1.1** enforcing bounded contexts. It comprises **29 Maven modules** organized in 5 layers (composition root → infra → shared contracts → domain core → domain support → edge BFF).
+The Marketplace Backend is a **modular monolith** built on **Spring Boot 4.1.1 + Java 25 LTS** with **Spring Modulith 2.1.1** enforcing bounded contexts. It comprises **30 Maven modules** organized in 5 layers (composition root → infra → shared contracts → domain core → domain support → edge BFF).
 
 **Key characteristics:**
 - ✅ **Modular monolith** (not microservices) — operational simplicity, single deployment unit
@@ -76,11 +76,11 @@ User → HTTPS → CF Worker (proxy + CORS) → HTTP → CF Container (Spring Bo
 L4: marketplace-app              ← Composition root (REST, admin, bootstrap)
 L3: marketplace-platform-infra   ← Cross-cutting (JPA, Security, Cache, Observability)
 L2: marketplace-shared           ← API contracts (SPIs, events, exceptions, DTOs)
-L1: 23 domain modules            ← Bounded contexts (each owns its data + logic)
+L1: 26 domain modules            ← Bounded contexts (each owns its data + logic)
 L5: marketplace-edge             ← Edge BFF (Gateway, TokenRelay — zero domain dependencies)
 ```
 
-### The 29 Modules
+### The 30 Modules
 
 | # | Module | Layer | Role | Key Artifacts |
 |---|--------|-------|------|---------------|
@@ -113,6 +113,7 @@ L5: marketplace-edge             ← Edge BFF (Gateway, TokenRelay — zero doma
 | 27 | `marketplace-institutions` | L1 | Domain support | Verified institution registry, review lifecycle, JSON-LD (B-13, C.3) |
 | 28 | `marketplace-discovery` | L1 | Domain support | Home discovery rails: eligibility-first projections over shared ports (waves D1-D4) |
 | 29 | `marketplace-lending` | L1 | Domain core | Stage 8 (D-09, ADR-0004): the lending offer projection + the loan machine (period exclusivity via the EXCLUDE constraint, the fee through the existing LOAN-origin payment engine) |
+| 30 | `marketplace-delivery` | L1 | Domain core | Direct delivery quotes, dispatch assignment, tracking and proof of delivery |
 
 ### Spring Modulith Boundaries
 
@@ -488,3 +489,8 @@ All diagrams are in `docs/architecture/diagrams/`:
 - [RFC 6797](https://datatracker.ietf.org/doc/html/rfc6797) (HSTS)
 - [RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009) (Token Revocation)
 - [RFC 7807](https://datatracker.ietf.org/doc/html/rfc7807) (Problem Details)
+
+
+## Direct delivery bounded context
+
+`marketplace-delivery` owns standalone delivery quotes, delivery requests, the physical request lifecycle, dispatch assignment, and tracking/proof events. It integrates with `marketplace-payments` through the shared `DeliveryPaymentPort`; delivery is an explicit payment source, not a booking/order alias. The `marketplace-ledger` owns the balanced delivery journal for capture, delivery revenue recognition and refund deltas. Delivery is disabled by default. Marketplace-order fulfillment integration remains a separate follow-up; see [the vertical-slice implementation note](delivery-direct-service-vertical-slice.md).

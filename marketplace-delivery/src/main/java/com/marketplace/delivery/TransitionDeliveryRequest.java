@@ -1,0 +1,1 @@
+package com.marketplace.delivery;import jakarta.validation.constraints.NotNull;import jakarta.validation.constraints.Size;public record TransitionDeliveryRequest(@NotNull DeliveryRequestStatus targetStatus,@Size(max=500)String reason,@Size(max=100)String proofCode){}

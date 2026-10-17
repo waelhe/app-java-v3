@@ -6,6 +6,8 @@ import com.marketplace.shared.api.OrderCancelledEvent;
 import com.marketplace.shared.api.OrderConfirmedEvent;
 import com.marketplace.shared.api.OrderFulfilledEvent;
 import com.marketplace.shared.api.OrderPaymentPort;
+import com.marketplace.shared.api.OrderDeliveryPort;
+import com.marketplace.shared.api.OrderDeliveryDetails;
 import com.marketplace.shared.api.PaymentIntentDetails;
 import com.marketplace.shared.api.ProductPricingPort;
 import com.marketplace.shared.api.ProductStockPort;
@@ -70,7 +72,7 @@ import java.util.UUID;
  * the cart tombstones once, and PLACED still publishes nothing.
  */
 @Service
-public class OrdersService {
+public class OrdersService implements OrderDeliveryPort {
 
     private final CartRepository cartRepository;
     private final CartItemRepository cartItemRepository;
@@ -361,10 +363,83 @@ public class OrdersService {
      * stock's commit edge (ADR-0002): the reservation becomes a real
      * deduction, exactly once (the machine's guard is the idempotency).
      */
+    @Override
+    @Transactional
+    @Observed(name = "order.fulfill.delivery")
+    public void fulfillFromDelivery(UUID orderId, UUID deliveryRequestId) {
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
+        if (order.getStatus() == OrderStatus.FULFILLED
+                && deliveryRequestId.equals(order.getDeliveryRequestId())) {
+            return;
+        }
+        if (order.getStatus() != OrderStatus.CONFIRMED
+                || !deliveryRequestId.equals(order.getDeliveryRequestId())) {
+            throw new ConflictException("Delivery completion does not match the confirmed linked order");
+        }
+        Instant at = Instant.now();
+        order.fulfill(at);
+        if (order.isStockReserved()) {
+            productStockPort.commit(productStockMapOf(order.getId()));
+            productStockPort.commitVariants(variantStockMapOf(order.getId()));
+            order.markStockReleased();
+        }
+        orderRepository.save(order);
+        eventPublisher.publishEvent(new OrderFulfilledEvent(order.getId(), order.getConsumerId()));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public OrderDeliveryDetails requireConfirmedOrderForDelivery(UUID orderId, UUID buyerId) {
+        Order order = requireOrder(orderId);
+        if (!order.getConsumerId().equals(buyerId)) {
+            throw new ResourceNotFoundException("Order", orderId);
+        }
+        if (order.getStatus() != OrderStatus.CONFIRMED || order.getSellerId() == null) {
+            throw new ConflictException("Only a confirmed order with a known seller can be delivered");
+        }
+        return new OrderDeliveryDetails(order.getId(), order.getConsumerId(), order.getSellerId(),
+                order.getCurrency(), order.getDeliveryRequestId());
+    }
+
+    @Override
+    @Transactional
+    @Observed(name = "order.delivery.attach")
+    public void attachDeliveryRequest(UUID orderId, UUID buyerId, UUID deliveryRequestId) {
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
+        if (!order.getConsumerId().equals(buyerId)) {
+            throw new ResourceNotFoundException("Order", orderId);
+        }
+        if (order.getStatus() != OrderStatus.CONFIRMED) {
+            throw new ConflictException("Only a confirmed order can be linked to delivery");
+        }
+        if (order.getDeliveryRequestId() != null
+                && !order.getDeliveryRequestId().equals(deliveryRequestId)) {
+            throw new ConflictException("Order already has a delivery request");
+        }
+        order.attachDeliveryRequest(deliveryRequestId);
+        orderRepository.save(order);
+    }
+
+    @Override
+    @Transactional
+    @Observed(name = "order.delivery.clear")
+    public void clearDeliveryRequest(UUID orderId, UUID deliveryRequestId) {
+        Order order = orderRepository.findByIdForUpdate(orderId).orElse(null);
+        if (order == null) return;
+        order.clearDeliveryRequest(deliveryRequestId);
+        orderRepository.save(order);
+    }
+
     @Transactional
     @Observed(name = "order.fulfill")
     public Order fulfill(UUID orderId) {
-        Order order = requireOrder(orderId);
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
+        if (order.getStatus() == OrderStatus.CONFIRMED && order.getDeliveryRequestId() != null) {
+            throw new ConflictException("An order linked to an active delivery must be fulfilled through its delivery lifecycle");
+        }
         requireStatus(order, OrderStatus.CONFIRMED, "fulfill");
         order.fulfill(Instant.now());
         if (order.isStockReserved()) {
@@ -393,7 +468,11 @@ public class OrdersService {
     @Transactional
     @Observed(name = "order.cancel")
     public Order cancel(UUID orderId, String reason) {
-        Order order = requireOrder(orderId);
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
+        if (order.getDeliveryRequestId() != null) {
+            throw new ConflictException("An order linked to an active delivery must be cancelled through its delivery lifecycle");
+        }
         if (order.getStatus() != OrderStatus.PLACED && order.getStatus() != OrderStatus.CONFIRMED) {
             throw new ConflictException("Order " + orderId + " is " + order.getStatus()
                     + " — cancel is legal from PLACED or CONFIRMED only");

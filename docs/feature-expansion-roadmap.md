@@ -253,3 +253,8 @@
 - أرقام الترحيلات الواردة في §5 (V37–V41) محفوظة **تخطيطياً**؛ عند تنفيذ كل بند يُعتمد الرقم الحي التالي من عدّاد Flyway آنذاك (اليوم: V36 — `marketplace-app/src/main/resources/db/migration/`).
 
 
+
+
+## Direct Delivery Vertical Slice (2026-10-17)
+
+The initial direct-delivery implementation is under PR review on `feat/platform-delivery-direct-service`. It adds a disabled-by-default delivery bounded context, server-derived quote snapshots, a `DELIVERY` source in the existing payment engine, guarded dispatch/pickup/transit/proof states, and delivery-specific balanced journal postings. It is not considered complete until Build/Test and full JDK 25 integration CI pass. External carrier routing, real-road ETA, courier accounts, payout rules, and order-linked marketplace fulfillment remain explicitly out of this first slice. See [implementation note](architecture/delivery-direct-service-vertical-slice.md).

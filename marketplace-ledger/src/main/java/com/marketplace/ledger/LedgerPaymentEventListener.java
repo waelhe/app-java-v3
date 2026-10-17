@@ -78,6 +78,10 @@ public class LedgerPaymentEventListener {
     }
 
     private void processLedgerEntry(PaymentIntentDetails intent) {
+        // DELIVERY is posted by the dedicated balanced delivery journal; this listener must not double-post it.
+        if (intent.isDeliveryOrigin()) {
+            return;
+        }
         // W5 (yelp-level plan §5 — G24): the ad bill's settlement — the
         // raw amount credit, no commission, no booking lookup. The payer
         // of an AD-origin intent IS the provider (consumer_id carries the
@@ -164,6 +168,10 @@ public class LedgerPaymentEventListener {
     }
 
     private void processRefundDebit(PaymentIntentDetails intent) {
+        // DELIVERY refunds are mirrored by the dedicated delivery journal, not the generic provider ledger.
+        if (intent.isDeliveryOrigin()) {
+            return;
+        }
         // W5 (CodeRabbit round 1, adopted): an ad bill's refund MIRRORS its
         // settlement credit exactly the way a booking's refund mirrors its
         // own — the refund surface (admin refundPayment / a future PSP

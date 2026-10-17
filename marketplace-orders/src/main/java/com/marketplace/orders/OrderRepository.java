@@ -3,6 +3,10 @@ package com.marketplace.orders;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -32,4 +36,9 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
      * so the single-column match is the whole scoping predicate.
      */
     Page<Order> findBySellerIdOrderByPlacedAtDescIdDesc(UUID sellerId, Pageable pageable);
+ 
+    /** Serialized order/delivery handoff; only the order owner mutates this association. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select o from Order o where o.id = :id")
+    Optional<Order> findByIdForUpdate(@Param("id") UUID id);
 }

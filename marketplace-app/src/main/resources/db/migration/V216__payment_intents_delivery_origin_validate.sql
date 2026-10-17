@@ -1,0 +1,2 @@
+ALTER TABLE payment_intents VALIDATE CONSTRAINT chk_payment_intents_origin;
+ALTER TABLE payment_intents VALIDATE CONSTRAINT ck_payment_intents_origin_pairing;

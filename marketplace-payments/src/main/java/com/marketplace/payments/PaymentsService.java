@@ -469,6 +469,31 @@ public class PaymentsService implements PaymentsSpi {
         return saved;
     }
 
+    /** Unique delivery payable resolved from the delivery domain's persisted quote. */
+    @Observed(name = "payment.delivery-intent.create")
+    public PaymentIntent createDeliveryIntent(UUID deliveryRequestId, UUID requesterId, long amountMinor, String currency) {
+        if (deliveryRequestId == null || requesterId == null || amountMinor <= 0
+                || currency == null || !currency.trim().matches("[A-Za-z]{3}")) {
+            throw new ConflictException("Delivery request, payer, positive amount and ISO currency are required");
+        }
+        String normalizedCurrency = currency.trim().toUpperCase(java.util.Locale.ROOT);
+        String key = "delivery-" + deliveryRequestId;
+        var existing = paymentIntentRepository.findByIdempotencyKey(key);
+        if (existing.isPresent()) {
+            PaymentIntent intent = existing.get();
+            if (!requesterId.equals(intent.getConsumerId()) || !deliveryRequestId.equals(intent.getDeliveryRequestId())
+                    || !PaymentIntent.ORIGIN_DELIVERY.equals(intent.getOrigin())
+                    || intent.getAmountCents() != amountMinor || !normalizedCurrency.equals(intent.getCurrency())) {
+                throw new ConflictException("Delivery payment idempotency key conflicts with the authoritative payable");
+            }
+            return intent;
+        }
+        PaymentIntent saved = paymentIntentRepository.save(PaymentIntent.createForDelivery(
+                deliveryRequestId, requesterId, amountMinor, normalizedCurrency, key));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), saved.getId()));
+        return saved;
+    }
+
     /**
      * Stage 8 (ADR-0004): the loan-fee intent — the order-checkout twin
      * verbatim (the deterministic {@code loan-{loanId}} key is the first
@@ -821,12 +846,23 @@ public class PaymentsService implements PaymentsSpi {
                 case CREATED -> cancelUnpaid(intent);
                 case PROCESSING -> failInFlight(intent);
                 case SUCCEEDED, PARTIALLY_REFUNDED -> refundFully(intent);
-                case REFUNDED ->
-                        log.info("Auto-refund for order {} skipped — intent {} already terminal in REFUNDED",
-                                orderId, intent.getId());
-                default ->
-                        log.info("Auto-refund for order {} skipped — intent {} already terminal in {}",
-                                orderId, intent.getId(), intent.getStatus());
+                case REFUNDED -> log.info("Auto-refund for order {} skipped — intent {} already REFUNDED", orderId, intent.getId());
+                default -> log.info("Auto-refund for order {} skipped — intent {} terminal in {}", orderId, intent.getId(), intent.getStatus());
+            }
+        });
+    }
+
+    @Observed(name = "payment.delivery.refund")
+    @Retry(name = "paymentProcessing")
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void autoRefundByDelivery(UUID deliveryRequestId) {
+        paymentIntentRepository.findByDeliveryRequestId(deliveryRequestId).ifPresent(intent -> {
+            switch (intent.getStatus()) {
+                case CREATED -> cancelUnpaid(intent);
+                case PROCESSING -> failInFlight(intent);
+                case SUCCEEDED, PARTIALLY_REFUNDED -> refundFully(intent);
+                case REFUNDED -> log.info("Delivery {} intent {} already REFUNDED", deliveryRequestId, intent.getId());
+                default -> log.info("Delivery {} intent {} terminal in {}", deliveryRequestId, intent.getId(), intent.getStatus());
             }
         });
     }

@@ -54,7 +54,7 @@ class BookingPaymentEventListenerTest {
 
     @Test
     void onPaymentCompleted_doesNotConfirmForNonBookingOrigins() {
-        for (String origin : new String[]{"AD", "ORDER", "LOAN", "UNKNOWN"}) {
+        for (String origin : new String[]{"AD", "ORDER", "LOAN", "DELIVERY", "UNKNOWN"}) {
             UUID paymentIntentId = UUID.randomUUID();
             PaymentIntentDetails intent = new PaymentIntentDetails(
                     paymentIntentId, null, UUID.randomUUID(), null,

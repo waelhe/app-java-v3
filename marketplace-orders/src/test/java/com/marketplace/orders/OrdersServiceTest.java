@@ -353,7 +353,7 @@ class OrdersServiceTest {
     void fulfillMovesConfirmedToFulfilledAndPublishes() {
         Order order = placedOrder();
         order.confirm(java.time.Instant.now());
-        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Order fulfilled = service.fulfill(order.getId());
@@ -366,7 +366,7 @@ class OrdersServiceTest {
     @Test
     void cancelFromPlacedIsLegalAndPublishesWithTheReason() {
         Order order = placedOrder();
-        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Order cancelled = service.cancel(order.getId(), "buyer changed mind");
@@ -381,7 +381,7 @@ class OrdersServiceTest {
     void cancelFromConfirmedIsAlsoLegal() {
         Order order = placedOrder();
         order.confirm(java.time.Instant.now());
-        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
 
         assertThat(service.cancel(order.getId(), "late cancel").getStatus())
@@ -407,7 +407,7 @@ class OrdersServiceTest {
     @Test
     void fulfillFromPlacedAnswers409TheMachineSkipsNoState() {
         Order order = placedOrder();
-        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
 
         assertThatThrownBy(() -> service.fulfill(order.getId()))
                 .isInstanceOf(ConflictException.class)
@@ -419,7 +419,7 @@ class OrdersServiceTest {
         Order order = placedOrder();
         order.confirm(java.time.Instant.now());
         order.fulfill(java.time.Instant.now());
-        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
 
         assertThatThrownBy(() -> service.cancel(order.getId(), "too late"))
                 .isInstanceOf(ConflictException.class);
@@ -577,6 +577,7 @@ class OrdersServiceTest {
         order.confirm(java.time.Instant.now());
         order.markStockReserved(); // the placement's own flag (the place() edge sets it)
         when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         // No isAdmin stub: the seller match short-circuits the gate.
@@ -594,6 +595,7 @@ class OrdersServiceTest {
         Order order = soldOrder();
         order.markStockReserved(); // the placement's own flag (the place() edge sets it)
         when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         // No isAdmin stub: the seller match short-circuits the gate.

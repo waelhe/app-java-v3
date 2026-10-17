@@ -32,6 +32,16 @@ public class ProviderProfile extends BaseEntity {
     @Column(name = "user_id")
     private UUID userId;
 
+    /** Private pickup coordinates used by marketplace order fulfillment. */
+    @Column(name = "fulfillment_address", length = 250)
+    private String fulfillmentAddress;
+
+    @Column(name = "fulfillment_latitude")
+    private Double fulfillmentLatitude;
+
+    @Column(name = "fulfillment_longitude")
+    private Double fulfillmentLongitude;
+
     /**
      * L36 (realestate systems plan §5): the actor classification —
      * فرد / وسيط مستقل / مكتب. Non-null by design: every profile carries a
@@ -145,6 +155,21 @@ public class ProviderProfile extends BaseEntity {
 
     public UUID getUserId() {
         return userId;
+    }
+
+    public String getFulfillmentAddress() { return fulfillmentAddress; }
+    public Double getFulfillmentLatitude() { return fulfillmentLatitude; }
+    public Double getFulfillmentLongitude() { return fulfillmentLongitude; }
+
+    public void updateFulfillmentLocation(String address, double latitude, double longitude) {
+        if (address == null || address.isBlank() || address.trim().length() > 250
+                || !Double.isFinite(latitude) || latitude < -90 || latitude > 90
+                || !Double.isFinite(longitude) || longitude < -180 || longitude > 180) {
+            throw new IllegalArgumentException("A valid fulfillment address and coordinates are required");
+        }
+        this.fulfillmentAddress = address.trim();
+        this.fulfillmentLatitude = latitude;
+        this.fulfillmentLongitude = longitude;
     }
 
     public ProviderActorType getActorType() {

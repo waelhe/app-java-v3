@@ -106,6 +106,16 @@ public class ProviderController {
     /** The manual path's ceiling — the resolver's configured cap (application.yml: max-page-size: 100). */
     static final int MAX_REVIEWS_PAGE_SIZE = 100;
 
+    @PutMapping("/providers/me/fulfillment-location")
+    @Operation(summary = "Set my private marketplace pickup point",
+            description = "A verified seller's address and coordinates used to quote and dispatch marketplace-order delivery. These private fields are not included in public provider profiles.")
+    public ResponseEntity<ProviderFulfillmentLocationResponse> updateMyFulfillmentLocation(
+            @Valid @RequestBody ProviderFulfillmentLocationRequest request, Authentication authentication) {
+        return ResponseEntity.ok(ProviderFulfillmentLocationResponse.from(
+                providerService.updateMyFulfillmentLocation(
+                        request.address(), request.latitude(), request.longitude(), authentication)));
+    }
+
     @PostMapping("/admin/providers/{id}/verify")
     @Operation(summary = "Verify a provider (administrative)",
             description = "Marks the provider verified — the administrative trust decision "

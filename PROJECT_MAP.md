@@ -1983,3 +1983,5 @@ Plus new `RevisionService` in `marketplace-admin` package for unified audit quer
 - Spring Data Projections used for read-only endpoints (ListingSimple, ReviewSummary, BookingSummary)
 - build-info (`META-INF/build-info.properties`) + git-commit-id (`git.properties`) — `/actuator/info` populated
 - Tomcat access log enabled with `%{ms}T` pattern (milliseconds) via `server.tomcat.accesslog.*`
+
+- `marketplace-delivery` — platform-owned direct delivery requests, quote snapshots, guarded physical delivery state, operator assignment, tracking timeline; disabled by default; see [delivery vertical slice](docs/architecture/delivery-direct-service-vertical-slice.md).
