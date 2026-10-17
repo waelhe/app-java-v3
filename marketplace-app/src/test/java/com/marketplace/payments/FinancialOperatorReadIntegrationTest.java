@@ -140,7 +140,10 @@ class FinancialOperatorReadIntegrationTest {
         setStock(sellerGate.accessToken(), product, 10);
 
         String buyerName = "it-finops-buyer-" + UUID.randomUUID().toString().substring(0, 8);
-        registerUser(buyerName);
+        // The CONSUMER authority rides the registration seed — the process
+        // command's own gate (the state machine's law: CREATED -> PROCESSING
+        // -> SUCCEEDED; the confirm command refuses a jump from CREATED).
+        registerUser(buyerName, "USER", "CONSUMER");
         GateResult buyerGate = loginGate(buyerName, PASSWORD);
         assertThat(getWithBearer("/api/v1/users/me", buyerGate.accessToken()).statusCode())
                 .as("the buyer's /me provisioning sync").isEqualTo(200);
@@ -161,9 +164,16 @@ class FinancialOperatorReadIntegrationTest {
         UUID intentId = UUID.fromString(intentNode.path("paymentIntentId").asString());
         assertThat(intentNode.path("origin").asString()).isEqualTo("ORDER");
 
-        // (2) The money leg — the ADMIN settlement command publishes
-        // COMPLETED on the real event chain; the ledger's allocation
-        // listener (ADR-0013 D2) posts at the FROZEN rate.
+        // (2) The money leg — the buyer's process command opens the
+        // collection (CREATED -> PROCESSING, the Payment row lands, no
+        // remote PSP bound in the test profile — the documented local-only
+        // path), then the ADMIN settlement command publishes COMPLETED on
+        // the real event chain; the ledger's allocation listener (ADR-0013
+        // D2) posts at the FROZEN rate.
+        HttpResponse<String> process = postJson("/api/v1/payments/intents/" + intentId + "/process",
+                buyerGate.accessToken(), "");
+        assertThat(process.statusCode()).as("the buyer's process step: %s", body(process)).isEqualTo(200);
+
         String adminName = "it-finops-admin-" + UUID.randomUUID().toString().substring(0, 8);
         registerUser(adminName, "ADMIN");
         GateResult adminGate = loginGate(adminName, PASSWORD);
