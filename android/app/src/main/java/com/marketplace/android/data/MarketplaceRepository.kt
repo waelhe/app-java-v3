@@ -244,8 +244,17 @@ class MarketplaceRepository(
     suspend fun getMarket(page: Int = 0) = api.getMarket(page = page)
     suspend fun createMarketItem(request: CreateMarketItemRequest) = api.createMarketItem(request)
     suspend fun withdrawMarketItem(itemId: String) = api.withdrawMarketItem(itemId)
+    suspend fun getUrgentAlerts(locationId: String) = api.getUrgentAlerts(locationId)
     suspend fun getNotifications() = api.getNotifications()
     suspend fun markNotificationRead(id: String) = api.markNotificationRead(id)
+    suspend fun reportContent(targetType: String, targetId: String, reason: String) =
+        api.createContentReport(
+            com.marketplace.android.core.network.CreateContentReportRequest(
+                targetType = targetType,
+                targetId = targetId,
+                reason = reason
+            )
+        )
 
     suspend fun getEvents(page: Int = 0) = api.getEvents(page = page)
     suspend fun createEvent(request: com.marketplace.android.core.network.CreateEventRequest) = api.createEvent(request)
