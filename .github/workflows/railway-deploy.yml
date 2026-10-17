@@ -58,7 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Gate — every GitHub Actions suite on the commit must be green
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         id: gate
         with:
           script: |
