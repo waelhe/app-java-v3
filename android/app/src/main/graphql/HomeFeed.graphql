@@ -1,0 +1,62 @@
+# HomeFeed — the first composite GraphQL journey (the corrected plan
+# §11-Phase-6 + the journey inventory #599 §7 stage 4: «قراءة مركبة
+# للاكتشاف/موجز الحي»): the home read composed in ONE authenticated
+# operation — the discovery rails plus the neighborhood live feed's
+# first page. The same journey over REST is TWO HTTP requests
+# (GET /api/v1/discovery + GET /api/v1/neighborhood/posts); this one
+# document is the measured composite the server's integration tests
+# pin (each owning seam exactly once per execution, selection-driven
+# cost). The server owns eligibility, ordering, geo scope and the
+# page bounds (marketplace.graphql.pagination.* — the default when
+# first is absent, hard-capped, forward-only offset cursors); the
+# client passes the connection arguments only. Authored per
+# §11-Phase-5 item 4 from the approved home screen journey (#593's
+# connected rails) — the models are generated, never hand-duplicated.
+query HomeFeed($feedFirst: Int, $feedAfter: String) {
+  discovery {
+    row
+    cards {
+      sourceType
+      sourceId
+      updatedAt
+      title
+      snippet
+      state
+      scopeLocationId
+      reason
+      paid
+    }
+    totalEligible
+  }
+  neighborhoodFeed(first: $feedFirst, after: $feedAfter) {
+    edges {
+      cursor
+      node {
+        id
+        authorId
+        locationId
+        category
+        title
+        body
+        status
+        declaredCommercial
+        lostFoundState
+        reactionsCount
+        reactedByMe
+        media {
+          mediaId
+          url
+          thumbUrl
+          contentType
+          position
+        }
+        createdAt
+        updatedAt
+      }
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
