@@ -33,6 +33,32 @@ class LedgerPaymentEventListenerTest {
             loanOwnerPort, COMMISSION_RATE);
 
     @Test
+    void rejectsUnknownOriginBeforeAnyLedgerOrBookingEffect() {
+        UUID paymentIntentId = UUID.randomUUID();
+        var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
+                "COMPLETED", "UNKNOWN", 1000L, "SAR", null, null);
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+        assertThrows(IllegalStateException.class, () -> listener.onPaymentCompleted(event));
+
+        verifyNoInteractions(ledgerService, bookingParticipantProvider, orderSellerPort, loanOwnerPort);
+    }
+
+    @Test
+    void rejectsUnknownOriginBeforeAnyRefundLedgerOrBookingEffect() {
+        UUID paymentIntentId = UUID.randomUUID();
+        var event = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
+                "REFUNDED", "UNKNOWN", 1000L, "SAR", null, null);
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+        assertThrows(IllegalStateException.class, () -> listener.onPaymentCompleted(event));
+
+        verifyNoInteractions(ledgerService, bookingParticipantProvider, orderSellerPort, loanOwnerPort);
+    }
+
+    @Test
     void ignoresNonCompletedEvents() {
         var event = new PaymentStateChangedEvent(UUID.randomUUID(), "PENDING");
         listener.onPaymentCompleted(event);
