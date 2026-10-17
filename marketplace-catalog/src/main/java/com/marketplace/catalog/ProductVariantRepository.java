@@ -74,7 +74,7 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
                AND EXISTS (SELECT 1
                              FROM products p
                             WHERE p.id = v.product_id
-                              AND p.status = 'ACTIVE'
+                              AND p.product_status = 'ACTIVE'
                               AND p.is_deleted = FALSE)
             """, nativeQuery = true)
     int reserve(@Param("id") UUID id, @Param("qty") int qty);
