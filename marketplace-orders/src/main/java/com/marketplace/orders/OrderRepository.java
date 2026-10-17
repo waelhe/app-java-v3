@@ -22,4 +22,14 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
      * V184 column, unique per order) resolves the order.
      */
     Optional<Order> findByPaymentIntentId(UUID paymentIntentId);
+
+    /**
+     * The merchant surface (the Saleor study's Phase-1 slice, PR #602):
+     * the seller's own sold-order history, newest-first — the buyer's
+     * {@code findByConsumerIdOrderByPlacedAtDescIdDesc} twin, the same
+     * D-N5 complete ordering key ({@code placedAt DESC, id DESC}) so pages
+     * neither shuffle nor shift. ADR-0010: one order carries one seller,
+     * so the single-column match is the whole scoping predicate.
+     */
+    Page<Order> findBySellerIdOrderByPlacedAtDescIdDesc(UUID sellerId, Pageable pageable);
 }

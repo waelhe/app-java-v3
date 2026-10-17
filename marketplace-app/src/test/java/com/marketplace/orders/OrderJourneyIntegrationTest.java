@@ -97,9 +97,6 @@ class OrderJourneyIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    @Autowired
-    private OrdersService ordersService;
-
     @Value("${local.server.port}")
     private int port;
 
@@ -206,13 +203,23 @@ class OrderJourneyIntegrationTest {
                 "SELECT payment_intent_id FROM orders WHERE id = ?", String.class, orderId))
                 .as("the order's intent link").isNotNull();
 
-        // (3) The machine's merchant transitions through the service: the
-        // guarded edges the store's merchant console (A-17) will ride.
-        ordersService.confirm(orderId);
+        // (3) The machine's merchant transitions through the MERCHANT
+        // SURFACE (A-17's HTTP arrival — the Saleor study's Phase-1
+        // slice): the seller's own guarded edges, the post-command
+        // read-back over the wire, the same single machine underneath.
+        HttpResponse<String> sellerConfirm = postJson(
+                "/api/v1/orders/seller/" + orderId + "/confirm", sellerGate.accessToken(), "");
+        assertThat(sellerConfirm.statusCode()).as("seller confirm: %s", body(sellerConfirm)).isEqualTo(200);
+        assertThat(objectMapper.readTree(sellerConfirm.body()).path("status").asString())
+                .as("the confirm's read-back").isEqualTo("CONFIRMED");
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT status FROM orders WHERE id = ?", String.class, orderId))
                 .isEqualTo("CONFIRMED");
-        ordersService.fulfill(orderId);
+        HttpResponse<String> sellerFulfill = postJson(
+                "/api/v1/orders/seller/" + orderId + "/fulfill", sellerGate.accessToken(), "");
+        assertThat(sellerFulfill.statusCode()).as("seller fulfill: %s", body(sellerFulfill)).isEqualTo(200);
+        assertThat(objectMapper.readTree(sellerFulfill.body()).path("status").asString())
+                .as("the fulfill's read-back").isEqualTo("FULFILLED");
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT status FROM orders WHERE id = ?", String.class, orderId))
                 .isEqualTo("FULFILLED");
@@ -261,6 +268,28 @@ class OrderJourneyIntegrationTest {
                 "/api/v1/orders/" + orderId, strangerGate.accessToken());
         assertThat(strangerRead.statusCode())
                 .as("stranger read: existence itself is private").isEqualTo(404);
+
+        // (7) The merchant surface's own scope contract: the BUYER cannot
+        // pull the merchant levers (the seller surface is not theirs — the
+        // honest 404), the stranger cannot either, and the seller's
+        // sold-orders page carries the order they sold.
+        HttpResponse<String> buyerConfirm = postJson(
+                "/api/v1/orders/seller/" + orderId + "/confirm", gate.accessToken(), "");
+        assertThat(buyerConfirm.statusCode())
+                .as("the buyer on the merchant surface: not the seller").isEqualTo(404);
+        HttpResponse<String> strangerSellerRead = getWithBearer(
+                "/api/v1/orders/seller/" + orderId, strangerGate.accessToken());
+        assertThat(strangerSellerRead.statusCode())
+                .as("stranger on the merchant surface").isEqualTo(404);
+        HttpResponse<String> soldList = getWithBearer(
+                "/api/v1/orders/seller/me", sellerGate.accessToken());
+        assertThat(soldList.statusCode()).as("sold list: %s", body(soldList)).isEqualTo(200);
+        java.util.List<UUID> soldIds = new java.util.ArrayList<>();
+        for (JsonNode sold : objectMapper.readTree(soldList.body()).path("content")) {
+            soldIds.add(UUID.fromString(sold.path("id").asString()));
+        }
+        assertThat(soldIds).as("the seller's sold page carries the order")
+                .contains(orderId);
     }
 
     /**
@@ -350,6 +379,27 @@ class OrderJourneyIntegrationTest {
         assertThat(objectMapper.readTree(primaryIntent.body()).path("paymentIntentId").asString())
                 .as("each order's intent carries its own id")
                 .isNotEqualTo(objectMapper.readTree(siblingIntent.body()).path("paymentIntentId").asString());
+
+        // The merchant surface preserves ADR-0010's seller isolation: each
+        // seller commands their OWN order through the HTTP surface, and the
+        // sibling's order reads as the honest 404 (existence itself is
+        // private — one order, one seller, one lever).
+        HttpResponse<String> aConfirms = postJson(
+                "/api/v1/orders/seller/" + primaryId + "/confirm", sellerAGate.accessToken(), "");
+        assertThat(aConfirms.statusCode())
+                .as("seller A confirms the primary: %s", body(aConfirms)).isEqualTo(200);
+        assertThat(objectMapper.readTree(aConfirms.body()).path("status").asString())
+                .isEqualTo("CONFIRMED");
+        HttpResponse<String> aOnSibling = postJson(
+                "/api/v1/orders/seller/" + siblingId + "/confirm", sellerAGate.accessToken(), "");
+        assertThat(aOnSibling.statusCode())
+                .as("seller A on the sibling order: not their sale").isEqualTo(404);
+        HttpResponse<String> bConfirms = postJson(
+                "/api/v1/orders/seller/" + siblingId + "/confirm", sellerBGate.accessToken(), "");
+        assertThat(bConfirms.statusCode())
+                .as("seller B confirms the sibling: %s", body(bConfirms)).isEqualTo(200);
+        assertThat(objectMapper.readTree(bConfirms.body()).path("status").asString())
+                .isEqualTo("CONFIRMED");
     }
 
     @Test
