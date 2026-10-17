@@ -3,14 +3,18 @@ package com.marketplace.admin;
 import com.marketplace.booking.spi.BookingSpi;
 import com.marketplace.catalog.spi.CatalogSpi;
 import com.marketplace.identity.spi.IdentitySpi;
+import com.marketplace.payments.spi.PaymentIntentSearch;
 import com.marketplace.payments.spi.PaymentsSpi;
 import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.BookingSummary;
+import com.marketplace.shared.api.CurrencyAmount;
+import com.marketplace.shared.api.LedgerAllocationPort;
 import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.PaymentSummary;
 import com.marketplace.shared.api.ProviderListingSummary;
 import com.marketplace.shared.api.UserSummary;
+import org.springframework.format.annotation.DateTimeFormat;
 import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -25,6 +29,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import tools.jackson.databind.JsonNode;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -39,6 +44,7 @@ public class AdminController {
     private final CatalogSpi catalogSpi;
     private final BookingSpi bookingSpi;
     private final PaymentsSpi paymentsSpi;
+    private final LedgerAllocationPort ledgerAllocationPort;
     private final RevisionService revisionService;
     private final SystemSettingsService systemSettings;
 
@@ -46,12 +52,14 @@ public class AdminController {
                            CatalogSpi catalogSpi,
                            BookingSpi bookingSpi,
                            PaymentsSpi paymentsSpi,
+                           LedgerAllocationPort ledgerAllocationPort,
                            RevisionService revisionService,
                            SystemSettingsService systemSettings) {
         this.identitySpi = identitySpi;
         this.catalogSpi = catalogSpi;
         this.bookingSpi = bookingSpi;
         this.paymentsSpi = paymentsSpi;
+        this.ledgerAllocationPort = ledgerAllocationPort;
         this.revisionService = revisionService;
         this.systemSettings = systemSettings;
     }
@@ -327,11 +335,27 @@ public class AdminController {
     // -- Payments -------------------------------------------------------
 
     @GetMapping("/payments")
-    @Operation(summary = "List payment intents",
-            description = "Paginated payment-intent summaries — the administrative money "
-                    + "oversight surface (amount, currency, state machine position per intent).")
-    public ResponseEntity<PagedResponse<PaymentSummary>> listPaymentIntents(Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(paymentsSpi.listIntentsSummaries(pageable)));
+    @Operation(summary = "Search payment intents",
+            description = "The finance operator's single search over EVERY payable origin — "
+                    + "origin, status, the origin-agnostic subject id (a booking, an ad "
+                    + "campaign, an order or a loan — whichever the pasted id names), the "
+                    + "payer, and an exclusive-end creation window, AND-composed. With no "
+                    + "parameters it remains the plain paginated list. Each row carries the "
+                    + "ADR-0013 frozen commission rate and the PSP linkage.")
+    public ResponseEntity<PagedResponse<PaymentSummary>> searchPaymentIntents(
+            Pageable pageable,
+            @RequestParam(required = false) String origin,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) UUID subjectId,
+            @RequestParam(required = false) UUID consumerId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+            Instant createdAfter,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+            Instant createdBefore) {
+        PaymentIntentSearch search = new PaymentIntentSearch(
+                origin, status, subjectId, consumerId, createdAfter, createdBefore);
+        return ResponseEntity.ok(PagedResponse.of(
+                paymentsSpi.searchIntentsSummaries(search, pageable)));
     }
 
     @GetMapping("/payments/{id}")
@@ -340,6 +364,38 @@ public class AdminController {
                     + "of the money oversight surface.")
     public ResponseEntity<PaymentSummary> getPaymentIntent(@PathVariable UUID id) {
         return ResponseEntity.ok(paymentsSpi.getIntentSummary(id));
+    }
+
+    @GetMapping("/payments/{id}/financial-facts")
+    @Operation(summary = "Read one intent's unified financial facts",
+            description = "The finance operator's per-intent investigation view: the payment "
+                    + "engine's own summary (state, amount, the ADR-0013 frozen commission "
+                    + "rate, the refund state, the PSP linkage) COMPOSED with the ledger "
+                    + "module's source-owned allocation read — the intent-keyed postings "
+                    + "(credit, commission, refund) and the provider balances they moved. "
+                    + "This is the acceptance journey's 'verify provider/payment/ledger "
+                    + "state' in one read; the owning-domain state stays each origin's own "
+                    + "surface (documented boundary — this read composes money truth, it "
+                    + "does not duplicate domain state).")
+    public ResponseEntity<FinancialFactsResponse> getFinancialFacts(@PathVariable UUID id) {
+        PaymentSummary intent = paymentsSpi.getIntentSummary(id);
+        LedgerAllocationPort.LedgerAllocation allocation =
+                ledgerAllocationPort.findByPaymentIntentId(id);
+        return ResponseEntity.ok(new FinancialFactsResponse(intent, allocation));
+    }
+
+    /** The composed investigation view — the intent's facts plus its allocation. */
+    public record FinancialFactsResponse(
+            PaymentSummary intent,
+            List<LedgerAllocationPort.LedgerAllocationEntry> ledgerEntries,
+            List<LedgerAllocationPort.ProviderBalanceFact> providerBalances,
+            List<CurrencyAmount> netAllocation
+    ) {
+        public FinancialFactsResponse(PaymentSummary intent,
+                                      LedgerAllocationPort.LedgerAllocation allocation) {
+            this(intent, allocation.entries(), allocation.providerBalances(),
+                    allocation.netAllocation());
+        }
     }
 
     // -- Revisions / Audit history ---------------------------------------
