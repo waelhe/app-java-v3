@@ -3,3 +3,10 @@ local.properties
 **/build/
 .idea/
 *.iml
+# The GraphQL contract schema is machine-published (the graphql-contract
+# distribution branch) and staged at this exact path by CI before Gradle
+# runs (see android/app/build.gradle.kts — apollo schemaFiles.from). It is
+# never committed: hand-copied SDL is the Phase-5 anti-pattern
+# (docs/api/graphql-target-architecture.md §11-Phase-5 acceptance:
+# "no hand-copied SDL between repositories").
+app/src/main/graphql/schema.graphqls

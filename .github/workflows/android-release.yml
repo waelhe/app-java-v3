@@ -46,6 +46,23 @@ jobs:
         with:
           packages: "platform-tools platforms;android-36 build-tools;36.0.0"
 
+      # GraphQL Phase 5 (docs/api/graphql-target-architecture.md
+      # §11-Phase-5): stage the CI-published contract SDL for Apollo
+      # codegen — the graphql-contract branch (machine-written from the
+      # schema CI booted and gated), never the production server, never a
+      # hand copy. Release builds compile the same operations CI validated.
+      - name: Fetch the published GraphQL contract schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p android/app/src/main/graphql
+          if ! curl -fsSL "https://raw.githubusercontent.com/waelhe/app-java-v3/graphql-contract/schema.graphqls" \
+              -o android/app/src/main/graphql/schema.graphqls; then
+            echo "::error::The GraphQL contract branch 'graphql-contract' is not published yet. It is created by .github/workflows/graphql-contract.yml after the first successful CI run on main that carries that workflow (the Phase-5 bootstrap)."
+            exit 1
+          fi
+          echo "Staged published GraphQL contract SDL ($(wc -c < android/app/src/main/graphql/schema.graphqls) bytes)."
+
       - name: Decode release keystore
         env:
           ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}

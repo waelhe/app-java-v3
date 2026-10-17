@@ -42,6 +42,21 @@ Override environment-specific values without committing them:
 
     ./gradlew :app:testDebugUnitTest :app:assembleDebug -PoidcClientId=android-community-native -PoidcRedirectUri=com.marketplace.android:/oauth2redirect -PmediaMaxUploadBytes=10485760
 
+## GraphQL contract consumption (Apollo Kotlin codegen)
+
+The GraphQL layer follows the backend's contract-lifecycle design (Phase 5 of `docs/api/graphql-target-architecture.md`): the Android Gradle build consumes the **CI-published SDL contract**, and Apollo Kotlin generates the operation-specific Kotlin models from it. Apollo Kotlin 5.2.0 is measured from Maven Central and the official v5 docs (plugin `com.apollographql.apollo`; Gradle 8.0+, KGP 2.1.0+, AGP 8.0.0+ — all satisfied by this build's Gradle 9.7.1 / KGP 2.4.21 / AGP 9.4.1).
+
+The contract is the **runtime SDL the server actually boots** (graphql-java's SchemaPrinter over the booted GraphQlSource, the generated Relay connection types included), dumped and compatibility-gated by CI, then published by `.github/workflows/graphql-contract.yml` to the machine-written `graphql-contract` distribution branch (`schema.graphqls` + a versioned `manifest.json`). Two hard rules come from the plan's acceptance criteria:
+
+- **Never fetch the schema from the production server during Android builds** — the schema comes from the published CI artifact channel, not from an introspection endpoint.
+- **Never hand-copy the SDL** — `android/app/src/main/graphql/schema.graphqls` is gitignored; it is staged by CI (the android-client and android-release workflows fetch the published contract before Gradle runs, and CI's android-graphql job stages the run's own runtime dump). Hand-copied SDL between repositories is exactly the anti-pattern the plan forbids.
+
+A fresh checkout needs the contract staged once before `generateApolloSources`/any compile can run:
+
+    curl -fsSL https://raw.githubusercontent.com/waelhe/app-java-v3/graphql-contract/schema.graphqls -o android/app/src/main/graphql/schema.graphqls
+
+Operation documents are authored from approved screens/journeys and committed as `.graphql` files beside the schema path (`GetService`, `ListServices` — the approved business/services lookup surface). Models and operation result types are **generated**, never manually duplicated, and the app compiles against `apollo-api` only for now (models + parsers); the network runtime is added with the first operation-executing screen in Phase 6. An incompatible server schema change or a stale Android operation fails CI's required "Build & Test (JDK 25)" check before release: the `android-graphql` job validates the operations against the very run's own runtime schema dump — the same publication the Maven side's DGS codegen is measured against, with Maven and Gradle keeping independent lifecycles.
+
 ## Native authentication acceptance and release signing
 
 The Android CI now runs JVM tests, builds the debug APK and Android test APK, then executes the authentication-entry instrumentation test on an Android emulator. That test proves the installed app opens its unauthenticated UI and presents both Credential Manager passkey sign-in and the AppAuth Authorization Code + PKCE fallback; it does **not** prove that a real passkey was created or authenticated against a server.

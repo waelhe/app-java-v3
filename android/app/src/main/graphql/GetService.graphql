@@ -1,0 +1,18 @@
+# GetService — the service-detail read of the approved GraphQL contract
+# (docs/api/graphql-target-architecture.md §11-Phase-5 item 4: operation
+# documents are authored from approved screens/journeys; models and
+# operation result types are generated, not manually duplicated). This is
+# the business/services lookup journey on the currently approved SDL
+# surface: Query.service — the same use case the REST directory reads
+# serve; the first consuming screen lands with Phase 6 (journey work).
+query GetService($id: ID!) {
+  service(id: $id) {
+    id
+    name
+    description
+    category
+    price
+    currency
+    status
+  }
+}

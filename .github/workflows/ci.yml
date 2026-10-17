@@ -504,6 +504,21 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+      # Phase 5 (docs/api/graphql-target-architecture.md §11-Phase-5 items 3
+      # and 5): the current tree's runtime SDL — already produced by the gate
+      # above as its compared artifact — is published as a run artifact so
+      # the android-graphql job can validate Apollo Kotlin codegen against
+      # the SAME dump of the SAME run, and so the graphql-contract workflow
+      # publishes to the `graphql-contract` distribution branch exactly what
+      # CI booted and gated (never the production server, never a hand copy).
+      - name: Upload the current runtime schema
+        uses: actions/upload-artifact@v7
+        with:
+          name: graphql-runtime-schema
+          path: .ci/graphql-compat/current-schema.graphqls
+          retention-days: 7
+          if-no-files-found: error
+
   # The app bundle's coverage gate, reconstituted on MERGED data: the 9
   # partial .exec files (8 IT shards + the unit pass) combine through the
   # jacoco merge mojo (the root pom's ci-coverage-merge profile — the
@@ -551,16 +566,79 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # Phase 5 item 4/5 (docs/api/graphql-target-architecture.md §11-Phase-5):
+  # the Android side of the GraphQL contract. Apollo Kotlin codegen consumes
+  # the SAME runtime SDL dump the graphql-schema-gate produced in THIS run —
+  # one schema publication, both codegens (the DGS server types are generated
+  # from the same SDL inside the Maven build this very run executes) — and
+  # the generated models must compile. A stale Android operation (a field the
+  # PR's schema no longer carries) or an incompatible server schema change
+  # fails HERE, and build-test propagates it to the required
+  # "Build & Test (JDK 25)" check: the Phase-5 acceptance criterion
+  # "an incompatible server schema change or stale Android operation fails a
+  # required build/check before release". Maven and Gradle keep their own
+  # independent lifecycles (JDK 25 reactor vs JDK 17 Android toolchain); only
+  # the schema publication is shared. JVM-only by design: no emulator, so
+  # this required-path gate never inherits the instrumentation flakiness the
+  # android-client workflow handles separately.
+  android-graphql:
+    name: Android GraphQL Contract Gate
+    needs: [ graphql-schema-gate ]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Set up stable Android SDK
+        uses: android-actions/setup-android@v4.0.4
+        with:
+          packages: "platform-tools platforms;android-36 build-tools;36.0.0"
+
+      - name: Fetch this run's runtime schema dump
+        uses: actions/download-artifact@v7
+        with:
+          name: graphql-runtime-schema
+          path: .ci/graphql-contract-in
+
+      # The published-contract staging contract: the exact path Apollo's
+      # schemaFiles.from() pins (android/app/build.gradle.kts). CI stages the
+      # file; the file is gitignored; hand-copied SDL is the anti-pattern.
+      - name: Stage the run's SDL for Apollo codegen
+        run: |
+          set -euo pipefail
+          mkdir -p android/app/src/main/graphql
+          cp .ci/graphql-contract-in/current-schema.graphqls android/app/src/main/graphql/schema.graphqls
+          echo "Staged this run's runtime SDL ($(wc -c < android/app/src/main/graphql/schema.graphqls) bytes) for Apollo Kotlin codegen"
+
+      - name: Apollo Kotlin codegen against the run's schema publication
+        working-directory: android
+        run: ./gradlew :app:generateApolloSources
+
+      - name: Compile the app with the generated Apollo models
+        working-directory: android
+        run: ./gradlew :app:compileDebugKotlin
+
   # The required-check contract: the merge ruleset demands the context
   # "Build & Test (JDK 25)" — the documented matrix-summary pattern (a
   # final job over needs.*.result) keeps that exact check name while the
   # work fans out. It is green ONLY when build, all 8 shards, the modules
-  # suite, the OpenAPI gate, the GraphQL schema gate, AND the coverage gate
-  # are green — strictly more enforcement than the old single job (which
-  # could not even distinguish a shard failure from a flake retry).
+  # suite, the OpenAPI gate, the GraphQL schema gate, the Android GraphQL
+  # contract gate, AND the coverage gate are green — strictly more
+  # enforcement than the old single job (which could not even distinguish a
+  # shard failure from a flake retry).
   build-test:
     name: Build & Test (JDK 25)
-    needs: [ build, test-app, test-modules, openapi-gate, graphql-schema-gate, coverage ]
+    needs: [ build, test-app, test-modules, openapi-gate, graphql-schema-gate, coverage, android-graphql ]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -572,4 +650,4 @@ jobs:
             echo "::error::One or more required gates did not pass — see the failed jobs in this run."
             exit 1
           fi
-          echo "All gates green: build, 8 app shards, modules suite, OpenAPI gate, coverage gate."
+          echo "All gates green: build, 8 app shards, modules suite, OpenAPI gate, GraphQL schema gate, Android GraphQL contract gate, coverage gate."
