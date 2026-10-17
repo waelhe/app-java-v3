@@ -199,6 +199,7 @@ class CommunityViewModel(
     private var stateBeforeSessionRecovery: AppUiState? = null
     val uiState = _uiState.asStateFlow()
     private var locationSearchJob: Job? = null
+    private var urgentAlertsJob: Job? = null
     private var searchJob: Job? = null
     private var searchRequestId: Long = 0
 
@@ -393,7 +394,8 @@ class CommunityViewModel(
                             urgentAlerts = emptyList(),
                             urgentAlertsScopeId = null,
                             urgentAlertsBusy = false,
-                            urgentAlertsError = null
+                            urgentAlertsError = null,
+                            reportingContentKeys = emptySet()
                         )
                     }
                 } else {
@@ -1282,6 +1284,8 @@ class CommunityViewModel(
         val current = _uiState.value
         val locationId = current.membership?.locationId
         if (!current.authenticated || locationId.isNullOrBlank()) {
+            urgentAlertsJob?.cancel()
+            urgentAlertsJob = null
             _uiState.update {
                 it.copy(
                     urgentAlerts = emptyList(),
@@ -1293,7 +1297,8 @@ class CommunityViewModel(
             return
         }
 
-        viewModelScope.launch {
+        urgentAlertsJob?.cancel()
+        urgentAlertsJob = viewModelScope.launch {
             _uiState.update {
                 if (it.authenticated && it.membership?.locationId == locationId) {
                     it.copy(
