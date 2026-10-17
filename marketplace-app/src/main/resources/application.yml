@@ -710,6 +710,23 @@ resilience4j:
         base-config: default
         limit-for-period: 10
         timeout-duration: 0
+      # Phase 6 (the GraphQL plan §11-Phase-6 — the first composite
+      # journey, the inventory #599 §7 stage 4): the two home reads'
+      # named instances, the same L29 fail-fast model. graphqlDiscovery-
+      # Query sits at the catalog read budget (50/min — the discovery
+      # home read assembles six bounded rails through the shared ports,
+      # a heavier read than one listing page); graphqlNeighborhoodFeed-
+      # Query at the same 50/min — the bounded feed page the REST feed
+      # serves. Conservative until measured traffic (G-R6 calibration
+      # gate); env-tunable per the house relaxed-binding rule.
+      graphqlDiscoveryQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      graphqlNeighborhoodFeedQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
       # L42 (neighborhood community plan §5 — the posts/feed/comments
       # layer): the community writes — two distinct named instances
       # (the plan's own words: "نمطلتان مسماتان مستقلتان") so a comment

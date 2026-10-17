@@ -1,5 +1,7 @@
 package com.marketplace.discovery;
 
+import com.marketplace.discovery.spi.DiscoverySpi;
+
 import com.marketplace.shared.api.CommunityDiscoveryPort;
 import com.marketplace.shared.api.CommunityMembershipPort;
 import com.marketplace.shared.api.DiscoveryCardView;
@@ -64,9 +66,17 @@ import java.util.UUID;
  * 204-always contract); the ledger's own short transaction rides the
  * repository method's {@code @Transactional} (see
  * {@link DiscoveryImpressionRepository#insertOnce}).</p>
+ * <p><b>Phase 6 (the GraphQL plan §11-Phase-6 — the first composite
+ * journey):</b> this class also implements the module's declared
+ * {@code DiscoverySpi} read seam — {@code homeRows} served to the
+ * app's GraphQL home composite through the
+ * {@code @NamedInterface("discovery-spi")} exposure, the {@code CatalogSpi}
+ * house pattern: the SAME use case the REST home endpoint invokes, no
+ * rule added and no rule moved (the inventory #599 §8: one use case,
+ * one set of rules, on both transports).</p>
  */
 @Service
-public class DiscoveryService {
+public class DiscoveryService implements DiscoverySpi {
 
     private static final Logger log = LoggerFactory.getLogger(DiscoveryService.class);
 
