@@ -156,7 +156,9 @@ class FinancialOperatorReadIntegrationTest {
                 "/api/v1/orders/" + orderId + "/payment-intent", buyerGate.accessToken(), "");
         assertThat(intentResponse.statusCode()).as("intent: %s", body(intentResponse)).isEqualTo(201);
         JsonNode intentNode = objectMapper.readTree(intentResponse.body());
-        UUID intentId = UUID.fromString(intentNode.path("id").asString());
+        // The order's intent surface answers the shared PaymentIntentDetails
+        // carrier — the intent's own key field is paymentIntentId.
+        UUID intentId = UUID.fromString(intentNode.path("paymentIntentId").asString());
         assertThat(intentNode.path("origin").asString()).isEqualTo("ORDER");
 
         // (2) The money leg — the ADMIN settlement command publishes
