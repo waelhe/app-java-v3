@@ -346,7 +346,7 @@ class HomeGraphQlIntegrationTest {
                 .jsonPath("$.errors[0].path[0]").isEqualTo("neighborhoodFeed")
                 .jsonPath("$.data.discovery").isArray()
                 .jsonPath("$.data.discovery.length()").isEqualTo(0)
-                .jsonPath("$.data.neighborhoodFeed").valueIsNull();
+                .jsonPath("$.data.neighborhoodFeed").isEqualTo(null);
     }
 
     // ------------------------------------------------------------------
@@ -362,8 +362,8 @@ class HomeGraphQlIntegrationTest {
                 .variable("first", 0)
                 .execute()
                 .errors().verify()
-                .path("discovery").entityList(Object.class).isEmpty()
-                .path("neighborhoodFeed.edges").entityList(Object.class).isEmpty()
+                .path("discovery").entityList(Object.class).hasSize(0)
+                .path("neighborhoodFeed.edges").entityList(Object.class).hasSize(0)
                 .path("neighborhoodFeed.pageInfo.hasNextPage").entity(Boolean.class).isEqualTo(false);
 
         verify(discoveryService, times(1)).homeRows(CALLER_ID);
