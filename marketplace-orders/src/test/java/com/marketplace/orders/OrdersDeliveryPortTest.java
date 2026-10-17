@@ -161,13 +161,17 @@ class OrdersDeliveryPortTest {
         order.attachDeliveryRequest(deliveryRequestId);
         order.markStockReserved();
         OrderItem frozenLine = OrderItem.snapshotOf(order.getId(),
-                CartItem.of(UUID.randomUUID(), productId, 2, 500L, "SAR"));
+                CartItem.of(UUID.randomUUID(), productId, null, 2, 500L, "SAR"));
         when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
         when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(frozenLine));
 
         service().fulfillFromDelivery(order.getId(), deliveryRequestId);
 
         verify(productStockPort).commit(Map.of(productId, 2));
+        // the dual-shelf law (#616 composed): a product-level-only order
+        // commits the product shelf and calls the variant shelf with the
+        // empty map — both shelves settle in the same transaction.
+        verify(productStockPort).commitVariants(Map.of());
         assertThat(order.isStockReserved()).isFalse();
         assertThat(order.getStatus()).isEqualTo(OrderStatus.FULFILLED);
         verify(eventPublisher).publishEvent(new OrderFulfilledEvent(order.getId(), buyerId));
