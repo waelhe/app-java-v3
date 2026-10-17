@@ -1,6 +1,8 @@
 package com.marketplace.payments;
 
+import com.marketplace.payments.spi.PaymentIntentSearch;
 import com.marketplace.payments.spi.PaymentsSpi;
+import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.CacheInvalidationRequested;
@@ -21,6 +23,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.resilience.annotation.ConcurrencyLimit;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -330,15 +333,52 @@ public class PaymentsService implements PaymentsSpi {
         return paymentIntentRepository.findAllSummariesBy(pageable).map(this::toPaymentSummaryFromView);
     }
 
+    /**
+     * The unified finance-operator read model's search (payments plan
+     * Phase 1 — "investigate any origin by a single search"): the AND of
+     * every present field, over the specification mechanism the repository
+     * already exposes. The neutral search is the plain list — the caller
+     * decides which surface it answers, this method only composes
+     * predicates.
+     */
+    @Transactional(readOnly = true)
+    @Override
+    public Page<PaymentSummary> searchIntentsSummaries(PaymentIntentSearch search, Pageable pageable) {
+        if (search == null || search.isNeutral()) {
+            return listIntentsSummaries(pageable);
+        }
+        // The status word is validated by the vocabulary's owner — a typo
+        // answers the house 400, never a silent zero-match page (the
+        // seam carries words; the enum stays inside the module).
+        if (search.status() != null) {
+            try {
+                PaymentIntentStatus.valueOf(search.status());
+            } catch (IllegalArgumentException unknownWord) {
+                throw new BadRequestException("Unknown payment status: " + search.status()
+                        + " — the state machine's vocabulary is: " + java.util.Arrays.toString(
+                                PaymentIntentStatus.values()));
+            }
+        }
+        Specification<PaymentIntent> spec = PaymentIntentSpecifications.fromSearch(search);
+        return paymentIntentRepository.findAll(spec, pageable)
+                .map(this::toPaymentSummary);
+    }
+
     private PaymentSummary toPaymentSummaryFromView(PaymentIntentSummaryView view) {
         return new PaymentSummary(
                 view.getId(),
                 view.getBookingId(),
+                view.getAdCampaignId(),
+                view.getOrderId(),
+                view.getLoanId(),
                 view.getConsumerId(),
                 view.getAmountCents(),
                 view.getCurrency(),
+                view.getOrigin(),
                 view.getStatus().name(),
                 view.getRefundedAmountCents(),
+                view.getCommissionRate(),
+                view.getPspIntentId(),
                 view.getCreatedAt(),
                 view.getUpdatedAt()
         );
@@ -992,11 +1032,17 @@ public class PaymentsService implements PaymentsSpi {
         return new PaymentSummary(
                 paymentIntent.getId(),
                 paymentIntent.getBookingId(),
+                paymentIntent.getAdCampaignId(),
+                paymentIntent.getOrderId(),
+                paymentIntent.getLoanId(),
                 paymentIntent.getConsumerId(),
                 paymentIntent.getAmountCents(),
                 paymentIntent.getCurrency(),
+                paymentIntent.getOrigin(),
                 paymentIntent.getStatus().name(),
                 paymentIntent.getRefundedAmountCents(),
+                paymentIntent.getCommissionRate(),
+                paymentIntent.getPspIntentId(),
                 paymentIntent.getCreatedAt(),
                 paymentIntent.getUpdatedAt()
         );

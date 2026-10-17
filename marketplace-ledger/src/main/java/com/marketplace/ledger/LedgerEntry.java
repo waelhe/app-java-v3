@@ -83,6 +83,7 @@ public class LedgerEntry extends BaseEntity {
     }
 
     @Override public UUID getId(){return id;}
+    public UUID getProviderId(){return providerId;}
     public UUID getSourceId(){return sourceId;}
     public LedgerEntryType getEntryType(){return entryType;}
     public long getAmountCents(){return amountCents;}
