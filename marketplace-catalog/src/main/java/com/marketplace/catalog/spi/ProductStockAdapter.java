@@ -106,4 +106,23 @@ public class ProductStockAdapter implements ProductStockPort {
             }
         });
     }
+
+    // ---- The V225 RMA restock twins — the received goods go back on the
+    // shelves. REQUIRED propagation (the return's completion transaction
+    // spans both maps), one unconditional UPDATE per line (the physical
+    // truth of goods back on the shelf).
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void restock(Map<java.util.UUID, Integer> quantities) {
+        quantities.forEach((productId, qty) ->
+                productRepository.restock(productId, qty));
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void restockVariants(Map<java.util.UUID, Integer> quantities) {
+        quantities.forEach((variantId, qty) ->
+                variantRepository.restock(variantId, qty));
+    }
 }

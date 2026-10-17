@@ -72,6 +72,17 @@ public interface ProductStockPort {
     void commitVariants(Map<UUID, Integer> quantities);
 
     /**
+     * Restocks quantities — the RETURN's write (the V225 RMA lifecycle):
+     * the received goods go back on the shelves. Called when a return
+     * reaches RECEIVED; unconditional increments (the physical truth of
+     * goods back on the shelf — the display lifecycle never gates it).
+     */
+    void restock(Map<UUID, Integer> quantities);
+
+    /** The variant twin of {@link #restock} — the return's write. */
+    void restockVariants(Map<UUID, Integer> quantities);
+
+    /**
      * The line quantities of one placement, in port-carrier form — the
      * adapter-friendly shape the machine passes back on release/commit.
      *
