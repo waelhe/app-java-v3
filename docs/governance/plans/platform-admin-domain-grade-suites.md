@@ -200,7 +200,7 @@ Dedicated queues for packing/dispatch, tracking gaps, delivery failure, pickup, 
 
 The detail view joins order, shipment/booking, provider/member communications, relevant evidence and financial status. Return receipt and refund execution are separate states. Refund preview shows eligible lines, shipping/fees, currency, amount, transaction state and accounting impact. An action may require independent finance approval. Partial provider failure must remain visible per line/step.
 
-Local delivery and collection points should be configurable by geography, operating hours, capacity, blackout dates and serviceability.
+Local delivery and collection points should be configurable by geography, operating hours, capacity, blackout dates and serviceability. The market suite handles fulfillment attached to orders; independent delivery bookings and platform-wide dispatch/provider operations are owned by the delivery network described in [Platform-Wide Payments and Delivery Network](../../architecture/platform-wide-payments-and-delivery.md). Do not model a standalone courier request as a fake store order.
 
 ### 4.11 Customers, members and customer groups
 
@@ -231,7 +231,7 @@ Dedicated settings workspaces for:
 - Communication templates for order/booking states.
 - Integration health in human language, with technical detail restricted to specialist diagnostics.
 
-Changing these controls requires an impact simulation against example orders/markets and must never silently rewrite historical orders.
+Changing these controls requires an impact simulation against example orders/markets and must never silently rewrite historical orders. These are market-scoped configuration surfaces only: payment execution/reconciliation across all domains belongs to Section 8's platform-wide financial suite, and standalone courier dispatch/operations belongs to the delivery network described in [Platform-Wide Payments and Delivery Network](../../architecture/platform-wide-payments-and-delivery.md). Avoid creating a separate market-only payment or delivery engine.
 
 ### 4.14 Reviews, quality, search and merchandising
 
@@ -560,23 +560,48 @@ This suite must go beyond a basic member list and must support:
 
 Required journey: resolve ambiguous address → see candidate neighborhoods/evidence → request missing proof or select approved adjudication → record reason → apply effective neighborhood membership → verify member content visibility and local permissions → provide appeal route.
 
-## 8. Money, growth and operational suite
+## 8. Platform-wide money, payments and growth suite
 
-Not a single finance dashboard. Required operational surfaces:
-- Transaction/payment intent search and payment-provider status.
-- Payment reconciliation across provider, platform order and ledger.
-- Refunds with eligibility, line-level breakdown, approval and result read-back.
-- Disputes/chargebacks, deadline/evidence requirements and ownership.
-- Provider balances/payout eligibility/settlement/reconciliation where implemented.
-- Promotions/campaign spend, budgets, audience rules and spend caps.
-- Fees/commission policies and effective dating.
-- Finance reports with explicitly defined gross/net/refund/tax/fee concepts.
-- Acquisition, neighborhood activation, retention and returning member cohorts.
-- A/B/controlled experiments tied to explicit revisions, cohorts, guardrails and pause/restore.
-- Fraud/abuse exception queues and safe handling of unknown provider responses.
-- Permission separation for viewing, initiating and approving financial actions.
+This is a cross-domain financial operations suite, not a second payment engine and not just an order-payment screen. It must cover every approved payable source on the platform through the same payment operations and reconciliation experience while each business domain continues to own its own eligibility, amount, lifecycle and cancellation rules. See [Platform-Wide Payments and Delivery Network](../../architecture/platform-wide-payments-and-delivery.md).
 
-Required journey: investigate uncertain payment → establish provider state → reconcile order and ledger → calculate eligible corrective action → independent approval if required → execute once → verify all three states → reconcile report → inform member.
+Required operational surfaces:
+- One permission-aware search and timeline across payment intents/transactions, provider callbacks, source-domain records, ledger entries, refunds, disputes, allocations, settlements and payouts.
+- Source coverage for bookings/services, product orders, paid lending/rental flows, provider advertising/promotions, standalone delivery, delivery charges attached to orders, and future monetized capabilities only when explicitly approved. The existing code's BOOKING/AD/ORDER/LOAN origins are evidence of current integrations, not proof every future source is wired.
+- Provider/gateway eligibility and health by region, currency and method; do not represent an unavailable/unconfigured gateway as usable.
+- Reconciliation across external provider state, platform payment state, the source business state and the ledger. Distinguish accepted, pending, authorized, captured/collected, refunded, disputed, failed and unknown only where the underlying adapter actually supports those states.
+- Refunds with source-owned eligibility, original currency, remaining refundable amount, line/fee/delivery allocation, approvals and result read-back; separate customer refund from transfer reversal and seller/courier recovery.
+- Seller/provider/courier allocation and settlement where the approved commercial policy requires them; show payable calculation, holds, payout state, failure and retry eligibility without direct balance edits.
+- Disputes/chargebacks, deadlines/evidence, fraud/abuse exceptions, provider webhooks, duplicate deliveries and ambiguous outcomes.
+- Promotions/campaign billing, budgets, audience rules and spend caps, separated from purchase discounts and delivery fees.
+- Defined finance reports for gross/net/refund/chargeback/tax/fee/payout concepts, with source records, freshness, currency and drill-through.
+- Acquisition, neighborhood activation, retention and cohort analytics, with metric definitions.
+- Permission separation among viewing, initiating, approving, executing, reconciling and exporting financial data. High-risk actions support separation of duties.
+
+**Required money journey:** identify the payable source → resolve its authoritative amount/currency and current business state → verify provider outcome → reconcile provider/payment/ledger/source → preview the exact correction and who bears it → obtain independent approval if policy requires → execute once → re-read all affected records → verify the financial and member-visible outcomes → record audit evidence and notify the parties.
+
+No wallet, escrow-like holding, cash collection, cash-on-delivery, recurring off-session charge, commission, merchant-of-record or payout policy is implied merely by making payments platform-wide. Each requires explicit commercial/legal review and configuration.
+
+## 8.1 Delivery as a platform service and a fulfillment network
+
+Delivery is a first-class service, not solely an order field. Its complete target contract is described in [Platform-Wide Payments and Delivery Network](../../architecture/platform-wide-payments-and-delivery.md). The admin UX must support both a **standalone direct-delivery request** and **delivery/fulfillment attached to an order or applicable service**, using the same delivery domain without merging their business states.
+
+Required workspaces:
+- Direct delivery requests: quote, pickup/drop-off, package declaration, service window, payment mode, dispatch, tracking, proof, cancellation, failed attempt, return-to-sender and claim.
+- Marketplace shipments/fulfillment: delivery options, seller/package hand-off, multi-package/leg tracking, local courier, carrier shipping, seller-delivery and pickup/collection.
+- Serviceability and rates: delivery zones, operating hours, capacity, cut-offs, holidays, package limits/restrictions, provider pricing, quote expiry and fee allocation.
+- Courier/driver and delivery-provider operations: eligibility, scoped access, assignment/accept/reject/reassignment, workload, incidents, performance and settlement eligibility.
+- External integration control: provider/carrier capabilities, credentials in approved secret storage, webhook authentication/deduplication, health, rate limits and safe recovery.
+- Exceptions/claims: unassigned or late jobs, provider outage, missing tracking, pickup failure, recipient unavailable, damage/loss, return, cancellation-fee dispute and customer refund.
+- Reconciliation of customer delivery charge, partner/courier cost, provider invoice, platform fee, refund, compensation and ledger entries.
+
+A direct-service quote and a delivery fee selected inside checkout are not interchangeable records. Quote versions and customer-agreed prices must be retained; a later rate change must not silently rewrite an accepted order. Each shipment/delivery leg has its own physical-progress timeline while order state remains order-owned.
+
+Required journeys:
+1. Request direct delivery → confirm serviceability and quoted terms → confirm/payment → dispatch → pickup proof → tracking → delivery proof → customer/provider notification → financial reconciliation.
+2. Select delivery at checkout → freeze the delivery option and accepted price in the order agreement → confirm order → create shipment/job idempotently → track hand-off and proof → update the order's fulfillment projection → reconcile fee/refund/settlement.
+3. Handle no serviceable quote, courier rejection, provider timeout, duplicate/out-of-order webhooks, failed pickup, failed delivery, return-to-sender and partial refund without duplicate charges or phantom delivery completion.
+4. Correct a rate/zone/capacity rule after previewing affected geographies/orders; prove historical quote and order snapshots remain unchanged.
+5. Confirm a driver or carrier cannot access other jobs or more address/proof data than the role and assignment permit.
 
 ## 9. Member Experience Studio and Change Centre are cross-domain, not substitutes for domain depth
 
