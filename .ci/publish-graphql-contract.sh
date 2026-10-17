@@ -53,7 +53,10 @@ fi
 git config user.name "github-actions[bot]"
 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-# Stale-run guard (CodeRabbit round 1 on PR #605, adopted 2026-10-17):
+# Stale-run guard (CodeRabbit round 1 on PR #605, adopted 2026-10-17;
+# round-2 refinement adopted the same day — the probe must be a CONDITION,
+# never a bare statement: under set -e a failing command-substitution
+# assignment would kill the script before the safe-skip path below):
 # workflow_run deliveries are not guaranteed to arrive in commit order, and
 # the concurrency group serializes by TRIGGER order, not commit order — a
 # delayed run of an OLDER main commit could otherwise overwrite the contract
@@ -63,11 +66,14 @@ git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 # run's tree descends from it and already carries its schema changes, and
 # every merge to main runs its own push-event CI (the ruleset demands green
 # checks before merge), so every main state is still published by its own
-# run. A failed fetch of main also skips — never publish an unverified
-# currency state.
-MAIN_HEAD=$(git fetch origin main --depth=1 2>/dev/null && git rev-parse origin/main)
-if [[ -z "${MAIN_HEAD:-}" || "$SOURCE_SHA" != "$MAIN_HEAD" ]]; then
-  echo "Stale publication run: SOURCE_SHA $SOURCE_SHA is not the current main head (${MAIN_HEAD:-unavailable}). A newer run already advanced the contract past this commit's tree — skipping."
+# run. A main head that cannot be verified also skips — never publish an
+# unverified currency state, and never fail the job for it.
+MAIN_HEAD=""
+if git fetch origin main --depth=1 2>/dev/null && git rev-parse --verify origin/main >/dev/null 2>&1; then
+  MAIN_HEAD=$(git rev-parse origin/main)
+fi
+if [[ -z "$MAIN_HEAD" || "$SOURCE_SHA" != "$MAIN_HEAD" ]]; then
+  echo "Stale or unverifiable publication run: SOURCE_SHA $SOURCE_SHA vs current main head '${MAIN_HEAD:-unavailable}'. A newer run already advanced the contract past this commit's tree, or main could not be verified — skipping."
   exit 0
 fi
 
