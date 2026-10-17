@@ -5,6 +5,8 @@
 **Related work:** [Saleor Commerce Backend Fit-Gap Study (PR #602)](https://github.com/waelhe/app-java-v3/pull/602) and [Platform Administration Domain-Grade Suites](../governance/plans/platform-admin-domain-grade-suites.md).  
 **Authority:** The platform owner defines product/commercial policies. Technical implementation follows `AGENTS.md`, `docs/official-compliance-plan.md`, the current source, and official Spring documentation. The official Saleor/Stripe/carrier references below are behavioral and integration references, not a mandate to copy their internal architecture.
 
+**Detailed implementation gates:** the source-of-truth audit is in [Payment Sources and Ledger Audit](../research/platform-payment-source-and-ledger-audit.md); the proposed interface, state graph, and cross-module/payment contract are in [Delivery Domain Contract](./delivery-domain-contract.md). These documents separate verified existing behavior from target-state design and explicitly cover the existing partial-refund ledger gap.
+
 ## 1. Decision
 
 Treat **payments as a platform-wide capability** and **delivery/shipping as a first-class service domain** with two modes:
