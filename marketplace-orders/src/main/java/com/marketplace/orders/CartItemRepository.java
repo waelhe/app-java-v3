@@ -8,6 +8,21 @@ import java.util.UUID;
 
 public interface CartItemRepository extends JpaRepository<CartItem, UUID> {
 
+    /**
+     * <b>The cart's lines in their TOTAL ORDER</b> — {@code (createdAt, id)}
+     * ascending, the R4 deterministic-order pattern (the intent search's
+     * own fix). The placement's seller grouping and the primary-order
+     * contract ride the line order, and a derived {@code findByCartId}
+     * with NO ordering is an unspecified physical order — heap scan,
+     * index scan, whichever the planner picks — so the "first group"
+     * could flip between runs (CI-measured on main after V222's union-key
+     * swap changed the planner's scan choice: the mixed-seller journey's
+     * primary answered the SECOND seller's total). Every order-sensitive
+     * consumer reads through this form; the unordered form stays for
+     * order-insensitive bulk uses only.
+     */
+    List<CartItem> findByCartIdOrderByCreatedAtAscIdAsc(UUID cartId);
+
     List<CartItem> findByCartId(UUID cartId);
 
     Optional<CartItem> findByCartIdAndProductId(UUID cartId, UUID productId);
