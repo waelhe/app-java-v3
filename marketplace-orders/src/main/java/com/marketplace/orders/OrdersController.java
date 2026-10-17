@@ -41,8 +41,11 @@ public class OrdersController {
     }
 
     /**
-     * Cart to order(S): the placement transaction — no body (the cart IS
-     * the order(S)' content; the totals are derived, never caller-supplied).
+     * Cart to order(S): the placement transaction — the cart IS the
+     * order(S)' content (the totals are derived, never caller-supplied);
+     * the optional body carries the buyer's VOUCHER CODE (the Phase-3
+     * commercial rules — an absent body or null code places exactly as
+     * before, byte-compatible).
      * Chained through the service's view assembly: the HTTP boundary never
      * declares an entity local (the controllersMustNotDependOnJpaEntities
      * rule). ADR-0010: the body is the first group's order; a mixed-seller
@@ -53,13 +56,41 @@ public class OrdersController {
     @Operation(summary = "Place an order from the cart", description = "Freezes the caller's "
             + "active cart lines into order(s) (PLACED) — one order per seller (ADR-0010: a "
             + "mixed-seller cart splits; the response body is the first order and its siblings "
-            + "ride additionalOrders) — and tombstones the cart, one atomic transaction. The "
-            + "totals are derived from the frozen lines; an empty or absent cart answers 409.")
-    public ResponseEntity<OrderResponses.OrderResponse> place(Authentication authentication) {
+            + "ride additionalOrders) — with the Phase-3 commercial breakdown (price-list "
+            + "overrides, the best single applicable promotion, at most one voucher on the "
+            + "primary order, the jurisdiction's explicit tax) frozen on each order — and "
+            + "tombstones the cart, one atomic transaction. An empty or absent cart answers 409.")
+    public ResponseEntity<OrderResponses.OrderResponse> place(
+            @org.springframework.lang.Nullable @RequestBody(required = false) PlaceOrderRequest request,
+            Authentication authentication) {
         UUID caller = currentUserProvider.getCurrentUserId(authentication);
-        java.util.List<OrderDetail> placed = ordersService.place(caller);
+        java.util.List<OrderDetail> placed = ordersService.place(caller,
+                request == null ? null : request.voucherCode());
         return ResponseEntity.status(org.springframework.http.HttpStatus.CREATED)
                 .body(OrderResponses.OrderResponse.ofPlacement(placed));
+    }
+
+    /**
+     * The Phase-3 checkout preview: the buyer's active cart re-priced and
+     * broken down EXACTLY as the placement would freeze it — one breakdown
+     * per seller group (the primary group carries the voucher). Read-only:
+     * no reservation, no redemption, no tombstone; the placement re-computes
+     * at ITS instant.
+     */
+    @PostMapping("/cart/preview")
+    @Operation(summary = "Preview the placement's commercial breakdown", description = "The "
+            + "active cart's per-seller breakdown as the placement would freeze it: the "
+            + "re-priced subtotal, the best single applicable promotion, the voucher's "
+            + "discount (validated read-only — the redemption happens at placement), and the "
+            + "jurisdiction's tax component. A refused voucher answers 409 BEFORE any money or "
+            + "stock moves.")
+    public ResponseEntity<java.util.List<OrderResponses.PlacementPreviewResponse>> previewPlacement(
+            @org.springframework.lang.Nullable @RequestBody(required = false) PlaceOrderRequest request,
+            Authentication authentication) {
+        UUID caller = currentUserProvider.getCurrentUserId(authentication);
+        return ResponseEntity.ok(ordersService.previewPlacement(caller,
+                        request == null ? null : request.voucherCode()).stream()
+                .map(OrderResponses.PlacementPreviewResponse::of).toList());
     }
 
     @GetMapping("/{id}")
@@ -114,5 +145,10 @@ public class OrdersController {
 
     public record CancelOrderRequest(
             @NotBlank @Size(max = 500) String reason) {
+    }
+
+    /** The Phase-3 placement command: the optional voucher code. */
+    public record PlaceOrderRequest(
+            @Size(max = 64) String voucherCode) {
     }
 }

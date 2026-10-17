@@ -67,6 +67,10 @@ class OrdersServiceTest {
     @Mock
     private OrderPaymentPort orderPaymentPort;
     @Mock
+    private com.marketplace.shared.api.CommercialPricingPort commercialPricingPort;
+    @Mock
+    private OrderPriceComponentRepository orderPriceComponentRepository;
+    @Mock
     private Authentication authentication;
 
     private OrdersService service;
@@ -79,9 +83,38 @@ class OrdersServiceTest {
      * state gates pass and the stock seam is the only remaining edge.
      */
     private void priceActive(UUID productId) {
-        when(productPricingPort.priceOf(productId)).thenReturn(
+        org.mockito.Mockito.lenient().when(productPricingPort.priceOf(productId)).thenReturn(
                 new ProductPricingPort.ProductPrice(productId, seller, 1500L, "SAR",
                         ProductPricingPort.StorefrontState.ACTIVE));
+        resolveActive(productId, 1500L, "SAR");
+    }
+
+    /**
+     * The Phase-3 placement stub: the commercial policy layer resolves the
+     * unit ACTIVE at the catalog price (no override) — the placement's
+     * re-pricing read.
+     */
+    private void resolveActive(UUID productId, long priceMinor, String currency) {
+        when(commercialPricingPort.resolveUnitPrice(productId, null)).thenReturn(
+                new com.marketplace.shared.api.CommercialPricingPort.ResolvedUnitPrice(
+                        priceMinor, currency, seller, true, null, null));
+    }
+
+    private void resolveVariantActive(UUID product, UUID variant, long priceMinor) {
+        when(commercialPricingPort.resolveUnitPrice(product, variant)).thenReturn(
+                new com.marketplace.shared.api.CommercialPricingPort.ResolvedUnitPrice(
+                        priceMinor, "SAR", seller, true, null, null));
+        org.mockito.Mockito.lenient().when(productPricingPort.priceOfVariant(variant)).thenReturn(
+                new ProductPricingPort.VariantPrice(variant, product, seller, priceMinor, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE,
+                        ProductPricingPort.StorefrontState.ACTIVE));
+    }
+
+    /** The Phase-3 no-policies breakdown: subtotal stands, no discounts, no tax. */
+    private com.marketplace.shared.api.CommercialPricingPort.CommercialBreakdown noPolicies(
+            long subtotalMinor) {
+        return new com.marketplace.shared.api.CommercialPricingPort.CommercialBreakdown(
+                subtotalMinor, 0, null, null, 0, null, null, 0, null, true, 0, subtotalMinor);
     }
 
     private final UUID seller = UUID.randomUUID();
@@ -90,7 +123,17 @@ class OrdersServiceTest {
     void setUp() {
         service = new OrdersService(cartRepository, cartItemRepository,
                 orderRepository, orderItemRepository, currentUserProvider, eventPublisher,
-                productPricingPort, productStockPort, orderPaymentPort);
+                productPricingPort, productStockPort, orderPaymentPort,
+                commercialPricingPort, orderPriceComponentRepository);
+        org.mockito.Mockito.lenient()
+                .when(commercialPricingPort.computeBreakdown(org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> noPolicies(inv.getArgument(1)));
+        org.mockito.Mockito.lenient()
+                .when(orderPriceComponentRepository.save(any(OrderPriceComponent.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
     }
 
     // ------------------------------------------------------------------
@@ -103,9 +146,10 @@ class OrdersServiceTest {
         CartItem line = CartItem.of(cart.getId(), UUID.randomUUID(), null, 2, 1500L, "SAR");
         CartItem line2 = CartItem.of(cart.getId(), UUID.randomUUID(), null, 1, 9900L, "SAR");
         priceActive(line.getProductId());
-        when(productPricingPort.priceOf(line2.getProductId())).thenReturn(
+        org.mockito.Mockito.lenient().when(productPricingPort.priceOf(line2.getProductId())).thenReturn(
                 new ProductPricingPort.ProductPrice(line2.getProductId(), seller, 9900L, "SAR",
                         ProductPricingPort.StorefrontState.ACTIVE));
+        resolveActive(line2.getProductId(), 9900L, "SAR");
         when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
                 .thenReturn(Optional.of(cart));
         when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId())).thenReturn(List.of(line, line2));
@@ -195,9 +239,10 @@ class OrdersServiceTest {
                 .thenReturn(Optional.of(cart));
         when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId())).thenReturn(List.of(
                 CartItem.of(cart.getId(), productId, null, 1, 100L, "SAR")));
-        when(productPricingPort.priceOf(productId)).thenReturn(
+        org.mockito.Mockito.lenient().when(productPricingPort.priceOf(productId)).thenReturn(
                 new ProductPricingPort.ProductPrice(productId, seller, 100L, "USD",
                         ProductPricingPort.StorefrontState.ACTIVE));
+        resolveActive(productId, 100L, "USD");
 
         assertThatThrownBy(() -> service.place(consumer))
                 .isInstanceOf(ConflictException.class)
@@ -223,12 +268,18 @@ class OrdersServiceTest {
         when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId())).thenReturn(List.of(
                 CartItem.of(cart.getId(), p1, null, 2, 1500L, "SAR"),
                 CartItem.of(cart.getId(), p2, null, 1, 9900L, "SAR")));
-        when(productPricingPort.priceOf(p1)).thenReturn(
+        org.mockito.Mockito.lenient().when(productPricingPort.priceOf(p1)).thenReturn(
                 new ProductPricingPort.ProductPrice(p1, sellerA, 1500L, "SAR",
                         ProductPricingPort.StorefrontState.ACTIVE));
-        when(productPricingPort.priceOf(p2)).thenReturn(
+        org.mockito.Mockito.lenient().when(productPricingPort.priceOf(p2)).thenReturn(
                 new ProductPricingPort.ProductPrice(p2, sellerB, 9900L, "SAR",
                         ProductPricingPort.StorefrontState.ACTIVE));
+        when(commercialPricingPort.resolveUnitPrice(p1, null)).thenReturn(
+                new com.marketplace.shared.api.CommercialPricingPort.ResolvedUnitPrice(
+                        1500L, "SAR", sellerA, true, null, null));
+        when(commercialPricingPort.resolveUnitPrice(p2, null)).thenReturn(
+                new com.marketplace.shared.api.CommercialPricingPort.ResolvedUnitPrice(
+                        9900L, "SAR", sellerB, true, null, null));
         when(orderRepository.save(any(Order.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         when(orderItemRepository.save(any(OrderItem.class)))
@@ -274,12 +325,18 @@ class OrdersServiceTest {
         when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId())).thenReturn(List.of(
                 CartItem.of(cart.getId(), p1, null, 1, 100L, "SAR"),
                 CartItem.of(cart.getId(), p2, null, 1, 100L, "USD")));
-        when(productPricingPort.priceOf(p1)).thenReturn(
+        org.mockito.Mockito.lenient().when(productPricingPort.priceOf(p1)).thenReturn(
                 new ProductPricingPort.ProductPrice(p1, sellerA, 100L, "SAR",
                         ProductPricingPort.StorefrontState.ACTIVE));
-        when(productPricingPort.priceOf(p2)).thenReturn(
+        org.mockito.Mockito.lenient().when(productPricingPort.priceOf(p2)).thenReturn(
                 new ProductPricingPort.ProductPrice(p2, sellerA, 100L, "USD",
                         ProductPricingPort.StorefrontState.ACTIVE));
+        when(commercialPricingPort.resolveUnitPrice(p1, null)).thenReturn(
+                new com.marketplace.shared.api.CommercialPricingPort.ResolvedUnitPrice(
+                        100L, "SAR", sellerA, true, null, null));
+        when(commercialPricingPort.resolveUnitPrice(p2, null)).thenReturn(
+                new com.marketplace.shared.api.CommercialPricingPort.ResolvedUnitPrice(
+                        100L, "USD", sellerA, true, null, null));
 
         assertThatThrownBy(() -> service.place(consumer))
                 .isInstanceOf(ConflictException.class)
@@ -328,6 +385,86 @@ class OrdersServiceTest {
         assertThatThrownBy(() -> service.place(consumer))
                 .isInstanceOf(ConflictException.class);
         verify(orderRepository, never()).save(any());
+    }
+
+    // ------------------------------------------------------------------
+    // The Phase-3 commercial breakdown (the frozen agreement)
+    // ------------------------------------------------------------------
+
+    @Test
+    void placementFreezesTheCommercialBreakdownAndItsComponents() {
+        Cart cart = Cart.activeFor(consumer);
+        java.util.UUID productId = java.util.UUID.randomUUID();
+        priceActive(productId);
+        when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
+                .thenReturn(Optional.of(cart));
+        // two units at 1500 = subtotal 3000
+        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
+                .thenReturn(List.of(CartItem.of(cart.getId(), productId, null, 2, 1500L, "SAR")));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(orderItemRepository.save(any(OrderItem.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(cartRepository.save(any(Cart.class))).thenAnswer(inv -> inv.getArgument(0));
+        // the pricing module's answer for THIS placement: 10% promotion
+        // (300) + a 500 voucher on the post-promotion 2700 + an INCLUSIVE
+        // 15% tax component on the 2200 discounted subtotal
+        UUID promotionId = UUID.randomUUID();
+        UUID voucherId = UUID.randomUUID();
+        when(commercialPricingPort.computeBreakdown(consumer, 3000L, "SAR", "RAMADAN10"))
+                .thenReturn(new com.marketplace.shared.api.CommercialPricingPort.CommercialBreakdown(
+                        3000L, 300L, promotionId, "Ramadan 10%", 500L, voucherId, "RAMADAN10",
+                        287L, "SA", true, 1500, 2200L));
+
+        List<OrderDetail> placed = service.place(consumer, "RAMADAN10");
+
+        Order order = placed.get(0).order();
+        // the frozen agreement: subtotal 3000, discount 800 (promotion +
+        // voucher), INCLUSIVE tax 287 contained in the 2200 total
+        assertThat(order.getSubtotalAmountMinor()).isEqualTo(3000L);
+        assertThat(order.getDiscountAmountMinor()).isEqualTo(800L);
+        assertThat(order.getTaxAmountMinor()).isEqualTo(287L);
+        assertThat(order.getTotalAmountMinor()).isEqualTo(2200L);
+        // the itemized components — promotion, voucher, tax — each with its
+        // reference and amount (the §3.4 auditable breakdown)
+        ArgumentCaptor<OrderPriceComponent> component = ArgumentCaptor.forClass(OrderPriceComponent.class);
+        verify(orderPriceComponentRepository, org.mockito.Mockito.times(3)).save(component.capture());
+        assertThat(component.getAllValues()).extracting(OrderPriceComponent::getComponentType)
+                .containsExactly(OrderPriceComponent.ComponentType.PROMOTION,
+                        OrderPriceComponent.ComponentType.VOUCHER,
+                        OrderPriceComponent.ComponentType.TAX);
+        assertThat(component.getAllValues().get(2).getReferenceCode())
+                .isEqualTo("SA:INCLUSIVE:1500");
+        // the voucher settlement rode INSIDE the placement transaction
+        verify(commercialPricingPort).settleVoucher(order.getId(), consumer, "RAMADAN10", 500L, "SAR");
+    }
+
+    @Test
+    void aRefusedVoucherSettlementRollsTheWholePlacementBack() {
+        Cart cart = Cart.activeFor(consumer);
+        java.util.UUID productId = java.util.UUID.randomUUID();
+        priceActive(productId);
+        when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
+                .thenReturn(Optional.of(cart));
+        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
+                .thenReturn(List.of(CartItem.of(cart.getId(), productId, null, 2, 1500L, "SAR")));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(commercialPricingPort.computeBreakdown(org.mockito.ArgumentMatchers.eq(consumer),
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq("EXPIRED")))
+                .thenReturn(new com.marketplace.shared.api.CommercialPricingPort.CommercialBreakdown(
+                        3000L, 0, null, null, 300L, UUID.randomUUID(), "EXPIRED",
+                        0, null, true, 0, 2700L));
+        org.mockito.Mockito.doThrow(new ConflictException("Voucher EXPIRED has reached its "
+                + "redemption limit"))
+                .when(commercialPricingPort).settleVoucher(org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        org.mockito.ArgumentMatchers.any());
+
+        // the whole placement rolls back — the cart keeps its lines
+        assertThatThrownBy(() -> service.place(consumer, "EXPIRED"))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("redemption limit");
     }
 
     // ------------------------------------------------------------------
@@ -756,10 +893,7 @@ class OrdersServiceTest {
         when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
                 .thenReturn(Optional.of(cart));
         when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId())).thenReturn(List.of(line));
-        when(productPricingPort.priceOfVariant(variant)).thenReturn(
-                new ProductPricingPort.VariantPrice(variant, product, seller, 1750L, "SAR",
-                        ProductPricingPort.StorefrontState.ACTIVE,
-                        ProductPricingPort.StorefrontState.ACTIVE));
+        resolveVariantActive(product, variant, 1750L);
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
         when(orderItemRepository.save(any(OrderItem.class))).thenAnswer(inv -> inv.getArgument(0));
 
