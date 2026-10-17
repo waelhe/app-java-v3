@@ -66,7 +66,7 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
     @Modifying
     @Query(value = """
             UPDATE product_variants v
-               SET v.reserved_quantity = v.reserved_quantity + :qty
+               SET reserved_quantity = v.reserved_quantity + :qty
              WHERE v.id = :id
                AND v.variant_status = 'ACTIVE'
                AND v.is_deleted = FALSE
