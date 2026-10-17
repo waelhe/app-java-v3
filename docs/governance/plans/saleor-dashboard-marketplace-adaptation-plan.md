@@ -398,3 +398,8 @@ A migrated screen is not complete until all applicable conditions pass:
 ## Honest implementation status
 
 This is an architecture and migration plan only. It does not claim that a Saleor fork has been created, that the Dashboard builds against Spring, or that any market management workflow is already live. Those facts require the dedicated repository to exist and the gates above to pass.
+
+
+## Repository baseline synchronization — 17 October 2026
+
+This proposal is based on the current repository line after GraphQL Phase 5 published the accepted SDL contract and connected Apollo Kotlin code generation on Android. That repository baseline does not change the architectural boundary: Spring remains the sole business-data and command authority, and the Saleor-derived dashboard remains a proposed independent admin frontend until a pinned upstream build and a complete goods-listing journey have passed the proof-of-fit gates above.
