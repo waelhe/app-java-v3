@@ -143,7 +143,12 @@ class ObservationCoverageFilesTest {
                     // commands — the same commands-not-reads policy; the wave's
                     // two public reads stay unobserved.
                     "catalog.product.answer.publish", "catalog.product.question.ask",
-                    "catalog.product.register")),
+                    "catalog.product.register",
+                    // ADR-0012 (the Saleor plan's Phase 2): the variant's
+                    // registration — the Product root's own exact treatment
+                    // (registration observed; the inventory and lifecycle
+                    // writes and every read stay unobserved per policy).
+                    "catalog.variant.register")),
             Map.entry("marketplace-community", List.of(
                     "community.event.create", "community.event.delete",
                     "community.event.rsvp", "community.event.unrsvp",
