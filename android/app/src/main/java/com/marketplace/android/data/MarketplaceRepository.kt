@@ -245,6 +245,20 @@ class MarketplaceRepository(
     suspend fun createMarketItem(request: CreateMarketItemRequest) = api.createMarketItem(request)
     suspend fun withdrawMarketItem(itemId: String) = api.withdrawMarketItem(itemId)
     suspend fun getUrgentAlerts(locationId: String) = api.getUrgentAlerts(locationId)
+
+    suspend fun getDiscoveryHome() = api.getDiscoveryHome()
+
+    suspend fun getDiscoveryRow(row: String, page: Int = 0, size: Int = 20) =
+        api.getDiscoveryRow(row, page = page, size = size)
+
+    suspend fun recordDiscoveryImpression(row: String, card: com.marketplace.android.core.network.DiscoveryCardDto) =
+        api.recordDiscoveryImpression(
+            com.marketplace.android.core.network.DiscoveryImpressionRequest(
+                row = row,
+                sourceType = card.sourceType,
+                sourceId = card.sourceId
+            )
+        )
     suspend fun getNotifications() = api.getNotifications()
     suspend fun markNotificationRead(id: String) = api.markNotificationRead(id)
     suspend fun reportContent(targetType: String, targetId: String, reason: String) =

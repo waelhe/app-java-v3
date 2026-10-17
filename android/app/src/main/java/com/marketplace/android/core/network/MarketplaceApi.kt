@@ -118,6 +118,19 @@ interface MarketplaceApi {
     @GET("api/v1/urgent-alerts")
     suspend fun getUrgentAlerts(@Query("locationId") locationId: String): List<UrgentAlertDto>
 
+    @GET("api/v1/discovery")
+    suspend fun getDiscoveryHome(): List<DiscoveryRowDto>
+
+    @GET("api/v1/discovery/rows/{row}")
+    suspend fun getDiscoveryRow(
+        @Path("row") row: String,
+        @Query("page") page: Int = 0,
+        @Query("size") size: Int = 20
+    ): ApiPage<DiscoveryCardDto>
+
+    @POST("api/v1/discovery/impressions")
+    suspend fun recordDiscoveryImpression(@Body request: DiscoveryImpressionRequest)
+
     @GET("api/v1/notifications")
     suspend fun getNotifications(@Query("page") page: Int = 0, @Query("size") size: Int = 30): ApiPage<NotificationDto>
 
