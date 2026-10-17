@@ -66,4 +66,15 @@ public record PaymentIntentDetails(
     public boolean isLoanOrigin() {
         return ORIGIN_LOAN.equals(origin);
     }
+
+    /**
+     * The booking settlement branch's own test — the explicit fourth
+     * sibling (the payment/ledger source audit's fail-closed finding,
+     * PR #603): the ledger's origin dispatch must be EXHAUSTIVE, so the
+     * booking path is a named branch like its AD/ORDER/LOAN twins, never
+     * the silent fallback an unknown origin would fall through.
+     */
+    public boolean isBookingOrigin() {
+        return ORIGIN_BOOKING.equals(origin);
+    }
 }

@@ -181,6 +181,17 @@ public class NotificationService {
                         text.compose("notification.PAYMENT_STATE.order", platform, stateWord, intent.orderId()));
                 return;
             }
+            // The payment/ledger source audit's recommendation 7 (PR #603,
+            // merged): notifications must not assume a booking for an origin
+            // they do not know — the AD/ORDER/LOAN branches above own their
+            // own templates, so an unknown origin skips with a visible warn
+            // until its owning template lands (a cosmetic gap, not a money
+            // defect — the publication is still acknowledged normally).
+            if (!intent.isBookingOrigin()) {
+                log.warn("Skipping payment notification for unsupported origin: paymentIntentId={}, origin={}",
+                        intent.paymentIntentId(), intent.origin());
+                return;
+            }
             BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
             String message = text.compose("notification.PAYMENT_STATE.booking", platform, stateWord, intent.bookingId());
             // L22: the in-app channel is always on (see onBookingCreated).

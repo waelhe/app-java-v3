@@ -278,4 +278,47 @@ class LedgerPaymentEventListenerTest {
         verify(ledgerService).debitFromRefund(providerId, paymentIntentId, 7500L, "SAR");
         verifyNoInteractions(bookingParticipantProvider);
     }
+
+    // ---- The payment/ledger source audit's critical finding (PR #603):
+    //      the exhaustive, fail-closed origin dispatch ----
+
+    @Test
+    void failsClosedOnAnUnknownOriginCompletion() {
+        // The audit's DELIVERY example: an origin this consumer does not
+        // know must NEVER fall through to the booking branch (the
+        // pre-fix code would have called getBookingInfo(null)). The
+        // explicit refusal: no credit, no commission, no booking lookup —
+        // the publication stays recoverable for the owning implementation.
+        UUID paymentIntentId = UUID.randomUUID();
+        var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
+                "COMPLETED", "DELIVERY", 6200L, "SAR", null, null);
+
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+        assertThrows(IllegalStateException.class, () -> listener.onPaymentCompleted(event));
+
+        verifyNoInteractions(bookingParticipantProvider, orderSellerPort, loanOwnerPort);
+        verify(ledgerService, never()).creditFromPayment(any(), any(), anyLong(), any());
+        verify(ledgerService, never()).debitFromCommission(any(), any(), anyLong(), any());
+        verify(ledgerService, never()).debitFromRefund(any(), any(), anyLong(), any());
+    }
+
+    @Test
+    void failsClosedOnAnUnknownOriginRefund() {
+        // The refund path's twin: an unknown origin debits nothing — the
+        // explicit refusal, never a mirrored-booking debit.
+        UUID paymentIntentId = UUID.randomUUID();
+        var event = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
+                "REFUNDED", "DELIVERY", 6200L, "SAR", null, null);
+
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+        assertThrows(IllegalStateException.class, () -> listener.onPaymentCompleted(event));
+
+        verifyNoInteractions(bookingParticipantProvider, orderSellerPort, loanOwnerPort);
+        verify(ledgerService, never()).debitFromRefund(any(), any(), anyLong(), any());
+        verify(ledgerService, never()).creditFromPayment(any(), any(), anyLong(), any());
+    }
 }

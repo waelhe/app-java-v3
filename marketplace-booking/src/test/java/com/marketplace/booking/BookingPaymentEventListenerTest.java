@@ -53,6 +53,21 @@ class BookingPaymentEventListenerTest {
     }
 
     @Test
+    void onPaymentCompleted_doesNotConfirmForNonBookingOrigins() {
+        for (String origin : new String[]{"AD", "ORDER", "LOAN", "UNKNOWN"}) {
+            UUID paymentIntentId = UUID.randomUUID();
+            PaymentIntentDetails intent = new PaymentIntentDetails(
+                    paymentIntentId, null, UUID.randomUUID(), null,
+                    "COMPLETED", origin, 25000L, "SAR", null, null);
+            when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+            listener.onPaymentCompleted(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED"));
+        }
+
+        verifyNoInteractions(bookingService);
+    }
+
+    @Test
     void onPaymentCompleted_propagatesException() {
         UUID bookingId = UUID.randomUUID();
         UUID paymentIntentId = UUID.randomUUID();
