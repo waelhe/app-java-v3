@@ -1,0 +1,73 @@
+name: GraphQL contract publication
+
+# Phase 5 item 3 (docs/api/graphql-target-architecture.md §11-Phase-5):
+# publish the accepted SDL as a versioned CI artifact. The accepted SDL is
+# the runtime schema CI itself booted and gated: the graphql-schema-gate job
+# of a SUCCESSFUL CI run on main dumps it (graphql-java's SchemaPrinter over
+# the booted GraphQlSource — generated Relay connection types, applied
+# type-definition configurers and runtime wiring all included) and uploads
+# it as the run's graphql-runtime-schema artifact. This workflow publishes
+# that exact dump to the `graphql-contract` distribution branch (the
+# gh-pages pattern: a machine-written channel outside the PR flow — the
+# main ruleset is untouched and no tags are created, so both compat gates'
+# "newest release tag" baseline selection is unaffected). Android builds
+# fetch the published SDL by its stable raw URL — never from the production
+# server, never hand-copied (the Phase-5 acceptance).
+#
+# Publication is idempotent: a run whose SDL is byte-identical to the
+# published contract advances nothing and exits green — every successful
+# CI run on main ends here quietly. The branch carries exactly three files
+# (schema.graphqls, manifest.json with the monotonic version + provenance,
+# README.md) and its git history is the contract's versioned changelog;
+# .ci/publish-graphql-contract.sh owns every byte written to it.
+on:
+  workflow_run:
+    workflows: [ CI ]
+    types: [ completed ]
+    branches: [ main ]
+
+# Serialize publications: two merges in quick succession must not race the
+# version counter (the second publication re-reads the advanced branch and
+# no-ops if the SDL did not change again). Never cancel an in-flight
+# publication.
+concurrency:
+  group: graphql-contract-publication
+  cancel-in-progress: false
+
+permissions:
+  actions: read   # download the triggering run's schema artifact
+  contents: write # push the graphql-contract distribution branch
+
+jobs:
+  publish:
+    name: Publish the accepted SDL
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # The exact commit CI booted and gated — not whatever main points at
+      # by the time this workflow runs. persist-credentials stays ON (the
+      # default): the contract-branch push authenticates with the
+      # checkout-stored header, so a token never appears in a push URL or
+      # the logs.
+      - name: Checkout the exact commit CI validated
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      # Cross-workflow-run artifact download — the documented run-id +
+      # github-token pattern (actions/download-artifact); the artifact
+      # belongs to the CI run that just completed on main.
+      - name: Download the run's runtime schema dump
+        uses: actions/download-artifact@v7
+        with:
+          name: graphql-runtime-schema
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: .ci/graphql-contract-in
+
+      - name: Publish to the graphql-contract branch
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          SOURCE_RUN: ${{ github.event.workflow_run.html_url }}
+        run: ./.ci/publish-graphql-contract.sh .ci/graphql-contract-in/current-schema.graphqls

@@ -3,6 +3,11 @@ import com.android.build.api.dsl.ApplicationExtension
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
+    // Apollo Kotlin codegen — GraphQL Phase 5 (docs/api/graphql-target-
+    // architecture.md §11-Phase-5 item 4): operation-specific Kotlin models
+    // generated from the CI-published SDL contract (the version is pinned
+    // once, in the root build).
+    id("com.apollographql.apollo")
 }
 
 val apiBaseUrl = providers.gradleProperty("apiBaseUrl")
@@ -82,6 +87,25 @@ extensions.configure<ApplicationExtension> {
     }
 }
 
+// The GraphQL contract — Phase 5 (docs/api/graphql-target-architecture.md
+// §11-Phase-5): the schema this codegen compiles against is the CI-published
+// RUNTIME SDL (the graphql-contract branch — machine-dumped from the booted
+// GraphQlSource, Relay connection types included), staged at exactly this
+// path by CI before Gradle runs and gitignored in the Android tree. It is
+// never fetched from the production server and never hand-copied: the
+// android-client/android-release workflows fetch the published contract,
+// and CI's android-graphql job validates the operations against the very
+// run's own schema dump. Operation documents live beside it as committed
+// .graphql files; the generated models are operation-specific and are
+// never manually duplicated.
+apollo {
+    service("marketplace") {
+        packageName.set("com.marketplace.android.core.graphql")
+        srcDir("src/main/graphql")
+        schemaFiles.from("src/main/graphql/schema.graphqls")
+    }
+}
+
 dependencies {
     implementation(platform("com.squareup.okhttp3:okhttp-bom:5.4.0"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
@@ -116,6 +140,10 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.5.0")
     implementation("com.squareup.okhttp3:okhttp")
     implementation("net.openid:appauth:0.11.1")
+    // Apollo Kotlin models + parsers only (Phase 5: codegen pipeline). The
+    // network runtime (apollo-runtime) is added with the first operation-
+    // executing screen in Phase 6 — no unused network stack ships in the APK.
+    implementation("com.apollographql.apollo:apollo-api:5.2.0")
     // Official Android Credential Manager passkey APIs (latest stable release).
     implementation("androidx.credentials:credentials:1.6.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.6.0")

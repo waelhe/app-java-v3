@@ -1,0 +1,27 @@
+# ListServices — one bounded, cursor-paginated page of the services
+# collection from the approved GraphQL contract (Query.services, the
+# relay Connection the server generates and gates). The server owns the
+# default page size and hard cap (marketplace.graphql.pagination.*) and
+# the deterministic order; the client passes explicit arguments only —
+# no offset semantics. Authored per §11-Phase-5 item 4; the first
+# consuming screen lands with Phase 6 (journey work).
+query ListServices($first: Int, $after: String) {
+  services(first: $first, after: $after) {
+    edges {
+      cursor
+      node {
+        id
+        name
+        description
+        category
+        price
+        currency
+        status
+      }
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
