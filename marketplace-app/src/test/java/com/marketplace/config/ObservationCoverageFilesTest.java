@@ -297,6 +297,15 @@ class ObservationCoverageFilesTest {
                     "order.delivery.attach", "order.delivery.clear",
                     "order.fulfill", "order.fulfill.delivery",
                     "order.payment-intent", "order.place",
+                    // V230 (the RMA lifecycle): the return/exchange edges' six
+                    // commands — the buyer's request/cancel, the operational
+                    // approve/reject/receive, and the terminal complete
+                    // (the refund itself rides the payments module's own
+                    // observed refund path; the reads stay unobserved per
+                    // the commands-not-reads policy).
+                    "order.return.approve", "order.return.cancel",
+                    "order.return.complete", "order.return.receive",
+                    "order.return.reject", "order.return.request",
                     "order.seller.cancel", "order.seller.confirm",
                     "order.seller.fulfill")),
             Map.entry("marketplace-notifications", List.of(

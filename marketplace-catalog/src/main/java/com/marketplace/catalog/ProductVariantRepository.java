@@ -111,4 +111,17 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
                and v.stockQuantity >= :qty
             """)
     int commit(@Param("id") UUID id, @Param("qty") int qty);
+
+    /**
+     * Restocks {@code qty} units — the return's write (the V225 RMA
+     * lifecycle's variant twin): the received goods go back on the
+     * variant's shelf, unconditionally (the physical truth).
+     */
+    @Modifying
+    @Query("""
+            update ProductVariant v
+               set v.stockQuantity = v.stockQuantity + :qty
+             where v.id = :id
+            """)
+    int restock(@Param("id") UUID id, @Param("qty") int qty);
 }

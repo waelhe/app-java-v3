@@ -139,10 +139,15 @@ public class Voucher extends BaseEntity {
         return endsAt == null || at.isBefore(endsAt);
     }
 
-    /** The discount on the given amount, capped at that amount. */
+    /**
+     * The discount on the given amount, capped at that amount. The
+     * percentage path is exact integer arithmetic ({@link ExactPercentMath})
+     * — the double division drifted a minor unit on large amounts (the
+     * review's measured finding).
+     */
     public long discountOn(long amountMinor) {
         long raw = discountType == DiscountType.PERCENTAGE
-                ? Math.round(amountMinor * discountValue / 10000.0)
+                ? ExactPercentMath.roundHalfUpScaled(amountMinor, discountValue, 10000L)
                 : discountValue;
         return Math.min(raw, amountMinor);
     }
