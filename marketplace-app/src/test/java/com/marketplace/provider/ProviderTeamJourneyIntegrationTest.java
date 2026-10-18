@@ -159,7 +159,13 @@ class ProviderTeamJourneyIntegrationTest {
                         .content("{\"displayName\": \"مكتب القضية — الفرع الرئيسي\", \"bio\": \"بعد التفويض\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.displayName").value("مكتب القضية — الفرع الرئيسي"));
-        mockMvc.perform(get("/api/v1/providers/{id}", providerUuid))
+        // The read-back rides the AUTHENTICATED profile read — the
+        // anonymous surface is the /public page alone (SecurityConfig's
+        // own matcher: only GET /api/v1/providers/*/public is permitAll).
+        // The earlier bare GET answered the honest 401 AUTHN-001 (the
+        // measured CI failure at this step).
+        mockMvc.perform(get("/api/v1/providers/{id}", providerUuid)
+                        .with(asConsumer(editorUserId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.displayName").value("مكتب القضية — الفرع الرئيسي"));
 
