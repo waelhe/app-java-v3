@@ -189,6 +189,7 @@ class HomeGraphQlIntegrationTest {
                 3L + ordinal,
                 ordinal % 2 == 0,
                 List.of(),
+                null,
                 Instant.parse("2026-10-17T09:00:00Z").plusSeconds(100 - ordinal),
                 Instant.parse("2026-10-17T09:00:00Z").plusSeconds(100 - ordinal));
     }
