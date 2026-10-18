@@ -140,7 +140,7 @@ class BookingJourneyIntegrationTest {
         // (the exact slot the booking will claim) are the provider's own
         // records before any book lands.
         String sellerName = "it-booking-seller-" + UUID.randomUUID().toString().substring(0, 8);
-        registerUser(sellerName, "USER", "PROVIDER");
+        registerUser(sellerName, "USER", "PROVIDER", "CONSUMER");
         GateResult sellerGate = loginGate(sellerName, PASSWORD);
         assertThat(getWithBearer("/api/v1/users/me", sellerGate.accessToken()).statusCode())
                 .as("the seller's /me provisioning sync").isEqualTo(200);
@@ -366,7 +366,7 @@ class BookingJourneyIntegrationTest {
     @Test
     void theCancellationBranchRefundsAndReleasesTheWindow() throws Exception {
         String sellerName = "it-booking-cancel-seller-" + UUID.randomUUID().toString().substring(0, 8);
-        registerUser(sellerName, "USER", "PROVIDER");
+        registerUser(sellerName, "USER", "PROVIDER", "CONSUMER");
         GateResult sellerGate = loginGate(sellerName, PASSWORD);
         assertThat(getWithBearer("/api/v1/users/me", sellerGate.accessToken()).statusCode()).isEqualTo(200);
         UUID sellerId = java.util.UUID.fromString(
