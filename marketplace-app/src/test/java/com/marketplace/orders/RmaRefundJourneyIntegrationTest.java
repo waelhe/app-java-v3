@@ -600,10 +600,19 @@ class RmaRefundJourneyIntegrationTest {
                 Integer.class, refundSource);
         assertThat(refundDebits).as("no refund debit for the intent (the partial no-op — ADR-0013 D3)").isZero();
 
-        // (9) The closed-stays-closed branch: the second complete answers 409.
+        // (9) The closed-stays-closed branch: the second complete answers the
+        // IDEMPOTENT 200 no-op (the implemented contract: concurrent completes
+        // serialize on the row and the second finds COMPLETED and returns the
+        // row — never a second refund; the honest 409 is for the non-RECEIVED
+        // states alone: REQUESTED/APPROVED carry no frozen share to execute).
         HttpResponse<String> secondComplete = postJson(
                 "/api/v1/orders/returns/admin/" + returnId + "/complete", adminGate.accessToken(), "");
-        assertThat(secondComplete.statusCode()).isEqualTo(409);
+        assertThat(secondComplete.statusCode()).isEqualTo(200);
+        assertThat(objectMapper.readTree(secondComplete.body()).path("status").asString())
+                .as("the row stays COMPLETED — the no-op's own echo").isEqualTo("COMPLETED");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM ledger_entries WHERE source_id = ?", Integer.class, intentId))
+                .as("no second credit — the refund executed exactly once").isEqualTo(1);
     }
 
     /** The bounded poll for the order's own status (the AFTER_COMMIT listener hop). */
