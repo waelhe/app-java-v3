@@ -147,6 +147,14 @@ class BookingJourneyIntegrationTest {
         UUID sellerId = java.util.UUID.fromString(
                 objectMapper.readTree(getWithBearer("/api/v1/users/me", sellerGate.accessToken()).body())
                         .path("id").asString());
+        // The seller registers their business FIRST — the provider_profiles row
+        // the availability gate's ownsProvider resolves through (the user-owned
+        // "me" seam: every cross-module provider_id carries the USER id, so the
+        // slot publish 403'd without the row; the RMA and delegation journeys'
+        // own registration step).
+        HttpResponse<String> providerReg = postJson("/api/v1/providers", sellerGate.accessToken(),
+                "{\"displayName\":\"مكتب الحجوزات — الرحلة الكاملة\",\"bio\":\"J20\"}");
+        assertThat(providerReg.statusCode()).as("provider register: %s", body(providerReg)).isEqualTo(200);
         UUID listing = registerProduct(sellerGate.accessToken(), 1500L);
         createSlot(sellerGate.accessToken(), sellerId, SLOT_START, SLOT_END);
 
@@ -364,6 +372,11 @@ class BookingJourneyIntegrationTest {
         UUID sellerId = java.util.UUID.fromString(
                 objectMapper.readTree(getWithBearer("/api/v1/users/me", sellerGate.accessToken()).body())
                         .path("id").asString());
+        // The same registration-first law: the provider_profiles row the
+        // availability gate's ownsProvider resolves through.
+        HttpResponse<String> providerReg = postJson("/api/v1/providers", sellerGate.accessToken(),
+                "{\"displayName\":\"مكتب الحجوزات — فرع الإلغاء\",\"bio\":\"J20 cancel\"}");
+        assertThat(providerReg.statusCode()).as("provider register: %s", body(providerReg)).isEqualTo(200);
         UUID listing = registerProduct(sellerGate.accessToken(), 2000L);
         createSlot(sellerGate.accessToken(), sellerId, CANCEL_SLOT_START, CANCEL_SLOT_END);
 
