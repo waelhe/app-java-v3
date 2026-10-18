@@ -403,7 +403,7 @@ class PurposeJourneysIntegrationTest {
                 .isEqualTo("CONFIRMED");
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT booked FROM availability_slots WHERE provider_id = ? AND starts_at = ?",
-                Boolean.class, sellerId, java.time.Instant.parse(SERVICE_SLOT_START)))
+                Boolean.class, sellerId, java.sql.Timestamp.from(java.time.Instant.parse(SERVICE_SLOT_START))))
                 .as("the window claimed in the booking's own name").isTrue();
 
         // The money loop of the visit: the BOOKING intent (the domain's
@@ -558,7 +558,7 @@ class PurposeJourneysIntegrationTest {
         assertThat(confirm.statusCode()).as("the host's confirm: %s", body(confirm)).isEqualTo(200);
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT booked FROM availability_slots WHERE provider_id = ? AND starts_at = ?",
-                Boolean.class, hostId, java.time.Instant.parse(STAY_WINDOW_START)))
+                Boolean.class, hostId, java.sql.Timestamp.from(java.time.Instant.parse(STAY_WINDOW_START))))
                 .as("the stay window claimed at confirm").isTrue();
         HttpResponse<String> intentResponse = postJson("/api/v1/payments/intents", travelerGate.accessToken(), """
                 {"bookingId":"%s","idempotencyKey":"j30-stay-%s"}"""
