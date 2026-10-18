@@ -48,7 +48,8 @@ class CommunityPostSearchAdapterTest {
                 "Lost keys", "I lost my keys near the mosque yesterday", "PUBLISHED",
                 false,
                 null,
-                3L, false, List.of(), Instant.parse("2026-10-10T10:15:00Z"), Instant.parse("2026-10-10T10:15:00Z"));
+                3L, false, List.of(), null,
+                Instant.parse("2026-10-10T10:15:00Z"), Instant.parse("2026-10-10T10:15:00Z"));
         when(postService.searchFeed(eq(CALLER_ID), eq("مفتاح"), isNull(), any()))
                 .thenReturn(new PageImpl<>(List.of(view)));
 

@@ -35,6 +35,24 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 @WithMockUser
 class ProviderModuleIntegrationTest {
 
+    /**
+     * W5a's ProviderClaimService consumes the injectable Clock — the
+     * production bean lives in platform-infra's ClockConfig, which this
+     * slice does not scan (the identity slice's own ClockBean pattern:
+     * one Clock per context, never two; the slices that DO load infra
+     * keep the production bean). The measured context-load failure of
+     * 2026-10-18 ("No qualifying bean of type 'java.time.Clock'",
+     * providerClaimService constructor parameter 3) closes here — the
+     * same root as the identity slice's 2026-10-09 lesson.
+     */
+    @org.springframework.boot.test.context.TestConfiguration
+    static class ClockBean {
+        @org.springframework.context.annotation.Bean
+        java.time.Clock clock() {
+            return java.time.Clock.systemUTC();
+        }
+    }
+
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers; raw type matches the established container pattern.
