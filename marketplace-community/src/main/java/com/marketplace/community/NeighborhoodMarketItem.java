@@ -135,6 +135,24 @@ public class NeighborhoodMarketItem extends BaseEntity {
         return item;
     }
 
+    /**
+     * W6 / J06 (the unified plan §4 — the used-goods journey's own close):
+     * the mark-sold edge — the seller's own close of their listing after a
+     * face-to-face deal, the {@link MarketItemStatus} javadoc's own
+     * documented future wave arriving. The guard order and the same-state
+     * idempotence live in the service, before this write (the
+     * {@code applyLostFoundState} discipline verbatim: the retried
+     * mark-sold never reaches here — the service answers 200 without any
+     * write); the SOLD row STAYS on the board by design (the card's
+     * display states — the buyer-side social proof the vocabulary's own
+     * javadoc documents). Package-private by design: the seller's own
+     * close is the community domain's own — no surface outside this
+     * package flips another seller's listing.
+     */
+    void applySold() {
+        this.status = MarketItemStatus.SOLD;
+    }
+
     @Override
     public UUID getId() { return id; }
     public UUID getAuthorId() { return authorId; }

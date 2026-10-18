@@ -147,6 +147,31 @@ public class NeighborhoodMarketController {
     }
 
     /**
+     * W6 / J06 (the unified plan §4): the mark-sold edge — the seller's
+     * own close after a face-to-face deal. The gate order is the
+     * withdraw's own: unknown 404, non-author 403; a retried SOLD
+     * answers 200 idempotently (no write); the SOLD row STAYS on the
+     * board (the buyer-side social proof). Like the lost-found-state
+     * command, this ride carries no dedicated rate limiter — the named
+     * write limiters' config lives in the app module; adding one is a
+     * config decision, not a silent omission.
+     */
+    @PostMapping("/neighborhood/market/{itemId}/sold")
+    @Operation(summary = "Mark my market item sold",
+            description = "The seller's own close of their listing after a face-to-face "
+                    + "deal — the community market's own settlement (no online money "
+                    + "moves on this board by design). Unknown item ⇒ 404; anyone but "
+                    + "the author ⇒ 403; a retried SOLD ⇒ 200 idempotently (no write). "
+                    + "The SOLD row stays on the board as the buyer-side social proof "
+                    + "— the withdraw remains the only way off it.")
+    public ResponseEntity<NeighborhoodMarketItemView> markSold(
+            @PathVariable UUID itemId,
+            Authentication authentication) {
+        UUID authorId = currentUserProvider.getCurrentUserId(authentication);
+        return ResponseEntity.ok(marketService.markSoldByAuthor(authorId, itemId));
+    }
+
+    /**
      * The category type gate (criterion 3): a String in, the enum out —
      * an invalid value answers the house 400 listing the valid
      * vocabulary, BEFORE any service call (and therefore before any
