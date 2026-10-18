@@ -89,6 +89,13 @@ class ServiceDgsDataFetcherTest {
     @MockitoBean
     private com.marketplace.community.spi.NeighborhoodFeedPort neighborhoodFeedPort;
 
+    // Stage 7 (the post/source detail composite journey): the detail
+    // fetcher component-scanned into this slice consumes the detail port —
+    // mocked here exactly as the feed port above (the slice wires every
+    // fetcher in the package; each owning seam gets its mock).
+    @MockitoBean
+    private com.marketplace.community.spi.NeighborhoodPostDetailPort postDetailPort;
+
     @MockitoBean
     private CurrentUserProvider currentUserProvider;
 
