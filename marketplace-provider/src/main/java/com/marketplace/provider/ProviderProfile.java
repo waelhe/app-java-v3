@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import org.hibernate.envers.Audited;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -102,6 +103,19 @@ public class ProviderProfile extends BaseEntity {
     @Column(name = "verification_state", nullable = false, length = 30)
     private ProviderVerificationState verificationState = ProviderVerificationState.UNVERIFIED;
 
+    /**
+     * J14 (the journeys register — «مطالبة صاحب العمل بالملف»): the
+     * ownership handover's own clock — set the moment an APPROVED claim
+     * links the claimant ({@code user_id} moves in the same write).
+     * NULL on the platform's unowned pre-seed AND on every
+     * owner-registered page (the {@code POST /providers} self-onboarding
+     * — no claim ever happened there; {@code created_at} is that page's
+     * own clock). Display/audit signal only: the ownership GATE is
+     * {@code user_id} itself.
+     */
+    @Column(name = "claimed_at")
+    private Instant claimedAt;
+
     protected ProviderProfile() {}
 
     private ProviderProfile(UUID id, String displayName, String bio, ProviderStatus status, UUID userId,
@@ -134,6 +148,22 @@ public class ProviderProfile extends BaseEntity {
                                          String licenseNumber) {
         return new ProviderProfile(UUID.randomUUID(), displayName, bio, ProviderStatus.PENDING, userId,
                 actorType, agencyName, licenseNumber);
+    }
+
+    /**
+     * J14: the platform's own pre-seed — the CLAIMABLE business page
+     * (the Yelp unclaimed-listing shape). {@code user_id} is NULL by
+     * construction: no member owns the page until a claim is APPROVED
+     * ({@link #claimOwnership}). The status machine starts where every
+     * profile starts (PENDING — the platform's verification gate), the
+     * ownership badge starts UNVERIFIED (its own honest default), and
+     * {@code claimed_at} stays NULL (no handover happened). The L36
+     * persona fields ride the pre-seed like any creation.
+     */
+    public static ProviderProfile createUnclaimed(String displayName, String bio,
+                                                   ProviderActorType actorType, String agencyName,
+                                                   String licenseNumber) {
+        return create(displayName, bio, null, actorType, agencyName, licenseNumber);
     }
 
     @Override
@@ -199,6 +229,32 @@ public class ProviderProfile extends BaseEntity {
     /** W2 (§5 — the business page): the ownership-verification badge state. */
     public ProviderVerificationState getVerificationState() {
         return verificationState;
+    }
+
+    /** J14: the ownership handover's own clock (NULL until a claim is approved). */
+    public Instant getClaimedAt() {
+        return claimedAt;
+    }
+
+    /**
+     * J14: the ownership handover — the APPROVED claim's profile-side
+     * half, landing in the SAME transaction as the claim's own state
+     * flip (one decision, one write pair, one Envers revision each).
+     * Fails loud on an already-owned page (the machine's own
+     * {@link IllegalStateException} — the caller renders the house 409):
+     * a second owner would silently orphan the first, so the only way
+     * in is an unowned page, exactly as the pre-seed left it.
+     */
+    public void claimOwnership(UUID claimantUserId, Instant claimedAt) {
+        if (claimantUserId == null || claimedAt == null) {
+            throw new IllegalArgumentException("claimantUserId and claimedAt are both required");
+        }
+        if (this.userId != null) {
+            throw new IllegalStateException(
+                    "Provider profile " + id + " is already owned — a claim cannot hand it over again");
+        }
+        this.userId = claimantUserId;
+        this.claimedAt = claimedAt;
     }
 
     /**

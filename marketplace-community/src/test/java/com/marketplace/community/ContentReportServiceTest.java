@@ -90,7 +90,7 @@ class ContentReportServiceTest {
 
     private NeighborhoodPost visiblePost(UUID author) {
         return NeighborhoodPost.post(author, locationId,
-                PostCategory.GENERAL, "Title", "Body", false, clock);
+                PostCategory.GENERAL, "Title", "Body", false, null, clock);
     }
 
     private ContentReport openPostReport() {
