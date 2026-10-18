@@ -644,6 +644,8 @@ class NewsAndAlertDeliveryJourneyIntegrationTest {
             }
             Thread.sleep(200);
         }
+        throw new AssertionError("urgent-alert rows for event " + sourceEventId
+                + " never reached " + expected + " within 10s");
     }
 
     /**
@@ -661,6 +663,8 @@ class NewsAndAlertDeliveryJourneyIntegrationTest {
             }
             Thread.sleep(200);
         }
+        throw new AssertionError("channel ledger rows for event " + eventId
+                + " never reached " + expected + " within 10s");
     }
 
     // ------------------------------------------------------------------
