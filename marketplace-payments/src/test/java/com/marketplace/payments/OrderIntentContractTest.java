@@ -44,10 +44,12 @@ class OrderIntentContractTest {
     private final WebhookEventRecorder webhookEventRecorder = new WebhookEventRecorder(webhookEventRepository);
     private final PaymentIntentSettlementService settlementService = new PaymentIntentSettlementService(
             intentRepository, paymentRepository, eventPublisher, webhookEventRecorder);
+    private final SettlementEligibilityService settlementEligibilityService = new SettlementEligibilityService(
+            mock(com.marketplace.shared.api.LedgerReadPort.class), intentRepository, bookingParticipantProvider);
     private final PaymentsService service = new PaymentsService(
             intentRepository, paymentRepository, webhookEventRepository, eventPublisher,
             currentUserProvider, bookingParticipantProvider, webhookSecurity,
-            webhookEventRecorder, settlementService, pspChannel,
+            webhookEventRecorder, settlementService, settlementEligibilityService, pspChannel,
             new CommissionProperties(java.math.BigDecimal.valueOf(0.10)));
 
     @Test
