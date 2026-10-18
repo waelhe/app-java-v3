@@ -264,7 +264,7 @@ class DirectDeliveryJourneyIntegrationTest {
         registerUser(adminName, "ADMIN");
         GateResult adminGate = loginGate(adminName, PASSWORD);
         HttpResponse<String> verify = postJson(
-                "/api/v1/providers/admin/" + providerId + "/verify", adminGate.accessToken(), "");
+                "/api/v1/admin/providers/" + providerId + "/verify", adminGate.accessToken(), "");
         assertThat(verify.statusCode()).as("admin verify: %s", body(verify)).isEqualTo(200);
         assertThat(objectMapper.readTree(verify.body()).path("status").asString()).isEqualTo("VERIFIED");
 
