@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -33,6 +34,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -77,6 +80,10 @@ class NeighborhoodPostServiceTest {
     @Mock
     private MediaLookupPort mediaLookupPort;
 
+    /** W4 (J09): the recommendation bridge's own port — the new constructor seam. */
+    @Mock
+    private com.marketplace.shared.api.ProviderLookupPort providerLookupPort;
+
     @Mock
     private ApplicationEventPublisher eventPublisher;
 
@@ -87,8 +94,7 @@ class NeighborhoodPostServiceTest {
     @BeforeEach
     void setUp() {
         service = new NeighborhoodPostService(repository, commentRepository,
-                reactionRepository, membershipRepository, geoLookupPort, mediaLookupPort,
-                eventPublisher, clock);
+                reactionRepository, membershipRepository, geoLookupPort, mediaLookupPort, providerLookupPort, eventPublisher, clock);
     }
 
     private UUID authorId = UUID.randomUUID();
@@ -106,10 +112,81 @@ class NeighborhoodPostServiceTest {
 
     private NeighborhoodPost visiblePost(UUID author, UUID location) {
         return NeighborhoodPost.post(author, location,
-                PostCategory.GENERAL, "Title", "Body", false, clock);
+                PostCategory.GENERAL, "Title", "Body", false, null, clock);
     }
 
     // ---------- createPost ----------
+
+    // ---------- W4 (J09 — the recommendation-to-source bridge) ----------
+
+    @Test
+    void createPost_unknownRecommendedProvider_is404BeforeAnyWrite() {
+        when(geoLookupPort.getLocation(locationId)).thenReturn(node(3));
+        when(membershipRepository.findByUserId(authorId))
+                .thenReturn(Optional.of(membershipOf(authorId, locationId)));
+        UUID providerId = UUID.randomUUID();
+        when(providerLookupPort.findById(providerId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.createPost(authorId, locationId,
+                PostCategory.RECOMMENDATION, "Best plumber", "Highly recommended.", false, providerId))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("Recommended provider not found");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void createPost_knownRecommendedProvider_storesTheBridge() {
+        when(geoLookupPort.getLocation(locationId)).thenReturn(node(3));
+        when(membershipRepository.findByUserId(authorId))
+                .thenReturn(Optional.of(membershipOf(authorId, locationId)));
+        UUID providerId = UUID.randomUUID();
+        when(providerLookupPort.findById(providerId))
+                .thenReturn(Optional.of(new com.marketplace.shared.api.ProviderSummary(
+                        providerId, "Abu Samir Repairs", "VERIFIED", UUID.randomUUID())));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var view = service.createPost(authorId, locationId,
+                PostCategory.RECOMMENDATION, "Best plumber", "Highly recommended.", false, providerId);
+
+        assertThat(view.id()).isNotNull();
+        ArgumentCaptor<NeighborhoodPost> saved = ArgumentCaptor.forClass(NeighborhoodPost.class);
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getRecommendedProviderId()).isEqualTo(providerId);
+    }
+
+    @Test
+    void getFeed_resolvesTheRecommendedProvidersInOneBatchAtReadTime() {
+        // Two recommending posts sharing ONE provider — the page resolves
+        // the distinct ids in a single batch call, and the view carries the
+        // provider's CURRENT facts (never a frozen copy).
+        UUID providerId = UUID.randomUUID();
+        NeighborhoodPost p1 = NeighborhoodPost.post(authorId, locationId,
+                PostCategory.RECOMMENDATION, "R1", "B1", false, providerId, clock);
+        NeighborhoodPost p2 = NeighborhoodPost.post(authorId, locationId,
+                PostCategory.RECOMMENDATION, "R2", "B2", false, providerId, clock);
+        NeighborhoodPost plain = NeighborhoodPost.post(authorId, locationId,
+                PostCategory.GENERAL, "G", "B", false, null, clock);
+        when(membershipRepository.findByUserId(authorId))
+                .thenReturn(Optional.of(membershipOf(authorId, locationId)));
+        when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(p1, p2, plain)));
+        when(providerLookupPort.findAllByIds(any()))
+                .thenReturn(Map.of(providerId, new com.marketplace.shared.api.ProviderSummary(
+                        providerId, "Abu Samir Repairs", "VERIFIED", UUID.randomUUID())));
+
+        var page = service.getFeed(authorId, null, PageRequest.of(0, 20));
+
+        assertThat(page.getContent()).hasSize(3);
+        assertThat(page.getContent().get(0).recommendedProvider()).isNotNull();
+        assertThat(page.getContent().get(0).recommendedProvider().displayName())
+                .isEqualTo("Abu Samir Repairs");
+        assertThat(page.getContent().get(0).recommendedProvider().verificationStatus())
+                .isEqualTo("VERIFIED");
+        assertThat(page.getContent().get(2).recommendedProvider()).isNull();
+        // ONE batch call over the DISTINCT id (not one per post).
+        verify(providerLookupPort, times(1)).findAllByIds(argThat(ids -> ids.size() == 1));
+    }
 
     @Test
     void createPost_unknownLocation_isThePortsOwn404() {
@@ -117,7 +194,7 @@ class NeighborhoodPostServiceTest {
                 .thenThrow(new ResourceNotFoundException("Location", locationId));
 
         assertThatThrownBy(() -> service.createPost(authorId, locationId,
-                PostCategory.GENERAL, "Title", "Body", false))
+                PostCategory.GENERAL, "Title", "Body", false, null))
                 .isInstanceOf(ResourceNotFoundException.class);
         verify(repository, never()).save(any());
     }
@@ -127,7 +204,7 @@ class NeighborhoodPostServiceTest {
         when(geoLookupPort.getLocation(locationId)).thenReturn(node(0));
 
         assertThatThrownBy(() -> service.createPost(authorId, locationId,
-                PostCategory.GENERAL, "Title", "Body", false))
+                PostCategory.GENERAL, "Title", "Body", false, null))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("level-3");
         verify(membershipRepository, never()).findByUserId(authorId);
@@ -135,7 +212,7 @@ class NeighborhoodPostServiceTest {
 
         when(geoLookupPort.getLocation(locationId)).thenReturn(node(2));
         assertThatThrownBy(() -> service.createPost(authorId, locationId,
-                PostCategory.GENERAL, "Title", "Body", false))
+                PostCategory.GENERAL, "Title", "Body", false, null))
                 .isInstanceOf(BadRequestException.class);
         verify(repository, never()).save(any());
     }
@@ -146,7 +223,7 @@ class NeighborhoodPostServiceTest {
         when(membershipRepository.findByUserId(authorId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.createPost(authorId, locationId,
-                PostCategory.GENERAL, "Title", "Body", false))
+                PostCategory.GENERAL, "Title", "Body", false, null))
                 .isInstanceOf(AccessDeniedException.class)
                 .hasMessageContaining("Join a neighborhood");
         verify(repository, never()).save(any());
@@ -160,7 +237,7 @@ class NeighborhoodPostServiceTest {
                 .thenReturn(Optional.of(membershipOf(authorId, otherLocation)));
 
         assertThatThrownBy(() -> service.createPost(authorId, locationId,
-                PostCategory.GENERAL, "Title", "Body", false))
+                PostCategory.GENERAL, "Title", "Body", false, null))
                 .isInstanceOf(AccessDeniedException.class)
                 .hasMessageContaining("own neighborhood");
         verify(repository, never()).save(any());
@@ -175,7 +252,7 @@ class NeighborhoodPostServiceTest {
         when(repository.save(any())).thenReturn(stored);
 
         var view = service.createPost(authorId, locationId,
-                PostCategory.GENERAL, "Title", "Body", false);
+                PostCategory.GENERAL, "Title", "Body", false, null);
 
         assertThat(view.authorId()).isEqualTo(authorId);
         assertThat(view.locationId()).isEqualTo(locationId);
@@ -194,11 +271,11 @@ class NeighborhoodPostServiceTest {
                 .thenReturn(Optional.of(membershipOf(authorId, locationId)));
         NeighborhoodPost stored = NeighborhoodPost.post(authorId, locationId,
                 PostCategory.CLASSIFIED, "Selling my bike", "Barely used, message me.",
-                true, clock);
+                true, null, clock);
         when(repository.save(any())).thenReturn(stored);
 
         var view = service.createPost(authorId, locationId,
-                PostCategory.CLASSIFIED, "Selling my bike", "Barely used, message me.", true);
+                PostCategory.CLASSIFIED, "Selling my bike", "Barely used, message me.", true, null);
 
         assertThat(view.declaredCommercial()).isTrue();
     }
@@ -255,7 +332,7 @@ class NeighborhoodPostServiceTest {
     @Test
     void comment_hiddenPost_is404() {
         NeighborhoodPost hidden = NeighborhoodPost.post(authorId, locationId,
-                PostCategory.GENERAL, "Title", "Body", false, clock);
+                PostCategory.GENERAL, "Title", "Body", false, null, clock);
         // The only writer of HIDDEN_BY_MODERATOR is L45's moderation flip —
         // the entity exposes no setter because this layer never writes it.
         // The unit pin: simulate the stored row's state through reflection,
