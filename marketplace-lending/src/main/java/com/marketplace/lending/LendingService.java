@@ -170,18 +170,23 @@ public class LendingService {
     public Loan approve(UUID loanId, Authentication authentication) {
         Loan loan = requireLoan(loanId);
         requireOwner(loan, authentication);
-        loan.approve();
-        // The self-exclusion law (measured 2026-10-18): the managed entity's
-        // APPROVED status dirties the persistence context BEFORE this count,
-        // and Hibernate's pre-query AUTO flush already wrote it — WITHOUT the
-        // exclusion the count included the loan ITSELF and every real-HTTP
-        // approval answered 409 against no competing hold at all. The count
-        // now excludes the candidate; a positive count is a REAL competing
-        // hold — the other edge of the race.
+        // The overlap gate runs BEFORE the candidate is dirtied to APPROVED
+        // (measured 2026-10-18, both edges of the race): a count query's
+        // pre-query AUTO flush writes the managed entity's pending state
+        // FIRST — with the approval already applied, a REAL competing hold
+        // then surfaces as the exclusion constraint's integrity violation
+        // (a 500) instead of this honest 409, and without the count's
+        // self-exclusion the flushed candidate made the count see ITSELF
+        // (every approval answered 409 against no competitor at all). A
+        // clean context writes nothing before the count; the candidate is
+        // REQUESTED here so the self-exclusion is the defensive second
+        // layer; the DB's loans_live_period_exclusive stays the race's last
+        // line BEHIND this gate.
         if (loanRepository.countLiveOverlap(loan.getId(), loan.getProductId(), loan.getStartAt(), loan.getEndAt()) > 0) {
             throw new ConflictException("The period overlaps another live hold on item "
                     + loan.getProductId() + " — the approval is refused");
         }
+        loan.approve();
         Loan saved = loanRepository.save(loan);
         PaymentIntentDetails details = loanPaymentPort.createForLoan(
                 loan.getId(), loan.getBorrowerId(), loan.getFeeMinor(), loan.getCurrency());
