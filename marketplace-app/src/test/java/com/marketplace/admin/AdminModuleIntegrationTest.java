@@ -59,6 +59,13 @@ class AdminModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.LedgerAllocationPort ledgerAllocationPort;
 
+    // W11 (the matrix's G5): SettlementEligibilityService — booted through
+    // the payments module inside this slice's dependency closure — consumes
+    // the ledger's settlement-eligibility read port; its adapter lives in
+    // the ledger module, outside this slice. The same house pattern.
+    @MockitoBean
+    com.marketplace.shared.api.LedgerReadPort ledgerReadPort;
+
     @MockitoBean
     BookingParticipantProvider bookingParticipantProvider;
 
