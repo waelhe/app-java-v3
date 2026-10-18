@@ -240,7 +240,7 @@ class OrderLegDeliveryJourneyIntegrationTest {
         // administrative verification and the pickup write all precede the
         // buyer's cart.
         String sellerName = "it-leg-seller-" + UUID.randomUUID().toString().substring(0, 8);
-        registerUser(sellerName, "USER", "PROVIDER");
+        registerUser(sellerName, "USER", "PROVIDER", "CONSUMER");
         GateResult sellerGate = loginGate(sellerName, PASSWORD);
         assertThat(getWithBearer("/api/v1/users/me", sellerGate.accessToken()).statusCode())
                 .as("the seller's /me provisioning sync").isEqualTo(200);
@@ -454,7 +454,7 @@ class OrderLegDeliveryJourneyIntegrationTest {
         // (8) The courier's onboarding: a verified provider opting into
         // the dispatch pool with a fresh location.
         String courierName = "it-leg-courier-" + UUID.randomUUID().toString().substring(0, 8);
-        registerUser(courierName, "USER", "PROVIDER");
+        registerUser(courierName, "USER", "PROVIDER", "CONSUMER");
         GateResult courierGate = loginGate(courierName, PASSWORD);
         assertThat(getWithBearer("/api/v1/users/me", courierGate.accessToken()).statusCode())
                 .as("the courier's /me provisioning sync").isEqualTo(200);
@@ -588,7 +588,7 @@ class OrderLegDeliveryJourneyIntegrationTest {
     void thePartialCancelBranch() throws Exception {
         // The provisioning (each journey provisions its own actors).
         String sellerName = "it-leg-cancel-seller-" + UUID.randomUUID().toString().substring(0, 8);
-        registerUser(sellerName, "USER", "PROVIDER");
+        registerUser(sellerName, "USER", "PROVIDER", "CONSUMER");
         GateResult sellerGate = loginGate(sellerName, PASSWORD);
         assertThat(getWithBearer("/api/v1/users/me", sellerGate.accessToken()).statusCode()).isEqualTo(200);
         UUID sellerProductId = registerProduct(sellerGate.accessToken(), 1500L);
