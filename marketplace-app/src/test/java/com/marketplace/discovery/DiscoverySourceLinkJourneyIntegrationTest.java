@@ -109,7 +109,7 @@ class DiscoverySourceLinkJourneyIntegrationTest {
         // the post from the feed AND from the discovery rail (the adapter
         // reads the source's own visibility — no second truth).
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                        .delete("/api/v1/neighborhood/posts/{postId}", postId)
+                        .delete("/api/v1/posts/{postId}", postId)
                         .with(jwt()))
                 .andExpect(status().isNoContent());
         mockMvc.perform(get("/api/v1/neighborhood/posts")
