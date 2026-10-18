@@ -370,6 +370,105 @@ class NeighborhoodPostServiceTest {
                 .isEqualTo(Sort.Direction.ASC);
     }
 
+    // ---------- getPost (Phase 7 — the single-post read use case) ----------
+
+    @Test
+    void getPost_unknownPost_is404BeforeTheMembershipGateConsumesAnything() {
+        when(repository.findById(postId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getPost(commenterId, postId))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(membershipRepository, never()).findByUserId(commenterId);
+        verify(reactionRepository, never()).countByPostIdIn(any());
+        verify(mediaLookupPort, never()).findUploadedByPostIds(any());
+    }
+
+    @Test
+    void getPost_hiddenPost_is404() {
+        NeighborhoodPost hidden = visiblePost(authorId, locationId);
+        // The only writer of HIDDEN_BY_MODERATOR is L45's moderation flip —
+        // the honest channel for "a value this layer can never produce"
+        // (the comment gate's own unit pin).
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                hidden, "status", PostStatus.HIDDEN_BY_MODERATOR);
+        when(repository.findById(postId)).thenReturn(Optional.of(hidden));
+
+        assertThatThrownBy(() -> service.getPost(commenterId, postId))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(membershipRepository, never()).findByUserId(commenterId);
+    }
+
+    @Test
+    void getPost_noMembership_is403() {
+        when(repository.findById(postId))
+                .thenReturn(Optional.of(visiblePost(authorId, locationId)));
+        when(membershipRepository.findByUserId(commenterId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getPost(commenterId, postId))
+                .isInstanceOf(AccessDeniedException.class);
+        verify(reactionRepository, never()).countByPostIdIn(any());
+        verify(mediaLookupPort, never()).findUploadedByPostIds(any());
+    }
+
+    @Test
+    void getPost_membershipInADifferentNeighborhood_is403() {
+        UUID otherLocation = UUID.randomUUID();
+        when(repository.findById(postId))
+                .thenReturn(Optional.of(visiblePost(authorId, locationId)));
+        when(membershipRepository.findByUserId(commenterId))
+                .thenReturn(Optional.of(membershipOf(commenterId, otherLocation)));
+
+        assertThatThrownBy(() -> service.getPost(commenterId, postId))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("Only members of the post's neighborhood can read it");
+    }
+
+    @Test
+    void getPost_member_servesTheSameJourneyFieldSetThroughTheGroupedAggregates() {
+        NeighborhoodPost post = visiblePost(authorId, locationId);
+        when(repository.findById(postId)).thenReturn(Optional.of(post));
+        when(membershipRepository.findByUserId(commenterId))
+                .thenReturn(Optional.of(membershipOf(commenterId, locationId)));
+        when(reactionRepository.countByPostIdIn(any()))
+                .thenReturn(List.of(new PostReactionRepository.PostReactionCount() {
+                    @Override
+                    public UUID getPostId() {
+                        return post.getId();
+                    }
+
+                    @Override
+                    public long getTotalCount() {
+                        return 4L;
+                    }
+                }));
+        when(reactionRepository.findByMemberIdAndPostIdIn(org.mockito.ArgumentMatchers.eq(commenterId),
+                any())).thenReturn(List.of());
+        when(mediaLookupPort.findUploadedByPostIds(any()))
+                .thenReturn(List.of(new MediaLookupPort.PostMediaEntry(
+                        post.getId(), UUID.randomUUID(), "https://presigned/one", null,
+                        "image/jpeg", 0)));
+
+        NeighborhoodPostView view = service.getPost(commenterId, postId);
+
+        // The same-journey field set the feed page serves: the stored
+        // facts plus the caller-scoped reaction facts plus the grouped
+        // media — served through the SAME grouped-aggregate helpers over
+        // the singleton page (one id per call).
+        assertThat(view.authorId()).isEqualTo(authorId);
+        assertThat(view.locationId()).isEqualTo(locationId);
+        assertThat(view.category()).isEqualTo("GENERAL");
+        assertThat(view.status()).isEqualTo("VISIBLE");
+        assertThat(view.reactionsCount()).isEqualTo(4L);
+        assertThat(view.reactedByMe()).isFalse();
+        assertThat(view.media()).hasSize(1);
+        assertThat(view.media().getFirst().url()).isEqualTo("https://presigned/one");
+
+        // The grouped calls each consumed exactly the singleton id — no
+        // new repository shape for a journey the feed already serves.
+        verify(reactionRepository).countByPostIdIn(List.of(post.getId()));
+        verify(mediaLookupPort).findUploadedByPostIds(List.of(post.getId()));
+    }
+
     // ---------- deleteByAuthor ----------
 
     @Test

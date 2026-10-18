@@ -18,7 +18,15 @@
         // the CI-measured verification round that caught the missing
         // pair, exactly what this allowlist exists to make explicit).
         "discovery :: discovery-spi",
-        "community :: neighborhood-feed-spi"
+        "community :: neighborhood-feed-spi",
+        // §11-Phase-7 — the second composite journey (the post/source
+        // detail read, the readiness doc's P0-1 closure): the GraphQL
+        // surface's two detail fields delegate to the community module's
+        // declared post-detail SPI (the detail + comments legs — the
+        // same getPost/getComments use cases the REST surface invokes).
+        // The neighborhood-feed-spi pattern extended to the journey's
+        // own seam (the interface, never the internals).
+        "community :: neighborhood-post-detail-spi"
     }
 )
 package com.marketplace.app;

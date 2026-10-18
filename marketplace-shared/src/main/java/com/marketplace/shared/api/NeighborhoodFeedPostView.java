@@ -7,13 +7,22 @@ import java.util.UUID;
 /**
  * Phase 6 (the corrected GraphQL plan §11-Phase-6 — the first composite
  * user journey, the journey inventory #599 §7 stage 4: «قراءة مركبة
- * للاكتشاف/موجز الحي»): the neighborhood live feed's cross-module read
+ * للاكتشاف/موجز الحي»): the neighborhood post's cross-module read
  * projection — the bounded page the home composite's GraphQL field
  * consumes, on the {@code PostLookupAdapter}/{@code CommunityPostSearchPort}
  * house pattern: the transport view lives here in shared-api, the
  * community module's adapter maps its internal feed view into it, and
  * the consumer (the app's DGS data fetcher) injects the owner's declared
  * port — no module boundary is crossed in code.
+ *
+ * <p><b>Phase 7 widening (the post/source detail composite journey, the
+ * readiness doc's P0-1 closure): the SAME projection serves the
+ * single-post detail read</b> — the detail port's answer leg. The
+ * field set is IDENTICAL by measurement (the REST single-post read
+ * returns the feed page's own view shape — the same-journey rule), so a
+ * second record with the same fields would be pure duplication; the
+ * detail adapter's mapping is the feed adapter's own mapping
+ * field-for-field. One projection, one field set, two journey legs.</p>
  *
  * <p><b>The field set IS the REST feed view's own set</b> — the
  * same-journey comparison the inventory's acceptance gate pins («مقارنة

@@ -154,6 +154,24 @@ class NeighborhoodPostControllerTest {
     }
 
     @Test
+    void get_delegatesWithTheResolvedCallerAndAnswers200() {
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(authorId);
+        when(postService.getPost(authorId, postId)).thenReturn(view());
+
+        ResponseEntity<NeighborhoodPostView> response =
+                controller.get(postId, authentication);
+
+        // The Phase-7 single-post read's delegation contract: the
+        // caller's user id rides the CurrentUserProvider seam, the
+        // SAME use case the GraphQL detail leg invokes serves the REST
+        // surface, and the answer is the feed page's own view shape
+        // (the same-journey field set).
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isEqualTo(view());
+        verify(postService).getPost(authorId, postId);
+    }
+
+    @Test
     void create_answers201WithTheStoredView() {
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(authorId);
         when(postService.createPost(authorId, locationId, PostCategory.GENERAL,

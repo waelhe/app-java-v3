@@ -28,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.instancio.Instancio.create;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -245,7 +246,7 @@ class UrgentAlertServiceTest {
         UrgentAlertSource source = verifiedSource();
         when(sourceRepository.findById(source.getId())).thenReturn(Optional.of(source));
         neighborhoodNode();
-        when(alertRepository.save(any(UrgentAlert.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(alertRepository.saveAndFlush(any(UrgentAlert.class))).thenAnswer(inv -> inv.getArgument(0));
 
         UrgentAlertService.ActiveAlert active = service().publishAlert(publishRequest(source));
 
@@ -266,6 +267,87 @@ class UrgentAlertServiceTest {
         assertThat(event.level()).isEqualTo("CRITICAL");
         assertThat(event.title()).isEqualTo("انقطاع المياه صباح الخميس");
         assertThat(event.occurredAt()).isEqualTo(now);
+    }
+
+    // ------------------------------------------------------------------
+    // W3 (the unified plan's J10 dedup requirement — «منع إنشاء تنبيه عاجل
+    // مزدوج عند اجتماع أحداث في مسار واحد»): the duplicate publication gate.
+    // ------------------------------------------------------------------
+
+    @Test
+    void publishRejectsADuplicateLiveWindowWithTheSameTitle409() {
+        UrgentAlertSource source = verifiedSource();
+        when(sourceRepository.findById(source.getId())).thenReturn(Optional.of(source));
+        neighborhoodNode();
+        // The predecessor: the SAME source, neighborhood and title, with a
+        // window that OVERLAPS the request's [now-60s, now+1h] window.
+        UrgentAlert predecessor = UrgentAlert.publish(source.getId(), NEIGHBORHOOD_ID,
+                UrgentAlertLevel.CRITICAL, "انقطاع المياه صباح الخميس", "الأصل المنشور مسبقًا.",
+                now.minusSeconds(3600), now.plusSeconds(1800));
+        when(alertRepository.findNotWithdrawnDuplicates(source.getId(), NEIGHBORHOOD_ID,
+                "انقطاع المياه صباح الخميس")).thenReturn(List.of(predecessor));
+
+        assertThatThrownBy(() -> service().publishAlert(publishRequest(source)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("already live for this neighborhood");
+        verify(alertRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void publishAllowsANewWindowAfterThePredecessorEntirelyEnded() {
+        UrgentAlertSource source = verifiedSource();
+        when(sourceRepository.findById(source.getId())).thenReturn(Optional.of(source));
+        neighborhoodNode();
+        // The predecessor's window ENDED strictly before the new one starts —
+        // a legitimate re-publication, not a duplicate.
+        UrgentAlert predecessor = UrgentAlert.publish(source.getId(), NEIGHBORHOOD_ID,
+                UrgentAlertLevel.CRITICAL, "انقطاع المياه صباح الخميس", "النافذة السابقة المنتهية.",
+                now.minusSeconds(7200), now.minusSeconds(3600));
+        when(alertRepository.findNotWithdrawnDuplicates(source.getId(), NEIGHBORHOOD_ID,
+                "انقطاع المياه صباح الخميس")).thenReturn(List.of(predecessor));
+        when(alertRepository.saveAndFlush(any(UrgentAlert.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        UrgentAlertService.ActiveAlert active = service().publishAlert(publishRequest(source));
+
+        assertThat(active.alert()).isNotNull();
+        verify(eventPublisher).publishEvent(any(UrgentAlertPublishedEvent.class));
+    }
+
+    @Test
+    void publishAllowsADifferentTitleFromTheSameSourceAndNeighborhood() {
+        UrgentAlertSource source = verifiedSource();
+        when(sourceRepository.findById(source.getId())).thenReturn(Optional.of(source));
+        neighborhoodNode();
+        // A DIFFERENT alert (a different title) is never a duplicate — the
+        // candidate read is title-scoped and answers nothing for it.
+        when(alertRepository.findNotWithdrawnDuplicates(source.getId(), NEIGHBORHOOD_ID,
+                "انقطاع المياه صباح الخميس")).thenReturn(List.of());
+        when(alertRepository.saveAndFlush(any(UrgentAlert.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        UrgentAlertService.ActiveAlert active = service().publishAlert(publishRequest(source));
+
+        assertThat(active.alert()).isNotNull();
+    }
+
+    @Test
+    void publishTranslatesTheConcurrentIndexRaceIntoTheHonest409() {
+        UrgentAlertSource source = verifiedSource();
+        when(sourceRepository.findById(source.getId())).thenReturn(Optional.of(source));
+        neighborhoodNode();
+        when(alertRepository.findNotWithdrawnDuplicates(source.getId(), NEIGHBORHOOD_ID,
+                "انقطاع المياه صباح الخميس")).thenReturn(List.of());
+        // The V231 backstop fires: two publications that both passed the read
+        // race to the insert — the 23505 must surface as the SAME honest 409,
+        // never a 500.
+        when(alertRepository.saveAndFlush(any(UrgentAlert.class)))
+                .thenThrow(new org.springframework.dao.DataIntegrityViolationException(
+                        "uq_urgent_alerts_same_window"));
+
+        assertThatThrownBy(() -> service().publishAlert(publishRequest(source)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("published concurrently");
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -397,7 +479,7 @@ class UrgentAlertServiceTest {
 
         // 3. The publish — the geo gate passes, the event rides the transaction.
         neighborhoodNode();
-        when(alertRepository.save(any(UrgentAlert.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(alertRepository.saveAndFlush(any(UrgentAlert.class))).thenAnswer(inv -> inv.getArgument(0));
         UrgentAlertService.ActiveAlert published = service.publishAlert(publishRequest(source));
         verify(eventPublisher).publishEvent(any(UrgentAlertPublishedEvent.class));
 
