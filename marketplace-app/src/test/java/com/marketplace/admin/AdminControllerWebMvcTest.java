@@ -20,6 +20,7 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -161,6 +162,62 @@ class AdminControllerWebMvcTest {
     void getFinancialFacts_withUserRole_returnsForbidden() throws Exception {
         mockMvc.perform(get("/api/v1/admin/payments/{id}/financial-facts", UUID.randomUUID()))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void settlementEligibility_delegatesToThePaymentsSpi() throws Exception {
+        // W11 (the matrix's G5): the report's shape is the SPI's own wire
+        // record — the admin surface composes, it never re-derives.
+        UUID providerId = UUID.randomUUID();
+        when(paymentsSpi.settlementEligibility(eq(providerId), isNull(), any()))
+                .thenReturn(new com.marketplace.payments.spi.SettlementEligibilityReport(
+                        providerId,
+                        java.util.List.of(new com.marketplace.shared.api.LedgerAllocationPort.ProviderBalanceFact(
+                                providerId, "SAR", 4500L)),
+                        java.util.List.of(new com.marketplace.payments.spi.SettlementEligibilityReport.OriginCurrencyTotal(
+                                "BOOKING", "SAR", 1, 5000L, 5000L)),
+                        new com.marketplace.shared.api.PagedResponse<>(java.util.List.of(), 0, 20, 0, 0, true)));
+
+        mockMvc.perform(get("/api/v1/admin/payments/settlement-eligibility")
+                        .param("providerId", providerId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(content().json("""
+                        {"providerId":"%s","balances":[{"currency":"SAR","balanceCents":4500}],
+                         "totals":[{"origin":"BOOKING","currency":"SAR","creditCount":1,
+                                    "creditedCents":5000,"eligibleCents":5000}]}
+                        """.formatted(providerId)));
+        verify(paymentsSpi).settlementEligibility(eq(providerId), isNull(), any());
+    }
+
+    @Test
+    void settlementEligibility_originFilterRidesTheSeam() throws Exception {
+        UUID providerId = UUID.randomUUID();
+        when(paymentsSpi.settlementEligibility(eq(providerId), eq("ORDER"), any()))
+                .thenReturn(new com.marketplace.payments.spi.SettlementEligibilityReport(
+                        providerId, java.util.List.of(), java.util.List.of(),
+                        new com.marketplace.shared.api.PagedResponse<>(java.util.List.of(), 0, 20, 0, 0, true)));
+
+        mockMvc.perform(get("/api/v1/admin/payments/settlement-eligibility")
+                        .param("providerId", providerId.toString())
+                        .param("origin", "ORDER"))
+                .andExpect(status().isOk());
+        verify(paymentsSpi).settlementEligibility(eq(providerId), eq("ORDER"), any());
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    void settlementEligibility_withUserRole_returnsForbidden() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/payments/settlement-eligibility")
+                        .param("providerId", UUID.randomUUID().toString()))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void settlementEligibility_missingProviderId_answers400() throws Exception {
+        // Eligibility is a per-provider question — the absent id is a
+        // client error, never a platform-wide unbounded walk.
+        mockMvc.perform(get("/api/v1/admin/payments/settlement-eligibility"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
