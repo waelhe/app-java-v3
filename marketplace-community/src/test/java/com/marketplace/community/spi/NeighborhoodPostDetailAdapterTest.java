@@ -9,7 +9,6 @@ import com.marketplace.shared.api.NeighborhoodPostCommentView;
 import com.marketplace.shared.api.PagedRequest;
 import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.ResourceNotFoundException;
-import com.marketplace.shared.api.SpringPagination;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
