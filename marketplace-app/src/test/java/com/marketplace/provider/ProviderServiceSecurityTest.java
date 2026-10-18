@@ -42,6 +42,12 @@ class ProviderServiceSecurityTest {
     @MockitoBean
     private ReviewStatsPort reviewStatsPort;
 
+    // W5b (J29): the acting-provider gate consults the delegation seam —
+    // a plain mock here (default false) keeps every owner-only assertion
+    // honest: the owner's authority must never depend on the registry.
+    @MockitoBean
+    private ProviderTeamService teamService;
+
     @Test
     @WithMockUser(roles = "USER")
     void create_whenNotConsumer_thenAccessDenied() {
