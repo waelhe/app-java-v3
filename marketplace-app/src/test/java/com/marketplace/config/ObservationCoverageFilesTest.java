@@ -103,7 +103,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       calendar.seasonal.create, calendar.seasonal.update,
  *       calendar.seasonal.delete (L26 — the host's price-calendar commands;
  *       the calendar READ stays unobserved per policy)</li>
- *   <li>provider — create, update, verify, suspend; rating.stats (L21 — the
+ *   <li>provider — create, update, verify, suspend; team.add, team.list,
+ *       team.revoke (W5b — the delegation surface's three commands; the
+ *       roster read rides the owner's decision surface, the documented
+ *       queue-read exception family); rating.stats (L21 — the
  *       event-driven stored-rating recompute; the reads stay unobserved)</li>
  *   <li>reviews — create, update, create.reverse, reply (I8 + L21);
  *       create.organic, moderate.approve, moderate.reject, moderate.hide,
@@ -341,6 +344,7 @@ class ObservationCoverageFilesTest {
                     "provider.service-areas.remove", "provider.services.add",
                     "provider.services.move", "provider.services.remove",
                     "provider.services.update", "provider.suspend",
+                    "provider.team.add", "provider.team.list", "provider.team.revoke",
                     "provider.update", "provider.verification.confirm",
                     "provider.verification.reject", "provider.verification.submit",
                     "provider.verify")),
