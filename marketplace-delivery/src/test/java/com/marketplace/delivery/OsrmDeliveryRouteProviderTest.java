@@ -48,7 +48,7 @@ class OsrmDeliveryRouteProviderTest {
     private OsrmDeliveryRouteProvider provider(String baseUrl) {
         return new OsrmDeliveryRouteProvider(RestClient.builder(),
                 new DeliveryProperties(true, "SAR", 100, 50, 20_000, 900,
-                        baseUrl, 50, 25, 120, 25));
+                        baseUrl, 50, 25, 120, 25, 3L, 92L));
     }
 
     @Test
