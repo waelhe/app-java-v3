@@ -40,9 +40,17 @@ import java.util.UUID;
  * nothing and keeps the reasoning one sentence long.
  *
  * <p><b>Ownership (the module's own law — {@code ProviderService
- * .verifyOwnership}'s exact rule, admin bypass included):</b> every write
- * resolves the profile then checks the caller owns it; any mismatch is
- * {@link AccessDeniedException}. The verification SUBMISSION and its
+ * .verifyOwnership}'s exact rule, admin bypass included, PLUS the W5b
+ * delegation branch):</b> every write resolves the profile then checks the
+ * caller may act for it — the owner, an administrator, OR (W5b, J29) a
+ * live team seat with role MANAGER or EDITOR
+ * ({@code ProviderTeamService.isActiveEditorOrAbove} — the same
+ * acting-provider law {@code ProviderService#requireActingProvider} hosts
+ * for the profile update). The declared blocks are the business's public
+ * face — exactly the surface a delegated employee maintains; the SENSITIVE
+ * surfaces (the private fulfillment location, the ownership-verification
+ * claim) stay owner-only by design. Any mismatch is {@link
+ * AccessDeniedException}. The verification SUBMISSION and its
  * administrative RESOLUTION stay in {@code ProviderService} with the
  * profile's other lifecycle transitions (the cached-entity invalidation
  * concern lives there).
@@ -55,17 +63,20 @@ public class ProviderBusinessPageService {
     private final BusinessHourRepository businessHourRepository;
     private final OfferedServiceRepository offeredServiceRepository;
     private final ServiceAreaRepository serviceAreaRepository;
+    private final ProviderTeamService teamService;
 
     public ProviderBusinessPageService(ProviderService providerService,
                                        CurrentUserProvider currentUserProvider,
                                        BusinessHourRepository businessHourRepository,
                                        OfferedServiceRepository offeredServiceRepository,
-                                       ServiceAreaRepository serviceAreaRepository) {
+                                       ServiceAreaRepository serviceAreaRepository,
+                                       ProviderTeamService teamService) {
         this.providerService = providerService;
         this.currentUserProvider = currentUserProvider;
         this.businessHourRepository = businessHourRepository;
         this.offeredServiceRepository = offeredServiceRepository;
         this.serviceAreaRepository = serviceAreaRepository;
+        this.teamService = teamService;
     }
 
     // -- Working hours (G11) -------------------------------------------------
@@ -291,12 +302,25 @@ public class ProviderBusinessPageService {
 
     // -- helpers --------------------------------------------------------------
 
+    /**
+     * W5b (J29): the acting-provider gate — {@code ProviderService
+     * .verifyOwnership}'s exact rule (the 404 for an unknown provider, the
+     * admin bypass, the owner branch, the house 403 message) PLUS the
+     * delegation branch: a live team seat with role MANAGER or EDITOR may
+     * maintain the declared blocks. The owner's own branch runs inline so
+     * the owner never depends on the delegation registry (the delegation
+     * is consulted for a non-owner only — one indexed read per delegated
+     * write, never on the owner's happy path).
+     */
     private ProviderProfile owned(UUID providerId, Authentication authentication) {
         ProviderProfile provider = providerService.getById(providerId);
-        if (!currentUserProvider.isAdmin(authentication)
-                && (provider.getUserId() == null
-                    || !provider.getUserId().equals(
-                            currentUserProvider.getCurrentUserId(authentication)))) {
+        UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
+        if (currentUserProvider.isAdmin(authentication)
+                || (provider.getUserId() != null
+                    && provider.getUserId().equals(currentUserId))) {
+            return provider;
+        }
+        if (!teamService.isActiveEditorOrAbove(provider.getId(), currentUserId)) {
             throw new AccessDeniedException("You do not own this provider");
         }
         return provider;
