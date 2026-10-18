@@ -3,9 +3,12 @@ package com.marketplace.booking;
 import test.config.IntegrationContainers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
@@ -76,6 +79,7 @@ import static test.config.AuthorizationServerFixture.TOKEN_PATH;
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
+@ExtendWith(OutputCaptureExtension.class)
 class BookingJourneyIntegrationTest {
 
     @Container
@@ -134,7 +138,7 @@ class BookingJourneyIntegrationTest {
     }
 
     @Test
-    void theFullBookingJourneyFromRequestToEligibleReview() throws Exception {
+    void theFullBookingJourneyFromRequestToEligibleReview(CapturedOutput output) throws Exception {
         // The seller provisions FIRST: the listing (the catalog row the
         // booking's amounts resolve through) and the availability window
         // (the exact slot the booking will claim) are the provider's own
@@ -286,12 +290,24 @@ class BookingJourneyIntegrationTest {
         // (9) The booking listener's honest no-op: the payment completion
         // reaches autoConfirm, but a booking the provider already confirmed
         // stays CONFIRMED — measured behavior, not a second transition.
+        // The listener-specific completion signal first (the listener's OWN
+        // log line — the no-op writes no DB row, so the log is the only
+        // causally-honest witness that autoConfirm ran; PAYMENT_CREDIT is
+        // the LEDGER listener's row on the same event — an independent
+        // consumer that proves nothing about this listener, and the
+        // notification row below belongs to the seller's EARLIER manual
+        // confirm, not to this no-op).
+        awaitListenerCompletion(output,
+                "Booking auto-confirmed from payment: bookingId=" + bookingId + ",");
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT status FROM bookings WHERE id = ?", String.class, bookingId))
                 .as("the already-CONFIRMED no-op (the listener's own guard)").isEqualTo("CONFIRMED");
 
         // (10) The consumer's notification row for the confirmation (the
         // CONSUMER alone — the recipient contract of onBookingConfirmed).
+        // Read AFTER the listener completed (9): the row count staying ONE
+        // is the regression catcher — a guard-less autoConfirm would
+        // re-publish BookingConfirmedEvent and land a SECOND row.
         awaitTypedNotificationRows(bookingId, "BOOKING_CONFIRMED", 1);
         Integer confirmedRows = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM notifications WHERE type = 'BOOKING_CONFIRMED'"
@@ -461,16 +477,23 @@ class BookingJourneyIntegrationTest {
         // refunded IN FULL (the R4 scoped search's own target), the payment
         // row flips REFUNDED, and the ledger's refund debit mirrors the
         // booking-origin credit under the refund's own nameUUID source key.
+        // The REFUNDED status can surface BEFORE the async
+        // @ApplicationModuleListener commits the REFUND_DEBIT row (and the
+        // earlier PAYMENT_CREDIT may still be pending) — the bounded
+        // ledger-row poll is the honest synchronization, THEN the exact
+        // count catches any double mirror.
         awaitIntentStatus(intentId, "REFUNDED");
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT status FROM payments WHERE payment_intent_id = ?", String.class, intentId))
                 .as("the payment row follows the refund").isEqualTo("REFUNDED");
         UUID refundSource = UUID.nameUUIDFromBytes(
                 ("refund-" + intentId.toString()).getBytes(StandardCharsets.UTF_8));
+        awaitLedgerRow(refundSource, "REFUND_DEBIT", 1);
         Integer refundDebits = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM ledger_entries WHERE entry_type = 'REFUND_DEBIT' AND source_id = ?",
                 Integer.class, refundSource);
         assertThat(refundDebits).as("the refund debit mirrors the credit (the ONE refund contract)").isEqualTo(1);
+        awaitLedgerRow(intentId, "PAYMENT_CREDIT", 1);
         Integer credits = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM ledger_entries WHERE entry_type = 'PAYMENT_CREDIT' AND source_id = ?",
                 Integer.class, intentId);
@@ -624,6 +647,52 @@ class BookingJourneyIntegrationTest {
         }
         throw new AssertionError("payment intent " + intentId + " did not reach " + expected
                 + " within 10s");
+    }
+
+    /**
+     * The bounded poll for the listener's OWN completion line (the official
+     * {@code OutputCaptureExtension} — Spring Boot reference, Testing ›
+     * Captured Output; the same witness {@code
+     * EventPublicationResubmissionIntegrationTest} uses). The no-op branch
+     * of {@code BookingPaymentEventListener} writes NO row anywhere — the
+     * listener's own INFO line is the only causally-honest completion
+     * signal for it; the ledger's PAYMENT_CREDIT row belongs to a DIFFERENT
+     * consumer of the same event and proves nothing about this listener.
+     */
+    private void awaitListenerCompletion(CapturedOutput output, String marker)
+            throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline) {
+            if (output.getAll().contains(marker)) {
+                return;
+            }
+            Thread.sleep(200);
+        }
+        throw new AssertionError("the listener's completion marker never appeared within 10s: "
+                + marker);
+    }
+
+    /**
+     * The bounded poll for the ledger's async rows (the {@code
+     * LendingLifecycleJourneyIntegrationTest} house shape verbatim): the
+     * REFUNDED status can surface before the AFTER_COMMIT listener commits
+     * the REFUND_DEBIT row, so the row's presence is awaited — the exact
+     * count assertion that follows catches any double mirror.
+     */
+    private void awaitLedgerRow(UUID sourceId, String entryType, int expected)
+            throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline) {
+            Integer rows = jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM ledger_entries WHERE source_id = ? AND entry_type = ?",
+                    Integer.class, sourceId, entryType);
+            if (rows != null && rows >= expected) {
+                return;
+            }
+            Thread.sleep(200);
+        }
+        throw new AssertionError("ledger rows of type " + entryType + " for " + sourceId
+                + " never reached " + expected + " within 10s");
     }
 
     private String baseUrl() {
