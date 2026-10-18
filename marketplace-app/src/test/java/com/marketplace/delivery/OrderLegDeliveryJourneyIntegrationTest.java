@@ -744,6 +744,7 @@ class OrderLegDeliveryJourneyIntegrationTest {
             }
             Thread.sleep(200);
         }
+        throw new AssertionError("order " + orderId + " did not reach " + expected + " within 10s");
     }
 
     /**
@@ -760,6 +761,8 @@ class OrderLegDeliveryJourneyIntegrationTest {
             }
             Thread.sleep(200);
         }
+        throw new AssertionError("delivery legs for order " + orderId + " never reached " + expected
+                + " within 10s");
     }
 
     /**
@@ -778,7 +781,7 @@ class OrderLegDeliveryJourneyIntegrationTest {
             }
             Thread.sleep(200);
         }
-        return null;
+        throw new AssertionError("leg " + legId + " was never ASSIGNED to a courier within 20s");
     }
 
     /** The bounded poll for the refund engine's terminal state. */
@@ -792,6 +795,8 @@ class OrderLegDeliveryJourneyIntegrationTest {
             }
             Thread.sleep(200);
         }
+        throw new AssertionError("payment intent " + intentId + " did not reach " + expected
+                + " within 10s");
     }
 
     /**
@@ -815,6 +820,8 @@ class OrderLegDeliveryJourneyIntegrationTest {
             }
             Thread.sleep(200);
         }
+        throw new AssertionError("notification rows of type " + type + " for order " + orderId
+                + " never reached " + expected + " within 10s");
     }
 
     // ------------------------------------------------------------------
