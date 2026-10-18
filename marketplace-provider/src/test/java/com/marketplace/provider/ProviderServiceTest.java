@@ -32,7 +32,7 @@ class ProviderServiceTest {
         when(repository.findById(profile.getId())).thenReturn(java.util.Optional.of(profile));
 
         ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class), eventPublisher,
-                mock(com.marketplace.shared.api.ReviewStatsPort.class));
+                mock(com.marketplace.shared.api.ReviewStatsPort.class), mock(ProviderTeamService.class));
         ProviderProfile verified = service.verify(profile.getId());
 
         assertThat(verified.getStatus()).isEqualTo(ProviderStatus.VERIFIED);
@@ -49,7 +49,7 @@ class ProviderServiceTest {
         when(repository.findById(profile.getId())).thenReturn(java.util.Optional.of(profile));
 
         ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class), eventPublisher,
-                mock(com.marketplace.shared.api.ReviewStatsPort.class));
+                mock(com.marketplace.shared.api.ReviewStatsPort.class), mock(ProviderTeamService.class));
         ProviderProfile suspended = service.suspend(profile.getId());
 
         assertThat(suspended.getStatus()).isEqualTo(ProviderStatus.SUSPENDED);
@@ -59,7 +59,7 @@ class ProviderServiceTest {
     void getByIdThrowsWhenMissing() {
         ProviderRepository repository = mock(ProviderRepository.class);
         ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class), eventPublisher,
-                mock(com.marketplace.shared.api.ReviewStatsPort.class));
+                mock(com.marketplace.shared.api.ReviewStatsPort.class), mock(ProviderTeamService.class));
         UUID unknownId = Instancio.create(UUID.class);
         when(repository.findById(unknownId)).thenReturn(java.util.Optional.empty());
 
@@ -71,7 +71,7 @@ class ProviderServiceTest {
     void create_savesAndReturnsProfile() {
         ProviderRepository repository = mock(ProviderRepository.class);
         ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class), eventPublisher,
-                mock(com.marketplace.shared.api.ReviewStatsPort.class));
+                mock(com.marketplace.shared.api.ReviewStatsPort.class), mock(ProviderTeamService.class));
         UUID userId = UUID.randomUUID();
         when(repository.save(any(ProviderProfile.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -87,7 +87,7 @@ class ProviderServiceTest {
     void getById_returnsProfileWhenFound() {
         ProviderRepository repository = mock(ProviderRepository.class);
         ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class), eventPublisher,
-                mock(com.marketplace.shared.api.ReviewStatsPort.class));
+                mock(com.marketplace.shared.api.ReviewStatsPort.class), mock(ProviderTeamService.class));
         UUID id = Instancio.create(UUID.class);
         ProviderProfile profile = Instancio.of(ProviderProfile.class)
                 .set(field(ProviderProfile::getId), id)
@@ -106,7 +106,7 @@ class ProviderServiceTest {
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         Authentication authentication = mock(Authentication.class);
         ProviderService service = new ProviderService(repository, currentUserProvider, eventPublisher,
-                mock(com.marketplace.shared.api.ReviewStatsPort.class));
+                mock(com.marketplace.shared.api.ReviewStatsPort.class), mock(ProviderTeamService.class));
         UUID id = Instancio.create(UUID.class);
         UUID userId = UUID.randomUUID();
         ProviderProfile profile = Instancio.of(ProviderProfile.class)
@@ -130,7 +130,7 @@ class ProviderServiceTest {
     void create_fullForm_carriesThePersona() {
         ProviderRepository repository = mock(ProviderRepository.class);
         ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class), eventPublisher,
-                mock(com.marketplace.shared.api.ReviewStatsPort.class));
+                mock(com.marketplace.shared.api.ReviewStatsPort.class), mock(ProviderTeamService.class));
         UUID userId = UUID.randomUUID();
         when(repository.save(any(ProviderProfile.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -148,7 +148,7 @@ class ProviderServiceTest {
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         Authentication authentication = mock(Authentication.class);
         ProviderService service = new ProviderService(repository, currentUserProvider, eventPublisher,
-                mock(com.marketplace.shared.api.ReviewStatsPort.class));
+                mock(com.marketplace.shared.api.ReviewStatsPort.class), mock(ProviderTeamService.class));
         UUID id = Instancio.create(UUID.class);
         UUID userId = UUID.randomUUID();
         ProviderProfile profile = Instancio.of(ProviderProfile.class)
@@ -171,6 +171,101 @@ class ProviderServiceTest {
         assertThat(result.getAgencyName()).isNull();
         assertThat(result.getLicenseNumber()).isNull();
         verify(eventPublisher).publishEvent(any(com.marketplace.shared.api.CacheInvalidationRequested.class));
+    }
+
+    // -- W5b (J29): the acting-provider gate on the profile update ---------
+
+    /**
+     * W5b (the journeys register's J29 row): a live team seat with role
+     * MANAGER (the senior class — EDITOR answers the same gate) may keep
+     * the business's own profile current — the delegation's write floor
+     * ({@code isActiveEditorOrAbove}), consulted ONLY for a non-owner.
+     */
+    @Test
+    void update_managerTeamMember_updatesTheProfile() {
+        ProviderRepository repository = mock(ProviderRepository.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        ProviderTeamService teamService = mock(ProviderTeamService.class);
+        Authentication authentication = mock(Authentication.class);
+        ProviderService service = new ProviderService(repository, currentUserProvider, eventPublisher,
+                mock(com.marketplace.shared.api.ReviewStatsPort.class), teamService);
+        UUID id = Instancio.create(UUID.class);
+        UUID managerUserId = UUID.randomUUID();
+        ProviderProfile profile = Instancio.of(ProviderProfile.class)
+                .set(field(ProviderProfile::getId), id)
+                .set(field(ProviderProfile::getDisplayName), "Old")
+                .set(field(ProviderProfile::getBio), "old bio")
+                .set(field(ProviderProfile::getUserId), UUID.randomUUID())
+                .create();
+        when(repository.findById(id)).thenReturn(java.util.Optional.of(profile));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(managerUserId);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+        when(teamService.isActiveEditorOrAbove(id, managerUserId)).thenReturn(true);
+
+        ProviderProfile result = service.update(id, "المدير المفوَّض", "bio by the manager",
+                authentication);
+
+        assertThat(result.getDisplayName()).isEqualTo("المدير المفوَّض");
+        verify(teamService).isActiveEditorOrAbove(id, managerUserId);
+        verify(eventPublisher).publishEvent(any(com.marketplace.shared.api.CacheInvalidationRequested.class));
+    }
+
+    /**
+     * W5b: a REVOKED seat carries no authority — the seam answers false
+     * and the write falls back to the house 403 (the journey test's final
+     * branch, proven here at the unit seam with the revoked answer).
+     */
+    @Test
+    void update_revokedTeamMember_isDenied() {
+        ProviderRepository repository = mock(ProviderRepository.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        ProviderTeamService teamService = mock(ProviderTeamService.class);
+        Authentication authentication = mock(Authentication.class);
+        ProviderService service = new ProviderService(repository, currentUserProvider, eventPublisher,
+                mock(com.marketplace.shared.api.ReviewStatsPort.class), teamService);
+        UUID id = Instancio.create(UUID.class);
+        UUID revokedMemberUserId = UUID.randomUUID();
+        ProviderProfile profile = Instancio.of(ProviderProfile.class)
+                .set(field(ProviderProfile::getId), id)
+                .set(field(ProviderProfile::getDisplayName), "Old")
+                .set(field(ProviderProfile::getUserId), UUID.randomUUID())
+                .create();
+        when(repository.findById(id)).thenReturn(java.util.Optional.of(profile));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(revokedMemberUserId);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+        when(teamService.isActiveEditorOrAbove(id, revokedMemberUserId)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.update(id, "no", "no", authentication))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class)
+                .hasMessage("You do not own this provider");
+    }
+
+    /**
+     * W5b: a stranger — no ownership, no delegation — keeps the exact
+     * pre-W5b semantics (the house 403 for a known provider owned by
+     * someone else; the unknown provider's 404 is {@code getById}'s own
+     * law, covered by {@link #getByIdThrowsWhenMissing}).
+     */
+    @Test
+    void update_stranger_isDenied() {
+        ProviderRepository repository = mock(ProviderRepository.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        ProviderTeamService teamService = mock(ProviderTeamService.class);
+        Authentication authentication = mock(Authentication.class);
+        ProviderService service = new ProviderService(repository, currentUserProvider, eventPublisher,
+                mock(com.marketplace.shared.api.ReviewStatsPort.class), teamService);
+        UUID id = Instancio.create(UUID.class);
+        ProviderProfile profile = Instancio.of(ProviderProfile.class)
+                .set(field(ProviderProfile::getId), id)
+                .set(field(ProviderProfile::getUserId), UUID.randomUUID())
+                .create();
+        when(repository.findById(id)).thenReturn(java.util.Optional.of(profile));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(UUID.randomUUID());
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.update(id, "no", "no", authentication))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class)
+                .hasMessage("You do not own this provider");
     }
 
     // -- L21: stored rating average ---------------------------------------
@@ -204,7 +299,7 @@ class ProviderServiceTest {
                 .thenReturn(Optional.empty());
 
         ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class),
-                eventPublisher, reviewStatsPort);
+                eventPublisher, reviewStatsPort, mock(ProviderTeamService.class));
         service.refreshRatingAverage(reviewId);
 
         assertThat(profile.getRatingAverage()).isEqualTo(4.5);
@@ -226,7 +321,7 @@ class ProviderServiceTest {
         when(repository.findByUserIdForUpdate(providerUserId)).thenReturn(Optional.empty());
 
         ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class),
-                eventPublisher, reviewStatsPort);
+                eventPublisher, reviewStatsPort, mock(ProviderTeamService.class));
         service.refreshRatingAverage(reviewId);
 
         // A deleted provider is a skip, not an exception — an exception would

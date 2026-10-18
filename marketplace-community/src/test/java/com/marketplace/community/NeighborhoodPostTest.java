@@ -26,8 +26,7 @@ class NeighborhoodPostTest {
         UUID locationId = UUID.randomUUID();
 
         NeighborhoodPost post = NeighborhoodPost.post(authorId, locationId,
-                PostCategory.CLASSIFIED, "Bicycle for sale", "Good condition, rarely used.", false,
-                clock);
+                PostCategory.CLASSIFIED, "Bicycle for sale", "Good condition, rarely used.", false, null, clock);
 
         assertThat(post.getId()).isNotNull();
         assertThat(post.getAuthorId()).isEqualTo(authorId);
@@ -51,11 +50,11 @@ class NeighborhoodPostTest {
 
         NeighborhoodPost declared = NeighborhoodPost.post(authorId, locationId,
                 PostCategory.CLASSIFIED, "Selling my bike", "Barely used, message me.",
-                true, clock);
+                true, null, clock);
         assertThat(declared.isDeclaredCommercial()).isTrue();
 
         NeighborhoodPost undeclared = NeighborhoodPost.post(authorId, locationId,
-                PostCategory.GENERAL, "Title", "Body", false, clock);
+                PostCategory.GENERAL, "Title", "Body", false, null, clock);
         assertThat(undeclared.isDeclaredCommercial()).isFalse();
     }
 
@@ -83,8 +82,7 @@ class NeighborhoodPostTest {
         NeighborhoodPost post = NeighborhoodPost.post(authorId, locationId,
                 PostCategory.RECOMMENDATION,
                 "Any trustworthy plumber around?",
-                "Looking for a reliable plumber for a kitchen leak.", false,
-                clock);
+                "Looking for a reliable plumber for a kitchen leak.", false, null, clock);
 
         assertThat(post.getCategory()).isEqualTo(PostCategory.RECOMMENDATION);
         assertThat(post.getStatus()).isEqualTo(PostStatus.VISIBLE);
