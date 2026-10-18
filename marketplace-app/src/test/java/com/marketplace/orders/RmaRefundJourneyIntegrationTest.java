@@ -505,7 +505,11 @@ class RmaRefundJourneyIntegrationTest {
         HttpResponse<String> intentResponse = postJson(
                 "/api/v1/orders/" + orderId + "/payment-intent", gate.accessToken(), "");
         assertThat(intentResponse.statusCode()).as("intent: %s", body(intentResponse)).isEqualTo(201);
-        UUID intentId = UUID.fromString(objectMapper.readTree(intentResponse.body()).path("id").asString());
+        // The intent response's canonical vocabulary is paymentIntentId (the
+        // record's own field name — the sibling journeys' parse and the
+        // wire contract); the earlier path("id") read a missing node and
+        // answered "Invalid UUID string: " (the measured CI failure).
+        UUID intentId = UUID.fromString(objectMapper.readTree(intentResponse.body()).path("paymentIntentId").asString());
         String adminName = "it-rma-admin-" + UUID.randomUUID().toString().substring(0, 8);
         registerUser(adminName, "USER", "ADMIN");
         GateResult adminGate = loginGate(adminName, PASSWORD);
