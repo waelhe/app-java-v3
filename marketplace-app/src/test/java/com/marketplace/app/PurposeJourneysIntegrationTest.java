@@ -196,7 +196,7 @@ class PurposeJourneysIntegrationTest {
         // store's own records — the shelf row (1500 SAR, stock 10) and the
         // service-visit window the booking leg will claim.
         String sellerName = "it-purpose-seller-" + UUID.randomUUID().toString().substring(0, 8);
-        registerUser(sellerName, "USER", "PROVIDER");
+        registerUser(sellerName, "USER", "PROVIDER", "CONSUMER");
         GateResult sellerGate = loginGate(sellerName, PASSWORD);
         assertThat(getWithBearer("/api/v1/users/me", sellerGate.accessToken()).statusCode())
                 .as("the seller's /me provisioning sync").isEqualTo(200);
@@ -205,6 +205,7 @@ class PurposeJourneysIntegrationTest {
                         .path("id").asString());
         UUID product = registerProduct(sellerGate.accessToken(), 1500L);
         setStock(sellerGate.accessToken(), product, 10);
+        UUID listing = becomeVerifiedListing(sellerGate, "J30 daily-need service visit", 1500L);
         createSlot(sellerGate.accessToken(), sellerId, SERVICE_SLOT_START, SERVICE_SLOT_END);
 
         // (B) The ask: a VERIFIED member of the old town posts the
@@ -384,7 +385,7 @@ class PurposeJourneysIntegrationTest {
         // product id — the source stays one).
         HttpResponse<String> bookingResponse = postJson("/api/v1/bookings", gate.accessToken(), """
                 {"listingId":"%s","startsAt":"%s","endsAt":"%s","notes":"J30 daily-need service visit"}"""
-                .formatted(product, SERVICE_SLOT_START, SERVICE_SLOT_END));
+                .formatted(listing, SERVICE_SLOT_START, SERVICE_SLOT_END));
         assertThat(bookingResponse.statusCode()).as("the service-visit booking: %s", body(bookingResponse))
                 .isEqualTo(201);
         UUID bookingId = UUID.fromString(
@@ -483,7 +484,7 @@ class PurposeJourneysIntegrationTest {
         // (A) The host provisions: the stay listing + TWO windows (the
         // completed stay and the cancelled one).
         String hostName = "it-purpose-host-" + UUID.randomUUID().toString().substring(0, 8);
-        registerUser(hostName, "USER", "PROVIDER");
+        registerUser(hostName, "USER", "PROVIDER", "CONSUMER");
         GateResult hostGate = loginGate(hostName, PASSWORD);
         assertThat(getWithBearer("/api/v1/users/me", hostGate.accessToken()).statusCode())
                 .as("the host's /me provisioning sync").isEqualTo(200);
@@ -492,6 +493,7 @@ class PurposeJourneysIntegrationTest {
                         .path("id").asString());
         UUID stay = registerProduct(hostGate.accessToken(), 2000L);
         setStock(hostGate.accessToken(), stay, 1);
+        UUID stayListing = becomeVerifiedListing(hostGate, "J30 tourism stay", 2000L);
         createSlot(hostGate.accessToken(), hostId, STAY_WINDOW_START, STAY_WINDOW_END);
         createSlot(hostGate.accessToken(), hostId, CANCEL_WINDOW_START, CANCEL_WINDOW_END);
 
@@ -532,7 +534,7 @@ class PurposeJourneysIntegrationTest {
         // server-derived flat price (the client never supplied money).
         HttpResponse<String> bookingResponse = postJson("/api/v1/bookings", travelerGate.accessToken(), """
                 {"listingId":"%s","startsAt":"%s","endsAt":"%s","notes":"J30 tourism stay"}"""
-                .formatted(stay, STAY_WINDOW_START, STAY_WINDOW_END));
+                .formatted(stayListing, STAY_WINDOW_START, STAY_WINDOW_END));
         assertThat(bookingResponse.statusCode()).as("the stay booking: %s", body(bookingResponse))
                 .isEqualTo(201);
         UUID bookingId = UUID.fromString(
@@ -600,7 +602,7 @@ class PurposeJourneysIntegrationTest {
                 .as("the second traveler's /me provisioning sync").isEqualTo(200);
         HttpResponse<String> booking2 = postJson("/api/v1/bookings", traveler2Gate.accessToken(), """
                 {"listingId":"%s","startsAt":"%s","endsAt":"%s","notes":"J30 cancellation branch"}"""
-                .formatted(stay, CANCEL_WINDOW_START, CANCEL_WINDOW_END));
+                .formatted(stayListing, CANCEL_WINDOW_START, CANCEL_WINDOW_END));
         assertThat(booking2.statusCode()).as("the second booking: %s", body(booking2)).isEqualTo(201);
         UUID booking2Id = UUID.fromString(
                 objectMapper.readTree(booking2.body()).path("id").asString());
@@ -661,7 +663,7 @@ class PurposeJourneysIntegrationTest {
                 .as("the rebooker's /me provisioning sync").isEqualTo(200);
         HttpResponse<String> rebooking = postJson("/api/v1/bookings", traveler3Gate.accessToken(), """
                 {"listingId":"%s","startsAt":"%s","endsAt":"%s","notes":"J30 the freed window rebooked"}"""
-                .formatted(stay, CANCEL_WINDOW_START, CANCEL_WINDOW_END));
+                .formatted(stayListing, CANCEL_WINDOW_START, CANCEL_WINDOW_END));
         assertThat(rebooking.statusCode()).as("the rebooking on the freed window: %s", body(rebooking))
                 .isEqualTo(201);
 
@@ -909,6 +911,37 @@ class PurposeJourneysIntegrationTest {
                 .formatted(priceMinor));
         assertThat(created.statusCode()).as("product register: %s", body(created)).isEqualTo(201);
         return java.util.UUID.fromString(objectMapper.readTree(created.body()).path("id").asString());
+    }
+
+
+    /**
+     * The booking leg's real provisioning: the provider profile (the slot
+     * gate's ownsProvider resolves provider_profiles by USER id), the
+     * administrative VERIFIED decision (the listing's creation gate
+     * requires it — CatalogService.create's own filter), and the bookable
+     * ProviderListing (the entity getListingInfo reads; a store product
+     * answers the honest 404 at the booking create).
+     */
+    private UUID becomeVerifiedListing(GateResult sellerGate, String title, long priceCents)
+            throws Exception {
+        HttpResponse<String> profile = postJson("/api/v1/providers", sellerGate.accessToken(),
+                "{\"displayName\":\"" + title + "\",\"bio\":\"J30 booking provisioning\"}");
+        assertThat(profile.statusCode()).as("provider profile: %s", body(profile)).isEqualTo(200);
+        UUID providerProfileId = UUID.fromString(
+                objectMapper.readTree(profile.body()).path("id").asString());
+        String verifierName = "it-purpose-verifier-" + UUID.randomUUID().toString().substring(0, 8);
+        registerUser(verifierName, "ADMIN");
+        GateResult verifierGate = loginGate(verifierName, PASSWORD);
+        HttpResponse<String> verified = postJson(
+                "/api/v1/admin/providers/" + providerProfileId + "/verify",
+                verifierGate.accessToken(), "");
+        assertThat(verified.statusCode()).as("provider verify: %s", body(verified)).isEqualTo(200);
+        HttpResponse<String> created = postJson("/api/v1/listings", sellerGate.accessToken(),
+                "{\"title\":\"" + title + "\",\"description\":\"The J30 booking leg's own listing\","
+                        + "\"category\":\"stay\",\"priceCents\":" + priceCents
+                        + ",\"currency\":\"SAR\",\"maxGuests\":2}");
+        assertThat(created.statusCode()).as("listing register: %s", body(created)).isEqualTo(201);
+        return UUID.fromString(objectMapper.readTree(created.body()).path("id").asString());
     }
 
     private void setStock(String sellerToken, UUID productId, int quantity) throws Exception {
