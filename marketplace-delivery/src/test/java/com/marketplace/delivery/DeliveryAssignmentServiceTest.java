@@ -39,7 +39,7 @@ class DeliveryAssignmentServiceTest {
 
     private DeliveryProperties enabled() {
         return new DeliveryProperties(true, "SAR", 100, 50, 20_000, 900,
-                "https://routing.example.invalid", 50, 25, 120, 25, 3L);
+                "https://routing.example.invalid", 50, 25, 120, 25, 3L, 92L);
     }
 
     private DeliveryRequest readyRequest() {

@@ -24,7 +24,17 @@ public class CarrierRegistry {
     public CarrierRegistry(Collection<CarrierChannel> channels) {
         Map<String, CarrierChannel> byCode = new LinkedHashMap<>();
         for (CarrierChannel channel : channels) {
-            byCode.put(channel.code(), channel);
+            // CodeRabbit round 1, verified real: a duplicate code must be a
+            // LOUD configuration error at startup — a silent put would
+            // replace the earlier channel, hide it from all(), and answer
+            // only the later one from byCode() (§3.4's stable-code contract).
+            CarrierChannel previous = byCode.putIfAbsent(channel.code(), channel);
+            if (previous != null) {
+                throw new IllegalStateException("Duplicate carrier code '" + channel.code()
+                        + "': " + previous.getClass().getName() + " and "
+                        + channel.getClass().getName()
+                        + " declare the same code — carrier codes must be unique");
+            }
         }
         this.channels = java.util.Collections.unmodifiableMap(byCode);
     }

@@ -9,6 +9,13 @@
 --     (ACTIVE/SUSPENDED): a suspended courier disappears from dispatch
 --     eligibility (the assignment gate reads it); availability stays the
 --     courier's own live signal, status is the operator's verdict.
+--   * delivery_couriers.status_reason — the operator's verdict's own words
+--     (CodeRabbit round 1, verified real: a courier-scoped suspension note
+--     must NOT ride delivery_request_events — its delivery_request_id is
+--     NOT NULL by V215's design, and an idle courier's suspension would
+--     violate it and roll back the whole status change; the reason lives on
+--     the courier's own row and the Envers _aud revision history carries
+--     the who/when — the order_returns.reason/resolution_note pattern).
 --   * delivery_requests.carrier — WHICH carrier executes each leg: the
 --     platform's own fleet ('PLATFORM', the launch mode — ADR-0013 D4)
 --     or an external carrier's code (arriving behind the CarrierChannel
@@ -23,6 +30,12 @@ ALTER TABLE delivery_couriers
 
 ALTER TABLE delivery_couriers_aud
     ADD COLUMN status VARCHAR(12);
+
+ALTER TABLE delivery_couriers
+    ADD COLUMN status_reason VARCHAR(500);
+
+ALTER TABLE delivery_couriers_aud
+    ADD COLUMN status_reason VARCHAR(500);
 
 ALTER TABLE delivery_requests
     ADD COLUMN carrier VARCHAR(40) NOT NULL DEFAULT 'PLATFORM';

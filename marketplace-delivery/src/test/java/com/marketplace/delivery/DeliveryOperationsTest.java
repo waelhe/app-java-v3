@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -38,7 +39,7 @@ class DeliveryOperationsTest {
 
         private DispatchQueueService service;
         private final DeliveryProperties properties = new DeliveryProperties(
-                true, "SAR", 500L, 100L, 50_000, 900L, "http://routing", 200L, 50L, 120L, 25, 3L);
+                true, "SAR", 500L, 100L, 50_000, 900L, "http://routing", 200L, 50L, 120L, 25, 3L, 92L);
 
         @BeforeEach
         void setUp() {
@@ -80,14 +81,12 @@ class DeliveryOperationsTest {
 
         @Mock
         private DeliveryCourierRepository couriers;
-        @Mock
-        private DeliveryRequestEventRepository events;
 
         private CourierOperationsService service;
 
         @BeforeEach
         void setUp() {
-            service = new CourierOperationsService(couriers, events);
+            service = new CourierOperationsService(couriers);
         }
 
         @Test
@@ -103,15 +102,39 @@ class DeliveryOperationsTest {
 
             assertThat(suspended.status()).isEqualTo(CourierStatus.SUSPENDED);
             assertThat(suspended.available()).isFalse();
-            // the verdict event was recorded on the operational timeline
-            verify(events).save(any(DeliveryRequestEvent.class));
+            // the verdict's own words ride the row (the Envers revision
+            // history carries the who/when) — CodeRabbit round 1: the
+            // courier-scoped note never rides delivery_request_events
+            assertThat(suspended.statusReason()).isEqualTo("safety incident");
+            assertThat(courier.getStatusReason()).isEqualTo("safety incident");
+        }
+
+        @Test
+        void anIdleCourierSuspendsWithoutAnyDeliveryRequestEvent() {
+            // CodeRabbit round 1, verified real (the Major): the idle courier
+            // has NO current delivery request — the old shape wrote a
+            // DeliveryRequestEvent whose delivery_request_id is NOT NULL by
+            // V215's design, so the insert violated the constraint and rolled
+            // the whole suspension back. The row-carried reason needs no
+            // request at all.
+            UUID userId = UUID.randomUUID();
+            DeliveryCourier idle = new DeliveryCourier(userId);
+            when(couriers.findByUserIdForUpdate(userId)).thenReturn(java.util.Optional.of(idle));
+            when(couriers.save(any(DeliveryCourier.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            CourierOperationsService.CourierStatusResponse suspended = service.suspend(userId,
+                    "no current job");
+
+            assertThat(suspended.status()).isEqualTo(CourierStatus.SUSPENDED);
+            assertThat(suspended.currentDeliveryRequestId()).isNull();
+            assertThat(suspended.statusReason()).isEqualTo("no current job");
         }
 
         @Test
         void aSecondSuspensionAnswersTheHonestConflict() {
             UUID userId = UUID.randomUUID();
             DeliveryCourier courier = new DeliveryCourier(userId);
-            courier.suspend();
+            courier.suspend("first");
             when(couriers.findByUserIdForUpdate(userId)).thenReturn(java.util.Optional.of(courier));
 
             assertThatThrownBy(() -> service.suspend(userId, "again"))
@@ -123,20 +146,24 @@ class DeliveryOperationsTest {
         void reactivationReturnsTheCourierToTheOperatorsGrace() {
             UUID userId = UUID.randomUUID();
             DeliveryCourier courier = new DeliveryCourier(userId);
-            courier.suspend();
+            courier.updateAvailability(24.7, 46.7, true, Instant.now());
+            courier.suspend("safety incident");
             when(couriers.findByUserIdForUpdate(userId)).thenReturn(java.util.Optional.of(courier));
             when(couriers.save(any(DeliveryCourier.class))).thenAnswer(inv -> inv.getArgument(0));
 
             CourierOperationsService.CourierStatusResponse reactivated = service.reactivate(userId);
             assertThat(reactivated.status()).isEqualTo(CourierStatus.ACTIVE);
-            // availability stays the courier's OWN live signal — re-declared, not forced
+            // availability stays the courier's OWN live signal — re-declared,
+            // never auto-restored by the reactivation itself; the verdict's
+            // reason is cleared with the verdict
             assertThat(reactivated.available()).isFalse();
+            assertThat(reactivated.statusReason()).isNull();
         }
 
         @Test
         void aSuspendedCourierCannotDeclareAvailabilityOrTakeWork() {
             DeliveryCourier courier = new DeliveryCourier(UUID.randomUUID());
-            courier.suspend();
+            courier.suspend("verdict");
 
             assertThatThrownBy(() -> courier.updateAvailability(24.7, 46.7, true, Instant.now()))
                     .isInstanceOf(IllegalStateException.class)
@@ -144,6 +171,25 @@ class DeliveryOperationsTest {
             assertThatThrownBy(() -> courier.assign(UUID.randomUUID(), Instant.now()))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("suspended courier cannot take new work");
+        }
+
+        @Test
+        void aLegFinishingUnderSuspensionNeverRestoresAvailability() {
+            // CodeRabbit round 1, verified real (the Major): the suspended
+            // courier's in-flight leg finishes — finish() must respect the
+            // suspension and keep the courier unavailable until the operator
+            // reactivates AND the courier re-declares availability.
+            DeliveryCourier courier = new DeliveryCourier(UUID.randomUUID());
+            courier.updateAvailability(24.7, 46.7, true, Instant.now());
+            UUID requestId = UUID.randomUUID();
+            courier.assign(requestId, Instant.now());
+            courier.suspend("mid-route verdict");
+
+            courier.finish(requestId, true, Instant.now(), 120L);
+
+            assertThat(courier.getCurrentDeliveryRequestId()).isNull();
+            assertThat(courier.isAvailable()).isFalse();
+            assertThat(courier.getStatus()).isEqualTo(CourierStatus.SUSPENDED);
         }
 
         @Test
@@ -160,7 +206,7 @@ class DeliveryOperationsTest {
     @Test
     void theRegistryExposesThePlatformFleetByItsStableCode() {
         DeliveryProperties properties = new DeliveryProperties(
-                true, "SAR", 500L, 100L, 50_000, 900L, "http://routing", 200L, 50L, 120L, 25, 3L);
+                true, "SAR", 500L, 100L, 50_000, 900L, "http://routing", 200L, 50L, 120L, 25, 3L, 92L);
         DeliveryRouteProvider routes = new DeliveryRouteProvider() {
             @Override
             public DeliveryRouteMetrics route(double pickupLatitude, double pickupLongitude,
@@ -182,11 +228,45 @@ class DeliveryOperationsTest {
     @Test
     void anOutageOrDisabledServiceIsAnHonestNonServiceable() {
         DeliveryProperties properties = new DeliveryProperties(
-                false, "SAR", 500L, 100L, 50_000, 900L, "http://routing", 200L, 50L, 120L, 25, 3L);
+                false, "SAR", 500L, 100L, 50_000, 900L, "http://routing", 200L, 50L, 120L, 25, 3L, 92L);
         PlatformFleetCarrier platform = new PlatformFleetCarrier(
                 (a, b, c, d) -> { throw new RuntimeException("routing outage"); }, properties);
 
         assertThat(platform.serviceable(24.7, 46.7, 24.8, 46.8)).isFalse();
+    }
+
+    @Test
+    void theFleetDeclaresItsImplementedCapabilitiesOnly() {
+        // CodeRabbit round 1, verified real: the current path quotes and
+        // executes on-demand legs and closes them with the proof-code
+        // verification — SCHEDULED, LIVE_TRACKING and RETURNS are declared
+        // when (and only when) a carrier actually implements them
+        DeliveryProperties properties = new DeliveryProperties(
+                true, "SAR", 500L, 100L, 50_000, 900L, "http://routing", 200L, 50L, 120L, 25, 3L, 92L);
+        PlatformFleetCarrier platform = new PlatformFleetCarrier(
+                (a, b, c, d) -> new DeliveryRouteMetrics(10_000, 600), properties);
+
+        assertThat(platform.capabilities()).containsExactlyInAnyOrder(
+                CarrierChannel.CarrierCapability.ON_DEMAND,
+                CarrierChannel.CarrierCapability.PROOF_OF_DELIVERY);
+    }
+
+    @Test
+    void duplicateCarrierCodesAreALoudConfigurationError() {
+        // CodeRabbit round 1, verified real: a duplicate code must fail the
+        // registry's construction — a silent put would replace the earlier
+        // channel, hide it from all(), and answer only the later one from
+        // byCode()
+        DeliveryProperties properties = new DeliveryProperties(
+                true, "SAR", 500L, 100L, 50_000, 900L, "http://routing", 200L, 50L, 120L, 25, 3L, 92L);
+        PlatformFleetCarrier first = new PlatformFleetCarrier(
+                (a, b, c, d) -> new DeliveryRouteMetrics(10_000, 600), properties);
+        PlatformFleetCarrier second = new PlatformFleetCarrier(
+                (a, b, c, d) -> new DeliveryRouteMetrics(20_000, 600), properties);
+
+        assertThatThrownBy(() -> new CarrierRegistry(java.util.List.of(first, second)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Duplicate carrier code 'PLATFORM'");
     }
 
     // ---------------- the settlement reconciliation ----------------
@@ -200,10 +280,12 @@ class DeliveryOperationsTest {
         private com.marketplace.shared.api.PaymentIntentLookupPort paymentIntents;
 
         private DeliveryReconciliationService service;
+        private final DeliveryProperties properties = new DeliveryProperties(
+                true, "SAR", 500L, 100L, 50_000, 900L, "http://routing", 200L, 50L, 120L, 25, 3L, 92L);
 
         @BeforeEach
         void setUp() {
-            service = new DeliveryReconciliationService(requests, paymentIntents);
+            service = new DeliveryReconciliationService(requests, paymentIntents, properties);
         }
 
         private DeliveryRequest leg(String currency, long amount, long compensation,
@@ -226,12 +308,13 @@ class DeliveryOperationsTest {
             DeliveryRequest orderBorne = leg("SAR", 1_500L, 600L, null);
             when(requests.findByCreatedAtBetween(any(Instant.class), any(Instant.class)))
                     .thenReturn(List.of(collected, pending, orderBorne));
-            when(paymentIntents.findById(collectedIntent)).thenReturn(java.util.Optional.of(
+            // the window's intents resolve in ONE batched port read —
+            // CodeRabbit round 1: never the per-leg findById N+1
+            when(paymentIntents.findAllById(any())).thenReturn(java.util.List.of(
                     new com.marketplace.shared.api.PaymentIntentDetails(
                             collectedIntent, null, null, null, "SUCCEEDED", "DELIVERY",
-                            1_000L, "SAR", null, null, null, null, 0L)));
-            when(paymentIntents.findById(pending.getPaymentIntentId()))
-                    .thenReturn(java.util.Optional.of(new com.marketplace.shared.api.PaymentIntentDetails(
+                            1_000L, "SAR", null, null, null, null, 0L),
+                    new com.marketplace.shared.api.PaymentIntentDetails(
                             pending.getPaymentIntentId(), null, null, null, "CREATED", "DELIVERY",
                             2_000L, "SAR", null, null, null, null, 0L)));
 
@@ -250,6 +333,35 @@ class DeliveryOperationsTest {
             // payables span both families (couriers ride every leg)
             assertThat(report.courierPayables()).containsExactly(
                     new DeliveryReconciliationService.CurrencyRow("SAR", 1_800L));
+            // the batched read is the ONE port call for the whole window
+            verify(paymentIntents).findAllById(any());
+            verify(paymentIntents, never()).findById(any());
+        }
+
+        @Test
+        void anInvertedWindowAnswersTheHonest400() {
+            // CodeRabbit round 1: an empty/inverted window is a client input
+            // error — never a silently empty 200 report
+            Instant from = Instant.now();
+            Instant to = from.minusSeconds(3600);
+
+            assertThatThrownBy(() -> service.reconcile(from, to))
+                    .isInstanceOf(com.marketplace.shared.api.BadRequestException.class)
+                    .hasMessageContaining("must be before");
+            verifyNoInteractions(requests);
+        }
+
+        @Test
+        void anOversizedWindowAnswersTheHonest400() {
+            // CodeRabbit round 1: the report is an in-memory operational read —
+            // the span is bounded by the configured maximum (92 days here)
+            Instant from = Instant.parse("2026-01-01T00:00:00Z");
+            Instant to = Instant.parse("2026-10-01T00:00:00Z");
+
+            assertThatThrownBy(() -> service.reconcile(from, to))
+                    .isInstanceOf(com.marketplace.shared.api.BadRequestException.class)
+                    .hasMessageContaining("exceeds the configured maximum");
+            verifyNoInteractions(requests);
         }
     }
 }

@@ -32,9 +32,19 @@ public class PlatformFleetCarrier implements CarrierChannel {
         return CODE;
     }
 
+    /**
+     * The fleet's IMPLEMENTED capabilities only (CodeRabbit round 1,
+     * verified real): the current path quotes and executes on-demand legs
+     * and closes them with the proof-code verification (the
+     * {@code proof_code_hash} mechanism) — SCHEDULED, LIVE_TRACKING and
+     * RETURNS are declared by a carrier when (and only when) its adapter
+     * actually implements them; an honest {@code /carriers} board is the
+     * routing decisions' input, never a wish list.
+     */
     @Override
     public Set<CarrierCapability> capabilities() {
-        return EnumSet.allOf(CarrierCapability.class);
+        return EnumSet.of(CarrierCapability.ON_DEMAND,
+                CarrierCapability.PROOF_OF_DELIVERY);
     }
 
     @Override

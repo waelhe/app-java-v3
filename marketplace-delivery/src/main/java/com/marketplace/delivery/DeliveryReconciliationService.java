@@ -1,15 +1,22 @@
 package com.marketplace.delivery;
 
+import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.api.PaymentIntentDetails;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
 import io.micrometer.observation.annotation.Observed;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * The V229 settlement reconciliation (the architecture §4.2: «Reconciliation
@@ -43,11 +50,14 @@ public class DeliveryReconciliationService {
 
     private final DeliveryRequestRepository requests;
     private final PaymentIntentLookupPort paymentIntents;
+    private final DeliveryProperties properties;
 
     public DeliveryReconciliationService(DeliveryRequestRepository requests,
-                                         PaymentIntentLookupPort paymentIntents) {
+                                         PaymentIntentLookupPort paymentIntents,
+                                         DeliveryProperties properties) {
         this.requests = requests;
         this.paymentIntents = paymentIntents;
+        this.properties = properties;
     }
 
     /**
@@ -58,7 +68,31 @@ public class DeliveryReconciliationService {
      */
     @Observed(name = "delivery.reconciliation.window")
     public ReconciliationReport reconcile(Instant from, Instant to) {
+        // CodeRabbit round 1 on #630, verified real: the window's shape is
+        // part of the contract — an empty/inverted window answers a 400
+        // (never a silently empty 200 report), and the span is bounded by
+        // the configured maximum (the report is an in-memory operational
+        // read, never an unbounded historical walk).
+        if (from == null || to == null || !from.isBefore(to)) {
+            throw new BadRequestException(
+                    "The reconciliation window is invalid: 'from' must be before 'to'");
+        }
+        if (Duration.between(from, to).compareTo(Duration.ofDays(properties.reconciliationMaxWindowDays())) > 0) {
+            throw new BadRequestException("The reconciliation window exceeds the configured maximum of "
+                    + properties.reconciliationMaxWindowDays() + " days");
+        }
         List<DeliveryRequest> window = requests.findByCreatedAtBetween(from, to);
+        // CodeRabbit round 1 on #630, verified real: the window's intents
+        // resolve in ONE batched port read (the per-leg findById N+1 over
+        // a historical window) — absent intents simply stay missing.
+        Map<UUID, PaymentIntentDetails> intentsById = paymentIntents
+                .findAllById(window.stream()
+                        .map(DeliveryRequest::getPaymentIntentId)
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .toList())
+                .stream()
+                .collect(Collectors.toMap(PaymentIntentDetails::paymentIntentId, Function.identity()));
         Accumulator quoted = new Accumulator();
         Accumulator collected = new Accumulator();
         Accumulator payables = new Accumulator();
@@ -69,10 +103,10 @@ public class DeliveryReconciliationService {
             // visibility (a subset of quoted, never an addition to it)
             quoted.add(leg.getCurrency(), leg.getAmountMinor());
             if (leg.getPaymentIntentId() != null) {
-                boolean completed = paymentIntents.findById(leg.getPaymentIntentId())
-                        .map(intent -> "SUCCEEDED".equals(intent.status())
-                                || "PARTIALLY_REFUNDED".equals(intent.status()))
-                        .orElse(false);
+                PaymentIntentDetails intent = intentsById.get(leg.getPaymentIntentId());
+                boolean completed = intent != null
+                        && ("SUCCEEDED".equals(intent.status())
+                                || "PARTIALLY_REFUNDED".equals(intent.status()));
                 if (completed) {
                     collected.add(leg.getCurrency(), leg.getAmountMinor());
                 }

@@ -34,13 +34,13 @@ class DeliveryCourierServiceTest {
 
     private DeliveryProperties enabled() {
         return new DeliveryProperties(true, "SAR", 100, 50, 20_000, 900,
-                "https://routing.example.invalid", 50, 25, 120, 25, 3L);
+                "https://routing.example.invalid", 50, 25, 120, 25, 3L, 92L);
     }
 
     @Test
     void disabledFeatureRefusesTheOptIn() {
         assertThrows(ServiceUnavailableException.class, () -> service(
-                new DeliveryProperties(false, "SAR", 0, 0, 0, 900, "", 0, 0, 120, 25, 3L))
+                new DeliveryProperties(false, "SAR", 0, 0, 0, 900, "", 0, 0, 120, 25, 3L, 92L))
                 .updateAvailability(UUID.randomUUID(),
                         new CourierAvailabilityRequest(37.0, -122.0, true)));
     }

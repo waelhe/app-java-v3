@@ -25,12 +25,9 @@ import java.util.UUID;
 public class CourierOperationsService {
 
     private final DeliveryCourierRepository couriers;
-    private final DeliveryRequestEventRepository events;
 
-    public CourierOperationsService(DeliveryCourierRepository couriers,
-                                    DeliveryRequestEventRepository events) {
+    public CourierOperationsService(DeliveryCourierRepository couriers) {
         this.couriers = couriers;
-        this.events = events;
     }
 
     /** The roster — the couriers board with availability, status, and the current job. */
@@ -39,7 +36,14 @@ public class CourierOperationsService {
         return couriers.findAllByOrderByUpdatedAtDesc(pageable).map(CourierStatusResponse::of);
     }
 
-    /** The operator's suspension — new work stops; the in-flight leg (if any) finishes. */
+    /**
+     * The operator's suspension — new work stops; the in-flight leg (if any) finishes.
+     * The verdict's reason rides the courier's own row (bounded 500) and the Envers
+     * revision history carries the who/when — CodeRabbit round 1, verified real:
+     * delivery_request_events.delivery_request_id is NOT NULL by V215's design, so
+     * an idle courier's suspension must never write there (the insert would violate
+     * the constraint and roll back the whole status change).
+     */
     @Transactional
     @Observed(name = "delivery.courier.suspend")
     public CourierStatusResponse suspend(UUID courierUserId, String reason) {
@@ -48,13 +52,8 @@ public class CourierOperationsService {
         if (courier.getStatus() == CourierStatus.SUSPENDED) {
             throw new ConflictException("Courier " + courierUserId + " is already suspended");
         }
-        courier.suspend();
+        courier.suspend(reason);
         DeliveryCourier saved = couriers.save(courier);
-        events.save(new DeliveryRequestEvent(UUID.randomUUID(),
-                courier.getCurrentDeliveryRequestId(), null,
-                "ACTIVE", "SUSPENDED",
-                "Courier suspended by the operator: " + (reason == null ? "" : reason.strip()),
-                java.time.Instant.now()));
         return CourierStatusResponse.of(saved);
     }
 
@@ -75,13 +74,14 @@ public class CourierOperationsService {
     public record CourierStatusResponse(UUID userId, CourierStatus status, boolean available,
                                         UUID currentDeliveryRequestId,
                                         Double latitude, Double longitude,
-                                        java.time.Instant locationUpdatedAt) {
+                                        java.time.Instant locationUpdatedAt,
+                                        String statusReason) {
 
         static CourierStatusResponse of(DeliveryCourier courier) {
             return new CourierStatusResponse(courier.getUserId(), courier.getStatus(),
                     courier.isAvailable(), courier.getCurrentDeliveryRequestId(),
                     courier.getLatitude(), courier.getLongitude(),
-                    courier.getLocationUpdatedAt());
+                    courier.getLocationUpdatedAt(), courier.getStatusReason());
         }
     }
 }

@@ -77,7 +77,7 @@ class DeliveryOperationsControllerTest {
     void suspensionCarriesTheReasonAndAnswersTheReadBack() {
         when(couriers.suspend(courierId, "safety incident")).thenReturn(
                 new CourierOperationsService.CourierStatusResponse(courierId,
-                        CourierStatus.SUSPENDED, false, null, null, null, null));
+                        CourierStatus.SUSPENDED, false, null, null, null, null, "safety incident"));
 
         ResponseEntity<CourierOperationsService.CourierStatusResponse> result =
                 controller.suspend(courierId, new DeliveryOperationsController.SuspendRequest(
@@ -92,7 +92,7 @@ class DeliveryOperationsControllerTest {
     void reactivationAnswersTheReadBack() {
         when(couriers.reactivate(courierId)).thenReturn(
                 new CourierOperationsService.CourierStatusResponse(courierId,
-                        CourierStatus.ACTIVE, false, null, null, null, null));
+                        CourierStatus.ACTIVE, false, null, null, null, null, null));
 
         assertThat(controller.reactivate(courierId).getBody().status())
                 .isEqualTo(CourierStatus.ACTIVE);
@@ -107,7 +107,7 @@ class DeliveryOperationsControllerTest {
     @Test
     void theCarrierRegistryAnswersItsChannelsWithCapabilities() {
         DeliveryProperties properties = new DeliveryProperties(
-                true, "SAR", 500L, 100L, 50_000, 900L, "http://routing", 200L, 50L, 120L, 25, 3L);
+                true, "SAR", 500L, 100L, 50_000, 900L, "http://routing", 200L, 50L, 120L, 25, 3L, 92L);
         PlatformFleetCarrier platform = new PlatformFleetCarrier(
                 (a, b, c, d) -> new DeliveryRouteMetrics(1_000, 60), properties);
         when(carriers.all()).thenReturn(List.of(platform));
