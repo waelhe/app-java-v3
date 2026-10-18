@@ -344,6 +344,69 @@ class PaymentsServicePspTest {
         assertEquals(Long.valueOf(400L), intent.getRefundedAmountCents());
     }
 
+    /**
+     * The V230 return-scoped key (the RMA completion edge): a completing
+     * return's refund derives the STABLE return-scoped PSP idempotency key —
+     * payment + return + frozen amount, deliberately NOT the refunded-so-far
+     * state — so a retried completion after a sibling return's refund advanced
+     * the cumulative total re-derives the SAME key and replays the one remote
+     * refund instead of double-charging (the review's Major finding).
+     */
+    @Test
+    void refundPayment_returnScopedRefund_derivesTheStableReturnKey() {
+        UUID returnId = UUID.randomUUID();
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null);
+        intent.markProcessing();
+        intent.markSucceeded();
+        intent.assignPspIntentId("pi_remote_r3");
+        Payment payment = Payment.create(intent.getId(), 5000L);
+        payment.markCompleted("ch_r3");
+        // a sibling return's refund already advanced the cumulative actual —
+        // the state-derived key would have drifted past it; the return-scoped
+        // key must not care
+        payment.markPartiallyRefunded(1000L);
+        when(intentRepository.findById(intent.getId())).thenReturn(Optional.of(intent));
+        when(paymentRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
+        when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
+        when(pspChannel.createRemoteRefund(eq("pi_remote_r3"), eq(1500L),
+                eq("marketplace-refund-" + payment.getId() + "-return-" + returnId + "-1500")))
+                .thenReturn(new PspChannel.RemoteRefund("re_r3", "succeeded", 2500L));
+
+        Payment result = service(boundChannel)
+                .refundPayment(payment.getId(), 1500L, returnId).payment();
+
+        // the remote cumulative actual (2500 = the sibling's 1000 + this 1500) wins
+        verify(pspChannel, times(1)).createRemoteRefund(eq("pi_remote_r3"), eq(1500L),
+                eq("marketplace-refund-" + payment.getId() + "-return-" + returnId + "-1500"));
+        assertEquals(PaymentStatus.PARTIALLY_REFUNDED, result.getStatus());
+        assertEquals(2500L, result.getRefundedAmountCents());
+    }
+
+    /**
+     * The key's stability contract, pinned pure (no channel): the same
+     * completing return re-derives the same key regardless of the
+     * refunded-so-far state; a different return or amount derives a
+     * different one; a null amount reads "full".
+     */
+    @Test
+    void returnScopedRefundIdempotencyKey_isStableForTheSameReturnOnly() {
+        UUID paymentId = UUID.randomUUID();
+        UUID returnId = UUID.randomUUID();
+        UUID otherReturnId = UUID.randomUUID();
+
+        String first = PaymentsService.returnScopedRefundIdempotencyKey(paymentId, returnId, 1500L);
+        String retried = PaymentsService.returnScopedRefundIdempotencyKey(paymentId, returnId, 1500L);
+        String full = PaymentsService.returnScopedRefundIdempotencyKey(paymentId, returnId, null);
+        String sibling = PaymentsService.returnScopedRefundIdempotencyKey(paymentId, otherReturnId, 1500L);
+        String otherAmount = PaymentsService.returnScopedRefundIdempotencyKey(paymentId, returnId, 2500L);
+
+        assertEquals(first, retried, "the same return must re-derive the same key");
+        assertEquals("marketplace-refund-" + paymentId + "-return-" + returnId + "-1500", first);
+        assertEquals("marketplace-refund-" + paymentId + "-return-" + returnId + "-full", full);
+        assertNotEquals(first, sibling, "a sibling return's key differs");
+        assertNotEquals(first, otherAmount, "a different frozen amount differs");
+    }
+
     /** Acceptance 3: the remote cumulative wins over the local sum (divergence case). */
     @Test
     void refundPayment_partialRefundAppliesRemoteCumulative() {

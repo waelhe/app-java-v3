@@ -12,7 +12,14 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-interface OrderReturnRepository extends JpaRepository<OrderReturn, UUID> {
+/**
+ * The V230 RMA lifecycle's aggregate repository (the governing one-interface-
+ * per-file public-repository law: Spring Data's dynamic proxy cannot carry a
+ * package-private interface across the packaged application's split class
+ * loading — the measured #624/#628 boot failure «non-public interface is not
+ * defined by the given loader», this branch's Full Integration red).
+ */
+public interface OrderReturnRepository extends JpaRepository<OrderReturn, UUID> {
 
     Optional<OrderReturn> findById(UUID id);
 
@@ -35,11 +42,4 @@ interface OrderReturnRepository extends JpaRepository<OrderReturn, UUID> {
     List<OrderReturn> findByOrderIdAndStatusIn(UUID orderId, List<OrderReturn.ReturnStatus> statuses);
 
     long countByOrderId(UUID orderId);
-}
-
-interface OrderReturnLineRepository extends JpaRepository<OrderReturnLine, UUID> {
-
-    List<OrderReturnLine> findByOrderReturnId(UUID orderReturnId);
-
-    List<OrderReturnLine> findByOrderItemId(UUID orderItemId);
 }
