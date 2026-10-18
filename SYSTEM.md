@@ -57,7 +57,7 @@ Canonical product/UX authority: [Platform Administration Operating System Produc
 |---|---|---|
 | compile | compiler | `failOnWarning` — أي تحذير يُفشل البناء |
 | test | surefire | اختبارات الوحدة (`*Test`) — منفصلة تماماً عن التكامل |
-| integration-test / verify | failsafe | اختبارات التكامل — **157 ملفًا** تختارها أنماط التضمين (`**/*IT.java` + `**/*IntegrationTest.java`؛ 4 منها بلاحقة `*IT`)؛ البيئية منها تُتخطى بلا Docker (`disabledWithoutDocker`) — الحارس `DocumentationNumbersGuardTest` يستمد العدد من أشجار اختبار الوحدات |
+| integration-test / verify | failsafe | اختبارات التكامل — **158 ملفًا** تختارها أنماط التضمين (`**/*IT.java` + `**/*IntegrationTest.java`؛ 4 منها بلاحقة `*IT`)؛ البيئية منها تُتخطى بلا Docker (`disabledWithoutDocker`) — الحارس `DocumentationNumbersGuardTest` يستمد العدد من أشجار اختبار الوحدات |
 | integration-test / verify | failsafe | اختبارات التكامل — **158 ملفًا** تختارها أنماط التضمين (`**/*IT.java` + `**/*IntegrationTest.java`؛ 4 منها بلاحقة `*IT`)؛ البيئية منها تُتخطى بلا Docker (`disabledWithoutDocker`) — الحارس `DocumentationNumbersGuardTest` يستمد العدد من أشجار اختبار الوحدات |
 | package | spring-boot-maven | `repackage` → jar تنفيذي لوحدة `marketplace-app` فقط |
 
