@@ -187,7 +187,15 @@ class LendingLifecycleJourneyIntegrationTest {
                 rivalGate.accessToken(), """
                         {"startAt":"%s","endAt":"%s"}"""
                         .formatted(startAt.plus(Duration.ofDays(1)), endAt.plus(Duration.ofDays(1))));
-        assertThat(rivalRequest.statusCode()).as("the overlapping window: %s", body(rivalRequest)).isEqualTo(409);
+        // The implemented contract's own shape: a competing REQUEST is legal
+        // (REQUESTED is not a live hold — the exclusivity predicate counts
+        // APPROVED/ACTIVE/RETURN_REQUESTED/DISPUTED alone); the exclusivity
+        // proves itself at the rival's APPROVAL against the first loan's live
+        // hold, not at the request.
+        assertThat(rivalRequest.statusCode()).as("the competing request is born REQUESTED: %s", body(rivalRequest))
+                .isEqualTo(201);
+        UUID rivalLoanId = UUID.fromString(
+                objectMapper.readTree(rivalRequest.body()).path("id").asString());
 
         // (4) The LOAN_REQUESTED notification landed for the owner (the
         // event machinery's receipt — the payload carries the truth).
@@ -208,6 +216,17 @@ class LendingLifecycleJourneyIntegrationTest {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT idempotency_key FROM payment_intents WHERE id = ?", String.class, intentId))
                 .as("the deterministic loan-{id} key (the first line of defense)").isEqualTo("loan-" + loanId);
+
+        // (5b) The exclusivity's own proof at its honest place: the rival's
+        // competing APPROVAL against the first loan's now-live hold answers
+        // 409 (REQUESTED was never a hold — the approval is where the
+        // window's exclusivity is enforced; the pre-query self-exclusion law
+        // keeps the first approval's own count honest).
+        HttpResponse<String> rivalApprove = postJson(
+                "/api/v1/lending/loans/" + rivalLoanId + "/approve", ownerGate.accessToken(), "");
+        assertThat(rivalApprove.statusCode())
+                .as("the rival's approval against the live hold: %s", body(rivalApprove))
+                .isEqualTo(409);
 
         // (6) The honest handover gate FIRST: the handover before the
         // money settles answers the domain 409 (the A5 classification —

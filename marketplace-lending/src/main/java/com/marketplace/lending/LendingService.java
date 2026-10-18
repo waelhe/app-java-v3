@@ -142,7 +142,9 @@ public class LendingService {
             throw new ConflictException("Product " + productId + " is " + product.storefront()
                     + " — a loan rides an ACTIVE product");
         }
-        if (loanRepository.countLiveOverlap(productId, startAt, endAt) > 0) {
+        // selfId = null: the request's own loan does not exist yet — nothing
+        // of its own to exclude from the count (the self-exclusion law).
+        if (loanRepository.countLiveOverlap(null, productId, startAt, endAt) > 0) {
             throw new ConflictException("The period overlaps a live hold on item " + productId
                     + " — pick another window");
         }
@@ -169,9 +171,14 @@ public class LendingService {
         Loan loan = requireLoan(loanId);
         requireOwner(loan, authentication);
         loan.approve();
-        // The DB row is still REQUESTED here (not live), so any positive
-        // count is a REAL competing hold — the other edge of the race.
-        if (loanRepository.countLiveOverlap(loan.getProductId(), loan.getStartAt(), loan.getEndAt()) > 0) {
+        // The self-exclusion law (measured 2026-10-18): the managed entity's
+        // APPROVED status dirties the persistence context BEFORE this count,
+        // and Hibernate's pre-query AUTO flush already wrote it — WITHOUT the
+        // exclusion the count included the loan ITSELF and every real-HTTP
+        // approval answered 409 against no competing hold at all. The count
+        // now excludes the candidate; a positive count is a REAL competing
+        // hold — the other edge of the race.
+        if (loanRepository.countLiveOverlap(loan.getId(), loan.getProductId(), loan.getStartAt(), loan.getEndAt()) > 0) {
             throw new ConflictException("The period overlaps another live hold on item "
                     + loan.getProductId() + " — the approval is refused");
         }

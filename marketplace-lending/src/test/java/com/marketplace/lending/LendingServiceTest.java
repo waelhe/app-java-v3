@@ -92,7 +92,7 @@ class LendingServiceTest {
         LendingOffer offer = offer();
         when(offerRepository.lockForProduct(productId)).thenReturn(Optional.of(offer));
         priceActive();
-        when(loanRepository.countLiveOverlap(eq(productId), any(), any())).thenReturn(0L);
+        when(loanRepository.countLiveOverlap(isNull(), eq(productId), any(), any())).thenReturn(0L);
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(borrower);
         when(loanRepository.save(any(Loan.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -110,7 +110,7 @@ class LendingServiceTest {
     void anOverlappingPeriodAnswersThe409BeforeAnyInsert() {
         when(offerRepository.lockForProduct(productId)).thenReturn(Optional.of(offer()));
         priceActive();
-        when(loanRepository.countLiveOverlap(any(), any(), any())).thenReturn(1L);
+        when(loanRepository.countLiveOverlap(any(), any(), any(), any())).thenReturn(1L);
 
         assertThatThrownBy(() -> service.request(productId,
                 Instant.parse("2026-11-02T10:00:00Z"), Instant.parse("2026-11-05T10:00:00Z"),
@@ -124,7 +124,7 @@ class LendingServiceTest {
     void theOwnerCannotBorrowTheirOwnItem() {
         when(offerRepository.lockForProduct(productId)).thenReturn(Optional.of(offer()));
         priceActive();
-        when(loanRepository.countLiveOverlap(any(), any(), any())).thenReturn(0L);
+        when(loanRepository.countLiveOverlap(any(), any(), any(), any())).thenReturn(0L);
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(owner);
 
         assertThatThrownBy(() -> service.request(productId,
@@ -152,7 +152,7 @@ class LendingServiceTest {
         Loan loan = loan();
         when(loanRepository.findById(loan.getId())).thenReturn(Optional.of(loan));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(owner);
-        when(loanRepository.countLiveOverlap(productId, loan.getStartAt(), loan.getEndAt())).thenReturn(1L);
+        when(loanRepository.countLiveOverlap(eq(loan.getId()), eq(productId), any(), any())).thenReturn(1L);
 
         assertThatThrownBy(() -> service.approve(loan.getId(), authentication))
                 .isInstanceOf(ConflictException.class);
@@ -164,7 +164,7 @@ class LendingServiceTest {
         Loan loan = loan();
         when(loanRepository.findById(loan.getId())).thenReturn(Optional.of(loan));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(owner);
-        when(loanRepository.countLiveOverlap(productId, loan.getStartAt(), loan.getEndAt())).thenReturn(0L);
+        when(loanRepository.countLiveOverlap(eq(loan.getId()), eq(productId), any(), any())).thenReturn(0L);
         when(loanRepository.save(any(Loan.class))).thenAnswer(inv -> inv.getArgument(0));
         UUID intentId = UUID.randomUUID();
         when(loanPaymentPort.createForLoan(loan.getId(), borrower, 1500L, "SAR")).thenReturn(
