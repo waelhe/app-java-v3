@@ -862,6 +862,8 @@ class DirectDeliveryJourneyIntegrationTest {
             }
             Thread.sleep(200);
         }
+        throw new AssertionError("delivery request " + requestId + " never reached " + expected
+                + " within 20s");
     }
 
     /**
@@ -879,6 +881,8 @@ class DirectDeliveryJourneyIntegrationTest {
             }
             Thread.sleep(200);
         }
+        throw new AssertionError("delivery request " + requestId
+                + " was never assigned to courier " + courierUserId + " within 20s");
     }
 
     /** Awaits a payment intent's status (the money loop's listener hops). */
@@ -892,6 +896,8 @@ class DirectDeliveryJourneyIntegrationTest {
             }
             Thread.sleep(200);
         }
+        throw new AssertionError("payment intent " + intentId + " did not reach " + expected
+                + " within 15s");
     }
 
     /**
@@ -911,6 +917,8 @@ class DirectDeliveryJourneyIntegrationTest {
             }
             Thread.sleep(200);
         }
+        throw new AssertionError("journal operation " + operationKey + " for delivery " + sourceId
+                + " never appeared within 15s");
     }
 
     /** The proof hash the transition gate re-derives (sha256 hex, lowercase). */
