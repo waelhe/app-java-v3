@@ -19,6 +19,19 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+/**
+ * W5b (the journeys register's J29 row — the provider team delegation): the
+ * ownership-gate family this service hosts now has TWO members — the
+ * owner-only law ({@link #verifyOwnership}, unchanged: the verification
+ * claim and every "me" surface) and the acting-provider law
+ * ({@link #requireActingProvider}, the declared profile update): the owner
+ * OR a live team seat with role MANAGER or EDITOR, resolved through
+ * {@link ProviderTeamService#isActiveEditorOrAbove} — the delegation's
+ * write floor. The inline owner branch runs FIRST so the owner's own
+ * authority never depends on the delegation registry (and the team
+ * service's answer is only consulted for a non-owner — one indexed read
+ * per delegated write, never on the owner's happy path).
+ */
 @Service
 @Transactional
 public class ProviderService {
@@ -27,17 +40,20 @@ public class ProviderService {
     private final CurrentUserProvider currentUserProvider;
     private final ApplicationEventPublisher eventPublisher;
     private final ReviewStatsPort reviewStatsPort;
+    private final ProviderTeamService teamService;
 
     private static final Set<String> PROVIDER_CACHE_NAMES = Set.of("providers");
 
     public ProviderService(ProviderRepository providerRepository,
                            CurrentUserProvider currentUserProvider,
                            ApplicationEventPublisher eventPublisher,
-                           ReviewStatsPort reviewStatsPort) {
+                           ReviewStatsPort reviewStatsPort,
+                           ProviderTeamService teamService) {
         this.providerRepository = providerRepository;
         this.currentUserProvider = currentUserProvider;
         this.eventPublisher = eventPublisher;
         this.reviewStatsPort = reviewStatsPort;
+        this.teamService = teamService;
     }
 
     @Observed(name = "provider.create")
@@ -80,13 +96,20 @@ public class ProviderService {
      * semantics (actorType null = keep; agencyName/licenseNumber null =
      * clear, the bio contract). Same entry-form rule as create: both forms
      * carry the observation.
+     *
+     * <p><b>W5b (J29 — the delegation's write floor):</b> the gate on this
+     * surface is the ACTING-provider law — the owner OR a live team seat
+     * with role MANAGER/EDITOR — so a delegated employee keeps the
+     * business's own profile current (the register's «تفويض فريق بصلاحيات
+     * ونطاق»). A stranger keeps the exact pre-W5b semantics: the 404 for
+     * an unknown provider, the 403 for a known one owned by someone else.
      */
     @Observed(name = "provider.update")
     @PreAuthorize("hasRole('PROVIDER')")
     public ProviderProfile update(UUID id, String displayName, String bio, ProviderActorType actorType,
                                   String agencyName, String licenseNumber, Authentication authentication) {
         ProviderProfile provider = getById(id);
-        verifyOwnership(provider, authentication);
+        requireActingProvider(provider, authentication);
         provider.update(displayName, bio, actorType, agencyName, licenseNumber);
         eventPublisher.publishEvent(new CacheInvalidationRequested(PROVIDER_CACHE_NAMES, id));
         return provider;
@@ -220,6 +243,27 @@ public class ProviderService {
         UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
         if (!currentUserProvider.isAdmin(authentication)
                 && (provider.getUserId() == null || !provider.getUserId().equals(currentUserId))) {
+            throw new AccessDeniedException("You do not own this provider");
+        }
+    }
+
+    /**
+     * W5b (J29): the ACTING-provider gate — the delegated surfaces' law.
+     * The admin bypass and the owner branch are {@link #verifyOwnership}'s
+     * exact rule (unchanged); the THIRD branch is the delegation: a live
+     * team seat with role MANAGER or EDITOR answers for the business
+     * ({@code ProviderTeamService.isActiveEditorOrAbove} — the write
+     * floor). Everything else keeps the house 403 and its exact message,
+     * so a stranger's request is indistinguishable from the pre-W5b
+     * behavior on every surface this gate serves.
+     */
+    private void requireActingProvider(ProviderProfile provider, Authentication authentication) {
+        UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
+        if (currentUserProvider.isAdmin(authentication)
+                || (provider.getUserId() != null && provider.getUserId().equals(currentUserId))) {
+            return;
+        }
+        if (!teamService.isActiveEditorOrAbove(provider.getId(), currentUserId)) {
             throw new AccessDeniedException("You do not own this provider");
         }
     }
