@@ -470,8 +470,9 @@ class PostDetailGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> {
-                    assertThat(errors).isNotEmpty();
+                    assertThat(errors).hasSize(1);
                     var error = errors.getFirst();
+                    assertThat(error.getPath()).containsExactly("postComments");
                     assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
                 });
     }
@@ -486,6 +487,12 @@ class PostDetailGraphQlIntegrationTest {
      */
     @Test
     void changingFirstBetweenPagesIsRejectedAsAValidationError() {
+        // The composite selects post BEFORE postComments — the detail leg
+        // must resolve cleanly so the ONE error on the wire is exactly the
+        // cursor contract's (the CodeRabbit round's measured catch: an
+        // unstubbed getPost would NPE inside the adapter and add an
+        // unrelated post error before the expected one).
+        when(postService.getPost(CALLER_ID, POST_ID)).thenReturn(detailPost());
         when(postService.getComments(eq(CALLER_ID), eq(POST_ID), any(Pageable.class)))
                 .thenAnswer(inv -> commentPage(inv.getArgument(2), 9));
 
@@ -498,8 +505,9 @@ class PostDetailGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> {
-                    assertThat(errors).isNotEmpty();
+                    assertThat(errors).hasSize(1);
                     var error = errors.getFirst();
+                    assertThat(error.getPath()).containsExactly("postComments");
                     assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
                     assertThat(error.getMessage()).contains("not aligned");
                 });
