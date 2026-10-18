@@ -97,7 +97,8 @@ class CommunityDiscoveryAdapterTest {
 
     private NeighborhoodPost post(PostCategory category) {
         return NeighborhoodPost.post(UUID.randomUUID(), locationId,
-                category, "Title", "Body", false, clock);
+                category, "Title", "Body", false, null,
+                clock);
     }
 
     @SuppressWarnings("unchecked")

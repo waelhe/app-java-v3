@@ -4,6 +4,7 @@ import com.marketplace.shared.api.MediaLookupPort;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -68,6 +69,7 @@ public record NeighborhoodPostView(
         long reactionsCount,
         boolean reactedByMe,
         List<PostMediaView> media,
+        RecommendedProviderView recommendedProvider,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -97,6 +99,7 @@ public record NeighborhoodPostView(
                 0L,
                 false,
                 List.of(),
+                null,
                 post.getCreatedAt(),
                 post.getUpdatedAt());
     }
@@ -108,7 +111,8 @@ public record NeighborhoodPostView(
      * (L48) mapped into the feed's own read model.
      */
     static NeighborhoodPostView of(NeighborhoodPost post, long reactionsCount, boolean reactedByMe,
-                                   List<MediaLookupPort.PostMediaEntry> media) {
+                                   List<MediaLookupPort.PostMediaEntry> media,
+                                   Map<UUID, com.marketplace.shared.api.ProviderSummary> recommendedProviders) {
         return new NeighborhoodPostView(
                 post.getId(),
                 post.getAuthorId(),
@@ -122,8 +126,26 @@ public record NeighborhoodPostView(
                 reactionsCount,
                 reactedByMe,
                 media.stream().map(PostMediaView::of).toList(),
+                recommendedProviderOf(post, recommendedProviders),
                 post.getCreatedAt(),
                 post.getUpdatedAt());
+    }
+
+    /**
+     * W4 (J09): the post's recommended provider resolved from the page's
+     * ONE batch read — the provider's CURRENT facts at read time (never
+     * frozen into the post). NULL when the post carries no bridge or the
+     * provider row no longer resolves (the honest absence — the client
+     * renders the recommendation's own words without a stale profile).
+     */
+    private static RecommendedProviderView recommendedProviderOf(NeighborhoodPost post,
+            Map<UUID, com.marketplace.shared.api.ProviderSummary> recommendedProviders) {
+        if (post.getRecommendedProviderId() == null) {
+            return null;
+        }
+        com.marketplace.shared.api.ProviderSummary summary =
+                recommendedProviders.get(post.getRecommendedProviderId());
+        return summary == null ? null : RecommendedProviderView.of(summary);
     }
 
     /**
@@ -143,6 +165,23 @@ public record NeighborhoodPostView(
                 false,
                 // JT-20: the echo carries no lost-and-found state either.
                 null,
-                0L, false, List.of(), createdAt, updatedAt);
+                0L, false, List.of(), null, createdAt, updatedAt);
     }
+    /**
+     * W4 (J09 — the recommendation-to-source bridge): the CURRENT provider
+     * facts riding the post view — resolved at read time through the
+     * shared-api port (the provider's truth stays the provider's own). The
+     * client navigates to the source with the id (the public business page).
+     */
+    public record RecommendedProviderView(
+            UUID providerId,
+            String displayName,
+            String verificationStatus
+    ) {
+        static RecommendedProviderView of(com.marketplace.shared.api.ProviderSummary summary) {
+            return new RecommendedProviderView(
+                    summary.id(), summary.displayName(), summary.status());
+        }
+    }
+
 }

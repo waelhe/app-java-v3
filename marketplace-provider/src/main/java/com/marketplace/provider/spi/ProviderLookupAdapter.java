@@ -56,6 +56,25 @@ public class ProviderLookupAdapter implements ProviderLookupPort {
                         (left, right) -> left));
     }
 
+    /**
+     * W4 (J09 — the recommendation-to-source bridge): the provider-id batch
+     * form — one {@code findAllById} (the JpaRepository's own) for a whole
+     * feed page's recommended providers. Ids with no row are absent; the
+     * duplicate-collapse keeps the first row (the caller deduplicates by
+     * construction).
+     */
+    @Override
+    public Map<UUID, ProviderSummary> findAllByIds(Collection<UUID> providerIds) {
+        if (providerIds == null || providerIds.isEmpty()) {
+            return Map.of();
+        }
+        return providerRepository.findAllById(providerIds).stream()
+                .collect(Collectors.toMap(
+                        ProviderProfile::getId,
+                        ProviderLookupAdapter::toSummary,
+                        (left, right) -> left));
+    }
+
     private static ProviderSummary toSummary(ProviderProfile profile) {
         return new ProviderSummary(profile.getId(), profile.getDisplayName(),
                 profile.getStatus().name(), profile.getUserId());

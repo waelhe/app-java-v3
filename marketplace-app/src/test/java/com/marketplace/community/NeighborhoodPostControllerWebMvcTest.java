@@ -134,7 +134,7 @@ class NeighborhoodPostControllerWebMvcTest {
         UUID userId = stubCaller();
         UUID locationId = UUID.randomUUID();
         when(postService.createPost(eq(userId), eq(locationId), eq(PostCategory.GENERAL),
-                eq("Title"), eq("Body"), eq(false)))
+                eq("Title"), eq("Body"), eq(false), org.mockito.ArgumentMatchers.isNull()))
                 .thenReturn(postView(userId, locationId));
 
         mockMvc.perform(post("/api/v1/neighborhood/posts")
@@ -161,7 +161,7 @@ class NeighborhoodPostControllerWebMvcTest {
                 Instant.parse("2026-09-20T11:30:00Z"));
         when(postService.createPost(eq(userId), eq(locationId), eq(PostCategory.RECOMMENDATION),
                 eq("Any trustworthy plumber around?"),
-                eq("Looking for a reliable plumber for a kitchen leak."), eq(false)))
+                eq("Looking for a reliable plumber for a kitchen leak."), eq(false), org.mockito.ArgumentMatchers.isNull()))
                 .thenReturn(recommendationView);
 
         mockMvc.perform(post("/api/v1/neighborhood/posts")
@@ -244,7 +244,7 @@ class NeighborhoodPostControllerWebMvcTest {
         UUID userId = stubCaller();
         UUID locationId = UUID.randomUUID();
         when(postService.createPost(eq(userId), eq(locationId), eq(PostCategory.GENERAL),
-                eq("Title"), eq("Body"), eq(false)))
+                eq("Title"), eq("Body"), eq(false), org.mockito.ArgumentMatchers.isNull()))
                 .thenThrow(new AccessDeniedException("Join a neighborhood first"));
 
         mockMvc.perform(post("/api/v1/neighborhood/posts")
@@ -260,7 +260,7 @@ class NeighborhoodPostControllerWebMvcTest {
         UUID userId = stubCaller();
         UUID locationId = UUID.randomUUID();
         when(postService.createPost(eq(userId), eq(locationId), eq(PostCategory.GENERAL),
-                eq("Title"), eq("Body"), eq(false)))
+                eq("Title"), eq("Body"), eq(false), org.mockito.ArgumentMatchers.isNull()))
                 .thenThrow(new ResourceNotFoundException("Location", locationId));
 
         mockMvc.perform(post("/api/v1/neighborhood/posts")
@@ -276,7 +276,7 @@ class NeighborhoodPostControllerWebMvcTest {
         UUID userId = stubCaller();
         UUID locationId = UUID.randomUUID();
         when(postService.createPost(eq(userId), eq(locationId), eq(PostCategory.GENERAL),
-                eq("Title"), eq("Body"), eq(false)))
+                eq("Title"), eq("Body"), eq(false), org.mockito.ArgumentMatchers.isNull()))
                 .thenThrow(new BadRequestException(
                         "locationId must reference a level-3 neighborhood node, got level 2"));
 
@@ -485,6 +485,7 @@ class NeighborhoodPostControllerWebMvcTest {
                 3L, true,
                 List.of(new PostMediaView(UUID.randomUUID(), "https://orig", "https://thumb",
                         "image/jpeg", 1)),
+                null,
                 Instant.parse("2026-09-30T09:30:00Z"),
                 Instant.parse("2026-09-30T09:30:00Z"));
         when(postService.getFeed(eq(memberId), isNull(), any()))

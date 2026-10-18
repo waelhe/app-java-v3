@@ -94,6 +94,18 @@ public class NeighborhoodPost extends BaseEntity {
      * column's own documented shape).
      */
     @Enumerated(EnumType.STRING)
+    /**
+     * W4 (the unified plan's J09 — the recommendation-to-source bridge):
+     * the OPTIONAL provider row this post recommends — a plain UUID
+     * reference (no JPA relation across the module boundary, the D-N1
+     * discipline). NULL for every non-recommending post; the existence
+     * gate ran at publish time and the CURRENT provider facts are
+     * resolved at read time through the shared-api port (the provider's
+     * truth stays the provider's own — nothing is frozen here).
+     */
+    @jakarta.persistence.Column(name = "recommended_provider_id")
+    private UUID recommendedProviderId;
+
     @Column(name = "lost_found_state", length = 20)
     private LostFoundState lostFoundState;
 
@@ -118,13 +130,15 @@ public class NeighborhoodPost extends BaseEntity {
      */
     public static NeighborhoodPost post(UUID authorId, UUID locationId,
                                         PostCategory category, String title, String body,
-                                        boolean declaredCommercial, Clock clock) {
+                                        boolean declaredCommercial, UUID recommendedProviderId,
+                                        Clock clock) {
         NeighborhoodPost post = new NeighborhoodPost(UUID.randomUUID(), authorId, locationId);
         post.category = category;
         post.title = title;
         post.body = body;
         post.status = PostStatus.VISIBLE;
         post.declaredCommercial = declaredCommercial;
+        post.recommendedProviderId = recommendedProviderId;
         // JT-20: the lost-and-found lifecycle starts the moment the
         // report is published — ACTIVE only for LOST_FOUND, NULL for
         // every other category (the V171 column's own documented shape).
@@ -178,4 +192,7 @@ public class NeighborhoodPost extends BaseEntity {
 
     /** Null unless {@code category} is {@code LOST_FOUND} (the V171 shape). */
     public LostFoundState getLostFoundState() { return lostFoundState; }
+
+    /** W4 (J09): the optional recommended-provider bridge — NULL when absent. */
+    public UUID getRecommendedProviderId() { return recommendedProviderId; }
 }
