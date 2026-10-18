@@ -52,6 +52,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class PostMediaJourneyIntegrationTest {
 
     private static final String QUDSAYYA_OLD_TOWN = "11111111-1111-4111-8111-111111111104";
+    // One location per test method (the house isolation pattern): the main
+    // journey's feed read carries an absolute content[0] contract, so the
+    // sibling method's post must live in a DISTINCT location — it can
+    // never leak into the journey's membership-scoped feed.
+    private static final String QUDSAYYA_SUBURB = "11111111-1111-4111-8111-111111111105";
 
     @Container
     @ServiceConnection
@@ -149,16 +154,17 @@ class PostMediaJourneyIntegrationTest {
                 .andExpect(jsonPath("$.content[0].media[0].url").value("https://signed-get"));
     }
 
-    /** The non-author branch: someone else's post is not an upload target — the honest 403. */
+    /** The non-author branch: someone else's post is not an upload target — the honest 403.
+     * Isolation: this branch owns QUDSAYYA_SUBURB. */
     @Test
     void aNonAuthorCannotRequestMediaForSomeoneElsesPost() throws Exception {
         when(currentUserProvider.getCurrentUserId(any(Authentication.class))).thenReturn(authorId);
         mockMvc.perform(put("/api/v1/me/neighborhood",
-                        "{\"locationId\":\"" + QUDSAYYA_OLD_TOWN + "\"}"))
+                        "{\"locationId\":\"" + QUDSAYYA_SUBURB + "\"}"))
                 .andExpect(status().isCreated());
         String postBody = mockMvc.perform(post("/api/v1/neighborhood/posts")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"locationId\":\"" + QUDSAYYA_OLD_TOWN + "\",\"category\":\"GENERAL\","
+                        .content("{\"locationId\":\"" + QUDSAYYA_SUBURB + "\",\"category\":\"GENERAL\","
                                 + "\"title\":\"J04 other author\",\"body\":\"Another member's post.\"}")
                         .with(jwt()))
                 .andExpect(status().isCreated())

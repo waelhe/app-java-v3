@@ -52,6 +52,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ReportModerationJourneyIntegrationTest {
 
     private static final String QUDSAYYA_OLD_TOWN = "11111111-1111-4111-8111-111111111104";
+    // One location per test method (the house isolation pattern): the
+    // membership-scoped feed reads in this class carry absolute
+    // totalElements contracts, so each method owns a DISTINCT seeded
+    // location — a post created by a sibling method can never leak into
+    // another method's count (the measured CI failure: the comment-host
+    // post leaked across methods through the shared cached context).
+    private static final String QUDSAYYA_SUBURB = "11111111-1111-4111-8111-111111111105";
+    private static final String AL_HAMAH = "11111111-1111-4111-8111-111111111106";
 
     @Container
     @ServiceConnection
@@ -162,18 +170,19 @@ class ReportModerationJourneyIntegrationTest {
                 .andExpect(status().isConflict());
     }
 
-    /** The DISMISS branch: the report closes, the content stays visible — the honest non-action. */
+    /** The DISMISS branch: the report closes, the content stays visible — the honest non-action.
+     * Isolation: this branch owns QUDSAYYA_SUBURB. */
     @Test
     void theDismissedReportLeavesTheContentUntouched() throws Exception {
         UUID authorId = asCaller(UUID.randomUUID());
         mockMvc.perform(put("/api/v1/me/neighborhood")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"locationId\":\"" + QUDSAYYA_OLD_TOWN + "\"}")
+                        .content("{\"locationId\":\"" + QUDSAYYA_SUBURB + "\"}")
                         .with(jwt()))
                 .andExpect(status().isCreated());
         String postBody = mockMvc.perform(post("/api/v1/neighborhood/posts")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"locationId\":\"" + QUDSAYYA_OLD_TOWN + "\",\"category\":\"GENERAL\","
+                        .content("{\"locationId\":\"" + QUDSAYYA_SUBURB + "\",\"category\":\"GENERAL\","
                                 + "\"title\":\"J10 dismissed post\",\"body\":\"This one stays.\"}")
                         .with(jwt()))
                 .andExpect(status().isCreated())
@@ -183,7 +192,7 @@ class ReportModerationJourneyIntegrationTest {
         UUID reporterId = asCaller(UUID.randomUUID());
         mockMvc.perform(put("/api/v1/me/neighborhood")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"locationId\":\"" + QUDSAYYA_OLD_TOWN + "\"}")
+                        .content("{\"locationId\":\"" + QUDSAYYA_SUBURB + "\"}")
                         .with(jwt()))
                 .andExpect(status().isCreated());
         String reportBody = mockMvc.perform(post("/api/v1/reports")
@@ -209,18 +218,19 @@ class ReportModerationJourneyIntegrationTest {
                 .andExpect(jsonPath("$.totalElements").value(1));
     }
 
-    /** The comment-target branch: HIDE_CONTENT on a COMMENT report soft-deletes the comment itself. */
+    /** The comment-target branch: HIDE_CONTENT on a COMMENT report soft-deletes the comment itself.
+     * Isolation: this branch owns AL_HAMAH. */
     @Test
     void theCommentReportHidesTheCommentItself() throws Exception {
         UUID authorId = asCaller(UUID.randomUUID());
         mockMvc.perform(put("/api/v1/me/neighborhood")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"locationId\":\"" + QUDSAYYA_OLD_TOWN + "\"}")
+                        .content("{\"locationId\":\"" + AL_HAMAH + "\"}")
                         .with(jwt()))
                 .andExpect(status().isCreated());
         String postBody = mockMvc.perform(post("/api/v1/neighborhood/posts")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"locationId\":\"" + QUDSAYYA_OLD_TOWN + "\",\"category\":\"GENERAL\","
+                        .content("{\"locationId\":\"" + AL_HAMAH + "\",\"category\":\"GENERAL\","
                                 + "\"title\":\"J10 comment host\",\"body\":\"The post that hosts the comment.\"}")
                         .with(jwt()))
                 .andExpect(status().isCreated())
@@ -231,7 +241,7 @@ class ReportModerationJourneyIntegrationTest {
         UUID commenterId = asCaller(UUID.randomUUID());
         mockMvc.perform(put("/api/v1/me/neighborhood")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"locationId\":\"" + QUDSAYYA_OLD_TOWN + "\"}")
+                        .content("{\"locationId\":\"" + AL_HAMAH + "\"}")
                         .with(jwt()))
                 .andExpect(status().isCreated());
         String commentBody = mockMvc.perform(post("/api/v1/posts/{postId}/comments", postId)

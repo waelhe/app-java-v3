@@ -50,6 +50,7 @@ class CommentsInteractionsJourneyIntegrationTest {
 
     private static final String QUDSAYYA_OLD_TOWN = "11111111-1111-4111-8111-111111111104";
     private static final String QUDSAYYA_SUBURB = "11111111-1111-4111-8111-111111111105";
+    private static final String AL_HAMAH = "11111111-1111-4111-8111-111111111106";
 
     @Container
     @ServiceConnection
@@ -91,19 +92,28 @@ class CommentsInteractionsJourneyIntegrationTest {
                 .andReturn().getResponse().getContentAsString();
         String postId = idOf(postBody);
 
-        // (1) The empty comments page — the honest zero before any voice.
+        // (1) The Stage-7 membership gate on the comments read (the
+        // documented #599 P0-1 contract on main: "Only members of the
+        // post's neighborhood can read its comments") — a verified
+        // non-member is honestly denied BEFORE any voice exists.
         UUID neighborId = asCaller(UUID.randomUUID());
         mockMvc.perform(get("/api/v1/posts/{postId}/comments", postId)
                         .with(jwt()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalElements").value(0));
+                .andExpect(status().isForbidden());
 
-        // (2) The neighbor joins the SAME neighborhood and comments.
+        // (2) The neighbor joins the SAME neighborhood — the honest zero
+        // (an empty, readable comments page) becomes visible to a member.
         mockMvc.perform(put("/api/v1/me/neighborhood")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"locationId\":\"" + QUDSAYYA_OLD_TOWN + "\"}")
                         .with(jwt()))
                 .andExpect(status().isCreated());
+        mockMvc.perform(get("/api/v1/posts/{postId}/comments", postId)
+                        .with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
+
+        // (3) The neighbor comments.
         mockMvc.perform(post("/api/v1/posts/{postId}/comments", postId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"body\":\"Abu Samir near the bakery — highly recommended.\"}")
@@ -111,14 +121,14 @@ class CommentsInteractionsJourneyIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.postId").value(postId));
 
-        // (3) The paged read carries the comment, chronological.
+        // (4) The paged read carries the comment, chronological.
         mockMvc.perform(get("/api/v1/posts/{postId}/comments", postId)
                         .with(jwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(1))
                 .andExpect(jsonPath("$.content[0].body").value("Abu Samir near the bakery — highly recommended."));
 
-        // (4) The reaction lands and the counter reads back live.
+        // (5) The reaction lands and the counter reads back live.
         mockMvc.perform(post("/api/v1/posts/{postId}/reactions", postId)
                         .with(jwt()))
                 .andExpect(status().isCreated());
@@ -129,12 +139,12 @@ class CommentsInteractionsJourneyIntegrationTest {
                 .andExpect(jsonPath("$.content[0].reactionsCount").value(1))
                 .andExpect(jsonPath("$.content[0].reactedByMe").value(true));
 
-        // (5) The double-reaction — the honest 409 (one thank per member).
+        // (6) The double-reaction — the honest 409 (one thank per member).
         mockMvc.perform(post("/api/v1/posts/{postId}/reactions", postId)
                         .with(jwt()))
                 .andExpect(status().isConflict());
 
-        // (6) The withdraw — the counter returns to zero and the voice reopens.
+        // (7) The withdraw — the counter returns to zero and the voice reopens.
         mockMvc.perform(delete("/api/v1/posts/{postId}/reactions", postId)
                         .with(jwt()))
                 .andExpect(status().isNoContent());
@@ -144,7 +154,7 @@ class CommentsInteractionsJourneyIntegrationTest {
                 .andExpect(jsonPath("$.content[0].reactionsCount").value(0))
                 .andExpect(jsonPath("$.content[0].reactedByMe").value(false));
 
-        // (7) The lost-eligibility branch: the neighbor's verification is
+        // (8) The lost-eligibility branch: the neighbor's verification is
         // REJECTED — the NEXT comment is denied (403) while the reads
         // stay open (the D-N3 split, measured mid-journey).
         String membershipBody = mockMvc.perform(get("/api/v1/me/neighborhood")
@@ -172,18 +182,20 @@ class CommentsInteractionsJourneyIntegrationTest {
                 .andExpect(jsonPath("$.totalElements").value(1));
     }
 
-    /** The foreign-neighborhood branch: neither the comment nor the reaction crosses the hood line. */
+    /** The foreign-neighborhood branch: neither the comment nor the reaction crosses the hood line.
+     * Isolation: this branch owns AL_HAMAH so its post never leaks into the main journey's
+     * membership-scoped feed reads (one location per method — the house pattern). */
     @Test
     void aForeignNeighborCanNeitherCommentNorReact() throws Exception {
         UUID authorId = asCaller(UUID.randomUUID());
         mockMvc.perform(put("/api/v1/me/neighborhood")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"locationId\":\"" + QUDSAYYA_OLD_TOWN + "\"}")
+                        .content("{\"locationId\":\"" + AL_HAMAH + "\"}")
                         .with(jwt()))
                 .andExpect(status().isCreated());
         String postBody = mockMvc.perform(post("/api/v1/neighborhood/posts")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"locationId\":\"" + QUDSAYYA_OLD_TOWN + "\",\"category\":\"GENERAL\","
+                        .content("{\"locationId\":\"" + AL_HAMAH + "\",\"category\":\"GENERAL\","
                                 + "\"title\":\"J05 foreign branch\",\"body\":\"Old town's own post.\"}")
                         .with(jwt()))
                 .andExpect(status().isCreated())
