@@ -82,6 +82,13 @@ public class NeighborhoodPostService {
     private final NeighborhoodMembershipRepository membershipRepository;
     private final GeoLookupPort geoLookupPort;
     private final MediaLookupPort mediaLookupPort;
+    /**
+     * W4 (J09 — the recommendation-to-source bridge): the shared-api port
+     * the publish gate validates the recommended provider through (404
+     * before any write) and the feed read resolves the CURRENT facts
+     * through (one batch call per page — the G21 discipline).
+     */
+    private final com.marketplace.shared.api.ProviderLookupPort providerLookupPort;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
@@ -91,6 +98,7 @@ public class NeighborhoodPostService {
                                    NeighborhoodMembershipRepository membershipRepository,
                                    GeoLookupPort geoLookupPort,
                                    MediaLookupPort mediaLookupPort,
+                                   com.marketplace.shared.api.ProviderLookupPort providerLookupPort,
                                    ApplicationEventPublisher eventPublisher,
                                    Clock clock) {
         this.repository = repository;
@@ -99,6 +107,7 @@ public class NeighborhoodPostService {
         this.membershipRepository = membershipRepository;
         this.geoLookupPort = geoLookupPort;
         this.mediaLookupPort = mediaLookupPort;
+        this.providerLookupPort = providerLookupPort;
         this.eventPublisher = eventPublisher;
         this.clock = clock;
     }
@@ -114,7 +123,7 @@ public class NeighborhoodPostService {
     @Observed(name = "community.post.create")
     public NeighborhoodPostView createPost(UUID authorId, UUID locationId,
                                            PostCategory category, String title, String body,
-                                           boolean declaredCommercial) {
+                                           boolean declaredCommercial, UUID recommendedProviderId) {
         GeoLookupPort.GeoNode node = geoLookupPort.getLocation(locationId);
         if (node.level() != NEIGHBORHOOD_LEVEL) {
             throw new BadRequestException(
@@ -124,9 +133,18 @@ public class NeighborhoodPostService {
         requireWritableMembershipIn(authorId, locationId,
                 "Join a neighborhood before posting (PUT /api/v1/me/neighborhood)",
                 "Posts go to your own neighborhood — this location is not it");
+        // W4 (J09 — the bridge's existence gate, BEFORE any write): an
+        // unknown provider answers the honest 404 — a recommendation must
+        // point at a REAL source (a quoted post that owns no profile never
+        // becomes a phantom card).
+        if (recommendedProviderId != null
+                && providerLookupPort.findById(recommendedProviderId).isEmpty()) {
+            throw new com.marketplace.shared.api.ResourceNotFoundException(
+                    "Recommended provider not found: " + recommendedProviderId);
+        }
         NeighborhoodPost saved = repository.save(
                 NeighborhoodPost.post(authorId, locationId, category, title, body,
-                        declaredCommercial, clock));
+                        declaredCommercial, recommendedProviderId, clock));
         return NeighborhoodPostView.of(saved);
     }
 
@@ -201,11 +219,33 @@ public class NeighborhoodPostService {
         Map<UUID, Long> counts = reactionCounts(posts);
         Set<UUID> mine = myReactions(callerId, posts);
         Map<UUID, List<MediaLookupPort.PostMediaEntry>> media = postMedia(posts);
+        Map<UUID, com.marketplace.shared.api.ProviderSummary> recommended = recommendedProviders(posts);
         return page.map(post -> NeighborhoodPostView.of(
                 post,
                 counts.getOrDefault(post.getId(), 0L),
                 mine.contains(post.getId()),
-                media.getOrDefault(post.getId(), List.of())));
+                media.getOrDefault(post.getId(), List.of()),
+                recommended));
+    }
+
+    /**
+     * W4 (J09 — the recommendation-to-source bridge): the page's
+     * recommended providers resolved in ONE batch port call over the
+     * DISTINCT ids (the G21/L47 grouped-aggregate discipline). The empty
+     * set short-circuits to the empty map (a page of plain posts costs no
+     * provider read); a provider row that no longer resolves is simply
+     * absent — the view's honest NULL, never a stale copy.
+     */
+    private Map<UUID, com.marketplace.shared.api.ProviderSummary> recommendedProviders(
+            List<NeighborhoodPost> posts) {
+        Set<UUID> ids = posts.stream()
+                .map(NeighborhoodPost::getRecommendedProviderId)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return providerLookupPort.findAllByIds(ids);
     }
 
     /**
@@ -261,7 +301,8 @@ public class NeighborhoodPostService {
                 post,
                 reactionCounts(singletonPage).getOrDefault(post.getId(), 0L),
                 myReactions(callerId, singletonPage).contains(post.getId()),
-                postMedia(singletonPage).getOrDefault(post.getId(), List.of()));
+                postMedia(singletonPage).getOrDefault(post.getId(), List.of()),
+                recommendedProviders(singletonPage));
     }
 
     /**

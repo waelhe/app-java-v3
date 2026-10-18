@@ -61,7 +61,7 @@ class PostLookupAdapterTest {
 
     private NeighborhoodPost post() {
         return NeighborhoodPost.post(authorId, locationId,
-                PostCategory.GENERAL, "Title", "Body", false,
+                PostCategory.GENERAL, "Title", "Body", false, null,
                 Clock.fixed(FIXED, ZoneOffset.UTC));
     }
 
