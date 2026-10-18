@@ -323,6 +323,42 @@ class OrderReturnsServiceTest {
     }
 
     @Test
+    void completingARequestedReturnAnswersTheHonest409BeforeAnySideEffect() {
+        // CodeRabbit round 2, verified real (the Major): REQUESTED carries a
+        // null frozen share — the old shape unboxed it to long inside the
+        // refund call and answered a 500; the pre-guard answers the honest
+        // 409 and never reaches the port
+        Order order = fulfilledOrder();
+        OrderReturn r = OrderReturn.requested(order.getId(), buyer,
+                OrderReturn.ReturnType.RETURN, "wrong size", "SAR", Instant.now());
+        when(returns.findByIdForUpdate(r.getId())).thenReturn(Optional.of(r));
+
+        assertThatThrownBy(() -> service.complete(r.getId()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("requires RECEIVED");
+        verify(orderRefundPort, never()).refundForOrder(any(), any(), anyLong());
+    }
+
+    @Test
+    void completingAnApprovedReturnNeverMovesRemoteMoney() {
+        // CodeRabbit round 2, verified real (the Major): APPROVED has the
+        // goods still in transit — the old shape called the refund port
+        // FIRST and the entity guard rolled back only the LOCAL books,
+        // leaving an unrecoverable remote refund; the pre-guard keeps the
+        // money untouched until the goods are actually received
+        Order order = fulfilledOrder();
+        OrderReturn r = OrderReturn.requested(order.getId(), buyer,
+                OrderReturn.ReturnType.RETURN, "wrong size", "SAR", Instant.now());
+        r.approve(2_700L, Instant.now());
+        when(returns.findByIdForUpdate(r.getId())).thenReturn(Optional.of(r));
+
+        assertThatThrownBy(() -> service.complete(r.getId()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("requires RECEIVED");
+        verify(orderRefundPort, never()).refundForOrder(any(), any(), anyLong());
+    }
+
+    @Test
     void theBuyerCancelsWhileRequestedOnly() {
         Order order = fulfilledOrder();
         OrderReturn r = OrderReturn.requested(order.getId(), buyer,

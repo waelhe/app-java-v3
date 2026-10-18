@@ -183,6 +183,17 @@ public class OrderReturnsService {
         if (r.getStatus() == OrderReturn.ReturnStatus.COMPLETED) {
             return r;
         }
+        // CodeRabbit round 2, verified real (the Major): the completion edge
+        // guards its state BEFORE any side effect — the documented lifecycle
+        // is RECEIVED -> COMPLETED. Anything else must answer the honest 409
+        // UP FRONT: REQUESTED/REJECTED/CANCELLED carry a null frozen share
+        // (the unboxing to long would 500), and APPROVED has the goods still
+        // in transit — refunding there would move remote money that a local
+        // rollback cannot undo.
+        if (r.getStatus() != OrderReturn.ReturnStatus.RECEIVED) {
+            throw new ConflictException("Return " + returnId + " is " + r.getStatus()
+                    + " — completion requires RECEIVED (the goods back first)");
+        }
         if (r.getReturnType() == OrderReturn.ReturnType.RETURN) {
             orderRefundPort.refundForOrder(r.getOrderId(), r.getId(), r.getRefundAmountMinor());
             r.complete(null, Instant.now());
