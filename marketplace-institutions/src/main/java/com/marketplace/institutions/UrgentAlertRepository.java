@@ -44,4 +44,28 @@ public interface UrgentAlertRepository extends JpaRepository<UrgentAlert, UUID> 
             """)
     List<UrgentAlert> findLiveByLocation(@Param("locationId") UUID locationId,
                                          @Param("now") Instant now);
+
+    /**
+     * W3 (the unified plan's J10 dedup requirement — «منع إنشاء تنبيه عاجل
+     * مزدوج عند اجتماع أحداث في مسار واحد»): the duplicate-candidate read
+     * the publication gate consults BEFORE any write — the SAME source's
+     * non-withdrawn alerts carrying the SAME title for the SAME neighborhood
+     * (soft-delete filter rides BaseEntity as everywhere). The overlap
+     * semantics (does one of these windows actually overlap the new one?)
+     * are the service's own — deliberately NOT a query predicate, because a
+     * time-overlap comparison against the NEW request's window is request
+     * state, and the house keeps request-state logic in the service where
+     * the 409's words live.
+     */
+    @Query("""
+            select a from UrgentAlert a
+            where a.sourceId = :sourceId
+              and a.locationId = :locationId
+              and a.title = :title
+              and a.withdrawn = false
+            order by a.validFrom desc, a.id desc
+            """)
+    List<UrgentAlert> findNotWithdrawnDuplicates(@Param("sourceId") UUID sourceId,
+                                                 @Param("locationId") UUID locationId,
+                                                 @Param("title") String title);
 }
