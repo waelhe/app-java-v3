@@ -567,6 +567,8 @@ class BookingJourneyIntegrationTest {
             }
             Thread.sleep(200);
         }
+        throw new AssertionError("notification rows of type " + type + " for booking " + bookingId
+                + " never reached " + expected + " within 10s");
     }
 
     /** The bounded poll for the intent's own status (the refund listener's hop). */
@@ -580,6 +582,8 @@ class BookingJourneyIntegrationTest {
             }
             Thread.sleep(200);
         }
+        throw new AssertionError("payment intent " + intentId + " did not reach " + expected
+                + " within 10s");
     }
 
     private String baseUrl() {
