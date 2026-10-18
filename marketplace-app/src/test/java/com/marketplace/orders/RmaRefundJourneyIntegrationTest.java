@@ -480,8 +480,12 @@ class RmaRefundJourneyIntegrationTest {
         setStock(sellerGate.accessToken(), product, 10);
 
         // The buyer places the order: 2 units, total 3000.
+        // The buyer carries the CONSUMER role explicitly — the money loop's
+        // process step is @PreAuthorize("hasRole('CONSUMER')") (the sibling
+        // journeys' own registration shape; the earlier bare USER registration
+        // answered the honest 403 at the process step).
         String username = "it-rma-buyer-" + UUID.randomUUID().toString().substring(0, 8);
-        registerUser(username);
+        registerUser(username, "CONSUMER");
         GateResult gate = loginGate(username, PASSWORD);
         assertThat(getWithBearer("/api/v1/users/me", gate.accessToken()).statusCode()).isEqualTo(200);
         postJson("/api/v1/me/cart/items", gate.accessToken(),
