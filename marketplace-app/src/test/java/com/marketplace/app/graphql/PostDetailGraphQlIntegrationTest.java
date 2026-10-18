@@ -472,7 +472,7 @@ class PostDetailGraphQlIntegrationTest {
                 .satisfy(errors -> {
                     assertThat(errors).hasSize(1);
                     var error = errors.getFirst();
-                    assertThat(error.getPath()).containsExactly("postComments");
+                    assertThat(error.getParsedPath()).containsExactly("postComments");
                     assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
                 });
     }
@@ -507,7 +507,7 @@ class PostDetailGraphQlIntegrationTest {
                 .satisfy(errors -> {
                     assertThat(errors).hasSize(1);
                     var error = errors.getFirst();
-                    assertThat(error.getPath()).containsExactly("postComments");
+                    assertThat(error.getParsedPath()).containsExactly("postComments");
                     assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
                     assertThat(error.getMessage()).contains("not aligned");
                 });
