@@ -67,6 +67,10 @@ class LostFoundLifecycleTest {
     @Mock
     private MediaLookupPort mediaLookupPort;
 
+    /** W4 (J09): the recommendation bridge's own port — the new constructor seam. */
+    @Mock
+    private com.marketplace.shared.api.ProviderLookupPort providerLookupPort;
+
     @Mock
     private ApplicationEventPublisher eventPublisher;
 
@@ -77,8 +81,7 @@ class LostFoundLifecycleTest {
     @BeforeEach
     void setUp() {
         service = new NeighborhoodPostService(repository, commentRepository,
-                reactionRepository, membershipRepository, geoLookupPort, mediaLookupPort,
-                eventPublisher, clock);
+                reactionRepository, membershipRepository, geoLookupPort, mediaLookupPort, providerLookupPort, eventPublisher, clock);
     }
 
     private UUID authorId = UUID.randomUUID();
@@ -97,7 +100,7 @@ class LostFoundLifecycleTest {
     private NeighborhoodPost lostReport() {
         return NeighborhoodPost.post(authorId, locationId,
                 PostCategory.LOST_FOUND, "Missing cat near the old market",
-                "Gray, answers to سوشي.", false, clock);
+                "Gray, answers to سوشي.", false, null, clock);
     }
 
     // ---------- publish: the birth state ----------
@@ -111,7 +114,7 @@ class LostFoundLifecycleTest {
         when(repository.save(any())).thenReturn(stored);
 
         var view = service.createPost(authorId, locationId,
-                PostCategory.LOST_FOUND, "Missing cat near the old market", "Gray.", false);
+                PostCategory.LOST_FOUND, "Missing cat near the old market", "Gray.", false, null);
 
         // The lifecycle starts the moment the report is published.
         assertThat(view.category()).isEqualTo("LOST_FOUND");
@@ -125,11 +128,11 @@ class LostFoundLifecycleTest {
         when(membershipRepository.findByUserId(authorId))
                 .thenReturn(Optional.of(membershipOf(authorId, locationId)));
         NeighborhoodPost stored = NeighborhoodPost.post(authorId, locationId,
-                PostCategory.GENERAL, "Title", "Body", false, clock);
+                PostCategory.GENERAL, "Title", "Body", false, null, clock);
         when(repository.save(any())).thenReturn(stored);
 
         var view = service.createPost(authorId, locationId,
-                PostCategory.GENERAL, "Title", "Body", false);
+                PostCategory.GENERAL, "Title", "Body", false, null);
 
         // The five non-LOST_FOUND categories carry NULL — a state on a
         // GENERAL post would be a fact the post does not have.
@@ -163,7 +166,7 @@ class LostFoundLifecycleTest {
     @Test
     void updateLostFoundState_nonLostFoundPost_is409() {
         NeighborhoodPost general = NeighborhoodPost.post(authorId, locationId,
-                PostCategory.QUESTION, "Who fixes boilers?", "Recommendations?", false, clock);
+                PostCategory.QUESTION, "Who fixes boilers?", "Recommendations?", false, null, clock);
         when(repository.findById(postId)).thenReturn(Optional.of(general));
 
         // The honest conflict: the operation fights what the post IS —
@@ -210,7 +213,7 @@ class LostFoundLifecycleTest {
         assertThat(lost.lostFoundState()).isEqualTo("ACTIVE");
 
         var general = NeighborhoodPostView.of(NeighborhoodPost.post(authorId,
-                locationId, PostCategory.RECOMMENDATION, "Plumber?", "Trustworthy", false, clock));
+                locationId, PostCategory.RECOMMENDATION, "Plumber?", "Trustworthy", false, null, clock));
         assertThat(general.lostFoundState()).isNull();
     }
 }
