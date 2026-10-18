@@ -275,8 +275,10 @@ class EventPollGroupJourneyIntegrationTest {
     }
 
     private static String optionIdOf(String body, int index) {
+        // The body's FIRST "id" is the poll's own; the options follow — the
+        // search skips it (index + 2 finds: poll id, then the Nth option).
         int start = -1;
-        for (int i = 0; i <= index; i++) {
+        for (int i = 0; i < index + 2; i++) {
             start = body.indexOf("\"id\":\"", start + 1) + 6;
         }
         int end = body.indexOf('"', start);
