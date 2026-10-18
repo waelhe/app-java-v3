@@ -508,4 +508,89 @@ class NeighborhoodMarketItemServiceTest {
         assertThatThrownBy(() -> service.deleteByAuthor(authorId, itemId))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
+
+    // ---------- markSoldByAuthor (W6 / J06 — the used-goods journey's own close) ----------
+
+    @Test
+    void markSoldByAuthor_unknownItem_isTheHonest404() {
+        when(itemRepository.findById(itemId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.markSoldByAuthor(authorId, itemId))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(itemRepository, never()).save(any(NeighborhoodMarketItem.class));
+    }
+
+    @Test
+    void markSoldByAuthor_notTheSeller_is403() {
+        when(itemRepository.findById(itemId))
+                .thenReturn(Optional.of(itemBy(otherMemberId, locationId,
+                        MarketCategory.ELECTRONICS, 25000)));
+
+        assertThatThrownBy(() -> service.markSoldByAuthor(authorId, itemId))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("Only the item's seller");
+        verify(itemRepository, never()).save(any(NeighborhoodMarketItem.class));
+    }
+
+    @Test
+    void markSoldByAuthor_theSeller_flipsActiveToSoldAndStays() {
+        NeighborhoodMarketItem own = itemBy(authorId, locationId, MarketCategory.ELECTRONICS, 25000);
+        when(itemRepository.findById(itemId)).thenReturn(Optional.of(own));
+        when(itemRepository.save(own)).thenReturn(own);
+        when(membershipRepository.findByUserId(authorId)).thenReturn(Optional.empty());
+
+        NeighborhoodMarketItemView view = service.markSoldByAuthor(authorId, itemId);
+
+        assertThat(view.status()).isEqualTo("SOLD");
+        assertThat(view.sellerVerified()).as("no current membership ⇒ the honest unverified floor")
+                .isFalse();
+        verify(itemRepository).save(own);
+    }
+
+    @Test
+    void markSoldByAuthor_aVerifiedSeller_ridesTheBadge() {
+        NeighborhoodMarketItem own = itemBy(authorId, locationId, MarketCategory.FURNITURE, 90000);
+        when(itemRepository.findById(itemId)).thenReturn(Optional.of(own));
+        when(itemRepository.save(own)).thenReturn(own);
+        when(membershipRepository.findByUserId(authorId))
+                .thenReturn(Optional.of(membershipVerified(authorId, locationId)));
+
+        NeighborhoodMarketItemView view = service.markSoldByAuthor(authorId, itemId);
+
+        assertThat(view.status()).isEqualTo("SOLD");
+        assertThat(view.sellerVerified()).isTrue();
+    }
+
+    @Test
+    void markSoldByAuthor_aSellerWhoSwitchedNeighborhoods_carriesTheHonestUnverifiedFloor() {
+        // The badge resolves the author's CURRENT membership in the ITEM's
+        // own neighborhood — a seller who moved away closes their listing
+        // and the echo answers the honest floor, never a guessed badge.
+        NeighborhoodMarketItem own = itemBy(authorId, locationId, MarketCategory.TOOLS, 7500);
+        when(itemRepository.findById(itemId)).thenReturn(Optional.of(own));
+        when(itemRepository.save(own)).thenReturn(own);
+        when(membershipRepository.findByUserId(authorId))
+                .thenReturn(Optional.of(membershipVerified(authorId, UUID.randomUUID())));
+
+        NeighborhoodMarketItemView view = service.markSoldByAuthor(authorId, itemId);
+
+        assertThat(view.status()).isEqualTo("SOLD");
+        assertThat(view.sellerVerified()).isFalse();
+    }
+
+    @Test
+    void markSoldByAuthor_alreadySold_isIdempotentNoWrite() {
+        NeighborhoodMarketItem own = itemBy(authorId, locationId, MarketCategory.OTHER, 12000);
+        // The already-sold fact, applied by the domain's own edge (the
+        // same package — the service's single-writer discipline keeps
+        // the edge package-private).
+        own.applySold();
+        when(itemRepository.findById(itemId)).thenReturn(Optional.of(own));
+        when(membershipRepository.findByUserId(authorId)).thenReturn(Optional.empty());
+
+        NeighborhoodMarketItemView view = service.markSoldByAuthor(authorId, itemId);
+
+        assertThat(view.status()).isEqualTo("SOLD");
+        verify(itemRepository, never()).save(any(NeighborhoodMarketItem.class));
+    }
 }
