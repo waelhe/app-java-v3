@@ -56,10 +56,12 @@ class OrderRefundAdapterTest {
 
         RefundOutcome outcome = adapter.refundForOrder(orderId, returnId, 1500L);
 
-        assertEquals(payment.getId(), outcome.paymentId());
+        // the OUTCOME rides the refunded payment the production path returned
+        assertEquals(refunded.getId(), outcome.paymentId());
         assertEquals(1500L, outcome.refundedAmountCents());
         // the return's id rides as the PSP idempotency scope — one return,
-        // one remote refund, replayed safely on a retried completion
+        // one remote refund, replayed safely on a retried completion; the
+        // delegation itself rides the payment the lookup found
         verify(paymentsService).refundPayment(payment.getId(), 1500L, returnId);
     }
 
