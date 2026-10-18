@@ -322,6 +322,8 @@ class AdOriginRefundJourneyIntegrationTest {
                 break;
             }
         }
+        throw new AssertionError("payment intent " + intentId + " did not reach " + expected
+                + " within 10s");
     }
 
     /** The bounded poll for a typed ledger row (the listener's AFTER_COMMIT hop). */
@@ -341,6 +343,8 @@ class AdOriginRefundJourneyIntegrationTest {
                 break;
             }
         }
+        throw new AssertionError("ledger rows of type " + entryType + " for " + sourceId
+                + " never reached " + expected + " within 10s");
     }
 
     private int jdbcTemplateCount(String sql, UUID arg) {
