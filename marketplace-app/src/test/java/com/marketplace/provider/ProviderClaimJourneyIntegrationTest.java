@@ -155,7 +155,11 @@ class ProviderClaimJourneyIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"note\": \"قرار الإدارة بعد مطابقة المستندات\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.state").value("APPROVED".equals(decision) ? "APPROVED" : "REJECTED"));
+                // The decision PARAM is the verb (APPROVE/REJECT) — the
+                // response STATE is the past participle (APPROVED/REJECTED).
+                // The earlier "APPROVED".equals(decision) mispairing made the
+                // APPROVE branch expect REJECTED (the measured CI failure).
+                .andExpect(jsonPath("$.state").value("APPROVE".equals(decision) ? "APPROVED" : "REJECTED"));
     }
 
     /**
