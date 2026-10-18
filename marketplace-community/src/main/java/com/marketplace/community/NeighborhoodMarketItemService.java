@@ -194,6 +194,46 @@ public class NeighborhoodMarketItemService {
     }
 
     /**
+     * W6 / J06 (the unified plan §4 — the used-goods/giveaway journey's
+     * own close): the mark-sold edge — the seller's own close of their
+     * listing after a face-to-face deal (the community market's own
+     * settlement: no online money moves on this board by design — the
+     * unique used possession meets its buyer in the neighborhood). The
+     * gate order is the withdraw's own verbatim: an unknown item answers
+     * the honest 404, anyone but the author answers 403. The same-state
+     * request answers 200 idempotently — no write (the lost-found flip's
+     * own stance: a retried SOLD never re-stamps the row). The SOLD row
+     * STAYS on the board (the card's display states — the buyer-side
+     * social proof); the withdraw remains the only way off it.
+     *
+     * <p>Like the withdraw, the command is the author's OWN management
+     * write — it does not re-run the membership gate (a seller who
+     * switched neighborhoods still closes the listing they authored; the
+     * board's read scope is a read concern). The honest echo's
+     * seller badge resolves the author's CURRENT membership in the
+     * item's own neighborhood (absent ⇒ the honest unverified floor).
+     */
+    @Observed(name = "community.market.markSold")
+    public NeighborhoodMarketItemView markSoldByAuthor(UUID authorId, UUID itemId) {
+        NeighborhoodMarketItem item = itemRepository.findById(itemId)
+                .orElseThrow(() -> new ResourceNotFoundException("Market item", itemId));
+        if (!item.getAuthorId().equals(authorId)) {
+            throw new AccessDeniedException("Only the item's seller can mark it sold");
+        }
+        boolean sellerVerified = membershipRepository.findByUserId(authorId)
+                .filter(membership -> membership.getLocationId().equals(item.getLocationId()))
+                .map(this::isVerified)
+                .orElse(false);
+        if (item.getStatus() == MarketItemStatus.SOLD) {
+            // Idempotent: the fact is already stored — answer honestly,
+            // write nothing (the lost-found flip's own stance).
+            return NeighborhoodMarketItemView.of(item, sellerVerified);
+        }
+        item.applySold();
+        return NeighborhoodMarketItemView.of(itemRepository.save(item), sellerVerified);
+    }
+
+    /**
      * The ONE pricing rule (the design's own binary model): a FREE
      * item is a gift — no price at all («مجاني ⇔ بلا سعر», the safety
      * rules' own «الإعلانات المجانية بلا مقابل»); the four sale
