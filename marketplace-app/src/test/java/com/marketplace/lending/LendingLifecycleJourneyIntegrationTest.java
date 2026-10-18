@@ -525,6 +525,7 @@ class LendingLifecycleJourneyIntegrationTest {
             }
             Thread.sleep(200);
         }
+        throw new AssertionError("loan " + loanId + " was never marked paid within 10s");
     }
 
     /** The bounded poll for the intent's own status (the refund/cancel listener hop). */
@@ -538,6 +539,8 @@ class LendingLifecycleJourneyIntegrationTest {
             }
             Thread.sleep(200);
         }
+        throw new AssertionError("payment intent " + intentId + " did not reach " + expected
+                + " within 10s");
     }
 
     /** The bounded poll for a typed ledger row (the listener's AFTER_COMMIT hop). */
@@ -552,6 +555,8 @@ class LendingLifecycleJourneyIntegrationTest {
             }
             Thread.sleep(200);
         }
+        throw new AssertionError("ledger rows of type " + entryType + " for " + sourceId
+                + " never reached " + expected + " within 10s");
     }
 
     // ------------------------------------------------------------------
@@ -657,6 +662,8 @@ class LendingLifecycleJourneyIntegrationTest {
             }
             Thread.sleep(200);
         }
+        throw new AssertionError("notification rows of type " + type + " for loan " + loanId
+                + " never reached " + expected + " within 10s");
     }
 
     private String baseUrl() {
