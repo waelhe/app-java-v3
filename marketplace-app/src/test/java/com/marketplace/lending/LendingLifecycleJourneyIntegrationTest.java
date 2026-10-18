@@ -356,14 +356,16 @@ class LendingLifecycleJourneyIntegrationTest {
                 {"dailyFeeMinor":100,"depositMinor":300,"lateFeePerDayMinor":50}""");
         assertThat(offer.statusCode()).as("offer publish: %s", body(offer)).isEqualTo(200);
 
-        // A ~3-day period that ALREADY ended just under 2 days ago — the
-        // machine's own now-stamped return will be the late fact. The
-        // 5-minute margin keeps the stamped lateness INSIDE whole-day 2
-        // under close()'s ceiling law («a partial day rents the whole
-        // day»): an exact now-2d end would price 2 days + the stamping
-        // delay's partial third day = 3 (the deterministic flake the
-        // margin removes); the period itself still ceils to 3 fee days.
-        Instant startAt = Instant.now().minus(Duration.ofDays(5));
+        // A period EXACTLY 3 days long that ALREADY ended just under 2
+        // days ago — the machine's own now-stamped return will be the
+        // late fact. BOTH edges carry the same 5-minute margin: the END's
+        // margin keeps the stamped lateness INSIDE whole-day 2 under
+        // close()'s ceiling law («a partial day rents the whole day») — an
+        // exact now-2d end would price 2 days + the stamping delay's
+        // partial third day = 3; the START's margin keeps the span exactly
+        // 3 fee days (an end-only margin would ceil the span to 4 — the
+        // measured 300-vs-400 arithmetic). Fee: 3 x 100; lateness: 2 x 50.
+        Instant startAt = Instant.now().minus(Duration.ofDays(5)).plus(Duration.ofMinutes(5));
         Instant endAt = Instant.now().minus(Duration.ofDays(2)).plus(Duration.ofMinutes(5));
         String borrowerName = "it-lend-late-borrower-" + UUID.randomUUID().toString().substring(0, 8);
         registerUser(borrowerName, "CONSUMER");
