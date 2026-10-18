@@ -513,9 +513,13 @@ class RmaRefundJourneyIntegrationTest {
         String adminName = "it-rma-admin-" + UUID.randomUUID().toString().substring(0, 8);
         registerUser(adminName, "USER", "ADMIN");
         GateResult adminGate = loginGate(adminName, PASSWORD);
+        // The confirm body's JSON string stays OPEN across the concatenation
+        // (the earlier \"it-rma-ext-\" closed the value before the UUID and
+        // the raw id landed outside the string literal — malformed JSON,
+        // the honest 400 "Failed to read request" of the measured CI run).
         HttpResponse<String> confirm = postJson(
                 "/api/v1/payments/intents/" + intentId + "/confirm", adminGate.accessToken(),
-                "{\"externalId\":\"it-rma-ext-\"" + UUID.randomUUID() + "\"}");
+                "{\"externalId\":\"it-rma-ext-" + UUID.randomUUID() + "\"}");
         assertThat(confirm.statusCode()).as("admin confirm: %s", body(confirm)).isEqualTo(200);
         awaitOrderStatus(orderId, "CONFIRMED");
 
