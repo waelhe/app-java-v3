@@ -123,10 +123,15 @@ public class Promotion extends BaseEntity {
         return endsAt == null || at.isBefore(endsAt);
     }
 
-    /** The discount on the subtotal, capped at the subtotal. */
+    /**
+     * The discount on the subtotal, capped at the subtotal. The percentage
+     * path is exact integer arithmetic ({@link ExactPercentMath}) — the
+     * double division drifted a minor unit on large subtotals (the
+     * review's measured finding).
+     */
     public long discountOn(long subtotalMinor) {
         long raw = discountType == DiscountType.PERCENTAGE
-                ? Math.round(subtotalMinor * discountValue / 10000.0)
+                ? ExactPercentMath.roundHalfUpScaled(subtotalMinor, discountValue, 10000L)
                 : discountValue;
         return Math.min(raw, subtotalMinor);
     }

@@ -80,13 +80,16 @@ public class TaxRate extends BaseEntity {
      * INCLUSIVE: the component contained in {@code amount} —
      * {@code amount × rate / (1 + rate)} rounded half-up. EXCLUSIVE: the
      * component added on top — {@code amount × rate}. Both are the frozen
-     * facts the order's breakdown records.
+     * facts the order's breakdown records. The percentage arithmetic is
+     * exact integer quotient/remainder ({@link ExactPercentMath}) — the
+     * double division drifted on large amounts (the review's measured
+     * example: one minor unit off at {@code 1099511641251 × 8749 bps}).
      */
     public long taxOn(long amountMinor) {
         if (taxMode == TaxMode.INCLUSIVE) {
-            return Math.round(amountMinor * rateBps / (10000.0 + rateBps));
+            return ExactPercentMath.roundHalfUpScaled(amountMinor, rateBps, 10000L + rateBps);
         }
-        return Math.round(amountMinor * rateBps / 10000.0);
+        return ExactPercentMath.roundHalfUpScaled(amountMinor, rateBps, 10000L);
     }
 
     public void activate() {

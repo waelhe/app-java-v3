@@ -66,6 +66,17 @@ public class OrderItem extends BaseEntity {
                 cartLine.getUnitAmountMinor(), cartLine.getCurrency());
     }
 
+    /**
+     * The V225 RMA lifecycle's exchange twin: the REPLACEMENT order's line
+     * — a copy of the original frozen line at the returned quantity (the
+     * buyer already paid; the replacement ships the same goods again).
+     */
+    public static OrderItem snapshotOfReturn(UUID orderId, OrderItem original, int quantity) {
+        return new OrderItem(UUID.randomUUID(), orderId, original.getProductId(),
+                original.getVariantId(), quantity,
+                original.getUnitAmountMinor(), original.getCurrency());
+    }
+
     @Override
     public UUID getId() {
         return id;

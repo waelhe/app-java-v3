@@ -72,4 +72,20 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
                and p.stockQuantity >= :qty
             """)
     int commit(@Param("id") UUID id, @Param("qty") int qty);
+
+    /**
+     * Restocks {@code qty} units — the return's write (the V225 RMA
+     * lifecycle): the received goods go back on the shelf. An UNCONDITIONAL
+     * increment by design: the goods physically returned whatever the
+     * product's display lifecycle says (a suspended product's returns still
+     * restock — the shelf count is the physical truth, the status only
+     * gates buying).
+     */
+    @Modifying
+    @Query("""
+            update Product p
+               set p.stockQuantity = p.stockQuantity + :qty
+             where p.id = :id
+            """)
+    int restock(@Param("id") UUID id, @Param("qty") int qty);
 }

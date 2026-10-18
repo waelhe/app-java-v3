@@ -620,7 +620,13 @@ public class PaymentsService implements PaymentsSpi {
     @PreAuthorize("hasRole('ADMIN')")
     @Retry(name = "paymentProcessing")
     public RefundedPayment refundPayment(UUID paymentId) {
-        return refundPayment(paymentId, null);
+        return refundPayment(paymentId, null, null);
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @Retry(name = "paymentProcessing")
+    public RefundedPayment refundPayment(UUID paymentId, @Min(1) Long amountCents) {
+        return refundPayment(paymentId, amountCents, null);
     }
 
     /**
@@ -632,9 +638,21 @@ public class PaymentsService implements PaymentsSpi {
      */
     public record RefundedPayment(Payment payment, PaymentIntent intent) {}
 
+    /**
+     * The V230 return-scoped refund edge (the review's Major finding): a
+     * completing RETURN passes its own id as the idempotency key's STABLE
+     * scope. The state-derived key (payment + refunded-so-far + amount)
+     * drifts when a sibling return's refund advances the cumulative total
+     * between a rollback and its retry — the retry then derives a NEW key
+     * and the PSP refunds the same return twice. The return-scoped key is
+     * stable across that window: one return, one remote refund, replayed
+     * safely on retry. The dispute twin and the full-refund path keep the
+     * state-derived key (null scope) — their own scopes are single-shot.
+     */
     @PreAuthorize("hasRole('ADMIN')")
     @Retry(name = "paymentProcessing")
-    public RefundedPayment refundPayment(UUID paymentId, @Min(1) Long amountCents) {
+    public RefundedPayment refundPayment(UUID paymentId, @Min(1) Long amountCents,
+                                         UUID idempotencyScope) {
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found: " + paymentId));
         PaymentIntent intent = paymentIntentRepository.findById(payment.getPaymentIntentId())
@@ -659,7 +677,7 @@ public class PaymentsService implements PaymentsSpi {
         // stays byte-compatible. The booking-cancellation listener's full
         // refund (refundFully) routes through the SAME contract — one
         // behavior for one financial operation, no dual paths.
-        RemoteRefundOutcome outcome = refundThroughChannel(payment, intent, amountCents);
+        RemoteRefundOutcome outcome = refundThroughChannel(payment, intent, amountCents, idempotencyScope);
         switch (outcome) {
             case PENDING_AT_PROVIDER -> {
                 // Remote refund created but not completed: local books await
@@ -718,6 +736,20 @@ public class PaymentsService implements PaymentsSpi {
     static String refundIdempotencyKey(UUID paymentId, long alreadyRefundedCents, Long amountCents) {
         String amount = amountCents == null ? "full" : amountCents.toString();
         return "marketplace-refund-" + paymentId + "-" + alreadyRefundedCents + "-" + amount;
+    }
+
+    /**
+     * The V230 return-scoped key (the review's Major finding): derived from
+     * the payment, the RETURN's id, and the frozen amount — deliberately
+     * NOT from the refunded-so-far state. One completing return owns exactly
+     * one remote refund: its retried completion (after a rollback whose
+     * sibling refund advanced the cumulative total) re-derives the SAME key
+     * and replays the same refund at the PSP instead of creating a second
+     * one — the official idempotency-key contract, scoped to the RMA edge.
+     */
+    static String returnScopedRefundIdempotencyKey(UUID paymentId, UUID returnId, Long amountCents) {
+        String amount = amountCents == null ? "full" : amountCents.toString();
+        return "marketplace-refund-" + paymentId + "-return-" + returnId + "-" + amount;
     }
 
     /**
@@ -935,13 +967,16 @@ public class PaymentsService implements PaymentsSpi {
      * Anything else from the provider is a loud conflict with no local state
      * change (CodeRabbit #249 round 1).
      */
-    private RemoteRefundOutcome refundThroughChannel(Payment payment, PaymentIntent intent, Long amountCents) {
+    private RemoteRefundOutcome refundThroughChannel(Payment payment, PaymentIntent intent, Long amountCents,
+                                                    UUID idempotencyScope) {
         PspChannel channel = pspChannel.getIfAvailable();
         if (channel == null || intent.getPspIntentId() == null) {
             return RemoteRefundOutcome.NO_CHANNEL;
         }
-        String idempotencyKey = refundIdempotencyKey(
-                payment.getId(), payment.getRefundedAmountCents(), amountCents);
+        String idempotencyKey = idempotencyScope != null
+                ? returnScopedRefundIdempotencyKey(payment.getId(), idempotencyScope, amountCents)
+                : refundIdempotencyKey(
+                        payment.getId(), payment.getRefundedAmountCents(), amountCents);
         PspChannel.RemoteRefund remote = channel.createRemoteRefund(
                 intent.getPspIntentId(), amountCents, idempotencyKey);
         if ("pending".equals(remote.status())) {
@@ -979,7 +1014,7 @@ public class PaymentsService implements PaymentsSpi {
                     intent.getId());
             return;
         }
-        RemoteRefundOutcome outcome = refundThroughChannel(payment, intent, null);
+        RemoteRefundOutcome outcome = refundThroughChannel(payment, intent, null, null);
         switch (outcome) {
             case SYNCED -> {
                 paymentIntentRepository.save(intent);
