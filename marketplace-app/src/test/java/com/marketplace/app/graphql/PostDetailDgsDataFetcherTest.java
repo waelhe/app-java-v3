@@ -225,8 +225,9 @@ class PostDetailDgsDataFetcherTest {
         // The partial-data contract: the detail leg still resolved, the
         // comments field alone is null with its one classified error.
         java.util.Map<?, ?> data = (java.util.Map<?, ?>) result.getData();
-        assertThat((java.util.Map<?, ?>) data.get("post")).isNotNull()
-                .containsEntry("title", "The post's title");
+        java.util.Map<?, ?> post = (java.util.Map<?, ?>) data.get("post");
+        assertThat(post).isNotNull();
+        assertThat(post.get("title")).isEqualTo("The post's title");
         assertThat(data.get("postComments")).isNull();
     }
 
