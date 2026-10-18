@@ -199,7 +199,14 @@ class NewsAndAlertDeliveryJourneyIntegrationTest {
         // (3) The publication: born displayed, the REQUIRED attribution pair
         // (the original link + the original date) riding the answer, and the
         // geo scope omitted (the whole board — the axis is optional).
-        Instant originalPublishedAt = Instant.now().minusSeconds(3600);
+        // Micro-aligned on purpose: the Postgres timestamptz column stores
+        // MICROSECONDS — a nanosecond-carrying requested instant round-trips
+        // ROUNDED (the create echo shows the in-memory nanos; the correction's
+        // re-loaded answer the stored truth), and the immutability comparison
+        // below would flake on the storage rounding. An exactly-microsecond
+        // instant round-trips losslessly — the assertion stays exact.
+        Instant originalPublishedAt = Instant.now().minusSeconds(3600)
+                .truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         HttpResponse<String> published = postJson("/api/v1/admin/news/items", adminGate.accessToken(), """
                 {"publisherId":"%s","title":"افتتاح الطريق الدائري الجديد لحي القضية",
                  "summary":"الترحيل الأول للخبر كما قيس على السلك",
