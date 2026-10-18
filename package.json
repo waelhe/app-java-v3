@@ -4,5 +4,9 @@
   "description": "Railway IaC SDK dependency for .railway/railway.ts evaluation (official CLI requirement)",
   "devDependencies": {
     "railway": "^3.11.0"
+  },
+  "dependencies": {
+    "@neon/config": "^1.9.2",
+    "@neon/env": "^1.6.3"
   }
 }
