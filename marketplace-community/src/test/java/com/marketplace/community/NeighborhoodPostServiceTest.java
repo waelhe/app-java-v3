@@ -445,7 +445,8 @@ class NeighborhoodPostServiceTest {
                 any())).thenReturn(List.of());
         when(mediaLookupPort.findUploadedByPostIds(any()))
                 .thenReturn(List.of(new MediaLookupPort.PostMediaEntry(
-                        UUID.randomUUID(), "https://presigned/one", null, "image/jpeg", 0)));
+                        post.getId(), UUID.randomUUID(), "https://presigned/one", null,
+                        "image/jpeg", 0)));
 
         NeighborhoodPostView view = service.getPost(commenterId, postId);
 
