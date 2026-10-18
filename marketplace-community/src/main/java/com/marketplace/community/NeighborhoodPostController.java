@@ -140,6 +140,26 @@ public class NeighborhoodPostController {
         return ResponseEntity.status(201).body(view);
     }
 
+    @GetMapping("/posts/{postId}")
+    @Operation(summary = "Read one post",
+            description = "Phase 7 (the composite post/source detail journey — the inventory #599 "
+                    + "P0-1 closure): the single-post read. Reached through the post gate first: "
+                    + "an unknown, hidden or deleted post answers the honest 404 (the current "
+                    + "state is re-validated at open time — never trust the card that pointed "
+                    + "here), then the membership gate in the post's OWN neighborhood (an active "
+                    + "membership, else 403 — ANY verification state reads). The answer is the "
+                    + "feed page's own view shape: the stored facts plus the caller-scoped "
+                    + "reaction facts (reactionsCount / reactedByMe) plus the post's presigned "
+                    + "media URLs — the same-journey field set the feed serves, nothing narrower, "
+                    + "nothing wider. The SAME use case serves the GraphQL detail leg (one use "
+                    + "case, one set of rules on both surfaces).")
+    public ResponseEntity<NeighborhoodPostView> get(
+            @PathVariable UUID postId,
+            Authentication authentication) {
+        UUID callerId = currentUserProvider.getCurrentUserId(authentication);
+        return ResponseEntity.ok(postService.getPost(callerId, postId));
+    }
+
     @GetMapping("/posts/{postId}/comments")
     @Operation(summary = "Read one post's comments",
             description = "One VISIBLE post's comments, chronological on the complete sort key "

@@ -87,6 +87,55 @@ type Query {
     # startup by the same ConnectionTypeDefinitionConfigurer — never
     # hand-declared here.
     neighborhoodFeed(first: Int, after: String): NeighborhoodPostConnection
+
+    # Phase 7 — the composite post/source detail journey (the corrected
+    # plan §11-Phase-7 + the journey inventory #599 §5 item 3 + the
+    # readiness doc's P0-1 closure): the detail read. The composition
+    # lives in the OPERATION DOCUMENT exactly as the home read's does —
+    # the client composes this field with postComments below in ONE
+    # authenticated round-trip (the measured REST comparison #599's gate
+    # pins: the same journey over REST is two HTTP requests, GET
+    # /api/v1/posts/{postId} + GET /api/v1/posts/{postId}/comments —
+    # both contracts now exist on the REST side, this wave's P0-1
+    # closure). Two ROOT fields, not a wrapper type and not a field on
+    # NeighborhoodPost: the codegen's data-type generation excludes the
+    # Query root (measured), so a connection-typed field stays off the
+    # generated transport type the mapper builds — the feed journey's
+    # contract is untouched byte-for-byte.
+    #
+    # The id is NOT permission (the inventory §8: «لا يعتبر المعرّف
+    # إذنًا»): the owner re-validates the post's CURRENT state at open
+    # time (an unknown, hidden or deleted post answers the honest 404 —
+    # never trust the discovery card that pointed here) and the caller's
+    # active membership in the post's OWN neighborhood (403 otherwise).
+    # The field is NULLABLE deliberately (the neighborhoodFeed
+    # precedent): the denial resolves this field to null WITH one
+    # classified error in errors[] while the sibling comments field (or
+    # any other section of the same document) still resolves — the
+    # composite never destroys the sibling section and never bends the
+    # owner's rules. The answer is the feed node's own type — the
+    # same-journey field set (stored facts + caller-scoped reaction
+    # facts + presigned media), nothing narrower, nothing wider.
+    post(id: ID!): NeighborhoodPost
+
+    # The post-detail journey's comments leg — the same bounded read the
+    # REST comments endpoint serves (GET /api/v1/posts/{postId}/comments):
+    # the post's comments on the owner's complete sort key createdAt ASC,
+    # id ASC (the owner pins the order — no shaky page boundaries),
+    # reached through the SAME post gate first (an unknown, hidden or
+    # deleted post answers the honest 404 — a hidden post's comments are
+    # absent exactly as the post itself is), then the membership gate in
+    # the post's OWN neighborhood (403; ANY verification state reads).
+    # The relay envelope is the Phase-1 connection contract the services
+    # and neighborhoodFeed fields established: forward-only first/after
+    # with the server's configured default page size and hard cap
+    # (marketplace.graphql.pagination.*) and no SDL literal default (the
+    # single-source rule). The connection is NULLABLE for the same
+    # field-level denial contract as post above. The connection types
+    # (PostCommentConnection/Edge/PageInfo) are generated at startup by
+    # the same ConnectionTypeDefinitionConfigurer — never hand-declared
+    # here.
+    postComments(postId: ID!, first: Int, after: String): PostCommentConnection
 }
 
 type Mutation {
@@ -281,4 +330,30 @@ type NeighborhoodPostMedia {
     thumbUrl: String
     contentType: String
     position: Int!
+}
+
+# =====================================================================
+# Phase 7 — the composite post/source detail journey's comment
+# projection (the corrected plan §11-Phase-7 + the inventory #599 §5
+# item 3). The same bounded read projection discipline as every type
+# above: the GraphQL surface owns no business rule — the REST comments
+# read and the GraphQL comments leg invoke the SAME use case through
+# the SAME declared SPI (#599 §8).
+# =====================================================================
+
+# One comment of a post as the detail journey carries it — the REST
+# comments read view's own field set (the same-journey comparison the
+# inventory's acceptance gate demands: nothing narrower, nothing
+# wider). The author stays an opaque id (the identity seams own
+# resolution — GraphQL never widens it); the comment never
+# re-projects its post's own state (the comment is reached through the
+# post gate); the instants are ISO-8601 strings (the same deliberate
+# no-new-scalar decision as NeighborhoodPost.createdAt).
+type PostComment {
+    id: ID!
+    postId: ID!
+    authorId: ID!
+    body: String!
+    createdAt: String!
+    updatedAt: String!
 }

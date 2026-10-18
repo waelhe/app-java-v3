@@ -91,6 +91,18 @@ class GraphQlSchemaCodegenTest {
     }
 
     /**
+     * The Phase-7 constants half: the post-detail journey's two root
+     * fields bind through the generated constants exactly as the schema
+     * names them — the same drift-failing contract the home journey's
+     * pair carries.
+     */
+    @Test
+    void generatedConstantsMatchThePostDetailJourneySchemaContract() {
+        assertThat(DgsConstants.QUERY.Post).isEqualTo("post");
+        assertThat(DgsConstants.QUERY.PostComments).isEqualTo("postComments");
+    }
+
+    /**
      * The Phase-6 transport-side half: the home journey's generated data
      * types ARE the wire contract the adapter returns — exactly the SDL's
      * field sets with the engine's documented scalar mapping (ID renders
@@ -151,6 +163,30 @@ class GraphQlSchemaCodegenTest {
         assertThat(com.marketplace.app.graphql.generated.types.LostFoundState.values())
                 .extracting(Enum::name)
                 .containsExactly("ACTIVE", "RESOLVED", "FOUND");
+    }
+
+    /**
+     * The Phase-7 transport-side half: the post-detail journey's
+     * generated comment data type IS the wire contract the comments leg
+     * returns — exactly the SDL's six fields (the REST comments read
+     * view's own set, the same-journey rule) with the engine's
+     * documented scalar mapping (ID renders as String).
+     */
+    @Test
+    void generatedTransportTypesMatchThePostDetailJourneySchemaContract() {
+        assertThat(Arrays.stream(com.marketplace.app.graphql.generated.types.PostComment.class
+                        .getDeclaredFields()).map(Field::getName))
+                .containsExactlyInAnyOrder("id", "postId", "authorId", "body",
+                        "createdAt", "updatedAt");
+
+        assertThat(fieldType(com.marketplace.app.graphql.generated.types.PostComment.class, "id"))
+                .isEqualTo(String.class);
+        assertThat(fieldType(com.marketplace.app.graphql.generated.types.PostComment.class, "postId"))
+                .isEqualTo(String.class);
+        assertThat(fieldType(com.marketplace.app.graphql.generated.types.PostComment.class, "authorId"))
+                .isEqualTo(String.class);
+        assertThat(fieldType(com.marketplace.app.graphql.generated.types.PostComment.class, "createdAt"))
+                .isEqualTo(String.class);
     }
 
     /**

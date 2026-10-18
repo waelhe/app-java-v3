@@ -727,6 +727,23 @@ resilience4j:
         base-config: default
         limit-for-period: 50
         timeout-duration: 0
+      # Phase 7 (the GraphQL plan §11-Phase-7 — the second composite
+      # journey, the inventory #599 §5 item 3 / the readiness doc's
+      # P0-1 closure): the post-detail journey's two reads' named
+      # instances, the same L29 fail-fast model and the same 50/min
+      # read budget the home reads sit at — the detail leg is one
+      # bounded single-post read (the grouped aggregates over one id),
+      # the comments leg one bounded comment page. Conservative until
+      # measured traffic (G-R6 calibration gate); env-tunable per the
+      # house relaxed-binding rule.
+      graphqlPostQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      graphqlPostCommentsQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
       # L42 (neighborhood community plan §5 — the posts/feed/comments
       # layer): the community writes — two distinct named instances
       # (the plan's own words: "نمطلتان مسماتان مستقلتان") so a comment

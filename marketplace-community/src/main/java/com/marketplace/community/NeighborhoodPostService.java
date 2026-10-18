@@ -226,6 +226,45 @@ public class NeighborhoodPostService {
     }
 
     /**
+     * Phase 7 (the composite post/source detail journey — the readiness
+     * doc's P0-1 closure, the inventory #599 §5 item 3): the single-post
+     * read use case the REST surface's {@code GET /posts/{postId}} and
+     * the GraphQL detail leg BOTH invoke — the same use case, one set of
+     * rules (the inventory §8). The gate order is {@link #getComments}'
+     * own verbatim (the read that already reaches through the post
+     * gate): the post gate FIRST — an unknown, hidden or deleted post
+     * answers the honest 404 ({@code @SoftDelete} hides the deleted from
+     * {@code findById} itself; a HIDDEN_BY_MODERATOR post is absent from
+     * the reads by the same honest-404 convention — the re-validation at
+     * open time the inventory's P0-1 demands: «إعادة التحقق من الحالة
+     * الحالية», never trusting the card that pointed here) — then the
+     * membership gate in the post's OWN {@code locationId} (403; ANY
+     * verification state reads — D-N3: REJECTED blocks community writes,
+     * never reads).
+     *
+     * <p>The answer is the feed page's own view shape — the
+     * same-journey field set (the stored facts plus the caller-scoped
+     * reaction facts plus the post's grouped media entries), served by
+     * the SAME grouped-aggregate helpers the feed read rides over a
+     * singleton page ({@code List.of(post)} — one id, one grouped call
+     * per fact, the L47/L48 pattern verbatim, no new repository shape
+     * for a journey the feed already serves field-for-field).</p>
+     */
+    @Transactional(readOnly = true)
+    public NeighborhoodPostView getPost(UUID callerId, UUID postId) {
+        NeighborhoodPost post = visiblePost(postId);
+        requireMembershipIn(callerId, post.getLocationId(),
+                "Join a neighborhood before reading a post (PUT /api/v1/me/neighborhood)",
+                "Only members of the post's neighborhood can read it");
+        List<NeighborhoodPost> singletonPage = List.of(post);
+        return NeighborhoodPostView.of(
+                post,
+                reactionCounts(singletonPage).getOrDefault(post.getId(), 0L),
+                myReactions(callerId, singletonPage).contains(post.getId()),
+                postMedia(singletonPage).getOrDefault(post.getId(), List.of()));
+    }
+
+    /**
      * Comment on a VISIBLE post — the same active-membership gate, in the
      * post's OWN {@code locationId}. The event is the fact; the
      * notification policy (no self-notify) is the listener's.
