@@ -31,4 +31,14 @@ public interface ProviderLookupPort {
      * empty {@code Optional}).
      */
     Map<UUID, ProviderSummary> findAllByUserIds(Collection<UUID> userIds);
+
+    /**
+     * W4 (the unified end-to-end plan §3, J09 — the recommendation-to-source
+     * bridge): batch resolution by PROVIDER id for page-sized surfaces that
+     * carry provider references (a neighborhood feed page resolving its
+     * posts' recommended providers in ONE query — the {@code findAllByUserIds}
+     * G21 precedent verbatim). Ids with no provider row are simply absent
+     * from the map; the caller's own fallback applies.
+     */
+    Map<UUID, ProviderSummary> findAllByIds(Collection<UUID> providerIds);
 }

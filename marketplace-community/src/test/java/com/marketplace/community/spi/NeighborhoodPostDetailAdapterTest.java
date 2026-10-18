@@ -72,6 +72,7 @@ class NeighborhoodPostDetailAdapterTest {
                 true,
                 List.of(new PostMediaView(
                         UUID.randomUUID(), "https://presigned/one", null, "image/jpeg", 0)),
+                null,
                 Instant.parse("2026-10-18T09:00:00Z"),
                 Instant.parse("2026-10-18T09:00:00Z"));
     }

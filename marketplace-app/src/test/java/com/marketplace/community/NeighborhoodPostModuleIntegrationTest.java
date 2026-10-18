@@ -448,10 +448,10 @@ class NeighborhoodPostModuleIntegrationTest {
 
         com.marketplace.community.NeighborhoodPostService postService = this.postService;
         var ownPost = postService.createPost(authorId, UUID.fromString(QUDSAYYA_OLD_TOWN),
-                PostCategory.CLASSIFIED, "Bicycle for sale", "Good condition.", false);
+                PostCategory.CLASSIFIED, "Bicycle for sale", "Good condition.", false, null);
         postService.comment(otherMember, ownPost.id(), "Still available?");
         var otherPost = postService.createPost(otherMember, UUID.fromString(QUDSAYYA_OLD_TOWN),
-                PostCategory.GENERAL, "Other title", "Other body.", false);
+                PostCategory.GENERAL, "Other title", "Other body.", false, null);
         postService.comment(authorId, otherPost.id(), "Nice post!");
 
         // b-2: the export carries the subject's posts and comments (the
@@ -550,7 +550,7 @@ class NeighborhoodPostModuleIntegrationTest {
         UUID authorId = UUID.randomUUID();
         membershipService.join(authorId, UUID.fromString(QUDSAYYA_OLD_TOWN));
         var ownPost = postService.createPost(authorId, UUID.fromString(QUDSAYYA_OLD_TOWN),
-                PostCategory.GENERAL, "Title", "Body", false);
+                PostCategory.GENERAL, "Title", "Body", false, null);
 
         // L43 (criterion 3, the positive half): the widened CHECK (V68+V69)
         // ACCEPTS RECOMMENDATION at the DB floor — the value L42's guard
@@ -615,13 +615,13 @@ class NeighborhoodPostModuleIntegrationTest {
                 authorId, UUID.fromString(QUDSAYYA_OLD_TOWN),
                 PostCategory.RECOMMENDATION,
                 "Any trustworthy plumber around?",
-                "Looking for a reliable plumber for a kitchen leak.", false);
+                "Looking for a reliable plumber for a kitchen leak.", false, null);
         org.assertj.core.api.Assertions.assertThat(recommendation.category())
                 .isEqualTo("RECOMMENDATION");
         NeighborhoodPostView general = postService.createPost(
                 authorId, UUID.fromString(QUDSAYYA_OLD_TOWN),
                 PostCategory.GENERAL,
-                "Welcome to the neighborhood board", "Introduce yourself here.", false);
+                "Welcome to the neighborhood board", "Introduce yourself here.", false, null);
         org.assertj.core.api.Assertions.assertThat(general.category())
                 .isEqualTo("GENERAL");
 
@@ -727,15 +727,15 @@ class NeighborhoodPostModuleIntegrationTest {
         postService.createPost(
                 authorId, locationId, PostCategory.QUESTION,
                 "سؤال عن سباك موثوق",
-                "أبحث عن سباك موثوق في الحي لإصلاح تسرب ماء.", false);
+                "أبحث عن سباك موثوق في الحي لإصلاح تسرب ماء.", false, null);
         postService.createPost(
                 otherNeighborhoodAuthorId, otherNeighborhoodId, PostCategory.QUESTION,
                 "سباك موثوق في الضاحية",
-                "أبحث عن سباك موثوق في ضاحية قدسيا.", false);
+                "أبحث عن سباك موثوق في ضاحية قدسيا.", false, null);
         postService.createPost(
                 authorId, locationId, PostCategory.REQUEST,
                 "طلب مساعدة في نقل أثاث",
-                "أحتاج مساعدة محلية في نقل الأثاث.", false);
+                "أحتاج مساعدة محلية في نقل الأثاث.", false, null);
 
         var questions = postService.searchFeed(
                 authorId, "سباك", PostCategory.QUESTION,
