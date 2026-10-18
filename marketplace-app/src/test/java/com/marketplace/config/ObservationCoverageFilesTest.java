@@ -154,6 +154,9 @@ class ObservationCoverageFilesTest {
                     "community.event.rsvp", "community.event.unrsvp",
                     "community.group.join", "community.group.leave",
                     "community.market.create", "community.market.delete",
+                    // W6 (J06 — the used-goods journey's own close): the
+                    // seller's mark-sold command.
+                    "community.market.markSold",
                     "community.membership.join", "community.membership.leave",
                     "community.membership.verification.queue",
                     "community.membership.verification.request",
