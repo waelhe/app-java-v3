@@ -155,7 +155,24 @@ class BookingJourneyIntegrationTest {
         HttpResponse<String> providerReg = postJson("/api/v1/providers", sellerGate.accessToken(),
                 "{\"displayName\":\"مكتب الحجوزات — الرحلة الكاملة\",\"bio\":\"J20\"}");
         assertThat(providerReg.statusCode()).as("provider register: %s", body(providerReg)).isEqualTo(200);
-        UUID listing = registerProduct(sellerGate.accessToken(), 1500L);
+        UUID providerProfileId = UUID.fromString(
+                objectMapper.readTree(providerReg.body()).path("id").asString());
+        // The listing's creation gate requires the provider VERIFIED
+        // (CatalogService.create's own filter) — the administrative trust
+        // decision rides before the listing, the delivery journeys'
+        // becomeVerifiedProvider step verbatim.
+        String verifierName = "it-booking-verifier-" + UUID.randomUUID().toString().substring(0, 8);
+        registerUser(verifierName, "ADMIN");
+        GateResult verifierGate = loginGate(verifierName, PASSWORD);
+        HttpResponse<String> verified = postJson(
+                "/api/v1/admin/providers/" + providerProfileId + "/verify",
+                verifierGate.accessToken(), "");
+        assertThat(verified.statusCode()).as("provider verify: %s", body(verified)).isEqualTo(200);
+        // The bookable LISTING — the ProviderListing entity the booking's
+        // getListingInfo reads (a store product is a different entity: the
+        // booking create answered the honest 404 for it). The flat base
+        // price is the L26 backward-compatible total the assertions read.
+        UUID listing = registerListing(sellerGate.accessToken(), 1500L);
         createSlot(sellerGate.accessToken(), sellerId, SLOT_START, SLOT_END);
 
         String consumerName = "it-booking-buyer-" + UUID.randomUUID().toString().substring(0, 8);
@@ -377,7 +394,24 @@ class BookingJourneyIntegrationTest {
         HttpResponse<String> providerReg = postJson("/api/v1/providers", sellerGate.accessToken(),
                 "{\"displayName\":\"مكتب الحجوزات — فرع الإلغاء\",\"bio\":\"J20 cancel\"}");
         assertThat(providerReg.statusCode()).as("provider register: %s", body(providerReg)).isEqualTo(200);
-        UUID listing = registerProduct(sellerGate.accessToken(), 2000L);
+        UUID providerProfileId = UUID.fromString(
+                objectMapper.readTree(providerReg.body()).path("id").asString());
+        // The listing's creation gate requires the provider VERIFIED
+        // (CatalogService.create's own filter) — the administrative trust
+        // decision rides before the listing, the delivery journeys'
+        // becomeVerifiedProvider step verbatim.
+        String verifierName = "it-booking-verifier-" + UUID.randomUUID().toString().substring(0, 8);
+        registerUser(verifierName, "ADMIN");
+        GateResult verifierGate = loginGate(verifierName, PASSWORD);
+        HttpResponse<String> verified = postJson(
+                "/api/v1/admin/providers/" + providerProfileId + "/verify",
+                verifierGate.accessToken(), "");
+        assertThat(verified.statusCode()).as("provider verify: %s", body(verified)).isEqualTo(200);
+        // The bookable LISTING — the ProviderListing entity the booking's
+        // getListingInfo reads (a store product is a different entity: the
+        // booking create answered the honest 404 for it). The flat base
+        // price is the L26 backward-compatible total the assertions read.
+        UUID listing = registerListing(sellerGate.accessToken(), 2000L);
         createSlot(sellerGate.accessToken(), sellerId, CANCEL_SLOT_START, CANCEL_SLOT_END);
 
         String consumerName = "it-booking-cancel-buyer-" + UUID.randomUUID().toString().substring(0, 8);
@@ -476,12 +510,18 @@ class BookingJourneyIntegrationTest {
                 .build());
     }
 
-    private UUID registerProduct(String sellerToken, long priceMinor) throws Exception {
-        HttpResponse<String> created = postJson("/api/v1/store/products", sellerToken, """
-                {"storeCategoryCode":"journey-appliances","title":"Journey stay listing",
-                 "description":"J20 journey listing","priceMinor":%d,"currency":"SAR"}"""
-                .formatted(priceMinor));
-        assertThat(created.statusCode()).as("product register: %s", body(created)).isEqualTo(201);
+    /**
+     * The bookable ProviderListing — the entity the booking's listing gate
+     * (ListingPriceProvider → CatalogService.getListingInfo) actually reads;
+     * "stay" is the only seeded category (V70's registry). The flat base
+     * price rides as the L26 backward-compatible total (no calendar rows).
+     */
+    private UUID registerListing(String sellerToken, long priceCents) throws Exception {
+        HttpResponse<String> created = postJson("/api/v1/listings", sellerToken, """
+                {"title":"J20 journey stay","description":"The booking journey's own listing",
+                 "category":"stay","priceCents":%d,"currency":"SAR","maxGuests":2}"""
+                .formatted(priceCents));
+        assertThat(created.statusCode()).as("listing register: %s", body(created)).isEqualTo(201);
         return UUID.fromString(objectMapper.readTree(created.body()).path("id").asString());
     }
 
