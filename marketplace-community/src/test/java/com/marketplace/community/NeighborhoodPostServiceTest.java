@@ -465,11 +465,8 @@ class NeighborhoodPostServiceTest {
 
         // The grouped calls each consumed exactly the singleton id — no
         // new repository shape for a journey the feed already serves.
-        var ids = org.mockito.ArgumentCaptor.forClass(java.util.Collection.class);
-        verify(reactionRepository).countByPostIdIn(ids.capture());
-        assertThat(ids.getValue()).containsExactly(post.getId());
-        verify(mediaLookupPort).findUploadedByPostIds(ids.capture());
-        assertThat(ids.getValue()).containsExactly(post.getId());
+        verify(reactionRepository).countByPostIdIn(List.of(post.getId()));
+        verify(mediaLookupPort).findUploadedByPostIds(List.of(post.getId()));
     }
 
     // ---------- deleteByAuthor ----------
