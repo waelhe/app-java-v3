@@ -56,6 +56,7 @@ class PaymentsServicePspTest {
                 eventPublisher, currentUserProvider, bookingParticipantProvider, webhookSecurity,
                 recorder,
                 new PaymentIntentSettlementService(intentRepository, paymentRepository, eventPublisher, recorder),
+                new SettlementEligibilityService(mock(com.marketplace.shared.api.LedgerReadPort.class), intentRepository, bookingParticipantProvider),
                 channel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)));
     }
 

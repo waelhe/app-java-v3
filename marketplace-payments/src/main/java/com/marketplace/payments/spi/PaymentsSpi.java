@@ -14,6 +14,12 @@ import java.util.UUID;
  * model: the operator's single-search surface rides the same seam the
  * plain list already rides (the admin composition layer stays a consumer
  * of this SPI — it never queries the payments module's storage itself).
+ *
+ * <p>Widened again by W11 (the origin-state matrix's G5 closure —
+ * ADR-0013 D3): the settlement-eligibility operational read rides the
+ * same seam — the eligibility law (which settled credit's owning domain
+ * reached its proper end) is payments-owned, so the admin surface consumes
+ * the derived report rather than composing the facts itself.
  */
 @NamedInterface("payments-spi")
 public interface PaymentsSpi {
@@ -29,4 +35,17 @@ public interface PaymentsSpi {
     Page<PaymentSummary> searchIntentsSummaries(PaymentIntentSearch search, Pageable pageable);
 
     PaymentSummary getIntentSummary(UUID id);
+
+    /**
+     * W11 (the matrix's G5): one provider's settlement-eligibility report
+     * — the read-only derivation above the ledger's settled credits and
+     * the intent facts. READ-ONLY by contract: no state machine, no money
+     * movement (ADR-0013 D4 keeps payout a separate operational stage).
+     *
+     * @param providerId the provider whose credits the report derives
+     *        over (required — the house 400 when absent)
+     * @param origin optional origin filter over the derived rows
+     * @param pageable the per-intent breakdown page
+     */
+    SettlementEligibilityReport settlementEligibility(UUID providerId, String origin, Pageable pageable);
 }

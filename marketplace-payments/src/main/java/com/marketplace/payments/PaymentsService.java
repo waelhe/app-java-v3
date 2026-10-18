@@ -2,6 +2,7 @@ package com.marketplace.payments;
 
 import com.marketplace.payments.spi.PaymentIntentSearch;
 import com.marketplace.payments.spi.PaymentsSpi;
+import com.marketplace.payments.spi.SettlementEligibilityReport;
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
@@ -56,6 +57,7 @@ public class PaymentsService implements PaymentsSpi {
     private final PaymentWebhookSecurity paymentWebhookSecurity;
     private final WebhookEventRecorder webhookEventRecorder;
     private final PaymentIntentSettlementService paymentIntentSettlementService;
+    private final SettlementEligibilityService settlementEligibilityService;
     private final ObjectProvider<PspChannel> pspChannel;
     private final CommissionProperties commissionProperties;
 
@@ -68,6 +70,7 @@ public class PaymentsService implements PaymentsSpi {
                            PaymentWebhookSecurity paymentWebhookSecurity,
                            WebhookEventRecorder webhookEventRecorder,
                            PaymentIntentSettlementService paymentIntentSettlementService,
+                           SettlementEligibilityService settlementEligibilityService,
                            ObjectProvider<PspChannel> pspChannel,
                            CommissionProperties commissionProperties) {
         this.paymentIntentRepository = paymentIntentRepository;
@@ -79,6 +82,7 @@ public class PaymentsService implements PaymentsSpi {
         this.paymentWebhookSecurity = paymentWebhookSecurity;
         this.webhookEventRecorder = webhookEventRecorder;
         this.paymentIntentSettlementService = paymentIntentSettlementService;
+        this.settlementEligibilityService = settlementEligibilityService;
         this.pspChannel = pspChannel;
         this.commissionProperties = commissionProperties;
     }
@@ -362,6 +366,21 @@ public class PaymentsService implements PaymentsSpi {
         Specification<PaymentIntent> spec = PaymentIntentSpecifications.fromSearch(search);
         return paymentIntentRepository.findAll(spec, pageable)
                 .map(this::toPaymentSummary);
+    }
+
+    /**
+     * W11 (the origin-state matrix's G5 closure — ADR-0013 D3): the
+     * settlement-eligibility operational read — a pure delegation to the
+     * law's owner ({@link SettlementEligibilityService}), exactly the way
+     * the settlement command delegates to its own extracted bean. The
+     * admin authorization gate lives on the consuming controller surface
+     * (the financial-facts read's own rule); this method is the read
+     * itself — no mutation, no events, no money movement (ADR-0013 D4).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public SettlementEligibilityReport settlementEligibility(UUID providerId, String origin, Pageable pageable) {
+        return settlementEligibilityService.eligibility(providerId, origin, pageable);
     }
 
     private PaymentSummary toPaymentSummaryFromView(PaymentIntentSummaryView view) {
