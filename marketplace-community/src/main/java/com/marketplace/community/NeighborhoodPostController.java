@@ -136,7 +136,8 @@ public class NeighborhoodPostController {
                 parseCategory(request.category()),
                 request.title(),
                 request.body(),
-                request.declaredCommercial());
+                request.declaredCommercial(),
+                parseOptionalUuid(request.recommendedProviderId(), "recommendedProviderId"));
         return ResponseEntity.status(201).body(view);
     }
 
@@ -269,6 +270,22 @@ public class NeighborhoodPostController {
     }
 
     /**
+     * W4 (J09): the bridge id's own type gate — null/blank passes as absent
+     * (the optional contract), anything else must parse as a UUID (the
+     * honest 400 BEFORE any write, the house VAL-001 vocabulary).
+     */
+    private static UUID parseOptionalUuid(String raw, String fieldName) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(raw.trim());
+        } catch (IllegalArgumentException malformed) {
+            throw new BadRequestException(fieldName + " must be a UUID — got '" + raw + "'");
+        }
+    }
+
+    /**
      * The category type gate (criterion 3): a String in, the enum out —
      * an invalid value answers the house 400 listing the valid
      * vocabulary, BEFORE any service call (and therefore before any
@@ -335,7 +352,16 @@ public class NeighborhoodPostController {
                     + "post is or contains commercial communications. Other recipients read the "
                     + "declaration on the post itself, in real time. Absent = not declared.",
                     example = "false")
-            boolean declaredCommercial
+            boolean declaredCommercial,
+
+            @Size(max = 36)
+            @Schema(description = "W4 (J09 — the recommendation-to-source bridge): the optional "
+                    + "recommended provider id — the REAL business/service source this post "
+                    + "recommends. The publish gate answers 404 for an unknown provider and 400 "
+                    + "for a malformed id, both BEFORE any write; the CURRENT provider facts are "
+                    + "resolved at read time through the shared-api port (never frozen into the post).",
+                    example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+            String recommendedProviderId
     ) {
     }
 
