@@ -166,6 +166,7 @@ class PostDetailGraphQlIntegrationTest {
                 3L,
                 true,
                 List.of(),
+                null,
                 Instant.parse("2026-10-18T09:00:00Z"),
                 Instant.parse("2026-10-18T09:00:00Z"));
     }

@@ -301,7 +301,8 @@ public class NeighborhoodPostService {
                 post,
                 reactionCounts(singletonPage).getOrDefault(post.getId(), 0L),
                 myReactions(callerId, singletonPage).contains(post.getId()),
-                postMedia(singletonPage).getOrDefault(post.getId(), List.of()));
+                postMedia(singletonPage).getOrDefault(post.getId(), List.of()),
+                recommendedProviders(singletonPage));
     }
 
     /**
