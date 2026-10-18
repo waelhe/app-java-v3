@@ -130,7 +130,10 @@ class PrivacyAccountJourneyIntegrationTest {
         assertThat(me.statusCode()).as("/me review: %s", body(me)).isEqualTo(200);
         JsonNode user = objectMapper.readTree(me.body());
         UUID userId = UUID.fromString(user.path("id").asString());
-        assertThat(user.path("subject").asString()).isEqualTo(username);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT id FROM users WHERE subject = ?", UUID.class, username))
+                .as("the /me projection is the login subject's own row")
+                .isEqualTo(userId);
 
         // (2) The member joins their neighborhood and publishes a post —
         // the journey's authored content (the export must carry it and the

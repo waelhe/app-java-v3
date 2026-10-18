@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.test.context.ActiveProfiles;
@@ -98,6 +99,9 @@ class SessionLifecycleJourneyIntegrationTest {
     private UserDetailsManager userDetailsManager;
 
     @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Autowired
     private RegisteredClientRepository registeredClientRepository;
 
     @Value("${local.server.port}")
@@ -130,9 +134,17 @@ class SessionLifecycleJourneyIntegrationTest {
         HttpResponse<String> me = getWithBearer("/api/v1/users/me", gate.accessToken());
         assertThat(me.statusCode()).as("the /me provisioning sync: %s", body(me)).isEqualTo(200);
         JsonNode user = objectMapper.readTree(me.body());
-        assertThat(user.path("id").asString()).isNotBlank();
-        String subject = user.path("subject").asString();
-        assertThat(subject).as("the projection carries the login subject").isEqualTo(username);
+        // The /me view's own identity fields (UserResponse): the projection
+        // row's UUID is the stable identity the account-switch contract
+        // rides (the view carries no subject echo — the caller IS the
+        // subject by construction of the strict provider).
+        String userId = user.path("id").asString();
+        assertThat(userId).as("the projection carries the account's id").isNotBlank();
+        UUID identity = UUID.fromString(userId);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT id FROM users WHERE subject = ?", UUID.class, username))
+                .as("the /me projection is the login subject's own row")
+                .isEqualTo(identity);
 
         // (2) The documented renewal: the refresh grant answers a fresh
         // access token for the same subject (the app's session-restore leg
@@ -144,9 +156,9 @@ class SessionLifecycleJourneyIntegrationTest {
         assertThat(renewedToken).isNotBlank();
         HttpResponse<String> meRenewed = getWithBearer("/api/v1/users/me", renewedToken);
         assertThat(meRenewed.statusCode()).as("the renewed token carries the identity").isEqualTo(200);
-        assertThat(objectMapper.readTree(meRenewed.body()).path("subject").asString())
-                .as("the renewed token is the SAME subject — no identity drift")
-                .isEqualTo(username);
+        assertThat(objectMapper.readTree(meRenewed.body()).path("id").asString())
+                .as("the renewed token is the SAME identity — no drift")
+                .isEqualTo(identity.toString());
 
         // (3) Account switching: a SECOND account's gate coexists with the
         // first — each /me answers its own subject, no context bleed (the
@@ -156,12 +168,13 @@ class SessionLifecycleJourneyIntegrationTest {
         GateResult otherGate = loginGate(otherName, PASSWORD);
         HttpResponse<String> otherMe = getWithBearer("/api/v1/users/me", otherGate.accessToken());
         assertThat(otherMe.statusCode()).isEqualTo(200);
-        assertThat(objectMapper.readTree(otherMe.body()).path("subject").asString())
-                .as("the switched account's subject").isEqualTo(otherName);
+        String otherIdentity = objectMapper.readTree(otherMe.body()).path("id").asString();
+        assertThat(otherIdentity).as("the switched account's identity").isNotBlank();
+        assertThat(otherIdentity).as("two accounts, two distinct identities").isNotEqualTo(identity.toString());
         HttpResponse<String> firstMeAgain = getWithBearer("/api/v1/users/me", gate.accessToken());
-        assertThat(objectMapper.readTree(firstMeAgain.body()).path("subject").asString())
-                .as("the first account's token still answers its OWN subject — switching never mutates the other session")
-                .isEqualTo(username);
+        assertThat(objectMapper.readTree(firstMeAgain.body()).path("id").asString())
+                .as("the first account's token still answers its OWN identity — switching never mutates the other session")
+                .isEqualTo(identity.toString());
 
         // (4) The explicit server-side termination, leg one — the RFC 7009
         // revocation of the refresh token: the documented termination
