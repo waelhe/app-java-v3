@@ -333,7 +333,10 @@ class ObservationCoverageFilesTest {
                     "pricing.rule.create", "pricing.rule.deactivate",
                     "pricing.rule.delete")),
             Map.entry("marketplace-provider", List.of(
-                    "provider.business-hours.replace", "provider.create", "provider.fulfillment-location.update",
+                    "provider.business-hours.replace",
+                    "provider.claim.profile.seed", "provider.claim.review",
+                    "provider.claim.submit", "provider.claim.withdraw",
+                    "provider.create", "provider.fulfillment-location.update",
                     "provider.rating.stats", "provider.service-areas.add",
                     "provider.service-areas.remove", "provider.services.add",
                     "provider.services.move", "provider.services.remove",
