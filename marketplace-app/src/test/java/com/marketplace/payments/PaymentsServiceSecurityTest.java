@@ -2,6 +2,7 @@ package com.marketplace.payments;
 
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.LedgerReadPort;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -68,6 +69,21 @@ class PaymentsServiceSecurityTest {
             return new PaymentIntentSettlementService(intentRepository, paymentRepository, eventPublisher,
                     webhookEventRecorder);
         }
+
+        /**
+         * W11 (the matrix's G5): the widened PaymentsService constructor's
+         * new collaborator — the eligibility read service over the same
+         * mocked repositories the slice already stubs, plus the ledger's
+         * read port mocked below (the adapter lives in the ledger module).
+         */
+        @org.springframework.context.annotation.Bean
+        SettlementEligibilityService settlementEligibilityService(
+                LedgerReadPort ledgerReadPort,
+                PaymentIntentRepository paymentIntentRepository,
+                BookingParticipantProvider bookingParticipantProvider) {
+            return new SettlementEligibilityService(ledgerReadPort, paymentIntentRepository,
+                    bookingParticipantProvider);
+        }
     }
 
     @Autowired
@@ -93,6 +109,9 @@ class PaymentsServiceSecurityTest {
 
     @MockitoBean
     private PaymentWebhookSecurity paymentWebhookSecurity;
+
+    @MockitoBean
+    private LedgerReadPort ledgerReadPort;
 
     @Test
     @WithMockUser(roles = "USER")
