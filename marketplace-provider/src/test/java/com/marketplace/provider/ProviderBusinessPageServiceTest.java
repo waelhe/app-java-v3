@@ -42,6 +42,7 @@ class ProviderBusinessPageServiceTest {
     private BusinessHourRepository businessHourRepository;
     private OfferedServiceRepository offeredServiceRepository;
     private ServiceAreaRepository serviceAreaRepository;
+    private ProviderTeamService teamService;
     private ProviderBusinessPageService service;
     private final Authentication owner = new TestingAuthenticationToken(
             USER_ID.toString(), "n/a", "ROLE_PROVIDER");
@@ -55,8 +56,9 @@ class ProviderBusinessPageServiceTest {
         businessHourRepository = mock(BusinessHourRepository.class);
         offeredServiceRepository = mock(OfferedServiceRepository.class);
         serviceAreaRepository = mock(ServiceAreaRepository.class);
+        teamService = mock(ProviderTeamService.class);
         service = new ProviderBusinessPageService(providerService, currentUserProvider,
-                businessHourRepository, offeredServiceRepository, serviceAreaRepository);
+                businessHourRepository, offeredServiceRepository, serviceAreaRepository, teamService);
 
         profile = ProviderProfile.create("اسم", null, USER_ID);
         // The fixture's id must BE the path parameter's id (the production
@@ -106,6 +108,25 @@ class ProviderBusinessPageServiceTest {
 
         assertThatThrownBy(() -> service.replaceHours(PROVIDER_ID, List.of(), owner))
                 .isInstanceOf(AccessDeniedException.class);
+    }
+
+    /**
+     * W5b (J29): the delegation branch — a live team seat with role EDITOR
+     * (the working class; MANAGER answers the same seam) maintains the
+     * declared blocks. The gate consults the seam ONLY for a non-owner,
+     * after the exact owner/admin rule ran inline.
+     */
+    @Test
+    void activeTeamMember_maintainsTheDeclaredBlocks() {
+        UUID editorUserId = UUID.randomUUID();
+        when(currentUserProvider.getCurrentUserId(any())).thenReturn(editorUserId);
+        when(teamService.isActiveEditorOrAbove(PROVIDER_ID, editorUserId)).thenReturn(true);
+        when(businessHourRepository.findByProviderIdOrderByDayOfWeekAsc(PROVIDER_ID))
+                .thenReturn(List.of());
+
+        service.replaceHours(PROVIDER_ID, List.of(), owner);
+
+        verify(teamService).isActiveEditorOrAbove(PROVIDER_ID, editorUserId);
     }
 
     // -- the declared week (G11) -------------------------------------------------
