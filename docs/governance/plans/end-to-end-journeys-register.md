@@ -17,8 +17,8 @@
 
 | المعرّف | الحالة (البنية الخلفية) | ساق Android | المالك (وحدات) | الدليل المقيس (عند الأساس) | الفجوة الرئيسية ← الموجة المغلقة |
 |---|---|---|---|---|---|
-| J01 تسجيل/دخول/جلسة/خروج | `IMPLEMENTED_NOT_E2E` | `GAP_CONFIRMED` | identity, edge | `IdentityModuleIntegrationTest` (23 ملف اختبار) + `AccountMailJourneyIntegrationTest` + 7 متحكمات REST + بوابة edge | دورة الجلسة الكاملة على العميل الأصلي (استعادة/تبديل/خروج بأثر) ← W2/W12 |
-| J02 إثبات الحي والعضوية الجغرافية | `IMPLEMENTED_NOT_E2E` | `GAP_CONFIRMED` | geo, community, identity | `GeoModuleIntegrationTest` + `NeighborhoodMembershipModuleIntegrationTest` + `NeighborhoodVerificationAdminControllerWebMvcTest` | مسار تقديم دليل العنوان من العضو + تحديث السياق عند الانتقال ← W2 |
+| J01 تسجيل/دخول/جلسة/خروج | `IMPLEMENTED_AND_PROVEN` (خلفي) | `GAP_CONFIRMED` | identity, edge | `SessionLifecycleJourneyIntegrationTest` (W2): بوابة الدخول الكاملة PKCE + تجديد refresh + تبديل حسابين بلا خلط + إنهاء مؤثر (RFC 7009 revocation + خروج الجلسة) + فروع كلمة المرور الخاطئة/401 | ساق الواجهة الأصلية ← W12 |
+| J02 إثبات الحي والعضوية الجغرافية | `IMPLEMENTED_AND_PROVEN` (خلفي) | `GAP_CONFIRMED` | geo, community, identity | `MembershipContextJourneyIntegrationTest` (W2): انضمام→تحقق PENDING→قرار ADMIN APPROVE/REJECT + عزل المحتوى بين الأحياء (الموجز والتعليقات 403) + التبديل الذري للنطاق + المغادرة 404/403 + عقد الحدود (400/404 قبل أي كتابة) | مسار دليل العنوان الخارجي (SMS/بريد) خلف G-N2 + ساق الواجهة ← W12 |
 | J03 موجز الحي والاهتمامات | `IMPLEMENTED_NOT_E2E` | `GAP_CONFIRMED` | community, discovery, ai | `NeighborhoodPostModuleIntegrationTest` + رحلة GraphQL المركبة الأولى (المرحلة 6، #612) + `DiscoveryController` | شخصنة الاهتمامات ورحلة المصدر-إلى-البطاقة-إلى-التفاصيل كاملة ← W3/W4 |
 | J04 منشور ووسائطه | `IMPLEMENTED_NOT_E2E` | `GAP_CONFIRMED` | community, media | `NeighborhoodPostModuleIntegrationTest` + `MediaUploadFlowIntegrationTest` + `MediaModuleIntegrationTest` | دورة الرفع الموقّع→التأكيد→العرض داخل المنشور كمركّب واحد ← W3 |
 | J05 تعليقات وتفاعلات | `IMPLEMENTED_NOT_E2E` | `GAP_CONFIRMED` | community | 35 ملف اختبار في community + moderation | سباقات التحديث وحالات فقدان الأهلية على الواجهة ← W3 |
@@ -50,7 +50,7 @@
 | J31 حل مشكلة عضو (مشرف/دعم) | `IMPLEMENTED_NOT_E2E` | `GAP_CONFIRMED` | console, disputes, community | `ConsoleAdminController` + طوابير إدارة + `DisputesModuleIntegrationTest` | ملف 360 وتكليف وتصعيد وسلسلة قرار ← W11 |
 | J32 إعداد وتشغيل تجربة (مدير) | `IMPLEMENTED_NOT_E2E` | `GAP_CONFIRMED` | console, app | `ConsoleAdminController` + بوابات ومقاييس وإعدادات + `PlatformReleaseJourneyIntegrationTest` | معاينة الجمهور والإطلاق التدريجي وقياس الأثر ← W11 (PAOS هدف) |
 | J33 إشعارات وحوادث (مدير) | `IMPLEMENTED_NOT_E2E` | `GAP_CONFIRMED` | notifications, institutions | `NotificationsModuleIntegrationTest` + تنبيه عاجل مؤسسي + تفضيلات | تتبع تسليم/فشل القنوات وإعادة المحاولة الآمنة؛ FCM ‏`BLOCKED_EXTERNAL` ← W9 |
-| J34 خصوصية وحساب | `IMPLEMENTED_NOT_E2E` | `GAP_CONFIRMED` | identity, app | `POST /users/{id}/pseudonymize` + `purge-content` + `purge-audit-history` (مقيسة في `AdminController`) + `AccountMailJourneyIntegrationTest` | تصدير/تصحيح البيانات وسياسة الاحتفاظ وأثر الطلب ← W2/W13 |
+| J34 خصوصية وحساب | `IMPLEMENTED_AND_PROVEN` (خلفي) | `GAP_CONFIRMED` | identity, app | `PrivacyAccountJourneyIntegrationTest` (W2): مراجعة /me + تصدير Art.20 بالمحوّلات الحقيقية (منشور المؤلف داخل التصدير) + سلسلة المحو بالترتيب (pseudonymize→purge-content→purge-audit-history) بآثار مقيسة + حرس 409 للحساب الحي + idempotence | ساق الواجهة (شاشات الخصوصية) ← W12 |
 | J35 استعادة الخدمة (فريق الإصدار) | `IMPLEMENTED_AND_PROVEN` | لا ينطبق (تشغيل) | عبر المنصة | **الدليل الحي:** جدار Neon الموثق (التكرار الثالث) → قرار المالك (الخيار C) → نشر الاسترداد `ef7066a1` SUCCESS → دخان ALL PASS → إغلاق #623 بقياس طازج (هذه الدورة) + runbook §11.1 بدروسه المقيسة | الاستمرار: مراقبة النافذة وتحديث الدخان عند كل إطلاق ← W13 |
 
 ## 2. قواعد تحديث هذا السجل
