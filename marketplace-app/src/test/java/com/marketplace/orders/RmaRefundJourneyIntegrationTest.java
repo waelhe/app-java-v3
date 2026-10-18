@@ -510,6 +510,16 @@ class RmaRefundJourneyIntegrationTest {
         // wire contract); the earlier path("id") read a missing node and
         // answered "Invalid UUID string: " (the measured CI failure).
         UUID intentId = UUID.fromString(objectMapper.readTree(intentResponse.body()).path("paymentIntentId").asString());
+        // The money loop's own shape (the sibling journeys' law): the
+        // consumer drives the PROCESS step FIRST — the machine's guarded
+        // edge is CREATED -> PROCESSING -> SUCCEEDED, and the settlement's
+        // confirm rides PROCESSING (the earlier direct CREATED -> SUCCEEDED
+        // call answered the machine's honest 409 "Cannot transition").
+        HttpResponse<String> process = postJson(
+                "/api/v1/payments/intents/" + intentId + "/process", gate.accessToken(), "");
+        assertThat(process.statusCode()).as("process: %s", body(process)).isEqualTo(200);
+        assertThat(objectMapper.readTree(process.body()).path("status").asString())
+                .as("the process step's own state").isEqualTo("PROCESSING");
         String adminName = "it-rma-admin-" + UUID.randomUUID().toString().substring(0, 8);
         registerUser(adminName, "USER", "ADMIN");
         GateResult adminGate = loginGate(adminName, PASSWORD);
