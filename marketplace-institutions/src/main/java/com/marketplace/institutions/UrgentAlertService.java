@@ -13,6 +13,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -202,9 +203,35 @@ public class UrgentAlertService {
             throw new BadRequestException("validUntil must be absent or strictly after validFrom — got "
                     + request.validFrom() + " .. " + request.validUntil());
         }
-        UrgentAlert alert = alertRepository.save(UrgentAlert.publish(
-                source.getId(), request.locationId(), request.level(),
-                request.title(), request.body(), request.validFrom(), request.validUntil()));
+        // W3 (the unified plan's J10 dedup requirement — «منع إنشاء تنبيه
+        // عاجل مزدوج عند اجتماع أحداث في مسار واحد»): the duplicate gate,
+        // BEFORE any write (the house gate order): the same source's live,
+        // non-withdrawn alert for the same neighborhood carrying the same
+        // title whose window OVERLAPS the new one is the SAME publication
+        // intent — the honest 409, never a second row. A withdrawn
+        // predecessor, a different title, a different neighborhood, or a
+        // window that does not overlap are all legitimate new alerts.
+        for (UrgentAlert existing : alertRepository.findNotWithdrawnDuplicates(
+                source.getId(), request.locationId(), request.title())) {
+            if (windowsOverlap(existing, request.validFrom(), request.validUntil())) {
+                throw new ConflictException("An identical urgent alert from source " + source.getId()
+                        + " is already live for this neighborhood (published " + existing.getValidFrom()
+                        + ") — withdraw it before publishing the same alert again");
+            }
+        }
+        UrgentAlert alert;
+        try {
+            alert = alertRepository.saveAndFlush(UrgentAlert.publish(
+                    source.getId(), request.locationId(), request.level(),
+                    request.title(), request.body(), request.validFrom(), request.validUntil()));
+        } catch (DataIntegrityViolationException race) {
+            // The V231 partial unique index's own words — the concurrent
+            // double-submit that both passed the read above (the V73/V103
+            // translation discipline): the race answers the same honest 409,
+            // never a 500.
+            throw new ConflictException("An identical urgent alert from source " + source.getId()
+                    + " was published concurrently for this neighborhood — one live window per alert");
+        }
         eventPublisher.publishEvent(new UrgentAlertPublishedEvent(
                 alert.getId(),
                 source.getId(),
@@ -292,4 +319,23 @@ public class UrgentAlertService {
      */
     public record ActiveAlert(UrgentAlert alert, UrgentAlertSource source) {
     }
+
+    /**
+     * W3 (the duplicate gate's own arithmetic): do the existing alert's
+     * window and the new request's window overlap? An open-ended existing
+     * window (no {@code validUntil}) overlaps everything that starts before
+     * infinity; an open-ended NEW window overlaps everything that has not
+     * entirely ended. Pure instant comparison — no clock, so the gate never
+     * depends on "now" (a re-publication of a window that has entirely
+     * passed is legitimate; the ACTIVE read is the eligibility engine's own
+     * concern, not this gate's).
+     */
+    private static boolean windowsOverlap(UrgentAlert existing, Instant newFrom, Instant newUntil) {
+        boolean existingEndsAfterNewStarts = existing.getValidUntil() == null
+                || existing.getValidUntil().isAfter(newFrom);
+        boolean newEndsAfterExistingStarts = newUntil == null
+                || newUntil.isAfter(existing.getValidFrom());
+        return existingEndsAfterNewStarts && newEndsAfterExistingStarts;
+    }
+
 }
