@@ -93,7 +93,6 @@ public class NeighborhoodPost extends BaseEntity {
      * {@code category} is {@code LOST_FOUND} (null otherwise, the V171
      * column's own documented shape).
      */
-    @Enumerated(EnumType.STRING)
     /**
      * W4 (the unified plan's J09 — the recommendation-to-source bridge):
      * the OPTIONAL provider row this post recommends — a plain UUID
@@ -106,6 +105,7 @@ public class NeighborhoodPost extends BaseEntity {
     @jakarta.persistence.Column(name = "recommended_provider_id")
     private UUID recommendedProviderId;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "lost_found_state", length = 20)
     private LostFoundState lostFoundState;
 
