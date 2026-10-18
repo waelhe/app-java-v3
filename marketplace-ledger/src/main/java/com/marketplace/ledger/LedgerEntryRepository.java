@@ -23,6 +23,19 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, UUID>,
     Page<LedgerEntry> findByProviderIdOrderByCreatedAtDescIdDesc(UUID providerId, Pageable pageable);
 
     /**
+     * W11 (the origin-state matrix's G5 closure — ADR-0013 D3): the
+     * provider's {@code PAYMENT_CREDIT} entries — the settled credits the
+     * settlement-eligibility read derives over (one per collected intent,
+     * the credit's idempotency key being the intent id itself). Same
+     * deterministic ordering law as the provider statement: newest first,
+     * secondary id-DESC — the eligibility page over them is stable across
+     * tie boundaries. Read-only; the derivation itself lives in the
+     * payments module behind {@code LedgerReadPort}.
+     */
+    List<LedgerEntry> findByProviderIdAndEntryTypeOrderByCreatedAtDescIdDesc(UUID providerId,
+                                                                            LedgerEntryType entryType);
+
+    /**
      * R9 (comprehensive-review-ar-fix plan §4/R9 — the ledger's currency):
      * the provider's windowed net movement PER CURRENCY — credits minus
      * commission debits minus refund debits (the L25 sign convention),

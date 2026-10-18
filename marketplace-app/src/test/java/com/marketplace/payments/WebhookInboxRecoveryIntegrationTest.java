@@ -5,6 +5,7 @@ import test.config.ModuleTestConfig;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.LedgerReadPort;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import java.io.IOException;
@@ -100,6 +101,13 @@ class WebhookInboxRecoveryIntegrationTest {
 
     @MockitoBean
     BookingParticipantProvider bookingParticipantProvider;
+
+    // W11 (the matrix's G5): SettlementEligibilityService boots inside this
+    // slice and consumes the ledger's settlement-eligibility read port —
+    // the adapter lives in the ledger module, outside the slice (the same
+    // house outside-slice port pattern).
+    @MockitoBean
+    LedgerReadPort ledgerReadPort;
 
     @Autowired
     private WebhookInboxRecovery recovery;
