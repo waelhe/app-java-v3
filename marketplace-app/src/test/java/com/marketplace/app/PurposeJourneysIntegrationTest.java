@@ -999,6 +999,8 @@ class PurposeJourneysIntegrationTest {
             }
             Thread.sleep(200);
         }
+        throw new AssertionError("notification rows of type " + type + " for " + refId
+                + " never reached " + expected + " within 10s");
     }
 
     /** The bounded poll for the order's own status (the payment listener's hop). */
@@ -1012,6 +1014,7 @@ class PurposeJourneysIntegrationTest {
             }
             Thread.sleep(200);
         }
+        throw new AssertionError("order " + orderId + " did not reach " + expected + " within 10s");
     }
 
     /** The bounded poll for the intent's own status (the settlement/refund listener's hop). */
@@ -1025,6 +1028,8 @@ class PurposeJourneysIntegrationTest {
             }
             Thread.sleep(200);
         }
+        throw new AssertionError("payment intent " + intentId + " did not reach " + expected
+                + " within 10s");
     }
 
     private String baseUrl() {
