@@ -5,6 +5,7 @@ import com.marketplace.catalog.spi.CatalogSpi;
 import com.marketplace.identity.spi.IdentitySpi;
 import com.marketplace.payments.spi.PaymentIntentSearch;
 import com.marketplace.payments.spi.PaymentsSpi;
+import com.marketplace.payments.spi.SettlementEligibilityReport;
 import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.BookingSummary;
@@ -396,6 +397,31 @@ public class AdminController {
             this(intent, allocation.entries(), allocation.providerBalances(),
                     allocation.netAllocation());
         }
+    }
+
+    @GetMapping("/payments/settlement-eligibility")
+    @Operation(summary = "Read one provider's settlement-eligibility report (W11 — the matrix's G5)",
+            description = "The finance operator's payout-preparation read over the four "
+                    + "non-delivery origins: the provider's per-currency ledger balances, the "
+                    + "per-origin+currency totals (credited vs. eligible), and the paged "
+                    + "per-intent breakdown — each settled credit carrying its derived "
+                    + "eligibility with an HONEST reason (SETTLED_NOT_REFUNDED / REFUNDED / "
+                    + "PARTIALLY_REFUNDED / DOMAIN_END_NOT_REACHED / DOMAIN_END_UNKNOWN). "
+                    + "The law is ADR-0013 D3 measured from the code: a booking's eligibility "
+                    + "is its COMPLETED state (read through the same booking seam the intent's "
+                    + "creation gate uses), a loan fee settles on collection, an ad's edge is "
+                    + "its charged window — and the ORDER's FULFILLED fact is the documented "
+                    + "measured absence (no port carries it), so its credits honestly answer "
+                    + "DOMAIN_END_UNKNOWN until the owner widens the seam. Dispute holds and "
+                    + "refund windows have no facts in the code and are NOT invented. "
+                    + "Read-only: this surface never moves money — payout is ADR-0013 D4's "
+                    + "separate operational stage. DELIVERY is structurally out (its "
+                    + "settlement gate is the delivery journal's own recognize edge).")
+    public ResponseEntity<SettlementEligibilityReport> settlementEligibility(
+            @RequestParam UUID providerId,
+            @RequestParam(required = false) String origin,
+            Pageable pageable) {
+        return ResponseEntity.ok(paymentsSpi.settlementEligibility(providerId, origin, pageable));
     }
 
     // -- Revisions / Audit history ---------------------------------------
