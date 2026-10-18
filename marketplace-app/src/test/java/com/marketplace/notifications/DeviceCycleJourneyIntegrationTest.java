@@ -535,6 +535,8 @@ class DeviceCycleJourneyIntegrationTest {
             }
             Thread.sleep(200);
         }
+        throw new AssertionError("typed inbox rows for conversation " + conversationId
+                + " never reached " + expected + " within 10s");
     }
 
     private String baseUrl() {
