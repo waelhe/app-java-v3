@@ -168,7 +168,8 @@ public class ProductVariantService {
             prepared.add(new ValidatedVariantAttribute(assignment, value));
         }
         for (ProductTypeAttributeAssignment assignment : eligible.values()) {
-            if (assignment.isRequired() && !seen.contains(assignment.getId())) {
+            if ((assignment.isRequired() || assignment.getScope() == ProductTypeAttributeScope.VARIANT_SELECTION)
+                    && !seen.contains(assignment.getId())) {
                 throw new ConflictException("Required variant attribute assignment is missing: " + assignment.getId());
             }
         }

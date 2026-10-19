@@ -59,6 +59,16 @@ class ProductTypeAttributeServiceTest {
         verify(assignments, never()).save(any());
     }
 
+    @Test void variantSelectionCannotBeDeclaredOptional() {
+        when(definitions.findById(attributeId)).thenReturn(Optional.of(
+                CatalogAttributeDefinition.create("color", "Color", "اللون", CatalogAttributeType.CHOICE, null)));
+        when(options.countByAttributeDefinitionId(attributeId)).thenReturn(2);
+        assertThatThrownBy(() -> service.assign(typeId, attributeId,
+                ProductTypeAttributeScope.VARIANT_SELECTION, false, 0))
+                .isInstanceOf(ConflictException.class).hasMessageContaining("must be required");
+        verify(assignments, never()).save(any());
+    }
+
     @Test void duplicateAssignmentAndDuplicatePositionAreRejected() {
         when(definitions.findById(attributeId)).thenReturn(Optional.of(
                 CatalogAttributeDefinition.create("material", "Material", "الخامة", CatalogAttributeType.TEXT, null)));

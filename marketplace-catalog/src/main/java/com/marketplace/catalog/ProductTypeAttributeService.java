@@ -44,6 +44,9 @@ public class ProductTypeAttributeService {
                 .orElseThrow(() -> new ResourceNotFoundException("CatalogAttributeDefinition", attributeDefinitionId));
 
         if (scope == ProductTypeAttributeScope.VARIANT_SELECTION) {
+            if (!required) {
+                throw new ConflictException("VARIANT_SELECTION attributes must be required for every variant");
+            }
             if (definition.getValueType() != CatalogAttributeType.CHOICE) {
                 throw new ConflictException("VARIANT_SELECTION requires a CHOICE attribute");
             }

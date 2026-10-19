@@ -294,6 +294,16 @@ class ProductVariantJourneyIntegrationTest {
                 "SELECT product_status FROM products WHERE id = ?", String.class, productId))
                 .isEqualTo("DRAFT");
 
+        // Every selection dimension is required for every variant; do not let
+        // a missing option generate a hash for the empty combination.
+        HttpResponse<String> missingSelection = postJson("/api/v1/store/products/" + productId + "/variants",
+                sellerGate.accessToken(), """
+                        {"sku":"C1-TYPED-NO-COLOR","name":"No color","priceMinor":110000,"attributeValues":[]}
+                        """);
+        assertThat(missingSelection.statusCode())
+                .as("a selectable variant without its required option must be refused: %s", body(missingSelection))
+                .isEqualTo(409);
+
         // Create one variant for each buyer-selectable color combination.
         HttpResponse<String> red = postJson("/api/v1/store/products/" + productId + "/variants",
                 sellerGate.accessToken(), """
