@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: saleor-dashboard-upstream-e2e-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   upstream-dashboard-e2e:
