@@ -226,6 +226,157 @@ class ProductVariantJourneyIntegrationTest {
         assertThat(auditRows).as("the variant's Envers trail").isGreaterThanOrEqualTo(3);
     }
 
+    @Test
+    void theTypedProductLifecycleStoresValuesAndRejectsDuplicateVariantCombinations() throws Exception {
+        String sellerName = "it-typed-c1-" + UUID.randomUUID().toString().substring(0, 8);
+        registerUser(sellerName, "USER", "PROVIDER");
+        GateResult sellerGate = loginGate(sellerName, PASSWORD);
+        assertThat(getWithBearer("/api/v1/users/me", sellerGate.accessToken()).statusCode()).isEqualTo(200);
+        TypedProductSchema schema = seedTypedProductSchema();
+
+        // The typed product starts as a draft. Its required PRODUCT attribute
+        // is written against the ProductType assignment, not a StoreCategory field.
+        String createBody = """
+                {"storeCategoryCode":"journey-variants","title":"Typed C1 Product",
+                 "description":"before edit","priceMinor":100000,"currency":"SAR",
+                 "productTypeId":"%s",
+                 "attributeValues":[{"assignmentId":"%s","optionId":"%s"}]}
+                """.formatted(schema.productTypeId(), schema.materialAssignmentId(), schema.cottonOptionId());
+        HttpResponse<String> created = postJson("/api/v1/store/products", sellerGate.accessToken(), createBody);
+        assertThat(created.statusCode()).as("typed product create: %s", body(created)).isEqualTo(201);
+        JsonNode productBody = objectMapper.readTree(created.body());
+        UUID productId = UUID.fromString(productBody.path("id").asString());
+        assertThat(productBody.path("productTypeId").asString()).isEqualTo(schema.productTypeId().toString());
+        assertThat(productBody.path("status").asString()).isEqualTo("DRAFT");
+
+        HttpResponse<String> initialAttributes = getWithBearer(
+                "/api/v1/store/products/" + productId + "/attributes", sellerGate.accessToken());
+        assertThat(initialAttributes.statusCode()).isEqualTo(200);
+        assertThat(objectMapper.readTree(initialAttributes.body()).get(0).path("optionId").asString())
+                .isEqualTo(schema.cottonOptionId().toString());
+
+        // Replace the typed value and edit the product before publication.
+        HttpResponse<String> replaced = postJsonOrPut("/api/v1/store/products/" + productId + "/attributes",
+                sellerGate.accessToken(), """
+                        [{"assignmentId":"%s","optionId":"%s"}]
+                        """.formatted(schema.materialAssignmentId(), schema.linenOptionId()), "PUT");
+        assertThat(replaced.statusCode()).as("typed attribute edit: %s", body(replaced)).isEqualTo(200);
+        assertThat(objectMapper.readTree(replaced.body()).get(0).path("optionId").asString())
+                .isEqualTo(schema.linenOptionId().toString());
+
+        HttpResponse<String> edited = postJsonOrPut("/api/v1/store/products/" + productId,
+                sellerGate.accessToken(), """
+                        {"title":"Typed C1 Product Revised","description":"edited","priceMinor":110000}
+                        """, "PATCH");
+        assertThat(edited.statusCode()).as("product edit: %s", body(edited)).isEqualTo(200);
+        assertThat(objectMapper.readTree(edited.body()).path("title").asString())
+                .isEqualTo("Typed C1 Product Revised");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT product_type_id FROM products WHERE id = ?", UUID.class, productId))
+                .isEqualTo(schema.productTypeId());
+
+        // Create one variant for each buyer-selectable color combination.
+        HttpResponse<String> red = postJson("/api/v1/store/products/" + productId + "/variants",
+                sellerGate.accessToken(), """
+                        {"sku":"C1-TYPED-RED","name":"Red","priceMinor":110000,
+                         "attributeValues":[{"assignmentId":"%s","optionId":"%s"}]}
+                        """.formatted(schema.colorAssignmentId(), schema.redOptionId()));
+        assertThat(red.statusCode()).as("red variant: %s", body(red)).isEqualTo(201);
+        UUID redId = UUID.fromString(objectMapper.readTree(red.body()).path("id").asString());
+        assertThat(objectMapper.readTree(red.body()).path("optionCombinationKey").asString())
+                .matches("[0-9a-f]{64}");
+
+        HttpResponse<String> redReadback = getWithBearer(
+                "/api/v1/store/variants/" + redId + "/attributes", sellerGate.accessToken());
+        assertThat(redReadback.statusCode()).isEqualTo(200);
+        assertThat(objectMapper.readTree(redReadback.body()).get(0).path("optionId").asString())
+                .isEqualTo(schema.redOptionId().toString());
+
+        HttpResponse<String> duplicateCombination = postJson("/api/v1/store/products/" + productId + "/variants",
+                sellerGate.accessToken(), """
+                        {"sku":"C1-TYPED-RED-DUP","name":"Another red","priceMinor":109000,
+                         "attributeValues":[{"assignmentId":"%s","optionId":"%s"}]}
+                        """.formatted(schema.colorAssignmentId(), schema.redOptionId()));
+        assertThat(duplicateCombination.statusCode())
+                .as("same typed option combination must be refused even with a different SKU: %s", body(duplicateCombination))
+                .isEqualTo(409);
+
+        HttpResponse<String> blue = postJson("/api/v1/store/products/" + productId + "/variants",
+                sellerGate.accessToken(), """
+                        {"sku":"C1-TYPED-BLUE","name":"Blue","priceMinor":109000,
+                         "attributeValues":[{"assignmentId":"%s","optionId":"%s"}]}
+                        """.formatted(schema.colorAssignmentId(), schema.blueOptionId()));
+        assertThat(blue.statusCode()).as("distinct variant combination: %s", body(blue)).isEqualTo(201);
+
+        // Explicit publication flips DRAFT to ACTIVE; only ACTIVE products
+        // may be reserved by the existing cart/order invariant.
+        HttpResponse<String> published = postJson("/api/v1/store/products/" + productId + "/publish",
+                sellerGate.accessToken(), "");
+        assertThat(published.statusCode()).as("product publish: %s", body(published)).isEqualTo(200);
+        assertThat(objectMapper.readTree(published.body()).path("status").asString()).isEqualTo("ACTIVE");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT product_status FROM products WHERE id = ?", String.class, productId))
+                .isEqualTo("ACTIVE");
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM product_attribute_values_aud WHERE product_id = ?",
+                Integer.class, productId)).isGreaterThanOrEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM product_variant_attribute_values_aud WHERE product_variant_id = ?",
+                Integer.class, redId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM product_variants WHERE product_id = ? AND option_combination_key IS NOT NULL",
+                Integer.class, productId)).isEqualTo(2);
+    }
+
+    private TypedProductSchema seedTypedProductSchema() {
+        UUID typeId = UUID.randomUUID();
+        UUID materialDefinitionId = UUID.randomUUID();
+        UUID colorDefinitionId = UUID.randomUUID();
+        UUID materialAssignmentId = UUID.randomUUID();
+        UUID colorAssignmentId = UUID.randomUUID();
+        UUID cottonOptionId = UUID.randomUUID();
+        UUID linenOptionId = UUID.randomUUID();
+        UUID redOptionId = UUID.randomUUID();
+        UUID blueOptionId = UUID.randomUUID();
+        String unique = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+
+        jdbcTemplate.update("INSERT INTO product_types (id, code, name_en, name_ar) VALUES (?, ?, ?, ?)",
+                typeId, "typed-c1-" + unique, "Typed C1 goods", "سلع مصنفة");
+        jdbcTemplate.update("INSERT INTO catalog_attribute_definitions (id, code, name_en, name_ar, value_type) "
+                        + "VALUES (?, ?, ?, ?, 'CHOICE')",
+                materialDefinitionId, "material-" + unique, "Material", "الخامة");
+        jdbcTemplate.update("INSERT INTO catalog_attribute_definitions (id, code, name_en, name_ar, value_type) "
+                        + "VALUES (?, ?, ?, ?, 'CHOICE')",
+                colorDefinitionId, "color-" + unique, "Color", "اللون");
+        jdbcTemplate.update("INSERT INTO catalog_attribute_options "
+                        + "(id, attribute_definition_id, code, name_en, name_ar, position) VALUES (?, ?, ?, ?, ?, ?)",
+                cottonOptionId, materialDefinitionId, "cotton", "Cotton", "قطن", 0);
+        jdbcTemplate.update("INSERT INTO catalog_attribute_options "
+                        + "(id, attribute_definition_id, code, name_en, name_ar, position) VALUES (?, ?, ?, ?, ?, ?)",
+                linenOptionId, materialDefinitionId, "linen", "Linen", "كتان", 1);
+        jdbcTemplate.update("INSERT INTO catalog_attribute_options "
+                        + "(id, attribute_definition_id, code, name_en, name_ar, position) VALUES (?, ?, ?, ?, ?, ?)",
+                redOptionId, colorDefinitionId, "red", "Red", "أحمر", 0);
+        jdbcTemplate.update("INSERT INTO catalog_attribute_options "
+                        + "(id, attribute_definition_id, code, name_en, name_ar, position) VALUES (?, ?, ?, ?, ?, ?)",
+                blueOptionId, colorDefinitionId, "blue", "Blue", "أزرق", 1);
+        jdbcTemplate.update("INSERT INTO product_type_attribute_assignments "
+                        + "(id, product_type_id, attribute_definition_id, scope, is_required, position) "
+                        + "VALUES (?, ?, ?, 'PRODUCT', TRUE, 0)",
+                materialAssignmentId, typeId, materialDefinitionId);
+        jdbcTemplate.update("INSERT INTO product_type_attribute_assignments "
+                        + "(id, product_type_id, attribute_definition_id, scope, is_required, position) "
+                        + "VALUES (?, ?, ?, 'VARIANT_SELECTION', TRUE, 0)",
+                colorAssignmentId, typeId, colorDefinitionId);
+        return new TypedProductSchema(typeId, materialAssignmentId, colorAssignmentId,
+                cottonOptionId, linenOptionId, redOptionId, blueOptionId);
+    }
+
+    private record TypedProductSchema(UUID productTypeId, UUID materialAssignmentId, UUID colorAssignmentId,
+                                      UUID cottonOptionId, UUID linenOptionId, UUID redOptionId, UUID blueOptionId) {
+    }
+
     // ------------------------------------------------------------------
     // The provisioning helpers (the order journey's exact shapes).
     // ------------------------------------------------------------------
