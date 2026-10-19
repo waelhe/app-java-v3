@@ -99,6 +99,7 @@ public interface ProductPricingPort {
      */
     enum StorefrontState {
         DRAFT,
+        VARIANT_SELECTION_REQUIRED,
         ACTIVE,
         SUSPENDED,
         ARCHIVED
