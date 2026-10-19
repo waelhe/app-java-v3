@@ -26,6 +26,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -406,6 +407,154 @@ class ProductVariantJourneyIntegrationTest {
                 Integer.class, productId)).isEqualTo(2);
     }
 
+    @Test
+    void theProductAdminLifecycleIsExposedThroughGraphQlAgainstTheRealCatalogUseCases() throws Exception {
+        String sellerName = "it-graphql-product-seller-" + UUID.randomUUID().toString().substring(0, 8);
+        registerUser(sellerName, "USER", "PROVIDER");
+        GateResult sellerGate = loginGate(sellerName, PASSWORD);
+        assertThat(getWithBearer("/api/v1/users/me", sellerGate.accessToken()).statusCode())
+                .as("the seller's /me provisioning sync").isEqualTo(200);
+
+        // A ProductType with no required assignments exercises the common
+        // draft/edit/publish lifecycle; attribute/variant-required publication
+        // remains governed by ProductService and has its own typed HTTP journey.
+        UUID productTypeId = UUID.randomUUID();
+        String codeSuffix = UUID.randomUUID().toString().replace("-", "").substring(0, 10);
+        jdbcTemplate.update(
+                "INSERT INTO product_types (id, code, name_en, name_ar) VALUES (?, ?, ?, ?)",
+                productTypeId, "graphql-catalog-" + codeSuffix, "GraphQL catalog goods", "سلع GraphQL");
+
+        HttpResponse<String> anonymous = postJsonWithoutBearer("/graphql", objectMapper.writeValueAsString(Map.of(
+                "query", "query { storeProducts(first: 1) { edges { node { id } } } }")));
+        assertThat(anonymous.statusCode())
+                .as("GraphQL catalog reads remain behind the resource-server authentication boundary")
+                .isEqualTo(401);
+
+        String createQuery = """
+                mutation CreateStoreProduct($input: StoreProductCreateInput!) {
+                  createStoreProduct(input: $input) {
+                    id title description priceMinor currency providerId productTypeId status
+                  }
+                }
+                """;
+        String originalTitle = "GraphQL dashboard lifecycle " + codeSuffix;
+        String createBody = objectMapper.writeValueAsString(Map.of(
+                "query", createQuery,
+                "variables", Map.of("input", Map.of(
+                        "storeCategoryCode", "journey-variants",
+                        "title", originalTitle,
+                        "description", "Created through the platform GraphQL contract.",
+                        "priceMinor", "149900",
+                        "currency", "SAR",
+                        "productTypeId", productTypeId.toString()))));
+        HttpResponse<String> createdResponse =
+                postJson("/graphql", sellerGate.accessToken(), createBody);
+        assertThat(createdResponse.statusCode())
+                .as("GraphQL create transport: %s", body(createdResponse)).isEqualTo(200);
+        JsonNode createEnvelope = objectMapper.readTree(createdResponse.body());
+        assertThat(createEnvelope.path("errors").isMissingNode())
+                .as("createStoreProduct errors: %s", body(createdResponse)).isTrue();
+        JsonNode created = createEnvelope.path("data").path("createStoreProduct");
+        UUID productId = UUID.fromString(created.path("id").asString());
+        assertThat(created.path("title").asString()).isEqualTo(originalTitle);
+        assertThat(created.path("priceMinor").asString()).isEqualTo("149900");
+        assertThat(created.path("productTypeId").asString()).isEqualTo(productTypeId.toString());
+        assertThat(created.path("status").asString()).isEqualTo("DRAFT");
+
+        String updateQuery = """
+                mutation UpdateStoreProduct($id: ID!, $input: StoreProductUpdateInput!) {
+                  updateStoreProduct(id: $id, input: $input) {
+                    id title description priceMinor currency productTypeId status
+                  }
+                }
+                """;
+        String editedTitle = originalTitle + " — edited";
+        String updatedBody = objectMapper.writeValueAsString(Map.of(
+                "query", updateQuery,
+                "variables", Map.of(
+                        "id", productId.toString(),
+                        "input", Map.of(
+                                "title", editedTitle,
+                                "description", "Updated through GraphQL; read-back must match.",
+                                "priceMinor", "128999"))));
+        HttpResponse<String> updatedResponse =
+                postJson("/graphql", sellerGate.accessToken(), updatedBody);
+        assertThat(updatedResponse.statusCode())
+                .as("GraphQL update transport: %s", body(updatedResponse)).isEqualTo(200);
+        JsonNode updateEnvelope = objectMapper.readTree(updatedResponse.body());
+        assertThat(updateEnvelope.path("errors").isMissingNode())
+                .as("updateStoreProduct errors: %s", body(updatedResponse)).isTrue();
+        assertThat(updateEnvelope.path("data").path("updateStoreProduct").path("status").asString())
+                .isEqualTo("DRAFT");
+
+        String publishQuery = """
+                mutation PublishStoreProduct($id: ID!) {
+                  publishStoreProduct(id: $id) {
+                    id title description priceMinor currency productTypeId status
+                  }
+                }
+                """;
+        String publishBody = objectMapper.writeValueAsString(Map.of(
+                "query", publishQuery,
+                "variables", Map.of("id", productId.toString())));
+        HttpResponse<String> publishedResponse =
+                postJson("/graphql", sellerGate.accessToken(), publishBody);
+        assertThat(publishedResponse.statusCode())
+                .as("GraphQL publish transport: %s", body(publishedResponse)).isEqualTo(200);
+        JsonNode publishEnvelope = objectMapper.readTree(publishedResponse.body());
+        assertThat(publishEnvelope.path("errors").isMissingNode())
+                .as("publishStoreProduct errors: %s", body(publishedResponse)).isTrue();
+        assertThat(publishEnvelope.path("data").path("publishStoreProduct").path("status").asString())
+                .isEqualTo("ACTIVE");
+
+        String readQuery = """
+                query ReadStoreProduct($id: ID!) {
+                  storeProduct(id: $id) {
+                    id title description priceMinor currency providerId productTypeId status
+                  }
+                }
+                """;
+        String readBody = objectMapper.writeValueAsString(Map.of(
+                "query", readQuery, "variables", Map.of("id", productId.toString())));
+        HttpResponse<String> readResponse = postJson("/graphql", sellerGate.accessToken(), readBody);
+        assertThat(readResponse.statusCode())
+                .as("GraphQL read-back transport: %s", body(readResponse)).isEqualTo(200);
+        JsonNode readEnvelope = objectMapper.readTree(readResponse.body());
+        assertThat(readEnvelope.path("errors").isMissingNode())
+                .as("storeProduct read-back errors: %s", body(readResponse)).isTrue();
+        assertThat(readEnvelope.path("data").path("storeProduct"))
+                .containsExactlyInAnyOrderEntriesOf(Map.of(
+                        "id", productId.toString(),
+                        "title", editedTitle,
+                        "description", "Updated through GraphQL; read-back must match.",
+                        "priceMinor", "128999",
+                        "currency", "SAR",
+                        "providerId", sellerId(sellerName),
+                        "productTypeId", productTypeId.toString(),
+                        "status", "ACTIVE"));
+
+        String listQuery = """
+                query StoreProductRoster {
+                  storeProducts(first: 2) {
+                    edges { node { id title status } }
+                    pageInfo { hasNextPage endCursor }
+                  }
+                  storeProductTypes { id code nameEn nameAr description }
+                }
+                """;
+        HttpResponse<String> listResponse = postJson("/graphql", sellerGate.accessToken(),
+                objectMapper.writeValueAsString(Map.of("query", listQuery)));
+        assertThat(listResponse.statusCode())
+                .as("GraphQL connection and ProductType roster: %s", body(listResponse)).isEqualTo(200);
+        JsonNode listEnvelope = objectMapper.readTree(listResponse.body());
+        assertThat(listEnvelope.path("errors").isMissingNode())
+                .as("storeProducts/ProductType errors: %s", body(listResponse)).isTrue();
+        assertThat(listEnvelope.path("data").path("storeProducts").path("edges").size())
+                .isBetween(1, 2);
+        assertThat(listEnvelope.path("data").path("storeProductTypes").toString())
+                .contains(productTypeId.toString());
+    }
+
     private TypedProductSchema seedTypedProductSchema() {
         UUID typeId = UUID.randomUUID();
         UUID materialDefinitionId = UUID.randomUUID();
@@ -567,6 +716,15 @@ class ProductVariantJourneyIntegrationTest {
             builder.header("Authorization", "Bearer " + bearer);
         }
         return httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> postJsonWithoutBearer(String path, String json) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl() + path))
+                .timeout(Duration.ofSeconds(30))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8))
+                .build();
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
     private HttpResponse<String> postJson(String path, String accessToken, String json) throws Exception {
