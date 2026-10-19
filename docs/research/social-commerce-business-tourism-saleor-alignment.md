@@ -102,7 +102,9 @@ This is the first model gap that blocks a genuinely useful Saleor-derived produc
 
 ### C0 — Reconcile existing journeys before writing overlapping code
 
-At the 19 October 2026 review, [#649](https://github.com/waelhe/app-java-v3/pull/649) and [#658](https://github.com/waelhe/app-java-v3/pull/658) were open. They are integration-test PRs, not new production capabilities. Review their final merge/status and resulting `main` before changing those journeys. Do not create a second copy of their tests or treat test-only coverage as proof of an unimplemented UI/API capability.
+At the 19 October 2026 snapshot, nine PRs were open: [#649](https://github.com/waelhe/app-java-v3/pull/649), [#651](https://github.com/waelhe/app-java-v3/pull/651), [#653](https://github.com/waelhe/app-java-v3/pull/653), [#654](https://github.com/waelhe/app-java-v3/pull/654), [#655](https://github.com/waelhe/app-java-v3/pull/655), [#656](https://github.com/waelhe/app-java-v3/pull/656), [#657](https://github.com/waelhe/app-java-v3/pull/657), [#658](https://github.com/waelhe/app-java-v3/pull/658), and this plan [#664](https://github.com/waelhe/app-java-v3/pull/664). The complete snapshot, head SHAs, changed paths, check results, and base/mergeability observations are recorded in [the baseline and open-PR evidence audit](saleor-dashboard-baseline-and-open-pr-audit.md).
+
+Reconcile this entire wave before writing overlapping implementation or declaring the test registry final. All eight journey/feature PRs edit both `SYSTEM.md` and `docs/governance/plans/end-to-end-journeys-register.md`; #654 also changes the production Order entity and adds V235, while #656 changes PushTokenService. At the snapshot, #651/#653/#654/#655 were one commit behind main and non-mergeable; #656/#657/#658 were one commit behind even where GitHub reported mergeable. The CI runs were queued or in progress. Do not treat them as merged, do not copy their tests, and do not calculate the current Failsafe count from any unmerged head. Re-fetch every status before the relevant execution step.
 
 ### C1 — Typed product types and variant options for goods
 
@@ -121,7 +123,9 @@ If #649/#658 prove only part of the journey, record the remaining owner contract
 
 ### C2 — First Spring-backed Saleor Dashboard goods slice
 
-Pin an exact Dashboard tag/SHA and run its original baseline (build, type-check, unit/component tests, and E2E suite) against a disposable Saleor instance. Inventory the exact product routes and GraphQL operations of that pinned source. Then adapt the product list/detail/editor to the platform's real contracts from C1, with source-owned permissions and read-back.
+The selected baseline is now pinned to [Saleor Dashboard tag 3.23.39, commit bc75e988da0fa4fbc3d47378a888d859d070746f](https://github.com/saleor/saleor-dashboard/commit/bc75e988da0fa4fbc3d47378a888d859d070746f), licensed BSD-3-Clause, with Node >=24 and <25 and pnpm 11.13.1. The official commit-linked type/unit/quality workflow evidence is recorded, but **the unmodified E2E suite against the disposable Docker-backed Saleor stack has not been executed and evidenced in this audit**; C2 remains blocked until that passes.
+
+The pinned-source route/operation inventory and the current Spring contract comparison are recorded in [the baseline and open-PR evidence audit](saleor-dashboard-baseline-and-open-pr-audit.md). The observed backend currently has owner-scoped product create/read plus variant create/list/read/inventory/lifecycle endpoints, but no ProductType schema or typed variant options; the current Spring GraphQL SDL does not expose retail Product/ProductVariant/ProductType and its Mutation root only exposes createService. Therefore changing API_URL or reusing Saleor GraphQL documents is not a valid integration. Complete C1 and the missing source-owned product list/update/publication and typed attribute contracts first, then adapt only the selected routes and prove create/edit/publish/read-back with Playwright against Spring. Keep C3-C7 surfaces explicitly deferred until their own contracts and acceptance journeys are mapped.
 
 **Gate:** a real Playwright journey performs create/edit/publish and verifies the listing's actual discovery visibility through the Spring-backed platform API; no Saleor backend or hard-coded demo record is used.
 
@@ -201,25 +205,29 @@ These sources are useful experience signals but do not override official documen
 
 ## 10. What must be true before calling the plan “final”
 
-This matrix is source-grounded but is **not yet a final, fully proven implementation plan**. That designation requires all of the following:
+This matrix is source-grounded, and its Dashboard reference and first-slice source inventory are now more precisely pinned, but it is **not yet a final, fully proven implementation plan**. The remaining gates are measurable:
 
-1. Pin an exact Saleor Dashboard release tag and commit SHA, record the license and exact Node/pnpm/runtime requirements from that revision, and pass its unmodified build/typecheck/unit/component/E2E baseline against a disposable Saleor installation.
-2. Produce a route/query/mutation inventory from that exact source tree for every adopted product, inventory, order, pricing, seller, delivery and reporting screen. Each operation must map to the owning Spring module, actual REST/OpenAPI or GraphQL contract, permission/scope rule, error semantics, read-back behavior, and E2E journey.
-3. Refresh every status against current `main`, Flyway migrations, current SDL/OpenAPI, executable tests and open PRs. Distinguish repository-implemented, E2E-proven, production-configured, deferred by ADR, unsupported and policy-not-decided. Do not equate a merged PR with a fresh live deployment check.
-4. Confirm the first goods slice against the actual product model and avoid overbuilding generic attributes. It must prove option validation/uniqueness, ownership, existing zero-variant behavior, cart repricing, immutable order snapshot, storefront/discovery visibility, and API contract compatibility.
-5. Resolve how social posts, business/provider offers, tourism destinations, accommodations and trips are cross-linked in discovery/curated collections without duplicating source records or granting authority across domains.
-6. Review tourism separately against booking/availability contracts and the applicable Schema.org/OpenTravel integration use cases. Prove destination/experience → availability/capacity → booking terms and price freeze → payment → provider fulfillment → cancellation/reschedule/refund/review, or list the exact missing owner contracts.
-7. Define explicit go/no-go metrics for the Dashboard fork after its first full Spring-backed journey: number/percentage of source files changed, upstream E2E retained, operation coverage, number of Saleor-coupled paths remaining, and demonstrated ability to evaluate/apply a selected upstream fix.
-8. Run the repository's required build, test, compatibility, security and deployment gates for each implementation PR. This document's web/source review did not run Maven, full E2E, or a production smoke test.
+1. **Upstream baseline:** pin the exact Dashboard tag, full commit SHA, license and runtime (done: 3.23.39 / bc75e988da0fa4fbc3d47378a888d859d070746f / BSD-3-Clause / Node >=24 <25 / pnpm 11.13.1). The unmodified build/typecheck/unit/component gate has supporting upstream commit-linked results; the E2E local-stack run against a disposable Saleor instance has not been executed and evidenced in this audit. This remains blocking.
+2. **Selected route/operation inventory:** the first candidates (/products, product detail/editor/variants, /product-types, /attributes) and their upstream operation names have been inventoried in [the evidence audit](saleor-dashboard-baseline-and-open-pr-audit.md). Future screens (channels, collections, orders, discounts, warehouses, shipping, reporting, seller workspace) must be inventoried before being adopted. For every selected operation, map source owner, Spring REST/OpenAPI or GraphQL contract, authorization, errors, read-back, and a real E2E test—or explicitly remove/defer it.
+3. **Current repository truth:** current main at 72ebec6319f51f13ecaf5c24aa6566b5b6457ea7 and the nine open PR snapshot are recorded in the evidence audit. Several concurrent heads are one commit behind, CI remains queued/in progress, and #654 includes V235/Order production changes while #656 changes PushTokenService. This evidence must be refreshed after every accepted/rebased change; an unmerged test or migration does not count as main.
+4. **Goods acceptance contract:** the existing Product/ProductVariant implementation and ProductVariantJourneyIntegrationTest are real evidence, but C1 is still required. Add typed ProductType/attribute assignments and canonical variant-option combination validation without turning CategoryAttribute into ProductType or removing the zero-variant path. The selected real product/admin journey must prove correct owner scope, invalid/duplicate-option rejection, legacy no-variant compatibility, authoritative cart repricing, frozen variant/price in order, and actual storefront/discovery visibility.
+5. **Social-to-commerce linking:** prove canonical references to the actual product/provider/business/event/destination/stay/experience owners, with moderation, membership, privacy and action permission checked at the owning contracts. #658 remains an open backend test PR; its existence does not prove client-side or admin UI completion.
+6. **Tourism journey:** evaluate availability/capacity, booking terms and price freeze, payment, provider fulfilment, cancel/reschedule/refund and review eligibility against booking owners; record exact missing owner contracts. #649 and #658 are open backend test PRs and must be reconciled first. Never model stays/tours/capacity as retail variants or warehouse stock.
+7. **Fork sustainability:** apply the [GO/NO-GO gate in the evidence audit](saleor-dashboard-baseline-and-open-pr-audit.md) after one complete Spring-backed Playwright journey. Report the actual scoped source-file-change ratio, operation coverage, upstream E2E scenarios retained/replaced, zero remaining runtime/build-time Saleor dependencies, and a demonstrated upstream-fix application. Do not invent a churn threshold before measuring the pilot.
+8. **Release gates:** implementation PRs must pass the repository's required build, tests, API compatibility, security and review gates. Before any later merge, require the current head's CI success, CodeRabbit review success, zero open review threads and CLEAN/mergeable state. A merge to main is a production deployment. No merge or deployment is implied by this plan.
 
 ## 11. Evidence and limitations
 
-This document establishes a better-traced current-state matrix and an ordered entry plan. It does not claim:
-- full Saleor behavioral parity;
-- that every cited capability is already implemented in our backend;
-- an implemented Dashboard fork or a live Dashboard/Spring connection;
-- that all tourism journeys are currently E2E-proven;
-- that channel or warehouse tables are automatically required merely because Saleor has them;
-- that the complete final implementation plan has passed architecture review or automated tests.
+The dated evidence snapshot is maintained in [saleor-dashboard-baseline-and-open-pr-audit.md](saleor-dashboard-baseline-and-open-pr-audit.md). It distinguishes inspected source, CI results, end-to-end proof and production verification.
 
-Before every code slice, re-truth-sync the exact current `main`, review concurrent PRs, and read the source migrations/contracts/tests. No merge or production deployment is implied by this document.
+This matrix does not claim:
+- full Saleor behavioral parity;
+- that every upstream operation is implemented or should be adopted;
+- that a Dashboard fork, product editor or live Dashboard/Spring integration already exists;
+- that the pinned unmodified Dashboard E2E baseline passed against disposable Saleor;
+- that the current Spring SDL exposes retail Product/ProductVariant/ProductType or that existing category attributes provide those semantics;
+- that all social, tourism or Android-facing journeys are E2E-proven;
+- that deferred channels, collections or warehouse tables are required merely because Saleor has them;
+- that the entire implementation plan has passed all required architecture and automated gates.
+
+Before each code slice, re-truth-sync main, every concurrent PR, migrations, API contracts and tests. This plan remains **NOT YET FINAL** until all hard gates in §10 have current, reproducible evidence. No merge or production deployment is implied.
