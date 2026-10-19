@@ -179,6 +179,6 @@ public class ProductAdminSpiAdapter implements ProductAdminSpi {
                 product.getCurrency(),
                 product.getProviderId(),
                 product.getProductTypeId(),
-                product.getStatus());
+                product.getStatus().name());
     }
 }
