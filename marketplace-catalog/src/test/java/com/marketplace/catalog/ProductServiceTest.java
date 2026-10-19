@@ -49,6 +49,8 @@ class ProductServiceTest {
     @Mock
     private ProductAttributeValueRepository attributeValues;
     @Mock
+    private ProductVariantAttributeValueRepository variantAttributeValues;
+    @Mock
     private CurrentUserProvider currentUserProvider;
     @Mock
     private Authentication authentication;
@@ -59,7 +61,8 @@ class ProductServiceTest {
     @BeforeEach
     void setUp() {
         service = new ProductService(productRepository, productVariantRepository, storeCategoryRepository,
-                productTypeRepository, assignments, definitions, options, attributeValues, currentUserProvider);
+                productTypeRepository, assignments, definitions, options, attributeValues,
+                variantAttributeValues, currentUserProvider);
     }
 
     private ProductService.RegisterProductCommand command(String categoryCode) {
@@ -217,6 +220,63 @@ class ProductServiceTest {
                 .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
                 .hasMessageContaining("requires at least one active typed variant");
         verify(productRepository, never()).save(any(Product.class));
+    }
+
+    @Test
+    void typedDraftCannotPublishWhenAnActiveVariantMissesTheCurrentSelectionSchema() {
+        // The C1 review's Major finding, closed at the gate: the admin adds a
+        // required VARIANT_SELECTION assignment AFTER the variant's creation —
+        // the variant stays active with its stale combination key, and the
+        // publication must refuse (never publish a variant violating the
+        // current schema).
+        UUID productTypeId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID attributeId = UUID.randomUUID();
+        Product draft = Product.register("home-appliances", "Typed draft", null, 100L, "SAR", caller, productTypeId);
+        ProductTypeAttributeAssignment lateSelection = ProductTypeAttributeAssignment.create(
+                productTypeId, attributeId, ProductTypeAttributeScope.VARIANT_SELECTION, true, 0);
+        ProductVariant staleVariant = ProductVariant.register(draft, "SKU-STALE", "Old shape", 100L,
+                "cafebabe"); // active, non-null key, but its values never covered the late assignment
+        when(productRepository.findById(productId)).thenReturn(Optional.of(draft));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+        when(attributeValues.findAllByProductIdOrderByAssignmentIdAsc(productId)).thenReturn(List.of());
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId))
+                .thenReturn(List.of(lateSelection));
+        when(productVariantRepository.findByProductIdOrderBySkuAsc(productId))
+                .thenReturn(List.of(staleVariant));
+        when(variantAttributeValues.findAllByProductVariantIdOrderByAssignmentIdAsc(staleVariant.getId()))
+                .thenReturn(List.of()); // nothing covers the late assignment
+
+        assertThatThrownBy(() -> service.publishOwnedProduct(productId, authentication))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("does not satisfy the product type's current variant-selection schema");
+        verify(productRepository, never()).save(any(Product.class));
+    }
+
+    @Test
+    void typedDraftPublishesWhenEveryActiveVariantCoversTheCurrentSelectionSchema() {
+        UUID productTypeId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID attributeId = UUID.randomUUID();
+        Product draft = Product.register("home-appliances", "Typed draft", null, 100L, "SAR", caller, productTypeId);
+        ProductTypeAttributeAssignment selection = ProductTypeAttributeAssignment.create(
+                productTypeId, attributeId, ProductTypeAttributeScope.VARIANT_SELECTION, true, 0);
+        ProductVariant goodVariant = ProductVariant.register(draft, "SKU-GOOD", "Current shape", 100L,
+                "deadbeef");
+        when(productRepository.findById(productId)).thenReturn(Optional.of(draft));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+        when(attributeValues.findAllByProductIdOrderByAssignmentIdAsc(productId)).thenReturn(List.of());
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId))
+                .thenReturn(List.of(selection));
+        when(productVariantRepository.findByProductIdOrderBySkuAsc(productId))
+                .thenReturn(List.of(goodVariant));
+        when(variantAttributeValues.findAllByProductVariantIdOrderByAssignmentIdAsc(goodVariant.getId()))
+                .thenReturn(List.of(ProductVariantAttributeValue.create(goodVariant.getId(),
+                        new CatalogAttributeValueInput(selection.getId(), null, null, null, UUID.randomUUID()))));
+
+        service.publishOwnedProduct(productId, authentication);
+
+        verify(productRepository).save(any(Product.class));
     }
 
     @Test
