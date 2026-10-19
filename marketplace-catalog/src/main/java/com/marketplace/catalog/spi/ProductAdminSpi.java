@@ -1,6 +1,5 @@
 package com.marketplace.catalog.spi;
 
-import com.marketplace.catalog.StoreProductStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.modulith.NamedInterface;
@@ -54,7 +53,7 @@ public interface ProductAdminSpi {
             String currency,
             UUID providerId,
             UUID productTypeId,
-            StoreProductStatus status) { }
+            String status) { }
 
     record ProductTypeView(
             UUID id,
