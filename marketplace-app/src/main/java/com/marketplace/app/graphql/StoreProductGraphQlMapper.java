@@ -1,7 +1,6 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.app.graphql.generated.types.StoreProduct;
-import com.marketplace.app.graphql.generated.types.StoreProductStatus;
 import com.marketplace.app.graphql.generated.types.StoreProductType;
 import com.marketplace.catalog.spi.ProductAdminSpi;
 import org.mapstruct.Mapper;
