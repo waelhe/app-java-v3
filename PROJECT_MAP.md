@@ -1,5 +1,14 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
+## Product scope and Saleor alignment — current work in progress (2026-10-19)
+
+- **Product definition:** the platform is an integrated social + commerce/business + tourism product. Community posts, business/provider identity, retail goods, services, property/jobs, and tourism bookings remain domain-owned; cross-surface discovery references source records instead of duplicating them.
+- **Current-state matrix:** `docs/research/social-commerce-business-tourism-saleor-alignment.md` supersedes the historic classifications in the initial Saleor fit/gap table where later PRs have changed the source. It records measured current evidence, deferrals, and the next slice; the document is being proposed in PR from branch `docs/social-commerce-tourism-saleor-alignment`.
+- **Next commerce slice proposed:** typed ProductType/product attributes and variant option combinations inside `marketplace-catalog`, while retaining existing zero-variant product behavior. Channels, collections, and multi-location inventory must be reevaluated on product need and accepted ADRs, not added mechanically just because Saleor has them.
+- **Scope limit:** this is a documentation and baseline change only. It has not implemented ProductType or connected Saleor Dashboard to Spring. No test suite or production deployment is claimed by this entry.
+
+---
+
 ## موجة المرحلة 7 — رحلة تفاصيل المنشور/المصدر المركبة تصل main بالإنتاج (إغلاق فجوة P0-1 من مصفوفة #599) (2026-10-18 — أمر المالك «دمج #635، وتنفيذ البوابة التالية طبيعية هي المرحلة 7 من مصفوفة #599 (رحلات المنتج المركبة — جاهزيتها قيست في الموجة السابقة)» ببروتوكوله الدائم: لا انتظار لـCI/CodeRabbit — مراقبة بسيطة ثم إتمام؛ مراجعة ذاتية + تفعيل يدوي لمراجعات CodeRabbit؛ الوثائق الرسمية حاكمة؛ الإصلاح من الجذر)
 
 - **الدُمجُ (squash بالبوابات الثلاث المقيسة):** #635 (truth-sync موجة Neon الثانية — docs فقط) ⇒ `658ee515` (03:36Z): فُحصت الفروق الأربعة (صفر بايت تطبيق) وفُعّل CodeRabbit وكانت ملاحظته الوحيدة قابلة للتنفيذ (قوس مربع زائد في عنوان §15 الحي — LanguageTool UNPAIRED_BRACKETS) فأُصلحت من الجذر بكوميت على فرع PR نفسه (`f212dac5` — القياس 4 فتح/5 إغلاق قبل، 4/4 بعده) مع رد بالدليل على الخيط؛ CI على رأس الإصلاح اكتمل 20/20 فدُمج. ثم **#637 (المرحلة 7 كاملة)** ⇒ `af1e239a` (05:03Z) بعد أربع دورات CI جذرية الإصلاح (القياسات أدناه).

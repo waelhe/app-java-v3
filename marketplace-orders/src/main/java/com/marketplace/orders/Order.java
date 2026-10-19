@@ -88,7 +88,7 @@ public class Order extends BaseEntity {
      * agreement — its total stays the whole recorded agreement).
      */
     @Enumerated(EnumType.STRING)
-    @Column(name = "fulfillment_method", length = 16)
+    @Column(name = "fulfillment_method", length = 32)
     private FulfillmentMethod fulfillmentMethod;
 
     /**

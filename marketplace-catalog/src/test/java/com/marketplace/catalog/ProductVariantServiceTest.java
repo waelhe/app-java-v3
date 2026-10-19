@@ -125,12 +125,12 @@ class ProductVariantServiceTest {
     @Test
     void typedVariantRequiresValidSelectableOptionAndProducesCanonicalKey() {
         UUID productTypeId = UUID.randomUUID();
-        UUID definitionId = UUID.randomUUID();
+        CatalogAttributeDefinition definition = CatalogAttributeDefinition.create(
+                "color", "Color", "اللون", CatalogAttributeType.CHOICE, null);
+        UUID definitionId = definition.getId();
         Product product = Product.register("typed-goods", "Typed goods", null, 100L, "SAR", seller, productTypeId);
         ProductTypeAttributeAssignment selection = ProductTypeAttributeAssignment.create(
                 productTypeId, definitionId, ProductTypeAttributeScope.VARIANT_SELECTION, true, 0);
-        CatalogAttributeDefinition definition = CatalogAttributeDefinition.create(
-                "color", "Color", "اللون", CatalogAttributeType.CHOICE, null);
         CatalogAttributeOption option = CatalogAttributeOption.create(definitionId, "red", "Red", "أحمر", 0);
         when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
@@ -155,12 +155,12 @@ class ProductVariantServiceTest {
     @Test
     void duplicateTypedVariantCombinationIsRejectedBeforeWrite() {
         UUID productTypeId = UUID.randomUUID();
-        UUID definitionId = UUID.randomUUID();
+        CatalogAttributeDefinition definition = CatalogAttributeDefinition.create(
+                "color", "Color", "اللون", CatalogAttributeType.CHOICE, null);
+        UUID definitionId = definition.getId();
         Product product = Product.register("typed-goods", "Typed goods", null, 100L, "SAR", seller, productTypeId);
         ProductTypeAttributeAssignment selection = ProductTypeAttributeAssignment.create(
                 productTypeId, definitionId, ProductTypeAttributeScope.VARIANT_SELECTION, true, 0);
-        CatalogAttributeDefinition definition = CatalogAttributeDefinition.create(
-                "color", "Color", "اللون", CatalogAttributeType.CHOICE, null);
         CatalogAttributeOption option = CatalogAttributeOption.create(definitionId, "red", "Red", "أحمر", 0);
         when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);

@@ -48,6 +48,7 @@ public class ProductService {
     private final CatalogAttributeDefinitionRepository definitions;
     private final CatalogAttributeOptionRepository options;
     private final ProductAttributeValueRepository attributeValues;
+    private final ProductVariantAttributeValueRepository variantAttributeValues;
     private final com.marketplace.shared.security.CurrentUserProvider currentUserProvider;
 
     public ProductService(ProductRepository productRepository,
@@ -58,6 +59,7 @@ public class ProductService {
                           CatalogAttributeDefinitionRepository definitions,
                           CatalogAttributeOptionRepository options,
                           ProductAttributeValueRepository attributeValues,
+                          ProductVariantAttributeValueRepository variantAttributeValues,
                           com.marketplace.shared.security.CurrentUserProvider currentUserProvider) {
         this.productRepository = productRepository;
         this.productVariantRepository = productVariantRepository;
@@ -67,6 +69,7 @@ public class ProductService {
         this.definitions = definitions;
         this.options = options;
         this.attributeValues = attributeValues;
+        this.variantAttributeValues = variantAttributeValues;
         this.currentUserProvider = currentUserProvider;
     }
 
@@ -211,10 +214,34 @@ public class ProductService {
                     .findAllByProductTypeIdOrderByScopeAscPositionAsc(product.getProductTypeId()).stream()
                     .anyMatch(assignment -> assignment.getScope() == ProductTypeAttributeScope.VARIANT_SELECTION);
             if (selectionsDefinePurchasableVariants) {
-                boolean hasSelectableVariant = productVariantRepository
-                        .findByProductIdOrderBySkuAsc(productId).stream()
-                        .anyMatch(variant -> variant.getStatus() == ProductStatus.ACTIVE
-                                && variant.getOptionCombinationKey() != null);
+                // The publication gate revalidates EVERY active variant against
+                // the CURRENT selection schema (the C1 review's Major finding):
+                // an assignment the admin added after the variant's creation
+                // must surface HERE, never after publication — a non-null
+                // combination key proves nothing about schema currency.
+                Set<UUID> requiredSelections = assignments
+                        .findAllByProductTypeIdOrderByScopeAscPositionAsc(product.getProductTypeId()).stream()
+                        .filter(assignment -> assignment.getScope() == ProductTypeAttributeScope.VARIANT_SELECTION)
+                        .map(ProductTypeAttributeAssignment::getId)
+                        .collect(java.util.stream.Collectors.toSet());
+                boolean hasSelectableVariant = false;
+                for (ProductVariant variant : productVariantRepository.findByProductIdOrderBySkuAsc(productId)) {
+                    if (variant.getStatus() != ProductStatus.ACTIVE) {
+                        continue;
+                    }
+                    Set<UUID> covered = variantAttributeValues
+                            .findAllByProductVariantIdOrderByAssignmentIdAsc(variant.getId()).stream()
+                            .map(ProductVariantAttributeValue::getAssignmentId)
+                            .collect(java.util.stream.Collectors.toSet());
+                    if (!covered.containsAll(requiredSelections)) {
+                        throw new ConflictException("Variant '" + variant.getSku()
+                                + "' does not satisfy the product type's current variant-selection schema"
+                                + " — update it before publication");
+                    }
+                    if (variant.getOptionCombinationKey() != null) {
+                        hasSelectableVariant = true;
+                    }
+                }
                 if (!hasSelectableVariant) {
                     throw new ConflictException(
                             "A ProductType with variant-selection attributes requires at least one active typed variant before publication");
