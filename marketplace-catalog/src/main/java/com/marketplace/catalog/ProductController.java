@@ -169,11 +169,11 @@ public class ProductController {
         /** Source compatibility for older callers constructing this response shape directly. */
         public ProductResponse(UUID id, String storeCategoryCode, String title, String description,
                                long priceMinor, String currency, UUID providerId) {
-            this(id, storeCategoryCode, title, description, priceMinor, currency, providerId, null, ProductStatus.ACTIVE);
+            this(id, storeCategoryCode, title, description, priceMinor, currency, providerId, null, StoreProductStatus.ACTIVE);
         }
         public ProductResponse(UUID id, String storeCategoryCode, String title, String description,
                                long priceMinor, String currency, UUID providerId, UUID productTypeId) {
-            this(id, storeCategoryCode, title, description, priceMinor, currency, providerId, productTypeId, ProductStatus.ACTIVE);
+            this(id, storeCategoryCode, title, description, priceMinor, currency, providerId, productTypeId, StoreProductStatus.ACTIVE);
         }
 
         static ProductResponse of(Product product) {
