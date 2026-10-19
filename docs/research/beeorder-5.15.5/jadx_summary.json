@@ -1,0 +1,27 @@
+{
+ "source": "D:\\rea-beeorder\\clean\\jadx\\sources",
+ "java_files": 10390,
+ "custom_channels": [
+  {"name": "com.beeorder.customer/live_updates_order_tracking", "methods": ["getActiveOrderIds", "showNotification", "endNotification", "endAllNotifications"], "purpose": "Android 16 Live Updates for live order tracking"},
+  {"name": "instagram_share_channel", "purpose": "share to Instagram"},
+  {"name": "change_app_icon_channel", "purpose": "switch launcher icon (default/beepro/ramadan)"}
+ ],
+ "plugin_channels": [
+  "com.llfbandit.app_links/events", "com.llfbandit.app_links/messages",
+  "com.llfbandit.record/messages", "com.llfbandit.record/events/", "com.llfbandit.record/configChanged/",
+  "dev.steenbakker.mobile_scanner/scanner/method", "dev.steenbakker.mobile_scanner/scanner/event", "dev.steenbakker.mobile_scanner/scanner/deviceOrientation",
+  "dev.fluttercommunity.plus/share", "dev.fluttercommunity.plus/device_info", "dev.fluttercommunity.plus/connectivity", "dev.fluttercommunity.plus/network_info", "dev.fluttercommunity.plus/package_info", "dev.fluttercommunity.plus/android_intent",
+  "com.spencerccf.app_settings/methods", "com.android.badge/badge", "com.teslacoilsw.notifier/unread_count",
+  "plugins.flutter.io/google_maps", "plugins.flutter.io/shared_preferences", "plugins.flutter.io/image_picker",
+  "plugins.flutter.io/url_launcher", "plugins.flutter.io/video_player", "plugins.flutter.io/webview_flutter", "plugins.flutter.io/path_provider",
+  "firebase_messaging", "firebase_crashlytics", "firebase_remote_config", "firebase_analytics", "af_channel"
+ ],
+ "receivers": [
+  {"name": "OrderLiveUpdatePushReceiver", "action": "FCM data push", "gate": ["enabled", "allowed_<orderId>"], "extras": ["type=order_live_update", "order_id", "event=end", "is_order_ended", "sent_at", "title", "subtitle", "eta", "current_step_index", "total_steps", "driver_mobile"]},
+  {"name": "OrderLiveUpdateDismissReceiver", "action": "com.beeorder.customer.ORDER_LIVE_UPDATE_DISMISSED", "writes": "dismissed_step_<orderId>"},
+  {"name": "AppUpdateReceiver", "action": "android.intent.action.MY_PACKAGE_REPLACED", "effect": "re-enable non-alias activities"}
+ ],
+ "native_prefs": {"file": "order_live_updates", "keys": ["enabled", "allowed_<orderId>", "eta_label", "call_captain_label", "default_title", "timeout_seconds", "sent_at_<orderId>", "dismissed_step_<orderId>"]},
+ "native_packages": ["com.appsflyer", "com.pichillilorenzo", "com.baseflow", "com.crazecoder", "com.scottyab", "com.it_nomads", "com.dexterous", "com.google", "io.flutter.plugins"],
+ "media": "AndroidXMedia3 1.9.2"
+}
