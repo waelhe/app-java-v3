@@ -24,7 +24,7 @@ public interface StoreProductGraphQlMapper {
     @Mapping(target = "priceMinor", expression = "java(Long.toString(product.priceMinor()))")
     @Mapping(target = "providerId", expression = "java(toTransportId(product.providerId()))")
     @Mapping(target = "productTypeId", expression = "java(toTransportId(product.productTypeId()))")
-    @Mapping(target = "status", expression = "java(com.marketplace.app.graphql.generated.types.StoreProductStatus.valueOf(product.status().name()))")
+    @Mapping(target = "status", expression = "java(toProductStatus(product.status()))")
     StoreProduct toResponse(ProductAdminSpi.ProductView product);
 
     @Mapping(target = "id", expression = "java(toTransportId(productType.id()))")
@@ -49,6 +49,10 @@ public interface StoreProductGraphQlMapper {
     @Mapping(target = "priceMinor", expression = "java(Long.toString(variant.priceMinor()))")
     @Mapping(target = "status", expression = "java(toVariantStatus(variant.status()))")
     StoreProductVariant toResponse(ProductAdminSpi.ProductVariantView variant);
+
+    default StoreProductStatus toProductStatus(String status) {
+        return StoreProductStatus.valueOf(status);
+    }
 
     default String toTransportId(UUID id) {
         return id == null ? null : id.toString();
