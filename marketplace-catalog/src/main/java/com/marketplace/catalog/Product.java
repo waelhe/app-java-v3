@@ -93,7 +93,7 @@ public class Product extends BaseEntity {
      */
     @Enumerated(EnumType.STRING)
     @Column(name = "product_status", nullable = false, length = 16)
-    private ProductStatus status = ProductStatus.ACTIVE;
+    private StoreProductStatus status = StoreProductStatus.ACTIVE;
 
     protected Product() {
     }
@@ -110,7 +110,7 @@ public class Product extends BaseEntity {
         this.productTypeId = productTypeId;
         this.stockQuantity = 0;
         this.reservedQuantity = 0;
-        this.status = productTypeId == null ? ProductStatus.ACTIVE : ProductStatus.DRAFT;
+        this.status = productTypeId == null ? StoreProductStatus.ACTIVE : StoreProductStatus.DRAFT;
     }
 
     /**
@@ -170,13 +170,13 @@ public class Product extends BaseEntity {
         return reservedQuantity;
     }
 
-    public ProductStatus getStatus() {
+    public StoreProductStatus getStatus() {
         return status;
     }
 
     /** Updates editable product details without changing the frozen order snapshots. */
     public void updateDetails(String title, String description, long priceMinor) {
-        if (status == ProductStatus.ARCHIVED) {
+        if (status == StoreProductStatus.ARCHIVED) {
             throw new IllegalStateException("Archived products are terminal and cannot be edited");
         }
         if (title == null || title.isBlank() || title.length() > 200) {
@@ -195,10 +195,10 @@ public class Product extends BaseEntity {
 
     /** Publishes only a typed C1 draft; legacy products keep their historical ACTIVE-on-register path. */
     public void publish() {
-        if (status != ProductStatus.DRAFT) {
+        if (status != StoreProductStatus.DRAFT) {
             throw new IllegalStateException("Only a DRAFT product can be published (current status: " + status + ")");
         }
-        this.status = ProductStatus.ACTIVE;
+        this.status = StoreProductStatus.ACTIVE;
     }
 
     /**
@@ -217,24 +217,24 @@ public class Product extends BaseEntity {
 
     /** The lifecycle writes — the guarded transitions (the service gates ownership). */
     public void suspend() {
-        requireTransition(ProductStatus.SUSPENDED);
-        this.status = ProductStatus.SUSPENDED;
+        requireTransition(StoreProductStatus.SUSPENDED);
+        this.status = StoreProductStatus.SUSPENDED;
     }
 
     public void reactivate() {
-        requireTransition(ProductStatus.ACTIVE);
-        this.status = ProductStatus.ACTIVE;
+        requireTransition(StoreProductStatus.ACTIVE);
+        this.status = StoreProductStatus.ACTIVE;
     }
 
     public void archive() {
-        if (status == ProductStatus.ARCHIVED) {
+        if (status == StoreProductStatus.ARCHIVED) {
             throw new IllegalStateException("Product " + id + " is already ARCHIVED (terminal)");
         }
-        this.status = ProductStatus.ARCHIVED;
+        this.status = StoreProductStatus.ARCHIVED;
     }
 
-    private void requireTransition(ProductStatus target) {
-        if (status == ProductStatus.ARCHIVED) {
+    private void requireTransition(StoreProductStatus target) {
+        if (status == StoreProductStatus.ARCHIVED) {
             throw new IllegalStateException("Product " + id + " is ARCHIVED (terminal) — no transition out");
         }
         if (status == target) {
