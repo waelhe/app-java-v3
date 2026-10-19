@@ -647,8 +647,14 @@ class OrderLegDeliveryJourneyIntegrationTest {
         UUID baseLegId = UUID.fromString(legs.get(0).path("id").asString());
         assertThat(legs.get(0).path("amountMinor").asLong()).isEqualTo(FROZEN_SHIPPING_FEE_MINOR);
 
-        // The split: the frozen fee becomes two legs (2500 + 1500).
-        HttpResponse<String> split = postJson(
+        // The split: the frozen fee becomes two legs (2500 + 1500). The
+        // journey runs the REAL scheduler with the main journey's leftover
+        // available courier live in the class-shared database, so a sweep
+        // can commit a leg assignment inside this command's optimistic
+        // window — the API's documented contract for that collision is the
+        // retry-able 409, mirrored here with the honest client's bounded
+        // retry (the split itself carries no state precondition).
+        HttpResponse<String> split = postJsonWithOptimisticRetry(
                 "/api/v1/deliveries/admin/orders/" + orderId + "/legs", adminGate.accessToken(), """
                         {"packageDescription":"the partial package","amountMinor":1500}""");
         assertThat(split.statusCode()).as("the split: %s", body(split)).isEqualTo(201);
@@ -662,7 +668,10 @@ class OrderLegDeliveryJourneyIntegrationTest {
         // intent untouched. The frozen share has no dedicated refund path
         // (the measured absence G-J25-c): the buyer's recourse is the
         // whole-order cancellation below.
-        HttpResponse<String> splitCancel = postJson(
+        // The same live sweep can land inside the split leg's cancel —
+        // the retry mirror applies (cancellation is legal from either
+        // live state; the refusal 409s flow through untouched).
+        HttpResponse<String> splitCancel = postJsonWithOptimisticRetry(
                 "/api/v1/deliveries/requests/" + splitLegId + "/cancel", gate.accessToken(),
                 "{\"reason\":\"the partial package is not needed\"}");
         assertThat(splitCancel.statusCode()).as("the split leg's cancel: %s", body(splitCancel)).isEqualTo(200);
@@ -700,7 +709,7 @@ class OrderLegDeliveryJourneyIntegrationTest {
         // collected intent fully refunds (the whole agreement INCLUDING
         // the frozen shipping), the ledger mirrors the refund, and the
         // shelf is restored.
-        HttpResponse<String> baseCancel = postJson(
+        HttpResponse<String> baseCancel = postJsonWithOptimisticRetry(
                 "/api/v1/deliveries/requests/" + baseLegId + "/cancel", gate.accessToken(),
                 "{\"reason\":\"the whole order is not needed\"}");
         assertThat(baseCancel.statusCode()).as("the base leg's cancel: %s", body(baseCancel)).isEqualTo(200);
@@ -727,6 +736,30 @@ class OrderLegDeliveryJourneyIntegrationTest {
         HttpResponse<String> secondCancel = deleteWithBearer(
                 "/api/v1/orders/" + orderId, gate.accessToken(), "{\"reason\":\"twice\"}");
         assertThat(secondCancel.statusCode()).isEqualTo(409);
+    }
+
+    /**
+     * The retry-able-conflict mirror: this journey runs the REAL dispatch
+     * scheduler (the 500ms tick it configures itself) with the main
+     * journey's leftover available courier live in the class-shared
+     * database, so a sweep can commit a leg assignment inside any leg
+     * command's optimistic window. The API's own documented contract for
+     * that collision is the 409 «Resource was modified by another
+     * transaction. Please retry.» — the journey mirrors the honest
+     * client's bounded retry (3 attempts, 250ms apart). Only that specific
+     * conflict is retried: every honest refusal 409 (idempotence by
+     * refusal, state guards) flows through untouched and fails the
+     * assertion exactly as the registered-evidence law demands.
+     */
+    private HttpResponse<String> postJsonWithOptimisticRetry(String path, String accessToken, String json)
+            throws Exception {
+        HttpResponse<String> response = postJson(path, accessToken, json);
+        for (int attempt = 0; attempt < 3 && response.statusCode() == 409
+                && body(response).contains("modified by another transaction"); attempt++) {
+            Thread.sleep(250);
+            response = postJson(path, accessToken, json);
+        }
+        return response;
     }
 
     // ------------------------------------------------------------------
