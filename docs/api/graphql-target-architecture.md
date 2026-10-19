@@ -1,7 +1,7 @@
 # GraphQL Target Architecture and Evolution Plan
 
 **Status:** Target architecture and staged implementation plan — not implementation-complete  
-**Last repository inspection:** 2026-10-15  
+**Last repository inspection:** 2026-10-19  
 **Repository baseline:** waelhe/app-java-v3, Java 25, Spring Boot 4.1.1, Spring Modulith 2.1.1, Maven modular monolith  
 **Target GraphQL model:** Netflix DGS Framework programming model, using DGS's Spring for GraphQL integration; Spring Boot owns runtime auto-configuration and Maven owns backend build/code generation.  
 **Scope:** GraphQL in marketplace-app, its security/configuration/tests, Modulith boundaries, Maven generation, CI contract gates, and the Android client contract.  
@@ -29,50 +29,38 @@ Do not turn GraphQL into a mirror of all REST endpoints, a public database graph
 
 **Success means the schema, generated source, security, boundaries, client operations, and compatibility checks are managed by the build and framework wherever possible, while business rules remain explicit and testable.**
 
-## 2. Current-state audit (verified from the repository)
+## 2. Current implementation status (verified 2026-10-19)
 
-### 2.1 Implemented surface
+### 2.1 Implemented GraphQL surfaces
 
-The current SDL is in marketplace-app/src/main/resources/graphql/schema.graphqls and has only:
-- Query service(id: ID!): Service
-- Query services: [Service!]!
-- Mutation createService(input: ServiceInput!): Service!
-- Service, ServiceStatus, and ServiceInput types.
+The earlier pre-DGS inventory is preserved in `docs/api/graphql-baseline-2026-10.md`; it is historical evidence, not the current implementation.
 
-The implementation is under marketplace-app/src/main/java/com/marketplace/app/graphql/:
-- ServiceGraphQlController
-- ServiceInput, ServiceResponse, ServiceMapper
-- GraphQlExceptionResolver
+The active application uses **Netflix DGS as its only resolver programming model**:
+- `ServiceDataFetcher` exposes `service`, bounded `services(first, after)`, and `createService`.
+- `StoreProductDataFetcher` exposes provider-owned catalog read/write operations for products, ProductTypes, typed attributes, and variants.
+- Both adapters live in `marketplace-app` and delegate to declared catalog SPIs/use cases; domain entities and repositories do not cross module boundaries.
+- ProductType remains separate from StoreCategory. Product and variant lifecycle state and typed attribute scopes are domain-owned, not resolver-owned.
+- The public wire contract for money in the goods catalog uses decimal-string minor units; legacy service fields remain legacy contracts and should not be reused as the platform-wide money contract.
 
-It is a useful vertical slice: the controller consumes CatalogSpi and CurrentUserProvider, maps the shared catalog view into a GraphQL response, and does not directly use a JPA repository or entity. Preserve that application-composition boundary.
+### 2.2 Framework ownership and automatic build contract
 
-The write path already has valuable integration coverage. ServiceGraphQlMutationIntegrationTest executes the real SDL and current Spring GraphQL argument-binding/validation path and covers a free listing, positive price, negative price, and missing input. GraphQlErrorIntegrationTest exercises not-found, conflict, and internal-error mapping through the real HTTP GraphQL stack. GraphQlExceptionResolverTest covers exception mapping. These are pre-migration baseline tests to preserve and run unchanged as contract tests while converting the resolver programming model to DGS; they do not mean the final target should retain Spring resolver annotations.
+- `ArchitectureRulesTest` enforces a single GraphQL resolver model and rejects the old Spring `@QueryMapping`/`@MutationMapping` annotated-controller model. DGS owns the resolver model; Spring Boot and Spring for GraphQL keep runtime auto-configuration, security, validation, transactions, metrics and HTTP execution.
+- Maven generates DGS constants and generated transport types from the authoritative SDL under `marketplace-app/src/main/resources/graphql/**`; generated output is build output, not hand-edited source.
+- The DGS BOM/starter/test integration is pinned centrally. The Maven CodeGen adapter is community-maintained (Netflix's official CodeGen plugin is Gradle-only); this provenance is an explicit Maven-workflow tradeoff, not an official Netflix Maven-plugin claim.
+- The build has GraphQL schema compatibility and accepted-SDL publication gates. The current `main` after the catalog GraphQL merge has green JDK 25 build/test, coverage, full integration, GraphQL/OpenAPI compatibility, CodeQL, container and Android GraphQL contract checks.
+- Pagination defaults and hard maxima, query-depth and weighted-complexity instrumentation, rate limits, safe base-profile GraphiQL/introspection/WebSocket defaults, and GraphQL observation wiring are configured and covered by code/tests. Staging/production keep introspection and GraphiQL disabled; no GraphQL WebSocket path is configured while no Subscription journey is approved.
 
-### 2.2 Material gaps
+### 2.3 Known gaps that remain open
 
-| Finding | Evidence | Consequence / target |
+| Finding | Verified state | Next acceptance target |
 |---|---|---|
-| Unbounded collection query | services() calls catalogSpi.findAll(Pageable.unpaged()); SDL returns a list without page arguments or metadata | A growing catalogue can cause unbounded database work, heap use, payloads, and latency. Pagination and a hard maximum are the first functional fix. |
-| Schema is only a catalogue demo | Two read fields and one create mutation | It does not yet serve the platform's real journeys (community, discovery/search, businesses, offers, services, properties, bookings, orders, reviews, messaging, institutions, etc.). Add fields only when backed by a defined journey/use case. |
-| Money contract is asymmetric | Input uses priceCents: Int! with a signed 32-bit GraphQL scalar and a ceiling; output is price: Float! in major units plus currency | The wire contract invites precision/unit mistakes and does not generalize to every future high-value product/property. Design a precise money contract and migrate compatibly. |
-| Status vocabulary can be lossy | ServiceMapper currently maps ACTIVE vs non-ACTIVE to a two-value ServiceStatus | Before exposing more lifecycle states, define the public business vocabulary rather than leaking or collapsing internal persistence states. |
-| Error taxonomy can drift | GraphQlExceptionResolver has a separate mapping. The access-denied category is currently authz while the documented category vocabulary uses uppercase categories such as RESOURCE/DOMAIN/VALIDATION/INTERNAL | One stable GraphQL extension contract, aligned with the canonical taxonomy, must cover authorization, validation, domain conflicts, not-found, and internal failures. |
-| Request-level errors need distinct tests | DataFetcherExceptionResolverAdapter handles data-fetcher exceptions; parsing/schema validation/coercion can fail before a data fetcher runs | Do not assume the resolver normalizes every GraphQL error. Test and document both request errors and resolver errors. |
-| Query/resource limits are not proven | The 2026-09-25 quality audit lists GraphQL depth/complexity limits as unverified; no explicit application GraphQL depth/complexity instrumentation was found in current code search | Verify the exact GraphQL Java version and effective defaults; add explicit tested budgets for this API. |
-| Schema compatibility is not covered by the REST OpenAPI gate | The repository has an OpenAPI compatibility gate, but GraphQL has a separate SDL and operation contract | Add a GraphQL-specific compatibility check and a curated executable-operation suite. |
-| GraphQL WebSocket is configured without a subscription contract | Base application.yml sets spring.graphql.websocket.path to /graphql/ws, but the current schema has no Subscription root. The application already has a separate STOMP messaging transport | Explicitly disable this transport until a real GraphQL subscription use case is approved, or define and test that contract. Do not keep an unexplained second push protocol. |
-| Dev-oriented GraphQL switches are enabled in base configuration | Base application.yml enables GraphiQL and schema introspection; staging and production disable them | Prefer safe defaults in the base profile and explicit opt-in for local development. Verify any additional schema.inspection property against Boot 4.1.1 configuration metadata before treating it as a control. |
-| Authentication policy may block public journeys | /graphql is in the stateless Bearer security chain; current CI smoke expects anonymous GraphQL requests to return 401. This may be correct for the present protected contract, but public marketplace/tourism discovery is a product requirement to resolve | Decide explicitly whether anonymous public reads must be supported. Do not loosen endpoint security until every field and mutation has tested field/object authorization. |
-| Observability needs explicit proof | No GraphQlObservationInstrumentation bean was found in the searched code | Verify the effective Spring GraphQL/Micrometer instrumentation. Provide bounded-cardinality metrics and trace coverage for requests, expensive fields, and batching. |
+| Platform-wide graph coverage | The implemented vertical slices do not yet constitute the whole social-commerce-tourism graph. Community, institutions, cross-experience discovery, services, property, booking, order/payment, reviews and messaging journeys must be introduced only against approved end-to-end journeys. | Expand incrementally by journey; do not copy every REST endpoint or database table into GraphQL. |
+| Cursor semantics | `services` and `storeProducts` use Spring's encoded `ScrollPosition` cursor with an offset-backed `PageRequest`, sorted `createdAt DESC, id DESC`. This is bounded and deterministic for a stable dataset, but it is **not keyset pagination**; inserts/deletes between requests can shift offset pages, and clients must keep the same `first` value. | Retain this declared limitation for the current bounded admin roster, or implement/test keyset pagination before requiring stronger concurrent-change guarantees. Do not describe the present implementation as keyset pagination. |
+| Anonymous public discovery | The current GraphQL endpoint is protected (anonymous calls return 401); the new catalog contract enforces authenticated provider ownership. | Keep it protected until public-read policy and field/object authorization are explicitly decided and tested per journey. |
+| Dashboard platform lifecycle proof | The separate adapted Dashboard's strict build passed on the latest code-generation cleanup. The Spring-backed Playwright attempt stopped at protected-environment/credential validation before browser tests. | Pass the protected Spring-backed browser lifecycle before closing the Dashboard adaptation gate. |
+| Production measurements | Instrumentation is wired and tested; representative production p50/p95 latency, response-size, query-count and error-rate baselines are not yet a substitute for the passing functional CI. | Measure real representative journeys before claiming production performance acceptance. |
 
-### 2.3 Repository boundaries to preserve
-
-- The repository is a Spring Modulith modular monolith. marketplace-app is the composition root; domains own domain state and logic.
-- DGS data fetchers/resolvers must not access JPA repositories/entities from other modules. Use the owning module's declared SPI/read projection or an application-level use case.
-- No domain module should depend on marketplace-app. Do not add GraphQL dependencies to every domain merely to make SDL modular.
-- Keep public API DTOs independent of persistence entities. Add DataLoaders/batch projections when nested fields need cross-module relationships.
-- Domain rules, authorization, transaction boundaries, idempotency, state machines, and audit must live in the appropriate application/domain service, not in field resolvers.
-- Existing REST endpoints and contracts remain supported unless a separate reviewed migration says otherwise.
+The seven staged implementation phases below now record completed framework adoption separately from the unfinished journey expansion and production acceptance. Do not use the historical baseline table as if it described the current DGS code.
 
 ## 3. Target responsibilities and schema philosophy
 
@@ -257,110 +245,67 @@ The GraphQL work is not production-ready until all applicable gates below pass:
 - REST contracts remain unchanged unless a separate migration is approved;
 - Modulith and architecture checks remain green.
 
-## 11. Staged path from current partial state to target
+## 11. Staged path from current implementation to target
 
-The measured baseline is recorded in docs/api/graphql-baseline-2026-10.md. Do not repeat the baseline exercise unless a new code or CI measurement is required. Treat the current Spring-annotation implementation as the migration source, not the final programming model.
+The phase-0 measurement is preserved in `docs/api/graphql-baseline-2026-10.md`. The resolver-model migration and initial typed goods-catalog GraphQL vertical slice are implemented. The plan is **not complete overall**: wider platform journey coverage and production acceptance remain open.
 
-### Phase 0 — Measured baseline (complete, bounded to repository evidence)
+### Phase 0 — Measured baseline (complete; historical snapshot)
 
-1. Consumer/source inventory, current SDL, current security contract and tests are recorded in the baseline document.
-2. The resolved pre-DGS chain is recorded as Boot 4.1.1 BOM → Spring for GraphQL 2.0.5 → GraphQL Java 25.0 → java-dataloader 6.0.0. This is the baseline only; the post-DGS dependency tree must be measured again.
-3. In-repository consumer search found no Kotlin GraphQL clients and no contracted external consumer in repository source. This does not prove there are no out-of-repository consumers.
-4. Anonymous /graphql remains protected (401), WebSocket use is not evidenced, and latency/payload/database-query baselines remain deferred until the guarded API is measurable.
+1. Consumer/source inventory, initial SDL, security contract and pre-DGS tests are recorded in the baseline document.
+2. The resolved pre-DGS chain is historical evidence only; the active DGS dependency graph and its green JDK 25 build are validated by current CI.
+3. In-repository consumer search found no Kotlin GraphQL clients and no contracted external consumer in repository source at the time of the baseline. This does not prove there are no out-of-repository consumers.
+4. Anonymous `/graphql` remains protected (401). Latency, response-size and database-query baselines remain deferred until representative journeys are measured.
 
-### Phase 1 — Bound and harden the current surface (P0; implementation in progress)
+### Phase 1 — Bound and harden the current surface (core guardrails implemented; performance measurement open)
 
-The in-flight phase-1 work is intended to close the demonstrated safety gaps before the schema grows: bounded Relay pagination, deterministic ordering, weighted query-cost/depth budgets, request and list bounds, rate limits, the canonical GraphQL error contract, safe GraphiQL/introspection/WebSocket configuration, observation verification, and a schema-compatibility gate.
+Implemented and exercised: bounded database pagination with deterministic ordering, default/max page settings, query-depth/weighted-complexity instrumentation, rate limits, request/data-fetcher error handling tests, safe GraphiQL/introspection/WebSocket defaults, GraphQL observation integration tests and a GraphQL compatibility gate.
 
-The open phase-1 implementation currently starts from the existing Spring resolver surface. Its guardrails and executable tests are reusable requirements, but phase 1 is not proof of DGS adoption. Preserve its observable contracts and tests; the next phase must migrate the data-fetcher programming model to DGS and re-run the entire phase-1 suite before any new journey fields are added. Do not leave mixed @QueryMapping/@MutationMapping and @DgsQuery/@DgsMutation styles as the end state.
+Current constraint: the cursor is encoded by Spring's `EncodingCursorStrategy<ScrollPosition>`, but list retrieval is offset-backed. It is not keyset pagination and has not been proven invariant under concurrent catalog changes. Keep this distinction explicit. The functional/resource guardrails are not the same thing as a measured performance baseline.
 
-Acceptance:
-- every collection has a bounded default and hard maximum and uses database-level pagination;
-- query depth/weighted complexity limits and rate limits are actually exercised by HTTP tests;
-- request-level parse/coercion failures and data-fetcher/domain failures have separately tested contracts;
-- GraphiQL/introspection defaults are safe, and the unused GraphQL WebSocket path is disabled;
-- the SDL compatibility gate blocks unreviewed breaking changes and maintains a documented, expiring exception only when needed;
-- Spring Security policy remains unchanged (anonymous request → 401);
-- observation/metrics are measured rather than inferred from dependencies being present.
+### Phase 2 — Netflix DGS as the sole resolver programming model (implemented and guarded)
 
-### Phase 2 — Adopt the DGS Framework as the sole GraphQL programming model
+1. The DGS platform BOM, `dgs-starter` and `dgs-starter-test` are managed through Maven.
+2. `ServiceDataFetcher` and `StoreProductDataFetcher` use `@DgsComponent`, `@DgsQuery`, `@DgsMutation` and `@InputArgument`; business authorization and rules remain in their owning use cases/SPIs.
+3. `ArchitectureRulesTest` guards against reintroducing Spring annotated-controller resolver APIs, preventing the old mixed-programming-model end state.
+4. The current merge/main checks pass startup/build, test, coverage, integration and security/compatibility gates for this DGS implementation. Re-run all required checks for any later changes.
 
-1. Add the DGS platform BOM, dgs-starter, and dgs-starter-test through Maven dependency management. Keep the Spring Boot 4.1.1 parent and let Boot manage Spring artifacts; let the DGS BOM align DGS artifacts. Do not independently pin GraphQL Java or java-dataloader without a measured and documented compatibility/security need.
-2. Verify the exact candidate DGS release against Java 25, Spring Boot 4.1.1, Spring for GraphQL, GraphQL Java and Maven Enforcer. DGS 11+ is the documented Spring Boot 4 line; the upstream release page showed 12.1.0 on 2026-10-15. The exact selected version is accepted only after the effective Maven dependency tree and full CI prove convergence and runtime startup. If that candidate fails, select a compatible DGS 11+ release; do not patch around conflicts with unexplained overrides.
-3. Use the DGS Spring GraphQL integration and the DGS-specific property names for overlapping settings (notably dgs.graphql.schema-locations and dgs.graphql.graphiql.enabled) as directed by the official integration guide. Retain Spring Boot configuration properties/profiles for validated, environment-specific budgets. Do not create a second GraphQL engine, endpoint, schema source, or manual GraphQLSchema lifecycle.
-4. Migrate the existing service, services, and createService data fetchers to @DgsComponent, @DgsQuery, @DgsMutation and @InputArgument. Keep the current use-case/SPI calls, auth behavior, SDL contracts (except already documented Phase-1 schema changes), and exception semantics.
-5. Keep DGS data fetchers only in marketplace-app. They call CatalogSpi/other declared SPIs or application use cases; never import repositories or entities from other domain modules.
-6. Migrate/extend data-fetcher unit tests using DgsQueryExecutor and the DGS test starter; retain real HTTP tests using HttpGraphQlTester where they verify the integrated Spring Security/transport contract. Remove the old Spring resolver annotations only when the equivalent DGS implementation is covered.
-7. Add a test/build guard that the final GraphQL adapter uses one resolver programming model. A temporary mixed state is allowed only inside a migration PR and must not be the accepted end state.
+### Phase 3 — Maven-owned DGS CodeGen (implemented; provenance exception documented)
 
-Acceptance:
-- clean application startup on the exact Boot/JDK baseline;
-- no duplicate GraphQL engine or duplicated starter configuration;
-- dependency convergence, security, Modulith, CI, integration and coverage gates stay green;
-- the P0 contracts and schema compatibility gate behave identically across the migration.
+- SDL-first source remains under `marketplace-app/src/main/resources/graphql/**`.
+- DGS constants and eligible input/output transport types are generated by the centrally pinned community Maven adapter into isolated build output. The normal Maven lifecycle owns generation; generated source is not manually edited or committed.
+- Netflix's official CodeGen plugin is Gradle-only. Retaining a pinned community Maven adapter is an explicit tradeoff to preserve the repo's Maven-owned build, and must not be described as an official Netflix Maven plugin.
+- A clean build must continue to prove that SDL changes regenerate types and fail compilation if referenced generated schema symbols drift.
 
-### Phase 3 — Maven-owned DGS code generation
+### Phase 4 — Spring platform integration (core integration implemented; broader journey work remains)
 
-1. Keep SDL schema-first as the canonical server contract under the single configured DGS schema location. Split files by bounded topic only when size warrants it; DGS loads them as one schema.
-2. Use the Maven DGS CodeGen adapter pinned centrally and bound to generate-sources. Its output is isolated under marketplace-app/target/generated-sources/graphql-codegen, separate from MapStruct’s target/generated-sources/annotations. Never commit or hand-edit generated files.
-3. Generate DGS constants and GraphQL transport/input/output types that can be generated without changing public semantics. Disable backend client API generation unless there is a concrete server-to-server client use case; do not generate placeholder data fetcher implementations.
-4. Use generated GraphQL transport types as the contract at the adapter boundary. Domain entities, shared SPI views and application commands remain their owners’ types. MapStruct may generate mappings where the mappings are mechanical. Value constraints not expressible in SDL must be enforced once in the relevant validator/use case; do not keep a second DTO solely to duplicate rules unless generated-code validation equivalence cannot be proven.
-5. Since Netflix officially publishes the CodeGen Gradle plugin and the Maven adapter is community-maintained, track that provenance explicitly, pin its plugin version in root Maven properties, inspect its dependency graph, isolate its output, and enforce a clean-build CI test. It is a build plugin only; it does not add DGS runtime dependencies by itself.
-6. Make the normal Maven clean verify of marketplace-app and its required modules perform generation, compile, test and verify from a clean tree. No separate manual generation command and no generated source checked into Git.
+- Spring Security and the existing catalog use cases remain authoritative for authentication, ownership and business authorization.
+- DGS components remain in the `marketplace-app` composition root and use declared SPIs; domain modules do not depend on application GraphQL code.
+- Bean Validation, transactions, Spring Data, query budgets, rate limits and Micrometer observations retain their framework ownership. Tests cover the current surface; every new field or mutation must add its own authorization, error, resource and persistence proof.
 
-Acceptance:
-- deleting target and running the normal Maven build recreates all required code;
-- generated source does not collide with MapStruct or enter the source history;
-- SDL changes update generated symbols and fail compilation/tests if the adapter references removed or renamed fields;
-- custom validation, money and status semantics remain covered by tests.
+### Phase 5 — GraphQL contract lifecycle and Android integration (gates operational; continued schema governance required)
 
-### Phase 4 — Integrate the full Spring platform around DGS
+- The backend GraphQL compatibility check and accepted-SDL publication are in CI.
+- The Android GraphQL contract gate uses the accepted schema/operation workflow and passed on the merged catalog contract.
+- The independent admin UI synchronizes from an immutable SHA of the published `graphql-contract` branch and derives TypeScript `TypedDocumentNode` operations from `.graphql` documents. It must fail closed if the published SDL lacks the required operation set; it must not merge a pending PR's SDL or maintain handwritten schema copies.
+- Continue to publish/version the accepted SDL and have clients generate their own operation types against that approved artifact.
 
-- **Spring Security:** retain the existing stateless Bearer chain; enforce ownership, delegation and field/object authorization in the owning use-case/service boundary; test 401/403 and private-field access. Keep anonymous GraphQL protected until a public-discovery journey explicitly reopens the decision.
-- **Spring Modulith:** run ApplicationModules.verify() in the architecture gate; keep DGS components in the composition root; use named interfaces and existing SPIs/events only. No DGS dependency or resolver code in domain modules.
-- **Bean Validation:** validate generated/input DTOs at the boundary where supported and test every constraint; enforce domain invariants again in the authoritative use case. Never rely on SDL non-nullability alone for business validation.
-- **Spring Data/JPA and projections:** enforce bounded database pagination and stable ordering; do not fetch-all-and-slice; use focused read projections for screen composition where that is better than traversing a graph of entities.
-- **DGS DataLoaders:** use request-scoped DGS DataLoader batching for measured relationship fan-out. Add query-count tests; prefer a purpose-built projection if batching would obscure or multiply expensive queries.
-- **Transactions and Modulith events:** mutations call the owning use case, whose transaction/state machine remains authoritative. Follow existing event-publication/outbox conventions for side effects; GraphQL must not introduce resolver-side transaction chains.
-- **Micrometer/Actuator:** verify effective request/data-fetcher/DataLoader observations under the chosen DGS Spring GraphQL integration. Do not register instrumentation that replaces Boot’s observation infrastructure; compose custom depth/complexity instrumentation and verify no observation regression.
-- **Configuration/profiles:** bind page sizes, cost limits, rate limits and error options to validated @ConfigurationProperties; invalid production values fail startup. Use the DGS property namespace where the official integration says it overlaps with spring.graphql.*, and test the actual base/dev/test/staging/prod files.
+### Phase 6 — Expand by complete user journey (in progress; broad platform scope remains)
 
-Acceptance:
-- security tests, Modulith and architecture gates, real HTTP tests, resource-limit tests, transaction/event tests and observation tests pass;
-- each framework feature has one owner and one configured path—no parallel cache, auth, telemetry, transaction or GraphQL runtime layer.
+The current typed catalog lifecycle is one goods-commerce slice. Next additions must follow approved product journeys and owner SPIs/use cases. Candidate areas include community/local discovery, business and institution identity, services/offers, property, booking/payment/order, reviews, messaging, and separate resident/expat/tourist experiences. These remain staged, not claims of existing GraphQL coverage. Do not add one root field per REST endpoint or expose a database-shaped graph.
 
-### Phase 5 — GraphQL contract lifecycle and Android integration
+### Phase 7 — Production acceptance (not complete)
 
-1. Keep the GraphQL compatibility gate in CI: compare the runtime schema actually booted by the app against the approved tagged baseline; block unreviewed field/type removals, nullability tightening, required-argument changes and enum-value removals.
-2. Keep allowlisted breaking changes exceptional and expiring; after a release baseline advances, remove stale exceptions.
-3. Publish the accepted SDL as a versioned CI artifact. Do not fetch schema from the production server during Android builds.
-4. Have the Android Gradle build consume that artifact and use Apollo Kotlin CodeGen for operation-specific Kotlin types. Operation documents are authored from approved screens/journeys; models and operation result types are generated, not manually duplicated.
-5. Validate the DGS-generated server types and Apollo-generated client types against the same schema publication, while preserving independently managed Maven and Gradle lifecycles.
-
-Acceptance:
-- no hand-copied SDL between repositories;
-- an incompatible server schema change or stale Android operation fails a required build/check before release;
-- the schema tag and client-generated types are reproducible from CI artifacts.
-
-### Phase 6 — Expand by complete user journey
-
-For each journey, define screen/data requirements first, then identify the owning SPIs/use cases, add bounded read projections and only the mutations that add measurable benefit, and cover authorization, error recovery, pagination, query cost and end-to-end client behavior.
-
-Candidate journeys remain public-safe discovery (only after the public-read gate is reopened), local community, business/service discovery, marketplace offers, provider requests, bookings/payments/disputes, property journeys, and expat/tourist/local entry points. Do not introduce federation or split GraphQL into multiple endpoints: this is one Spring application and a modular monolith.
-
-### Phase 7 — Production acceptance
-
-Production readiness requires all of:
-- full Maven/CI/build/coverage/Enforcer and DGS test gates green;
-- GraphQL schema compatibility gate green;
-- negative security and per-field/object authorization tests;
-- resource budgets and pagination verified over HTTP;
-- measured p50/p95 latency, response size, database query count and error rate for representative journeys;
-- DGS/DataLoader and request observations verified with bounded metric cardinality;
-- Android operations compiled against the versioned accepted SDL;
+Production readiness still requires:
+- all relevant Maven/CI/build/coverage/Enforcer and DGS gates green for the final release head;
+- GraphQL compatibility and generated-client contract gates green;
+- negative security and field/object authorization tests for each exposed journey;
+- paging/resource budgets exercised against actual HTTP execution;
+- representative production p50/p95 latency, response size, database-query count and error rate measured;
+- the protected Spring-backed Playwright lifecycle for the adapted Dashboard passing against the owner-approved target and correct test credentials/configuration;
 - an explicit rollback plan for runtime/dependency/schema/client changes.
 
 No wholesale REST-to-GraphQL rewrite is required.
+
 ## 12. Official and community references
 
 The official documents are the authority for API use. The version chosen for implementation must be checked against the actual Maven dependency tree under Boot 4.1.1, not inferred from a framework release tag.
