@@ -3,6 +3,7 @@ package com.marketplace.catalog.spi;
 import com.marketplace.catalog.Product;
 import com.marketplace.catalog.ProductRepository;
 import com.marketplace.catalog.ProductStatus;
+import com.marketplace.catalog.StoreProductStatus;
 import com.marketplace.catalog.ProductVariant;
 import com.marketplace.catalog.ProductVariantRepository;
 import com.marketplace.shared.api.ProductPricingPort;
@@ -26,11 +27,14 @@ public class ProductPricingAdapter implements ProductPricingPort {
 
     private final ProductRepository productRepository;
     private final ProductVariantRepository variantRepository;
+    private final com.marketplace.catalog.ProductTypeAttributeAssignmentRepository assignments;
 
     public ProductPricingAdapter(ProductRepository productRepository,
-                                 ProductVariantRepository variantRepository) {
+                                 ProductVariantRepository variantRepository,
+                                 com.marketplace.catalog.ProductTypeAttributeAssignmentRepository assignments) {
         this.productRepository = productRepository;
         this.variantRepository = variantRepository;
+        this.assignments = assignments;
     }
 
     @Override
@@ -38,8 +42,16 @@ public class ProductPricingAdapter implements ProductPricingPort {
     public ProductPrice priceOf(java.util.UUID productId) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product", productId));
+        StorefrontState state = toState(product.getStatus());
+        if (state == StorefrontState.ACTIVE && product.getProductTypeId() != null
+                && assignments.existsByProductTypeIdAndScope(product.getProductTypeId(),
+                        com.marketplace.catalog.ProductTypeAttributeScope.VARIANT_SELECTION)) {
+            // A product with buyer-selectable option dimensions is purchasable
+            // only through a chosen typed variant, never as a product-level line.
+            state = StorefrontState.VARIANT_SELECTION_REQUIRED;
+        }
         return new ProductPrice(product.getId(), product.getProviderId(),
-                product.getPriceMinor(), product.getCurrency(), toState(product.getStatus()));
+                product.getPriceMinor(), product.getCurrency(), state);
     }
 
     /**
@@ -61,6 +73,15 @@ public class ProductPricingAdapter implements ProductPricingPort {
         return new VariantPrice(variant.getId(), product.getId(), product.getProviderId(),
                 variant.getPriceMinor(), variant.getCurrency(),
                 toState(product.getStatus()), toState(variant.getStatus()));
+    }
+
+    private StorefrontState toState(StoreProductStatus status) {
+        return switch (status) {
+            case DRAFT -> StorefrontState.DRAFT;
+            case ACTIVE -> StorefrontState.ACTIVE;
+            case SUSPENDED -> StorefrontState.SUSPENDED;
+            case ARCHIVED -> StorefrontState.ARCHIVED;
+        };
     }
 
     private StorefrontState toState(ProductStatus status) {

@@ -22,6 +22,9 @@ import org.springframework.data.repository.query.Param;
  */
 public interface ProductRepository extends JpaRepository<Product, UUID> {
 
+    /** Owner-scoped roster for the store administration surface. */
+    java.util.List<Product> findByProviderId(UUID providerId);
+
     /**
      * Reserves {@code qty} units of an ACTIVE product whose free stock
      * covers it — the placement's write.
@@ -35,7 +38,7 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
             update Product p
                set p.reservedQuantity = p.reservedQuantity + :qty
              where p.id = :id
-               and p.status = com.marketplace.catalog.ProductStatus.ACTIVE
+               and p.status = com.marketplace.catalog.StoreProductStatus.ACTIVE
                and (p.stockQuantity - p.reservedQuantity) >= :qty
             """)
     int reserve(@Param("id") UUID id, @Param("qty") int qty);

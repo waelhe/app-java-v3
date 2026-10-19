@@ -11,6 +11,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.Authentication;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -50,6 +51,14 @@ class ProductVariantServiceTest {
     @Mock
     private CurrentUserProvider currentUserProvider;
     @Mock
+    private ProductTypeAttributeAssignmentRepository assignments;
+    @Mock
+    private CatalogAttributeDefinitionRepository definitions;
+    @Mock
+    private CatalogAttributeOptionRepository options;
+    @Mock
+    private ProductVariantAttributeValueRepository attributeValues;
+    @Mock
     private Authentication authentication;
 
     private ProductVariantService service;
@@ -59,7 +68,8 @@ class ProductVariantServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ProductVariantService(variantRepository, productRepository, currentUserProvider);
+        service = new ProductVariantService(variantRepository, productRepository, currentUserProvider,
+                assignments, definitions, options, attributeValues);
     }
 
     /** The owning product — the seller's own live shelf, the register-honest fresh shape. */
@@ -67,7 +77,8 @@ class ProductVariantServiceTest {
         return Instancio.of(Product.class)
                 .set(field(Product::getProviderId), seller)
                 .set(field(Product::getCurrency), "SAR")
-                .set(field(Product::getStatus), ProductStatus.ACTIVE)
+                .set(field(Product::getStatus), StoreProductStatus.ACTIVE)
+                .set(field(Product::getProductTypeId), null)
                 .set(field(Product::getStockQuantity), 0)
                 .set(field(Product::getReservedQuantity), 0)
                 .create();
@@ -109,6 +120,63 @@ class ProductVariantServiceTest {
         assertThat(saved.getStockQuantity()).isZero();
         assertThat(saved.getReservedQuantity()).isZero();
         assertThat(saved.getStatus()).isEqualTo(ProductStatus.ACTIVE);
+    }
+
+    @Test
+    void typedVariantRequiresValidSelectableOptionAndProducesCanonicalKey() {
+        UUID productTypeId = UUID.randomUUID();
+        CatalogAttributeDefinition definition = CatalogAttributeDefinition.create(
+                "color", "Color", "اللون", CatalogAttributeType.CHOICE, null);
+        UUID definitionId = definition.getId();
+        Product product = Product.register("typed-goods", "Typed goods", null, 100L, "SAR", seller, productTypeId);
+        ProductTypeAttributeAssignment selection = ProductTypeAttributeAssignment.create(
+                productTypeId, definitionId, ProductTypeAttributeScope.VARIANT_SELECTION, true, 0);
+        CatalogAttributeOption option = CatalogAttributeOption.create(definitionId, "red", "Red", "أحمر", 0);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
+        when(variantRepository.findByProviderIdAndSku(seller, "TYPED-RED")).thenReturn(Optional.empty());
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId)).thenReturn(List.of(selection));
+        when(definitions.findById(definitionId)).thenReturn(Optional.of(definition));
+        when(options.findById(option.getId())).thenReturn(Optional.of(option));
+        when(variantRepository.existsByProductIdAndOptionCombinationKey(
+                org.mockito.ArgumentMatchers.eq(product.getId()), org.mockito.ArgumentMatchers.anyString())).thenReturn(false);
+        when(variantRepository.save(any(ProductVariant.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(attributeValues.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        ProductVariant saved = service.register(product.getId(),
+                new ProductVariantService.RegisterVariantCommand("TYPED-RED", "Red", 100,
+                        List.of(new CatalogAttributeValueInput(selection.getId(), null, null, null, option.getId()))),
+                authentication);
+
+        assertThat(saved.getOptionCombinationKey()).matches("[0-9a-f]{64}");
+        verify(attributeValues).saveAll(any());
+    }
+
+    @Test
+    void duplicateTypedVariantCombinationIsRejectedBeforeWrite() {
+        UUID productTypeId = UUID.randomUUID();
+        CatalogAttributeDefinition definition = CatalogAttributeDefinition.create(
+                "color", "Color", "اللون", CatalogAttributeType.CHOICE, null);
+        UUID definitionId = definition.getId();
+        Product product = Product.register("typed-goods", "Typed goods", null, 100L, "SAR", seller, productTypeId);
+        ProductTypeAttributeAssignment selection = ProductTypeAttributeAssignment.create(
+                productTypeId, definitionId, ProductTypeAttributeScope.VARIANT_SELECTION, true, 0);
+        CatalogAttributeOption option = CatalogAttributeOption.create(definitionId, "red", "Red", "أحمر", 0);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
+        when(variantRepository.findByProviderIdAndSku(seller, "DUP-RED")).thenReturn(Optional.empty());
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId)).thenReturn(List.of(selection));
+        when(definitions.findById(definitionId)).thenReturn(Optional.of(definition));
+        when(options.findById(option.getId())).thenReturn(Optional.of(option));
+        when(variantRepository.existsByProductIdAndOptionCombinationKey(
+                org.mockito.ArgumentMatchers.eq(product.getId()), org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
+
+        assertThatThrownBy(() -> service.register(product.getId(),
+                new ProductVariantService.RegisterVariantCommand("DUP-RED", "Another red", 100,
+                        List.of(new CatalogAttributeValueInput(selection.getId(), null, null, null, option.getId()))),
+                authentication)).isInstanceOf(ConflictException.class)
+                .hasMessageContaining("same typed option combination");
+        verify(variantRepository, never()).save(any());
     }
 
     @Test

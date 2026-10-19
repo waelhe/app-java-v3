@@ -70,7 +70,7 @@ class ProductInventoryServiceTest {
     private Product product() {
         return Instancio.of(Product.class)
                 .set(field(Product::getProviderId), seller)
-                .set(field(Product::getStatus), ProductStatus.ACTIVE)
+                .set(field(Product::getStatus), StoreProductStatus.ACTIVE)
                 .set(field(Product::getStockQuantity), 0)
                 .set(field(Product::getReservedQuantity), 0)
                 .create();
@@ -80,7 +80,7 @@ class ProductInventoryServiceTest {
     private Product productWithShelfState(int stockQuantity, int reservedQuantity) {
         return Instancio.of(Product.class)
                 .set(field(Product::getProviderId), seller)
-                .set(field(Product::getStatus), ProductStatus.ACTIVE)
+                .set(field(Product::getStatus), StoreProductStatus.ACTIVE)
                 .set(field(Product::getStockQuantity), stockQuantity)
                 .set(field(Product::getReservedQuantity), reservedQuantity)
                 .create();
@@ -143,9 +143,9 @@ class ProductInventoryServiceTest {
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        assertThat(service.suspend(product.getId(), authentication).getStatus()).isEqualTo(ProductStatus.SUSPENDED);
-        assertThat(service.reactivate(product.getId(), authentication).getStatus()).isEqualTo(ProductStatus.ACTIVE);
-        assertThat(service.archive(product.getId(), authentication).getStatus()).isEqualTo(ProductStatus.ARCHIVED);
+        assertThat(service.suspend(product.getId(), authentication).getStatus()).isEqualTo(StoreProductStatus.SUSPENDED);
+        assertThat(service.reactivate(product.getId(), authentication).getStatus()).isEqualTo(StoreProductStatus.ACTIVE);
+        assertThat(service.archive(product.getId(), authentication).getStatus()).isEqualTo(StoreProductStatus.ARCHIVED);
 
         // ARCHIVED is terminal — no transition out, from the service either.
         assertThatThrownBy(() -> service.reactivate(product.getId(), authentication))

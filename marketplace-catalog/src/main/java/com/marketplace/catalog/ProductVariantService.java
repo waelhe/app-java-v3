@@ -1,6 +1,16 @@
 package com.marketplace.catalog;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import com.marketplace.shared.api.ConflictException;
@@ -39,13 +49,25 @@ public class ProductVariantService {
     private final ProductVariantRepository variantRepository;
     private final ProductRepository productRepository;
     private final CurrentUserProvider currentUserProvider;
+    private final ProductTypeAttributeAssignmentRepository assignments;
+    private final CatalogAttributeDefinitionRepository definitions;
+    private final CatalogAttributeOptionRepository options;
+    private final ProductVariantAttributeValueRepository attributeValues;
 
     public ProductVariantService(ProductVariantRepository variantRepository,
                                  ProductRepository productRepository,
-                                 CurrentUserProvider currentUserProvider) {
+                                 CurrentUserProvider currentUserProvider,
+                                 ProductTypeAttributeAssignmentRepository assignments,
+                                 CatalogAttributeDefinitionRepository definitions,
+                                 CatalogAttributeOptionRepository options,
+                                 ProductVariantAttributeValueRepository attributeValues) {
         this.variantRepository = variantRepository;
         this.productRepository = productRepository;
         this.currentUserProvider = currentUserProvider;
+        this.assignments = assignments;
+        this.definitions = definitions;
+        this.options = options;
+        this.attributeValues = attributeValues;
     }
 
     /**
@@ -64,9 +86,126 @@ public class ProductVariantService {
             throw new ConflictException("SKU '" + command.sku() + "' is already used by variant "
                     + existing.getId() + " in this seller's namespace");
         });
+        List<ProductTypeAttributeAssignment> typeAssignments = product.getProductTypeId() == null
+                ? List.of()
+                : assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(product.getProductTypeId());
+        List<ValidatedVariantAttribute> preparedValues = validateVariantAttributes(
+                product, typeAssignments, command.attributeValues());
+        String combinationKey = canonicalCombinationKey(typeAssignments, preparedValues);
+        if (combinationKey != null && variantRepository.existsByProductIdAndOptionCombinationKey(productId, combinationKey)) {
+            throw new ConflictException("This product already has a variant with the same typed option combination");
+        }
         ProductVariant variant = ProductVariant.register(product, command.sku(),
-                command.name(), command.priceMinor());
-        return variantRepository.save(variant);
+                command.name(), command.priceMinor(), combinationKey);
+        ProductVariant saved = variantRepository.save(variant);
+        if (!preparedValues.isEmpty()) {
+            attributeValues.saveAll(preparedValues.stream()
+                    .map(value -> ProductVariantAttributeValue.create(saved.getId(), value.input()))
+                    .toList());
+        }
+        return saved;
+    }
+
+    private List<ValidatedVariantAttribute> validateVariantAttributes(
+            Product product, List<ProductTypeAttributeAssignment> typeAssignments,
+            List<CatalogAttributeValueInput> suppliedValues) {
+        List<CatalogAttributeValueInput> values = suppliedValues == null ? List.of() : suppliedValues;
+        if (product.getProductTypeId() == null) {
+            if (!values.isEmpty()) throw new ConflictException("Variant attribute values require a ProductType");
+            return List.of();
+        }
+
+        Map<UUID, ProductTypeAttributeAssignment> eligible = new HashMap<>();
+        for (ProductTypeAttributeAssignment assignment : typeAssignments) {
+            if (assignment.getScope() == ProductTypeAttributeScope.VARIANT
+                    || assignment.getScope() == ProductTypeAttributeScope.VARIANT_SELECTION) {
+                eligible.put(assignment.getId(), assignment);
+            }
+        }
+        Set<UUID> seen = new HashSet<>();
+        List<ValidatedVariantAttribute> prepared = new ArrayList<>();
+        for (CatalogAttributeValueInput value : values) {
+            if (value == null || value.assignmentId() == null) {
+                throw new ConflictException("Every variant attribute value requires an assignmentId");
+            }
+            if (!seen.add(value.assignmentId())) {
+                throw new ConflictException("A variant attribute assignment may be supplied only once");
+            }
+            ProductTypeAttributeAssignment assignment = eligible.get(value.assignmentId());
+            if (assignment == null) {
+                throw new ConflictException("Attribute assignment does not belong to this ProductType's VARIANT scope");
+            }
+            if (value.populatedValueCount() != 1) {
+                throw new ConflictException("Exactly one typed value must be supplied for assignment " + assignment.getId());
+            }
+            CatalogAttributeDefinition definition = definitions.findById(assignment.getAttributeDefinitionId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "CatalogAttributeDefinition", assignment.getAttributeDefinitionId()));
+            boolean valid = switch (definition.getValueType()) {
+                case TEXT -> value.textValue() != null && value.numberValue() == null
+                        && value.booleanValue() == null && value.optionId() == null;
+                case NUMBER -> value.textValue() == null && value.numberValue() != null
+                        && value.booleanValue() == null && value.optionId() == null;
+                case BOOLEAN -> value.textValue() == null && value.numberValue() == null
+                        && value.booleanValue() != null && value.optionId() == null;
+                case CHOICE -> value.textValue() == null && value.numberValue() == null
+                        && value.booleanValue() == null && value.optionId() != null;
+            };
+            if (!valid) {
+                throw new ConflictException("Typed value does not match attribute definition '" + definition.getCode() + "'");
+            }
+            if (assignment.getScope() == ProductTypeAttributeScope.VARIANT_SELECTION
+                    && definition.getValueType() != CatalogAttributeType.CHOICE) {
+                throw new ConflictException("VARIANT_SELECTION values must be CHOICE attributes");
+            }
+            if (definition.getValueType() == CatalogAttributeType.CHOICE) {
+                CatalogAttributeOption option = options.findById(value.optionId())
+                        .orElseThrow(() -> new ResourceNotFoundException("CatalogAttributeOption", value.optionId()));
+                if (!option.getAttributeDefinitionId().equals(definition.getId())) {
+                    throw new ConflictException("Choice option does not belong to attribute '" + definition.getCode() + "'");
+                }
+            }
+            prepared.add(new ValidatedVariantAttribute(assignment, value));
+        }
+        for (ProductTypeAttributeAssignment assignment : eligible.values()) {
+            if ((assignment.isRequired() || assignment.getScope() == ProductTypeAttributeScope.VARIANT_SELECTION)
+                    && !seen.contains(assignment.getId())) {
+                throw new ConflictException("Required variant attribute assignment is missing: " + assignment.getId());
+            }
+        }
+        return List.copyOf(prepared);
+    }
+
+    /** Null means this product has no typed selectable-option schema (legacy free-form variant path). */
+    private String canonicalCombinationKey(List<ProductTypeAttributeAssignment> assignments,
+                                           List<ValidatedVariantAttribute> values) {
+        List<ProductTypeAttributeAssignment> selectionAssignments = assignments.stream()
+                .filter(a -> a.getScope() == ProductTypeAttributeScope.VARIANT_SELECTION).toList();
+        if (selectionAssignments.isEmpty()) return null;
+        Map<UUID, CatalogAttributeValueInput> byAssignment = new HashMap<>();
+        values.forEach(v -> byAssignment.put(v.assignment().getId(), v.input()));
+        String canonical = selectionAssignments.stream()
+                .filter(a -> byAssignment.containsKey(a.getId()))
+                .sorted(Comparator.comparing(a -> a.getId().toString()))
+                .map(a -> a.getId() + "=" + byAssignment.get(a.getId()).optionId())
+                .reduce((left, right) -> left + "\n" + right).orElse("");
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("JDK SHA-256 implementation is required", impossible);
+        }
+    }
+
+    private record ValidatedVariantAttribute(ProductTypeAttributeAssignment assignment,
+                                             CatalogAttributeValueInput input) { }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasRole('PROVIDER') or hasRole('ADMIN')")
+    public List<CatalogAttributeValueInput> listOwnedAttributeValues(UUID variantId, Authentication authentication) {
+        requireOwnedVariant(variantId, authentication);
+        return attributeValues.findAllByProductVariantIdOrderByAssignmentIdAsc(variantId).stream()
+                .map(ProductVariantAttributeValue::toInput).toList();
     }
 
     /** The owner's roster read — the product's live variants (Sku order, the index's order). */
@@ -151,6 +290,13 @@ public class ProductVariantService {
      * owning product (never client-supplied); the stock starts at zero
      * and arrives through the inventory surface.
      */
-    public record RegisterVariantCommand(String sku, String name, long priceMinor) {
+    public record RegisterVariantCommand(String sku, String name, long priceMinor,
+                                         List<CatalogAttributeValueInput> attributeValues) {
+        public RegisterVariantCommand {
+            attributeValues = attributeValues == null ? List.of() : List.copyOf(attributeValues);
+        }
+        public RegisterVariantCommand(String sku, String name, long priceMinor) {
+            this(sku, name, priceMinor, List.of());
+        }
     }
 }

@@ -133,6 +133,13 @@ class ObservationCoverageFilesTest {
                     "booking.auto.cancel", "booking.cancel", "booking.complete",
                     "booking.confirm", "booking.create")),
             Map.entry("marketplace-catalog", List.of(
+                    // C1 (the typed catalog wave): the attribute dictionary's
+                    // four commands — definitions and options are business
+                    // writes; every dictionary read stays unobserved per policy.
+                    "catalog.attribute-definition.register",
+                    "catalog.attribute-definition.update",
+                    "catalog.attribute-option.register",
+                    "catalog.attribute-option.remove",
                     "catalog.category-attributes.register",
                     "catalog.category-attributes.remove",
                     "catalog.category-attributes.update",
@@ -140,6 +147,15 @@ class ObservationCoverageFilesTest {
                     // W3 (G19): the favorites surface's two commands — the
                     // same commands-not-reads policy as every house entry.
                     "catalog.favorites.save", "catalog.favorites.unsave",
+                    // C1 (the typed catalog wave): the product-type dictionary
+                    // and its assignments — five business commands, the same
+                    // commands-not-reads policy; the configuration reads stay
+                    // unobserved.
+                    "catalog.product-type-attribute.assign",
+                    "catalog.product-type-attribute.remove",
+                    "catalog.product-type.register",
+                    "catalog.product-type.remove",
+                    "catalog.product-type.update",
                     // A-17 (C.7 — the M1 store root): the registration command;
                     // the owner read stays unobserved (the commands-not-reads policy).
                     // B-16 (C.8 — the M2 store wave) adds the Q&A pair's two

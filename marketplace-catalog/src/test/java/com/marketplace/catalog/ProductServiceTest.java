@@ -1,7 +1,9 @@
 package com.marketplace.catalog;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.math.BigDecimal;
 
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -16,6 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 
 /**
  * A-17 (C.7 — the M1 store root): the registration and owner-read
@@ -31,7 +35,21 @@ class ProductServiceTest {
     @Mock
     private ProductRepository productRepository;
     @Mock
+    private ProductVariantRepository productVariantRepository;
+    @Mock
     private StoreCategoryRepository storeCategoryRepository;
+    @Mock
+    private ProductTypeRepository productTypeRepository;
+    @Mock
+    private ProductTypeAttributeAssignmentRepository assignments;
+    @Mock
+    private CatalogAttributeDefinitionRepository definitions;
+    @Mock
+    private CatalogAttributeOptionRepository options;
+    @Mock
+    private ProductAttributeValueRepository attributeValues;
+    @Mock
+    private ProductVariantAttributeValueRepository variantAttributeValues;
     @Mock
     private CurrentUserProvider currentUserProvider;
     @Mock
@@ -42,12 +60,25 @@ class ProductServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ProductService(productRepository, storeCategoryRepository, currentUserProvider);
+        service = new ProductService(productRepository, productVariantRepository, storeCategoryRepository,
+                productTypeRepository, assignments, definitions, options, attributeValues,
+                variantAttributeValues, currentUserProvider);
     }
 
     private ProductService.RegisterProductCommand command(String categoryCode) {
         return new ProductService.RegisterProductCommand(
                 categoryCode, "Espresso machine, 2-cup", "Pump-driven", 149900L, "SAR");
+    }
+
+    private ProductService.RegisterProductCommand typedCommand(String categoryCode, UUID productTypeId) {
+        return new ProductService.RegisterProductCommand(
+                categoryCode, "Espresso machine, 2-cup", "Pump-driven", 149900L, "SAR", productTypeId);
+    }
+
+    private ProductService.RegisterProductCommand typedCommand(String categoryCode, UUID productTypeId,
+                                                               List<CatalogAttributeValueInput> values) {
+        return new ProductService.RegisterProductCommand(
+                categoryCode, "Espresso machine, 2-cup", "Pump-driven", 149900L, "SAR", productTypeId, values);
     }
 
     @Test
@@ -76,6 +107,179 @@ class ProductServiceTest {
     }
 
     @Test
+    void registerCanAttachAnExistingProductType() {
+        UUID productTypeId = UUID.randomUUID();
+        when(storeCategoryRepository.findByCode("home-appliances"))
+                .thenReturn(Optional.of(StoreCategory.register("home-appliances", "Home appliances", "أجهزة منزلية", 0)));
+        when(productTypeRepository.findById(productTypeId)).thenReturn(Optional.of(
+                ProductType.create("home-appliances", "Home appliances", "الأجهزة المنزلية", null)));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+        when(productRepository.save(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Product product = service.register(typedCommand("home-appliances", productTypeId), authentication);
+
+        assertThat(product.getProductTypeId()).isEqualTo(productTypeId);
+    }
+
+    @Test
+    void requiredProductAttributeMustBeSuppliedAndStoredWithItsTypedValue() {
+        UUID productTypeId = UUID.randomUUID();
+        UUID assignmentId = UUID.randomUUID();
+        UUID attributeId = UUID.randomUUID();
+        when(storeCategoryRepository.findByCode("home-appliances"))
+                .thenReturn(Optional.of(StoreCategory.register("home-appliances", "Home appliances", "أجهزة منزلية", 0)));
+        when(productTypeRepository.findById(productTypeId)).thenReturn(Optional.of(
+                ProductType.create("home-appliances", "Home appliances", "الأجهزة المنزلية", null)));
+        ProductTypeAttributeAssignment assignment = ProductTypeAttributeAssignment.create(
+                productTypeId, attributeId, ProductTypeAttributeScope.PRODUCT, true, 0);
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId)).thenReturn(List.of(assignment));
+        when(definitions.findById(attributeId)).thenReturn(Optional.of(
+                CatalogAttributeDefinition.create("material", "Material", "الخامة", CatalogAttributeType.TEXT, null)));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+        when(productRepository.save(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CatalogAttributeValueInput input = new CatalogAttributeValueInput(assignmentId, "Cotton", null, null, null);
+        // The caller must supply the actual assignment ID, not just the definition ID.
+        input = new CatalogAttributeValueInput(assignment.getId(), "Cotton", null, null, null);
+        when(attributeValues.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        Product product = service.register(typedCommand("home-appliances", productTypeId, List.of(input)), authentication);
+
+        assertThat(product.getProductTypeId()).isEqualTo(productTypeId);
+        verify(attributeValues).saveAll(any());
+    }
+
+    @Test
+    void mismatchedTypedValueIsRejectedBeforeProductWrite() {
+        UUID productTypeId = UUID.randomUUID();
+        UUID attributeId = UUID.randomUUID();
+        when(storeCategoryRepository.findByCode("home-appliances"))
+                .thenReturn(Optional.of(StoreCategory.register("home-appliances", "Home appliances", "أجهزة منزلية", 0)));
+        when(productTypeRepository.findById(productTypeId)).thenReturn(Optional.of(
+                ProductType.create("home-appliances", "Home appliances", "الأجهزة المنزلية", null)));
+        ProductTypeAttributeAssignment assignment = ProductTypeAttributeAssignment.create(
+                productTypeId, attributeId, ProductTypeAttributeScope.PRODUCT, false, 0);
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId)).thenReturn(List.of(assignment));
+        when(definitions.findById(attributeId)).thenReturn(Optional.of(
+                CatalogAttributeDefinition.create("weight", "Weight", "الوزن", CatalogAttributeType.NUMBER, null)));
+        CatalogAttributeValueInput wrongType = new CatalogAttributeValueInput(assignment.getId(), "heavy", null, null, null);
+
+        assertThatThrownBy(() -> service.register(typedCommand("home-appliances", productTypeId, List.of(wrongType)), authentication))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("does not match");
+        verify(productRepository, never()).save(any(Product.class));
+    }
+
+    @Test
+    void registerRejectsUnknownProductTypeBeforeProductWrite() {
+        UUID unknownType = UUID.randomUUID();
+        when(storeCategoryRepository.findByCode("home-appliances"))
+                .thenReturn(Optional.of(StoreCategory.register("home-appliances", "Home appliances", "أجهزة منزلية", 0)));
+        when(productTypeRepository.findById(unknownType)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.register(typedCommand("home-appliances", unknownType), authentication))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("ProductType");
+        org.mockito.Mockito.verify(productRepository, org.mockito.Mockito.never()).save(any(Product.class));
+    }
+
+    @Test
+    void typedDraftCannotPublishWhenARequiredProductAttributeIsMissing() {
+        UUID productTypeId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID attributeId = UUID.randomUUID();
+        Product draft = Product.register("home-appliances", "Typed draft", null, 100L, "SAR", caller, productTypeId);
+        ProductTypeAttributeAssignment required = ProductTypeAttributeAssignment.create(
+                productTypeId, attributeId, ProductTypeAttributeScope.PRODUCT, true, 0);
+        when(productRepository.findById(productId)).thenReturn(Optional.of(draft));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+        when(attributeValues.findAllByProductIdOrderByAssignmentIdAsc(productId)).thenReturn(List.of());
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId)).thenReturn(List.of(required));
+
+        assertThatThrownBy(() -> service.publishOwnedProduct(productId, authentication))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("Required product attribute assignment is missing");
+        verify(productRepository, never()).save(any(Product.class));
+    }
+
+    @Test
+    void typedDraftCannotPublishBeforeASelectableVariantExists() {
+        UUID productTypeId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID attributeId = UUID.randomUUID();
+        Product draft = Product.register("home-appliances", "Typed draft", null, 100L, "SAR", caller, productTypeId);
+        ProductTypeAttributeAssignment selection = ProductTypeAttributeAssignment.create(
+                productTypeId, attributeId, ProductTypeAttributeScope.VARIANT_SELECTION, true, 0);
+        when(productRepository.findById(productId)).thenReturn(Optional.of(draft));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+        when(attributeValues.findAllByProductIdOrderByAssignmentIdAsc(productId)).thenReturn(List.of());
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId))
+                .thenReturn(List.of(selection));
+        when(productVariantRepository.findByProductIdOrderBySkuAsc(productId)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.publishOwnedProduct(productId, authentication))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("requires at least one active typed variant");
+        verify(productRepository, never()).save(any(Product.class));
+    }
+
+    @Test
+    void typedDraftCannotPublishWhenAnActiveVariantMissesTheCurrentSelectionSchema() {
+        // The C1 review's Major finding, closed at the gate: the admin adds a
+        // required VARIANT_SELECTION assignment AFTER the variant's creation —
+        // the variant stays active with its stale combination key, and the
+        // publication must refuse (never publish a variant violating the
+        // current schema).
+        UUID productTypeId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID attributeId = UUID.randomUUID();
+        Product draft = Product.register("home-appliances", "Typed draft", null, 100L, "SAR", caller, productTypeId);
+        ProductTypeAttributeAssignment lateSelection = ProductTypeAttributeAssignment.create(
+                productTypeId, attributeId, ProductTypeAttributeScope.VARIANT_SELECTION, true, 0);
+        ProductVariant staleVariant = ProductVariant.register(draft, "SKU-STALE", "Old shape", 100L,
+                "cafebabe"); // active, non-null key, but its values never covered the late assignment
+        when(productRepository.findById(productId)).thenReturn(Optional.of(draft));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+        when(attributeValues.findAllByProductIdOrderByAssignmentIdAsc(productId)).thenReturn(List.of());
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId))
+                .thenReturn(List.of(lateSelection));
+        when(productVariantRepository.findByProductIdOrderBySkuAsc(productId))
+                .thenReturn(List.of(staleVariant));
+        when(variantAttributeValues.findAllByProductVariantIdOrderByAssignmentIdAsc(staleVariant.getId()))
+                .thenReturn(List.of()); // nothing covers the late assignment
+
+        assertThatThrownBy(() -> service.publishOwnedProduct(productId, authentication))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("does not satisfy the product type's current variant-selection schema");
+        verify(productRepository, never()).save(any(Product.class));
+    }
+
+    @Test
+    void typedDraftPublishesWhenEveryActiveVariantCoversTheCurrentSelectionSchema() {
+        UUID productTypeId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID attributeId = UUID.randomUUID();
+        Product draft = Product.register("home-appliances", "Typed draft", null, 100L, "SAR", caller, productTypeId);
+        ProductTypeAttributeAssignment selection = ProductTypeAttributeAssignment.create(
+                productTypeId, attributeId, ProductTypeAttributeScope.VARIANT_SELECTION, true, 0);
+        ProductVariant goodVariant = ProductVariant.register(draft, "SKU-GOOD", "Current shape", 100L,
+                "deadbeef");
+        when(productRepository.findById(productId)).thenReturn(Optional.of(draft));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+        when(attributeValues.findAllByProductIdOrderByAssignmentIdAsc(productId)).thenReturn(List.of());
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId))
+                .thenReturn(List.of(selection));
+        when(productVariantRepository.findByProductIdOrderBySkuAsc(productId))
+                .thenReturn(List.of(goodVariant));
+        when(variantAttributeValues.findAllByProductVariantIdOrderByAssignmentIdAsc(goodVariant.getId()))
+                .thenReturn(List.of(ProductVariantAttributeValue.create(goodVariant.getId(),
+                        new CatalogAttributeValueInput(selection.getId(), null, null, null, UUID.randomUUID()))));
+
+        service.publishOwnedProduct(productId, authentication);
+
+        verify(productRepository).save(any(Product.class));
+    }
+
+    @Test
     void ownerReadReturnsTheProductToStrangerNothing() {
         UUID productId = UUID.randomUUID();
         Product owned = Product.register("home-appliances", "t", null, 1L, "SAR", caller);
@@ -95,5 +299,46 @@ class ProductServiceTest {
         assertThatThrownBy(() -> service.getOwnedProduct(productId, authentication))
                 .as("existence itself is private (the R5 posture)")
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void ownedListReadsTheCallersOwnShelf() {
+        Product owned = Product.register("home-appliances", "t", null, 1L, "SAR", caller);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+        when(productRepository.findByProviderId(caller)).thenReturn(List.of(owned));
+
+        assertThat(service.listOwnedProducts(authentication)).containsExactly(owned);
+    }
+
+    @Test
+    void ownedUpdateEditsTheDetailsAndSaves() {
+        UUID productId = UUID.randomUUID();
+        Product owned = Product.register("home-appliances", "old title", null, 1L, "SAR", caller);
+        when(productRepository.findById(productId)).thenReturn(Optional.of(owned));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+        when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Product updated = service.updateOwnedProduct(productId,
+                new ProductService.UpdateProductCommand("new title", "desc", 2500L), authentication);
+        assertThat(updated.getTitle()).isEqualTo("new title");
+        assertThat(updated.getPriceMinor()).isEqualTo(2500L);
+        verify(productRepository).save(owned);
+    }
+
+    @Test
+    void ownedAttributeReadMapsTheStoredTypedValues() {
+        UUID productId = UUID.randomUUID();
+        Product owned = Product.register("home-appliances", "t", null, 1L, "SAR", caller);
+        when(productRepository.findById(productId)).thenReturn(Optional.of(owned));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+        UUID assignmentId = UUID.randomUUID();
+        ProductAttributeValue stored = ProductAttributeValue.create(productId,
+                new CatalogAttributeValueInput(assignmentId, "red", null, null, null));
+        when(attributeValues.findAllByProductIdOrderByAssignmentIdAsc(productId)).thenReturn(List.of(stored));
+
+        List<CatalogAttributeValueInput> read = service.listOwnedAttributeValues(productId, authentication);
+        assertThat(read).hasSize(1);
+        assertThat(read.get(0).assignmentId()).isEqualTo(assignmentId);
+        assertThat(read.get(0).textValue()).isEqualTo("red");
     }
 }

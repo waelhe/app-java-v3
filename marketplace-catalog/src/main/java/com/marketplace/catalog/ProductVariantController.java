@@ -60,7 +60,7 @@ public class ProductVariantController {
                                                     Authentication authentication) {
         ProductVariant variant = variantService.register(productId,
                 new ProductVariantService.RegisterVariantCommand(
-                        request.sku(), request.name(), request.priceMinor()), authentication);
+                        request.sku(), request.name(), request.priceMinor(), request.attributeValues()), authentication);
         return ResponseEntity.status(HttpStatus.CREATED).body(VariantResponse.of(variant));
     }
 
@@ -74,6 +74,15 @@ public class ProductVariantController {
                                                                Authentication authentication) {
         return ResponseEntity.ok(variantService.listOwnedByProduct(productId, authentication)
                 .stream().map(VariantResponse::of).toList());
+    }
+
+    /** Read back the persisted typed values for an owned variant. */
+    @GetMapping("/variants/{id}/attributes")
+    @PreAuthorize("hasRole('PROVIDER') or hasRole('ADMIN')")
+    @Operation(summary = "Read a variant's typed attribute values")
+    public ResponseEntity<List<CatalogAttributeValueInput>> listAttributes(@PathVariable UUID id,
+            Authentication authentication) {
+        return ResponseEntity.ok(variantService.listOwnedAttributeValues(id, authentication));
     }
 
     /** The owner's read — a stranger's read answers the honest 404. */
@@ -134,8 +143,16 @@ public class ProductVariantController {
             @Size(max = 200) String name,
             @Schema(description = "The variant's authoritative unit price in minor units",
                     example = "149900")
-            @NotNull @Min(0) Long priceMinor
+            @NotNull @Min(0) Long priceMinor,
+            @Schema(description = "Typed VARIANT and VARIANT_SELECTION values. Selection options must form a unique combination for this product.", nullable = true)
+            List<CatalogAttributeValueInput> attributeValues
     ) {
+        public RegisterVariantRequest {
+            attributeValues = attributeValues == null ? List.of() : List.copyOf(attributeValues);
+        }
+        public RegisterVariantRequest(String sku, String name, Long priceMinor) {
+            this(sku, name, priceMinor, List.of());
+        }
     }
 
     /** The shelf write's contract (the {@code SetStockRequest} twin). */
@@ -156,13 +173,20 @@ public class ProductVariantController {
             UUID providerId,
             int stockQuantity,
             int reservedQuantity,
-            ProductStatus status
+            ProductStatus status,
+            String optionCombinationKey
     ) {
+        public VariantResponse(UUID id, UUID productId, String sku, String name, long priceMinor,
+                               String currency, UUID providerId, int stockQuantity,
+                               int reservedQuantity, ProductStatus status) {
+            this(id, productId, sku, name, priceMinor, currency, providerId, stockQuantity,
+                    reservedQuantity, status, null);
+        }
         static VariantResponse of(ProductVariant variant) {
             return new VariantResponse(variant.getId(), variant.getProductId(), variant.getSku(),
                     variant.getName(), variant.getPriceMinor(), variant.getCurrency(),
                     variant.getProviderId(), variant.getStockQuantity(),
-                    variant.getReservedQuantity(), variant.getStatus());
+                    variant.getReservedQuantity(), variant.getStatus(), variant.getOptionCombinationKey());
         }
     }
 }

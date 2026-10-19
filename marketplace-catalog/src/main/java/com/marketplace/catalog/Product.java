@@ -47,6 +47,10 @@ public class Product extends BaseEntity {
     @Column(name = "store_category_code", nullable = false, length = 50)
     private String storeCategoryCode;
 
+    /** Optional reusable goods schema; null keeps pre-C1 and zero-variant products compatible. */
+    @Column(name = "product_type_id")
+    private UUID productTypeId;
+
     /** The product's display title. */
     @Column(name = "title", nullable = false, length = 200)
     private String title;
@@ -89,13 +93,13 @@ public class Product extends BaseEntity {
      */
     @Enumerated(EnumType.STRING)
     @Column(name = "product_status", nullable = false, length = 16)
-    private ProductStatus status = ProductStatus.ACTIVE;
+    private StoreProductStatus status = StoreProductStatus.ACTIVE;
 
     protected Product() {
     }
 
     private Product(UUID id, String storeCategoryCode, String title, String description,
-                    long priceMinor, String currency, UUID providerId) {
+                    long priceMinor, String currency, UUID providerId, UUID productTypeId) {
         this.id = id;
         this.storeCategoryCode = storeCategoryCode;
         this.title = title;
@@ -103,9 +107,10 @@ public class Product extends BaseEntity {
         this.priceMinor = priceMinor;
         this.currency = currency;
         this.providerId = providerId;
+        this.productTypeId = productTypeId;
         this.stockQuantity = 0;
         this.reservedQuantity = 0;
-        this.status = ProductStatus.ACTIVE;
+        this.status = productTypeId == null ? StoreProductStatus.ACTIVE : StoreProductStatus.DRAFT;
     }
 
     /**
@@ -115,8 +120,14 @@ public class Product extends BaseEntity {
      */
     public static Product register(String storeCategoryCode, String title, String description,
                                    long priceMinor, String currency, UUID providerId) {
+        return register(storeCategoryCode, title, description, priceMinor, currency, providerId, null);
+    }
+
+    /** C1: attaches a reusable goods schema without forcing it onto legacy products. */
+    public static Product register(String storeCategoryCode, String title, String description,
+                                   long priceMinor, String currency, UUID providerId, UUID productTypeId) {
         return new Product(UUID.randomUUID(), storeCategoryCode, title, description,
-                priceMinor, currency, providerId);
+                priceMinor, currency, providerId, productTypeId);
     }
 
     public UUID getId() {
@@ -125,6 +136,10 @@ public class Product extends BaseEntity {
 
     public String getStoreCategoryCode() {
         return storeCategoryCode;
+    }
+
+    public UUID getProductTypeId() {
+        return productTypeId;
     }
 
     public String getTitle() {
@@ -155,8 +170,35 @@ public class Product extends BaseEntity {
         return reservedQuantity;
     }
 
-    public ProductStatus getStatus() {
+    public StoreProductStatus getStatus() {
         return status;
+    }
+
+    /** Updates editable product details without changing the frozen order snapshots. */
+    public void updateDetails(String title, String description, long priceMinor) {
+        if (status == StoreProductStatus.ARCHIVED) {
+            throw new IllegalStateException("Archived products are terminal and cannot be edited");
+        }
+        if (title == null || title.isBlank() || title.length() > 200) {
+            throw new IllegalArgumentException("title must be non-blank and at most 200 characters");
+        }
+        if (description != null && description.length() > 2000) {
+            throw new IllegalArgumentException("description must be at most 2000 characters");
+        }
+        if (priceMinor < 0) {
+            throw new IllegalArgumentException("priceMinor must be non-negative");
+        }
+        this.title = title;
+        this.description = description;
+        this.priceMinor = priceMinor;
+    }
+
+    /** Publishes only a typed C1 draft; legacy products keep their historical ACTIVE-on-register path. */
+    public void publish() {
+        if (status != StoreProductStatus.DRAFT) {
+            throw new IllegalStateException("Only a DRAFT product can be published (current status: " + status + ")");
+        }
+        this.status = StoreProductStatus.ACTIVE;
     }
 
     /**
@@ -175,24 +217,24 @@ public class Product extends BaseEntity {
 
     /** The lifecycle writes — the guarded transitions (the service gates ownership). */
     public void suspend() {
-        requireTransition(ProductStatus.SUSPENDED);
-        this.status = ProductStatus.SUSPENDED;
+        requireTransition(StoreProductStatus.SUSPENDED);
+        this.status = StoreProductStatus.SUSPENDED;
     }
 
     public void reactivate() {
-        requireTransition(ProductStatus.ACTIVE);
-        this.status = ProductStatus.ACTIVE;
+        requireTransition(StoreProductStatus.ACTIVE);
+        this.status = StoreProductStatus.ACTIVE;
     }
 
     public void archive() {
-        if (status == ProductStatus.ARCHIVED) {
+        if (status == StoreProductStatus.ARCHIVED) {
             throw new IllegalStateException("Product " + id + " is already ARCHIVED (terminal)");
         }
-        this.status = ProductStatus.ARCHIVED;
+        this.status = StoreProductStatus.ARCHIVED;
     }
 
-    private void requireTransition(ProductStatus target) {
-        if (status == ProductStatus.ARCHIVED) {
+    private void requireTransition(StoreProductStatus target) {
+        if (status == StoreProductStatus.ARCHIVED) {
             throw new IllegalStateException("Product " + id + " is ARCHIVED (terminal) — no transition out");
         }
         if (status == target) {

@@ -58,9 +58,13 @@ public class ProductVariant extends BaseEntity {
     @Column(name = "sku", nullable = false, length = 100)
     private String sku;
 
-    /** The option's display name (e.g. «Large / Red») — the ADR's free-form first step. */
+    /** The option's display name (e.g. «Large / Red») — retained for legacy and display. */
     @Column(name = "name", length = 200)
     private String name;
+
+    /** SHA-256 of the sorted server-derived selection assignment/option pairs; null for legacy free-form variants. */
+    @Column(name = "option_combination_key", length = 64)
+    private String optionCombinationKey;
 
     /** The variant's authoritative unit price in minor units (the ADR's decision 4). */
     @Column(name = "price_minor", nullable = false)
@@ -87,12 +91,13 @@ public class ProductVariant extends BaseEntity {
     }
 
     private ProductVariant(UUID id, UUID productId, UUID providerId, String sku, String name,
-                           long priceMinor, String currency) {
+                           long priceMinor, String currency, String optionCombinationKey) {
         this.id = id;
         this.productId = productId;
         this.providerId = providerId;
         this.sku = sku;
         this.name = name;
+        this.optionCombinationKey = optionCombinationKey;
         this.priceMinor = priceMinor;
         this.currency = currency;
         this.stockQuantity = 0;
@@ -108,8 +113,14 @@ public class ProductVariant extends BaseEntity {
      * {@code ProductInventoryService.setStock} twin).
      */
     public static ProductVariant register(Product product, String sku, String name, long priceMinor) {
+        return register(product, sku, name, priceMinor, null);
+    }
+
+    /** Registers a typed variant using the catalog service's canonical combination key. */
+    public static ProductVariant register(Product product, String sku, String name, long priceMinor,
+                                          String optionCombinationKey) {
         return new ProductVariant(UUID.randomUUID(), product.getId(), product.getProviderId(),
-                sku, name, priceMinor, product.getCurrency());
+                sku, name, priceMinor, product.getCurrency(), optionCombinationKey);
     }
 
     public UUID getId() {
@@ -130,6 +141,10 @@ public class ProductVariant extends BaseEntity {
 
     public String getName() {
         return name;
+    }
+
+    public String getOptionCombinationKey() {
+        return optionCombinationKey;
     }
 
     public long getPriceMinor() {

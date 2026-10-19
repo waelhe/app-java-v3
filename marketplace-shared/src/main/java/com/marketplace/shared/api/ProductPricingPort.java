@@ -98,6 +98,8 @@ public interface ProductPricingPort {
      * archived states are the buyer-invisible surfaces of the same rule.
      */
     enum StorefrontState {
+        DRAFT,
+        VARIANT_SELECTION_REQUIRED,
         ACTIVE,
         SUSPENDED,
         ARCHIVED
