@@ -533,6 +533,36 @@ class ProductVariantJourneyIntegrationTest {
         assertThat(readBack.path("productTypeId").asString()).isEqualTo(productTypeId.toString());
         assertThat(readBack.path("status").asString()).isEqualTo("ACTIVE");
 
+        // An ID is not authorization: a second provider must not read or edit
+        // another seller's product through the GraphQL adapter.
+        String strangerName = "it-graphql-product-stranger-" + UUID.randomUUID().toString().substring(0, 8);
+        registerUser(strangerName, "USER", "PROVIDER");
+        GateResult strangerGate = loginGate(strangerName, PASSWORD);
+        assertThat(getWithBearer("/api/v1/users/me", strangerGate.accessToken()).statusCode()).isEqualTo(200);
+
+        HttpResponse<String> strangerReadResponse = postJson("/graphql", strangerGate.accessToken(), readBody);
+        assertThat(strangerReadResponse.statusCode()).isEqualTo(200);
+        JsonNode strangerReadEnvelope = objectMapper.readTree(strangerReadResponse.body());
+        assertThat(strangerReadEnvelope.path("errors").isArray())
+                .as("a stranger's owned-product read returns a field-level GraphQL error").isTrue();
+        assertThat(strangerReadEnvelope.path("data").path("storeProduct").isNull())
+                .as("a stranger must not receive the other provider's product").isTrue();
+
+        String strangerUpdateBody = objectMapper.writeValueAsString(Map.of(
+                "query", updateQuery,
+                "variables", Map.of(
+                        "id", productId.toString(),
+                        "input", Map.of(
+                                "title", "forged cross-provider edit",
+                                "description", "This update must be denied.",
+                                "priceMinor", "1"))));
+        HttpResponse<String> strangerUpdateResponse =
+                postJson("/graphql", strangerGate.accessToken(), strangerUpdateBody);
+        assertThat(strangerUpdateResponse.statusCode()).isEqualTo(200);
+        JsonNode strangerUpdateEnvelope = objectMapper.readTree(strangerUpdateResponse.body());
+        assertThat(strangerUpdateEnvelope.path("errors").isArray())
+                .as("cross-provider mutation must fail at the owning use case").isTrue();
+
         String listQuery = """
                 query StoreProductRoster {
                   storeProducts(first: 2) {
