@@ -1,7 +1,9 @@
 package com.marketplace.catalog;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.math.BigDecimal;
 
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -16,6 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 
 /**
  * A-17 (C.7 — the M1 store root): the registration and owner-read
@@ -35,6 +39,14 @@ class ProductServiceTest {
     @Mock
     private ProductTypeRepository productTypeRepository;
     @Mock
+    private ProductTypeAttributeAssignmentRepository assignments;
+    @Mock
+    private CatalogAttributeDefinitionRepository definitions;
+    @Mock
+    private CatalogAttributeOptionRepository options;
+    @Mock
+    private ProductAttributeValueRepository attributeValues;
+    @Mock
     private CurrentUserProvider currentUserProvider;
     @Mock
     private Authentication authentication;
@@ -44,7 +56,8 @@ class ProductServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ProductService(productRepository, storeCategoryRepository, productTypeRepository, currentUserProvider);
+        service = new ProductService(productRepository, storeCategoryRepository, productTypeRepository,
+                assignments, definitions, options, attributeValues, currentUserProvider);
     }
 
     private ProductService.RegisterProductCommand command(String categoryCode) {
@@ -55,6 +68,12 @@ class ProductServiceTest {
     private ProductService.RegisterProductCommand typedCommand(String categoryCode, UUID productTypeId) {
         return new ProductService.RegisterProductCommand(
                 categoryCode, "Espresso machine, 2-cup", "Pump-driven", 149900L, "SAR", productTypeId);
+    }
+
+    private ProductService.RegisterProductCommand typedCommand(String categoryCode, UUID productTypeId,
+                                                               List<CatalogAttributeValueInput> values) {
+        return new ProductService.RegisterProductCommand(
+                categoryCode, "Espresso machine, 2-cup", "Pump-driven", 149900L, "SAR", productTypeId, values);
     }
 
     @Test
@@ -95,6 +114,54 @@ class ProductServiceTest {
         Product product = service.register(typedCommand("home-appliances", productTypeId), authentication);
 
         assertThat(product.getProductTypeId()).isEqualTo(productTypeId);
+    }
+
+    @Test
+    void requiredProductAttributeMustBeSuppliedAndStoredWithItsTypedValue() {
+        UUID productTypeId = UUID.randomUUID();
+        UUID assignmentId = UUID.randomUUID();
+        UUID attributeId = UUID.randomUUID();
+        when(storeCategoryRepository.findByCode("home-appliances"))
+                .thenReturn(Optional.of(StoreCategory.register("home-appliances", "Home appliances", "أجهزة منزلية", 0)));
+        when(productTypeRepository.findById(productTypeId)).thenReturn(Optional.of(
+                ProductType.create("home-appliances", "Home appliances", "الأجهزة المنزلية", null)));
+        ProductTypeAttributeAssignment assignment = ProductTypeAttributeAssignment.create(
+                productTypeId, attributeId, ProductTypeAttributeScope.PRODUCT, true, 0);
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId)).thenReturn(List.of(assignment));
+        when(definitions.findById(attributeId)).thenReturn(Optional.of(
+                CatalogAttributeDefinition.create("material", "Material", "الخامة", CatalogAttributeType.TEXT, null)));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+        when(productRepository.save(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CatalogAttributeValueInput input = new CatalogAttributeValueInput(assignmentId, "Cotton", null, null, null);
+        // The caller must supply the actual assignment ID, not just the definition ID.
+        input = new CatalogAttributeValueInput(assignment.getId(), "Cotton", null, null, null);
+        when(attributeValues.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        Product product = service.register(typedCommand("home-appliances", productTypeId, List.of(input)), authentication);
+
+        assertThat(product.getProductTypeId()).isEqualTo(productTypeId);
+        verify(attributeValues).saveAll(any());
+    }
+
+    @Test
+    void mismatchedTypedValueIsRejectedBeforeProductWrite() {
+        UUID productTypeId = UUID.randomUUID();
+        UUID attributeId = UUID.randomUUID();
+        when(storeCategoryRepository.findByCode("home-appliances"))
+                .thenReturn(Optional.of(StoreCategory.register("home-appliances", "Home appliances", "أجهزة منزلية", 0)));
+        when(productTypeRepository.findById(productTypeId)).thenReturn(Optional.of(
+                ProductType.create("home-appliances", "Home appliances", "الأجهزة المنزلية", null)));
+        ProductTypeAttributeAssignment assignment = ProductTypeAttributeAssignment.create(
+                productTypeId, attributeId, ProductTypeAttributeScope.PRODUCT, false, 0);
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId)).thenReturn(List.of(assignment));
+        when(definitions.findById(attributeId)).thenReturn(Optional.of(
+                CatalogAttributeDefinition.create("weight", "Weight", "الوزن", CatalogAttributeType.NUMBER, null)));
+        CatalogAttributeValueInput wrongType = new CatalogAttributeValueInput(assignment.getId(), "heavy", null, null, null);
+
+        assertThatThrownBy(() -> service.register(typedCommand("home-appliances", productTypeId, List.of(wrongType)), authentication))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("does not match");
+        verify(productRepository, never()).save(any(Product.class));
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.marketplace.catalog;
 
+import java.util.List;
 import java.util.UUID;
 
 import com.marketplace.shared.api.ApiConstants;
@@ -53,7 +54,7 @@ public class ProductController {
             @Valid @RequestBody RegisterProductRequest request, Authentication authentication) {
         Product product = productService.register(new ProductService.RegisterProductCommand(
                 request.storeCategoryCode(), request.title(), request.description(),
-                request.priceMinor(), request.currency(), request.productTypeId()), authentication);
+                request.priceMinor(), request.currency(), request.productTypeId(), request.attributeValues()), authentication);
         return ResponseEntity.status(HttpStatus.CREATED).body(ProductResponse.of(product));
     }
 
@@ -85,12 +86,21 @@ public class ProductController {
             @Schema(description = "ISO-4217 currency code", example = "SAR")
             @NotBlank @Size(min = 3, max = 3) String currency,
             @Schema(description = "Optional reusable goods ProductType ID; omit to preserve the legacy untyped path", nullable = true)
-            UUID productTypeId
+            UUID productTypeId,
+            @Schema(description = "Typed PRODUCT-scope values. Each item names an assignmentId and one value field.", nullable = true)
+            List<CatalogAttributeValueInput> attributeValues
     ) {
-        /** Existing clients and direct test callers can continue to use the five-field constructor. */
+        public RegisterProductRequest {
+            attributeValues = attributeValues == null ? List.of() : List.copyOf(attributeValues);
+        }
+        /** Existing clients and direct callers can continue to use pre-C1 constructors. */
         public RegisterProductRequest(String storeCategoryCode, String title, String description,
                                       Long priceMinor, String currency) {
-            this(storeCategoryCode, title, description, priceMinor, currency, null);
+            this(storeCategoryCode, title, description, priceMinor, currency, null, List.of());
+        }
+        public RegisterProductRequest(String storeCategoryCode, String title, String description,
+                                      Long priceMinor, String currency, UUID productTypeId) {
+            this(storeCategoryCode, title, description, priceMinor, currency, productTypeId, List.of());
         }
     }
 
