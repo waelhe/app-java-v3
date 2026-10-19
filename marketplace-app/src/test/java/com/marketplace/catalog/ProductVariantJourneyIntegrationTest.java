@@ -585,6 +585,229 @@ class ProductVariantJourneyIntegrationTest {
                 .contains(productTypeId.toString());
     }
 
+    @Test
+    void theGraphQlTypedAttributeAndVariantJourneyEnforcesRequiredValuesAndUniqueSelections() throws Exception {
+        String sellerName = "it-graphql-typed-seller-" + UUID.randomUUID().toString().substring(0, 8);
+        registerUser(sellerName, "USER", "PROVIDER");
+        GateResult sellerGate = loginGate(sellerName, PASSWORD);
+        assertThat(getWithBearer("/api/v1/users/me", sellerGate.accessToken()).statusCode()).isEqualTo(200);
+
+        UUID productTypeId = UUID.randomUUID();
+        UUID materialDefinitionId = UUID.randomUUID();
+        UUID colorDefinitionId = UUID.randomUUID();
+        UUID materialAssignmentId = UUID.randomUUID();
+        UUID colorAssignmentId = UUID.randomUUID();
+        UUID redOptionId = UUID.randomUUID();
+        UUID blueOptionId = UUID.randomUUID();
+        String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 10);
+
+        jdbcTemplate.update(
+                "INSERT INTO product_types (id, code, name_en, name_ar) VALUES (?, ?, ?, ?)",
+                productTypeId, "graphql-typed-" + suffix, "GraphQL typed goods", "سلع GraphQL معرفة");
+        jdbcTemplate.update(
+                "INSERT INTO catalog_attribute_definitions (id, code, name_en, name_ar, value_type) "
+                        + "VALUES (?, ?, ?, ?, 'TEXT')",
+                materialDefinitionId, "graphql-material-" + suffix, "Material", "الخامة");
+        jdbcTemplate.update(
+                "INSERT INTO catalog_attribute_definitions (id, code, name_en, name_ar, value_type) "
+                        + "VALUES (?, ?, ?, ?, 'CHOICE')",
+                colorDefinitionId, "graphql-color-" + suffix, "Color", "اللون");
+        jdbcTemplate.update(
+                "INSERT INTO catalog_attribute_options "
+                        + "(id, attribute_definition_id, code, name_en, name_ar, position) VALUES (?, ?, ?, ?, ?, ?)",
+                redOptionId, colorDefinitionId, "red", "Red", "أحمر", 0);
+        jdbcTemplate.update(
+                "INSERT INTO catalog_attribute_options "
+                        + "(id, attribute_definition_id, code, name_en, name_ar, position) VALUES (?, ?, ?, ?, ?, ?)",
+                blueOptionId, colorDefinitionId, "blue", "Blue", "أزرق", 1);
+        jdbcTemplate.update(
+                "INSERT INTO product_type_attribute_assignments "
+                        + "(id, product_type_id, attribute_definition_id, scope, is_required, position) "
+                        + "VALUES (?, ?, ?, 'PRODUCT', TRUE, 0)",
+                materialAssignmentId, productTypeId, materialDefinitionId);
+        jdbcTemplate.update(
+                "INSERT INTO product_type_attribute_assignments "
+                        + "(id, product_type_id, attribute_definition_id, scope, is_required, position) "
+                        + "VALUES (?, ?, ?, 'VARIANT_SELECTION', TRUE, 0)",
+                colorAssignmentId, productTypeId, colorDefinitionId);
+
+        String configQuery = """
+                query StoreProductTypes {
+                  storeProductTypes {
+                    id code
+                    attributes {
+                      assignmentId attributeDefinitionId code valueType scope required
+                      options { id code nameEn nameAr position }
+                    }
+                  }
+                }
+                """;
+        HttpResponse<String> configResponse = postJson("/graphql", sellerGate.accessToken(),
+                objectMapper.writeValueAsString(Map.of("query", configQuery)));
+        assertThat(configResponse.statusCode()).isEqualTo(200);
+        JsonNode configEnvelope = objectMapper.readTree(configResponse.body());
+        assertThat(configEnvelope.path("errors").isMissingNode())
+                .as("typed ProductType configuration errors: %s", body(configResponse)).isTrue();
+        JsonNode configuredType = null;
+        for (JsonNode candidate : configEnvelope.path("data").path("storeProductTypes")) {
+            if (productTypeId.toString().equals(candidate.path("id").asString())) {
+                configuredType = candidate;
+                break;
+            }
+        }
+        assertThat(configuredType).isNotNull();
+        assertThat(configuredType.path("attributes").size()).isEqualTo(2);
+        assertThat(configuredType.toString()).contains(materialAssignmentId.toString(), colorAssignmentId.toString(),
+                redOptionId.toString(), blueOptionId.toString());
+
+        String createQuery = """
+                mutation CreateTypedProduct($input: StoreProductCreateInput!) {
+                  createStoreProduct(input: $input) { id status productTypeId }
+                }
+                """;
+        String createBody = objectMapper.writeValueAsString(Map.of(
+                "query", createQuery,
+                "variables", Map.of("input", Map.of(
+                        "storeCategoryCode", "journey-variants",
+                        "title", "GraphQL typed journey " + suffix,
+                        "description", "Required attributes and selectable variants.",
+                        "priceMinor", "19900",
+                        "currency", "SAR",
+                        "productTypeId", productTypeId.toString()))));
+        HttpResponse<String> createResponse = postJson("/graphql", sellerGate.accessToken(), createBody);
+        assertThat(createResponse.statusCode()).isEqualTo(200);
+        JsonNode createEnvelope = objectMapper.readTree(createResponse.body());
+        assertThat(createEnvelope.path("errors").isMissingNode())
+                .as("create typed product errors: %s", body(createResponse)).isTrue();
+        JsonNode createdProduct = createEnvelope.path("data").path("createStoreProduct");
+        UUID productId = UUID.fromString(createdProduct.path("id").asString());
+        assertThat(createdProduct.path("status").asString()).isEqualTo("DRAFT");
+
+        // Save the required PRODUCT-scope value through the GraphQL mutation.
+        String replaceAttributesQuery = """
+                mutation ReplaceProductAttributes($id: ID!, $values: [StoreProductAttributeValueInput!]!) {
+                  replaceStoreProductAttributes(id: $id, values: $values) {
+                    assignmentId textValue numberValue booleanValue optionId
+                  }
+                }
+                """;
+        String replaceAttributesBody = objectMapper.writeValueAsString(Map.of(
+                "query", replaceAttributesQuery,
+                "variables", Map.of(
+                        "id", productId.toString(),
+                        "values", List.of(Map.of(
+                                "assignmentId", materialAssignmentId.toString(),
+                                "textValue", "linen")))));
+        HttpResponse<String> replaceResponse =
+                postJson("/graphql", sellerGate.accessToken(), replaceAttributesBody);
+        assertThat(replaceResponse.statusCode()).isEqualTo(200);
+        JsonNode replaceEnvelope = objectMapper.readTree(replaceResponse.body());
+        assertThat(replaceEnvelope.path("errors").isMissingNode())
+                .as("replace product attributes errors: %s", body(replaceResponse)).isTrue();
+        assertThat(replaceEnvelope.path("data").path("replaceStoreProductAttributes").get(0).path("textValue").asString())
+                .isEqualTo("linen");
+
+        // VARIANT_SELECTION is required and the option must belong to that assignment's CHOICE definition.
+        String createVariantQuery = """
+                mutation CreateTypedVariant($productId: ID!, $input: StoreProductVariantCreateInput!) {
+                  createStoreProductVariant(productId: $productId, input: $input) {
+                    id productId sku priceMinor currency status stockQuantity
+                  }
+                }
+                """;
+        String sku = "GRAPHQL-TYPED-" + suffix.toUpperCase();
+        String createVariantBody = objectMapper.writeValueAsString(Map.of(
+                "query", createVariantQuery,
+                "variables", Map.of(
+                        "productId", productId.toString(),
+                        "input", Map.of(
+                                "sku", sku,
+                                "name", "Red / typed",
+                                "priceMinor", "129900",
+                                "attributeValues", List.of(Map.of(
+                                        "assignmentId", colorAssignmentId.toString(),
+                                        "optionId", redOptionId.toString()))))));
+        HttpResponse<String> variantResponse =
+                postJson("/graphql", sellerGate.accessToken(), createVariantBody);
+        assertThat(variantResponse.statusCode()).isEqualTo(200);
+        JsonNode variantEnvelope = objectMapper.readTree(variantResponse.body());
+        assertThat(variantEnvelope.path("errors").isMissingNode())
+                .as("create typed variant errors: %s", body(variantResponse)).isTrue();
+        JsonNode createdVariant = variantEnvelope.path("data").path("createStoreProductVariant");
+        UUID variantId = UUID.fromString(createdVariant.path("id").asString());
+        assertThat(createdVariant.path("status").asString()).isEqualTo("ACTIVE");
+        assertThat(createdVariant.path("priceMinor").asString()).isEqualTo("129900");
+
+        // The same option combination is not allowed twice, even with a different SKU.
+        String duplicateBody = objectMapper.writeValueAsString(Map.of(
+                "query", createVariantQuery,
+                "variables", Map.of(
+                        "productId", productId.toString(),
+                        "input", Map.of(
+                                "sku", "GRAPHQL-DUPLICATE-" + suffix.toUpperCase(),
+                                "name", "Duplicate red",
+                                "priceMinor", "130000",
+                                "attributeValues", List.of(Map.of(
+                                        "assignmentId", colorAssignmentId.toString(),
+                                        "optionId", redOptionId.toString()))))));
+        HttpResponse<String> duplicateResponse =
+                postJson("/graphql", sellerGate.accessToken(), duplicateBody);
+        assertThat(duplicateResponse.statusCode()).isEqualTo(200);
+        assertThat(objectMapper.readTree(duplicateResponse.body()).path("errors").isArray())
+                .as("duplicate selection must return a classified GraphQL error").isTrue();
+
+        String publishQuery = """
+                mutation PublishTypedProduct($id: ID!) {
+                  publishStoreProduct(id: $id) { id status }
+                }
+                """;
+        HttpResponse<String> publishResponse = postJson("/graphql", sellerGate.accessToken(),
+                objectMapper.writeValueAsString(Map.of(
+                        "query", publishQuery, "variables", Map.of("id", productId.toString()))));
+        assertThat(publishResponse.statusCode()).isEqualTo(200);
+        JsonNode publishEnvelope = objectMapper.readTree(publishResponse.body());
+        assertThat(publishEnvelope.path("errors").isMissingNode())
+                .as("publish typed product errors: %s", body(publishResponse)).isTrue();
+        assertThat(publishEnvelope.path("data").path("publishStoreProduct").path("status").asString())
+                .isEqualTo("ACTIVE");
+
+        String readTypedStateQuery = """
+                query TypedProductReadBack($productId: ID!, $variantId: ID!) {
+                  storeProductAttributeValues(productId: $productId) {
+                    assignmentId textValue numberValue booleanValue optionId
+                  }
+                  storeProductVariants(productId: $productId) {
+                    id sku priceMinor status
+                  }
+                  storeProductVariantAttributeValues(variantId: $variantId) {
+                    assignmentId textValue numberValue booleanValue optionId
+                  }
+                }
+                """;
+        HttpResponse<String> stateResponse = postJson("/graphql", sellerGate.accessToken(),
+                objectMapper.writeValueAsString(Map.of(
+                        "query", readTypedStateQuery,
+                        "variables", Map.of(
+                                "productId", productId.toString(),
+                                "variantId", variantId.toString()))));
+        assertThat(stateResponse.statusCode()).isEqualTo(200);
+        JsonNode stateEnvelope = objectMapper.readTree(stateResponse.body());
+        assertThat(stateEnvelope.path("errors").isMissingNode())
+                .as("typed read-back errors: %s", body(stateResponse)).isTrue();
+        JsonNode productValues = stateEnvelope.path("data").path("storeProductAttributeValues");
+        assertThat(productValues.size()).isEqualTo(1);
+        assertThat(productValues.get(0).path("assignmentId").asString()).isEqualTo(materialAssignmentId.toString());
+        assertThat(productValues.get(0).path("textValue").asString()).isEqualTo("linen");
+        JsonNode variantValues = stateEnvelope.path("data").path("storeProductVariantAttributeValues");
+        assertThat(variantValues.size()).isEqualTo(1);
+        assertThat(variantValues.get(0).path("assignmentId").asString()).isEqualTo(colorAssignmentId.toString());
+        assertThat(variantValues.get(0).path("optionId").asString()).isEqualTo(redOptionId.toString());
+        JsonNode variants = stateEnvelope.path("data").path("storeProductVariants");
+        assertThat(variants.size()).isEqualTo(1);
+        assertThat(variants.get(0).path("sku").asString()).isEqualTo(sku);
+        assertThat(variants.get(0).path("status").asString()).isEqualTo("ACTIVE");
+    }
+
     private TypedProductSchema seedTypedProductSchema() {
         UUID typeId = UUID.randomUUID();
         UUID materialDefinitionId = UUID.randomUUID();
