@@ -30,7 +30,7 @@ The intended result is not a themed demo or a handful of new pages. It is a full
 ### Why this path
 
 - Saleor Dashboard is a real, actively maintained React/TypeScript single-page admin application with thousands of commits, an extensive commerce route surface and an established E2E suite. The selected reproducible baseline is Dashboard 3.23.39 at exact commit bc75e988da0fa4fbc3d47378a888d859d070746f (BSD-3-Clause; Node >=24 and <25; pnpm 11.13.1). It requires a running Saleor instance for normal development. Sources: [pinned repository commit](https://github.com/saleor/saleor-dashboard/commit/bc75e988da0fa4fbc3d47378a888d859d070746f), [pinned package.json](https://github.com/saleor/saleor-dashboard/blob/3.23.39/package.json), and [pinned E2E workflow](https://github.com/saleor/saleor-dashboard/blob/3.23.39/.github/workflows/e2e-local.yml).
-- Its commerce information architecture is materially richer than a new bespoke console: products, product types/attributes, variants, categories, collections, orders, users, shipping, discounts, taxes, translations, staff/permission groups and settings are separate work surfaces. Inspect the [route declarations and permission gates](https://github.com/saleor/saleor-dashboard/blob/main/src/index.tsx).
+- Its commerce information architecture is materially richer than a new bespoke console: products, product types/attributes, variants, categories, collections, orders, users, shipping, discounts, taxes, translations, staff/permission groups and settings are separate work surfaces. Inspect the [route declarations and permission gates](https://github.com/saleor/saleor-dashboard/blob/3.23.39/src/index.tsx).
 - The UI is not a backend-neutral admin framework. It is tightly coupled to Saleor's GraphQL schema, generated types/operations, staff permissions, channel semantics, auth lifecycle and API versioning. It will not work against Spring by changing one URL.
 - Saleor's official guidance says a fork brings non-trivial upgrades and manual security maintenance; its extension/app mechanism assumes access to a Saleor instance and API. Because this platform has no Saleor backend and needs direct control over the whole market UX, a fork is a deliberate, accepted trade-off—not a claim that forking is low-cost. Sources: [extensibility model and fork guidance](https://docs.saleor.io/developer/extending/overview), [Dashboard extension points](https://docs.saleor.io/recipes/extending-dashboard).
 
@@ -46,7 +46,7 @@ Inspection of the upstream package and route entry point shows why this cannot b
 | The route tree guards numerous pages with Saleor's PermissionEnum and uses Saleor page modules | Map routes to platform capabilities and owner domains; do not translate permission names mechanically. Route files need an inventory before deciding which components can remain unchanged. |
 | The official E2E runner starts Saleor in Docker, seeds it, builds a dashboard bundle and exercises it in a browser; main and stable are separate targets | This is valuable test infrastructure, but it cannot prove a Spring-backed journey. Preserve component tests, then add platform contract/E2E suites and replace the upstream E2E target deliberately. |
 
-Evidence: [package.json](https://github.com/saleor/saleor-dashboard/blob/main/package.json), [source route tree](https://github.com/saleor/saleor-dashboard/blob/main/src/index.tsx), and [upstream E2E instructions](https://github.com/saleor/saleor-dashboard#testing).
+Evidence: [package.json](https://github.com/saleor/saleor-dashboard/blob/3.23.39/package.json), [source route tree](https://github.com/saleor/saleor-dashboard/blob/3.23.39/src/index.tsx), and [upstream E2E instructions](https://github.com/saleor/saleor-dashboard#testing).
 
 **Implication:** reusing Saleor's code is still preferable to drawing a weak custom console, but the real reusable asset is the mature admin product surface and its interaction design—not its GraphQL data contracts. The proof-of-fit must measure the number of route files and operations bound to Saleor before committing to the cost of a long-lived full fork. If the first complete listing journey requires invasive changes across most shared core files, stop and compare selective extraction of the shell/components against continued fork maintenance before migrating every route.
 
@@ -382,9 +382,9 @@ A migrated screen is not complete until all applicable conditions pass:
 ## 15. Sources reviewed
 
 - [Saleor Dashboard repository](https://github.com/saleor/saleor-dashboard) — React/TypeScript single-page admin app, prerequisites and E2E context.
-- [Saleor Dashboard package.json](https://github.com/saleor/saleor-dashboard/blob/main/package.json) — version, Node/pnpm requirements, build, type-check and test scripts.
-- [Dashboard route tree](https://github.com/saleor/saleor-dashboard/blob/main/src/index.tsx) — route and permission examples.
-- [Dashboard configuration](https://github.com/saleor/saleor-dashboard/blob/main/docs/configuration.md) — API/schema config and generated schema expectations.
+- [Saleor Dashboard package.json](https://github.com/saleor/saleor-dashboard/blob/3.23.39/package.json) — version, Node/pnpm requirements, build, type-check and test scripts.
+- [Dashboard route tree](https://github.com/saleor/saleor-dashboard/blob/3.23.39/src/index.tsx) — route and permission examples.
+- [Dashboard configuration](https://github.com/saleor/saleor-dashboard/blob/3.23.39/docs/configuration.md) — API/schema config and generated schema expectations.
 - [Official Dashboard extension guide](https://docs.saleor.io/recipes/extending-dashboard) — navigation/detail/list extension points and fork choice.
 - [Official Saleor extensibility model](https://docs.saleor.io/developer/extending/overview) — extension architecture and explicit warning about fork/upgrade/security maintenance.
 - [Products overview](https://docs.saleor.io/developer/products/overview) — product types, variants and merchandising concepts.
@@ -402,7 +402,7 @@ This is an architecture and migration plan only. It does not claim that a Saleor
 
 ## Repository baseline synchronization — 17 October 2026
 
-This proposal is based on the current repository line after GraphQL Phase 5 published the accepted SDL contract and connected Apollo Kotlin code generation on Android. That repository baseline does not change the architectural boundary: Spring remains the sole business-data and command authority, and the Saleor-derived dashboard remains a proposed independent admin frontend until a pinned upstream build and a complete goods-listing journey have passed the proof-of-fit gates above.
+This proposal was synchronized against the platform repository at main SHA 72ebec6319f51f13ecaf5c24aa6566b5b6457ea7 on 19 October 2026, with concurrent PR status captured separately in [the evidence audit](../../research/saleor-dashboard-baseline-and-open-pr-audit.md). The Dashboard baseline is the Dashboard repository's own latest release at the evidence date, 3.23.39—not the separate Saleor Core release numbering. Spring remains the sole business-data and command authority, and the Dashboard remains a proposed independent admin frontend until the pinned upstream build/E2E and complete Spring-backed goods journey have passed the proof-of-fit gates.
 
 
 ## Baseline evidence refresh — 19 October 2026
