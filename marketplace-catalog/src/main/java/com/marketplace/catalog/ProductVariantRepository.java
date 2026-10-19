@@ -55,6 +55,9 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
     /** The product's live roster (the owner's list surface — the V219 partial index's read). */
     List<ProductVariant> findByProductIdOrderBySkuAsc(UUID productId);
 
+    /** Friendly precheck for the database-unique canonical typed option combination. */
+    boolean existsByProductIdAndOptionCombinationKey(UUID productId, String optionCombinationKey);
+
     /**
      * Reserves {@code qty} units of an ACTIVE variant whose free stock
      * covers it — the placement's write (the cart-integration slice).
