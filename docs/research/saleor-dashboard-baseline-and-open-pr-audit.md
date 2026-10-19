@@ -6,7 +6,7 @@
 
 ## 1. Decision summary
 
-The plan can now pin a reproducible upstream Dashboard source and identify a concrete first-slice API gap. It cannot yet be designated a fully proven final implementation plan: the unmodified Dashboard end-to-end suite has not been run and evidenced against a disposable Saleor instance at the pin, the first Spring-backed product-administration journey does not yet have all required backend contracts, and several concurrent PRs still await the required CI completion and/or current-base reconciliation.
+The plan now pins a reproducible upstream Dashboard source and identifies the first-slice API gaps. The unmodified Saleor Dashboard E2E baseline has passed against a disposable Saleor instance at the exact pin (run [39190394506, job 117861701008](https://github.com/waelhe/app-java-v3/actions/runs/39190394506/job/117861701008)). This closes only the upstream baseline gate; it does not prove compatibility with Spring. The separate Spring-backed catalog browser journey, current-base reconciliation, full CI and fork GO/NO-GO evidence remain outstanding.
 
 Evidence states must not be conflated:
 - **Source inspected** means the linked source revision was fetched and examined.
@@ -32,7 +32,7 @@ Evidence states must not be conflated:
 
 The commit-linked workflow records for the pinned revision included successful runs named Testing, Check Licenses, Knip, MacawUI migration, CodeQL Advanced, QA, and Changesets. A separate PR cleanup workflow was reported failed; that housekeeping failure must not be represented as a completely green set of all upstream workflows.
 
-The E2E local-stack workflow is a separate Docker-backed run. This audit did **not** execute that workflow or obtain a successful run artifact proving the unmodified tag passes E2E against disposable Saleor. Therefore the unmodified end-to-end baseline gate remains **BLOCKING / NOT PROVEN**. A successful type-check or unit-test workflow does not close it.
+The E2E local-stack workflow is distinct from regular CI. The pinned upstream E2E suite passed against disposable Saleor in [run 39190394506, job 117861701008](https://github.com/waelhe/app-java-v3/actions/runs/39190394506/job/117861701008), including the original stable-target Playwright suite, report upload and teardown. The upstream baseline gate is therefore **PASSED at the pinned source**. This result is not evidence that custom platform GraphQL operations or the Spring-backed UI journey work.
 
 ### Version identity check
 
@@ -115,7 +115,7 @@ This section is a time-bounded snapshot fetched from GitHub pull-request metadat
 - #654 is higher risk than a test-only PR: its head changes the production Order entity and adds Flyway V235. Validate that change against the accepted #604/#607 delivery/order baseline, migration ordering/checksums, compatibility, and the final merged base before it is treated as current. #656 also changes production `PushTokenService` and requires its own semantic review.
 - PR #652 is reported `merged=true`; do not count it as open or reapply its work. Its merged code may be treated as repository history, but resulting behavior still needs the relevant current tests and environment proof.
 - For the #664 head recorded in this snapshot (`1098afea`), Snyk and CodeRabbit were successful; Integration Test, Container Scan, and CodeQL were successful; CI was queued. Later documentation refreshes advanced the branch head, so these results **do not apply to a newer SHA**. Before any merge decision, fetch the live PR head and confirm its own workflow runs and status contexts; a queued workflow is not a pass.
-- The open test PRs prove neither client-side Dashboard completion nor production behavior. The unmodified Saleor Dashboard E2E suite against disposable Saleor has not been evidenced as passing, and the Spring-backed Playwright create/edit/publish/read-back journey has not been executed. C1 ProductType/attribute/typed-option contracts remain a blocking implementation dependency. No merge or deployment is authorized by this audit.
+- The upstream baseline is evidenced as passing in [run 39190394506, job 117861701008](https://github.com/waelhe/app-java-v3/actions/runs/39190394506/job/117861701008). The open platform PRs do not prove production behavior or the separate Spring-backed Playwright create/edit/publish/read-back journey, which remains unproven until its protected workflow passes. C1 ProductType/attribute/typed-option contracts and current PR/base reconciliation remain merge gates. No merge or deployment is authorized by this audit.
 
 Recheck the linked live pull requests before acting: [#649](https://github.com/waelhe/app-java-v3/pull/649), [#651](https://github.com/waelhe/app-java-v3/pull/651), [#653](https://github.com/waelhe/app-java-v3/pull/653), [#654](https://github.com/waelhe/app-java-v3/pull/654), [#655](https://github.com/waelhe/app-java-v3/pull/655), [#656](https://github.com/waelhe/app-java-v3/pull/656), [#657](https://github.com/waelhe/app-java-v3/pull/657), [#658](https://github.com/waelhe/app-java-v3/pull/658), and [#664](https://github.com/waelhe/app-java-v3/pull/664).
 
@@ -145,9 +145,9 @@ After completing the first Spring-backed goods journey, record measured results 
 
 Not completed by this audit:
 - No local Maven build, platform integration suite, browser Playwright test, disposable Saleor launch, or production smoke test was executed.
-- No successful unmodified E2E run at Dashboard 3.23.39 was verified.
+- The unmodified Dashboard 3.23.39 E2E baseline is verified successful: [run 39190394506, job 117861701008](https://github.com/waelhe/app-java-v3/actions/runs/39190394506/job/117861701008). The custom Spring-backed Playwright journey remains a separate, unpassed gate.
 - No live staging OpenAPI/GraphQL document was fetched from the running platform; current contracts were inspected from the pinned repository tree.
 - No open PR was merged or deployed.
 - PR check statuses can change; the open PR table must be refreshed before execution or merge.
 
-**Verdict: NOT YET FINAL.** The upstream tag is now pinned, the initial source-route/operation inventory is evidenced, and the Spring contract gap is concrete. Final approval remains blocked on the upstream disposable-Saleor E2E baseline, completing the current-main/open-PR reconciliation, the backend-first C1 contract/acceptance gate and a real Spring-backed Dashboard Playwright journey. This is an evidence-driven gate, not a wording caveat.
+**Verdict: NOT YET FINAL.** The pinned upstream tag, disposable-Saleor E2E baseline and initial source-route/operation inventory are evidenced. The upstream E2E gate is closed as **PASSED** by run 39190394506/job 117861701008. Final approval remains blocked on current-main/open-PR reconciliation, the backend-first C1 contract/acceptance gates, a real Spring-backed Dashboard Playwright journey and the remaining fork GO/NO-GO evidence.
