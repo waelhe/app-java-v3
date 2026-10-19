@@ -167,6 +167,71 @@ public class ProductService {
         }
     }
 
+    /** The owner's full product roster, including drafts and suspended/archived items. */
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasRole('PROVIDER')")
+    public List<Product> listOwnedProducts(Authentication authentication) {
+        UUID caller = currentUserProvider.getCurrentUserId(authentication);
+        return productRepository.findByProviderId(caller);
+    }
+
+    @Transactional
+    @PreAuthorize("hasRole('PROVIDER')")
+    public Product updateOwnedProduct(UUID productId, UpdateProductCommand command, Authentication authentication) {
+        Product product = getOwnedProduct(productId, authentication);
+        product.updateDetails(command.title(), command.description(), command.priceMinor());
+        return productRepository.save(product);
+    }
+
+    @Transactional
+    @PreAuthorize("hasRole('PROVIDER')")
+    public Product publishOwnedProduct(UUID productId, Authentication authentication) {
+        Product product = getOwnedProduct(productId, authentication);
+        product.publish();
+        return productRepository.save(product);
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasRole('PROVIDER')")
+    public List<CatalogAttributeValueInput> listOwnedAttributeValues(UUID productId, Authentication authentication) {
+        getOwnedProduct(productId, authentication);
+        return attributeValues.findAllByProductIdOrderByAssignmentIdAsc(productId).stream()
+                .map(ProductAttributeValue::toInput).toList();
+    }
+
+    @Transactional
+    @PreAuthorize("hasRole('PROVIDER')")
+    public List<CatalogAttributeValueInput> replaceOwnedAttributeValues(UUID productId,
+            List<CatalogAttributeValueInput> newValues, Authentication authentication) {
+        Product product = getOwnedProduct(productId, authentication);
+        List<ProductAttributeValue> prepared = prepareProductAttributeValues(product,
+                newValues == null ? List.of() : newValues);
+        Map<UUID, ProductAttributeValue> currentByAssignment = new HashMap<>();
+        attributeValues.findAllByProductIdOrderByAssignmentIdAsc(productId)
+                .forEach(current -> currentByAssignment.put(current.getAssignmentId(), current));
+        List<ProductAttributeValue> save = new ArrayList<>();
+        Set<UUID> incoming = new HashSet<>();
+        for (ProductAttributeValue candidate : prepared) {
+            UUID assignmentId = candidate.getAssignmentId();
+            incoming.add(assignmentId);
+            ProductAttributeValue current = currentByAssignment.get(assignmentId);
+            if (current == null) {
+                save.add(candidate);
+            } else {
+                current.replaceValue(candidate.toInput());
+                save.add(current);
+            }
+        }
+        List<ProductAttributeValue> removed = currentByAssignment.values().stream()
+                .filter(current -> !incoming.contains(current.getAssignmentId())).toList();
+        if (!removed.isEmpty()) attributeValues.deleteAll(removed);
+        if (!save.isEmpty()) attributeValues.saveAll(save);
+        return attributeValues.findAllByProductIdOrderByAssignmentIdAsc(productId).stream()
+                .map(ProductAttributeValue::toInput).toList();
+    }
+
+    public record UpdateProductCommand(String title, String description, long priceMinor) { }
+
     /**
      * The owner's read — the M1 root has no public storefront yet (M2's
      * C.8 wave); a stranger's read answers the honest 404 (the R5 posture).

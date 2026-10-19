@@ -45,6 +45,20 @@ public class ProductAttributeValue extends BaseEntity {
         return new ProductAttributeValue(UUID.randomUUID(), productId, value.assignmentId(), value);
     }
 
+    public void replaceValue(CatalogAttributeValueInput value) {
+        if (value == null || !assignmentId.equals(value.assignmentId()) || value.populatedValueCount() != 1) {
+            throw new IllegalArgumentException("replacement must carry the same assignment and exactly one typed value");
+        }
+        this.textValue = value.textValue();
+        this.numberValue = value.numberValue();
+        this.booleanValue = value.booleanValue();
+        this.optionId = value.optionId();
+    }
+
+    public CatalogAttributeValueInput toInput() {
+        return new CatalogAttributeValueInput(assignmentId, textValue, numberValue, booleanValue, optionId);
+    }
+
     @Override public UUID getId() { return id; }
     public UUID getProductId() { return productId; }
     public UUID getAssignmentId() { return assignmentId; }

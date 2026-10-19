@@ -110,7 +110,7 @@ public class Product extends BaseEntity {
         this.productTypeId = productTypeId;
         this.stockQuantity = 0;
         this.reservedQuantity = 0;
-        this.status = ProductStatus.ACTIVE;
+        this.status = productTypeId == null ? ProductStatus.ACTIVE : ProductStatus.DRAFT;
     }
 
     /**
@@ -172,6 +172,33 @@ public class Product extends BaseEntity {
 
     public ProductStatus getStatus() {
         return status;
+    }
+
+    /** Updates editable product details without changing the frozen order snapshots. */
+    public void updateDetails(String title, String description, long priceMinor) {
+        if (status == ProductStatus.ARCHIVED) {
+            throw new IllegalStateException("Archived products are terminal and cannot be edited");
+        }
+        if (title == null || title.isBlank() || title.length() > 200) {
+            throw new IllegalArgumentException("title must be non-blank and at most 200 characters");
+        }
+        if (description != null && description.length() > 2000) {
+            throw new IllegalArgumentException("description must be at most 2000 characters");
+        }
+        if (priceMinor < 0) {
+            throw new IllegalArgumentException("priceMinor must be non-negative");
+        }
+        this.title = title;
+        this.description = description;
+        this.priceMinor = priceMinor;
+    }
+
+    /** Publishes only a typed C1 draft; legacy products keep their historical ACTIVE-on-register path. */
+    public void publish() {
+        if (status != ProductStatus.DRAFT) {
+            throw new IllegalStateException("Only a DRAFT product can be published (current status: " + status + ")");
+        }
+        this.status = ProductStatus.ACTIVE;
     }
 
     /**

@@ -22,6 +22,9 @@ import org.springframework.data.repository.query.Param;
  */
 public interface ProductRepository extends JpaRepository<Product, UUID> {
 
+    /** Owner-scoped roster for the store administration surface. */
+    java.util.List<Product> findByProviderId(UUID providerId);
+
     /**
      * Reserves {@code qty} units of an ACTIVE product whose free stock
      * covers it — the placement's write.

@@ -10,6 +10,7 @@ package com.marketplace.catalog;
  * ({@code @Enumerated(STRING)} — the ListingStatus discipline verbatim).
  */
 public enum ProductStatus {
+    DRAFT,
     ACTIVE,
     SUSPENDED,
     ARCHIVED
