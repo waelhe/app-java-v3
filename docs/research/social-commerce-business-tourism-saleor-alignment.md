@@ -98,15 +98,54 @@ This is the first model gap that blocks a genuinely useful Saleor-derived produc
 
 **Acceptance gate:** a seller can configure a typed goods product type, create a valid product and distinct selectable variants, receive honest validation for invalid/duplicate combinations and foreign ownership, add a chosen variant to cart, place an order with the correct authoritative price, and read the frozen variant/price back—all through the real API and integration suite. Existing products without variants continue to pass unchanged.
 
-## 6. Following slices, ordered by dependency and product value
+## 6. Ordered execution plan — with social and tourism kept first-class
 
-1. **C1 — Product types and variant options** (above).
-2. **C2 — Curated collections and typed cross-domain collection references.** Re-evaluate the ADR-0012 deferral in light of social discovery, local-business campaigns, destinations and seasonal tourism collections. Keep collection merchandising separate from taxonomy and avoid copying source records. Specify ownership, eligible target types, ordering, scheduling, publication scope and audit before schema work.
-3. **C3 — Platform/admin product API contract and Dashboard slice.** Pin a Saleor Dashboard source SHA, inventory the exact product routes/operations, and adapt the product list/detail/editor to C1's real contracts. Prove create/edit/publish/discovery in Playwright against the platform backend, not mock data.
-4. **C4 — Sales-context decision.** Reopen channels only if a real second commercial context requires different prices/currencies, tax/payment conditions, publication or availability. Social/tourism experiences alone do not prove this.
-5. **C5 — Multi-location stock only on a confirmed use case.** Implement location-owned stock, guarded transfers, fulfillment allocation, reconciliation and competing-checkout concurrency tests if providers have multiple real stock locations. Model tourism capacity separately.
-6. **C6 — Cross-domain tourism journeys.** Audit and prove destination/experience discovery → schedule/capacity selection → booking/guest data → price/terms freeze → payment → provider/transfer fulfillment → cancellation/reschedule/refund/review. Reuse owned booking/payment/delivery contracts; do not turn a trip into an ordinary SKU unless the purchased thing truly is a standard good.
-7. **C7 — Dashboard workbench parity.** Orders, pricing, stock, providers, fulfillment/RMA, reconciliation, search/merchandising, audit and permissions, only when the corresponding real backend capability and E2E acceptance test exist.
+### C0 — Reconcile existing journeys before writing overlapping code
+
+At the 19 October 2026 review, [#649](https://github.com/waelhe/app-java-v3/pull/649) and [#658](https://github.com/waelhe/app-java-v3/pull/658) were open. They are integration-test PRs, not new production capabilities. Review their final merge/status and resulting `main` before changing those journeys. Do not create a second copy of their tests or treat test-only coverage as proof of an unimplemented UI/API capability.
+
+### C1 — Typed product types and variant options for goods
+
+Use the first-slice acceptance gate in §5. This adds depth to the existing catalog owner and variants; it is not a new commerce engine. Include a typed data dictionary, reusable attribute definitions/assignments, variant-selection values and a stable combination identity, subject to the detailed source-to-decision audit in §8.
+
+### S1 — Social-to-commerce and social-to-tourism journey audit (parallel product track)
+
+This track begins alongside C1; it does not wait for channels, collections, or warehouse parity. Reconcile the #658 composite journey and inspect the current end-to-end journeys register for the complete path(s):
+
+- A community question/recommendation/initiative links to the canonical product, provider/business, event, destination, accommodation, or bookable experience source; the source is not copied into a community-only shadow record.
+- A commercial offer follows commerce price/stock/checkout/order semantics; a bookable stay/tour/activity follows booking/availability/capacity and reservation semantics. They may be shown together in discovery, but cannot share an incorrect lifecycle.
+- Identity, provider ownership, geography, publication/moderation, and audience privacy are enforced at the source and in every composed read.
+- If a user moves from a social reference into a purchase or booking, the same canonical source identity, price/terms freeze, order/booking, payment result, fulfillment/cancellation/refund, and review-eligibility evidence must be observable through the whole journey.
+
+If #649/#658 prove only part of the journey, record the remaining owner contract/test gaps. Do not rewrite a flow already proven by those PRs.
+
+### C2 — First Spring-backed Saleor Dashboard goods slice
+
+Pin an exact Dashboard tag/SHA and run its original baseline (build, type-check, unit/component tests, and E2E suite) against a disposable Saleor instance. Inventory the exact product routes and GraphQL operations of that pinned source. Then adapt the product list/detail/editor to the platform's real contracts from C1, with source-owned permissions and read-back.
+
+**Gate:** a real Playwright journey performs create/edit/publish and verifies the listing's actual discovery visibility through the Spring-backed platform API; no Saleor backend or hard-coded demo record is used.
+
+### C3 — Curated cross-domain collections and discovery references
+
+Reassess the ADR-0012 collection deferral against the actual community, business, and tourism discovery requirements. Define curated groups separately from navigation taxonomy and support references to canonical source records where needed. Specify eligible target types, ordering, schedule, publication/audience scope, audit, deletion/unpublish behavior, and search projection invalidation before schema work.
+
+### C4 — Sales-context decision
+
+Reopen a first-class channel only when there is an explicit second commercial context with independently governed price/currency, publication/availability, tax/payment conditions, or fulfillment rules. A tourist/resident/expatriate experience, a country/city/neighborhood filter, or a social feed is not sufficient by itself.
+
+### C5 — Multi-location goods inventory only on a confirmed trigger
+
+If providers really operate multiple stock locations, implement warehouse/location stock, guarded transfers, per-order-line allocations, allocation strategy, reconciliation, and a concurrency proof together. Tourism capacity and time-slot availability remain in booking/availability, not warehouse stock.
+
+### C6 — Commercial policy and marketplace operations parity
+
+Compare #624's implemented policy against Saleor's catalogue promotions, order promotions and voucher precedence; make any widening of stacking/eligibility rules an explicit pricing-policy decision. Complete seller payment/payout/reconciliation, fulfillment, return/refund and permission workflows through the existing owners and their real contracts.
+
+### C7 — Expand the global administration workbench
+
+Extend the tested pattern to provider/business operations, orders, pricing, delivery/RMA, tourism bookings and supplier operations, community/trust queues, audit, import/export and reporting only when their source-owned APIs and acceptance journeys are real. Preserve separate roles and scoped workflows for global platform operators and providers/merchants; the default Saleor Dashboard's own staff permissions are not our provider ACL.
+
+**Every slice:** define the owning module, migration and Envers requirements, source contract, authorization scope, command/read-back semantics, observability/audit evidence, negative tests and E2E. Run the required repository build/security/contract gates. A schema row or screen is not an acceptance result.
 
 ## 7. Source references
 
