@@ -79,12 +79,27 @@ public class PushTokenService {
         return results.stream().anyMatch(PushNotificationPort.PushResult::success);
     }
 
-    /** The /me identity resolution for the controller (the family's shape). */
+    /**
+     * The /me identity resolution for the controller (the family's shape).
+     * The TRANSACTION lives on these entry forms deliberately: the official
+     * AOP proxying rule (Spring Framework Reference, Proxying Mechanisms —
+     * «self invocation ... will bypass the advice») means the inner
+     * register/unregister calls run UNPROXIED — their own @Transactional
+     * never applies through this path, and the derived
+     * deleteByUserIdAndToken answered the measured 500
+     * («No EntityManager with actual transaction available ... cannot
+     * reliably process 'remove' call») on every real unregister. Each
+     * external call now crosses the proxy exactly once at its entry form,
+     * with the transaction active (the same law as CatalogService's
+     * createListing forms).
+     */
+    @Transactional
     public PushToken registerForCaller(String token, PushToken.Platform platform,
                                        Authentication authentication) {
         return register(currentUserProvider.getCurrentUserId(authentication), token, platform);
     }
 
+    @Transactional
     public void unregisterForCaller(String token, Authentication authentication) {
         unregister(currentUserProvider.getCurrentUserId(authentication), token);
     }

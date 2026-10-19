@@ -211,16 +211,23 @@ public class ReviewsService {
                     "Booking reviews are not enabled in the current reviews mode (OPEN)"
                             + " - submit an organic review instead");
         }
-        // I8: per-direction uniqueness — a booking may carry BOTH the
-        // consumer's review and the provider's reverse review (one each).
-        if (reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.CONSUMER_TO_PROVIDER)) {
-            throw new ConflictException("Review already exists for booking: " + bookingId);
-        }
-
+        // I8 + the honest gate order (measured 2026-10-19, the J20 journey's
+        // stranger leg): the OWNERSHIP gate precedes the per-direction
+        // uniqueness — a stranger probing booking ids must never learn
+        // whether a booking carries a review (a 409 to a non-owner leaks
+        // that existence); the duplicate signal is the rightful reviewer's
+        // own concern. The organic path keeps its own documented 409-first
+        // order — there the caller IS the reviewer (their own duplicate).
         BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(bookingId);
 
         if (!bookingInfo.consumerId().equals(reviewerId)) {
             throw new AccessDeniedException("Only the booking consumer can submit a review");
+        }
+
+        // I8: per-direction uniqueness — a booking may carry BOTH the
+        // consumer's review and the provider's reverse review (one each).
+        if (reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.CONSUMER_TO_PROVIDER)) {
+            throw new ConflictException("Review already exists for booking: " + bookingId);
         }
 
         if (!"COMPLETED".equals(bookingInfo.status())) {
@@ -267,10 +274,6 @@ public class ReviewsService {
     @PreAuthorize("hasRole('PROVIDER')")
     public Review createReverse(UUID bookingId, Integer rating, String comment,
                                 Authentication authentication) {
-        if (reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.PROVIDER_TO_CONSUMER)) {
-            throw new ConflictException("Reverse review already exists for booking: " + bookingId);
-        }
-
         UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
 
         BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(bookingId);
@@ -278,8 +281,15 @@ public class ReviewsService {
         // A1: the stored booking row is the ruling — its provider_id IS the
         // booking provider's user id (V3 FK), compared directly against the
         // caller (the verifyProviderOwnership pattern; no profile lookup).
+        // The ownership gate precedes the duplicate check (the same honest
+        // order as the forward path: a stranger never learns whether a
+        // booking carries a reverse review).
         if (!bookingInfo.providerId().equals(currentUserId)) {
             throw new AccessDeniedException("Only the booking provider can submit a reverse review");
+        }
+
+        if (reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.PROVIDER_TO_CONSUMER)) {
+            throw new ConflictException("Reverse review already exists for booking: " + bookingId);
         }
 
         if (!"COMPLETED".equals(bookingInfo.status())) {

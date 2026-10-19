@@ -93,9 +93,15 @@ class ReviewsServiceTest {
     @Test
     void create_rejectsDuplicateReview() {
         UUID bookingId = Instancio.create(UUID.class);
+        UUID consumerId = Instancio.create(UUID.class);
+        // The honest caller (the booking's own consumer) learns the duplicate;
+        // a stranger is answered by the ownership gate BEFORE this check
+        // (the measured gate order — 403 never leaks a 409's existence).
+        when(bookingParticipantProvider.getBookingInfo(bookingId))
+                .thenReturn(completedBooking(consumerId, Instancio.create(UUID.class)));
         when(reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.CONSUMER_TO_PROVIDER)).thenReturn(true);
         assertThrows(ConflictException.class,
-                () -> service.create(bookingId, Instancio.create(UUID.class), 3, "dup"));
+                () -> service.create(bookingId, consumerId, 3, "dup"));
     }
 
     @Test
@@ -389,6 +395,13 @@ class ReviewsServiceTest {
     @Test
     void createReverse_rejectsDuplicatePerBooking() {
         UUID bookingId = Instancio.create(UUID.class);
+        UUID providerUserId = Instancio.create(UUID.class);
+        // The honest caller (the booking's own provider) learns the duplicate;
+        // a stranger is answered by the ownership gate first (the same
+        // measured gate order as the forward path).
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(providerUserId);
+        when(bookingParticipantProvider.getBookingInfo(bookingId))
+                .thenReturn(completedBooking(Instancio.create(UUID.class), providerUserId));
         when(reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.PROVIDER_TO_CONSUMER))
                 .thenReturn(true);
 
