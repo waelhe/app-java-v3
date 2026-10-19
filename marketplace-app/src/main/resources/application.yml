@@ -710,6 +710,16 @@ resilience4j:
         base-config: default
         limit-for-period: 10
         timeout-duration: 0
+      # C1 dashboard product lifecycle GraphQL surface: bounded reads and
+      # fail-fast writes use explicit names, matching the existing catalog limits.
+      graphqlStoreProductQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      graphqlStoreProductMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
       # Phase 6 (the GraphQL plan §11-Phase-6 — the first composite
       # journey, the inventory #599 §7 stage 4): the two home reads'
       # named instances, the same L29 fail-fast model. graphqlDiscovery-

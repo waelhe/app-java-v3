@@ -479,6 +479,10 @@
                          schema references ServiceInput. -->
                     <typeMapping>
                         <ServiceInput>com.marketplace.app.graphql.ServiceInput</ServiceInput>
+                        <StoreProductCreateInput>com.marketplace.app.graphql.StoreProductCreateInput</StoreProductCreateInput>
+                        <StoreProductUpdateInput>com.marketplace.app.graphql.StoreProductUpdateInput</StoreProductUpdateInput>
+                        <StoreProductAttributeValueInput>com.marketplace.app.graphql.StoreProductAttributeValueInput</StoreProductAttributeValueInput>
+                        <StoreProductVariantCreateInput>com.marketplace.app.graphql.StoreProductVariantCreateInput</StoreProductVariantCreateInput>
                     </typeMapping>
                     <generateDataTypes>true</generateDataTypes>
                     <!-- The adapter's Mojo default for the all-fields

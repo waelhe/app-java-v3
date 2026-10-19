@@ -22,8 +22,12 @@ import org.springframework.data.repository.query.Param;
  */
 public interface ProductRepository extends JpaRepository<Product, UUID> {
 
-    /** Owner-scoped roster for the store administration surface. */
+    /** Owner-scoped roster for the legacy REST list. */
     java.util.List<Product> findByProviderId(UUID providerId);
+
+    /** Bounded owner-scoped roster for cursor-paginated GraphQL administration. */
+    org.springframework.data.domain.Page<Product> findByProviderId(
+            UUID providerId, org.springframework.data.domain.Pageable pageable);
 
     /**
      * Reserves {@code qty} units of an ACTIVE product whose free stock

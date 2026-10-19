@@ -77,6 +77,10 @@ class PostDetailDgsDataFetcherTest {
     @MockitoBean
     private com.marketplace.catalog.spi.CatalogSpi catalogSpi;
 
+    // Component scanning includes the catalog administration fetcher; mock its owning module seam.
+    @MockitoBean
+    private com.marketplace.catalog.spi.ProductAdminSpi productAdminSpi;
+
     @MockitoBean
     private com.marketplace.discovery.spi.DiscoverySpi discoverySpi;
 
