@@ -8,4 +8,4 @@ import jakarta.validation.constraints.Size;
 public record StoreProductUpdateInput(
         @NotBlank @Size(max = 200) String title,
         @Size(max = 2000) String description,
-        @NotBlank @Pattern(regexp = "^(0|[1-9][0-9]*)$") String priceMinor) { }
+        @NotBlank @Size(max = 19) @Pattern(regexp = "^(0|[1-9][0-9]*)$") String priceMinor) { }
