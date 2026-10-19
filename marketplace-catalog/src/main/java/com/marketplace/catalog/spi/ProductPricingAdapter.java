@@ -3,6 +3,7 @@ package com.marketplace.catalog.spi;
 import com.marketplace.catalog.Product;
 import com.marketplace.catalog.ProductRepository;
 import com.marketplace.catalog.ProductStatus;
+import com.marketplace.catalog.StoreProductStatus;
 import com.marketplace.catalog.ProductVariant;
 import com.marketplace.catalog.ProductVariantRepository;
 import com.marketplace.shared.api.ProductPricingPort;
@@ -61,6 +62,15 @@ public class ProductPricingAdapter implements ProductPricingPort {
         return new VariantPrice(variant.getId(), product.getId(), product.getProviderId(),
                 variant.getPriceMinor(), variant.getCurrency(),
                 toState(product.getStatus()), toState(variant.getStatus()));
+    }
+
+    private StorefrontState toState(StoreProductStatus status) {
+        return switch (status) {
+            case DRAFT -> StorefrontState.DRAFT;
+            case ACTIVE -> StorefrontState.ACTIVE;
+            case SUSPENDED -> StorefrontState.SUSPENDED;
+            case ARCHIVED -> StorefrontState.ARCHIVED;
+        };
     }
 
     private StorefrontState toState(ProductStatus status) {

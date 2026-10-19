@@ -38,7 +38,7 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
             update Product p
                set p.reservedQuantity = p.reservedQuantity + :qty
              where p.id = :id
-               and p.status = com.marketplace.catalog.ProductStatus.ACTIVE
+               and p.status = com.marketplace.catalog.StoreProductStatus.ACTIVE
                and (p.stockQuantity - p.reservedQuantity) >= :qty
             """)
     int reserve(@Param("id") UUID id, @Param("qty") int qty);

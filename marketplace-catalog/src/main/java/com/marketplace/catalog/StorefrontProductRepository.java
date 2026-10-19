@@ -40,7 +40,7 @@ public interface StorefrontProductRepository extends JpaRepository<Product, UUID
                    max(p.updatedAt) as lastActivityAt
             from Product p
             where p.providerId = :sellerId
-              and p.status = com.marketplace.catalog.ProductStatus.ACTIVE
+              and p.status = com.marketplace.catalog.StoreProductStatus.ACTIVE
             group by p.providerId
             """)
     Optional<SellerSummaryView> summarizeSeller(@Param("sellerId") UUID sellerId);
@@ -57,7 +57,7 @@ public interface StorefrontProductRepository extends JpaRepository<Product, UUID
                    max(p.priceMinor) as maxPriceMinor
             from Product p
             where p.providerId = :sellerId
-              and p.status = com.marketplace.catalog.ProductStatus.ACTIVE
+              and p.status = com.marketplace.catalog.StoreProductStatus.ACTIVE
             group by p.currency
             """)
     List<SellerCurrencyBand> sellerCurrencyBands(@Param("sellerId") UUID sellerId);
@@ -71,7 +71,7 @@ public interface StorefrontProductRepository extends JpaRepository<Product, UUID
                    count(p) as productCount
             from Product p
             where p.providerId = :sellerId
-              and p.status = com.marketplace.catalog.ProductStatus.ACTIVE
+              and p.status = com.marketplace.catalog.StoreProductStatus.ACTIVE
             group by p.storeCategoryCode
             """)
     List<SellerCategoryCount> sellerCategoryCounts(@Param("sellerId") UUID sellerId);
@@ -86,7 +86,7 @@ public interface StorefrontProductRepository extends JpaRepository<Product, UUID
     @Query("""
             select p from Product p
             where p.id = :productId
-              and p.status = com.marketplace.catalog.ProductStatus.ACTIVE
+              and p.status = com.marketplace.catalog.StoreProductStatus.ACTIVE
             """)
     Optional<Product> findActiveProduct(@Param("productId") UUID productId);
 }
