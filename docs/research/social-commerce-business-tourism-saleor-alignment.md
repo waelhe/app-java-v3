@@ -105,6 +105,46 @@ This is the first model gap that blocks a genuinely useful Saleor-derived produc
 The initial audit enumerated the journey/feature wave plus this plan. A subsequent live refresh found that **#652 has already merged**; the current open set is #649, #651, #653–#658 and #664. See the linked [baseline and open-PR evidence audit](saleor-dashboard-baseline-and-open-pr-audit.md) for the latest inspected head SHAs, base relations, and exact workflow/status results. That audit was refreshed at 2026-10-19 04:06 +03:00; statuses can change again after any push.
 
 Reconcile this entire wave before writing overlapping implementation or declaring the test registry final. The eight journey/feature PRs edit both `SYSTEM.md` and `docs/governance/plans/end-to-end-journeys-register.md`; #654 also changes the production Order entity and adds V235, while #656 changes PushTokenService. The refreshed evidence shows the CI workflow queued on every currently open head examined; #649 also has Integration Test and Container Scan queued, and #654 has Container Scan queued. The other listed workflow results were successful on their observed heads, but queued CI must not be described as passing. PRs #651–#658 have recorded base SHA `63871754…`, while current `main` is `72ebec63…` (one commit ahead); #649 and #664 record the current base. GitHub's mergeable flag is not evidence of fresh base, completed validation, or semantic safety. Refresh live states again immediately before each execution/merge step. Do not treat open PR changes as merged, do not copy their tests, and do not calculate the current Failsafe count from any unmerged head. Re-fetch every status before the relevant execution step.
+
+### Execution now — concurrent workstreams, not a whole-wave barrier
+
+**Execution rule:** the open journey PR wave is a serial merge train because its branches overlap in `SYSTEM.md` and `docs/governance/plans/end-to-end-journeys-register.md`; it is **not** a prerequisite for beginning independent C1 implementation or the upstream Dashboard baseline experiment. Track readiness per deliverable, and never infer that one track is complete because another has passed CI.
+
+#### Track A — merge the existing journey PRs incrementally
+
+1. **#649 first:** it targets current `main` and has no recorded base lag. Finish its queued CI on the exact head, verify the current review threads and all required checks, then squash-merge only if `mergeable_state=clean`. Verify CI on the resulting `main`.
+2. **#651 and #653 next, one at a time:** refresh each branch against the then-current `main`, reconcile `SYSTEM.md` and the journey register (do not copy their existing rows), recompute any derived Failsafe count from the final tree, run all required checks on the refreshed head, and merge one at a time after the post-merge `main` gate.
+3. **#654 before dependent order-delivery acceptance:** review the production `Order` change, V235, its Flyway checksum manifest and compatibility against existing order/delivery contracts. Resolve the V235 decision before allowing any later migration to reach `main`. Do not equate the current successful Integration Test with a completed CI gate.
+4. **#655 after the relevant delivery/order base is current:** reconcile its J24/J26 suite and run the checks on its refreshed head.
+5. **#656 before #657:** review the production `PushTokenService` change and prove the device-cycle behavior first; then rebase/reconcile #657's news/urgent-alert journey and rerun its checks.
+6. **#658 after the source journeys it composes have been accepted:** rerun its complete purpose/tourism journey against the latest owners and derived test count. This is a dependency-based ordering, not a reason to leave unrelated work idle.
+7. **#664 is a separate documentation PR:** keep its evidence current and do not merge it on stale statuses. It may be reviewed and validated while the implementation tracks proceed; because it also touches `SYSTEM.md`, reconcile that shared file explicitly at its merge point. It is not a blocker to starting C1 code or the upstream Dashboard E2E experiment.
+
+After **every** squash merge: fetch the new `main` SHA, verify the required CI on `main`, refresh the next PR's base comparison, and recalculate derived documentation/test counts before moving to that PR. No blanket batch merge.
+
+#### Track B — start C1 backend implementation now
+
+Start an isolated C1 feature branch from the current `main`; do not edit `SYSTEM.md` or the shared journey register in this branch while Track A is touching them. Implement the catalog-owned ProductType, reusable typed attribute definitions/assignments, typed variant-selection values and canonical unique combination rule, plus owner-scoped product list/update/publication contracts and tests. Preserve free-form legacy variant names and the zero-variant product path.
+
+**Migration serialization:** #654 currently owns V235. C1 may be developed and checked in parallel using the next reserved version (currently V236), including its checksum entry, but its PR must be marked as blocked on #654 and **must not merge or deploy before V235 is resolved and applied in order**. Confirm no other open change has claimed that version before creating the migration. After #654 merges, rebase C1 onto the new `main`, reconcile both entries in `migration-checksums.properties`, inspect migration ordering/checksums, and rerun the full required workflow set on the final C1 head. If #654 is rejected or its migration numbering changes, stop and re-reserve the version from the then-current tree; do not force the planned number.
+
+C1's acceptance suite must cover: foreign-owner denial; required/missing and invalid attribute values; duplicate and contradictory variant combinations; provider-scoped SKU uniqueness; unchanged legacy zero-variant purchase; selected variant and authoritative frozen price surviving catalog → cart → seller-split order; OpenAPI/GraphQL compatibility gates for only the contracts actually selected. Do not claim C1 proven from compilation alone.
+
+#### Track C — run the unmodified Saleor Dashboard E2E baseline now
+
+In a separate disposable environment, check out exactly `saleor/saleor-dashboard@bc75e988da0fa4fbc3d47378a888d859d070746f` (tag 3.23.39), use its pinned Node/pnpm toolchain, start the disposable Docker-backed Saleor stack, and run the upstream E2E workflow without platform modifications. Preserve the command, commit SHA, workflow/log output and test result in the evidence audit. Do not substitute typecheck/unit-test success for this gate and do not change Dashboard source before recording the pristine baseline. This track can proceed while Track A reviews and merges PRs and while C1 is implemented.
+
+#### Track D — prepare the real Dashboard integration without waiting for the full merge wave
+
+While C1 is in progress, map the selected Dashboard product-list/editor operations to the planned source-owned API contracts and prepare the Playwright scenario and negative cases. Keep this as a separate frontend branch. Do not simply change an API URL or point Saleor GraphQL operations at the Spring SDL. Wire selected screens to the approved C1 contracts when they are available, then run Playwright against Spring for create → edit → publish → actual discovery read-back, including wrong-owner and invalid-variant cases.
+
+#### Release gates and decision points
+
+- **Can start immediately:** Track A review/check refresh for #649; C1 domain/API implementation in isolation; pristine Saleor E2E baseline execution; Dashboard operation mapping and Playwright test preparation.
+- **Cannot cross the release gate early:** no C1 merge/deployment before V235 is reconciled; no Dashboard GO decision before the pristine upstream E2E baseline passes and the Spring-backed Playwright journey passes; no PR merge before its final-head checks are green, reviews are resolved, and `mergeable_state=clean`.
+- **A failed or delayed gate blocks only the dependent item.** For example, queued CI on #651 does not prevent implementing C1, and a failing Saleor baseline does not prevent C1 backend work; it does block declaring the fork decision proven.
+- After each accepted C1/backend slice, update the evidence record from measured sources and actual workflow/test results. Do not relabel the whole platform or every tourism journey as proven from a single product or composite test.
+
 ### C1 — Typed product types and variant options for goods
 
 Use the first-slice acceptance gate in §5. This adds depth to the existing catalog owner and variants; it is not a new commerce engine. Include a typed data dictionary, reusable attribute definitions/assignments, variant-selection values and a stable combination identity, subject to the detailed source-to-decision audit in §8.
