@@ -1,6 +1,7 @@
 package com.marketplace.catalog;
 
 import java.util.List;
+import java.util.List;
 import java.util.UUID;
 
 import com.marketplace.shared.api.ApiConstants;
@@ -17,6 +18,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -58,6 +61,48 @@ public class ProductController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ProductResponse.of(product));
     }
 
+    /** List the current provider's products, including drafts and archived records. */
+    @GetMapping("/products")
+    @Operation(summary = "List one's own store products")
+    public ResponseEntity<List<ProductResponse>> listOwned(Authentication authentication) {
+        return ResponseEntity.ok(productService.listOwnedProducts(authentication).stream()
+                .map(ProductResponse::of).toList());
+    }
+
+    /** Edit descriptive/pricing fields without changing existing order snapshots. */
+    @PatchMapping("/products/{id}")
+    @Operation(summary = "Edit one's own product")
+    public ResponseEntity<ProductResponse> update(@PathVariable UUID id,
+            @Valid @RequestBody UpdateProductRequest request, Authentication authentication) {
+        Product updated = productService.updateOwnedProduct(id,
+                new ProductService.UpdateProductCommand(request.title(), request.description(), request.priceMinor()),
+                authentication);
+        return ResponseEntity.ok(ProductResponse.of(updated));
+    }
+
+    /** C1 typed goods are created as drafts and require an explicit publication command. */
+    @PostMapping("/products/{id}/publish")
+    @Operation(summary = "Publish a typed product draft")
+    public ResponseEntity<ProductResponse> publish(@PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok(ProductResponse.of(productService.publishOwnedProduct(id, authentication)));
+    }
+
+    /** Read back the source-owned typed attributes persisted for this product. */
+    @GetMapping("/products/{id}/attributes")
+    @Operation(summary = "Read one's own product attribute values")
+    public ResponseEntity<List<CatalogAttributeValueInput>> listAttributes(@PathVariable UUID id,
+            Authentication authentication) {
+        return ResponseEntity.ok(productService.listOwnedAttributeValues(id, authentication));
+    }
+
+    /** Replace the product-scope value set, subject to the ProductType's required-field rules. */
+    @PutMapping("/products/{id}/attributes")
+    @Operation(summary = "Replace one's own product attribute values")
+    public ResponseEntity<List<CatalogAttributeValueInput>> replaceAttributes(@PathVariable UUID id,
+            @RequestBody List<CatalogAttributeValueInput> values, Authentication authentication) {
+        return ResponseEntity.ok(productService.replaceOwnedAttributeValues(id, values, authentication));
+    }
+
     /**
      * The owner's read — the M1 root has no public storefront surface (M2's
      * C.8 wave); a stranger's read answers the honest 404.
@@ -71,6 +116,12 @@ public class ProductController {
         return ResponseEntity.ok(ProductResponse.of(
                 productService.getOwnedProduct(id, authentication)));
     }
+
+    public record UpdateProductRequest(
+            @Schema(description = "The product's display title", example = "Espresso machine, revised")
+            @NotBlank @Size(max = 200) String title,
+            @Schema(description = "The product description", nullable = true) @Size(max = 2000) String description,
+            @NotNull @Min(0) Long priceMinor) { }
 
     /** The registration contract — the M1 field set with the house validation shapes. */
     public record RegisterProductRequest(
@@ -113,18 +164,23 @@ public class ProductController {
             long priceMinor,
             String currency,
             UUID providerId,
-            UUID productTypeId
+            UUID productTypeId,
+            ProductStatus status
     ) {
         /** Source compatibility for older callers constructing this response shape directly. */
         public ProductResponse(UUID id, String storeCategoryCode, String title, String description,
                                long priceMinor, String currency, UUID providerId) {
-            this(id, storeCategoryCode, title, description, priceMinor, currency, providerId, null);
+            this(id, storeCategoryCode, title, description, priceMinor, currency, providerId, null, ProductStatus.ACTIVE);
+        }
+        public ProductResponse(UUID id, String storeCategoryCode, String title, String description,
+                               long priceMinor, String currency, UUID providerId, UUID productTypeId) {
+            this(id, storeCategoryCode, title, description, priceMinor, currency, providerId, productTypeId, ProductStatus.ACTIVE);
         }
 
         static ProductResponse of(Product product) {
             return new ProductResponse(product.getId(), product.getStoreCategoryCode(),
                     product.getTitle(), product.getDescription(), product.getPriceMinor(),
-                    product.getCurrency(), product.getProviderId(), product.getProductTypeId());
+                    product.getCurrency(), product.getProviderId(), product.getProductTypeId(), product.getStatus());
         }
     }
 }

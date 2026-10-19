@@ -199,6 +199,14 @@ public class ProductVariantService {
     private record ValidatedVariantAttribute(ProductTypeAttributeAssignment assignment,
                                              CatalogAttributeValueInput input) { }
 
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasRole('PROVIDER') or hasRole('ADMIN')")
+    public List<CatalogAttributeValueInput> listOwnedAttributeValues(UUID variantId, Authentication authentication) {
+        requireOwnedVariant(variantId, authentication);
+        return attributeValues.findAllByProductVariantIdOrderByAssignmentIdAsc(variantId).stream()
+                .map(ProductVariantAttributeValue::toInput).toList();
+    }
+
     /** The owner's roster read — the product's live variants (Sku order, the index's order). */
     @Transactional(readOnly = true)
     @PreAuthorize("hasRole('PROVIDER') or hasRole('ADMIN')")

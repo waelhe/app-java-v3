@@ -6,4 +6,5 @@ import java.util.UUID;
 
 public interface ProductVariantAttributeValueRepository extends JpaRepository<ProductVariantAttributeValue, UUID> {
     List<ProductVariantAttributeValue> findAllByProductVariantId(UUID productVariantId);
+    List<ProductVariantAttributeValue> findAllByProductVariantIdOrderByAssignmentIdAsc(UUID productVariantId);
 }

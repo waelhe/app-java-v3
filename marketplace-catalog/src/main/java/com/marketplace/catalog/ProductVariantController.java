@@ -76,6 +76,15 @@ public class ProductVariantController {
                 .stream().map(VariantResponse::of).toList());
     }
 
+    /** Read back the persisted typed values for an owned variant. */
+    @GetMapping("/variants/{id}/attributes")
+    @PreAuthorize("hasRole('PROVIDER') or hasRole('ADMIN')")
+    @Operation(summary = "Read a variant's typed attribute values")
+    public ResponseEntity<List<CatalogAttributeValueInput>> listAttributes(@PathVariable UUID id,
+            Authentication authentication) {
+        return ResponseEntity.ok(variantService.listOwnedAttributeValues(id, authentication));
+    }
+
     /** The owner's read — a stranger's read answers the honest 404. */
     @GetMapping("/variants/{id}")
     @PreAuthorize("hasRole('PROVIDER') or hasRole('ADMIN')")
