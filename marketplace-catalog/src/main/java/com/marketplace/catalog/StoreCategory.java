@@ -67,10 +67,58 @@ public class StoreCategory extends BaseEntity {
 
     /**
      * Registers one dictionary row — the data-operation path (never a
-     * migration; the V70 discipline the plan's wording pins).
+     * migration; the V70 discipline the plan's wording pins). Validation
+     * mirrors the V116 CHECK contracts (code shape, non-negative position)
+     * so an invalid row fails before any database access — the
+     * {@link ProductType#create} precedent.
      */
     public static StoreCategory register(String code, String nameEn, String nameAr, Integer position) {
-        return new StoreCategory(UUID.randomUUID(), code, nameEn, nameAr, position);
+        validateCode(code);
+        validateDisplayNames(nameEn, nameAr);
+        Integer safePosition = position == null ? Integer.valueOf(0) : position;
+        if (safePosition < 0) {
+            throw new IllegalArgumentException("position must be non-negative (the V116 CHECK contract)");
+        }
+        return new StoreCategory(UUID.randomUUID(), code, blankToNull(nameEn), blankToNull(nameAr), safePosition);
+    }
+
+    /**
+     * Replaces display metadata and shelf position; the stable public code
+     * remains immutable (the {@link ProductType#update} precedent — identity
+     * values are never edited).
+     */
+    public void update(String newNameEn, String newNameAr, Integer newPosition) {
+        validateDisplayNames(newNameEn, newNameAr);
+        Integer safePosition = newPosition == null ? this.position : newPosition;
+        if (safePosition < 0) {
+            throw new IllegalArgumentException("position must be non-negative (the V116 CHECK contract)");
+        }
+        this.nameEn = blankToNull(newNameEn);
+        this.nameAr = blankToNull(newNameAr);
+        this.position = safePosition;
+    }
+
+    private static void validateCode(String code) {
+        if (code == null || code.length() > 50
+                || !code.matches("^[a-z0-9-]+$") || !code.equals(code.toLowerCase())) {
+            throw new IllegalArgumentException("code must be a lowercase slug (latin/digits/dashes, max 50)");
+        }
+    }
+
+    private static void validateDisplayNames(String en, String ar) {
+        if ((en == null || en.isBlank()) && (ar == null || ar.isBlank())) {
+            throw new IllegalArgumentException("at least one of nameEn or nameAr is required");
+        }
+        if (en != null && en.length() > 100) {
+            throw new IllegalArgumentException("nameEn must be at most 100 characters");
+        }
+        if (ar != null && ar.length() > 100) {
+            throw new IllegalArgumentException("nameAr must be at most 100 characters");
+        }
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 
     public String getCode() {
