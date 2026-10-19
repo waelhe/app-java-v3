@@ -522,16 +522,16 @@ class ProductVariantJourneyIntegrationTest {
         JsonNode readEnvelope = objectMapper.readTree(readResponse.body());
         assertThat(readEnvelope.path("errors").isMissingNode())
                 .as("storeProduct read-back errors: %s", body(readResponse)).isTrue();
-        assertThat(readEnvelope.path("data").path("storeProduct"))
-                .containsExactlyInAnyOrderEntriesOf(Map.of(
-                        "id", productId.toString(),
-                        "title", editedTitle,
-                        "description", "Updated through GraphQL; read-back must match.",
-                        "priceMinor", "128999",
-                        "currency", "SAR",
-                        "providerId", sellerId(sellerName),
-                        "productTypeId", productTypeId.toString(),
-                        "status", "ACTIVE"));
+        JsonNode readBack = readEnvelope.path("data").path("storeProduct");
+        assertThat(readBack.path("id").asString()).isEqualTo(productId.toString());
+        assertThat(readBack.path("title").asString()).isEqualTo(editedTitle);
+        assertThat(readBack.path("description").asString())
+                .isEqualTo("Updated through GraphQL; read-back must match.");
+        assertThat(readBack.path("priceMinor").asString()).isEqualTo("128999");
+        assertThat(readBack.path("currency").asString()).isEqualTo("SAR");
+        assertThat(readBack.path("providerId").asString()).isEqualTo(sellerId(sellerName));
+        assertThat(readBack.path("productTypeId").asString()).isEqualTo(productTypeId.toString());
+        assertThat(readBack.path("status").asString()).isEqualTo("ACTIVE");
 
         String listQuery = """
                 query StoreProductRoster {
