@@ -60,10 +60,10 @@ name: Container Scan
 on:
   workflow_dispatch:
   push:
+    # Temporary stack gate: #666 targets the typed-catalog feature branch (#665),
+    # so exercise full gates on this branch's pushes as its PR-base filter excludes main.
     branches: [ main, feat/product-variants, feat/graphql-catalog-admin-contract ]
   pull_request:
-# The GraphQL catalog-admin adapter is intentionally stacked on #665;
-# run its push gates while that PR targets a feature branch rather than main.
     # Parallel plan §4.1: the four gates run on pull_request for the wave's
     # integrative PRs. The official GitHub docs are explicit that the
     # pull_request branches filter matches the PR's BASE branch ("only run on
