@@ -249,6 +249,14 @@ class ProductVariantJourneyIntegrationTest {
         assertThat(productBody.path("productTypeId").asString()).isEqualTo(schema.productTypeId().toString());
         assertThat(productBody.path("status").asString()).isEqualTo("DRAFT");
 
+        HttpResponse<String> untypedCartAttemptWhileDraft = postJson(
+                "/api/v1/me/cart/items", sellerGate.accessToken(), """
+                        {"productId":"%s","quantity":1}
+                        """.formatted(productId));
+        assertThat(untypedCartAttemptWhileDraft.statusCode())
+                .as("a draft must not enter a product-level cart line: %s", body(untypedCartAttemptWhileDraft))
+                .isEqualTo(409);
+
         HttpResponse<String> initialAttributes = getWithBearer(
                 "/api/v1/store/products/" + productId + "/attributes", sellerGate.accessToken());
         assertThat(initialAttributes.statusCode()).isEqualTo(200);
@@ -274,6 +282,17 @@ class ProductVariantJourneyIntegrationTest {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT product_type_id FROM products WHERE id = ?", UUID.class, productId))
                 .isEqualTo(schema.productTypeId());
+
+        // A type with buyer-selectable dimensions cannot be published until
+        // at least one valid typed variant exists.
+        HttpResponse<String> earlyPublish = postJson("/api/v1/store/products/" + productId + "/publish",
+                sellerGate.accessToken(), "");
+        assertThat(earlyPublish.statusCode())
+                .as("a ProductType with selectable variants needs at least one active typed variant: %s", body(earlyPublish))
+                .isEqualTo(409);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT product_status FROM products WHERE id = ?", String.class, productId))
+                .isEqualTo("DRAFT");
 
         // Create one variant for each buyer-selectable color combination.
         HttpResponse<String> red = postJson("/api/v1/store/products/" + productId + "/variants",
@@ -318,7 +337,38 @@ class ProductVariantJourneyIntegrationTest {
                 "SELECT product_status FROM products WHERE id = ?", String.class, productId))
                 .isEqualTo("ACTIVE");
 
+        // A ProductType with buyer-selectable dimensions may only be bought
+        // through a chosen typed variant; the product-level cart route refuses it.
+        String buyerName = "it-typed-c1-buyer-" + UUID.randomUUID().toString().substring(0, 8);
+        registerUser(buyerName);
+        GateResult buyerGate = loginGate(buyerName, PASSWORD);
+        assertThat(getWithBearer("/api/v1/users/me", buyerGate.accessToken()).statusCode()).isEqualTo(200);
+        HttpResponse<String> directProductCart = postJson("/api/v1/me/cart/items", buyerGate.accessToken(), """
+                {"productId":"%s","quantity":1}
+                """.formatted(productId));
+        assertThat(directProductCart.statusCode())
+                .as("typed selections require a variant id on the cart line: %s", body(directProductCart))
+                .isEqualTo(409);
+
+        setVariantStock(sellerGate.accessToken(), redId, 5);
+        HttpResponse<String> variantCart = postJson("/api/v1/me/cart/items", buyerGate.accessToken(), """
+                {"productId":"%s","variantId":"%s","quantity":1}
+                """.formatted(productId, redId));
+        assertThat(variantCart.statusCode()).as("selected variant cart add: %s", body(variantCart)).isEqualTo(201);
+        JsonNode variantCartLine = objectMapper.readTree(variantCart.body());
+        assertThat(variantCartLine.path("variantId").asString()).isEqualTo(redId.toString());
+        assertThat(variantCartLine.path("unitAmountMinor").asLong()).isEqualTo(110000L);
+
+        HttpResponse<String> placed = postJson("/api/v1/orders", buyerGate.accessToken(), "");
+        assertThat(placed.statusCode()).as("typed variant order placement: %s", body(placed)).isEqualTo(201);
+        JsonNode placedOrder = objectMapper.readTree(placed.body());
+        assertThat(placedOrder.path("totalAmountMinor").asLong()).isEqualTo(110000L);
+        assertThat(placedOrder.path("items")).hasSize(1);
+        assertThat(placedOrder.path("items").get(0).path("variantId").asString()).isEqualTo(redId.toString());
+        assertThat(placedOrder.path("items").get(0).path("unitAmountMinor").asLong()).isEqualTo(110000L);
+
         assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM product_attribute_values_aud WHERE product_id = ?",
                 "SELECT count(*) FROM product_attribute_values_aud WHERE product_id = ?",
                 Integer.class, productId)).isGreaterThanOrEqualTo(2);
         assertThat(jdbcTemplate.queryForObject(
@@ -371,6 +421,12 @@ class ProductVariantJourneyIntegrationTest {
                 colorAssignmentId, typeId, colorDefinitionId);
         return new TypedProductSchema(typeId, materialAssignmentId, colorAssignmentId,
                 cottonOptionId, linenOptionId, redOptionId, blueOptionId);
+    }
+
+    private void setVariantStock(String sellerToken, UUID variantId, int quantity) throws Exception {
+        HttpResponse<String> stocked = postJsonOrPut("/api/v1/store/variants/" + variantId + "/inventory",
+                sellerToken, "{\"stockQuantity\":" + quantity + "}", "PUT");
+        assertThat(stocked.statusCode()).as("variant stock write: %s", body(stocked)).isEqualTo(200);
     }
 
     private record TypedProductSchema(UUID productTypeId, UUID materialAssignmentId, UUID colorAssignmentId,
