@@ -8,6 +8,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import io.micrometer.observation.annotation.Observed;
@@ -176,6 +178,14 @@ public class ProductService {
     public List<Product> listOwnedProducts(Authentication authentication) {
         UUID caller = currentUserProvider.getCurrentUserId(authentication);
         return productRepository.findByProviderId(caller);
+    }
+
+    /** Bounded owner-scoped roster for GraphQL's forward-only connection contract. */
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasRole('PROVIDER')")
+    public Page<Product> listOwnedProducts(Authentication authentication, Pageable pageable) {
+        UUID caller = currentUserProvider.getCurrentUserId(authentication);
+        return productRepository.findByProviderId(caller, pageable);
     }
 
     @Transactional
