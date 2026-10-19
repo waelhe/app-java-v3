@@ -222,11 +222,11 @@ class BookingJourneyIntegrationTest {
                 .as("the confirm's read-back").isEqualTo("CONFIRMED");
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT booked FROM availability_slots WHERE provider_id = ? AND starts_at = ?",
-                Boolean.class, sellerId, java.time.Instant.parse(SLOT_START)))
+                Boolean.class, sellerId, java.sql.Timestamp.from(java.time.Instant.parse(SLOT_START))))
                 .as("the window claimed at confirm").isTrue();
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT held_by_booking_id FROM availability_slots WHERE provider_id = ? AND starts_at = ?",
-                String.class, sellerId, java.time.Instant.parse(SLOT_START)))
+                String.class, sellerId, java.sql.Timestamp.from(java.time.Instant.parse(SLOT_START))))
                 .as("the R2 ownership claim names THIS booking").isEqualTo(bookingId.toString());
 
         // (4) The events DELIVER: BOOKING_CREATED rows land for BOTH
@@ -502,7 +502,7 @@ class BookingJourneyIntegrationTest {
         // The slot window is released: the R2 claim freed for the next booker.
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT booked FROM availability_slots WHERE provider_id = ? AND starts_at = ?",
-                Boolean.class, sellerId, java.time.Instant.parse(CANCEL_SLOT_START)))
+                Boolean.class, sellerId, java.sql.Timestamp.from(java.time.Instant.parse(CANCEL_SLOT_START))))
                 .as("the window released at cancel").isFalse();
 
         // The terminal guard: the closed state stays closed.
