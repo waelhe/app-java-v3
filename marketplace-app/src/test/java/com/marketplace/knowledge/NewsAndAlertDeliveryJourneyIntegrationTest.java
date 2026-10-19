@@ -296,6 +296,20 @@ class NewsAndAlertDeliveryJourneyIntegrationTest {
                 "SELECT withdrawn_at FROM news_items WHERE id = ?", java.sql.Timestamp.class, itemId))
                 .as("the withdrawal timestamp landed in the same write").isNotNull();
 
+        // (CodeRabbit quick-win — J08's own promised measurement) The Envers
+        // audit trail survives the withdrawal: birth, correction, and the
+        // withdrawal itself each left a revision (revtype 0=ADD, 1=MOD — the
+        // withdrawal is the domain-flag UPDATE, never a DEL).
+        Integer newsAdds = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM news_items_aud WHERE id = ? AND revtype = 0", Integer.class, itemId);
+        Integer newsMods = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM news_items_aud WHERE id = ? AND revtype = 1", Integer.class, itemId);
+        assertThat(newsAdds)
+                .as("Envers kept the birth revision through the withdrawal").isEqualTo(1);
+        assertThat(newsMods)
+                .as("Envers kept the correction and withdrawal revisions — the audit trail is the journey's own claim")
+                .isGreaterThanOrEqualTo(2);
+
         // (6) The honest guards: correcting a withdrawn item is a conflict
         // (there is no un-withdraw lever in this wave), a second withdrawal
         // answers 409 (idempotence by refusal), and a non-admin never
