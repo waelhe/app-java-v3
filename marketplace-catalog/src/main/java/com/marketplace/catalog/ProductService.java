@@ -187,6 +187,12 @@ public class ProductService {
     @PreAuthorize("hasRole('PROVIDER')")
     public Product publishOwnedProduct(UUID productId, Authentication authentication) {
         Product product = getOwnedProduct(productId, authentication);
+        // ProductType definitions can evolve after draft creation; publication
+        // must revalidate current required PRODUCT assignments and choice ownership.
+        List<CatalogAttributeValueInput> values = attributeValues
+                .findAllByProductIdOrderByAssignmentIdAsc(productId).stream()
+                .map(ProductAttributeValue::toInput).toList();
+        prepareProductAttributeValues(product, values);
         product.publish();
         return productRepository.save(product);
     }

@@ -178,6 +178,25 @@ class ProductServiceTest {
     }
 
     @Test
+    void typedDraftCannotPublishWhenARequiredProductAttributeIsMissing() {
+        UUID productTypeId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID attributeId = UUID.randomUUID();
+        Product draft = Product.register("home-appliances", "Typed draft", null, 100L, "SAR", caller, productTypeId);
+        ProductTypeAttributeAssignment required = ProductTypeAttributeAssignment.create(
+                productTypeId, attributeId, ProductTypeAttributeScope.PRODUCT, true, 0);
+        when(productRepository.findById(productId)).thenReturn(Optional.of(draft));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+        when(attributeValues.findAllByProductIdOrderByAssignmentIdAsc(productId)).thenReturn(List.of());
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId)).thenReturn(List.of(required));
+
+        assertThatThrownBy(() -> service.publishOwnedProduct(productId, authentication))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("Required product attribute assignment is missing");
+        verify(productRepository, never()).save(any(Product.class));
+    }
+
+    @Test
     void ownerReadReturnsTheProductToStrangerNothing() {
         UUID productId = UUID.randomUUID();
         Product owned = Product.register("home-appliances", "t", null, 1L, "SAR", caller);
