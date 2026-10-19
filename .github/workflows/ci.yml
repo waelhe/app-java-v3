@@ -3,9 +3,7 @@ name: CI
 on:
   workflow_dispatch:
   push:
-    # Temporary stack gate: #666 targets the typed-catalog feature branch (#665),
-    # so exercise full gates on this branch's pushes as its PR-base filter excludes main.
-    branches: [ main, feat/product-variants, feat/graphql-catalog-admin-contract ]
+    branches: [ main, feat/product-variants ]
   pull_request:
     # Parallel plan §4.1: the four gates run on pull_request for the wave's
     # integrative PRs. The official GitHub docs are explicit that the
