@@ -667,9 +667,19 @@ class OrderLegDeliveryJourneyIntegrationTest {
                 "SELECT delivery_request_id FROM orders WHERE id = ?", String.class, orderId))
                 .as("a non-primary cancel never clears the order's primary link")
                 .isEqualTo(baseLegId.toString());
-        assertThat(jdbcTemplate.queryForObject(
-                "SELECT status FROM delivery_requests WHERE id = ?", String.class, baseLegId))
-                .as("the primary leg still flies").isEqualTo("READY_FOR_DISPATCH");
+        // The primary leg still flies: READY_FOR_DISPATCH or already swept
+        // to a courier — the REAL scheduler assigns at every 500ms tick
+        // this journey itself configures (the main branch's steps 9-10
+        // PROVE that assignment), and the sibling-leg cancel must not
+        // disturb EITHER live state. The partial-cancel law is about
+        // survival, not about pinning a state the scheduler legitimately
+        // advances; customer cancellation stays legal from ASSIGNED
+        // («before the courier collects the parcel»).
+        String primaryLegStatus = jdbcTemplate.queryForObject(
+                "SELECT status FROM delivery_requests WHERE id = ?", String.class, baseLegId);
+        assertThat(primaryLegStatus)
+                .as("the primary leg still flies (ready or assigned — never cancelled)")
+                .isIn("READY_FOR_DISPATCH", "ASSIGNED");
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM payment_intents WHERE order_id = ?", Integer.class, orderId))
                 .as("the cancelled share opened no money movement").isEqualTo(1);
