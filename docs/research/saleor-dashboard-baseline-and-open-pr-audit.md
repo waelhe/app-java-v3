@@ -34,6 +34,10 @@ The commit-linked workflow records for the pinned revision included successful r
 
 The E2E local-stack workflow is a separate Docker-backed run. This audit did **not** execute that workflow or obtain a successful run artifact proving the unmodified tag passes E2E against disposable Saleor. Therefore the unmodified end-to-end baseline gate remains **BLOCKING / NOT PROVEN**. A successful type-check or unit-test workflow does not close it.
 
+### Version identity check
+
+The official [Saleor Dashboard releases page](https://github.com/saleor/saleor-dashboard/releases/) marked **Dashboard 3.23.39** as its latest release during this evidence snapshot. The similarly numbered **3.23.40** seen on [Saleor Core releases](https://github.com/saleor/saleor/releases) belongs to the different `saleor/saleor` repository, not `saleor/saleor-dashboard`. Do not substitute a Core tag for the Dashboard source pin.
+
 ## 3. Dashboard operation inventory for the initial goods slice
 
 The inventory below was gathered from the pinned source files, not inferred from screenshots or a different moving branch.
