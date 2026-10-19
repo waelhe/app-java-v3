@@ -95,6 +95,11 @@ type DiscoveryRow {
 
 type Mutation {
   createService(input: ServiceInput!): Service!
+  createStoreProduct(input: StoreProductCreateInput!): StoreProduct!
+  createStoreProductVariant(input: StoreProductVariantCreateInput!, productId: ID!): StoreProductVariant!
+  publishStoreProduct(id: ID!): StoreProduct!
+  replaceStoreProductAttributes(id: ID!, values: [StoreProductAttributeValueInput!]!): [StoreProductAttributeValue!]!
+  updateStoreProduct(id: ID!, input: StoreProductUpdateInput!): StoreProduct!
 }
 
 """
@@ -300,6 +305,16 @@ type Query {
    ordering.
   """
   services(after: String, first: Int): ServiceConnection!
+  """
+   Dashboard's provider-owned catalog surface. This is a journey contract, not
+   a mirror of the catalog tables; the fetchers delegate to ProductAdminSpi.
+  """
+  storeProduct(id: ID!): StoreProduct
+  storeProductAttributeValues(productId: ID!): [StoreProductAttributeValue!]!
+  storeProductTypes: [StoreProductType!]!
+  storeProductVariantAttributeValues(variantId: ID!): [StoreProductAttributeValue!]!
+  storeProductVariants(productId: ID!): [StoreProductVariant!]!
+  storeProducts(after: String, first: Int): StoreProductConnection!
 }
 
 type Service {
@@ -320,6 +335,84 @@ type ServiceConnection {
 type ServiceEdge {
   cursor: String!
   node: Service!
+}
+
+"""
+ The store catalog contract consumed by marketplace-admin. Monetary writes and
+ reads use canonical decimal strings in minor units to preserve the full Java
+ long precision; GraphQL Int is only signed 32-bit and Float is not exact money.
+"""
+type StoreProduct {
+  currency: String!
+  description: String
+  id: ID!
+  priceMinor: String!
+  productTypeId: ID
+  providerId: ID!
+  status: StoreProductStatus!
+  storeCategoryCode: String!
+  title: String!
+}
+
+type StoreProductAttributeOption {
+  code: String!
+  id: ID!
+  nameAr: String
+  nameEn: String
+  position: Int!
+}
+
+type StoreProductAttributeValue {
+  assignmentId: ID!
+  booleanValue: Boolean
+  numberValue: String
+  optionId: ID
+  textValue: String
+}
+
+type StoreProductConnection {
+  edges: [StoreProductEdge]
+  pageInfo: PageInfo!
+}
+
+type StoreProductEdge {
+  cursor: String!
+  node: StoreProduct!
+}
+
+type StoreProductType {
+  attributes: [StoreProductTypeAttribute!]!
+  code: String!
+  description: String
+  id: ID!
+  nameAr: String
+  nameEn: String
+}
+
+type StoreProductTypeAttribute {
+  assignmentId: ID!
+  attributeDefinitionId: ID!
+  code: String!
+  nameAr: String
+  nameEn: String
+  options: [StoreProductAttributeOption!]!
+  position: Int!
+  required: Boolean!
+  scope: StoreProductAttributeScope!
+  valueType: StoreProductAttributeValueType!
+}
+
+type StoreProductVariant {
+  currency: String!
+  id: ID!
+  name: String
+  priceMinor: String!
+  productId: ID!
+  providerId: ID!
+  reservedQuantity: Int!
+  sku: String!
+  status: StoreProductVariantStatus!
+  stockQuantity: Int!
 }
 
 """
@@ -642,6 +735,32 @@ enum ServiceStatus {
   INACTIVE
 }
 
+enum StoreProductAttributeScope {
+  PRODUCT
+  VARIANT
+  VARIANT_SELECTION
+}
+
+enum StoreProductAttributeValueType {
+  BOOLEAN
+  CHOICE
+  NUMBER
+  TEXT
+}
+
+enum StoreProductStatus {
+  ACTIVE
+  ARCHIVED
+  DRAFT
+  SUSPENDED
+}
+
+enum StoreProductVariantStatus {
+  ACTIVE
+  ARCHIVED
+  SUSPENDED
+}
+
 """
  Input speaks integer cents — the domain money language of every write
  surface (REST CreateListingRequest.priceCents, V2 price_cents >= 0,
@@ -659,4 +778,38 @@ input ServiceInput {
   description: String
   name: String!
   priceCents: Int!
+}
+
+input StoreProductAttributeValueInput {
+  assignmentId: ID!
+  booleanValue: Boolean
+  numberValue: String
+  optionId: ID
+  textValue: String
+}
+
+"""
+ priceMinor must be a non-negative, base-10 integer string (for example "149900").
+ Domain services remain authoritative for ownership, ProductType rules and publishability.
+"""
+input StoreProductCreateInput {
+  currency: String!
+  description: String
+  priceMinor: String!
+  productTypeId: ID
+  storeCategoryCode: String!
+  title: String!
+}
+
+input StoreProductUpdateInput {
+  description: String
+  priceMinor: String!
+  title: String!
+}
+
+input StoreProductVariantCreateInput {
+  attributeValues: [StoreProductAttributeValueInput!]!
+  name: String
+  priceMinor: String!
+  sku: String!
 }
