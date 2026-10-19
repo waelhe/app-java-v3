@@ -239,9 +239,8 @@ class ProductVariantJourneyIntegrationTest {
         String createBody = """
                 {"storeCategoryCode":"journey-variants","title":"Typed C1 Product",
                  "description":"before edit","priceMinor":100000,"currency":"SAR",
-                 "productTypeId":"%s",
-                 "attributeValues":[{"assignmentId":"%s","optionId":"%s"}]}
-                """.formatted(schema.productTypeId(), schema.materialAssignmentId(), schema.cottonOptionId());
+                 "productTypeId":"%s"}
+                """.formatted(schema.productTypeId());
         HttpResponse<String> created = postJson("/api/v1/store/products", sellerGate.accessToken(), createBody);
         assertThat(created.statusCode()).as("typed product create: %s", body(created)).isEqualTo(201);
         JsonNode productBody = objectMapper.readTree(created.body());
@@ -260,10 +259,29 @@ class ProductVariantJourneyIntegrationTest {
         HttpResponse<String> initialAttributes = getWithBearer(
                 "/api/v1/store/products/" + productId + "/attributes", sellerGate.accessToken());
         assertThat(initialAttributes.statusCode()).isEqualTo(200);
-        assertThat(objectMapper.readTree(initialAttributes.body()).get(0).path("optionId").asString())
+        assertThat(objectMapper.readTree(initialAttributes.body()).size())
+                .as("draft creation does not require all schema fields up front").isZero();
+
+        // Required product attributes may be completed while the listing is a draft,
+        // but publish must fail closed until the required value has been stored.
+        HttpResponse<String> publishWithoutRequiredValue = postJson(
+                "/api/v1/store/products/" + productId + "/publish", sellerGate.accessToken(), "");
+        assertThat(publishWithoutRequiredValue.statusCode())
+                .as("a draft missing a required product attribute cannot publish: %s", body(publishWithoutRequiredValue))
+                .isEqualTo(409);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT product_status FROM products WHERE id = ?", String.class, productId))
+                .isEqualTo("DRAFT");
+
+        HttpResponse<String> cottonValue = postJsonOrPut("/api/v1/store/products/" + productId + "/attributes",
+                sellerGate.accessToken(), """
+                        [{"assignmentId":"%s","optionId":"%s"}]
+                        """.formatted(schema.materialAssignmentId(), schema.cottonOptionId()), "PUT");
+        assertThat(cottonValue.statusCode()).as("add the required product attribute: %s", body(cottonValue)).isEqualTo(200);
+        assertThat(objectMapper.readTree(cottonValue.body()).get(0).path("optionId").asString())
                 .isEqualTo(schema.cottonOptionId().toString());
 
-        // Replace the typed value and edit the product before publication.
+        // Replace the value and edit the product before publication.
         HttpResponse<String> replaced = postJsonOrPut("/api/v1/store/products/" + productId + "/attributes",
                 sellerGate.accessToken(), """
                         [{"assignmentId":"%s","optionId":"%s"}]
@@ -378,7 +396,6 @@ class ProductVariantJourneyIntegrationTest {
         assertThat(placedOrder.path("items").get(0).path("unitAmountMinor").asLong()).isEqualTo(110000L);
 
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM product_attribute_values_aud WHERE product_id = ?",
                 "SELECT count(*) FROM product_attribute_values_aud WHERE product_id = ?",
                 Integer.class, productId)).isGreaterThanOrEqualTo(2);
         assertThat(jdbcTemplate.queryForObject(

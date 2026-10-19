@@ -88,7 +88,7 @@ public class ProductService {
         Product product = Product.register(command.storeCategoryCode(), command.title(),
                 command.description(), command.priceMinor(), command.currency(), providerId,
                 command.productTypeId());
-        List<ProductAttributeValue> preparedValues = prepareProductAttributeValues(product, command.attributeValues());
+        List<ProductAttributeValue> preparedValues = prepareProductAttributeValues(product, command.attributeValues(), false);
         Product saved = productRepository.save(product);
         if (!preparedValues.isEmpty()) {
             attributeValues.saveAll(preparedValues);
@@ -97,7 +97,7 @@ public class ProductService {
     }
 
     private List<ProductAttributeValue> prepareProductAttributeValues(
-            Product product, List<CatalogAttributeValueInput> suppliedValues) {
+            Product product, List<CatalogAttributeValueInput> suppliedValues, boolean enforceRequired) {
         List<CatalogAttributeValueInput> values = suppliedValues == null ? List.of() : suppliedValues;
         if (product.getProductTypeId() == null) {
             if (!values.isEmpty()) {
@@ -135,7 +135,7 @@ public class ProductService {
             prepared.add(ProductAttributeValue.create(product.getId(), value));
         }
         for (ProductTypeAttributeAssignment assignment : productAssignments.values()) {
-            if (assignment.isRequired() && !seen.contains(assignment.getId())) {
+            if (enforceRequired && assignment.isRequired() && !seen.contains(assignment.getId())) {
                 throw new ConflictException("Required product attribute assignment is missing: " + assignment.getId());
             }
         }
@@ -195,7 +195,7 @@ public class ProductService {
         List<CatalogAttributeValueInput> values = attributeValues
                 .findAllByProductIdOrderByAssignmentIdAsc(productId).stream()
                 .map(ProductAttributeValue::toInput).toList();
-        prepareProductAttributeValues(product, values);
+        prepareProductAttributeValues(product, values, true);
         if (product.getProductTypeId() != null) {
             boolean selectionsDefinePurchasableVariants = assignments
                     .findAllByProductTypeIdOrderByScopeAscPositionAsc(product.getProductTypeId()).stream()
@@ -229,7 +229,8 @@ public class ProductService {
             List<CatalogAttributeValueInput> newValues, Authentication authentication) {
         Product product = getOwnedProduct(productId, authentication);
         List<ProductAttributeValue> prepared = prepareProductAttributeValues(product,
-                newValues == null ? List.of() : newValues);
+                newValues == null ? List.of() : newValues,
+                product.getStatus() != StoreProductStatus.DRAFT);
         Map<UUID, ProductAttributeValue> currentByAssignment = new HashMap<>();
         attributeValues.findAllByProductIdOrderByAssignmentIdAsc(productId)
                 .forEach(current -> currentByAssignment.put(current.getAssignmentId(), current));
