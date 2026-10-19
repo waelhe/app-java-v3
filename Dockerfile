@@ -191,11 +191,36 @@ EXPOSE 8080
 #   only ~240 MB for metaspace (Hibernate/Envers/Modulith/GraphQL/18 repositories
 #   ≈ 200+ MB) + code cache + thread stacks + ZGC metadata + netty direct
 #   buffers — over budget.
-#   Fix: drop ZGC for G1 (the JDK default collector — least exotic, best-tested
-#   path; OpenJDK positions ZGC for sub-ms latency on "8MB to 16TB" heaps, but
-#   its colored-pointer metadata and load barriers buy nothing at ~1 GB where
-#   boot-time footprint is the binding constraint) and drop the heap share to
-#   60% (~572 MB) — leaving ~380 MB for the non-heap side.
+#   Fix: drop ZGC — and leave the collector to JVM ergonomics, which at this
+#   container size selects Serial, NOT G1: the JDK 25 GC ergonomics guide's
+#   server-class rule is "two or more processors and physical memory larger
+#   than or equal to 1792 MB" (docs.oracle.com/en/java/javase/25/gctuning/
+#   ergonomics.html) and the 953 MiB cgroup is below it. Measured live on this
+#   service (2026-10-19, `java -XX:+PrintFlagsFinal`): UseSerialGC=true
+#   {ergonomic}, UseG1GC=false — every production boot since September ran
+#   Serial; the earlier "G1 (the JDK default)" note was wrong at this
+#   container size and is corrected here.
+#   Heap share: 50% (~476 MB) — measured from BOTH cliffs of the 2026-10-17..19
+#   deployment-failure wave:
+#     - 40% (382 MB, a platform-side JDK_JAVA_OPTIONS drift) starved the boot:
+#       thread dumps taken inside the hung JVM (SIGQUIT over Railway
+#       deployment-instance SSH) show tenured 260799/260800 K and the VM thread
+#       at 231.4 s CPU / 256.6 s elapsed — a serial full-GC spiral; the main
+#       thread crawled at 85 ms CPU / 25 s wall, the boot took 242.787 s at
+#       best and healthcheck-timeout FAILED at worst (fe6371fc/8755f6a5/
+#       11b15f8c/6cbe9930 + the diagnostic fc09d660).
+#     - 60% (~572 MB) crossed the opposite cliff: VmHWM 1,020,276 K against
+#       the 999,997,440-byte cgroup ceiling — silent kernel OOM kills (zero
+#       Java-level OOM/exception lines; /v3/api-docs at 332 paths/~647 KB
+#       killed the container) crash-looping ee231cdf.
+#   The measured non-heap peak is ~424 MB (metaspace 58 MB + code cache + AOT
+#   cache resident + thread stacks + netty direct buffers; the kernel reclaims
+#   the AOT cache's clean file pages under pressure — RssFile squeezed to
+#   58 MB), so the budget is heap <= ~480 MB: 50% gives 476 + 424 = 900 MB
+#   with ~53 MB margin, and 476 MB strictly exceeds the 382 MB that served
+#   production stably for hours. Verified live (555e73a9): boot 35.556 s,
+#   cgroup steady 823.7 MB / peak 851.5 MB, /v3/api-docs 200 twice with
+#   liveness green after.
 # UseContainerSupport omitted — enabled by default since Java 10+
 # (same principle as @EnableWebSecurity being redundant in Boot).
 #
@@ -211,7 +236,7 @@ EXPOSE 8080
 # HMAC input via String.format, JDK ResourceBundle candidates) must see the
 # same Latin-digit en baseline on every host. Explicit defense-in-depth,
 # not assumption about the base image's locale data.
-ENV JDK_JAVA_OPTIONS="-XX:AOTCache=/app/app.aot -XX:MaxRAMPercentage=60.0 -XX:+ExitOnOutOfMemoryError -Duser.language=en -Duser.country=US"
+ENV JDK_JAVA_OPTIONS="-XX:AOTCache=/app/app.aot -XX:MaxRAMPercentage=50.0 -XX:+ExitOnOutOfMemoryError -Duser.language=en -Duser.country=US"
 
 # The pure official Spring Boot 4.1 recipe (same reference page as above):
 #   ENTRYPOINT ["java", "-jar", "application.jar"]

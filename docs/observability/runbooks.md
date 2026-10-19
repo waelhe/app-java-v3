@@ -87,7 +87,8 @@ Alertmanager الرسمي يُعرّف التجميع (Grouping): «categorizes 
 | قاطع الدائرة الوحيد | `paymentProcessing`: عتبة فشل 50%، نافذة 10 نداءات، انتظار open 60s، half-open 3 نداءات | `application.yml:255-267` |
 | نَسِف ناقل الأحداث | 6h published / 1h processing / 1h resubmitted + إعادة نشر المعلّق عند الإقلاع | `application-prod.yml:54-58` |
 | TTL المخبآت | ساعة واحدة (redis) | SYSTEM.md §11 (طبقة TTL) |
-| ذاكرة JVM | `MaxRAMPercentage=60` + `ExitOnOutOfMemoryError` (انهيار OOM يقتل العملية فوراً — لا حالة زومبي) | `Dockerfile:150` |
+| ذاكرة JVM | `MaxRAMPercentage=50` — ميزانية الحاوية 1 GB المقيسة: كومة ~476 MB + غير الكومة ~424 MB (موجة 2026-10-19، القياس في railway-deployment-reference §0.8) | `Dockerfile` |
+| وضعا فشل OOM | جافا: `ExitOnOutOfMemoryError` يقتل العملية فوراً (أثر في السجل)؛ cgroup: قتل نواة صامت — الدليل القاطع عدادا `oom`/`oom_kill` في `/sys/fs/cgroup/memory.events` (واجهة cgroup v2 الرسمية — متاحة داخل حاويات Railway ومقيسة صفرًا على النشر المستقر)، و`memory.current`/`VmHWM` مؤشرا استخدام لا دليلا قتل | `Dockerfile` + §0.8 |
 | فحص المنصة (Railway) | healthcheckPath = `/actuator/health/liveness`، مهلة 300s | `.railway/railway.ts:36-37` |
 
 ---
