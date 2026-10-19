@@ -14,6 +14,6 @@ import java.util.UUID;
 public record StoreProductAttributeValueInput(
         @NotNull UUID assignmentId,
         @Size(max = 4000) String textValue,
-        @Size(max = 100) @Pattern(regexp = "^-?(?:0|[1-9][0-9]*)(?:\\\\.[0-9]+)?$") String numberValue,
+        @Size(max = 100) @Pattern(regexp = "^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$") String numberValue,
         Boolean booleanValue,
         UUID optionId) { }
