@@ -32,7 +32,7 @@ class ProductTypeAttributeServiceTest {
     @Test void variantSelectionRequiresChoiceAndAtLeastTwoOptions() {
         when(definitions.findById(attributeId)).thenReturn(Optional.of(
                 CatalogAttributeDefinition.create("color", "Color", "اللون", CatalogAttributeType.CHOICE, null)));
-        when(options.countByAttributeDefinitionId(attributeId)).thenReturn(2);
+        when(options.countByAttributeDefinitionId(attributeId)).thenReturn(2L);
         when(assignments.existsByProductTypeIdAndAttributeDefinitionId(typeId, attributeId)).thenReturn(false);
         when(assignments.existsByProductTypeIdAndScopeAndPosition(typeId, ProductTypeAttributeScope.VARIANT_SELECTION, 0)).thenReturn(false);
         when(assignments.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -53,7 +53,7 @@ class ProductTypeAttributeServiceTest {
 
         when(definitions.findById(attributeId)).thenReturn(Optional.of(
                 CatalogAttributeDefinition.create("size", "Size", "المقاس", CatalogAttributeType.CHOICE, null)));
-        when(options.countByAttributeDefinitionId(attributeId)).thenReturn(1);
+        when(options.countByAttributeDefinitionId(attributeId)).thenReturn(1L);
         assertThatThrownBy(() -> service.assign(typeId, attributeId, ProductTypeAttributeScope.VARIANT_SELECTION, true, 0))
                 .isInstanceOf(ConflictException.class).hasMessageContaining("two allowed options");
         verify(assignments, never()).save(any());
@@ -62,7 +62,7 @@ class ProductTypeAttributeServiceTest {
     @Test void variantSelectionCannotBeDeclaredOptional() {
         when(definitions.findById(attributeId)).thenReturn(Optional.of(
                 CatalogAttributeDefinition.create("color", "Color", "اللون", CatalogAttributeType.CHOICE, null)));
-        when(options.countByAttributeDefinitionId(attributeId)).thenReturn(2);
+        when(options.countByAttributeDefinitionId(attributeId)).thenReturn(2L);
         assertThatThrownBy(() -> service.assign(typeId, attributeId,
                 ProductTypeAttributeScope.VARIANT_SELECTION, false, 0))
                 .isInstanceOf(ConflictException.class).hasMessageContaining("must be required");
