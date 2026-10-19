@@ -363,7 +363,7 @@ class ProductVariantJourneyIntegrationTest {
         assertThat(placed.statusCode()).as("typed variant order placement: %s", body(placed)).isEqualTo(201);
         JsonNode placedOrder = objectMapper.readTree(placed.body());
         assertThat(placedOrder.path("totalAmountMinor").asLong()).isEqualTo(110000L);
-        assertThat(placedOrder.path("items")).hasSize(1);
+        assertThat(placedOrder.path("items").size()).isEqualTo(1);
         assertThat(placedOrder.path("items").get(0).path("variantId").asString()).isEqualTo(redId.toString());
         assertThat(placedOrder.path("items").get(0).path("unitAmountMinor").asLong()).isEqualTo(110000L);
 
