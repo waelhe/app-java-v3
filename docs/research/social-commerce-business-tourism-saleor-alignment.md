@@ -84,12 +84,13 @@ This is the first model gap that blocks a genuinely useful Saleor-derived produc
 
 **Required model behavior:**
 
-- Add a first-class ProductType definition separate from StoreCategory/navigation taxonomy.
-- Define typed attributes with explicit product-level versus variant-level ownership, required/optional behavior, supported scalar/choice values, and validation. Only implement types/constraints actually needed by the initial goods workflow; keep the model extensible without claiming arbitrary dynamic schemas.
-- Define selectable variant options and allowed values; validate variant combinations under one product, reject duplicate combinations, and preserve provider-scoped SKU uniqueness.
-- Keep the existing free-form variant name as a compatible display field while clients migrate to typed option values.
+- Add a first-class ProductType definition separate from StoreCategory/navigation taxonomy. The existing CategoryAttribute registry is category-scoped and only has TEXT/NUMBER/BOOLEAN; it must not be silently repurposed as the product-type schema.
+- Model reusable Attribute definitions separately from ProductType assignments. Each assignment declares whether it is a product attribute, a variant attribute, or a customer-selectable variant-selection attribute. Persist required/optional behavior, allowed values, stable code/slug, display labels/localization, position, and validation explicitly.
+- Do not pretend the three current scalar types give Saleor-level attribute depth. Saleor's official attribute model includes choices (dropdown/multiselect), numeric values (optionally with units), text/rich text, boolean, date/date-time, swatches, files, and references to typed entities. Select the types needed by a real goods workflow and expand via reviewed additive migrations; do not create an unrestricted schema engine without requirements.
+- Define selectable variant options and allowed values, with a canonical combination identity per product. Reject duplicate combinations, invalid values, and combinations that contradict the ProductType; preserve provider-scoped SKU uniqueness. Treat the combination generator and its validation as a domain rule, not a frontend-only convenience.
+- Keep the existing free-form variant name as a compatible display field while legacy clients migrate to typed option values. Preserve products that use the existing zero-variant path; Saleor's native checkout is variant-based, whereas converting every existing product now would change our accepted compatibility contract.
 - Keep existing zero-variant products sellable with the same price/stock behavior. Do not synthesize default variants or mass-convert live records.
-- Keep category-based browsing/filters distinct from ProductType/attribute semantics. A type may be assigned independently from the navigation category.
+- Keep navigation Category separate from ProductType and the curated Collection model. A product's classification does not determine its fields/options, and neither should become a universal schema for property, jobs, social posts, accommodation, tours, capacity, or bookings.
 - Expose source-owned secured contracts suitable for the administration client; choose REST or GraphQL per the current schema/security/contract evidence instead of inventing an extra transport just for Dashboard.
 - Add additive Flyway migrations, Envers mirrors for audited entities, API compatibility assertions, owner/scope and duplicate-combination tests, and a real catalog → variant → cart → order journey proving the selected option and frozen price survive placement.
 
@@ -109,28 +110,77 @@ This is the first model gap that blocks a genuinely useful Saleor-derived produc
 
 ## 7. Source references
 
-- Saleor Product Overview: https://docs.saleor.io/developer/products/overview
-- Saleor Channels: https://docs.saleor.io/developer/channels/overview
-- Saleor Checkout: https://docs.saleor.io/developer/checkout/overview
-- Saleor Transactions: https://docs.saleor.io/developer/payments/overview
-- Saleor Marketplace Recipe: https://docs.saleor.io/recipes/marketplace
-- Saleor Modeling: https://docs.saleor.io/developer/modeling
-- Spring Modulith verification: https://docs.spring.io/spring-modulith/reference/verification.html
-- Spring Modulith events/publication registry: https://docs.spring.io/spring-modulith/reference/events.html
-- Repository study: `docs/research/saleor-commerce-backend-fit-gap.md`
-- Merchandise ADR: `docs/adr/ADR-0012-merchandise-variant-model.md`
-- Multi-seller checkout ADR: `docs/adr/ADR-0010-multi-seller-cart-split.md`
-- Financial allocation ADR: `docs/adr/ADR-0013-financial-allocation-decisions.md`
-- Platform product charter: `docs/governance/plans/platform-admin-operating-system-product-charter.md`
-- Dashboard adaptation plan: `docs/governance/plans/saleor-dashboard-marketplace-adaptation-plan.md`
+### Saleor official documentation and source
 
-## 8. Evidence and limitations
+- Product model, variants, types, Categories vs. Collections: https://docs.saleor.io/developer/products/overview
+- Product-type configuration and variant-selection attributes: https://docs.saleor.io/developer/products/configuration
+- Attribute types, reusable definitions, typed values, references vs. metadata: https://docs.saleor.io/developer/attributes/overview
+- Channels and their effect on price/currency, publication, checkout, tax, stock, discounts, shipping and access: https://docs.saleor.io/developer/channels/overview
+- Checkout lifecycle: https://docs.saleor.io/developer/checkout/overview
+- Stock allocation across warehouses and per-order-line allocations: https://docs.saleor.io/developer/stock/stock-allocation
+- Catalog and order promotions, predicates, voucher interaction and precedence: https://docs.saleor.io/developer/discounts/promotions
+- Transactions and refunds: https://docs.saleor.io/developer/payments/overview and https://docs.saleor.io/developer/payments/refunds
+- Marketplace vendor ownership, vendor-specific access, taxes, payouts and separate operator/vendor portals: https://docs.saleor.io/recipes/marketplace
+- Modeling and structured relationships: https://docs.saleor.io/developer/modeling
+- Dashboard configuration and schema generation: https://github.com/saleor/saleor-dashboard/blob/main/docs/configuration.md and https://github.com/saleor/saleor-dashboard/blob/main/docs/multi-schema.md
+- Official Dashboard extension points and fork trade-offs: https://docs.saleor.io/recipes/extending-dashboard and https://docs.saleor.io/developer/extending/overview
+- Saleor Dashboard source, versioned dependencies, scripts and test suites: https://github.com/saleor/saleor-dashboard
 
-This document establishes product scope and a current-state implementation order. It does not claim:
+### Spring and platform architecture authority
+
+- Spring Modulith module-boundary verification (current project line 2.1.x): https://docs.spring.io/spring-modulith/reference/verification.html
+- Spring Modulith transactional event publication and recovery: https://docs.spring.io/spring-modulith/reference/events.html
+- Spring GraphQL field-level/service-method security guidance (use only where consistent with the repository's actual DGS/Spring integration): https://docs.spring.io/spring-graphql/reference/security.html
+- Tourism interoperability/discoverability references: OpenTravel Alliance specifications https://opentravel.org/Specifications/ and FAQ https://opentravel.org/frequently-asked-questions/; Schema.org destination/trip vocabulary https://schema.org/TouristDestination and https://schema.org/TouristTrip; accommodation/lodging/offer model https://schema.org/docs/hotels.html. These are interoperability and vocabulary references, not a mandate to copy their schema into the core domain.
+- Repository authority: `docs/research/saleor-commerce-backend-fit-gap.md`; `docs/adr/ADR-0010-multi-seller-cart-split.md`; `docs/adr/ADR-0012-merchandise-variant-model.md`; `docs/adr/ADR-0013-financial-allocation-decisions.md`; `docs/governance/plans/platform-admin-operating-system-product-charter.md`; `docs/governance/plans/saleor-dashboard-marketplace-adaptation-plan.md`.
+
+## 8. Source-to-decision audit
+
+The following is a source trace, not a statement that every cited capability has already been implemented.
+
+| Source evidence | Architectural implication for this platform | Current consequence |
+|---|---|---|
+| Saleor Product Overview + Product Configuration + Attributes Overview | ProductType shapes fields; reusable typed Attributes may be assigned at product or variant level; a variant-selection attribute determines purchasable choices; navigation categories and curated collections are separate concerns. | C1 must model product/variant attribute assignments and allowed option values, not merely add a ProductType table over CategoryAttribute. The type inventory must be deliberately scoped and expanded only against real goods requirements. |
+| Saleor Channels Overview | A channel can affect publication/visibility, currency/price, variant availability, checkout, tax, vouchers/promotions, shipping, warehouse availability and access to orders. | A channel is not a persona, country/neighborhood filter, or tourism mode. ADR-0012's deferral remains valid only while there is one true commercial context; a second context with independent commercial behavior reopens the decision. |
+| Saleor Checkout Overview | Saleor uses a unified checkout object for cart-like operations, line items are variant-based, and completion may reserve stock and process payment before creating an order. | Our Cart/Checkout/Order model and ADR-0010's atomic split into one order per seller are intentional platform semantics. Compatibility requires an explicit operation-by-operation map, not copying Saleor's object graph. The legacy zero-variant path must remain supported unless a separate migration decision changes it. |
+| Saleor Promotions | Catalog promotions affect visible line prices; order promotions run at checkout; voucher and order-promotion combinations have defined restrictions and precedence. | #624's current best-single-order-promotion rule is a deliberate subset, not full Saleor promotion parity. Dashboard controls must expose only supported rules; parity requires a policy decision and tests before claiming equivalence. |
+| Saleor Stock Allocation + upstream warehouse models | Stock is scoped by variant and warehouse, allocations link order lines to stock, and channel/warehouse/shipping context affects valid allocation. | Our current conditional reservations prove the single-stock invariant, not multi-warehouse allocation. Retain the documented trigger and implement warehouses, transfer, allocation strategy, reconciliation and concurrency proof together if multi-location sellers require them. |
+| Saleor Marketplace Recipe | Vendors and vendor-scoped permissions are not built-in; the recipe requires application-level resource scoping, seller operations, vendor-specific tax handling and marketplace payout policies. The regular Dashboard does not provide vendor-scoped authorization by itself. | Our Provider/team ownership and platform payment/ledger/settlement remain authoritative. A global operator Dashboard and a provider's scoped workspace are different security experiences; never grant vendor access by translating Saleor PermissionEnum strings. |
+| Dashboard configuration and multi-schema documentation | Dashboard operations/types are generated from the Saleor schemas selected during build; a custom backend cannot be connected merely by changing the API URL. | For each selected screen we must inventory its actual operations and permissions, remove/replace Saleor-specific contracts, generate types from the platform's real approved schema/API contracts, and run API-backed E2E. |
+| Saleor official extension/fork guidance + current Dashboard repository | Extensions are appropriate while the Saleor backend remains; a fork provides deeper control but creates manual synchronization and security-update work. | Our Spring-backed dashboard cannot be only a Saleor extension app because the underlying Saleor backend is not our source of truth. A fork is a measured starting point, with a stop/continue decision after one complete real goods workflow based on code churn and upstream updateability. |
+| Spring Modulith verification and event publication registry | Module dependencies should remain acyclic and cross boundaries through exposed APIs; event publication/recovery is for decoupled consequences, not a substitute for synchronous domain invariants. | Keep stock/price/permission invariants synchronous in their owning modules; use existing ports/events for consequences and preserve idempotency/recovery. |
+| Schema.org travel vocabulary + OpenTravel Alliance specifications | Accommodation, a room/unit, an offer, a destination, and an itinerary are related but distinct concepts; travel standards help interoperability. | Tourism stays first-class and separate from retail ProductVariant. Use these sources when defining public discovery metadata and integration adapters, not as authority to merge tourism booking lifecycles with commerce inventory. |
+
+## 9. Maintainer and community evidence (non-normative)
+
+These sources are useful experience signals but do not override official documentation or our executable code:
+
+- In the Saleor repository discussion [“Customize Dashboard” #10736](https://github.com/saleor/saleor/discussions/10736), a Saleor contributor's accepted answer explains that substantial UI customization requires a fork and makes the fork owner responsible for keeping it updated. This supports the adaptation plan's upstream-sync and stop/continue gates; it does not by itself prove that a fork is the best architecture for our platform.
+- The Dashboard repository's issue list currently includes [#6984, a reported session-refresh/refresh-outage problem](https://github.com/saleor/saleor-dashboard/issues/6984). An open issue is not proof of a defect in every deployment; it is a reminder to verify session expiry, refresh failures, and recovery in our fork's own E2E/security tests.
+- The Dashboard issue list also contains feature requests such as [bulk product create/update #5820](https://github.com/saleor/saleor-dashboard/issues/5820). Do not assume a feature exists just because it appears in an enterprise admin target; verify the pinned source's actual routes, UI affordances, API operations, and tests.
+- The repository has concurrent product and tourism journey test PRs at this baseline: [#649](https://github.com/waelhe/app-java-v3/pull/649) (booking → payment → confirmation → eligible review) and [#658](https://github.com/waelhe/app-java-v3/pull/658) (local need, tourism/stay, returnee composite journeys). Both were open when rechecked on 19 October 2026. Reconcile their eventual merge result before adding overlapping acceptance tests; they do not represent production code changes by themselves.
+
+## 10. What must be true before calling the plan “final”
+
+This matrix is source-grounded but is **not yet a final, fully proven implementation plan**. That designation requires all of the following:
+
+1. Pin an exact Saleor Dashboard release tag and commit SHA, record the license and exact Node/pnpm/runtime requirements from that revision, and pass its unmodified build/typecheck/unit/component/E2E baseline against a disposable Saleor installation.
+2. Produce a route/query/mutation inventory from that exact source tree for every adopted product, inventory, order, pricing, seller, delivery and reporting screen. Each operation must map to the owning Spring module, actual REST/OpenAPI or GraphQL contract, permission/scope rule, error semantics, read-back behavior, and E2E journey.
+3. Refresh every status against current `main`, Flyway migrations, current SDL/OpenAPI, executable tests and open PRs. Distinguish repository-implemented, E2E-proven, production-configured, deferred by ADR, unsupported and policy-not-decided. Do not equate a merged PR with a fresh live deployment check.
+4. Confirm the first goods slice against the actual product model and avoid overbuilding generic attributes. It must prove option validation/uniqueness, ownership, existing zero-variant behavior, cart repricing, immutable order snapshot, storefront/discovery visibility, and API contract compatibility.
+5. Resolve how social posts, business/provider offers, tourism destinations, accommodations and trips are cross-linked in discovery/curated collections without duplicating source records or granting authority across domains.
+6. Review tourism separately against booking/availability contracts and the applicable Schema.org/OpenTravel integration use cases. Prove destination/experience → availability/capacity → booking terms and price freeze → payment → provider fulfillment → cancellation/reschedule/refund/review, or list the exact missing owner contracts.
+7. Define explicit go/no-go metrics for the Dashboard fork after its first full Spring-backed journey: number/percentage of source files changed, upstream E2E retained, operation coverage, number of Saleor-coupled paths remaining, and demonstrated ability to evaluate/apply a selected upstream fix.
+8. Run the repository's required build, test, compatibility, security and deployment gates for each implementation PR. This document's web/source review did not run Maven, full E2E, or a production smoke test.
+
+## 11. Evidence and limitations
+
+This document establishes a better-traced current-state matrix and an ordered entry plan. It does not claim:
 - full Saleor behavioral parity;
-- an implemented Dashboard fork or live Dashboard/Spring connection;
-- that every tourism journey is already implemented or E2E-proven;
-- that a currently deferred channel/warehouse model is automatically required;
-- that tests or a production smoke run were executed while authoring this matrix.
+- that every cited capability is already implemented in our backend;
+- an implemented Dashboard fork or a live Dashboard/Spring connection;
+- that all tourism journeys are currently E2E-proven;
+- that channel or warehouse tables are automatically required merely because Saleor has them;
+- that the complete final implementation plan has passed architecture review or automated tests.
 
-The first code change must re-truth-sync the exact current `main`, review concurrent PRs and run the repository's prescribed Maven/contract gates before any release. No merge or production deployment is implied by this document.
+Before every code slice, re-truth-sync the exact current `main`, review concurrent PRs, and read the source migrations/contracts/tests. No merge or production deployment is implied by this document.
