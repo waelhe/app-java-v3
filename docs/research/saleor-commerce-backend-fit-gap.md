@@ -5,6 +5,10 @@
 **Functional reference:** Saleor's official documentation and source.  
 **Technical implementation authority:** the project's pinned Spring / Spring Modulith / Spring Data official documentation and current repository constraints.
 
+## Current-state authority
+
+The original fit/gap tables below record the source inspection that preceded the execution waves. They must not be read as the current status of every capability after the later commerce merges. The current product scope, post-merge evidence, capability classifications, and next implementation slice are maintained in [Social, Commerce/Business, and Tourism Platform — Saleor Alignment Matrix](social-commerce-business-tourism-saleor-alignment.md). Where the historic table and that dated current-state matrix differ, re-read current `main`, migrations, contracts, tests, and open PRs before changing code; the repository state and executable evidence govern.
+
 ## 1. Decision in brief
 
 Study Saleor's backend deeply and use it as a **behavioral and domain-maturity reference** for the commerce part of the platform. Do not copy its Django models, repository layout, or application code into a new large `marketplace` module.
