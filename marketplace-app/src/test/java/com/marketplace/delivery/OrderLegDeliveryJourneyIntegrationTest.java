@@ -344,9 +344,16 @@ class OrderLegDeliveryJourneyIntegrationTest {
         JsonNode legs = objectMapper.readTree(legsRead.body());
         assertThat(legs.size()).isEqualTo(1);
         UUID baseLegId = UUID.fromString(legs.get(0).path("id").asString());
+        // The checkout leg is born dispatch-ready — the payment already
+        // rode the order (never an AWAITING_PAYMENT hop). But the REAL
+        // scheduler sweeps at every configured tick, and the row may have
+        // been assigned to a courier between its awaited birth and this
+        // read — the same live-state law as the partial-cancel branch
+        // (acbf32a466): the assertion accepts both live states and pins
+        // only the survival invariant (never CANCELLED).
         assertThat(legs.get(0).path("status").asString())
-                .as("the checkout leg is born dispatch-ready — the payment already rode the order")
-                .isEqualTo("READY_FOR_DISPATCH");
+                .as("the checkout leg is born dispatch-ready and flies (ready or assigned — the payment already rode the order)")
+                .isIn("READY_FOR_DISPATCH", "ASSIGNED");
         assertThat(legs.get(0).path("paymentIntentId").isNull())
                 .as("the leg owns NO payment intent of its own (the frozen fee never charges twice)").isTrue();
         assertThat(legs.get(0).path("amountMinor").asLong())
