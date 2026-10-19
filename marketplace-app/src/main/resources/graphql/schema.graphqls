@@ -4,6 +4,9 @@ type Query {
     storeProduct(id: ID!): StoreProduct
     storeProducts(first: Int, after: String): StoreProductConnection!
     storeProductTypes: [StoreProductType!]!
+    storeProductAttributeValues(productId: ID!): [StoreProductAttributeValue!]!
+    storeProductVariants(productId: ID!): [StoreProductVariant!]!
+    storeProductVariantAttributeValues(variantId: ID!): [StoreProductAttributeValue!]!
 
     service(id: ID!): Service
     # The bounded collection contract (GraphQL target design Phase 1): the
@@ -148,6 +151,8 @@ type Mutation {
     createStoreProduct(input: StoreProductCreateInput!): StoreProduct!
     updateStoreProduct(id: ID!, input: StoreProductUpdateInput!): StoreProduct!
     publishStoreProduct(id: ID!): StoreProduct!
+    replaceStoreProductAttributes(id: ID!, values: [StoreProductAttributeValueInput!]!): [StoreProductAttributeValue!]!
+    createStoreProductVariant(productId: ID!, input: StoreProductVariantCreateInput!): StoreProductVariant!
 
     createService(input: ServiceInput!): Service!
 }
@@ -397,6 +402,83 @@ type StoreProductType {
     nameEn: String
     nameAr: String
     description: String
+    attributes: [StoreProductTypeAttribute!]!
+}
+
+type StoreProductTypeAttribute {
+    assignmentId: ID!
+    attributeDefinitionId: ID!
+    code: String!
+    nameEn: String
+    nameAr: String
+    valueType: StoreProductAttributeValueType!
+    scope: StoreProductAttributeScope!
+    required: Boolean!
+    position: Int!
+    options: [StoreProductAttributeOption!]!
+}
+
+enum StoreProductAttributeValueType {
+    TEXT
+    NUMBER
+    BOOLEAN
+    CHOICE
+}
+
+enum StoreProductAttributeScope {
+    PRODUCT
+    VARIANT
+    VARIANT_SELECTION
+}
+
+type StoreProductAttributeOption {
+    id: ID!
+    code: String!
+    nameEn: String
+    nameAr: String
+    position: Int!
+}
+
+type StoreProductAttributeValue {
+    assignmentId: ID!
+    textValue: String
+    numberValue: String
+    booleanValue: Boolean
+    optionId: ID
+}
+
+type StoreProductVariant {
+    id: ID!
+    productId: ID!
+    sku: String!
+    name: String
+    priceMinor: String!
+    currency: String!
+    providerId: ID!
+    status: StoreProductVariantStatus!
+    stockQuantity: Int!
+    reservedQuantity: Int!
+}
+
+enum StoreProductVariantStatus {
+    ACTIVE
+    SUSPENDED
+    ARCHIVED
+}
+
+input StoreProductAttributeValueInput {
+    assignmentId: ID!
+    textValue: String
+    numberValue: String
+    booleanValue: Boolean
+    optionId: ID
+}
+
+input StoreProductVariantCreateInput {
+    sku: String!
+    name: String
+    priceMinor: String!
+    attributeValues: [StoreProductAttributeValueInput!]!
 }
 
 # priceMinor must be a non-negative, base-10 integer string (for example "149900").
