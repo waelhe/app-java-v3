@@ -15,6 +15,6 @@ public record StoreProductCreateInput(
         @NotBlank @Size(max = 50) String storeCategoryCode,
         @NotBlank @Size(max = 200) String title,
         @Size(max = 2000) String description,
-        @NotBlank @Pattern(regexp = "^(0|[1-9][0-9]*)$") String priceMinor,
+        @NotBlank @Size(max = 19) @Pattern(regexp = "^(0|[1-9][0-9]*)$") String priceMinor,
         @NotBlank @Pattern(regexp = "^[A-Z]{3}$") String currency,
         UUID productTypeId) { }
