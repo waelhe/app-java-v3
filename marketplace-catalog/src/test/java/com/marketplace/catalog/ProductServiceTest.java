@@ -240,4 +240,45 @@ class ProductServiceTest {
                 .as("existence itself is private (the R5 posture)")
                 .isInstanceOf(ResourceNotFoundException.class);
     }
+
+    @Test
+    void ownedListReadsTheCallersOwnShelf() {
+        Product owned = Product.register("home-appliances", "t", null, 1L, "SAR", caller);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+        when(productRepository.findByProviderId(caller)).thenReturn(List.of(owned));
+
+        assertThat(service.listOwnedProducts(authentication)).containsExactly(owned);
+    }
+
+    @Test
+    void ownedUpdateEditsTheDetailsAndSaves() {
+        UUID productId = UUID.randomUUID();
+        Product owned = Product.register("home-appliances", "old title", null, 1L, "SAR", caller);
+        when(productRepository.findById(productId)).thenReturn(Optional.of(owned));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+        when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Product updated = service.updateOwnedProduct(productId,
+                new ProductService.UpdateProductCommand("new title", "desc", 2500L), authentication);
+        assertThat(updated.getTitle()).isEqualTo("new title");
+        assertThat(updated.getPriceMinor()).isEqualTo(2500L);
+        verify(productRepository).save(owned);
+    }
+
+    @Test
+    void ownedAttributeReadMapsTheStoredTypedValues() {
+        UUID productId = UUID.randomUUID();
+        Product owned = Product.register("home-appliances", "t", null, 1L, "SAR", caller);
+        when(productRepository.findById(productId)).thenReturn(Optional.of(owned));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+        UUID assignmentId = UUID.randomUUID();
+        ProductAttributeValue stored = ProductAttributeValue.create(productId,
+                new CatalogAttributeValueInput(assignmentId, "red", null, null, null));
+        when(attributeValues.findAllByProductIdOrderByAssignmentIdAsc(productId)).thenReturn(List.of(stored));
+
+        List<CatalogAttributeValueInput> read = service.listOwnedAttributeValues(productId, authentication);
+        assertThat(read).hasSize(1);
+        assertThat(read.get(0).assignmentId()).isEqualTo(assignmentId);
+        assertThat(read.get(0).textValue()).isEqualTo("red");
+    }
 }
