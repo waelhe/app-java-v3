@@ -497,8 +497,8 @@ class OrderLegDeliveryJourneyIntegrationTest {
         assertThat(deliveredOne.statusCode()).as("the first split delivers: %s", body(deliveredOne)).isEqualTo(200);
         JsonNode deliveredOneView = objectMapper.readTree(deliveredOne.body());
         assertThat(deliveredOneView.path("status").asString()).isEqualTo("DELIVERED");
-        assertThat(deliveredOneView.path("deliveredAt").isNull())
-                .as("the delivered leg carries its proof timestamp").isFalse();
+        assertThat(deliveredOneView.hasNonNull("deliveredAt"))
+                .as("the delivered leg carries its proof timestamp").isTrue();
 
         // (12) The completion WAIT, measured across a real dispatch sweep:
         // the courier re-declares availability, the scheduler takes the
