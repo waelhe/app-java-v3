@@ -15,7 +15,7 @@ public interface StoreProductGraphQlMapper {
     @Mapping(target = "priceMinor", expression = "java(Long.toString(product.priceMinor()))")
     @Mapping(target = "providerId", expression = "java(product.providerId().toString())")
     @Mapping(target = "productTypeId", expression = "java(product.productTypeId() == null ? null : product.productTypeId().toString())")
-    @Mapping(target = "status", expression = "java(StoreProductStatus.valueOf(product.status().name()))")
+    @Mapping(target = "status", expression = "java(com.marketplace.app.graphql.generated.types.StoreProductStatus.valueOf(product.status().name()))")
     StoreProduct toResponse(ProductAdminSpi.ProductView product);
 
     @Mapping(target = "id", expression = "java(productType.id().toString())")
