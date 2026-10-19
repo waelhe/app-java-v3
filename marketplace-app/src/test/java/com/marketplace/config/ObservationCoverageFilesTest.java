@@ -163,6 +163,13 @@ class ObservationCoverageFilesTest {
                     // two public reads stay unobserved.
                     "catalog.product.answer.publish", "catalog.product.question.ask",
                     "catalog.product.register",
+                    // A-17/C.7 closing increment (PR #673): the store-categories
+                    // dictionary's data-operation surface — three business
+                    // commands; the configuration read stays unobserved per
+                    // the same commands-not-reads policy.
+                    "catalog.store-category.register",
+                    "catalog.store-category.remove",
+                    "catalog.store-category.update",
                     // ADR-0012 (the Saleor plan's Phase 2): the variant's
                     // registration — the Product root's own exact treatment
                     // (registration observed; the inventory and lifecycle
