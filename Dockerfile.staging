@@ -69,5 +69,5 @@ COPY --from=extractor /app/extracted/application/ ./
 COPY --from=trainer /app/app.aot app.aot
 USER app
 EXPOSE 8080
-ENV JDK_JAVA_OPTIONS="-XX:AOTCache=/app/app.aot -XX:MaxRAMPercentage=60.0 -XX:+ExitOnOutOfMemoryError -Duser.language=en -Duser.country=US"
+ENV JDK_JAVA_OPTIONS="-XX:AOTCache=/app/app.aot -XX:MaxRAMPercentage=50.0 -XX:+ExitOnOutOfMemoryError -Duser.language=en -Duser.country=US"
 ENTRYPOINT ["java", "-jar", "app.jar"]
