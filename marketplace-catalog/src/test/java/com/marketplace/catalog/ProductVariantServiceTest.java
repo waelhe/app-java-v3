@@ -77,7 +77,7 @@ class ProductVariantServiceTest {
         return Instancio.of(Product.class)
                 .set(field(Product::getProviderId), seller)
                 .set(field(Product::getCurrency), "SAR")
-                .set(field(Product::getStatus), ProductStatus.ACTIVE)
+                .set(field(Product::getStatus), StoreProductStatus.ACTIVE)
                 .set(field(Product::getProductTypeId), null)
                 .set(field(Product::getStockQuantity), 0)
                 .set(field(Product::getReservedQuantity), 0)

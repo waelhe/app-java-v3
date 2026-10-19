@@ -1,7 +1,6 @@
 package com.marketplace.catalog;
 
 import java.util.List;
-import java.util.List;
 import java.util.UUID;
 
 import com.marketplace.shared.api.ApiConstants;
@@ -165,7 +164,7 @@ public class ProductController {
             String currency,
             UUID providerId,
             UUID productTypeId,
-            ProductStatus status
+            StoreProductStatus status
     ) {
         /** Source compatibility for older callers constructing this response shape directly. */
         public ProductResponse(UUID id, String storeCategoryCode, String title, String description,
