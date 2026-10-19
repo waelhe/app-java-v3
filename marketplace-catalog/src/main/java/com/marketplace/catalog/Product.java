@@ -47,6 +47,10 @@ public class Product extends BaseEntity {
     @Column(name = "store_category_code", nullable = false, length = 50)
     private String storeCategoryCode;
 
+    /** Optional reusable goods schema; null keeps pre-C1 and zero-variant products compatible. */
+    @Column(name = "product_type_id")
+    private UUID productTypeId;
+
     /** The product's display title. */
     @Column(name = "title", nullable = false, length = 200)
     private String title;
@@ -95,7 +99,7 @@ public class Product extends BaseEntity {
     }
 
     private Product(UUID id, String storeCategoryCode, String title, String description,
-                    long priceMinor, String currency, UUID providerId) {
+                    long priceMinor, String currency, UUID providerId, UUID productTypeId) {
         this.id = id;
         this.storeCategoryCode = storeCategoryCode;
         this.title = title;
@@ -103,6 +107,7 @@ public class Product extends BaseEntity {
         this.priceMinor = priceMinor;
         this.currency = currency;
         this.providerId = providerId;
+        this.productTypeId = productTypeId;
         this.stockQuantity = 0;
         this.reservedQuantity = 0;
         this.status = ProductStatus.ACTIVE;
@@ -115,8 +120,14 @@ public class Product extends BaseEntity {
      */
     public static Product register(String storeCategoryCode, String title, String description,
                                    long priceMinor, String currency, UUID providerId) {
+        return register(storeCategoryCode, title, description, priceMinor, currency, providerId, null);
+    }
+
+    /** C1: attaches a reusable goods schema without forcing it onto legacy products. */
+    public static Product register(String storeCategoryCode, String title, String description,
+                                   long priceMinor, String currency, UUID providerId, UUID productTypeId) {
         return new Product(UUID.randomUUID(), storeCategoryCode, title, description,
-                priceMinor, currency, providerId);
+                priceMinor, currency, providerId, productTypeId);
     }
 
     public UUID getId() {
@@ -125,6 +136,10 @@ public class Product extends BaseEntity {
 
     public String getStoreCategoryCode() {
         return storeCategoryCode;
+    }
+
+    public UUID getProductTypeId() {
+        return productTypeId;
     }
 
     public String getTitle() {

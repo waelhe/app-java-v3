@@ -53,7 +53,7 @@ public class ProductController {
             @Valid @RequestBody RegisterProductRequest request, Authentication authentication) {
         Product product = productService.register(new ProductService.RegisterProductCommand(
                 request.storeCategoryCode(), request.title(), request.description(),
-                request.priceMinor(), request.currency()), authentication);
+                request.priceMinor(), request.currency(), request.productTypeId()), authentication);
         return ResponseEntity.status(HttpStatus.CREATED).body(ProductResponse.of(product));
     }
 
@@ -83,8 +83,15 @@ public class ProductController {
             @Schema(description = "The authoritative unit price in minor units", example = "149900")
             @NotNull @Min(0) Long priceMinor,
             @Schema(description = "ISO-4217 currency code", example = "SAR")
-            @NotBlank @Size(min = 3, max = 3) String currency
+            @NotBlank @Size(min = 3, max = 3) String currency,
+            @Schema(description = "Optional reusable goods ProductType ID; omit to preserve the legacy untyped path", nullable = true)
+            UUID productTypeId
     ) {
+        /** Existing clients and direct test callers can continue to use the five-field constructor. */
+        public RegisterProductRequest(String storeCategoryCode, String title, String description,
+                                      Long priceMinor, String currency) {
+            this(storeCategoryCode, title, description, priceMinor, currency, null);
+        }
     }
 
     /** The root's response shape — the same fields the entity declares. */
@@ -95,12 +102,19 @@ public class ProductController {
             String description,
             long priceMinor,
             String currency,
-            UUID providerId
+            UUID providerId,
+            UUID productTypeId
     ) {
+        /** Source compatibility for older callers constructing this response shape directly. */
+        public ProductResponse(UUID id, String storeCategoryCode, String title, String description,
+                               long priceMinor, String currency, UUID providerId) {
+            this(id, storeCategoryCode, title, description, priceMinor, currency, providerId, null);
+        }
+
         static ProductResponse of(Product product) {
             return new ProductResponse(product.getId(), product.getStoreCategoryCode(),
                     product.getTitle(), product.getDescription(), product.getPriceMinor(),
-                    product.getCurrency(), product.getProviderId());
+                    product.getCurrency(), product.getProviderId(), product.getProductTypeId());
         }
     }
 }

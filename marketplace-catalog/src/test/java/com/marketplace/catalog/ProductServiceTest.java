@@ -33,6 +33,8 @@ class ProductServiceTest {
     @Mock
     private StoreCategoryRepository storeCategoryRepository;
     @Mock
+    private ProductTypeRepository productTypeRepository;
+    @Mock
     private CurrentUserProvider currentUserProvider;
     @Mock
     private Authentication authentication;
@@ -42,12 +44,17 @@ class ProductServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ProductService(productRepository, storeCategoryRepository, currentUserProvider);
+        service = new ProductService(productRepository, storeCategoryRepository, productTypeRepository, currentUserProvider);
     }
 
     private ProductService.RegisterProductCommand command(String categoryCode) {
         return new ProductService.RegisterProductCommand(
                 categoryCode, "Espresso machine, 2-cup", "Pump-driven", 149900L, "SAR");
+    }
+
+    private ProductService.RegisterProductCommand typedCommand(String categoryCode, UUID productTypeId) {
+        return new ProductService.RegisterProductCommand(
+                categoryCode, "Espresso machine, 2-cup", "Pump-driven", 149900L, "SAR", productTypeId);
     }
 
     @Test
@@ -73,6 +80,34 @@ class ProductServiceTest {
         assertThat(product.getProviderId()).as("the owning provider IS the caller").isEqualTo(caller);
         assertThat(product.getPriceMinor()).isEqualTo(149900L);
         assertThat(product.getCurrency()).isEqualTo("SAR");
+    }
+
+    @Test
+    void registerCanAttachAnExistingProductType() {
+        UUID productTypeId = UUID.randomUUID();
+        when(storeCategoryRepository.findByCode("home-appliances"))
+                .thenReturn(Optional.of(StoreCategory.register("home-appliances", "Home appliances", "أجهزة منزلية", 0)));
+        when(productTypeRepository.findById(productTypeId)).thenReturn(Optional.of(
+                ProductType.create("home-appliances", "Home appliances", "الأجهزة المنزلية", null)));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+        when(productRepository.save(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Product product = service.register(typedCommand("home-appliances", productTypeId), authentication);
+
+        assertThat(product.getProductTypeId()).isEqualTo(productTypeId);
+    }
+
+    @Test
+    void registerRejectsUnknownProductTypeBeforeProductWrite() {
+        UUID unknownType = UUID.randomUUID();
+        when(storeCategoryRepository.findByCode("home-appliances"))
+                .thenReturn(Optional.of(StoreCategory.register("home-appliances", "Home appliances", "أجهزة منزلية", 0)));
+        when(productTypeRepository.findById(unknownType)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.register(typedCommand("home-appliances", unknownType), authentication))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("ProductType");
+        org.mockito.Mockito.verify(productRepository, org.mockito.Mockito.never()).save(any(Product.class));
     }
 
     @Test

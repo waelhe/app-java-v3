@@ -33,13 +33,16 @@ public class ProductService {
 
     private final ProductRepository productRepository;
     private final StoreCategoryRepository storeCategoryRepository;
+    private final ProductTypeRepository productTypeRepository;
     private final com.marketplace.shared.security.CurrentUserProvider currentUserProvider;
 
     public ProductService(ProductRepository productRepository,
                           StoreCategoryRepository storeCategoryRepository,
+                          ProductTypeRepository productTypeRepository,
                           com.marketplace.shared.security.CurrentUserProvider currentUserProvider) {
         this.productRepository = productRepository;
         this.storeCategoryRepository = storeCategoryRepository;
+        this.productTypeRepository = productTypeRepository;
         this.currentUserProvider = currentUserProvider;
     }
 
@@ -55,9 +58,14 @@ public class ProductService {
         storeCategoryRepository.findByCode(command.storeCategoryCode())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "StoreCategory", command.storeCategoryCode()));
+        if (command.productTypeId() != null) {
+            productTypeRepository.findById(command.productTypeId())
+                    .orElseThrow(() -> new ResourceNotFoundException("ProductType", command.productTypeId()));
+        }
         UUID providerId = currentUserProvider.getCurrentUserId(authentication);
         Product product = Product.register(command.storeCategoryCode(), command.title(),
-                command.description(), command.priceMinor(), command.currency(), providerId);
+                command.description(), command.priceMinor(), command.currency(), providerId,
+                command.productTypeId());
         return productRepository.save(product);
     }
 
@@ -87,6 +95,12 @@ public class ProductService {
             String title,
             String description,
             long priceMinor,
-            String currency) {
+            String currency,
+            UUID productTypeId) {
+        /** Source compatibility for callers predating optional ProductType assignment. */
+        public RegisterProductCommand(String storeCategoryCode, String title, String description,
+                                      long priceMinor, String currency) {
+            this(storeCategoryCode, title, description, priceMinor, currency, null);
+        }
     }
 }
