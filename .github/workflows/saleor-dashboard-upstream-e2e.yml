@@ -29,18 +29,30 @@ jobs:
           path: saleor-dashboard
           persist-credentials: false
 
-      - name: Set up pnpm 11.13.1
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Set up the pinned pnpm version
         uses: pnpm/action-setup@v4
         with:
           version: 11.13.1
           run_install: false
 
-      - name: Set up Node.js 24
-        uses: actions/setup-node@v4
+      - name: Configure the pnpm store
+        working-directory: saleor-dashboard
+        env:
+          PNPM_STORE_PATH: ${{ runner.temp }}/pnpm-store
+        run: pnpm config set store-dir "$PNPM_STORE_PATH"
+
+      - name: Cache the locked pnpm store
+        uses: actions/cache@v4
         with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: saleor-dashboard/pnpm-lock.yaml
+          path: ${{ runner.temp }}/pnpm-store
+          key: ${{ runner.os }}-pnpm-3.23.39-${{ hashFiles('saleor-dashboard/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-3.23.39-
 
       - name: Install the locked Dashboard dependencies
         working-directory: saleor-dashboard
