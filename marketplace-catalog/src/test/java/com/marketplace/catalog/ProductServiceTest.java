@@ -35,6 +35,8 @@ class ProductServiceTest {
     @Mock
     private ProductRepository productRepository;
     @Mock
+    private ProductVariantRepository productVariantRepository;
+    @Mock
     private StoreCategoryRepository storeCategoryRepository;
     @Mock
     private ProductTypeRepository productTypeRepository;
@@ -56,8 +58,8 @@ class ProductServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ProductService(productRepository, storeCategoryRepository, productTypeRepository,
-                assignments, definitions, options, attributeValues, currentUserProvider);
+        service = new ProductService(productRepository, productVariantRepository, storeCategoryRepository,
+                productTypeRepository, assignments, definitions, options, attributeValues, currentUserProvider);
     }
 
     private ProductService.RegisterProductCommand command(String categoryCode) {
@@ -193,6 +195,27 @@ class ProductServiceTest {
         assertThatThrownBy(() -> service.publishOwnedProduct(productId, authentication))
                 .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
                 .hasMessageContaining("Required product attribute assignment is missing");
+        verify(productRepository, never()).save(any(Product.class));
+    }
+
+    @Test
+    void typedDraftCannotPublishBeforeASelectableVariantExists() {
+        UUID productTypeId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID attributeId = UUID.randomUUID();
+        Product draft = Product.register("home-appliances", "Typed draft", null, 100L, "SAR", caller, productTypeId);
+        ProductTypeAttributeAssignment selection = ProductTypeAttributeAssignment.create(
+                productTypeId, attributeId, ProductTypeAttributeScope.VARIANT_SELECTION, true, 0);
+        when(productRepository.findById(productId)).thenReturn(Optional.of(draft));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+        when(attributeValues.findAllByProductIdOrderByAssignmentIdAsc(productId)).thenReturn(List.of());
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId))
+                .thenReturn(List.of(selection));
+        when(productVariantRepository.findByProductIdOrderBySkuAsc(productId)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.publishOwnedProduct(productId, authentication))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("requires at least one active typed variant");
         verify(productRepository, never()).save(any(Product.class));
     }
 

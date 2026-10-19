@@ -39,6 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProductService {
 
     private final ProductRepository productRepository;
+    private final ProductVariantRepository productVariantRepository;
     private final StoreCategoryRepository storeCategoryRepository;
     private final ProductTypeRepository productTypeRepository;
     private final ProductTypeAttributeAssignmentRepository assignments;
@@ -48,6 +49,7 @@ public class ProductService {
     private final com.marketplace.shared.security.CurrentUserProvider currentUserProvider;
 
     public ProductService(ProductRepository productRepository,
+                          ProductVariantRepository productVariantRepository,
                           StoreCategoryRepository storeCategoryRepository,
                           ProductTypeRepository productTypeRepository,
                           ProductTypeAttributeAssignmentRepository assignments,
@@ -56,6 +58,7 @@ public class ProductService {
                           ProductAttributeValueRepository attributeValues,
                           com.marketplace.shared.security.CurrentUserProvider currentUserProvider) {
         this.productRepository = productRepository;
+        this.productVariantRepository = productVariantRepository;
         this.storeCategoryRepository = storeCategoryRepository;
         this.productTypeRepository = productTypeRepository;
         this.assignments = assignments;
@@ -193,6 +196,21 @@ public class ProductService {
                 .findAllByProductIdOrderByAssignmentIdAsc(productId).stream()
                 .map(ProductAttributeValue::toInput).toList();
         prepareProductAttributeValues(product, values);
+        if (product.getProductTypeId() != null) {
+            boolean selectionsDefinePurchasableVariants = assignments
+                    .findAllByProductTypeIdOrderByScopeAscPositionAsc(product.getProductTypeId()).stream()
+                    .anyMatch(assignment -> assignment.getScope() == ProductTypeAttributeScope.VARIANT_SELECTION);
+            if (selectionsDefinePurchasableVariants) {
+                boolean hasSelectableVariant = productVariantRepository
+                        .findByProductIdOrderBySkuAsc(productId).stream()
+                        .anyMatch(variant -> variant.getStatus() == ProductStatus.ACTIVE
+                                && variant.getOptionCombinationKey() != null);
+                if (!hasSelectableVariant) {
+                    throw new ConflictException(
+                            "A ProductType with variant-selection attributes requires at least one active typed variant before publication");
+                }
+            }
+        }
         product.publish();
         return productRepository.save(product);
     }
