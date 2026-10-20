@@ -3,7 +3,8 @@
 **Status:** CANONICAL EXECUTION AUTHORITY — owner decision recorded 2026-10-20. Target and executable governance plan; implementation is not yet complete.  
 **Decision ID:** D-SALEOR-FULL-001  
 **Pins:** [saleor-source-pins.json](saleor-source-pins.json)  
-**Matrix:** [saleor-commerce-domain-matrix.csv](saleor-commerce-domain-matrix.csv)  
+**Domain matrix:** [saleor-commerce-domain-matrix.csv](saleor-commerce-domain-matrix.csv)  
+**Divergence registry:** [saleor-contract-divergences.csv](saleor-contract-divergences.csv)  
 **Automatic guards:** [canonical plan/schema inventory](../../../.github/workflows/saleor-canonical-governance.yml), [retired Saleor PR guard](../../../.github/workflows/retired-saleor-pr-guard.yml)
 
 > **Supersession rule:** This document is the single authority for Saleor Dashboard + commerce-schema integration. The previous Dashboard adaptation plan and schema-parity plan are historical evidence only. They must not be selected as execution authorities. CI enforces the superseded markers. Historical measurements and useful domain findings remain preserved.
@@ -38,7 +39,9 @@ Implement adapters at the GraphQL boundary:
 - Saleor transaction/payment operations delegate to existing payment and ledger owners; returns delegate to the existing RMA owner; fulfillment/shipping delegates to delivery owners.
 - OIDC/PKCE remains the platform's identity authority. The Dashboard sign-in/session adapter must use it rather than adding a parallel password/token identity store. Any upstream authentication operation not used by the adapted sign-in flow must have an explicit disposition and must not be a fake-success resolver.
 
-Any wire-level exception requires a row in the divergence registry: reason tied to a real domain constraint/ADR, platform owner, affected Dashboard routes and clients, alternative contract, tests, expiry/review trigger, and migration steps. No casual renaming of Saleor operations.
+For every retained upstream Dashboard mutation, preserve the Saleor-shaped payload/error fields, enums, nullability and per-field error semantics expected by that operation. Map native domain validation/authorization errors into that wire shape; do not replace it with a platform-only `extensions.code` contract. Platform-only extension operations may additionally use stable `extensions.code` semantics.
+
+Any wire-level exception must be recorded in [the machine-readable divergence registry](saleor-contract-divergences.csv), including the exact surface, disposition, public wire requirement, internal mapping, owner, affected Dashboard screens, acceptance tests, approval status, decision record and review trigger. CI fails if any required field is missing or two rows describe the same surface. No casual renaming of Saleor operations.
 
 ### D5. Preserve platform extensions without corrupting commerce semantics
 
@@ -103,11 +106,11 @@ The pinned schema is the source for inventory generation. CI downloads the exact
 
 The generated operation report records each of the 458 roots:
 - root type and name;
-- @doc(category) group;
+- @doc(category) group and phase;
 - argument/output signature;
 - whether the accepted backend schema has the same root name and signature;
-- explicit classification/owner metadata once added by its implementation wave;
-- tests and E2E journeys that prove the operation.
+- owner modules, target policy and acceptance criteria inherited from the reviewed domain matrix;
+- tests and E2E journeys that prove the operation. Wire-level exceptions are linked conceptually through the separate divergence registry; they remain unapproved until their owner/ADR gate is closed.
 
 Coverage is reported in separate columns: **exact root-signature presence**, full input/output type-closure compatibility, implementation/resolver proof, authorization proof, and Dashboard runtime journey. A matching root name alone is not full parity. Platform-only roots are reported separately and never inflate Saleor coverage.
 
@@ -115,7 +118,7 @@ The measured baseline in the existing parity study is 12 Query + 6 Mutation + 0 
 
 ## 5. Domain matrix and implementation waves
 
-The 458 roots are assigned exactly once in the machine-readable matrix. Wave totals:
+The pinned SDL generates one report row per root. The checked-in domain matrix is category-level by design and supplies ownership, phase, target policy and acceptance criteria; the generated report adds every exact root name/signature. Exceptions and non-applicability are recorded separately in the divergence registry. Wave totals:
 
 | Wave | Root count | Domain scope | Required outcome |
 |---|---:|---|---|
@@ -201,7 +204,7 @@ Phase order is dependency-aware, not permission to skip a later category. Work c
 ### P7 — Final full Dashboard release gate
 
 Release only after:
-- the pinned reference inventory has 458/458 root dispositions. Every applicable commerce root is implemented and tested; true architectural non-applicability is permitted only with an owner-approved divergence ADR and an explicit Dashboard route disposition. An open DEFER is not acceptable at full release.
+- the pinned reference inventory has 458/458 root dispositions in the generated report. Every applicable commerce root is implemented and tested; true architectural non-applicability is permitted only with an owner-approved divergence ADR and an explicit Dashboard route disposition. No `DEFER`, `IMPLEMENTATION_REQUIRED`, or `OWNER_ADR_REQUIRED` may remain at full release.
 - all Dashboard runtime operations in retained routes map to accepted contracts and are implemented/tested for the release;
 - operation signatures and required nested type/input/enum/scalar closure are verified, not just root names;
 - final-head backend CI, schema compatibility, generated code, Modulith boundaries and negative security tests pass;
@@ -226,7 +229,7 @@ The scheduled process may open/update an issue or candidate PR, but must not sil
 
 ## 7. Divergence registry rules
 
-Every exception is machine-readable and includes: Saleor root/type, exact divergence, reason, platform owner, affected Dashboard routes, affected clients, alternative contract, negative tests, expiry/review trigger and removal/migration steps. Examples requiring entries include:
+The controlling machine-readable record is [saleor-contract-divergences.csv](saleor-contract-divergences.csv). Each row includes the Saleor surface, disposition, public wire requirement, internal mapping, owner modules, affected Dashboard surfaces, acceptance tests, approval status, decision record, rationale and review trigger. CI rejects empty/duplicate rows and unknown status values. The P7 release gate requires every row to be approved with a real decision record; `IMPLEMENTATION_REQUIRED` and `OWNER_ADR_REQUIRED` cannot ship. Examples requiring entries include:
 - platform OIDC instead of stock Saleor username/password token flow;
 - UUID storage behind Relay/global IDs;
 - exact Decimal-to-minor-unit conversion;
