@@ -585,8 +585,11 @@ public class OrdersService implements OrderDeliveryPort {
     public Order fulfill(UUID orderId) {
         Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
-        if (order.getStatus() == OrderStatus.CONFIRMED && order.getDeliveryRequestId() != null) {
-            throw new ConflictException("An order linked to an active delivery must be fulfilled through its delivery lifecycle");
+        if (order.getStatus() == OrderStatus.CONFIRMED
+                && (order.getDeliveryRequestId() != null
+                || order.getFulfillmentMethod() == FulfillmentMethod.PLATFORM_DELIVERY)) {
+            throw new ConflictException("A platform-delivery order or an order linked to an active delivery "
+                    + "must be fulfilled through its delivery lifecycle");
         }
         requireStatus(order, OrderStatus.CONFIRMED, "fulfill");
         order.fulfill(Instant.now());
