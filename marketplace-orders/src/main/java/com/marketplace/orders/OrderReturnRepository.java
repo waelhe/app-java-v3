@@ -33,9 +33,13 @@ public interface OrderReturnRepository extends JpaRepository<OrderReturn, UUID> 
     @Query("select r from OrderReturn r where r.id = :id")
     Optional<OrderReturn> findByIdForUpdate(@Param("id") UUID id);
 
+    Page<OrderReturn> findByConsumerIdOrderByCreatedAtDescIdDesc(UUID consumerId, Pageable pageable);
+
     Page<OrderReturn> findByConsumerIdOrderByCreatedAtDesc(UUID consumerId, Pageable pageable);
 
     Page<OrderReturn> findByOrderIdOrderByCreatedAtDesc(UUID orderId, Pageable pageable);
+
+    Page<OrderReturn> findAllByOrderByCreatedAtDescIdDesc(Pageable pageable);
 
     Page<OrderReturn> findAllByOrderByCreatedAtDesc(Pageable pageable);
 

@@ -14,10 +14,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * The V225 RMA machine (the Saleor fit-gap study §7-Phase-3 item 4: «Model
@@ -256,12 +258,12 @@ public class OrderReturnsService {
 
     @Transactional(readOnly = true)
     public Page<OrderReturn> listMine(UUID buyerId, Pageable pageable) {
-        return returns.findByConsumerIdOrderByCreatedAtDesc(buyerId, pageable);
+        return returns.findByConsumerIdOrderByCreatedAtDescIdDesc(buyerId, pageable);
     }
 
     @Transactional(readOnly = true)
     public Page<OrderReturn> listAdmin(Pageable pageable) {
-        return returns.findAllByOrderByCreatedAtDesc(pageable);
+        return returns.findAllByOrderByCreatedAtDescIdDesc(pageable);
     }
 
     @Transactional(readOnly = true)
@@ -273,9 +275,25 @@ public class OrderReturnsService {
         return r;
     }
 
+    /** Administrative detail is deliberately available only through the ADMIN-guarded adapter. */
+    @Transactional(readOnly = true)
+    public OrderReturn getForAdmin(UUID returnId) {
+        return require(returnId);
+    }
+
     @Transactional(readOnly = true)
     public List<OrderReturnLine> linesOf(UUID returnId) {
         return returnLines.findByOrderReturnId(returnId);
+    }
+
+    /** One bounded batch for a page of return summaries; avoids one line query per return. */
+    @Transactional(readOnly = true)
+    public Map<UUID, List<OrderReturnLine>> linesByReturnIds(Collection<UUID> returnIds) {
+        if (returnIds == null || returnIds.isEmpty()) {
+            return Map.of();
+        }
+        return returnLines.findByOrderReturnIdIn(returnIds).stream()
+                .collect(Collectors.groupingBy(OrderReturnLine::getOrderReturnId));
     }
 
     // ------------------------------------------------------------------

@@ -15,5 +15,7 @@ public interface OrderReturnLineRepository extends JpaRepository<OrderReturnLine
 
     List<OrderReturnLine> findByOrderReturnId(UUID orderReturnId);
 
+    List<OrderReturnLine> findByOrderReturnIdIn(java.util.Collection<UUID> orderReturnIds);
+
     List<OrderReturnLine> findByOrderItemId(UUID orderItemId);
 }

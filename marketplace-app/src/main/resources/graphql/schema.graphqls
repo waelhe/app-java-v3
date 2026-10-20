@@ -26,6 +26,11 @@ type Query {
     commerceOrder(id: ID!): CommerceOrder
     soldOrder(id: ID!): CommerceOrder
     paymentIntent(id: ID!): PaymentIntentClient
+    # Buyer-scoped return history and an ADMIN-only operations queue. Both use bounded page-number pagination.
+    myOrderReturns(page: Int, first: Int): OrderReturnPage!
+    myOrderReturn(id: ID!): OrderReturn!
+    adminOrderReturns(page: Int, first: Int): OrderReturnPage!
+    adminOrderReturn(id: ID!): OrderReturn!
     checkoutPreview(input: CheckoutInput): [CommerceCheckoutPreview!]!
 
     service(id: ID!): Service
@@ -166,6 +171,12 @@ type Mutation {
     requestOrderPaymentIntent(orderId: ID!): OrderPaymentIntent!
     processPaymentIntent(id: ID!): PaymentIntentClient!
     cancelPaymentIntent(id: ID!): PaymentIntentClient!
+    requestOrderReturn(input: OrderReturnRequestInput!): OrderReturn!
+    cancelMyOrderReturn(id: ID!): OrderReturn!
+    approveOrderReturn(id: ID!): OrderReturn!
+    rejectOrderReturn(id: ID!, note: String): OrderReturn!
+    receiveOrderReturn(id: ID!): OrderReturn!
+    completeOrderReturn(id: ID!): OrderReturn!
 
     createService(input: ServiceInput!): Service!
 }
@@ -287,6 +298,69 @@ type PaymentIntentClient {
     clientSecret: String
     createdAt: String
     updatedAt: String
+}
+
+# Goods returns are a separate state machine from a payment refund. The orders owner
+# freezes the return's partial amount; completion invokes the existing OrderRefundPort.
+enum OrderReturnType {
+    RETURN
+    EXCHANGE
+}
+
+enum OrderReturnStatus {
+    REQUESTED
+    APPROVED
+    REJECTED
+    RECEIVED
+    COMPLETED
+    CANCELLED
+}
+
+input OrderReturnLineRequestInput {
+    orderItemId: ID!
+    quantity: Int!
+}
+
+input OrderReturnRequestInput {
+    orderId: ID!
+    type: OrderReturnType!
+    reason: String!
+    lines: [OrderReturnLineRequestInput!]!
+}
+
+type OrderReturnLine {
+    id: ID!
+    orderItemId: ID!
+    productId: ID!
+    variantId: ID
+    quantity: Int!
+}
+
+type OrderReturn {
+    id: ID!
+    orderId: ID!
+    type: OrderReturnType!
+    status: OrderReturnStatus!
+    reason: String!
+    resolutionNote: String
+    refundAmountMinor: String
+    currency: String!
+    replacementOrderId: ID
+    requestedAt: String
+    approvedAt: String
+    receivedAt: String
+    completedAt: String
+    lines: [OrderReturnLine!]!
+}
+
+type OrderReturnPage {
+    items: [OrderReturn!]!
+    page: Int!
+    size: Int!
+    totalElements: String!
+    totalPages: Int!
+    hasNext: Boolean!
+    hasPrevious: Boolean!
 }
 
 type Service {
