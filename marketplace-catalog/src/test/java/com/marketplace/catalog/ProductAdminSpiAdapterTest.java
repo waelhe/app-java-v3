@@ -42,6 +42,7 @@ class ProductAdminSpiAdapterTest {
     @Mock ProductTypeAttributeService typeAttributes;
     @Mock CatalogAttributeService attributes;
     @Mock ProductVariantService variants;
+    @Mock StoreCategoryService storeCategories;
     @Mock Authentication authentication;
     @InjectMocks ProductAdminSpiAdapter adapter;
 
@@ -120,6 +121,19 @@ class ProductAdminSpiAdapterTest {
         assertThat(view.id()).isEqualTo(product.getId());
         assertThat(view.status()).isEqualTo(product.getStatus().name());
         assertThat(view.providerId()).isEqualTo(product.getProviderId());
+    }
+
+    @Test
+    void storeCategoryDictionaryProjectsItsStableCodeAndBilingualLabels() {
+        StoreCategory category = StoreCategory.register(
+                "home-essentials", "Home essentials", "أساسيات المنزل", 3);
+        when(storeCategories.listForConfiguration()).thenReturn(List.of(category));
+
+        List<ProductAdminSpi.StoreCategoryView> result = adapter.listStoreCategories();
+
+        assertThat(result).containsExactly(new ProductAdminSpi.StoreCategoryView(
+                category.getId(), "home-essentials", "Home essentials", "أساسيات المنزل", 3));
+        verify(storeCategories).listForConfiguration();
     }
 
     @Test
