@@ -26,7 +26,15 @@
         // same getPost/getComments use cases the REST surface invokes).
         // The neighborhood-feed-spi pattern extended to the journey's
         // own seam (the interface, never the internals).
-        "community :: neighborhood-post-detail-spi"
+        "community :: neighborhood-post-detail-spi",
+        // P1 (the Saleor parity plan's catalog read wave) — the goods
+        // administration journey's media leg: the GraphQL surface's
+        // product-media fields delegate to the media module's declared
+        // admin SPI (the ProductAdminSpi pattern — the interface, never
+        // the internals; the port moved out of shared.api by the
+        // ArchitectureRulesTest framework-neutrality verdict, and this
+        // allowlist entry is the dependency the move makes explicit).
+        "media :: product-media-admin"
     }
 )
 package com.marketplace.app;
