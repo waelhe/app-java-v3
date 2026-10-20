@@ -87,6 +87,9 @@ class ServiceDgsDataFetcherTest {
     @Autowired
     private DgsQueryExecutor dgsQueryExecutor;
 
+    @Autowired
+    private GraphQlProperties graphQlProperties;
+
     @MockitoBean
     private CatalogSpi catalogSpi;
 
@@ -187,6 +190,23 @@ class ServiceDgsDataFetcherTest {
         assertThat(added.<Integer>read("data.addToCart.quantity")).isEqualTo(5);
         assertThat(added.<String>read("data.addToCart.lineTotalMinor")).isEqualTo("6250");
         verify(orderCommercePort).addToCart(productId, null, 3, auth);
+    }
+
+    @Test
+    void buyerOrderHistoryIsBoundedBeforeTheOrdersModuleIsCalled() {
+        var auth = new TestingAuthenticationToken("buyer", "pass", "ROLE_CONSUMER");
+        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+        securityContext.setAuthentication(auth);
+        SecurityContextHolder.setContext(securityContext);
+        when(orderCommercePort.listMyOrders(any(Integer.class), eq(auth))).thenReturn(List.of());
+
+        var result = dgsQueryExecutor.executeAndGetDocumentContext("""
+                query History($first: Int) { myOrders(first: $first) { id status totalAmountMinor } }
+                """, java.util.Map.of("first", 5000));
+
+        assertThat(result.<List<String>>read("data.myOrders[*].id")).isEmpty();
+        int expected = Math.min(50, graphQlProperties.pagination().maxPageSize());
+        verify(orderCommercePort).listMyOrders(expected, auth);
     }
 
     @Test
