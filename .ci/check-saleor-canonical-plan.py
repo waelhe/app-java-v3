@@ -15,6 +15,7 @@ from graphql.language.ast import ObjectTypeDefinitionNode, StringValueNode
 ROOT = Path(__file__).resolve().parents[1]
 PINS = ROOT / "docs/governance/plans/saleor-source-pins.json"
 MATRIX = ROOT / "docs/governance/plans/saleor-commerce-domain-matrix.csv"
+DIVERGENCES = ROOT / "docs/governance/plans/saleor-contract-divergences.csv"
 CANONICAL = ROOT / "docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md"
 SUPERSEDED = [
     ROOT / "docs/governance/plans/saleor-dashboard-marketplace-adaptation-plan.md",
@@ -130,13 +131,48 @@ def read_matrix():
     return rows
 
 
+def read_divergences():
+    required_fields = {
+        "saleor_surface", "disposition", "public_wire_requirement",
+        "internal_mapping", "owner_modules", "affected_dashboard_surfaces",
+        "required_acceptance", "approval_status", "decision_record",
+        "decision_basis", "review_trigger",
+    }
+    allowed_dispositions = {"ADOPT", "ADAPT", "DEFER", "N_A_WITH_ADR", "KEEP_EXTENSION"}
+    allowed_statuses = {"IMPLEMENTATION_REQUIRED", "OWNER_ADR_REQUIRED", "APPROVED"}
+    with DIVERGENCES.open(encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        if not reader.fieldnames or not required_fields.issubset(set(reader.fieldnames)):
+            fail(f"divergence registry missing required columns: {sorted(required_fields - set(reader.fieldnames or []))}")
+        rows = list(reader)
+    if not rows:
+        fail("divergence registry is empty; all wire-level exceptions must be recorded")
+    surfaces = [row["saleor_surface"] for row in rows]
+    if len(surfaces) != len(set(surfaces)):
+        fail("duplicate saleor_surface in divergence registry")
+    for row in rows:
+        for key in required_fields:
+            if not (row.get(key) or "").strip():
+                fail(f"divergence row {row.get('saleor_surface', '<unknown>')} has empty {key}")
+        if row["disposition"] not in allowed_dispositions:
+            fail(f"divergence row {row['saleor_surface']} has invalid disposition {row['disposition']}")
+        if row["approval_status"] not in allowed_statuses:
+            fail(f"divergence row {row['saleor_surface']} has invalid approval_status {row['approval_status']}")
+        if row["approval_status"] == "APPROVED" and row["decision_record"].startswith("PENDING"):
+            fail(f"approved divergence {row['saleor_surface']} has no decision record")
+        if row["approval_status"] == "OWNER_ADR_REQUIRED" and not row["decision_record"].startswith("PENDING"):
+            fail(f"unapproved divergence {row['saleor_surface']} must identify its pending ADR")
+    return rows
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--schema", required=True, type=Path)
     parser.add_argument("--published", required=True, type=Path)
     parser.add_argument("--report", required=True, type=Path)
     parser.add_argument("--summary", type=Path)
-    parser.add_argument("--require-full-coverage", action="store_true")
+    parser.add_argument("--require-exact-root-signatures", "--require-full-coverage", dest="require_exact_root_signatures", action="store_true", help="Diagnostic only: fail unless all 458 root names/signatures match literally; this is not semantic or end-to-end coverage.")
+    parser.add_argument("--require-approved-divergences", action="store_true", help="Fail unless every registered divergence has an approved decision record.")
     args = parser.parse_args()
 
     pins = json.loads(PINS.read_text(encoding="utf-8"))
@@ -158,6 +194,7 @@ def main():
             fail(f"canonical pointer missing from {old_path.relative_to(ROOT)}")
 
     matrix_rows = read_matrix()
+    divergence_rows = read_divergences()
     source_doc = parse(args.schema.read_text(encoding="utf-8"))
     published_doc = parse(args.published.read_text(encoding="utf-8"))
     source_roots = root_types(source_doc)
@@ -242,6 +279,7 @@ def main():
         f"- Published backend roots with the same root name and signature: **{exact}/{measured_total} ({exact / measured_total * 100:.2f}%)**",
         f"- Missing root names: **{missing}**; same-name signature differences: **{diff}**",
         "- This is root-signature inventory only; it is not implementation, nested type-closure, authorization or Dashboard E2E coverage.",
+        f"- Divergence registry rows: {len(divergence_rows)}; awaiting implementation/ADR approval: {sum(row['approval_status'] != 'APPROVED' for row in divergence_rows)}.",
         "",
         "| Status | Count |",
         "|---|---:|",
@@ -271,8 +309,12 @@ def main():
         args.summary.parent.mkdir(parents=True, exist_ok=True)
         with args.summary.open("a", encoding="utf-8") as handle:
             handle.write(output)
-    if args.require_full_coverage and (exact != measured_total or missing or diff):
-        fail("release gate requires all 458 root signatures to match; inspect the generated report")
+    if args.require_exact_root_signatures and (exact != measured_total or missing or diff):
+        fail("exact-root-signature diagnostic requires all 458 root names/signatures to match literally; this does not measure semantic or end-to-end coverage")
+    if args.require_approved_divergences:
+        unresolved = [row["saleor_surface"] for row in divergence_rows if row["approval_status"] != "APPROVED"]
+        if unresolved:
+            fail("divergences awaiting approval/ADR: " + ", ".join(unresolved))
 
 
 if __name__ == "__main__":
