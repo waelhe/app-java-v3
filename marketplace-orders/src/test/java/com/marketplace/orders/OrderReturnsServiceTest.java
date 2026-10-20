@@ -176,7 +176,13 @@ class OrderReturnsServiceTest {
         completed.complete(null, Instant.now());
         when(returns.findByOrderIdAndStatusIn(org.mockito.ArgumentMatchers.eq(order.getId()), any()))
                 .thenReturn(List.of(completed));
-        when(returnLines.findByOrderReturnId(completed.getId())).thenReturn(List.of(
+        // The request path reads the open returns' lines through the batch
+        // seam (linesByReturnIds → findByOrderReturnIdIn) — mock THAT
+        // method, the one the guard actually consults (the sibling
+        // open-return test's own pattern), so the completed return's
+        // consumed units reach the guard and the second request for the
+        // same units is refused.
+        when(returnLines.findByOrderReturnIdIn(List.of(completed.getId()))).thenReturn(List.of(
                 OrderReturnLine.of(completed.getId(), item, 2)));
 
         assertThatThrownBy(() -> service.request(order.getId(), buyer,
