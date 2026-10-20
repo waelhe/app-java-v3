@@ -1,0 +1,35 @@
+{
+  "decisionId": "D-SALEOR-FULL-001",
+  "status": "canonical",
+  "referenceSchema": {
+    "repository": "saleor/saleor",
+    "ref": "3.23.43",
+    "path": "saleor/graphql/schema.graphql",
+    "gitBlobSha1": "b8fa0dd809081f76dc2834bb5c286561e5783276",
+    "queryRoots": 90,
+    "mutationRoots": 342,
+    "subscriptionRoots": 26,
+    "totalRoots": 458
+  },
+  "dashboard": {
+    "repository": "saleor/saleor-dashboard",
+    "tag": "3.23.39",
+    "commit": "bc75e988da0fa4fbc3d47378a888d859d070746f",
+    "license": "BSD-3-Clause"
+  },
+  "platform": {
+    "backendRepository": "waelhe/app-java-v3",
+    "contractBranch": "graphql-contract",
+    "contractPath": "schema.graphqls",
+    "resolverModel": "Netflix DGS only",
+    "frameworkOwner": "Spring Boot",
+    "buildOwner": "Maven"
+  },
+  "policy": {
+    "dashboardIsFullBase": true,
+    "saleorSchemaIsFullCommerceReference": true,
+    "saleorBackendIsDeployed": false,
+    "legacyPlatformRootsAreCountedAsSaleorMatches": false,
+    "productionPinsMoveOnlyByReviewedChange": true
+  }
+}
