@@ -87,6 +87,16 @@ class HomeDgsDataFetcherTest {
     @MockitoBean
     private com.marketplace.media.spi.ProductMediaAdminPort productMediaAdminPort;
 
+    // P2 (the buyer commerce journey): the component scan includes the
+    // commerce fetcher; mock its owning module seams (the orders and
+    // payments SPIs — the slice wires every fetcher in the package, so
+    // each owning seam gets its mock, exactly as the seams above).
+    @MockitoBean
+    private com.marketplace.orders.spi.OrderCommercePort orderCommercePort;
+
+    @MockitoBean
+    private com.marketplace.payments.spi.PaymentIntentClientPort paymentIntentClientPort;
+
     @MockitoBean
     private DiscoverySpi discoverySpi;
 
