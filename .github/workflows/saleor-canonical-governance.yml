@@ -195,7 +195,7 @@ jobs:
               "|---|---|---|---|---|",
           ]
           for row in unresolved:
-              clean = lambda key: (row.get(key, "") or "").replace("|", "\\|").replace("\\n", " ")
+              clean = lambda key: (row.get(key, "") or "").replace("|", "\\|").replace("\n", " ")
               body.append(
                   f"| {clean('saleor_surface')} | {clean('disposition')} | {clean('approval_status')} | "
                   f"{clean('owner_modules')} | {clean('review_trigger')} |"
@@ -206,9 +206,9 @@ jobs:
               "Every row is approved with a real decision/ADR record, the canonical governance validation passes, and the relevant operation/route tests are green. The existence of an issue or an approved divergence is not itself proof of runtime compatibility.",
           ])
           out = Path(os.environ["RUNNER_TEMP"]) / "saleor-divergence-backlog.md"
-          out.write_text("\\n".join(body) + "\\n", encoding="utf-8")
+          out.write_text("\n".join(body) + "\n", encoding="utf-8")
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
-              env.write(f"UNRESOLVED_COUNT={len(unresolved)}\\n")
+              env.write(f"UNRESOLVED_COUNT={len(unresolved)}\n")
           PY
           TITLE='[Saleor divergence tracking] Unresolved compatibility adapters'
           EXISTING="$(gh issue list --repo "${GITHUB_REPOSITORY}" --state open --limit 100 --json number,title --jq '.[] | select(.title == "[Saleor divergence tracking] Unresolved compatibility adapters") | .number' | head -n 1)"
