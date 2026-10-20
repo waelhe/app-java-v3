@@ -875,6 +875,133 @@ public class UserService implements IdentitySpi {
         return auditHistoryPurgeService.purge(userId, reason, actor);
     }
 
+    /**
+     * P1 (the canonical Saleor plan §5-P1 — the Saleor {@code me} root):
+     * the caller's own stored projection by the JWT subject. Read-only by
+     * design — the REST {@code /me} bootstrap (token-claims sync) keeps its
+     * own documented path; a subject with no row yet answers empty (the
+     * honest absence the nullable {@code me} carries).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.Optional<com.marketplace.identity.spi.UserAccountView> findCurrentUserAccount(Authentication authentication) {
+        String subject = jwtSubjectOf(authentication);
+        if (subject == null || subject.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        return userRepository.findBySubject(subject).map(this::toAccountView);
+    }
+
+    /**
+     * P1 (the Saleor {@code user} root by typed global ID): ADMIN-enforced
+     * at the owning use-case boundary — the platform's server-side mapping
+     * of Saleor's MANAGE_STAFF/MANAGE_USERS/MANAGE_ORDERS requirement
+     * (the divergence registry's RBAC row).
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional(readOnly = true)
+    public java.util.Optional<com.marketplace.identity.spi.UserAccountView> findUserAccountById(UUID id, Authentication authentication) {
+        return userRepository.findById(id).map(this::toAccountView);
+    }
+
+    /** P1 (the Saleor {@code user} root's {@code email} argument). */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional(readOnly = true)
+    public java.util.Optional<com.marketplace.identity.spi.UserAccountView> findUserAccountByEmail(String email, Authentication authentication) {
+        if (email == null || email.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        return userRepository.findByEmail(email).map(this::toAccountView);
+    }
+
+    /** P1 (the Saleor {@code user} root's {@code externalReference} argument — the OIDC subject of record). */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional(readOnly = true)
+    public java.util.Optional<com.marketplace.identity.spi.UserAccountView> findUserAccountBySubject(String subject, Authentication authentication) {
+        if (subject == null || subject.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        return userRepository.findBySubject(subject).map(this::toAccountView);
+    }
+
+    /**
+     * P1 (the Saleor {@code staffUsers} root): the roster's forward-only
+     * keyset scroll — ADMIN-enforced, one owning sort with the {@code id}
+     * tiebreaker, plus the collection total Saleor's {@code totalCount}
+     * field carries. Soft-deleted rows are absent by the entity's own
+     * {@code @SoftDelete} filter (the same visibility every identity read
+     * applies).
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional(readOnly = true)
+    public com.marketplace.identity.spi.UserAccountPage scrollStaffUsers(
+            Authentication authentication,
+            com.marketplace.identity.spi.UserAccountSort sort,
+            org.springframework.data.domain.KeysetScrollPosition position,
+            org.springframework.data.domain.Limit limit) {
+        if (sort == null || sort.field() == null) {
+            throw new IllegalArgumentException("A staff-user sort is required");
+        }
+        org.springframework.data.domain.Window<User> window = switch (sort.field()) {
+            case EMAIL -> sort.ascending()
+                    ? userRepository.findByOrderByEmailAscIdAsc(position, limit)
+                    : userRepository.findByOrderByEmailDescIdDesc(position, limit);
+            case CREATED_AT -> sort.ascending()
+                    ? userRepository.findByOrderByCreatedAtAscIdAsc(position, limit)
+                    : userRepository.findByOrderByCreatedAtDescIdDesc(position, limit);
+            case LAST_MODIFIED_AT -> sort.ascending()
+                    ? userRepository.findByOrderByUpdatedAtAscIdAsc(position, limit)
+                    : userRepository.findByOrderByUpdatedAtDescIdDesc(position, limit);
+        };
+        return new com.marketplace.identity.spi.UserAccountPage(
+                window.map(this::toAccountView), userRepository.count());
+    }
+
+    /**
+     * The JWT subject extraction for the {@code me} read — the same join
+     * key {@code IdentityUserProvider} uses ({@code JwtAuthenticationToken}
+     * only; the resource-server chain guarantees the shape on this
+     * surface's routes).
+     */
+    private static String jwtSubjectOf(Authentication authentication) {
+        if (authentication instanceof JwtAuthenticationToken jwtToken) {
+            return jwtToken.getToken().getSubject();
+        }
+        if (authentication != null && authentication.getPrincipal() instanceof String subject) {
+            return subject;
+        }
+        return null;
+    }
+
+    /**
+     * P1: the bounded account projection — only facts the {@code users}
+     * row owns. {@code active} is the login-identity fact (a pseudonymized
+     * account is not active); {@code effectiveRoles} is the primary role
+     * unioned with the ACTIVE multi-role assignments (the V188 truth the
+     * login-side authorities read unions) — one indexed assignment read
+     * per account row, the bounded first-slice cost of an honest
+     * permission rendering on every roster page.
+     */
+    private com.marketplace.identity.spi.UserAccountView toAccountView(User user) {
+        java.util.Set<String> roles = new java.util.TreeSet<>();
+        roles.add(user.getRole().name());
+        roles.addAll(roleAssignmentService.activeRoles(user.getId()).stream()
+                .map(view -> view.role())
+                .toList());
+        return new com.marketplace.identity.spi.UserAccountView(
+                user.getId(),
+                user.getEmail(),
+                user.getRole() == UserRole.ADMIN,
+                user.getPseudonymizedAt() == null,
+                user.getCreatedAt(),
+                user.getUpdatedAt(),
+                roles);
+    }
+
     private UserSummary toUserSummary(User user) {
         boolean pseudonymized = user.getPseudonymizedAt() != null;
         return new UserSummary(

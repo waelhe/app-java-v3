@@ -1,5 +1,8 @@
 package com.marketplace.identity;
 
+import org.springframework.data.domain.KeysetScrollPosition;
+import org.springframework.data.domain.Limit;
+import org.springframework.data.domain.Window;
 import org.springframework.data.repository.history.RevisionRepository;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -23,4 +26,27 @@ public interface UserRepository extends JpaRepository<User, UUID>, RevisionRepos
      * ({@code Exists<Property>In}) per the official Spring Data JPA contract.
      */
     boolean existsBySubjectIn(Collection<String> subjects);
+
+    /**
+     * P1 (the canonical Saleor plan §5-P1 — the {@code staffUsers} keyset
+     * scroll): forward-only keyset scrolling over the roster in the three
+     * sorts with an owning column, each with the deterministic {@code id}
+     * tiebreaker (the official Spring Data JPA scrolling contract — derived
+     * query methods taking {@link KeysetScrollPosition} and {@link Limit}
+     * and returning {@link Window}; the static ordering is baked into the
+     * method name because keyset positions are only meaningful against one
+     * fixed sort). Six methods, one per (field, direction) pair the
+     * Saleor {@code UserSortingInput} subset executes.
+     */
+    Window<User> findByOrderByEmailAscIdAsc(KeysetScrollPosition position, Limit limit);
+
+    Window<User> findByOrderByEmailDescIdDesc(KeysetScrollPosition position, Limit limit);
+
+    Window<User> findByOrderByCreatedAtAscIdAsc(KeysetScrollPosition position, Limit limit);
+
+    Window<User> findByOrderByCreatedAtDescIdDesc(KeysetScrollPosition position, Limit limit);
+
+    Window<User> findByOrderByUpdatedAtAscIdAsc(KeysetScrollPosition position, Limit limit);
+
+    Window<User> findByOrderByUpdatedAtDescIdDesc(KeysetScrollPosition position, Limit limit);
 }

@@ -132,6 +132,74 @@ type Query {
     # the same ConnectionTypeDefinitionConfigurer — never hand-declared
     # here.
     postComments(postId: ID!, first: Int, after: String): PostCommentConnection
+
+
+    # =================================================================
+    # Saleor Users domain — P1 wave (the canonical plan §5-P1: "retained
+    # Dashboard user/profile and permission operations using existing
+    # identity and console owners"). Root names, argument shapes and the
+    # connection envelope are the pinned Saleor 3.23.43 wire contract
+    # (saleor/graphql/schema.graphql, blob b8fa0dd8 — the measured roots
+    # me/user/staffUsers); the platform's identity owner remains the
+    # single source of truth behind them. The GLOBAL IDs on this surface
+    # are the typed Relay-style codec's (SaleorGlobalIdCodec): opaque
+    # base64("User:<uuid>") values — never raw UUIDs. The bounded User
+    # type closure and the permission mapping are recorded in the
+    # divergence registry; a declared-but-fake field would be the
+    # violation, not the absence.
+    # =================================================================
+
+    # "Return the currently authenticated user." — any authenticated
+    # caller's OWN profile read (the JWT subject through the identity
+    # owner). Nullable exactly as Saleor's: a subject with no users row
+    # (login before the REST /me bootstrap) answers null — the honest
+    # absence, never a fabricated profile.
+    me: User
+
+    # "Look up a user by ID or email address." — the Saleor wire shape
+    # carries id/email/externalReference; on this platform externalReference
+    # maps to the identity owner's subject (the OIDC subject IS the external
+    # account identifier of record — the same column the JWT sub joins).
+    # Requires one of MANAGE_STAFF/MANAGE_USERS/MANAGE_ORDERS on Saleor —
+    # enforced server-side as the platform's ADMIN capability at the
+    # identity use-case boundary (the RBAC mapping row of the divergence
+    # registry), never as a UI route guard.
+    user(id: ID, email: String, externalReference: String): User
+
+    # "List of the shop's staff users." — the Saleor staff list with its
+    # countable-connection envelope (edges/pageInfo/totalCount, byte-shape
+    # from the pinned schema). FORWARD-ONLY keyset paging on this first
+    # slice: first/after ride the platform's ScrollPosition keyset
+    # contract (the storeProducts/services precedent — cursors identify a
+    # row's sort key (email|createdAt|updatedAt, id), never an absolute
+    # offset); before/last stay declared (the exact Saleor argument shape)
+    # but answer an explicit classified error until a backward scroll
+    # exists — a recorded, tested boundary, not a silent no-op. filter is
+    # likewise the declared wire shape with an explicit not-yet-supported
+    # error. Sort vocabulary is Saleor's full UserSortField enum; the
+    # fields with an owning indexed column (EMAIL/CREATED_AT/
+    # LAST_MODIFIED_AT) execute as real keyset sorts, the rest answer the
+    # same explicit error. MANAGE_STAFF on Saleor → ADMIN here.
+    staffUsers(
+    """Filtering options for staff users."""
+    filter: StaffUserInput
+
+    """Sort staff users."""
+    sortBy: UserSortingInput
+
+    """Return the elements in the list that come before the specified cursor."""
+    before: String
+
+    """Return the elements in the list that come after the specified cursor."""
+    after: String
+
+    """Retrieve the first n elements from the list."""
+    first: Int
+
+    """Retrieve the last n elements from the list."""
+    last: Int
+): UserCountableConnection
+
 }
 
 type Mutation {
@@ -513,4 +581,173 @@ input StoreProductUpdateInput {
     title: String!
     description: String
     priceMinor: String!
+}
+# The bounded User projection — see the block comment above for the
+# closure policy. id is the typed global ID; isStaff is the platform's
+# staff concept (the ADMIN role); isActive is the honest login-identity
+# fact the owner owns today (a pseudonymized account is not active);
+# userPermissions is the server-enforced capability mapping
+# (SaleorPermissionCatalog — the platform RBAC rendered in Saleor's
+# permission vocabulary, the divergence-registry RBAC row).
+type User {
+    """The ID of the user — typed global ID (opaque, never a raw UUID)."""
+    id: ID!
+
+    """The email address of the user (null when the account has none)."""
+    email: String
+
+    """Determine if the user is a staff admin (the platform ADMIN role)."""
+    isStaff: Boolean!
+
+    """Determine if the user is active (a live login identity exists)."""
+    isActive: Boolean!
+
+    """The date and time when the account was created (ISO-8601)."""
+    dateJoined: String
+
+    """The account's effective server-side permissions."""
+    userPermissions: [UserPermission!]!
+}
+
+# Saleor's UserPermission shape (minus sourcePermissionGroups — the
+# permission-group workbench is a later P1 slice with no owning model
+# yet; the absence is recorded, not faked).
+type UserPermission {
+    """Internal code for permission."""
+    code: PermissionEnum!
+
+    """Describe action(s) allowed to do by permission."""
+    name: String!
+}
+
+# The full Saleor 3.23.43 permission vocabulary — the closed wire enum
+# the platform renders its RBAC capabilities into. Values the platform
+# does not yet grant any role stay inert SDL vocabulary (never emitted);
+# the granted subset is the tested SaleorPermissionCatalog mapping.
+enum PermissionEnum {
+    MANAGE_USERS
+    MANAGE_STAFF
+    IMPERSONATE_USER
+    MANAGE_APPS
+    MANAGE_OBSERVABILITY @deprecated(reason: "The observability feature is no longer supported. This permission will be removed in Saleor 3.24.")
+    MANAGE_CHECKOUTS
+    HANDLE_CHECKOUTS
+    HANDLE_TAXES
+    MANAGE_TAXES
+    MANAGE_CHANNELS
+    MANAGE_CUSTOMER_TYPES_AND_ATTRIBUTES
+    MANAGE_DISCOUNTS
+    MANAGE_GIFT_CARD
+    MANAGE_MENUS
+    MANAGE_ORDERS
+    MANAGE_ORDERS_IMPORT
+    MANAGE_PAGES
+    MANAGE_PAGE_TYPES_AND_ATTRIBUTES
+    HANDLE_PAYMENTS
+    MANAGE_PLUGINS
+    MANAGE_PRODUCTS
+    MANAGE_PRODUCT_TYPES_AND_ATTRIBUTES
+    MANAGE_SHIPPING
+    MANAGE_SETTINGS
+    MANAGE_TRANSLATIONS
+}
+
+# Saleor's connection envelope for countable user lists — declared
+# (not runtime-generated) so the exact Saleor shape stands, including
+# totalCount. Spring's ConnectionTypeDefinitionConfigurer skips
+# already-declared connection types (measured in the 2.0.5 source —
+# the getTypeOrNull filter), so this declaration wins and the generated
+# connections elsewhere are untouched.
+type UserCountableConnection {
+    """Pagination data for this connection."""
+    pageInfo: PageInfo!
+
+    edges: [UserCountableEdge!]!
+
+    """A total count of items in the collection."""
+    totalCount: Int
+}
+
+type UserCountableEdge {
+    """The item at the end of the edge."""
+    node: User!
+
+    """A cursor for use in pagination (the row's keyset sort key)."""
+    cursor: String!
+}
+
+# Relay PageInfo — Saleor's exact field set. Hand-declared once here
+# for the UserCountableConnection (the runtime-generated connections
+# declare the same field set, so one PageInfo serves both).
+type PageInfo {
+    """When paginating forwards, are there more items?"""
+    hasNextPage: Boolean!
+
+    """When paginating backwards, are there more items?"""
+    hasPreviousPage: Boolean!
+
+    """When paginating backwards, the cursor to continue."""
+    startCursor: String
+
+    """When paginating forwards, the cursor to continue."""
+    endCursor: String
+}
+
+# Saleor's staff-user filter input — the declared wire shape of the
+# filter argument (see staffUsers: an explicit classified error until
+# the owning query capability exists).
+input StaffUserInput {
+    status: StaffMemberStatus
+    search: String
+    ids: [ID!]
+}
+
+enum StaffMemberStatus {
+    """User account has been activated."""
+    ACTIVE
+
+    """User account has not been activated yet."""
+    DEACTIVATED
+}
+
+# Saleor's user sorting input and field vocabulary (full closure; the
+# subset with an owning column executes — EMAIL/CREATED_AT/
+# LAST_MODIFIED_AT — the rest answer the explicit not-supported error).
+input UserSortingInput {
+    """Specifies the direction in which to sort users."""
+    direction: OrderDirection!
+
+    """Sort users by the selected field."""
+    field: UserSortField!
+}
+
+enum UserSortField {
+    """Sort users by first name."""
+    FIRST_NAME
+
+    """Sort users by last name."""
+    LAST_NAME
+
+    """Sort users by email."""
+    EMAIL
+
+    """Sort users by order count."""
+    ORDER_COUNT
+
+    """Sort users by created at."""
+    CREATED_AT
+
+    """Sort users by last modified at."""
+    LAST_MODIFIED_AT
+
+    """Sort users by rank. Note: This option is available only with the `search` filter."""
+    RANK
+}
+
+enum OrderDirection {
+    """Specifies an ascending sort order."""
+    ASC
+
+    """Specifies a descending sort order."""
+    DESC
 }

@@ -26,7 +26,14 @@
         // same getPost/getComments use cases the REST surface invokes).
         // The neighborhood-feed-spi pattern extended to the journey's
         // own seam (the interface, never the internals).
-        "community :: neighborhood-post-detail-spi"
+        "community :: neighborhood-post-detail-spi",
+        // P1 (the canonical Saleor plan §5-P1 — the Saleor Users read
+        // roots me/user/staffUsers): the GraphQL surface's user fields
+        // delegate to the identity module's OWN named SPI — the same
+        // catalog-spi/discovery-spi pattern every journey seam follows
+        // (the declared interface, never the internals; the ADMIN
+        // enforcement lives in the owning use case, not here).
+        "identity :: identity-spi"
     }
 )
 package com.marketplace.app;
