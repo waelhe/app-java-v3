@@ -7,6 +7,7 @@ on:
       - "marketplace-app/src/main/resources/graphql/**"
       - "docs/governance/plans/saleor-source-pins.json"
       - "docs/governance/plans/saleor-commerce-domain-matrix.csv"
+      - "docs/governance/plans/saleor-contract-divergences.csv"
       - "docs/governance/plans/saleor-dashboard-marketplace-adaptation-plan.md"
       - "docs/research/saleor-schema-parity-plan.md"
       - ".ci/check-saleor-canonical-plan.py"
@@ -22,6 +23,7 @@ on:
       - "marketplace-app/src/main/resources/graphql/**"
       - "docs/governance/plans/saleor-source-pins.json"
       - "docs/governance/plans/saleor-commerce-domain-matrix.csv"
+      - "docs/governance/plans/saleor-contract-divergences.csv"
       - "docs/governance/plans/saleor-dashboard-marketplace-adaptation-plan.md"
       - "docs/research/saleor-schema-parity-plan.md"
       - ".ci/check-saleor-canonical-plan.py"
@@ -34,8 +36,13 @@ on:
     - cron: "17 5 * * 1"
   workflow_dispatch:
     inputs:
-      require_full_coverage:
-        description: "Fail unless all 458 root signatures match"
+      require_exact_root_signatures:
+        description: "Diagnostic only: fail unless all 458 root signatures match literally"
+        required: true
+        type: boolean
+        default: false
+      require_approved_divergences:
+        description: "Fail unless every compatibility divergence has an approved decision/ADR"
         required: true
         type: boolean
         default: false
@@ -92,8 +99,11 @@ jobs:
         run: |
           set -euo pipefail
           ARGS=()
-          if [ "${{ inputs.require_full_coverage }}" = "true" ]; then
-            ARGS+=(--require-full-coverage)
+          if [ "${{ inputs.require_exact_root_signatures }}" = "true" ]; then
+            ARGS+=(--require-exact-root-signatures)
+          fi
+          if [ "${{ inputs.require_approved_divergences }}" = "true" ]; then
+            ARGS+=(--require-approved-divergences)
           fi
           python .ci/check-saleor-canonical-plan.py \
             --schema "${RUNNER_TEMP}/saleor-reference.graphql" \
