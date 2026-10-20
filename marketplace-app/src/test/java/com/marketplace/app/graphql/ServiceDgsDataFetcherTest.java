@@ -1,6 +1,10 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.catalog.spi.CatalogSpi;
+import com.marketplace.shared.api.OrderCommercePort;
+import com.marketplace.shared.api.PaymentIntentClientPort;
+import com.marketplace.shared.api.PaymentIntentDetails;
+import com.marketplace.shared.api.ProductMediaAdminPort;
 import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.security.CurrentUserProvider;
 import com.netflix.graphql.dgs.DgsQueryExecutor;
@@ -30,6 +34,9 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -91,6 +98,11 @@ class ServiceDgsDataFetcherTest {
     // (the port moved to media.spi — the module-owned SPI, the ProductAdminSpi pattern).
     @MockitoBean
     private com.marketplace.media.spi.ProductMediaAdminPort productMediaAdminPort;
+    @MockitoBean
+    private OrderCommercePort orderCommercePort;
+
+    @MockitoBean
+    private PaymentIntentClientPort paymentIntentClientPort;
 
     // Phase 6 — the home journey's fetcher is now in the SAME scanned
     // package (the slice is the package as one unit): its two owning
@@ -140,6 +152,68 @@ class ServiceDgsDataFetcherTest {
                 java.util.Map.of("id", id.toString()));
 
         assertThat(name).isEqualTo("Deep Clean");
+    }
+
+    @Test
+    void buyerCartReadAndAddMutationDelegateThroughTheCommercePort() {
+        var auth = new TestingAuthenticationToken("buyer", "pass", "ROLE_CONSUMER");
+        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+        securityContext.setAuthentication(auth);
+        SecurityContextHolder.setContext(securityContext);
+
+        UUID itemId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        when(orderCommercePort.getCart(auth)).thenReturn(List.of(
+                new OrderCommercePort.CartLineView(itemId, productId, null, 2, "1250", "SAR", "2500")));
+
+        var query = dgsQueryExecutor.executeAndGetDocumentContext("""
+                query { myCart { id productId variantId quantity unitAmountMinor lineTotalMinor currency } }
+                """);
+        assertThat(query.<String>read("data.myCart[0].productId")).isEqualTo(productId.toString());
+        assertThat(query.<Integer>read("data.myCart[0].quantity")).isEqualTo(2);
+        assertThat(query.<String>read("data.myCart[0].unitAmountMinor")).isEqualTo("1250");
+
+        when(orderCommercePort.addToCart(eq(productId), isNull(), eq(3), eq(auth)))
+                .thenReturn(new OrderCommercePort.CartLineView(itemId, productId, null, 5,
+                        "1250", "SAR", "6250"));
+
+        var added = dgsQueryExecutor.executeAndGetDocumentContext("""
+                mutation Add($input: AddToCartInput!) {
+                    addToCart(input: $input) { id productId quantity unitAmountMinor lineTotalMinor }
+                }
+                """, java.util.Map.of("input", java.util.Map.of(
+                "productId", productId.toString(), "quantity", 3)));
+
+        assertThat(added.<Integer>read("data.addToCart.quantity")).isEqualTo(5);
+        assertThat(added.<String>read("data.addToCart.lineTotalMinor")).isEqualTo("6250");
+        verify(orderCommercePort).addToCart(productId, null, 3, auth);
+    }
+
+    @Test
+    void orderCheckoutAndPaymentIntentCommandsMapTheirOwnerResponses() {
+        var auth = new TestingAuthenticationToken("buyer", "pass", "ROLE_CONSUMER");
+        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+        securityContext.setAuthentication(auth);
+        SecurityContextHolder.setContext(securityContext);
+
+        UUID orderId = UUID.randomUUID();
+        UUID intentId = UUID.randomUUID();
+        when(orderCommercePort.requestOrderPaymentIntent(orderId, auth)).thenReturn(
+                new PaymentIntentDetails(intentId, null, UUID.randomUUID(), null,
+                        "CREATED", PaymentIntentDetails.ORIGIN_ORDER, 2500L, "SAR",
+                        orderId, null));
+        var intent = dgsQueryExecutor.executeAndGetDocumentContext("""
+                mutation Request($orderId: ID!) {
+                    requestOrderPaymentIntent(orderId: $orderId) {
+                        id orderId amountMinor currency status origin
+                    }
+                }
+                """, java.util.Map.of("orderId", orderId.toString()));
+
+        assertThat(intent.<String>read("data.requestOrderPaymentIntent.id")).isEqualTo(intentId.toString());
+        assertThat(intent.<String>read("data.requestOrderPaymentIntent.orderId")).isEqualTo(orderId.toString());
+        assertThat(intent.<String>read("data.requestOrderPaymentIntent.amountMinor")).isEqualTo("2500");
+        verify(orderCommercePort).requestOrderPaymentIntent(orderId, auth);
     }
 
     /**
