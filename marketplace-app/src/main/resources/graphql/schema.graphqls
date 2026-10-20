@@ -12,6 +12,9 @@ type Query {
         sortBy: StoreProductSortInput
     ): StoreProductConnection!
     storeProductTypes: [StoreProductType!]!
+    # Provider/admin dictionary read used by product registration and category navigation.
+    storeCategories: [StoreCategory!]!
+    storeProductMedia(productId: ID!): [StoreProductMedia!]!
     storeProductAttributeValues(productId: ID!): [StoreProductAttributeValue!]!
     storeProductVariants(productId: ID!): [StoreProductVariant!]!
     storeProductVariantAttributeValues(variantId: ID!): [StoreProductAttributeValue!]!
@@ -140,6 +143,9 @@ type Mutation {
     publishStoreProduct(id: ID!): StoreProduct!
     replaceStoreProductAttributes(id: ID!, values: [StoreProductAttributeValueInput!]!): [StoreProductAttributeValue!]!
     createStoreProductVariant(productId: ID!, input: StoreProductVariantCreateInput!): StoreProductVariant!
+    requestStoreProductMediaUpload(input: StoreProductMediaUploadInput!): StoreProductMediaUpload!
+    confirmStoreProductMediaUpload(mediaId: ID!): StoreProductMedia!
+    deleteStoreProductMedia(mediaId: ID!): Boolean!
 
     createService(input: ServiceInput!): Service!
 }
@@ -364,6 +370,38 @@ type PostComment {
 # The store catalog contract consumed by marketplace-admin. Monetary writes and
 # reads use canonical decimal strings in minor units to preserve the full Java
 # long precision; GraphQL Int is only signed 32-bit and Float is not exact money.
+type StoreCategory {
+    id: ID!
+    code: String!
+    nameEn: String
+    nameAr: String
+    position: Int!
+}
+
+type StoreProductMedia {
+    id: ID!
+    productId: ID!
+    contentType: String!
+    sizeBytes: String!
+    status: StoreProductMediaStatus!
+    position: Int!
+    downloadUrl: String!
+    thumbUrl: String
+    createdAt: String!
+}
+
+enum StoreProductMediaStatus {
+    PENDING_UPLOAD
+    UPLOADED
+}
+
+type StoreProductMediaUpload {
+    mediaId: ID!
+    objectKey: String!
+    uploadUrl: String!
+    urlLifetimeSeconds: Int!
+}
+
 type StoreProduct {
     id: ID!
     storeCategoryCode: String!
@@ -513,4 +551,11 @@ input StoreProductUpdateInput {
     title: String!
     description: String
     priceMinor: String!
+}
+
+# sizeBytes is a decimal string to preserve a strict 64-bit positive integer contract.
+input StoreProductMediaUploadInput {
+    productId: ID!
+    contentType: String!
+    sizeBytes: String!
 }
