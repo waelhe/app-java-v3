@@ -1,0 +1,223 @@
+name: Saleor Canonical Plan and Schema Inventory
+
+on:
+  pull_request:
+    paths:
+      - "docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md"
+      - "marketplace-app/src/main/resources/graphql/**"
+      - "docs/governance/plans/saleor-source-pins.json"
+      - "docs/governance/plans/saleor-commerce-domain-matrix.csv"
+      - "docs/governance/plans/saleor-contract-divergences.csv"
+      - "docs/governance/plans/saleor-dashboard-marketplace-adaptation-plan.md"
+      - "docs/research/saleor-schema-parity-plan.md"
+      - ".ci/check-saleor-canonical-plan.py"
+      - ".github/workflows/saleor-canonical-governance.yml"
+      - ".github/workflows/retired-saleor-pr-guard.yml"
+      - "SYSTEM.md"
+      - "AGENTS.md"
+      - "PROJECT_MAP.md"
+  push:
+    branches: [main]
+    paths:
+      - "docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md"
+      - "marketplace-app/src/main/resources/graphql/**"
+      - "docs/governance/plans/saleor-source-pins.json"
+      - "docs/governance/plans/saleor-commerce-domain-matrix.csv"
+      - "docs/governance/plans/saleor-contract-divergences.csv"
+      - "docs/governance/plans/saleor-dashboard-marketplace-adaptation-plan.md"
+      - "docs/research/saleor-schema-parity-plan.md"
+      - ".ci/check-saleor-canonical-plan.py"
+      - ".github/workflows/saleor-canonical-governance.yml"
+      - ".github/workflows/retired-saleor-pr-guard.yml"
+      - "SYSTEM.md"
+      - "AGENTS.md"
+      - "PROJECT_MAP.md"
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      require_exact_root_signatures:
+        description: "Diagnostic only: fail unless all 458 root signatures match literally"
+        required: true
+        type: boolean
+        default: false
+      require_approved_divergences:
+        description: "Fail unless every compatibility divergence has an approved decision/ADR"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: saleor-canonical-governance-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  inventory:
+    name: Saleor Canonical Plan & Root Inventory
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned SDL parser
+        run: python -m pip install --disable-pip-version-check graphql-core==3.2.6
+
+      - name: Download and verify immutable official Saleor SDL
+        env:
+          SALEOR_REF: "3.23.43"
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            "https://raw.githubusercontent.com/saleor/saleor/${SALEOR_REF}/saleor/graphql/schema.graphql" \
+            --output "${RUNNER_TEMP}/saleor-reference.graphql"
+          ACTUAL="$(git hash-object "${RUNNER_TEMP}/saleor-reference.graphql")"
+          EXPECTED="$(python -c "import json; print(json.load(open('docs/governance/plans/saleor-source-pins.json'))['referenceSchema']['gitBlobSha1'])")"
+          test "${ACTUAL}" = "${EXPECTED}" || {
+            echo "::error::Pinned Saleor schema blob mismatch: expected ${EXPECTED}; got ${ACTUAL}"
+            exit 1
+          }
+
+      - name: Fetch accepted backend contract
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/heads/graphql-contract:refs/remotes/origin/graphql-contract
+          git show origin/graphql-contract:schema.graphqls > "${RUNNER_TEMP}/published-backend.graphqls"
+
+      - name: Validate pins, supersession, category counts and root signatures
+        run: |
+          set -euo pipefail
+          ARGS=()
+          if [ "${{ inputs.require_exact_root_signatures }}" = "true" ]; then
+            ARGS+=(--require-exact-root-signatures)
+          fi
+          if [ "${{ inputs.require_approved_divergences }}" = "true" ]; then
+            ARGS+=(--require-approved-divergences)
+          fi
+          python .ci/check-saleor-canonical-plan.py \
+            --schema "${RUNNER_TEMP}/saleor-reference.graphql" \
+            --published "${RUNNER_TEMP}/published-backend.graphqls" \
+            --report "${RUNNER_TEMP}/saleor-root-coverage.csv" \
+            --summary "${GITHUB_STEP_SUMMARY}" \
+            "${ARGS[@]}"
+
+      - name: Upload generated root inventory
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: saleor-root-coverage-${{ github.sha }}
+          path: ${{ runner.temp }}/saleor-root-coverage.csv
+          retention-days: 30
+          if-no-files-found: error
+
+  upstream-drift:
+    name: Detect upstream release drift
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Detect newer official pins and create one tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          PINNED_SALEOR="$(python -c "import json; print(json.load(open('docs/governance/plans/saleor-source-pins.json'))['referenceSchema']['ref'])")"
+          PINNED_DASHBOARD="$(python -c "import json; print(json.load(open('docs/governance/plans/saleor-source-pins.json'))['dashboard']['tag'])")"
+          LATEST_SALEOR="$(gh api repos/saleor/saleor/releases/latest --jq .tag_name)"
+          LATEST_DASHBOARD="$(gh api repos/saleor/saleor-dashboard/releases/latest --jq .tag_name)"
+          if [ "${LATEST_SALEOR}" = "${PINNED_SALEOR}" ] && [ "${LATEST_DASHBOARD}" = "${PINNED_DASHBOARD}" ]; then
+            echo "No upstream release drift. Pins remain immutable."
+            exit 0
+          fi
+          TITLE="[Saleor upstream pin review] Saleor ${PINNED_SALEOR} -> ${LATEST_SALEOR}; Dashboard ${PINNED_DASHBOARD} -> ${LATEST_DASHBOARD}"
+          EXISTING="$(gh issue list --repo "${GITHUB_REPOSITORY}" --state open --search '[Saleor upstream pin review] in:title' --json title --jq '.[].title')"
+          if printf '%s\n' "${EXISTING}" | grep -Fqx "${TITLE}"; then
+            echo "Tracking issue already exists: ${TITLE}"
+            exit 0
+          fi
+          gh issue create --repo "${GITHUB_REPOSITORY}" \
+            --title "${TITLE}" \
+            --body "A newer official Saleor or Dashboard release is available. This is a review signal, not an automatic pin change. Update immutable pins only through a PR that reruns schema inventory, code generation, compatibility gates, retained-route E2E and upstream security/rebase review. Pinned: Saleor ${PINNED_SALEOR}; Dashboard ${PINNED_DASHBOARD}. Latest: Saleor ${LATEST_SALEOR}; Dashboard ${LATEST_DASHBOARD}."
+
+  track-divergences:
+    name: Track unresolved Saleor contract divergences
+    needs: inventory
+    if: >-
+      needs.inventory.result == 'success' &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout canonical registry
+        uses: actions/checkout@v7.0.1
+      - name: Regenerate single unresolved-divergence tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv
+          import os
+          from pathlib import Path
+
+          path = Path("docs/governance/plans/saleor-contract-divergences.csv")
+          with path.open(encoding="utf-8", newline="") as handle:
+              rows = list(csv.DictReader(handle))
+          unresolved = [row for row in rows if row["approval_status"] != "APPROVED"]
+          body = [
+              "# Canonical Saleor contract divergence backlog",
+              "",
+              "This issue is generated from `docs/governance/plans/saleor-contract-divergences.csv` by CI. Edit the registry in a reviewed PR; do not resolve this issue manually while a row remains unresolved.",
+              "",
+              f"Unresolved rows: **{len(unresolved)} / {len(rows)}**.",
+              "",
+              "| Surface | Disposition | Status | Owner modules | Required trigger |",
+              "|---|---|---|---|---|",
+          ]
+          for row in unresolved:
+              clean = lambda key: (row.get(key, "") or "").replace("|", "\\|").replace("\n", " ")
+              body.append(
+                  f"| {clean('saleor_surface')} | {clean('disposition')} | {clean('approval_status')} | "
+                  f"{clean('owner_modules')} | {clean('review_trigger')} |"
+              )
+          body.extend([
+              "",
+              "## Close condition",
+              "Every row is approved with a real decision/ADR record, the canonical governance validation passes, and the relevant operation/route tests are green. The existence of an issue or an approved divergence is not itself proof of runtime compatibility.",
+          ])
+          out = Path(os.environ["RUNNER_TEMP"]) / "saleor-divergence-backlog.md"
+          out.write_text("\n".join(body) + "\n", encoding="utf-8")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write(f"UNRESOLVED_COUNT={len(unresolved)}\n")
+          PY
+          TITLE='[Saleor divergence tracking] Unresolved compatibility adapters'
+          EXISTING="$(gh issue list --repo "${GITHUB_REPOSITORY}" --state open --limit 100 --json number,title --jq '.[] | select(.title == "[Saleor divergence tracking] Unresolved compatibility adapters") | .number' | head -n 1)"
+          if [ "${UNRESOLVED_COUNT}" -gt 0 ]; then
+            if [ -n "${EXISTING}" ]; then
+              gh issue edit --repo "${GITHUB_REPOSITORY}" "${EXISTING}" --body-file "${RUNNER_TEMP}/saleor-divergence-backlog.md"
+            else
+              gh issue create --repo "${GITHUB_REPOSITORY}" --title "${TITLE}" --body-file "${RUNNER_TEMP}/saleor-divergence-backlog.md"
+            fi
+          elif [ -n "${EXISTING}" ]; then
+            gh issue close --repo "${GITHUB_REPOSITORY}" "${EXISTING}" --reason completed --comment "Auto-closed because every registered divergence is approved in the canonical registry and the inventory job passed on ${GITHUB_SHA}."
+          fi

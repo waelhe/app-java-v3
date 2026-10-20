@@ -1,0 +1,21 @@
+name: Retired Saleor Plan and PR Guard
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  block-retired-saleor-prs:
+    name: Block retired Saleor execution PRs
+    if: contains(fromJSON('[676,677,678,679,680,681,683]'), github.event.pull_request.number)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse superseded implementation path
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          echo "::error::PR #${PR_NUMBER} is retired by D-SALEOR-FULL-001. Do not reopen it; create a new operation-aligned PR linked to the canonical plan."
+          exit 1

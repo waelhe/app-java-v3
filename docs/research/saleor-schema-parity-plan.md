@@ -1,3 +1,6 @@
+> **SUPERSEDED — HISTORICAL EVIDENCE ONLY (2026-10-20).**  
+> Preserve the measurements and domain observations below, but do not execute this plan or use its former phase order/scope as authority. The single governing plan is [saleor-dashboard-full-commerce-canonical-plan.md](../governance/plans/saleor-dashboard-full-commerce-canonical-plan.md). CI rejects removal of this marker or its canonical pointer.  
+
 # Saleor Schema Parity Plan — Same Contract, Spring-Owned Implementation
 
 **Status:** Measured schema study and staged parity roadmap. Not an implementation-complete claim, and not an authorization to mass-generate resolvers. Each wave ships only against approved journeys and passes the repository's contract gates.

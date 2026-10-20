@@ -1,5 +1,17 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
+## قرار الحوكمة الحاكم لتكامل Saleor — D-SALEOR-FULL-001 (2026-10-20)
+
+- **المرجع التنفيذي الوحيد:** [الخطة النهائية للوحة الكاملة ومخطط التجارة الكامل](docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md). مصفوفة المجالات: `docs/governance/plans/saleor-commerce-domain-matrix.csv`; سجل الاختلافات: `docs/governance/plans/saleor-contract-divergences.csv`; الـpins: `docs/governance/plans/saleor-source-pins.json`.
+- **القرار:** كامل Saleor Dashboard 3.23.39 هو أساس الإدارة، ومخطط Saleor 3.23.43 (458 root operations/events) هو مرجع عقد التجارة. Spring Boot + DGS + Maven + وحدات Modulith القائمة تملك التنفيذ وقواعد العمل؛ لا يشغّل النظام محرك Saleor ثانيًا.
+- **إيقاف الخطط المتعارضة:** خطتا تكييف Dashboard القديمة وتكافؤ المخطط القديم موسومتان تاريخيًا فقط. يحظر الرجوع إليهما كخطتي تنفيذ؛ حارس CI يثبت علامة superseded والرابط المرجعي.
+- **إغلاق التنفيذ المتعارض:** #678، #679، #680، #681، #683 أُغلقت مع تعليق يشرح أن جذورها محفوظة لإعادة الاستخدام تحت عقد Saleor الصحيح؛ #676 و#677 كانا مغلقين وأُضيفت إليهما إحالة تاريخية. workflow `retired-saleor-pr-guard.yml` يفشل إذا أُعيد فتح أي منها. الإغلاق ليس حذفًا للشيفرة ولا ادعاءً بأن قدرات تلك الطلبات دُمجت.
+- **الأتمتة:** حارس CI يتحقق من pin الرسمي، وعدّ الجذور، والمصفوفة، ويولّد تقرير مطابقة من العقد المنشور. فحص الانجراف أسبوعي ويصدر issue للمراجعة، ولا يحدّث pins أو يدمج إلى main تلقائيًا.
+- **حارس المستودع المرافق:** [marketplace-admin#2](https://github.com/waelhe/marketplace-admin/pull/2) يضيف بناءً أسبوعيًا لاختبار Dashboard المربوط بالعقد المنشور والإبلاغ التلقائي عن الفشل؛ ما زال مفتوحًا وغير فعال حتى المراجعة والدمج.
+- **حدود الإثبات:** الخطوات أعلاه تثبت القرار والخطة والحواجز فقط. تنفيذ جميع العمليات الـ458 وقبول كل مسارات Dashboard لم يكتمل بمجرد إضافة هذه الوثائق. هذا التغيير جارٍ على `docs/saleor-canonical-full-commerce-plan` إلى أن يُراجع ويُدمج وفق قواعد الفرع المحمي.
+
+---
+
 ## موجة إغلاق رحلة لوحة الإدارة end-to-end — سطح فئات المتجر و one-live للمزود يصلان main، وقبول الإنتاج المشترك للـ Dashboard (Playwright) ينجح أول مرة (2026-10-20 — أمر المالك ببروتوكوله الدائم: لا انتظار لـCI/CodeRabbit — مراقبة بسيطة ثم إتمام؛ مراجعة ذاتية + تفعيل يدوي؛ الوثائق الرسمية حاكمة؛ الإصلاح من الجذر؛ الهدف تجربة مستخدم كاملة end-to-end)
 
 - **الدُمجُ (squash بالبوابات الثلاث المقيسة):** #673 (سطح عمليات بيانات قاموس `store_categories` — إغلاق فجوة «الصفوف تصل كعمليات بيانات» الموثقة في V116 نفسها: فحص جذر قناة Neon أظهر **صفر صفوف** في `store_categories`/`product_types`/`products` وصفر سطح HTTP للقاموس) ⇒ `5b04c343` (النشر `0032cb9f` SUCCESS قبله متزامنًا) ← #674 (one-live لـ`provider_profiles` + V244) ⇒ `10bb9648` (النشر SUCCESS 2026-10-20T01:24Z؛ **V244 طُبّقت على القناة الحية 01:26:22Z**: التقارب شطب المكرر الأحدث وأبقى الأقدم — قياس بعدها: صف حي واحد للمستخدم + الفهرس `uq_provider_profiles_one_live` حي).
@@ -23,8 +35,9 @@
 
 ---
 
-## Product scope and Saleor alignment — current work in progress (2026-10-19)
+## Historical snapshot: Product scope and Saleor alignment (2026-10-19; superseded for integration scope by D-SALEOR-FULL-001)
 
+> Historical product/domain observations below remain useful. Any Dashboard or commerce-schema integration scope stated in this dated snapshot is superseded by D-SALEOR-FULL-001 and must not be used as the current execution plan.
 - **Product definition:** the platform is an integrated social + commerce/business + tourism product. Community posts, business/provider identity, retail goods, services, property/jobs, and tourism bookings remain domain-owned; cross-surface discovery references source records instead of duplicating them.
 - **Current-state matrix:** `docs/research/social-commerce-business-tourism-saleor-alignment.md` supersedes the historic classifications in the initial Saleor fit/gap table where later PRs have changed the source. It records measured current evidence, deferrals, and the next slice; the document is being proposed in PR from branch `docs/social-commerce-tourism-saleor-alignment`.
 - **Next commerce slice proposed:** typed ProductType/product attributes and variant option combinations inside `marketplace-catalog`, while retaining existing zero-variant product behavior. Channels, collections, and multi-location inventory must be reevaluated on product need and accepted ADRs, not added mechanically just because Saleor has them.
