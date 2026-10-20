@@ -34,6 +34,7 @@ public interface ProductAdminSpi {
             Limit limit);
     ProductView getOwnedProduct(UUID id, Authentication authentication);
     List<ProductTypeView> listProductTypes();
+    List<StoreCategoryView> listStoreCategories();
     ProductView createProduct(CreateProductCommand command, Authentication authentication);
     ProductView updateProduct(UUID id, UpdateProductCommand command, Authentication authentication);
     ProductView publishProduct(UUID id, Authentication authentication);
@@ -152,6 +153,8 @@ public interface ProductAdminSpi {
             UUID providerId,
             UUID productTypeId,
             String status) { }
+
+    record StoreCategoryView(UUID id, String code, String nameEn, String nameAr, int position) { }
 
     record ProductTypeView(
             UUID id,
