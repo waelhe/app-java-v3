@@ -1,7 +1,10 @@
 package com.marketplace.catalog.spi;
 
+import org.springframework.data.domain.KeysetScrollPosition;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Window;
 import org.springframework.modulith.NamedInterface;
 import org.springframework.security.core.Authentication;
 
@@ -19,6 +22,8 @@ import java.util.UUID;
 public interface ProductAdminSpi {
 
     Page<ProductView> listOwnedProducts(Authentication authentication, Pageable pageable);
+    Window<ProductView> scrollOwnedProducts(
+            Authentication authentication, KeysetScrollPosition position, Limit limit);
     ProductView getOwnedProduct(UUID id, Authentication authentication);
     List<ProductTypeView> listProductTypes();
     ProductView createProduct(CreateProductCommand command, Authentication authentication);
