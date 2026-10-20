@@ -1,5 +1,8 @@
 # Social, Commerce/Business, and Tourism Platform — Saleor Alignment Matrix
 
+> **Integration-scope precedence:** This matrix remains evidence for platform domain ownership and deliberate domain distinctions. Dashboard reuse and the full Saleor commerce-schema contract are governed by [D-SALEOR-FULL-001](../governance/plans/saleor-dashboard-full-commerce-canonical-plan.md); this research matrix does not authorize a narrower Dashboard/schema target or replace the canonical operation inventory.
+
+
 **Status:** Current-state alignment and implementation-entry document. This is not a claim of full Saleor parity and does not authorize a production merge by itself.  
 **Baseline inspected:** `waelhe/app-java-v3`, `main`, 19 October 2026.  
 **Canonical platform scope:** one integrated social, commerce/business, and tourism platform.  
