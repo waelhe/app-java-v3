@@ -31,6 +31,26 @@
 -- sub-millisecond and keeps the dedup + the index atomic together (a
 -- split build would open a window where a new duplicate could land
 -- between the two statements and break the index creation).
+--
+-- Overlap-window note (CodeRabbit round 1, adopted from the root): the
+-- previous deployment can still serve ProviderService.create writes while
+-- this migration runs at startup (the Railway blue/green overlap — the
+-- V243 CONCURRENTLY context). SHARE mode blocks those writes for the
+-- milliseconds the migration holds: an insert that lands after the lock
+-- hits the finished unique index and answers the honest DB-level 409,
+-- instead of failing the migration's index creation and costing a deploy
+-- retry (the transactional rollback would self-heal, but the lock makes
+-- the window deterministic).
+--
+-- Unlinked-profiles note (CodeRabbit round 1, adopted from the root):
+-- user_id is nullable (V22 added it nullable; V23's backfill and V39's
+-- repair leave unmatched rows NULL). Window PARTITION BY groups NULLs
+-- into ONE partition, so unlinked live rows would be wrongly ranked as
+-- duplicates of each other — the ranking below excludes them; the
+-- partial unique index permits multiple NULLs by PostgreSQL's own
+-- documented semantics, so the invariant only binds account-linked rows.
+
+LOCK TABLE provider_profiles IN SHARE MODE;
 
 UPDATE provider_profiles
 SET is_deleted = TRUE
@@ -42,7 +62,7 @@ WHERE id IN (
             ORDER BY created_at ASC, id ASC
         ) AS rn
         FROM provider_profiles
-        WHERE is_deleted = FALSE
+        WHERE is_deleted = FALSE AND user_id IS NOT NULL
     ) ranked
     WHERE ranked.rn > 1
 );
