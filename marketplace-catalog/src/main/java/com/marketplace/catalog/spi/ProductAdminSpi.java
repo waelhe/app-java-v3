@@ -24,6 +24,13 @@ public interface ProductAdminSpi {
     Page<ProductView> listOwnedProducts(Authentication authentication, Pageable pageable);
     Window<ProductView> scrollOwnedProducts(
             Authentication authentication, KeysetScrollPosition position, Limit limit);
+
+    Window<ProductView> scrollOwnedProducts(
+            Authentication authentication,
+            ProductListFilter filter,
+            ProductListSort sort,
+            KeysetScrollPosition position,
+            Limit limit);
     ProductView getOwnedProduct(UUID id, Authentication authentication);
     List<ProductTypeView> listProductTypes();
     ProductView createProduct(CreateProductCommand command, Authentication authentication);
@@ -38,6 +45,75 @@ public interface ProductAdminSpi {
     List<AttributeValueView> listVariantAttributeValues(UUID variantId, Authentication authentication);
     ProductVariantView createProductVariant(
             UUID productId, CreateProductVariantCommand command, Authentication authentication);
+
+    /** Server-owned, provider-scoped list predicate. Null fields are intentionally omitted. */
+    record ProductListFilter(
+            String search,
+            String storeCategoryCode,
+            UUID productTypeId,
+            String status,
+            Long minPriceMinor,
+            Long maxPriceMinor) {
+        public ProductListFilter {
+            search = search == null || search.isBlank() ? null : search.strip();
+            storeCategoryCode = storeCategoryCode == null || storeCategoryCode.isBlank()
+                    ? null : storeCategoryCode.strip();
+            if (search != null && search.length() > 100) {
+                throw new IllegalArgumentException("search must be at most 100 characters");
+            }
+            if (storeCategoryCode != null && storeCategoryCode.length() > 50) {
+                throw new IllegalArgumentException("storeCategoryCode must be at most 50 characters");
+            }
+            if (minPriceMinor != null && minPriceMinor < 0
+                    || maxPriceMinor != null && maxPriceMinor < 0) {
+                throw new IllegalArgumentException("price bounds must be non-negative minor-unit integers");
+            }
+            if (minPriceMinor != null && maxPriceMinor != null && minPriceMinor > maxPriceMinor) {
+                throw new IllegalArgumentException("minPriceMinor must not exceed maxPriceMinor");
+            }
+            if (status != null && !List.of("DRAFT", "ACTIVE", "SUSPENDED", "ARCHIVED").contains(status)) {
+                throw new IllegalArgumentException("status is not a supported product lifecycle value");
+            }
+        }
+
+        public static ProductListFilter all() {
+            return new ProductListFilter(null, null, null, null, null, null);
+        }
+    }
+
+    enum ProductListSortField {
+        CREATED_AT("createdAt"),
+        TITLE("title"),
+        PRICE_MINOR("priceMinor"),
+        STATUS("status");
+
+        private final String property;
+
+        ProductListSortField(String property) {
+            this.property = property;
+        }
+
+        public String property() {
+            return property;
+        }
+    }
+
+    enum ProductListSortDirection {
+        ASC,
+        DESC
+    }
+
+    /** A closed, whitelisted sort vocabulary; arbitrary client property paths are never accepted. */
+    record ProductListSort(ProductListSortField field, ProductListSortDirection direction) {
+        public ProductListSort {
+            field = field == null ? ProductListSortField.CREATED_AT : field;
+            direction = direction == null ? ProductListSortDirection.DESC : direction;
+        }
+
+        public static ProductListSort defaultSort() {
+            return new ProductListSort(ProductListSortField.CREATED_AT, ProductListSortDirection.DESC);
+        }
+    }
 
     record CreateProductCommand(
             String storeCategoryCode,

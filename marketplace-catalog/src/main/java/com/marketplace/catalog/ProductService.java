@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -12,7 +13,11 @@ import org.springframework.data.domain.KeysetScrollPosition;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.domain.Window;
+import org.springframework.data.jpa.domain.Specification;
+import com.marketplace.catalog.spi.ProductAdminSpi;
+import jakarta.persistence.criteria.Predicate;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import io.micrometer.observation.annotation.Observed;
@@ -203,8 +208,77 @@ public class ProductService {
     @PreAuthorize("hasRole('PROVIDER')")
     public Window<Product> scrollOwnedProducts(
             Authentication authentication, KeysetScrollPosition position, Limit limit) {
+        return scrollOwnedProducts(authentication, ProductAdminSpi.ProductListFilter.all(),
+                ProductAdminSpi.ProductListSort.defaultSort(), position, limit);
+    }
+
+    /**
+     * Provider-owned, bounded GraphQL roster with Saleor-aligned search/filter/sort
+     * semantics adapted to fields that really exist on this domain model.
+     *
+     * <p>The owner predicate is always server-derived. Filter values become a
+     * Spring Data JPA Specification and the validated enum-to-property mapping
+     * produces an index-compatible sort; no client-supplied property path or
+     * query fragment is ever concatenated into SQL/JPQL.
+     */
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasRole('PROVIDER')")
+    public Window<Product> scrollOwnedProducts(
+            Authentication authentication,
+            ProductAdminSpi.ProductListFilter filter,
+            ProductAdminSpi.ProductListSort sort,
+            KeysetScrollPosition position,
+            Limit limit) {
         UUID caller = currentUserProvider.getCurrentUserId(authentication);
-        return productRepository.findByProviderIdOrderByCreatedAtDescIdDesc(caller, position, limit);
+        ProductAdminSpi.ProductListFilter safeFilter = filter == null
+                ? ProductAdminSpi.ProductListFilter.all() : filter;
+        ProductAdminSpi.ProductListSort safeSort = sort == null
+                ? ProductAdminSpi.ProductListSort.defaultSort() : sort;
+
+        Specification<Product> specification = (root, query, criteria) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(criteria.equal(root.get("providerId"), caller));
+
+            if (safeFilter.search() != null) {
+                String escaped = escapeLikePattern(safeFilter.search().toLowerCase(Locale.ROOT));
+                String pattern = "%" + escaped + "%";
+                predicates.add(criteria.or(
+                        criteria.like(criteria.lower(root.get("title")), pattern, '\\'),
+                        criteria.like(criteria.lower(root.get("description")), pattern, '\\')));
+            }
+            if (safeFilter.storeCategoryCode() != null) {
+                predicates.add(criteria.equal(root.get("storeCategoryCode"), safeFilter.storeCategoryCode()));
+            }
+            if (safeFilter.productTypeId() != null) {
+                predicates.add(criteria.equal(root.<UUID>get("productTypeId"), safeFilter.productTypeId()));
+            }
+            if (safeFilter.status() != null) {
+                StoreProductStatus status = StoreProductStatus.valueOf(safeFilter.status());
+                predicates.add(criteria.equal(root.get("status"), status));
+            }
+            if (safeFilter.minPriceMinor() != null) {
+                predicates.add(criteria.greaterThanOrEqualTo(
+                        root.<Long>get("priceMinor"), safeFilter.minPriceMinor()));
+            }
+            if (safeFilter.maxPriceMinor() != null) {
+                predicates.add(criteria.lessThanOrEqualTo(
+                        root.<Long>get("priceMinor"), safeFilter.maxPriceMinor()));
+            }
+            return criteria.and(predicates.toArray(Predicate[]::new));
+        };
+
+        Sort.Direction direction = safeSort.direction() == ProductAdminSpi.ProductListSortDirection.ASC
+                ? Sort.Direction.ASC : Sort.Direction.DESC;
+        Sort stableSort = Sort.by(direction, safeSort.field().property())
+                .and(Sort.by(direction, "id"));
+        return productRepository.findBy(specification,
+                query -> query.sortBy(stableSort).limit(limit.max()).scroll(position));
+    }
+
+    private static String escapeLikePattern(String value) {
+        return value.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
     }
 
     @Transactional

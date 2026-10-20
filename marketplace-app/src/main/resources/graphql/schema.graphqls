@@ -2,9 +2,15 @@ type Query {
     # Dashboard's provider-owned catalog surface. This is a journey contract, not
     # a mirror of the catalog tables; the fetchers delegate to ProductAdminSpi.
     storeProduct(id: ID!): StoreProduct
-    # Forward-only keyset connection ordered by createdAt DESC, id DESC.
-    # The cursor is opaque to clients; do not parse or synthesize it.
-    storeProducts(first: Int, after: String): StoreProductConnection!
+    # Forward-only keyset connection. Filter fields are limited to current domain
+    # attributes; the sort vocabulary is an allow-list backed by non-null indexed
+    # fields. Keep filter and sortBy identical when following an after cursor.
+    storeProducts(
+        first: Int,
+        after: String,
+        filter: StoreProductFilterInput,
+        sortBy: StoreProductSortInput
+    ): StoreProductConnection!
     storeProductTypes: [StoreProductType!]!
     storeProductAttributeValues(productId: ID!): [StoreProductAttributeValue!]!
     storeProductVariants(productId: ID!): [StoreProductVariant!]!
@@ -375,6 +381,34 @@ enum StoreProductStatus {
     ACTIVE
     SUSPENDED
     ARCHIVED
+}
+
+enum StoreProductSortField {
+    CREATED_AT
+    TITLE
+    PRICE_MINOR
+    STATUS
+}
+
+enum StoreProductSortDirection {
+    ASC
+    DESC
+}
+
+# Adapted to the catalog fields the platform actually owns. Prices are minor-unit
+# decimal strings to avoid GraphQL Int/Float precision loss.
+input StoreProductFilterInput {
+    search: String
+    storeCategoryCode: String
+    productTypeId: ID
+    status: StoreProductStatus
+    minPriceMinor: String
+    maxPriceMinor: String
+}
+
+input StoreProductSortInput {
+    field: StoreProductSortField! = CREATED_AT
+    direction: StoreProductSortDirection! = DESC
 }
 
 type StoreProductType {

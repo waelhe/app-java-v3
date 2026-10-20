@@ -3,6 +3,8 @@ package com.marketplace.app.graphql;
 import com.marketplace.app.graphql.generated.DgsConstants;
 import com.marketplace.app.graphql.generated.types.StoreProduct;
 import com.marketplace.app.graphql.generated.types.StoreProductAttributeValue;
+import com.marketplace.app.graphql.generated.types.StoreProductFilterInput;
+import com.marketplace.app.graphql.generated.types.StoreProductSortInput;
 import com.marketplace.app.graphql.generated.types.StoreProductType;
 import com.marketplace.app.graphql.generated.types.StoreProductVariant;
 import com.marketplace.catalog.spi.ProductAdminSpi;
@@ -61,16 +63,31 @@ public class StoreProductDataFetcher {
         return mapper.toResponse(productAdminSpi.getOwnedProduct(id, currentAuthentication()));
     }
 
+    /**
+     * Source-compatible convenience for existing tests/callers. DGS binds the
+     * four-argument operation below; all request shapes converge on one path.
+     */
+    public Window<StoreProduct> storeProducts(Integer first, String after) {
+        return storeProducts(first, after, null, null);
+    }
+
     @DgsQuery(field = DgsConstants.QUERY.StoreProducts)
     @RateLimiter(name = "graphqlStoreProductQuery")
-    public Window<StoreProduct> storeProducts(@InputArgument Integer first, @InputArgument String after) {
+    public Window<StoreProduct> storeProducts(
+            @InputArgument Integer first,
+            @InputArgument String after,
+            @InputArgument StoreProductFilterInput filter,
+            @InputArgument StoreProductSortInput sortBy) {
         int requested = first == null ? properties.pagination().defaultPageSize() : first;
         if (requested <= 0) {
             return Window.from(List.of(), index -> ScrollPosition.keyset(), false);
         }
         int pageSize = Math.min(requested, properties.pagination().maxPageSize());
+        ProductAdminSpi.ProductListFilter mappedFilter = toListFilter(filter);
+        ProductAdminSpi.ProductListSort mappedSort = toListSort(sortBy);
         return productAdminSpi.scrollOwnedProducts(
-                        currentAuthentication(), keysetPosition(after), Limit.of(pageSize))
+                        currentAuthentication(), mappedFilter, mappedSort,
+                        keysetPosition(after, mappedSort), Limit.of(pageSize))
                 .map(mapper::toResponse);
     }
 
@@ -194,17 +211,64 @@ public class StoreProductDataFetcher {
         return authentication;
     }
 
-    private KeysetScrollPosition keysetPosition(String after) {
+    private static ProductAdminSpi.ProductListFilter toListFilter(StoreProductFilterInput filter) {
+        if (filter == null) {
+            return ProductAdminSpi.ProductListFilter.all();
+        }
+        String status = filter.getStatus() == null ? null : filter.getStatus().name();
+        return new ProductAdminSpi.ProductListFilter(
+                filter.getSearch(),
+                filter.getStoreCategoryCode(),
+                filter.getProductTypeId() == null || filter.getProductTypeId().isBlank()
+                        ? null : UUID.fromString(filter.getProductTypeId()),
+                status,
+                parsePriceBound(filter.getMinPriceMinor(), "minPriceMinor"),
+                parsePriceBound(filter.getMaxPriceMinor(), "maxPriceMinor"));
+    }
+
+    private static ProductAdminSpi.ProductListSort toListSort(StoreProductSortInput sortBy) {
+        if (sortBy == null) {
+            return ProductAdminSpi.ProductListSort.defaultSort();
+        }
+        ProductAdminSpi.ProductListSortField field =
+                sortBy.getField() == null
+                        ? ProductAdminSpi.ProductListSortField.CREATED_AT
+                        : ProductAdminSpi.ProductListSortField.valueOf(sortBy.getField().name());
+        ProductAdminSpi.ProductListSortDirection direction =
+                sortBy.getDirection() == null
+                        ? ProductAdminSpi.ProductListSortDirection.DESC
+                        : ProductAdminSpi.ProductListSortDirection.valueOf(sortBy.getDirection().name());
+        return new ProductAdminSpi.ProductListSort(field, direction);
+    }
+
+    private static Long parsePriceBound(String value, String field) {
+        if (value == null) {
+            return null;
+        }
+        if (!value.matches("0|[1-9][0-9]*")) {
+            throw new IllegalArgumentException(field + " must be a non-negative decimal integer string");
+        }
+        try {
+            return Long.valueOf(value);
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException(
+                    field + " must be within the signed 64-bit integer range", exception);
+        }
+    }
+
+    private KeysetScrollPosition keysetPosition(
+            String after, ProductAdminSpi.ProductListSort sort) {
         if (after == null) {
             return ScrollPosition.keyset();
         }
 
         ScrollPosition decoded = cursorStrategy.fromCursor(after);
+        String sortProperty = sort.field().property();
         if (!(decoded instanceof KeysetScrollPosition keyset)
                 || !keyset.scrollsForward()
-                || !keyset.getKeys().keySet().equals(Set.of("createdAt", "id"))) {
+                || !keyset.getKeys().keySet().equals(Set.of(sortProperty, "id"))) {
             throw new IllegalArgumentException(
-                    "after must be a forward keyset cursor emitted by storeProducts");
+                    "after must be a forward keyset cursor emitted by storeProducts with the same sortBy");
         }
         return keyset.forward();
     }
