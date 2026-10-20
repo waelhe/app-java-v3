@@ -2,8 +2,8 @@ name: Android client
 
 on:
   pull_request:
-        # Temporary stacked Saleor commerce base for PR #678; remove after the child PR merges.
-    branches: [ main, feat/saleor-commerce-product-keyset-pagination ]
+        # Temporary stacked Saleor commerce target for PR #679; retire after that stacked wave merges.
+    branches: [ main, feat/saleor-commerce-product-keyset-pagination, feat/saleor-product-list-filters-sort ]
     paths:
       - "android/**"
       # A server-side SDL change changes the Apollo codegen inputs: the
