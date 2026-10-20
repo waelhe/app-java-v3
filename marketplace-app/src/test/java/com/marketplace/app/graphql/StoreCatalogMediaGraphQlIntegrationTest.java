@@ -161,7 +161,7 @@ class StoreCatalogMediaGraphQlIntegrationTest {
                 .path("requestStoreProductMediaUpload.mediaId").entity(String.class)
                 .satisfies(mediaIds::add)
                 .path("requestStoreProductMediaUpload.objectKey").entity(String.class)
-                .matches(key -> key.startsWith("products/" + productId + "/"))
+                .satisfies(key -> assertThat(key).startsWith("products/" + productId + "/"))
                 .path("requestStoreProductMediaUpload.uploadUrl").entity(String.class)
                 .isEqualTo("https://storage.test/signed-put")
                 .path("requestStoreProductMediaUpload.urlLifetimeSeconds").entity(Integer.class)
@@ -229,10 +229,11 @@ class StoreCatalogMediaGraphQlIntegrationTest {
                 .build();
         when(jwtDecoder.decode("consumer-token")).thenReturn(consumerJwt);
 
-        graphQlTester.mutate()
-                .header("Authorization", "Bearer consumer-token")
-                .build()
-                .document("query { storeCategories { code } }")
+        HttpGraphQlTester consumerTester = HttpGraphQlTester.builder(WebTestClient.bindToServer()
+                        .baseUrl("http://localhost:" + port + "/graphql")
+                        .defaultHeader("Authorization", "Bearer consumer-token"))
+                .build();
+        consumerTester.document("query { storeCategories { code } }")
                 .execute()
                 .errors()
                 .satisfy(errors -> {
