@@ -79,6 +79,15 @@ class StoreCategoryServiceTest {
         assertThat(service.update(id, "Daily essentials", null, null).getPosition()).isEqualTo(7);
     }
 
+    @Test void getForConfigurationReturnsTheRequestedDictionaryEntry() {
+        UUID id = UUID.randomUUID();
+        StoreCategory category = StoreCategory.register("home-essentials", "Home essentials", null, 2);
+        when(repository.findById(id)).thenReturn(Optional.of(category));
+
+        assertThat(service.getForConfiguration(id)).isSameAs(category);
+        verify(repository).findById(id);
+    }
+
     @Test void unknownCategoryIsNotReadUpdatedOrDeleted() {
         UUID missing = UUID.randomUUID();
         when(repository.findById(missing)).thenReturn(Optional.empty());
