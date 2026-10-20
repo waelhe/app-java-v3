@@ -370,6 +370,36 @@ Exact versions must come from the project’s resolved Maven BOM and compatibili
 | Tests/contracts | Testcontainers, MVC/Security tests, Modulith verification, REST Docs and current OpenAPI gates | Expand journey-level tests using real migrations | Integration suite cost; cannot substitute unit mocks for end-to-end proof |
 | Accessibility | WCAG 2.2 AA target | Verify keyboard/RTL/contrast/forms/status/error semantics as feature acceptance | No library alone guarantees compliance |
 
+### Spring Boot 4.1.1 capability audit — evidence-based, no duplicate roadmap
+
+**Audit date:** 2026-10-21. **Purpose:** distinguish Boot capabilities already used by the backend from candidates worth a measured trial. This section extends the existing technical decision matrix; it is not a new execution authority and does not change the Saleor canonical plan.
+
+| Capability | Evidence in this repository | Decision |
+|---|---|---|
+| Structured logging and log rotation | `marketplace-app/src/main/resources/application.yml` already selects Boot's `logging.structured.format.console/file: logstash` and configures rolling size/history/cap. Production adds message scrubbing in `application-prod.yml`. | **Already implemented. Do not add a second structured-logging task.** Verify ingestion/field extraction in the live log destination and test secret redaction. |
+| Actuator, configuration diagnostics and health | Existing Boot Actuator exposure includes the conditions/configuration and custom operations surfaces, with authenticated operator controls and explicit exclusions. | **Already implemented. Do not widen endpoint exposure by default.** Add only a missing signal tied to a real operator runbook. |
+| Micrometer / OpenTelemetry / OTLP | `application.yml` configures OTLP metrics and trace exports; the platform records the observability pipeline and custom health/SLO foundations. Configuration alone is not proof that the remote collector is deployed and receiving data. | **Keep current pipeline.** Validate delivery, sampling, cardinality and alert routing from runtime evidence; do not add a parallel telemetry stack. |
+| Resilience and graceful operation | The current engineering record documents Resilience4j circuit breakers/rate limiters, scheduled event-publication recovery, Testcontainers/`@ServiceConnection`, and graceful shutdown. | **Already covered in the existing roadmap.** Do not introduce Spring Retry or another scheduler as a second owner of the same retry lifecycle. |
+| HTTP Service Interfaces (`@HttpExchange`, `@ImportHttpServices`, named service groups) | Existing outbound integrations use Boot-managed `RestClient.Builder`; repository source search did not find active HTTP Service interface registrations. | **Candidate for a narrow spike, not a blanket migration.** Try one stable external provider only if it removes duplicated request/configuration code. Retain provider SDKs where they provide stronger official support. Require named groups, externally supplied base URLs, bounded connect/read timeouts, explicit redirects/TLS, typed error mapping and contract tests. |
+| Startup-step diagnostics (`ApplicationStartup` / `BufferingApplicationStartup` and Actuator `startup`) | No explicit `ApplicationStartup`/`BufferingApplicationStartup` wiring was found in the inspected source. The existing operations surface already reports build/runtime/health data. | **Optional diagnostic.** Enable temporarily if measured cold-start or bean-initialization latency is an active issue; expose the endpoint only on the protected management surface, and remove/disable it when the investigation ends unless there is an ongoing runbook need. |
+| SSRF hardening for outbound URL fetches | No `InetAddressFilter` use was found by repository search; this is a search finding, not proof that no other URL validation exists. Apply only to flows that resolve or fetch user-controlled URLs. | **Targeted security audit.** Inventory such flows, then use an allowlist when possible; otherwise validate scheme/host and resolved addresses, block loopback/private/link-local/metadata targets, re-check redirects and DNS changes, bound response size/time, and test bypass cases. Boot 4.1 documents `InetAddressFilter` as one possible HTTP-client control; it does not replace application-specific URL policy. |
+| Spring Boot Admin / Spring Batch | The existing technology matrix already treats Boot Admin as an optional SRE console and Spring Batch as a fit for restartable/chunked long jobs. | **Do not add now by default.** Revisit only if multiple independently operated Spring apps justify another secured console, or imports/exports need durable restartable chunk processing beyond existing jobs. |
+
+#### Acceptance and automation
+
+1. No production dependency or profile is changed by this audit alone.
+2. For an HTTP Service Interface trial, compare it with the existing client for maintainability, timeout/error behavior, Micrometer/trace propagation, and a representative integration test; keep it only if the benefit is demonstrated.
+3. For SSRF work, tests must include loopback/private/link-local/metadata addresses, IPv4 and IPv6 forms, redirects to prohibited targets, DNS changes, and response/time limits wherever those cases apply.
+4. Startup diagnostics remain opt-in and authenticated; no sensitive Actuator endpoints become public.
+5. Re-check this table against the resolved Maven dependency graph and actual deployed telemetry before claiming that a capability is active or absent.
+
+Official references for this targeted audit:
+- Spring Boot 4.1 logging: https://docs.spring.io/spring-boot/reference/features/logging.html
+- Spring Boot 4.1 REST and HTTP Service clients, groups, timeouts and SSRF filtering: https://docs.spring.io/spring-boot/reference/io/rest-client.html
+- Spring Boot Actuator endpoints and `startup`: https://docs.spring.io/spring-boot/reference/actuator/endpoints.html
+- Spring Boot Testcontainers service connections: https://docs.spring.io/spring-boot/reference/testing/testcontainers.html
+- Spring Framework resilience support: https://docs.spring.io/spring-framework/reference/core/resilience.html
+
 ### Official/community reference set
 
 - Spring Boot Actuator auditing: https://docs.spring.io/spring-boot/reference/actuator/auditing.html
