@@ -1,7 +1,10 @@
 package com.marketplace.catalog;
 
+import org.springframework.data.domain.KeysetScrollPosition;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Window;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
@@ -24,6 +27,14 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
      * ProviderListingSpecifications#boostFirst).
      */
     Page<ProviderListing> findByStatus(ListingStatus status, Pageable pageable);
+
+    /**
+     * Active listing connection for the GraphQL services surface. The
+     * non-null createdAt and unique id form the deterministic keyset order;
+     * a matching partial index supports continuation queries.
+     */
+    Window<ProviderListing> findByStatusOrderByCreatedAtDescIdDesc(
+            ListingStatus status, KeysetScrollPosition position, Limit limit);
 
     /**
      * JT-20 (#536 discovery waves D1-D4): the followed-sources rail's
