@@ -68,12 +68,26 @@ public class ProviderService {
      * forms cross the proxy exactly once at their entry (the #270 rule: the
      * delegating overload is unproxied self-invocation, so BOTH forms
      * carry {@code @Observed}).
+     *
+     * <p><b>The one-live guard (V244's contract):</b> an account holds at
+     * most ONE live provider profile. The pre-write check answers the
+     * friendly 409 ({@code ConflictException}, the dictionary surfaces'
+     * division of labor); the partial unique index
+     * {@code uq_provider_profiles_one_live} answers the concurrent-race 409
+     * (the L31/23505 law, the V233 {@code uq_provider_claims_one_live}
+     * precedent verbatim). {@code findByUserId} reads only live rows
+     * (Hibernate {@code @SoftDelete}), so a withdrawn profile frees the
+     * account to onboard again — the "revocation frees the slot" semantics.
      */
     @Observed(name = "provider.create")
     @PreAuthorize("hasRole('CONSUMER')")
     public ProviderProfile create(String displayName, String bio, UUID userId,
                                   ProviderActorType actorType, String agencyName,
                                   String licenseNumber) {
+        providerRepository.findByUserId(userId).ifPresent(existing -> {
+            throw new ConflictException(
+                    "Provider profile already exists for this account (id " + existing.getId() + ")");
+        });
         return providerRepository.save(
                 ProviderProfile.create(displayName, bio, userId, actorType, agencyName, licenseNumber));
     }

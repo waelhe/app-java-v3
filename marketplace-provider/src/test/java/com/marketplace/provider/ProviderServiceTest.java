@@ -84,6 +84,25 @@ class ProviderServiceTest {
     }
 
     @Test
+    void create_rejectsASecondLiveProfileBeforeTheWrite() {
+        ProviderRepository repository = mock(ProviderRepository.class);
+        ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class), eventPublisher,
+                mock(com.marketplace.shared.api.ReviewStatsPort.class), mock(ProviderTeamService.class));
+        UUID userId = UUID.randomUUID();
+        ProviderProfile existing = Instancio.of(ProviderProfile.class)
+                .set(field(ProviderProfile::getId), UUID.randomUUID())
+                .set(field(ProviderProfile::getDisplayName), "Existing")
+                .set(field(ProviderProfile::getUserId), userId)
+                .create();
+        when(repository.findByUserId(userId)).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> service.create("Second Provider", "desc", userId))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining(existing.getId().toString());
+        verify(repository, never()).save(any(ProviderProfile.class));
+    }
+
+    @Test
     void getById_returnsProfileWhenFound() {
         ProviderRepository repository = mock(ProviderRepository.class);
         ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class), eventPublisher,
