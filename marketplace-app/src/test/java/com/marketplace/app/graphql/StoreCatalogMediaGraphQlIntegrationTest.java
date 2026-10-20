@@ -94,7 +94,6 @@ class StoreCatalogMediaGraphQlIntegrationTest {
     @BeforeEach
     void setUp() {
         ownerId = UUID.randomUUID();
-        productId = UUID.randomUUID();
         categoryCode = "media-journey-" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
 
         users.save(new User(ownerId, ownerId.toString(), null, "P1 media journey owner", UserRole.PROVIDER));
@@ -104,9 +103,10 @@ class StoreCatalogMediaGraphQlIntegrationTest {
                 VALUES (?, ?, ?, ?, 4, FALSE, 0, now(), now())
                 """, UUID.randomUUID(), categoryCode, "Home essentials", "أساسيات المنزل");
 
-        products.save(Product.register(
+        Product product = products.save(Product.register(
                 categoryCode, "P1 media journey product", "Seeded for GraphQL media lifecycle",
                 149900L, "SAR", ownerId));
+        productId = product.getId();
 
         Jwt testJwt = Jwt.withTokenValue("test-token")
                 .header("alg", "RS256")
