@@ -220,6 +220,49 @@ class StoreCatalogMediaGraphQlIntegrationTest {
     }
 
     @Test
+    void consumerRoleCannotReadTheProviderCategoryDictionary() {
+        Jwt consumerJwt = Jwt.withTokenValue("consumer-token")
+                .header("alg", "RS256")
+                .claim("sub", ownerId.toString())
+                .claim("aud", List.of("marketplace-api"))
+                .claim("roles", List.of("CONSUMER"))
+                .build();
+        when(jwtDecoder.decode("consumer-token")).thenReturn(consumerJwt);
+
+        graphQlTester.mutate()
+                .header("Authorization", "Bearer consumer-token")
+                .build()
+                .document("query { storeCategories { code } }")
+                .execute()
+                .errors()
+                .satisfy(errors -> {
+                    assertThat(errors).hasSize(1);
+                    assertThat(errors.getFirst().getExtensions()).containsEntry("errorCode", "AUTHZ-001");
+                });
+    }
+
+    @Test
+    void nonPositiveUploadSizeIsRejectedBeforeStorageIsSigned() {
+        graphQlTester.document("""
+                        mutation($input: StoreProductMediaUploadInput!) {
+                            requestStoreProductMediaUpload(input: $input) { mediaId uploadUrl }
+                        }
+                        """)
+                .variable("input", java.util.Map.of(
+                        "productId", productId.toString(),
+                        "contentType", "image/jpeg",
+                        "sizeBytes", "0"))
+                .execute()
+                .errors()
+                .satisfy(errors -> {
+                    assertThat(errors).hasSize(1);
+                    assertThat(errors.getFirst().getExtensions()).containsEntry("errorCode", "VAL-001");
+                });
+
+        verify(storage, never()).presignUpload(anyString(), anyString());
+    }
+
+    @Test
     void productMediaUploadCannotMintAUrlForAForeignProvider() {
         when(currentUserProvider.getCurrentUserId(any(Authentication.class))).thenReturn(UUID.randomUUID());
 
