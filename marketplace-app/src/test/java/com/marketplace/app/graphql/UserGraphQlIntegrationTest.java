@@ -189,7 +189,7 @@ class UserGraphQlIntegrationTest {
                 .satisfies(id -> assertThat(id).isEqualTo(globalIdOf(CONSUMER_ROW_ID)))
                 .path("me.email").valueIsNull()
                 .path("me.isStaff").entity(Boolean.class).isEqualTo(false)
-                .path("me.userPermissions").entityList(Object.class).isEmpty();
+                .path("me.userPermissions").entityList(Object.class).hasSize(0);
     }
 
     @Test
@@ -266,10 +266,12 @@ class UserGraphQlIntegrationTest {
                 .variable("id", "not-a-global-id!")
                 .execute()
                 .errors()
-                .expect(err -> assertThat(err.getMessage()).contains("Invalid global ID"))
-                .expect(err -> assertThat(err.getExtensions()).containsEntry("errorCode", "VAL-001"))
-                .expect(err -> assertThat(err.getExtensions()).containsEntry("category", "validation"))
-                .verify()
+                .satisfy(errors -> {
+                    var error = errors.getFirst();
+                    assertThat(error.getMessage()).contains("Invalid global ID");
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
+                    assertThat(error.getExtensions()).containsEntry("category", "validation");
+                })
                 .path("user").valueIsNull();
     }
 
@@ -281,9 +283,11 @@ class UserGraphQlIntegrationTest {
                 .variable("id", PROVIDER_ROW_ID.toString())
                 .execute()
                 .errors()
-                .expect(err -> assertThat(err.getMessage()).contains("Invalid global ID"))
-                .expect(err -> assertThat(err.getExtensions()).containsEntry("errorCode", "VAL-001"))
-                .verify()
+                .satisfy(errors -> {
+                    var error = errors.getFirst();
+                    assertThat(error.getMessage()).contains("Invalid global ID");
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
+                })
                 .path("user").valueIsNull();
     }
 
@@ -297,8 +301,10 @@ class UserGraphQlIntegrationTest {
                 .variable("id", productTaggedId)
                 .execute()
                 .errors()
-                .expect(err -> assertThat(err.getExtensions()).containsEntry("errorCode", "VAL-001"))
-                .verify()
+                .satisfy(errors -> {
+                    var error = errors.getFirst();
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
+                })
                 .path("user").valueIsNull();
     }
 
@@ -307,10 +313,11 @@ class UserGraphQlIntegrationTest {
         adminTester.document("query { user { id } }")
                 .execute()
                 .errors()
-                .expect(err -> assertThat(err.getMessage())
-                        .contains("user requires exactly one of id, email or externalReference"))
-                .expect(err -> assertThat(err.getExtensions()).containsEntry("errorCode", "VAL-001"))
-                .verify();
+                .satisfy(errors -> {
+                    var error = errors.getFirst();
+                    assertThat(error.getMessage()).contains("user requires exactly one of id, email or externalReference");
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
+                });
     }
 
     @Test
@@ -321,10 +328,11 @@ class UserGraphQlIntegrationTest {
                 .variable("id", globalIdOf(ADMIN_ROW_ID))
                 .execute()
                 .errors()
-                .expect(err -> assertThat(err.getMessage())
-                        .contains("user accepts exactly one of id, email or externalReference"))
-                .expect(err -> assertThat(err.getExtensions()).containsEntry("errorCode", "VAL-001"))
-                .verify();
+                .satisfy(errors -> {
+                    var error = errors.getFirst();
+                    assertThat(error.getMessage()).contains("user accepts exactly one of id, email or externalReference");
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
+                });
     }
 
     @Test
@@ -335,9 +343,11 @@ class UserGraphQlIntegrationTest {
                 .variable("id", globalIdOf(ADMIN_ROW_ID))
                 .execute()
                 .errors()
-                .expect(err -> assertThat(err.getExtensions()).containsEntry("errorCode", "AUTHZ-001"))
-                .expect(err -> assertThat(err.getExtensions()).containsEntry("category", "authz"))
-                .verify()
+                .satisfy(errors -> {
+                    var error = errors.getFirst();
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "AUTHZ-001");
+                    assertThat(error.getExtensions()).containsEntry("category", "authz");
+                })
                 .path("user").valueIsNull();
     }
 
@@ -349,8 +359,10 @@ class UserGraphQlIntegrationTest {
                 .variable("email", "p1-admin@example.com")
                 .execute()
                 .errors()
-                .expect(err -> assertThat(err.getExtensions()).containsEntry("errorCode", "AUTHZ-001"))
-                .verify()
+                .satisfy(errors -> {
+                    var error = errors.getFirst();
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "AUTHZ-001");
+                })
                 .path("user").valueIsNull();
     }
 
@@ -418,9 +430,11 @@ class UserGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .expect(err -> assertThat(err.getMessage()).contains("filter is not implemented"))
-                .expect(err -> assertThat(err.getExtensions()).containsEntry("errorCode", "VAL-001"))
-                .verify();
+                .satisfy(errors -> {
+                    var error = errors.getFirst();
+                    assertThat(error.getMessage()).contains("filter is not implemented");
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
+                });
     }
 
     @Test
@@ -428,9 +442,11 @@ class UserGraphQlIntegrationTest {
         adminTester.document("query { staffUsers(last: 2) { totalCount } }")
                 .execute()
                 .errors()
-                .expect(err -> assertThat(err.getMessage()).contains("forward-only"))
-                .expect(err -> assertThat(err.getExtensions()).containsEntry("errorCode", "VAL-001"))
-                .verify();
+                .satisfy(errors -> {
+                    var error = errors.getFirst();
+                    assertThat(error.getMessage()).contains("forward-only");
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
+                });
     }
 
     @Test
@@ -440,9 +456,11 @@ class UserGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .expect(err -> assertThat(err.getMessage()).contains("FIRST_NAME"))
-                .expect(err -> assertThat(err.getExtensions()).containsEntry("errorCode", "VAL-001"))
-                .verify();
+                .satisfy(errors -> {
+                    var error = errors.getFirst();
+                    assertThat(error.getMessage()).contains("FIRST_NAME");
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
+                });
     }
 
     @Test
@@ -452,7 +470,7 @@ class UserGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors().verify()
-                .path("staffUsers.edges").entityList(Object.class).isEmpty()
+                .path("staffUsers.edges").entityList(Object.class).hasSize(0)
                 .path("staffUsers.totalCount").valueIsNull()
                 .path("staffUsers.pageInfo.hasNextPage").entity(Boolean.class).isEqualTo(false);
     }
@@ -462,8 +480,10 @@ class UserGraphQlIntegrationTest {
         providerTester.document("query { staffUsers(first: 1) { totalCount } }")
                 .execute()
                 .errors()
-                .expect(err -> assertThat(err.getExtensions()).containsEntry("errorCode", "AUTHZ-001"))
-                .verify()
+                .satisfy(errors -> {
+                    var error = errors.getFirst();
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "AUTHZ-001");
+                })
                 .path("staffUsers").valueIsNull();
     }
 
@@ -490,7 +510,9 @@ class UserGraphQlIntegrationTest {
                 .variable("after", createdAtCursor)
                 .execute()
                 .errors()
-                .expect(err -> assertThat(err.getExtensions()).containsEntry("errorCode", "VAL-001"))
-                .verify();
+                .satisfy(errors -> {
+                    var error = errors.getFirst();
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
+                });
     }
 }

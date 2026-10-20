@@ -48,7 +48,7 @@ class SaleorPermissionCatalogTest {
 
     @Test
     void unknownOrAbsentRolesGrantNothing() {
-        assertThat(SaleorPermissionCatalog.permissionsForRoles(Set.of()).isEmpty();
+        assertThat(SaleorPermissionCatalog.permissionsForRoles(Set.of())).isEmpty();
         assertThat(SaleorPermissionCatalog.permissionsForRoles(null)).isEmpty();
         assertThat(SaleorPermissionCatalog.permissionsForRoles(Set.of("NOT_A_ROLE"))).isEmpty();
     }

@@ -230,7 +230,7 @@ public class UserDataFetcher {
      * Saleor shape, built from the Window's own per-element scroll
      * positions (the exact positions the framework's connection
      * adaptation emits for its generated connections — one cursor
-     * strategy, one cursor semantics across the whole surface).
+     * strategy (toCursor/fromCursor), one cursor semantics across the whole surface).
      * {@code hasPreviousPage} is the forward-only honest fact: a scroll
      * that started after a known element has elements before it.
      * {@code totalCount} is the collection count (GraphQL Int's signed
@@ -243,7 +243,7 @@ public class UserDataFetcher {
         for (int i = 0; i < content.size(); i++) {
             edges.add(UserCountableEdge.newBuilder()
                     .node(mapper.toGraphQlUser(content.get(i)))
-                    .cursor(cursorStrategy.encode(window.positionAt(i)))
+                    .cursor(cursorStrategy.toCursor(window.positionAt(i)))
                     .build());
         }
         String startCursor = edges.isEmpty() ? null : edges.get(0).getCursor();
