@@ -237,6 +237,75 @@ class ServiceDgsDataFetcherTest {
     }
 
     @Test
+    void buyerCancellationDelegatesTheReasonToOrdersAndMapsTheCanceledState() {
+        var auth = new TestingAuthenticationToken("buyer", "pass", "ROLE_CONSUMER");
+        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+        securityContext.setAuthentication(auth);
+        SecurityContextHolder.setContext(securityContext);
+
+        UUID orderId = UUID.randomUUID();
+        String reason = "ordered by mistake";
+        var cancelled = new OrderCommercePort.OrderView(orderId, "CANCELLED", List.of(),
+                "2500", "2500", "0", "0", "PICKUP", "0", null, "SAR",
+                Instant.parse("2026-10-20T00:00:00Z"), Instant.parse("2026-10-20T00:01:00Z"),
+                null, Instant.parse("2026-10-20T00:02:00Z"), reason, null, List.of());
+        when(orderCommercePort.cancelOrder(orderId, reason, auth)).thenReturn(cancelled);
+
+        var result = dgsQueryExecutor.executeAndGetDocumentContext("""
+                mutation Cancel($id: ID!, $reason: String!) {
+                    cancelCommerceOrder(id: $id, reason: $reason) {
+                        id status currency totalAmountMinor cancelReason
+                    }
+                }
+                """, java.util.Map.of("id", orderId.toString(), "reason", reason));
+
+        assertThat(result.<String>read("data.cancelCommerceOrder.id")).isEqualTo(orderId.toString());
+        assertThat(result.<String>read("data.cancelCommerceOrder.status")).isEqualTo("CANCELLED");
+        assertThat(result.<String>read("data.cancelCommerceOrder.cancelReason")).isEqualTo(reason);
+        verify(orderCommercePort).cancelOrder(orderId, reason, auth);
+    }
+
+    @Test
+    void paymentIntentReadAndCancellationDelegateToThePaymentsOwner() {
+        var auth = new TestingAuthenticationToken("buyer", "pass", "ROLE_CONSUMER");
+        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+        securityContext.setAuthentication(auth);
+        SecurityContextHolder.setContext(securityContext);
+
+        UUID intentId = UUID.randomUUID();
+        var created = new PaymentIntentClientPort.PaymentIntentClientView(intentId, null, "2500",
+                "SAR", "CREATED", null, null,
+                Instant.parse("2026-10-20T00:00:00Z"), Instant.parse("2026-10-20T00:00:00Z"));
+        when(paymentIntentClientPort.get(intentId, auth)).thenReturn(created);
+
+        var read = dgsQueryExecutor.executeAndGetDocumentContext("""
+                query Intent($id: ID!) {
+                    paymentIntent(id: $id) { id amountMinor currency status }
+                }
+                """, java.util.Map.of("id", intentId.toString()));
+
+        assertThat(read.<String>read("data.paymentIntent.id")).isEqualTo(intentId.toString());
+        assertThat(read.<String>read("data.paymentIntent.amountMinor")).isEqualTo("2500");
+        assertThat(read.<String>read("data.paymentIntent.status")).isEqualTo("CREATED");
+        verify(paymentIntentClientPort).get(intentId, auth);
+
+        var cancelled = new PaymentIntentClientPort.PaymentIntentClientView(intentId, null, "2500",
+                "SAR", "CANCELLED", null, null,
+                Instant.parse("2026-10-20T00:00:00Z"), Instant.parse("2026-10-20T00:01:00Z"));
+        when(paymentIntentClientPort.cancel(intentId, auth)).thenReturn(cancelled);
+
+        var result = dgsQueryExecutor.executeAndGetDocumentContext("""
+                mutation CancelIntent($id: ID!) {
+                    cancelPaymentIntent(id: $id) { id amountMinor currency status }
+                }
+                """, java.util.Map.of("id", intentId.toString()));
+
+        assertThat(result.<String>read("data.cancelPaymentIntent.id")).isEqualTo(intentId.toString());
+        assertThat(result.<String>read("data.cancelPaymentIntent.status")).isEqualTo("CANCELLED");
+        verify(paymentIntentClientPort).cancel(intentId, auth);
+    }
+
+    @Test
     void checkoutPreviewResolvesThroughTheDgsWiringWithoutOwningPriceMath() {
         var auth = new TestingAuthenticationToken("buyer", "pass", "ROLE_CONSUMER");
         SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
