@@ -1,7 +1,7 @@
 package com.marketplace.orders;
 
-import com.marketplace.shared.api.OrderCommercePort;
 import com.marketplace.shared.api.PaymentIntentDetails;
+import com.marketplace.orders.spi.OrderCommercePort;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;

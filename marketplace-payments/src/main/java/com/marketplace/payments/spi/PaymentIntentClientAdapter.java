@@ -4,7 +4,6 @@ import com.marketplace.payments.PaymentIntent;
 import com.marketplace.payments.PaymentIntentMapper;
 import com.marketplace.payments.PaymentIntentResponse;
 import com.marketplace.payments.PaymentsService;
-import com.marketplace.shared.api.PaymentIntentClientPort;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;

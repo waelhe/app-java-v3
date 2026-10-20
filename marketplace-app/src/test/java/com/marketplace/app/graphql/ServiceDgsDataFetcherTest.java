@@ -1,10 +1,9 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.catalog.spi.CatalogSpi;
-import com.marketplace.shared.api.OrderCommercePort;
-import com.marketplace.shared.api.PaymentIntentClientPort;
+import com.marketplace.orders.spi.OrderCommercePort;
+import com.marketplace.payments.spi.PaymentIntentClientPort;
 import com.marketplace.shared.api.PaymentIntentDetails;
-import com.marketplace.shared.api.ProductMediaAdminPort;
 import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.security.CurrentUserProvider;
 import com.netflix.graphql.dgs.DgsQueryExecutor;

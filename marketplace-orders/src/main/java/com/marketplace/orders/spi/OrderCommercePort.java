@@ -1,5 +1,6 @@
-package com.marketplace.shared.api;
+package com.marketplace.orders.spi;
 
+import com.marketplace.shared.api.PaymentIntentDetails;
 import org.springframework.modulith.NamedInterface;
 import org.springframework.security.core.Authentication;
 
@@ -11,6 +12,13 @@ import java.util.UUID;
  * Buyer-commerce transport boundary. The orders module remains authoritative
  * for cart ownership, pricing, stock reservation, checkout, order transitions,
  * payment-intent linkage and order privacy.
+ *
+ * <p><b>Placement (the ArchitectureRulesTest verdict, the ProductAdminSpi
+ * pattern):</b> this seam carries Spring Security's {@code Authentication} —
+ * the authenticated caller crosses it exactly like the catalog's
+ * {@code ProductAdminSpi} — so it lives in the OWNING module's {@code spi}
+ * package, never in {@code shared.api}: the shared ports zone is
+ * framework-neutral by the #429 build gate.
  */
 @NamedInterface("order-commerce")
 public interface OrderCommercePort {

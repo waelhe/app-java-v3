@@ -1,4 +1,4 @@
-package com.marketplace.shared.api;
+package com.marketplace.orders.spi;
 
 import org.junit.jupiter.api.Test;
 
@@ -8,8 +8,12 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Covers generated record accessors nested in the public cross-module commerce ports. */
-class CommercePortRecordContractTest {
+/**
+ * Covers generated record accessors nested in the commerce ports (the moved
+ * seam's records keep their accessor-contract pin — the module's own test tree
+ * since the port moved from shared.api to the owning module's spi package).
+ */
+class OrderCommercePortRecordContractTest {
 
     @Test
     void checkoutCommandAndCartLineExposeEveryContractField() {
@@ -111,24 +115,5 @@ class CommercePortRecordContractTest {
         assertThat(order.cancelReason()).isEqualTo("buyer request");
         assertThat(order.deliveryRequestId()).isEqualTo(deliveryId);
         assertThat(order.additionalOrders()).containsExactly(additional);
-    }
-
-    @Test
-    void paymentIntentClientProjectionExposesEveryContractField() {
-        UUID id = UUID.randomUUID();
-        UUID bookingId = UUID.randomUUID();
-        Instant created = Instant.parse("2026-10-20T10:00:00Z");
-        Instant updated = created.plusSeconds(60);
-        var intent = new PaymentIntentClientPort.PaymentIntentClientView(
-                id, bookingId, "3000", "SAR", "CREATED", "psp-1", "client-secret", created, updated);
-        assertThat(intent.id()).isEqualTo(id);
-        assertThat(intent.bookingId()).isEqualTo(bookingId);
-        assertThat(intent.amountMinor()).isEqualTo("3000");
-        assertThat(intent.currency()).isEqualTo("SAR");
-        assertThat(intent.status()).isEqualTo("CREATED");
-        assertThat(intent.pspIntentId()).isEqualTo("psp-1");
-        assertThat(intent.clientSecret()).isEqualTo("client-secret");
-        assertThat(intent.createdAt()).isEqualTo(created);
-        assertThat(intent.updatedAt()).isEqualTo(updated);
     }
 }
