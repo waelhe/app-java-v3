@@ -14,9 +14,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.KeysetScrollPosition;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.ScrollPosition;
+import org.springframework.data.domain.Window;
 import org.springframework.graphql.data.pagination.CursorEncoder;
 import org.springframework.graphql.data.pagination.CursorStrategy;
 import org.springframework.graphql.data.pagination.EncodingCursorStrategy;
@@ -25,6 +26,7 @@ import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -113,113 +115,85 @@ class ServiceDataFetcherTest {
     }
 
     /**
-     * The bounded-collection default: an absent {@code first} resolves to
-     * the configured default page size with the deterministic connection
-     * order — never the unpaged read this field performed before Phase 1.
+     * The default size remains configuration-owned, and the catalog receives
+     * the initial keyset position plus a bounded Spring Data Limit.
      */
     @Test
-    void servicesDefaultsToBoundedPageSizeAndDeterministicOrder() {
-        ProviderListingView l1 = view(UUID.randomUUID(), "Svc1", "Desc1", 1000L, "ACTIVE");
-        ProviderListingView l2 = view(UUID.randomUUID(), "Svc2", "Desc2", 2000L, "ACTIVE");
-        when(catalogService.findAll(any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of(l1, l2)));
+    void servicesDefaultsToBoundedWindowAndInitialKeysetPosition() {
+        when(catalogService.scrollActiveListings(any(KeysetScrollPosition.class), any(Limit.class)))
+                .thenReturn(Window.from(List.of(), index -> ScrollPosition.keyset(), false));
 
-        fetcher.services(null, null);
+        var window = fetcher.services(null, null);
 
-        verify(catalogService).findAll(argThat((Pageable pageable) ->
-                pageable.getPageSize() == 20
-                        && pageable.getPageNumber() == 0
-                        && "createdAt: DESC,id: DESC".equals(pageable.getSort().toString())));
+        assertThat(window.getContent()).isEmpty();
+        verify(catalogService).scrollActiveListings(
+                argThat(KeysetScrollPosition::isInitial), eq(Limit.of(20)));
     }
 
     /**
-     * The hard maximum: a client asking for a page beyond the configured
-     * ceiling is clamped — the read stays bounded no matter the request.
+     * The hard maximum: a client asking for a larger window is clamped before
+     * the catalog SPI is called.
      */
     @Test
     void servicesClampsRequestedSizeToTheHardMaximum() {
-        when(catalogService.findAll(any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of()));
+        when(catalogService.scrollActiveListings(any(KeysetScrollPosition.class), any(Limit.class)))
+                .thenReturn(Window.from(List.of(), index -> ScrollPosition.keyset(), false));
 
         fetcher.services(5_000, null);
 
-        verify(catalogService).findAll(argThat((Pageable pageable) ->
-                pageable.getPageSize() == 100));
+        verify(catalogService).scrollActiveListings(any(KeysetScrollPosition.class), eq(Limit.of(100)));
     }
 
-    /**
-     * Relay spec: a non-positive {@code first} asks for an empty page —
-     * answered honestly, with zero repository interaction.
-     */
     @Test
-    void servicesAnswersNonPositiveFirstWithAnEmptyPageWithoutReading() {
-        var page = fetcher.services(0, null);
+    void servicesAnswersNonPositiveFirstWithAnEmptyWindowWithoutReading() {
+        var window = fetcher.services(0, null);
 
-        assertThat(page.getContent()).isEmpty();
+        assertThat(window.getContent()).isEmpty();
+        assertThat(window.hasNext()).isFalse();
         verifyNoInteractions(catalogService);
     }
 
     /**
-     * The cursor round trip: an offset cursor carries the absolute item
-     * position; exclusive-after semantics put the next page at
-     * {@code (offset + 1) / size} — the page-aligned cursors this surface
-     * emits land exactly. The cursor string is produced by the same
-     * framework codec the runtime injects.
+     * A cursor from the previous page resumes after its exact keyset, even
+     * when clients change the requested window size.
      */
     @Test
-    void servicesFollowsAnOffsetCursorToTheExactNextPage() {
-        when(catalogService.findAll(any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of()));
+    void servicesFollowsAnOpaqueKeysetCursorWithoutAnOffsetPageCalculation() {
+        UUID lastId = UUID.randomUUID();
+        KeysetScrollPosition after = ScrollPosition.forward(Map.of(
+                "createdAt", Instant.parse("2026-01-01T00:00:00Z"), "id", lastId));
+        String cursor = cursorStrategy.toCursor(after);
+        when(catalogService.scrollActiveListings(any(KeysetScrollPosition.class), any(Limit.class)))
+                .thenReturn(Window.from(List.of(), index -> ScrollPosition.keyset(), false));
 
-        // The terminal cursor of page 0 with size 20 is item offset 19.
-        String endCursor = cursorStrategy.toCursor(ScrollPosition.offset(19));
-        fetcher.services(20, endCursor);
+        fetcher.services(7, cursor);
 
-        verify(catalogService).findAll(argThat((Pageable pageable) ->
-                pageable.getPageNumber() == 1 && pageable.getPageSize() == 20));
+        verify(catalogService).scrollActiveListings(
+                argThat(position -> !position.isInitial()
+                        && position.scrollsForward()
+                        && position.getKeys().get("id").equals(lastId)),
+                eq(Limit.of(7)));
     }
 
     /**
-     * Design §6 "validate cursor arguments": a keyset ({@code K_}-shaped)
-     * cursor is a foreign format for this field's offset-cursor contract —
-     * rejected as a client-contract violation (the resolver's VALIDATION
-     * taxonomy), never silently mis-paginated.
+     * A keyset-shaped cursor with a different sort-key set is not accepted as
+     * a cursor emitted by this connection.
      */
     @Test
-    void servicesRejectsAKeysetCursorAsAValidationError() {
-        String keysetCursor = cursorStrategy.toCursor(
-                ScrollPosition.forward(Map.of("createdAt", "2026-01-01")));
+    void servicesRejectsAForeignKeysetCursorAsAValidationError() {
+        String foreignCursor = cursorStrategy.toCursor(
+                ScrollPosition.forward(Map.of("wrongKey", "value")));
 
-        assertThatThrownBy(() -> fetcher.services(20, keysetCursor))
+        assertThatThrownBy(() -> fetcher.services(20, foreignCursor))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("offset cursors");
+                .hasMessageContaining("forward keyset cursor emitted by services");
         verifyNoInteractions(catalogService);
     }
 
-    /**
-     * An undecodable cursor string is rejected by the framework codec
-     * itself (IllegalArgumentException from the base64/prefix decoding —
-     * the same exception family the resolver maps to VAL-001) — the
-     * unit-level twin of the garbage-cursor integration leg.
-     */
     @Test
     void servicesRejectsAnUndecodableCursorAsAValidationError() {
         assertThatThrownBy(() -> fetcher.services(20, "not-a-cursor-at-all"))
                 .isInstanceOf(IllegalArgumentException.class);
-        verifyNoInteractions(catalogService);
-    }
-
-    /**
-     * A tampered cursor whose offset overflows the addressable page space
-     * is rejected, never wrapped around.
-     */
-    @Test
-    void servicesRejectsAnOffsetBeyondThePaginableRange() {
-        String tampered = cursorStrategy.toCursor(ScrollPosition.offset(Long.MAX_VALUE - 1));
-
-        assertThatThrownBy(() -> fetcher.services(20, tampered))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("outside the paginable range");
         verifyNoInteractions(catalogService);
     }
 
