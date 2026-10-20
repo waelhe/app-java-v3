@@ -130,12 +130,13 @@ class ServiceGraphQlPaginationIntegrationTest {
                 throw new IllegalArgumentException("Unknown service keyset fixture");
             }
         }
-        int end = Math.min(start + limit.max(), totalItems);
+        final int windowStart = start;
+        int end = Math.min(windowStart + limit.max(), totalItems);
         List<ProviderListingView> items = new ArrayList<>();
-        for (int i = start; i < end; i++) items.add(listing(i));
+        for (int i = windowStart; i < end; i++) items.add(listing(i));
         return Window.from(List.copyOf(items), index -> {
             ProviderListingView item = items.get(index);
-            int ordinal = start + index;
+            int ordinal = windowStart + index;
             return ScrollPosition.forward(Map.of(
                     "createdAt", Instant.parse("2026-01-01T00:00:00Z").plusSeconds(totalItems - ordinal),
                     "id", item.id()));
