@@ -4,6 +4,7 @@ import com.marketplace.catalog.spi.CatalogSpi;
 import com.marketplace.orders.spi.OrderCommercePort;
 import com.marketplace.payments.spi.PaymentIntentClientPort;
 import com.marketplace.shared.api.PaymentIntentDetails;
+import com.marketplace.shared.api.SellerOrderManagementPort;
 import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.security.CurrentUserProvider;
 import com.netflix.graphql.dgs.DgsQueryExecutor;
@@ -102,6 +103,9 @@ class ServiceDgsDataFetcherTest {
     private com.marketplace.media.spi.ProductMediaAdminPort productMediaAdminPort;
     @MockitoBean
     private OrderCommercePort orderCommercePort;
+
+    @MockitoBean
+    private SellerOrderManagementPort sellerOrderManagementPort;
 
     @MockitoBean
     private PaymentIntentClientPort paymentIntentClientPort;
@@ -206,6 +210,32 @@ class ServiceDgsDataFetcherTest {
         assertThat(result.<List<String>>read("data.myOrders[*].id")).isEmpty();
         int expected = Math.min(50, graphQlProperties.pagination().maxPageSize());
         verify(orderCommercePort).listMyOrders(expected, auth);
+    }
+
+    @Test
+    void sellerConfirmMutationDelegatesTheExistingOrderStateMachine() {
+        var auth = new TestingAuthenticationToken("seller", "pass", "ROLE_PROVIDER");
+        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+        securityContext.setAuthentication(auth);
+        SecurityContextHolder.setContext(securityContext);
+
+        UUID orderId = UUID.randomUUID();
+        var confirmed = new OrderCommercePort.OrderView(orderId, "CONFIRMED", List.of(),
+                "2500", "2500", "0", "0", "PICKUP", "0", null, "SAR",
+                Instant.parse("2026-10-20T00:00:00Z"), Instant.parse("2026-10-20T00:01:00Z"),
+                null, null, null, null, List.of());
+        when(sellerOrderManagementPort.confirmSoldOrder(orderId, auth)).thenReturn(confirmed);
+
+        var result = dgsQueryExecutor.executeAndGetDocumentContext("""
+                mutation Confirm($id: ID!) {
+                    confirmSoldOrder(id: $id) { id status totalAmountMinor fulfillmentMethod }
+                }
+                """, java.util.Map.of("id", orderId.toString()));
+
+        assertThat(result.<String>read("data.confirmSoldOrder.id")).isEqualTo(orderId.toString());
+        assertThat(result.<String>read("data.confirmSoldOrder.status")).isEqualTo("CONFIRMED");
+        assertThat(result.<String>read("data.confirmSoldOrder.totalAmountMinor")).isEqualTo("2500");
+        verify(sellerOrderManagementPort).confirmSoldOrder(orderId, auth);
     }
 
     @Test
