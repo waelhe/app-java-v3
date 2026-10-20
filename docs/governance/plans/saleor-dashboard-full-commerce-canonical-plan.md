@@ -4,7 +4,7 @@
 **Decision ID:** D-SALEOR-FULL-001  
 **Pins:** [saleor-source-pins.json](saleor-source-pins.json)  
 **Matrix:** [saleor-commerce-domain-matrix.csv](saleor-commerce-domain-matrix.csv)  
-**Automatic guard:** [saleor-canonical-governance.yml](../../../.github/workflows/saleor-canonical-governance.yml)
+**Automatic guards:** [canonical plan/schema inventory](../../../.github/workflows/saleor-canonical-governance.yml), [retired Saleor PR guard](../../../.github/workflows/retired-saleor-pr-guard.yml)
 
 > **Supersession rule:** This document is the single authority for Saleor Dashboard + commerce-schema integration. The previous Dashboard adaptation plan and schema-parity plan are historical evidence only. They must not be selected as execution authorities. CI enforces the superseded markers. Historical measurements and useful domain findings remain preserved.
 
@@ -134,7 +134,7 @@ Phase order is dependency-aware, not permission to skip a later category. Work c
 
 1. Install the pinned manifest and domain matrix.
 2. Mark the old Dashboard adaptation and schema-parity plans as superseded historical evidence.
-3. Close implementation drafts encoding the retired store*-as-Saleor strategy. Keep their commits/branches as salvageable history; re-home valid domain logic only after mapping it to Saleor operations.
+3. Close the retired implementation path. PRs #678, #679, #680, #681 and #683 were closed with explicit comments; #676 and #677 were already closed and are marked historical in their discussions. Their commits/branches remain salvageable history. Re-home useful logic only through new operation-aligned PRs. The separate retired-PR guard fails if any of #676, #677, #678, #679, #680, #681 or #683 is reopened.
 4. Add CI verifying the pinned upstream schema blob, measured 90/342/26 counts, matrix totals, superseded markers and published graphql-contract snapshot.
 5. Publish an operation-level CSV artifact and CI summary on every PR/main run. A scheduled drift job opens one deduplicated issue if either official upstream release advances. Pins change only through a reviewed update.
 
@@ -242,7 +242,7 @@ The following documents remain in history but cease to be execution authorities:
 2. docs/research/saleor-schema-parity-plan.md — measured 3.23.43 baseline and domain observations; previous wave order and narrower adoption policy are superseded.
 3. docs/research/saleor-commerce-backend-fit-gap.md and docs/research/social-commerce-business-tourism-saleor-alignment.md remain useful domain evidence only; this plan owns Dashboard/schema integration.
 
-Superseded implementation PRs targeting the old store*-as-Saleor strategy are closed with not_planned and a link to this decision. Their commits/branches are not deleted; useful domain code can be reused by a new operation-aligned PR. Never reopen an old PR to continue the retired contract strategy.
+Superseded implementation PRs targeting the old store*-as-Saleor strategy (#678, #679, #680, #681, #683) are closed with a direct explanatory comment and link to this decision; #676 and #677 were already closed and their threads now point here. A workflow fails on any reopening of retired PRs #676, #677, #678, #679, #680, #681 or #683. Their commits/branches are not deleted; useful domain code can be reused by a new operation-aligned PR. Never reopen an old PR to continue the retired contract strategy.
 
 ## 9. Final definition of done
 
