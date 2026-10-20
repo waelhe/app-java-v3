@@ -22,7 +22,9 @@ type Query {
 
     myCart: [CartLine!]!
     myOrders(first: Int): [CommerceOrder!]!
+    mySoldOrders(first: Int): [CommerceOrder!]!
     commerceOrder(id: ID!): CommerceOrder
+    soldOrder(id: ID!): CommerceOrder
     paymentIntent(id: ID!): PaymentIntentClient
     checkoutPreview(input: CheckoutInput): [CommerceCheckoutPreview!]!
 
@@ -158,6 +160,9 @@ type Mutation {
     removeFromCart(itemId: ID!): Boolean!
     placeOrder(input: CheckoutInput): CommerceOrder!
     cancelCommerceOrder(id: ID!, reason: String!): CommerceOrder!
+    confirmSoldOrder(id: ID!): CommerceOrder!
+    fulfillSoldOrder(id: ID!): CommerceOrder!
+    cancelSoldOrder(id: ID!, reason: String!): CommerceOrder!
     requestOrderPaymentIntent(orderId: ID!): OrderPaymentIntent!
     processPaymentIntent(id: ID!): PaymentIntentClient!
     cancelPaymentIntent(id: ID!): PaymentIntentClient!
