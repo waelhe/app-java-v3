@@ -2,6 +2,12 @@ package com.marketplace.app.graphql;
 
 import com.marketplace.catalog.Product;
 import com.marketplace.catalog.ProductRepository;
+import com.marketplace.catalog.ListingStatus;
+import com.marketplace.catalog.ProviderListing;
+import com.marketplace.catalog.ProviderListingRepository;
+import com.marketplace.identity.User;
+import com.marketplace.identity.UserRepository;
+import com.marketplace.identity.UserRole;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -57,10 +63,76 @@ class StoreProductKeysetPaginationTest {
     private ProductRepository products;
 
     @Autowired
+    private ProviderListingRepository listings;
+
+    @Autowired
+    private UserRepository users;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @PersistenceContext
     private EntityManager entityManager;
+
+    @Test
+    @Transactional
+    void activeServiceListingContinuationRemainsStableWhenANewHeadIsInserted() {
+        UUID providerId = UUID.randomUUID();
+        users.saveAndFlush(new User(providerId, "service-keyset-" + providerId, null,
+                "Keyset service provider", UserRole.PROVIDER));
+
+        List<ProviderListing> original = new java.util.ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            ProviderListing listing = ProviderListing.create(
+                    providerId, "Service " + i, "Keyset fixture", "general", 1000L + i, "SAR");
+            listing.activate(Instant.parse("2027-01-01T00:00:00Z"));
+            original.add(listings.save(listing));
+        }
+        entityManager.flush();
+
+        for (int i = 0; i < original.size(); i++) {
+            Instant createdAt = Instant.parse("2026-01-01T00:00:00Z")
+                    .plusSeconds(original.size() - i);
+            jdbcTemplate.update("UPDATE provider_listings SET created_at = ? WHERE id = ?",
+                    Timestamp.from(createdAt), original.get(i).getId());
+        }
+        entityManager.clear();
+
+        List<UUID> expectedIds = listings.findByStatus(
+                        ListingStatus.ACTIVE, PageRequest.of(0, 10, PRODUCT_ORDER))
+                .getContent().stream().map(ProviderListing::getId).toList();
+        assertThat(expectedIds).hasSize(5);
+
+        Window<ProviderListing> first = listings.findByStatusOrderByCreatedAtDescIdDesc(
+                ListingStatus.ACTIVE, ScrollPosition.keyset(), Limit.of(2));
+        assertThat(first.getContent()).extracting(ProviderListing::getId)
+                .containsExactlyElementsOf(expectedIds.subList(0, 2));
+        assertThat(first.hasNext()).isTrue();
+
+        KeysetScrollPosition continuation =
+                (KeysetScrollPosition) first.positionAt(first.size() - 1);
+
+        ProviderListing newHead = ProviderListing.create(
+                providerId, "Inserted ahead of cursor", "Must not shift continuation",
+                "general", 2000L, "SAR");
+        newHead.activate(Instant.parse("2027-01-01T00:00:00Z"));
+        listings.saveAndFlush(newHead);
+        jdbcTemplate.update("UPDATE provider_listings SET created_at = ? WHERE id = ?",
+                Timestamp.from(Instant.parse("2027-01-01T00:00:00Z").plusSeconds(1)),
+                newHead.getId());
+        entityManager.clear();
+
+        Window<ProviderListing> second = listings.findByStatusOrderByCreatedAtDescIdDesc(
+                ListingStatus.ACTIVE, continuation.forward(), Limit.of(2));
+        assertThat(second.getContent()).extracting(ProviderListing::getId)
+                .containsExactlyElementsOf(expectedIds.subList(2, 4));
+        assertThat(second.getContent()).extracting(ProviderListing::getId)
+                .doesNotContain(newHead.getId());
+        assertThat(second.getContent()).extracting(ProviderListing::getId)
+                .doesNotContainAnyElementsOf(first.getContent().stream()
+                        .map(ProviderListing::getId).toList());
+        assertThat(second.hasNext()).isTrue();
+    }
 
     @Test
     @Transactional
