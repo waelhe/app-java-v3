@@ -27,6 +27,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.function.Function;
 import java.util.Set;
 import java.util.UUID;
 
@@ -257,20 +258,21 @@ public class StoreProductDataFetcher {
         }
     }
 
-    private KeysetScrollPosition keysetPosition(
-            String after, ProductAdminSpi.ProductListSort sort) {
-        if (after == null) {
-            return ScrollPosition.keyset();
-        }
-
-        ScrollPosition decoded = cursorStrategy.fromCursor(after);
-        String sortProperty = sort.field().property();
-        if (!(decoded instanceof KeysetScrollPosition keyset)
-                || !keyset.scrollsForward()
-                || !keyset.getKeys().keySet().equals(Set.of(sortProperty, "id"))) {
-            throw new IllegalArgumentException(
-                    "after must be a forward keyset cursor emitted by storeProducts with the same sortBy");
-        }
-        return keyset.forward();
+    private KeysetScrollPosition keysetPosition(String after, ProductAdminSpi.ProductListSort sort) {
+        // The ONE shared gate (the #677 review adoption, generalized for
+        // the roster's own sort vocabulary): the key set is the sort's own
+        // (property, id) pair, and the VALUES normalize to the property's
+        // declared type — createdAt to Instant, title/status to text,
+        // priceMinor to long, id to UUID — so a client-crafted cursor with
+        // well-named but unparseable values answers the SAME VAL-001
+        // taxonomy instead of failing inside the JPA keyset predicate.
+        ProductAdminSpi.ProductListSortField field = sort.field();
+        Function<Object, Object> sortValue = switch (field) {
+            case CREATED_AT -> KeysetCursorGate::instantValue;
+            case TITLE, STATUS -> KeysetCursorGate::textValue;
+            case PRICE_MINOR -> KeysetCursorGate::longValue;
+        };
+        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, field.property(), sortValue,
+                "storeProducts with the same sortBy");
     }
 }

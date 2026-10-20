@@ -12,6 +12,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.graphql.test.tester.HttpGraphQlTester;
+import org.springframework.data.domain.ScrollPosition;
+import org.springframework.graphql.data.pagination.CursorEncoder;
+import org.springframework.graphql.data.pagination.CursorStrategy;
+import org.springframework.graphql.data.pagination.EncodingCursorStrategy;
+import org.springframework.graphql.data.pagination.ScrollPositionCursorStrategy;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -25,6 +30,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import test.config.IntegrationContainers;
 
 import java.sql.Timestamp;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -82,6 +88,13 @@ class StoreProductKeysetGraphQlTest {
     private JwtDecoder jwtDecoder;
 
     private HttpGraphQlTester graphQlTester;
+
+    // The SAME codec the fetchers inject — used only to CRAFT the
+    // well-named/unparseable cursor the value-normalization gate must
+    // reject (the real round-trips above use the connection's own
+    // emitted cursors).
+    private final EncodingCursorStrategy<ScrollPosition> cursorStrategy =
+            CursorStrategy.withEncoder(new ScrollPositionCursorStrategy(), CursorEncoder.base64());
     private UUID providerId;
     private String categoryCode;
     private final List<UUID> productIds = new ArrayList<>();
@@ -198,6 +211,30 @@ class StoreProductKeysetGraphQlTest {
     void priceSortRequiresCurrencyFilter() {
         graphQlTester.document(CONNECTION_QUERY)
                 .variable("first", 2)
+                .variable("sortBy", java.util.Map.of("field", "PRICE_MINOR", "direction", "ASC"))
+                .execute()
+                .errors()
+                .satisfy(errors -> {
+                    assertThat(errors).isNotEmpty();
+                    assertThat(errors.getFirst().getExtensions()).containsEntry("errorCode", "VAL-001");
+                });
+    }
+
+    @Test
+    void aSortKeyCursorWithWellNamedButUnparseableValuesIsRejected() {
+        // The #677 gate adoption generalized for the roster's sort
+        // vocabulary: the key-set check alone let a client-crafted cursor
+        // with matching names but unparseable VALUES travel to the JPA
+        // keyset predicate (an internal error). The shared gate now
+        // normalizes each property's value to its declared type, so the
+        // same craft answers the VAL-001 taxonomy on this connection too.
+        UUID id = UUID.nameUUIDFromBytes("unparseable-sort-cursor".getBytes(StandardCharsets.UTF_8));
+        String cursor = cursorStrategy.toCursor(
+                ScrollPosition.forward(java.util.Map.of("priceMinor", "x", "id", id.toString())));
+
+        graphQlTester.document(CONNECTION_QUERY)
+                .variable("first", 2)
+                .variable("after", cursor)
                 .variable("sortBy", java.util.Map.of("field", "PRICE_MINOR", "direction", "ASC"))
                 .execute()
                 .errors()
