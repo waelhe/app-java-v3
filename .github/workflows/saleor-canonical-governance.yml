@@ -1,0 +1,141 @@
+name: Saleor Canonical Plan and Schema Inventory
+
+on:
+  pull_request:
+    paths:
+      - "docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md"
+      - "docs/governance/plans/saleor-source-pins.json"
+      - "docs/governance/plans/saleor-commerce-domain-matrix.csv"
+      - "docs/governance/plans/saleor-dashboard-marketplace-adaptation-plan.md"
+      - "docs/research/saleor-schema-parity-plan.md"
+      - ".ci/check-saleor-canonical-plan.py"
+      - ".github/workflows/saleor-canonical-governance.yml"
+      - "SYSTEM.md"
+      - "AGENTS.md"
+      - "PROJECT_MAP.md"
+  push:
+    branches: [main]
+    paths:
+      - "docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md"
+      - "docs/governance/plans/saleor-source-pins.json"
+      - "docs/governance/plans/saleor-commerce-domain-matrix.csv"
+      - "docs/governance/plans/saleor-dashboard-marketplace-adaptation-plan.md"
+      - "docs/research/saleor-schema-parity-plan.md"
+      - ".ci/check-saleor-canonical-plan.py"
+      - ".github/workflows/saleor-canonical-governance.yml"
+      - "SYSTEM.md"
+      - "AGENTS.md"
+      - "PROJECT_MAP.md"
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      require_full_coverage:
+        description: "Fail unless all 458 root signatures match"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: saleor-canonical-governance-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  inventory:
+    name: Saleor Canonical Plan & Root Inventory
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned SDL parser
+        run: python -m pip install --disable-pip-version-check graphql-core==3.2.6
+
+      - name: Download and verify immutable official Saleor SDL
+        env:
+          SALEOR_REF: "3.23.43"
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            "https://raw.githubusercontent.com/saleor/saleor/${SALEOR_REF}/saleor/graphql/schema.graphql" \
+            --output "${RUNNER_TEMP}/saleor-reference.graphql"
+          ACTUAL="$(git hash-object "${RUNNER_TEMP}/saleor-reference.graphql")"
+          EXPECTED="$(python -c "import json; print(json.load(open('docs/governance/plans/saleor-source-pins.json'))['referenceSchema']['gitBlobSha1'])")"
+          test "${ACTUAL}" = "${EXPECTED}" || {
+            echo "::error::Pinned Saleor schema blob mismatch: expected ${EXPECTED}; got ${ACTUAL}"
+            exit 1
+          }
+
+      - name: Fetch accepted backend contract
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/heads/graphql-contract:refs/remotes/origin/graphql-contract
+          git show origin/graphql-contract:schema.graphqls > "${RUNNER_TEMP}/published-backend.graphqls"
+
+      - name: Validate pins, supersession, category counts and root signatures
+        run: |
+          set -euo pipefail
+          ARGS=()
+          if [ "${{ inputs.require_full_coverage }}" = "true" ]; then
+            ARGS+=(--require-full-coverage)
+          fi
+          python .ci/check-saleor-canonical-plan.py \
+            --schema "${RUNNER_TEMP}/saleor-reference.graphql" \
+            --published "${RUNNER_TEMP}/published-backend.graphqls" \
+            --report "${RUNNER_TEMP}/saleor-root-coverage.csv" \
+            --summary "${GITHUB_STEP_SUMMARY}" \
+            "${ARGS[@]}"
+
+      - name: Upload generated root inventory
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: saleor-root-coverage-${{ github.sha }}
+          path: ${{ runner.temp }}/saleor-root-coverage.csv
+          retention-days: 30
+          if-no-files-found: error
+
+  upstream-drift:
+    name: Detect upstream release drift
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Detect newer official pins and create one tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          PINNED_SALEOR="$(python -c "import json; print(json.load(open('docs/governance/plans/saleor-source-pins.json'))['referenceSchema']['ref'])")"
+          PINNED_DASHBOARD="$(python -c "import json; print(json.load(open('docs/governance/plans/saleor-source-pins.json'))['dashboard']['tag'])")"
+          LATEST_SALEOR="$(gh api repos/saleor/saleor/releases/latest --jq .tag_name)"
+          LATEST_DASHBOARD="$(gh api repos/saleor/saleor-dashboard/releases/latest --jq .tag_name)"
+          if [ "${LATEST_SALEOR}" = "${PINNED_SALEOR}" ] && [ "${LATEST_DASHBOARD}" = "${PINNED_DASHBOARD}" ]; then
+            echo "No upstream release drift. Pins remain immutable."
+            exit 0
+          fi
+          TITLE="[Saleor upstream pin review] Saleor ${PINNED_SALEOR} -> ${LATEST_SALEOR}; Dashboard ${PINNED_DASHBOARD} -> ${LATEST_DASHBOARD}"
+          EXISTING="$(gh issue list --repo "${GITHUB_REPOSITORY}" --state open --search '[Saleor upstream pin review] in:title' --json title --jq '.[].title')"
+          if printf '%s\n' "${EXISTING}" | grep -Fqx "${TITLE}"; then
+            echo "Tracking issue already exists: ${TITLE}"
+            exit 0
+          fi
+          gh issue create --repo "${GITHUB_REPOSITORY}" \
+            --title "${TITLE}" \
+            --body "A newer official Saleor or Dashboard release is available. This is a review signal, not an automatic pin change. Update immutable pins only through a PR that reruns schema inventory, code generation, compatibility gates, retained-route E2E and upstream security/rebase review. Pinned: Saleor ${PINNED_SALEOR}; Dashboard ${PINNED_DASHBOARD}. Latest: Saleor ${LATEST_SALEOR}; Dashboard ${LATEST_DASHBOARD}."
