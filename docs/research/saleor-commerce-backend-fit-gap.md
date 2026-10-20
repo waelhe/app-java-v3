@@ -1,5 +1,8 @@
 # Saleor Commerce Backend Study — Fit/Gap for app-java-v3
 
+> **Scope precedence:** Preserve this study as behavioral and domain evidence. For the owner's full Dashboard + full commerce-schema decision, the sole execution authority is [D-SALEOR-FULL-001](../governance/plans/saleor-dashboard-full-commerce-canonical-plan.md). Any narrower historical API scope is superseded for integration planning.
+
+
 **Status:** Research and implementation-planning evidence only. This document does not supersede accepted ADRs, the official-compliance policy, or the platform-administration product charter. No production code, schema, or dependencies are changed by this study.  
 **Inspection baseline:** `waelhe/app-java-v3`, main at `d3c873d3595f5c7a7b9f6104dfb7bb5477b2fb9b` (truth-sync commit dated 2026-10-16); research performed 2026-10-17.  
 **Functional reference:** Saleor's official documentation and source.  
