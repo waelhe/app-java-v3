@@ -35,6 +35,7 @@ public interface ProductAdminSpi {
     ProductView getOwnedProduct(UUID id, Authentication authentication);
     List<ProductTypeView> listProductTypes();
     List<StoreCategoryView> listStoreCategories();
+    StoreCategoryView getStoreCategory(UUID id);
     ProductView createProduct(CreateProductCommand command, Authentication authentication);
     ProductView updateProduct(UUID id, UpdateProductCommand command, Authentication authentication);
     ProductView publishProduct(UUID id, Authentication authentication);
