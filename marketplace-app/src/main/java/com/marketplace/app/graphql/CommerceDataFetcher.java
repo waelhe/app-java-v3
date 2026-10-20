@@ -11,6 +11,7 @@ import com.marketplace.app.graphql.generated.types.OrderPaymentIntent;
 import com.marketplace.app.graphql.generated.types.PaymentIntentClient;
 import com.marketplace.orders.spi.OrderCommercePort;
 import com.marketplace.payments.spi.PaymentIntentClientPort;
+import com.marketplace.shared.api.SellerOrderManagementPort;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
@@ -32,15 +33,18 @@ import java.util.UUID;
 public class CommerceDataFetcher {
 
     private final OrderCommercePort commerce;
+    private final SellerOrderManagementPort sellerOrders;
     private final PaymentIntentClientPort payments;
     private final CommerceGraphQlMapper mapper;
     private final GraphQlProperties properties;
 
     public CommerceDataFetcher(OrderCommercePort commerce,
+                               SellerOrderManagementPort sellerOrders,
                                PaymentIntentClientPort payments,
                                CommerceGraphQlMapper mapper,
                                GraphQlProperties properties) {
         this.commerce = commerce;
+        this.sellerOrders = sellerOrders;
         this.payments = payments;
         this.mapper = mapper;
         this.properties = properties;
@@ -61,6 +65,22 @@ public class CommerceDataFetcher {
         int bounded = Math.min(requested, Math.min(50, properties.pagination().maxPageSize()));
         return commerce.listMyOrders(bounded, currentAuthentication()).stream()
                 .map(mapper::toResponse).toList();
+    }
+
+    @DgsQuery(field = DgsConstants.QUERY.MySoldOrders)
+    @RateLimiter(name = "graphqlStoreProductQuery")
+    public List<CommerceOrder> mySoldOrders(@InputArgument Integer first) {
+        int requested = first == null ? properties.pagination().defaultPageSize() : first;
+        if (requested <= 0) return List.of();
+        int bounded = Math.min(requested, Math.min(50, properties.pagination().maxPageSize()));
+        return sellerOrders.listSoldOrders(bounded, currentAuthentication()).stream()
+                .map(mapper::toResponse).toList();
+    }
+
+    @DgsQuery(field = DgsConstants.QUERY.SoldOrder)
+    @RateLimiter(name = "graphqlStoreProductQuery")
+    public CommerceOrder soldOrder(@InputArgument UUID id) {
+        return mapper.toResponse(sellerOrders.getSoldOrder(id, currentAuthentication()));
     }
 
     @DgsQuery(field = DgsConstants.QUERY.CommerceOrder)
@@ -115,6 +135,29 @@ public class CommerceDataFetcher {
             throw new IllegalArgumentException("id and a reason between 1 and 500 characters are required");
         }
         return mapper.toResponse(commerce.cancelOrder(id, reason, currentAuthentication()));
+    }
+
+    @DgsMutation(field = DgsConstants.MUTATION.ConfirmSoldOrder)
+    @RateLimiter(name = "graphqlStoreProductMutation")
+    public CommerceOrder confirmSoldOrder(@InputArgument UUID id) {
+        if (id == null) throw new IllegalArgumentException("id is required");
+        return mapper.toResponse(sellerOrders.confirmSoldOrder(id, currentAuthentication()));
+    }
+
+    @DgsMutation(field = DgsConstants.MUTATION.FulfillSoldOrder)
+    @RateLimiter(name = "graphqlStoreProductMutation")
+    public CommerceOrder fulfillSoldOrder(@InputArgument UUID id) {
+        if (id == null) throw new IllegalArgumentException("id is required");
+        return mapper.toResponse(sellerOrders.fulfillSoldOrder(id, currentAuthentication()));
+    }
+
+    @DgsMutation(field = DgsConstants.MUTATION.CancelSoldOrder)
+    @RateLimiter(name = "graphqlStoreProductMutation")
+    public CommerceOrder cancelSoldOrder(@InputArgument UUID id, @InputArgument String reason) {
+        if (id == null || reason == null || reason.isBlank() || reason.length() > 500) {
+            throw new IllegalArgumentException("id and a reason between 1 and 500 characters are required");
+        }
+        return mapper.toResponse(sellerOrders.cancelSoldOrder(id, reason, currentAuthentication()));
     }
 
     @DgsMutation(field = DgsConstants.MUTATION.RequestOrderPaymentIntent)
