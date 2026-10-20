@@ -20,10 +20,13 @@ This file adds project-specific conventions.
      - postgis integration     → docs/postgis-integration-plan.md
      - community layer        → docs/neighborhood-community-plan.md
      - unified platform       → docs/unified-platform-plan.md
+     - Saleor Dashboard/full commerce schema → docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md
      - إصلاح أخر               → الملف المعني + CODING_STANDARDS.md
 4. ثم الشجرة المستهدفة من خريطة §10
 ```
 قاعدة: «الملف الحاكم» = المستند الذي يملك قرارات المهمة. لا يقبَل إجراء بلا إسناد صريح إليه.
+
+قاعدة خاصة بـSaleor (ملزمة): أي عمل على Dashboard/عقد التجارة/مخطط GraphQL يخضع حصريًا لـ`docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md`. الوثيقتان `saleor-dashboard-marketplace-adaptation-plan.md` و`saleor-schema-parity-plan.md` تاريخيتان فقط ولا يجوز اختيار أي منهما ملفًا حاكمًا. يتحقق CI من علامة الإلغاء ورابط الخطة الجديدة؛ لا تُحذف أدلة التاريخ.
 
 ### 0.2 قبل أي إجراء، أعلن بنص صريح (لا ضمنياً)
 ```text
