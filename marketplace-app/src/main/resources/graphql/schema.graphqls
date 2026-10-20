@@ -11,33 +11,12 @@ type Query {
     storeProductVariantAttributeValues(variantId: ID!): [StoreProductAttributeValue!]!
 
     service(id: ID!): Service
-    # The bounded collection contract (GraphQL target design Phase 1): the
-    # unbounded demo field `services: [Service!]!` (Pageable.unpaged() under
-    # it) is REPLACED, not paralleled — the consumer inventory measured zero
-    # contracted consumers (the repo's own tests are the only callers; the
-    # Android client is REST-only), which is the design plan §6 condition for
-    # direct replacement. The field keeps the official framework relay
-    # Connection path under the Phase-2 DGS programming model:
-    # ServiceConnection/ServiceEdge/PageInfo are generated at startup by the
-    # same ConnectionTypeDefinitionConfigurer — applied to the DGS type
-    # registry through the integration's DgsTypeDefinitionConfigurerBridge —
-    # the DGS data fetcher binds first/after via @InputArgument and decodes
-    # the cursor with the Boot-provided ScrollPositionCursorStrategy, and the
-    # returned Spring Data Page is still adapted by the SliceConnectionAdapter
-    # (Page is-a Slice) through Boot's ConnectionFieldTypeVisitor, which the
-    # DGS integration applies to the DGS-registered fetcher via the
-    # GraphQlSourceBuilderCustomizer chain — identical envelope, identical
-    # base64 `O_<offset>` ScrollPosition cursors on the wire.
-    # `first` carries no SDL literal default: graphql-java applies a field
-    # default at argument coercion whenever the argument is omitted, which
-    # would shadow the typed configuration
-    # (marketplace.graphql.pagination.default-page-size) — two sources of
-    # "default" that drift apart, the exact failure the first real
-    # integration run measured (property set to 3, the SDL literal
-    # answered 20). The server's configured default page size (bounded,
-    # hard-capped, fail-fast bound) is the single source; forward-only
-    # (last/before deliberately absent) with deterministic server-side
-    # ordering.
+    # Forward-only keyset connection over ACTIVE catalog listings, ordered
+    # by createdAt DESC, id DESC. Cursors are opaque framework-generated
+    # positions and may be reused with a different first value because they
+    # identify a row's sort key, not an absolute offset. The configured
+    # default and hard maximum are owned by marketplace.graphql.pagination;
+    # do not add an SDL literal default that shadows that configuration.
     services(first: Int, after: String): ServiceConnection!
 
     # Phase 6 — the first composite user journey (the corrected plan
