@@ -175,7 +175,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
+          # GitHub's documented GITHUB_ENV semantics: values written there are
+          # available to SUBSEQUENT steps, never the step that writes them.
+          # This step reads its own count, so it captures the value through
+          # command substitution instead (the first main run measured the
+          # previous shape failing: "UNRESOLVED_COUNT: unbound variable").
+          UNRESOLVED_COUNT="$(python - <<'PY'
           import csv
           import os
           from pathlib import Path
@@ -207,9 +212,9 @@ jobs:
           ])
           out = Path(os.environ["RUNNER_TEMP"]) / "saleor-divergence-backlog.md"
           out.write_text("\n".join(body) + "\n", encoding="utf-8")
-          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
-              env.write(f"UNRESOLVED_COUNT={len(unresolved)}\n")
+          print(len(unresolved))
           PY
+          )"
           TITLE='[Saleor divergence tracking] Unresolved compatibility adapters'
           EXISTING="$(gh issue list --repo "${GITHUB_REPOSITORY}" --state open --limit 100 --json number,title --jq '.[] | select(.title == "[Saleor divergence tracking] Unresolved compatibility adapters") | .number' | head -n 1)"
           if [ "${UNRESOLVED_COUNT}" -gt 0 ]; then
