@@ -216,6 +216,79 @@ class ServiceDgsDataFetcherTest {
         verify(orderCommercePort).requestOrderPaymentIntent(orderId, auth);
     }
 
+    @Test
+    void checkoutPreviewResolvesThroughTheDgsWiringWithoutOwningPriceMath() {
+        var auth = new TestingAuthenticationToken("buyer", "pass", "ROLE_CONSUMER");
+        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+        securityContext.setAuthentication(auth);
+        SecurityContextHolder.setContext(securityContext);
+        UUID sellerId = UUID.randomUUID();
+        when(orderCommercePort.previewCheckout(any(), eq(auth))).thenReturn(List.of(
+                new OrderCommercePort.CheckoutPreviewView(sellerId, "10000", "500", "Promo",
+                        "0", null, "950", "SA", false, 1500, "10450", "SAR", null)));
+
+        var document = dgsQueryExecutor.executeAndGetDocumentContext("""
+                query Preview($input: CheckoutInput) {
+                    checkoutPreview(input: $input) {
+                        sellerId subtotalMinor promotionDiscountMinor taxMinor totalMinor currency
+                    }
+                }""", java.util.Map.of("input", java.util.Map.of("voucherCode", "SAVE")));
+
+        assertThat(document.<String>read("data.checkoutPreview[0].sellerId")).isEqualTo(sellerId.toString());
+        assertThat(document.<String>read("data.checkoutPreview[0].subtotalMinor")).isEqualTo("10000");
+        assertThat(document.<String>read("data.checkoutPreview[0].totalMinor")).isEqualTo("10450");
+    }
+
+    @Test
+    void placeOrderDelegatesTheCheckoutCommandAndReturnsFrozenOrderShape() {
+        var auth = new TestingAuthenticationToken("buyer", "pass", "ROLE_CONSUMER");
+        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+        securityContext.setAuthentication(auth);
+        SecurityContextHolder.setContext(securityContext);
+        UUID orderId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        var order = new OrderCommercePort.OrderView(orderId, "PLACED",
+                List.of(new OrderCommercePort.OrderLineView(UUID.randomUUID(), productId, null,
+                        2, "1250", "SAR", "2500")),
+                "2500", "2500", "0", "0", "PICKUP", "0", null, "SAR",
+                Instant.parse("2026-10-20T00:00:00Z"), null, null, null, null, null, List.of());
+        when(orderCommercePort.placeOrder(isNull(), eq(auth))).thenReturn(order);
+
+        var document = dgsQueryExecutor.executeAndGetDocumentContext("""
+                mutation { placeOrder { id status totalAmountMinor items { productId quantity lineTotalMinor } } }
+                """);
+
+        assertThat(document.<String>read("data.placeOrder.id")).isEqualTo(orderId.toString());
+        assertThat(document.<String>read("data.placeOrder.status")).isEqualTo("PLACED");
+        assertThat(document.<String>read("data.placeOrder.totalAmountMinor")).isEqualTo("2500");
+        assertThat(document.<String>read("data.placeOrder.items[0].productId")).isEqualTo(productId.toString());
+        verify(orderCommercePort).placeOrder(null, auth);
+    }
+
+    @Test
+    void paymentProcessingReturnsProviderClientSecretFromThePaymentsOwner() {
+        var auth = new TestingAuthenticationToken("buyer", "pass", "ROLE_CONSUMER");
+        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+        securityContext.setAuthentication(auth);
+        SecurityContextHolder.setContext(securityContext);
+        UUID intentId = UUID.randomUUID();
+        when(paymentIntentClientPort.process(eq(intentId), eq(auth))).thenReturn(
+                new PaymentIntentClientPort.PaymentIntentClientView(intentId, null, "2500",
+                        "SAR", "PROCESSING", "psp_intent_test", "secret_test",
+                        Instant.parse("2026-10-20T00:00:00Z"), Instant.parse("2026-10-20T00:00:01Z")));
+
+        var document = dgsQueryExecutor.executeAndGetDocumentContext("""
+                mutation Process($id: ID!) {
+                    processPaymentIntent(id: $id) { id amountMinor status pspIntentId clientSecret }
+                }
+                """, java.util.Map.of("id", intentId.toString()));
+
+        assertThat(document.<String>read("data.processPaymentIntent.id")).isEqualTo(intentId.toString());
+        assertThat(document.<String>read("data.processPaymentIntent.clientSecret")).isEqualTo("secret_test");
+        assertThat(document.<String>read("data.processPaymentIntent.status")).isEqualTo("PROCESSING");
+        verify(paymentIntentClientPort).process(intentId, auth);
+    }
+
     /**
      * The bounded connection through the DGS wiring — the migration's
      * central architectural claim at the data-fetcher layer: the DGS
