@@ -1,18 +1,15 @@
 package com.marketplace.app.graphql;
 
-import com.marketplace.catalog.spi.ProductAdminSpi;
+import com.marketplace.catalog.Product;
+import com.marketplace.catalog.ProductRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.springframework.data.domain.KeysetScrollPosition;
-import org.springframework.data.domain.Limit;
-import org.springframework.data.domain.ScrollPosition;
-import org.springframework.data.domain.Window;
 import org.springframework.graphql.test.tester.HttpGraphQlTester;
-import org.springframework.security.core.Authentication;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.ActiveProfiles;
@@ -24,21 +21,20 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import test.config.IntegrationContainers;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 /**
- * Exercises the real DGS/HTTP connection adapter with keyset Window results.
- * The owning SPI is stubbed so this test isolates wire-cursor encode/decode;
- * the separate catalog test exercises the real Spring Data JPA keyset query.
+ * Exercises the provider product keyset cursor through the real PostgreSQL
+ * repository, secured service, DGS fetcher, and GraphQL HTTP connection adapter.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
@@ -67,60 +63,58 @@ class StoreProductKeysetGraphQlTest {
     @LocalServerPort
     private int port;
 
-    @MockitoBean
-    private ProductAdminSpi productAdminSpi;
+    @Autowired
+    private ProductRepository products;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     @MockitoBean
     private JwtDecoder jwtDecoder;
 
     private HttpGraphQlTester graphQlTester;
-    private final List<ProductAdminSpi.ProductView> products = new ArrayList<>();
-    private final Map<UUID, Instant> createdAtById = new HashMap<>();
-    private final Map<UUID, Integer> ordinalById = new HashMap<>();
+    private UUID providerId;
+    private final List<UUID> productIds = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
+        providerId = UUID.randomUUID();
         Jwt testJwt = Jwt.withTokenValue("test-token")
                 .header("alg", "RS256")
-                .claim("sub", "test-provider")
+                .claim("sub", providerId.toString())
                 .claim("aud", List.of("marketplace-api"))
                 .claim("roles", List.of("PROVIDER"))
                 .build();
         when(jwtDecoder.decode("test-token")).thenReturn(testJwt);
 
-        UUID providerId = UUID.randomUUID();
-        for (int i = 0; i < 5; i++) {
-            UUID id = UUID.nameUUIDFromBytes(("store-keyset-" + i).getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            products.add(new ProductAdminSpi.ProductView(
-                    id, "home-appliances", "Product " + i, "Keyset fixture",
-                    1000L + i, "SAR", providerId, null, "ACTIVE"));
-            createdAtById.put(id, Instant.parse("2026-01-01T00:00:00Z").plusSeconds(i));
-            ordinalById.put(id, i);
-        }
+        String categoryCode = "keyset-" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        jdbcTemplate.update("""
+                INSERT INTO store_categories
+                    (id, code, name_en, name_ar, position, is_deleted, version, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 0, FALSE, 0, now(), now())
+                """, UUID.randomUUID(), categoryCode, "Keyset test", "اختبار التصفح");
 
-        when(productAdminSpi.scrollOwnedProducts(any(Authentication.class),
-                any(KeysetScrollPosition.class), any(Limit.class))).thenAnswer(invocation -> {
-            KeysetScrollPosition position = invocation.getArgument(1);
-            int limit = invocation.getArgument(2, Limit.class).max();
-            int start = 0;
-            if (!position.isInitial()) {
-                Object rawId = position.getKeys().get("id");
-                UUID id = rawId instanceof UUID value ? value : UUID.fromString(rawId.toString());
-                Integer ordinal = ordinalById.get(id);
-                if (ordinal == null) {
-                    throw new IllegalArgumentException("Unknown fixture keyset id");
-                }
-                start = ordinal + 1;
-            }
-            int end = Math.min(start + limit, products.size());
-            List<ProductAdminSpi.ProductView> page = List.copyOf(products.subList(start, end));
-            return Window.from(page, index -> {
-                ProductAdminSpi.ProductView product = page.get(index);
-                return ScrollPosition.forward(Map.of(
-                        "createdAt", createdAtById.get(product.id()),
-                        "id", product.id()));
-            }, end < products.size());
-        });
+        List<Product> fixtures = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            Product product = products.save(Product.register(
+                    categoryCode, "Product " + i, "Keyset fixture",
+                    1000L + i, "SAR", providerId));
+            fixtures.add(product);
+            productIds.add(product.getId());
+        }
+        entityManager.flush();
+
+        // Descending timestamps make the fixture order deterministic even
+        // when the database clock gives adjacent inserts the same timestamp.
+        for (int i = 0; i < fixtures.size(); i++) {
+            Instant createdAt = Instant.parse("2026-01-01T00:00:00Z").plusSeconds(fixtures.size() - i);
+            jdbcTemplate.update("UPDATE products SET created_at = ? WHERE id = ?",
+                    Timestamp.from(createdAt), fixtures.get(i).getId());
+        }
+        entityManager.clear();
 
         graphQlTester = HttpGraphQlTester.builder(WebTestClient.bindToServer()
                         .baseUrl("http://localhost:" + port + "/graphql")
@@ -141,7 +135,7 @@ class StoreProductKeysetGraphQlTest {
                 .path("storeProducts.pageInfo.endCursor").entity(String.class)
                 .satisfies(cursors::add);
 
-        assertThat(firstIds).containsExactly(products.get(0).id().toString(), products.get(1).id().toString());
+        assertThat(firstIds).containsExactly(productIds.get(0).toString(), productIds.get(1).toString());
         assertThat(cursors).hasSize(1);
         assertThat(cursors.getFirst()).isNotBlank();
 
@@ -155,7 +149,7 @@ class StoreProductKeysetGraphQlTest {
                 .satisfies(secondIds::addAll)
                 .path("storeProducts.pageInfo.hasNextPage").entity(Boolean.class).isEqualTo(true);
 
-        assertThat(secondIds).containsExactly(products.get(2).id().toString(), products.get(3).id().toString());
+        assertThat(secondIds).containsExactly(productIds.get(2).toString(), productIds.get(3).toString());
         assertThat(secondIds).doesNotContainAnyElementsOf(firstIds);
     }
 }
