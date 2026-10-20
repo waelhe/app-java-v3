@@ -20,6 +20,11 @@ type Query {
     storeProductVariants(productId: ID!): [StoreProductVariant!]!
     storeProductVariantAttributeValues(variantId: ID!): [StoreProductAttributeValue!]!
 
+    myCart: [CartLine!]!
+    myOrders(first: Int): [CommerceOrder!]!
+    commerceOrder(id: ID!): CommerceOrder
+    paymentIntent(id: ID!): PaymentIntentClient
+
     service(id: ID!): Service
     # Forward-only keyset connection over ACTIVE catalog listings, ordered
     # by createdAt DESC, id DESC. Cursors are opaque framework-generated
@@ -148,7 +153,135 @@ type Mutation {
     confirmStoreProductMediaUpload(mediaId: ID!): StoreProductMedia!
     deleteStoreProductMedia(mediaId: ID!): Boolean!
 
+    addToCart(input: AddToCartInput!): CartLine!
+    removeFromCart(itemId: ID!): Boolean!
+    checkoutPreview(input: CheckoutInput): [CommerceCheckoutPreview!]!
+    placeOrder(input: CheckoutInput): CommerceOrder!
+    cancelCommerceOrder(id: ID!, reason: String!): CommerceOrder!
+    requestOrderPaymentIntent(orderId: ID!): OrderPaymentIntent!
+    processPaymentIntent(id: ID!): PaymentIntentClient!
+    cancelPaymentIntent(id: ID!): PaymentIntentClient!
+
     createService(input: ServiceInput!): Service!
+}
+
+# Buyer commerce projections. Money crosses GraphQL as integer-minor-unit
+# decimal strings, not Float/32-bit Int. Amounts are calculated by the orders
+# and payments owners; callers never submit unit prices or totals.
+type CartLine {
+    id: ID!
+    productId: ID!
+    variantId: ID
+    quantity: Int!
+    unitAmountMinor: String!
+    currency: String!
+    lineTotalMinor: String!
+}
+
+input AddToCartInput {
+    productId: ID!
+    variantId: ID
+    quantity: Int!
+}
+
+enum CommerceFulfillmentMethod {
+    PICKUP
+    PLATFORM_DELIVERY
+}
+
+input CheckoutFulfillmentInput {
+    method: CommerceFulfillmentMethod!
+    destinationAddress: String
+    destinationLatitude: Float
+    destinationLongitude: Float
+}
+
+input CheckoutInput {
+    voucherCode: String
+    fulfillment: CheckoutFulfillmentInput
+}
+
+type CheckoutDeliveryOption {
+    serviceable: Boolean!
+    feeMinor: String!
+    etaSeconds: String!
+    currency: String!
+    refusal: String
+}
+
+type CommerceCheckoutPreview {
+    sellerId: ID!
+    subtotalMinor: String!
+    promotionDiscountMinor: String!
+    promotionName: String
+    voucherDiscountMinor: String!
+    voucherCode: String
+    taxMinor: String!
+    taxCountry: String
+    taxInclusive: Boolean!
+    taxRateBps: Int!
+    totalMinor: String!
+    currency: String!
+    deliveryOption: CheckoutDeliveryOption
+}
+
+enum CommerceOrderStatus {
+    PLACED
+    CONFIRMED
+    FULFILLED
+    CANCELLED
+}
+
+type CommerceOrderLine {
+    id: ID!
+    productId: ID!
+    variantId: ID
+    quantity: Int!
+    unitAmountMinor: String!
+    currency: String!
+    lineTotalMinor: String!
+}
+
+type CommerceOrder {
+    id: ID!
+    status: CommerceOrderStatus!
+    items: [CommerceOrderLine!]!
+    totalAmountMinor: String!
+    subtotalAmountMinor: String
+    discountAmountMinor: String
+    taxAmountMinor: String
+    fulfillmentMethod: CommerceFulfillmentMethod
+    shippingAmountMinor: String
+    shipToAddress: String
+    currency: String!
+    placedAt: String
+    confirmedAt: String
+    fulfilledAt: String
+    cancelledAt: String
+    cancelReason: String
+    deliveryRequestId: ID
+    additionalOrders: [CommerceOrder!]!
+}
+
+type OrderPaymentIntent {
+    id: ID!
+    orderId: ID!
+    amountMinor: String!
+    currency: String!
+    status: String!
+    origin: String!
+}
+
+type PaymentIntentClient {
+    id: ID!
+    bookingId: ID
+    amountMinor: String
+    currency: String!
+    status: String!
+    pspIntentId: String
+    clientSecret: String
+    createdAt: String
+    updatedAt: String
 }
 
 type Service {
