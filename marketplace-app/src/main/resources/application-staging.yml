@@ -162,6 +162,12 @@ management:
 marketplace:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
+  # Incident #682's root fix, staging parity: the sandbox submits real mail
+  # through the real production path (the staging mail contract documented
+  # above), so its sender identity is exactly as mandatory as production's —
+  # no default, MAIL_FROM unset fails at binding time (INV-2/D6).
+  mail:
+    from: ${MAIL_FROM}
   security:
     jwt:
       audience: ${JWT_AUDIENCE:marketplace-api}

@@ -3,6 +3,7 @@ package com.marketplace.shared.email;
 import com.icegreen.greenmail.store.FolderException;
 import com.icegreen.greenmail.util.GreenMail;
 import com.icegreen.greenmail.util.ServerSetupTest;
+import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -86,6 +87,12 @@ class EmailServiceGreenMailTest {
     static void mailProperties(DynamicPropertyRegistry registry) {
         registry.add("spring.mail.host", () -> ServerSetupTest.SMTP.getBindAddress());
         registry.add("spring.mail.port", () -> greenMail.getSmtp().getPort());
+        // Incident #682's regression pin: the sender identity the channel now
+        // requires (MailChannelProperties) — asserted on the received message
+        // below; the pre-fix code produced no From header at all, which is
+        // exactly the failure this pin makes permanently visible.
+        registry.add("marketplace.mail.from",
+                () -> "Marketplace <no-reply@marketplace.test>");
     }
 
     @Autowired
@@ -103,6 +110,14 @@ class EmailServiceGreenMailTest {
 
         MimeMessage[] received = greenMail.getReceivedMessages();
         assertThat(received).hasSize(1);
+        // Incident #682's regression pin — the sender identity rides every
+        // message now. On the pre-fix code this assertion fails: the From
+        // header was absent and the provider rejected the submission at the
+        // MAIL FROM stage (550 Invalid `from` field, measured by raw-SMTP
+        // replay), so nothing arrived at all.
+        assertThat(received[0].getFrom()).hasSize(1);
+        assertThat(((InternetAddress) received[0].getFrom()[0]).getAddress())
+                .isEqualTo("no-reply@marketplace.test");
         assertThat(received[0].getAllRecipients()).hasSize(1);
         assertThat(received[0].getAllRecipients()[0].toString())
                 .isEqualTo(recipient);

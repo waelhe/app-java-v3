@@ -903,6 +903,16 @@ app:
 marketplace:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:https://marketplace.com}
+  # Incident #682's root fix — the base-profile default: profile-less boot
+  # contexts (the CI compatibility gates boot the plain jar with no profile;
+  # spring.mail.host's empty default still registers a dormant sender) get a
+  # syntactically valid local sender so the channel's identity validation
+  # never blocks a context that cannot send anyway. The DEPLOYED profiles
+  # override with the binding ${MAIL_FROM} and NO default — production and
+  # staging still fail fast without the real identity (Boot's documented
+  # precedence: profile-specific files win for the keys they carry).
+  mail:
+    from: ${MAIL_FROM:Marketplace <no-reply@marketplace.local>}
   # L33 (realestate systems plan): the classifieds lifecycle policy. 90
   # days is the global classifieds convention range (Dubizzle ~60, market
   # standard 60-90); env-tunable (MARKETPLACE_CATALOG_EXPIRY_EXPIRY_DAYS).
