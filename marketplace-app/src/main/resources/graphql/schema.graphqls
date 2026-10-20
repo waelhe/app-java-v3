@@ -14,6 +14,7 @@ type Query {
     storeProductTypes: [StoreProductType!]!
     # Provider/admin dictionary read used by product registration and category navigation.
     storeCategories: [StoreCategory!]!
+    storeCategory(id: ID!): StoreCategory
     storeProductMedia(productId: ID!): [StoreProductMedia!]!
     storeProductAttributeValues(productId: ID!): [StoreProductAttributeValue!]!
     storeProductVariants(productId: ID!): [StoreProductVariant!]!
