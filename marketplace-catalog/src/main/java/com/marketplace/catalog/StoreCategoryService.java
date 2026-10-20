@@ -42,6 +42,13 @@ public class StoreCategoryService {
         return repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("StoreCategory", id));
     }
 
+    /** Read one dictionary item for the same provider/admin roles as the configuration roster. */
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasRole('PROVIDER') or hasRole('ADMIN')")
+    public StoreCategory getForConfiguration(UUID id) {
+        return repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("StoreCategory", id));
+    }
+
     @Observed(name = "catalog.store-category.register")
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
