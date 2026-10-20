@@ -81,6 +81,13 @@ public class ProductAdminSpiAdapter implements ProductAdminSpi {
     }
 
     @Override
+    public StoreCategoryView getStoreCategory(UUID id) {
+        StoreCategory category = storeCategories.getForConfiguration(id);
+        return new StoreCategoryView(category.getId(), category.getCode(),
+                category.getNameEn(), category.getNameAr(), category.getPosition());
+    }
+
+    @Override
     public List<ProductTypeView> listProductTypes() {
         Map<UUID, CatalogAttributeDefinition> definitionsById = attributes.listDefinitions().stream()
                 .collect(Collectors.toMap(CatalogAttributeDefinition::getId, Function.identity()));
