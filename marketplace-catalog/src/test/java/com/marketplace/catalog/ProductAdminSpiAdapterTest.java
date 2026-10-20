@@ -137,6 +137,19 @@ class ProductAdminSpiAdapterTest {
     }
 
     @Test
+    void getStoreCategoryMapsTheStableDictionaryIdentity() {
+        StoreCategory category = StoreCategory.register(
+                "home-essentials", "Home essentials", "أساسيات المنزل", 3);
+        when(storeCategories.getForConfiguration(category.getId())).thenReturn(category);
+
+        var result = adapter.getStoreCategory(category.getId());
+
+        assertThat(result).isEqualTo(new ProductAdminSpi.StoreCategoryView(
+                category.getId(), "home-essentials", "Home essentials", "أساسيات المنزل", 3));
+        verify(storeCategories).getForConfiguration(category.getId());
+    }
+
+    @Test
     void productTypeProjectionCarriesAssignmentsAndChoiceOptions() {
         CatalogAttributeDefinition color = CatalogAttributeDefinition.create(
                 "color", "Color", "اللون", CatalogAttributeType.CHOICE, null);
