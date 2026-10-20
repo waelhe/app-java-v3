@@ -24,8 +24,6 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import test.config.IntegrationContainers;
 
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -75,9 +73,6 @@ class StoreProductKeysetGraphQlTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    @PersistenceContext
-    private EntityManager entityManager;
-
     @MockitoBean
     private JwtDecoder jwtDecoder;
 
@@ -112,8 +107,6 @@ class StoreProductKeysetGraphQlTest {
             fixtures.add(product);
             productIds.add(product.getId());
         }
-        entityManager.flush();
-
         // Descending timestamps make the fixture order deterministic even
         // when the database clock gives adjacent inserts the same timestamp.
         for (int i = 0; i < fixtures.size(); i++) {
@@ -121,8 +114,6 @@ class StoreProductKeysetGraphQlTest {
             jdbcTemplate.update("UPDATE products SET created_at = ? WHERE id = ?",
                     Timestamp.from(createdAt), fixtures.get(i).getId());
         }
-        entityManager.clear();
-
         graphQlTester = HttpGraphQlTester.builder(WebTestClient.bindToServer()
                         .baseUrl("http://localhost:" + port + "/graphql")
                         .defaultHeader("Authorization", "Bearer test-token"))
