@@ -16,7 +16,7 @@ import org.springframework.data.domain.ScrollPosition;
 import org.springframework.graphql.data.pagination.CursorEncoder;
 import org.springframework.graphql.data.pagination.CursorStrategy;
 import org.springframework.graphql.data.pagination.EncodingCursorStrategy;
-import org.springframework.graphql.data.pagination.ScrollPositionCursorStrategy;
+import org.springframework.graphql.data.query.ScrollPositionCursorStrategy;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
