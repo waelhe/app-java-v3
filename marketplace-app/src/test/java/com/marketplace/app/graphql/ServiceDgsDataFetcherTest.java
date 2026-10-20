@@ -3,6 +3,7 @@ package com.marketplace.app.graphql;
 import com.marketplace.catalog.spi.CatalogSpi;
 import com.marketplace.orders.spi.OrderCommercePort;
 import com.marketplace.payments.spi.PaymentIntentClientPort;
+import com.marketplace.shared.api.OrderReturnsPort;
 import com.marketplace.shared.api.PaymentIntentDetails;
 import com.marketplace.orders.spi.SellerOrderManagementPort;
 import com.marketplace.shared.api.ProviderListingView;
@@ -106,6 +107,9 @@ class ServiceDgsDataFetcherTest {
 
     @MockitoBean
     private SellerOrderManagementPort sellerOrderManagementPort;
+
+    @MockitoBean
+    private OrderReturnsPort orderReturnsPort;
 
     @MockitoBean
     private PaymentIntentClientPort paymentIntentClientPort;
@@ -415,6 +419,121 @@ class ServiceDgsDataFetcherTest {
         assertThat(result.<String>read("data.cancelPaymentIntent.id")).isEqualTo(intentId.toString());
         assertThat(result.<String>read("data.cancelPaymentIntent.status")).isEqualTo("CANCELLED");
         verify(paymentIntentClientPort).cancel(intentId, auth);
+    }
+
+    @Test
+    void buyerCanRequestReturnAndHistoryUsesABoundedPage() {
+        var auth = new TestingAuthenticationToken("buyer", "pass", "ROLE_CONSUMER");
+        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+        securityContext.setAuthentication(auth);
+        SecurityContextHolder.setContext(securityContext);
+
+        UUID orderId = UUID.randomUUID();
+        UUID itemId = UUID.randomUUID();
+        UUID returnId = UUID.randomUUID();
+        var line = new OrderReturnsPort.OrderReturnLineView(
+                UUID.randomUUID(), itemId, UUID.randomUUID(), null, 1);
+        var requested = new OrderReturnsPort.OrderReturnView(returnId, orderId,
+                "RETURN", "REQUESTED", "damaged", null, null, "SAR", null,
+                Instant.parse("2026-10-20T00:00:00Z"), null, null, null, List.of(line));
+        when(orderReturnsPort.requestReturn(any(OrderReturnsPort.ReturnRequest.class), eq(auth)))
+                .thenReturn(requested);
+
+        var command = dgsQueryExecutor.executeAndGetDocumentContext("""
+                mutation RequestReturn($input: OrderReturnRequestInput!) {
+                    requestOrderReturn(input: $input) {
+                        id orderId type status lines { orderItemId quantity }
+                    }
+                }
+                """, Map.of("input", Map.of(
+                    "orderId", orderId.toString(),
+                    "type", "RETURN",
+                    "reason", "damaged",
+                    "lines", List.of(Map.of("orderItemId", itemId.toString(), "quantity", 1))
+                )));
+
+        assertThat(command.<String>read("data.requestOrderReturn.id")).isEqualTo(returnId.toString());
+        assertThat(command.<String>read("data.requestOrderReturn.status")).isEqualTo("REQUESTED");
+        assertThat(command.<String>read("data.requestOrderReturn.lines[0].orderItemId"))
+                .isEqualTo(itemId.toString());
+        verify(orderReturnsPort).requestReturn(
+                new OrderReturnsPort.ReturnRequest(orderId, "RETURN", "damaged",
+                        List.of(new OrderReturnsPort.ReturnLineInput(itemId, 1))), auth);
+
+        when(orderReturnsPort.listMyReturns(0, 50, auth))
+                .thenReturn(new OrderReturnsPort.ReturnPageView(
+                        List.of(requested), 0, 50, 1L, 1, false, false));
+        var history = dgsQueryExecutor.executeAndGetDocumentContext("""
+                query MyReturns($page: Int, $first: Int) {
+                    myOrderReturns(page: $page, first: $first) {
+                        items { id status }
+                        page size totalElements totalPages hasNext hasPrevious
+                    }
+                }
+                """, Map.of("page", 0, "first", 999));
+
+        assertThat(history.<String>read("data.myOrderReturns.items[0].id")).isEqualTo(returnId.toString());
+        assertThat(history.<String>read("data.myOrderReturns.totalElements")).isEqualTo("1");
+        assertThat(history.<Integer>read("data.myOrderReturns.size")).isEqualTo(50);
+        verify(orderReturnsPort).listMyReturns(0, 50, auth);
+    }
+
+    @Test
+    void adminReturnQueueAndLifecycleMutationsDelegateToTheRmaOwner() {
+        var auth = new TestingAuthenticationToken("admin", "pass", "ROLE_ADMIN");
+        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+        securityContext.setAuthentication(auth);
+        SecurityContextHolder.setContext(securityContext);
+
+        UUID returnId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        var requested = new OrderReturnsPort.OrderReturnView(returnId, orderId, "RETURN",
+                "REQUESTED", "damaged", null, null, "SAR", null,
+                Instant.parse("2026-10-20T00:00:00Z"), null, null, null, List.of());
+        var approved = new OrderReturnsPort.OrderReturnView(returnId, orderId, "RETURN",
+                "APPROVED", "damaged", null, 1500L, "SAR", null,
+                requested.requestedAt(), Instant.parse("2026-10-20T00:01:00Z"), null, null, List.of());
+        var received = new OrderReturnsPort.OrderReturnView(returnId, orderId, "RETURN",
+                "RECEIVED", "damaged", null, 1500L, "SAR", null,
+                requested.requestedAt(), approved.approvedAt(), Instant.parse("2026-10-20T00:02:00Z"),
+                null, List.of());
+        var completed = new OrderReturnsPort.OrderReturnView(returnId, orderId, "RETURN",
+                "COMPLETED", "damaged", null, 1500L, "SAR", null,
+                requested.requestedAt(), approved.approvedAt(), received.receivedAt(),
+                Instant.parse("2026-10-20T00:03:00Z"), List.of());
+
+        when(orderReturnsPort.listAdminReturns(0, 20, auth))
+                .thenReturn(new OrderReturnsPort.ReturnPageView(
+                        List.of(requested), 0, 20, 1L, 1, false, false));
+        var queue = dgsQueryExecutor.executeAndGetDocumentContext("""
+                query AdminReturns { adminOrderReturns(page: 0, first: 20) {
+                    items { id status } totalElements
+                } }
+                """);
+        assertThat(queue.<String>read("data.adminOrderReturns.items[0].id")).isEqualTo(returnId.toString());
+        verify(orderReturnsPort).listAdminReturns(0, 20, auth);
+
+        when(orderReturnsPort.approveReturn(returnId, auth)).thenReturn(approved);
+        var approve = dgsQueryExecutor.executeAndGetDocumentContext("""
+                mutation Approve($id: ID!) { approveOrderReturn(id: $id) { id status refundAmountMinor } }
+                """, Map.of("id", returnId.toString()));
+        assertThat(approve.<String>read("data.approveOrderReturn.status")).isEqualTo("APPROVED");
+        assertThat(approve.<String>read("data.approveOrderReturn.refundAmountMinor")).isEqualTo("1500");
+        verify(orderReturnsPort).approveReturn(returnId, auth);
+
+        when(orderReturnsPort.receiveReturn(returnId, auth)).thenReturn(received);
+        var receive = dgsQueryExecutor.executeAndGetDocumentContext("""
+                mutation Receive($id: ID!) { receiveOrderReturn(id: $id) { id status } }
+                """, Map.of("id", returnId.toString()));
+        assertThat(receive.<String>read("data.receiveOrderReturn.status")).isEqualTo("RECEIVED");
+        verify(orderReturnsPort).receiveReturn(returnId, auth);
+
+        when(orderReturnsPort.completeReturn(returnId, auth)).thenReturn(completed);
+        var complete = dgsQueryExecutor.executeAndGetDocumentContext("""
+                mutation Complete($id: ID!) { completeOrderReturn(id: $id) { id status } }
+                """, Map.of("id", returnId.toString()));
+        assertThat(complete.<String>read("data.completeOrderReturn.status")).isEqualTo("COMPLETED");
+        verify(orderReturnsPort).completeReturn(returnId, auth);
     }
 
     @Test

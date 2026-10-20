@@ -26,6 +26,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -545,37 +547,56 @@ class RmaRefundJourneyIntegrationTest {
                 "SELECT stock_quantity FROM products WHERE id = ?", Integer.class, product)).isEqualTo(8);
 
         // (4) The buyer's RETURN request: ONE unit of the two-unit line.
-        HttpResponse<String> returnRequest = postJson("/api/v1/orders/returns", gate.accessToken(), """
-                {"orderId":"%s","type":"RETURN","reason":"one unit arrived damaged","lines":[{"orderItemId":"%s","quantity":1}]}"""
-                .formatted(orderId, orderItemId));
-        assertThat(returnRequest.statusCode()).as("return request: %s", body(returnRequest)).isEqualTo(201);
-        JsonNode returnView = objectMapper.readTree(returnRequest.body());
+        HttpResponse<String> returnRequest = postGraphQl(gate.accessToken(), """
+                mutation RequestReturn($input: OrderReturnRequestInput!) {
+                    requestOrderReturn(input: $input) { id status }
+                }
+                """, Map.of("input", Map.of(
+                    "orderId", orderId.toString(),
+                    "type", "RETURN",
+                    "reason", "one unit arrived damaged",
+                    "lines", List.of(Map.of("orderItemId", orderItemId.toString(), "quantity", 1))
+                )));
+        assertThat(returnRequest.statusCode()).as("GraphQL return request: %s", body(returnRequest)).isEqualTo(200);
+        JsonNode returnView = graphQlData(returnRequest).path("requestOrderReturn");
         UUID returnId = UUID.fromString(returnView.path("id").asString());
         assertThat(returnView.path("status").asString()).isEqualTo("REQUESTED");
 
         // (5) The admin APPROVE — the refund share FREEZES (1 x 1500).
-        HttpResponse<String> approve = postJson(
-                "/api/v1/orders/returns/admin/" + returnId + "/approve", adminGate.accessToken(),
-                "{\"note\":\"damage confirmed by photos\"}");
-        assertThat(approve.statusCode()).as("approve: %s", body(approve)).isEqualTo(200);
-        assertThat(objectMapper.readTree(approve.body()).path("status").asString()).isEqualTo("APPROVED");
-        assertThat(objectMapper.readTree(approve.body()).path("refundAmountMinor").asLong())
-                .as("the frozen refund share: 1 unit x 1500").isEqualTo(1500L);
+        HttpResponse<String> approve = postGraphQl(adminGate.accessToken(), """
+                mutation ApproveReturn($id: ID!) {
+                    approveOrderReturn(id: $id) { id status refundAmountMinor }
+                }
+                """, Map.of("id", returnId.toString()));
+        assertThat(approve.statusCode()).as("GraphQL approve: %s", body(approve)).isEqualTo(200);
+        JsonNode approvedView = graphQlData(approve).path("approveOrderReturn");
+        assertThat(approvedView.path("status").asString()).isEqualTo("APPROVED");
+        assertThat(approvedView.path("refundAmountMinor").asString())
+                .as("the frozen refund share: 1 unit x 1500").isEqualTo("1500");
 
         // (6) The RECEIVE — the goods arrive, the shelf restocks (8 + 1 = 9).
-        HttpResponse<String> receive = postJson(
-                "/api/v1/orders/returns/admin/" + returnId + "/receive", adminGate.accessToken(), "");
-        assertThat(receive.statusCode()).as("receive: %s", body(receive)).isEqualTo(200);
-        assertThat(objectMapper.readTree(receive.body()).path("status").asString()).isEqualTo("RECEIVED");
+        HttpResponse<String> receive = postGraphQl(adminGate.accessToken(), """
+                mutation ReceiveReturn($id: ID!) {
+                    receiveOrderReturn(id: $id) { id status }
+                }
+                """, Map.of("id", returnId.toString()));
+        assertThat(receive.statusCode()).as("GraphQL receive: %s", body(receive)).isEqualTo(200);
+        assertThat(graphQlData(receive).path("receiveOrderReturn").path("status").asString())
+                .isEqualTo("RECEIVED");
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT stock_quantity FROM products WHERE id = ?", Integer.class, product)).isEqualTo(9);
 
         // (7) The COMPLETE — the frozen partial refund executes through the
         // ONE refund contract: the intent answers PARTIALLY_REFUNDED.
-        HttpResponse<String> complete = postJson(
-                "/api/v1/orders/returns/admin/" + returnId + "/complete", adminGate.accessToken(), "");
-        assertThat(complete.statusCode()).as("complete: %s", body(complete)).isEqualTo(200);
-        assertThat(objectMapper.readTree(complete.body()).path("status").asString()).isEqualTo("COMPLETED");
+        HttpResponse<String> complete = postGraphQl(adminGate.accessToken(), """
+                mutation CompleteReturn($id: ID!) {
+                    completeOrderReturn(id: $id) { id status refundAmountMinor }
+                }
+                """, Map.of("id", returnId.toString()));
+        assertThat(complete.statusCode()).as("GraphQL complete: %s", body(complete)).isEqualTo(200);
+        JsonNode completedView = graphQlData(complete).path("completeOrderReturn");
+        assertThat(completedView.path("status").asString()).isEqualTo("COMPLETED");
+        assertThat(completedView.path("refundAmountMinor").asString()).isEqualTo("1500");
         String intentStatus = jdbcTemplate.queryForObject(
                 "SELECT status FROM payment_intents WHERE id = ?", String.class, intentId);
         assertThat(intentStatus)
@@ -605,10 +626,13 @@ class RmaRefundJourneyIntegrationTest {
         // serialize on the row and the second finds COMPLETED and returns the
         // row — never a second refund; the honest 409 is for the non-RECEIVED
         // states alone: REQUESTED/APPROVED carry no frozen share to execute).
-        HttpResponse<String> secondComplete = postJson(
-                "/api/v1/orders/returns/admin/" + returnId + "/complete", adminGate.accessToken(), "");
+        HttpResponse<String> secondComplete = postGraphQl(adminGate.accessToken(), """
+                mutation CompleteReturnAgain($id: ID!) {
+                    completeOrderReturn(id: $id) { id status }
+                }
+                """, Map.of("id", returnId.toString()));
         assertThat(secondComplete.statusCode()).isEqualTo(200);
-        assertThat(objectMapper.readTree(secondComplete.body()).path("status").asString())
+        assertThat(graphQlData(secondComplete).path("completeOrderReturn").path("status").asString())
                 .as("the row stays COMPLETED — the no-op's own echo").isEqualTo("COMPLETED");
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM ledger_entries WHERE source_id = ?", Integer.class, intentId))
@@ -786,6 +810,20 @@ class RmaRefundJourneyIntegrationTest {
                 .POST(HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8))
                 .build();
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> postGraphQl(String accessToken, String query, Map<String, ?> variables)
+            throws Exception {
+        String json = objectMapper.writeValueAsString(Map.of("query", query, "variables", variables));
+        return postJson("/graphql", accessToken, json);
+    }
+
+    private JsonNode graphQlData(HttpResponse<String> response) throws Exception {
+        JsonNode root = objectMapper.readTree(response.body());
+        assertThat(root.path("errors").isMissingNode())
+                .as("GraphQL errors: %s", response.body()).isTrue();
+        assertThat(root.path("data").isObject()).as("GraphQL data: %s", response.body()).isTrue();
+        return root.path("data");
     }
 
     private HttpResponse<String> postJsonOrPut(String path, String accessToken, String json,
