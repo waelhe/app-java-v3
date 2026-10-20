@@ -26,7 +26,23 @@
         // same getPost/getComments use cases the REST surface invokes).
         // The neighborhood-feed-spi pattern extended to the journey's
         // own seam (the interface, never the internals).
-        "community :: neighborhood-post-detail-spi"
+        "community :: neighborhood-post-detail-spi",
+        // P1/P2 (the Saleor parity plan's catalog read, buyer commerce,
+        // seller fulfillment, and returns/refund waves) — the GraphQL
+        // surface's seams delegate to the owning modules' declared SPIs:
+        // media's admin seam, orders' commerce and seller-management
+        // seams, payments' client seam (the ProductAdminSpi pattern; the
+        // ports moved out of shared.api by the ArchitectureRulesTest
+        // framework-neutrality verdict, and these allowlist entries make
+        // each dependency an explicit, verified fact).
+        "media :: product-media-admin",
+        "orders :: order-commerce",
+        "payments :: payment-client",
+        "orders :: seller-order-management",
+        // P2 (the returns/refund lifecycle wave) — the buyer and admin
+        // return operations delegate to the orders module's declared
+        // returns SPI (the same verdict and pattern).
+        "orders :: order-returns"
     }
 )
 package com.marketplace.app;

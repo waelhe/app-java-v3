@@ -3,7 +3,7 @@ package com.marketplace.app.graphql;
 import com.marketplace.catalog.spi.CatalogSpi;
 import com.marketplace.orders.spi.OrderCommercePort;
 import com.marketplace.payments.spi.PaymentIntentClientPort;
-import com.marketplace.shared.api.OrderReturnsPort;
+import com.marketplace.orders.spi.OrderReturnsPort;
 import com.marketplace.shared.api.PaymentIntentDetails;
 import com.marketplace.orders.spi.SellerOrderManagementPort;
 import com.marketplace.shared.api.ProviderListingView;

@@ -5,7 +5,7 @@ import com.marketplace.app.graphql.generated.types.OrderReturnLine;
 import com.marketplace.app.graphql.generated.types.OrderReturnPage;
 import com.marketplace.app.graphql.generated.types.OrderReturnStatus;
 import com.marketplace.app.graphql.generated.types.OrderReturnType;
-import com.marketplace.shared.api.OrderReturnsPort;
+import com.marketplace.orders.spi.OrderReturnsPort;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 

@@ -1,4 +1,4 @@
-package com.marketplace.shared.api;
+package com.marketplace.orders.spi;
 
 import org.springframework.modulith.NamedInterface;
 import org.springframework.security.core.Authentication;
@@ -7,7 +7,15 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-/** Transport-neutral boundary for buyer returns and administrative return/refund operations. */
+/**
+ * Transport-neutral boundary for buyer returns and administrative
+ * return/refund operations.
+ *
+ * <p><b>Placement (the ArchitectureRulesTest verdict, the ProductAdminSpi
+ * pattern):</b> the seam carries Spring Security's {@code Authentication},
+ * so it lives in the OWNING module's {@code spi} package —
+ * {@code shared.api} is the framework-neutral zone by the #429 build gate.
+ */
 @NamedInterface("order-returns")
 public interface OrderReturnsPort {
 

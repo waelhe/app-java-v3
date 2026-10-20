@@ -5,7 +5,7 @@ import com.marketplace.app.graphql.generated.types.OrderReturn;
 import com.marketplace.app.graphql.generated.types.OrderReturnLineRequestInput;
 import com.marketplace.app.graphql.generated.types.OrderReturnPage;
 import com.marketplace.app.graphql.generated.types.OrderReturnRequestInput;
-import com.marketplace.shared.api.OrderReturnsPort;
+import com.marketplace.orders.spi.OrderReturnsPort;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
