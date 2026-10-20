@@ -107,6 +107,12 @@ class ServiceDgsDataFetcherTest {
     @MockitoBean
     private CurrentUserProvider currentUserProvider;
 
+    // P1 (the Saleor Users read roots): the package slice now scans
+    // UserDataFetcher too — its owning identity seam joins the
+    // outside-slice mocking set, exactly the way the seams above do.
+    @MockitoBean
+    private com.marketplace.identity.spi.IdentitySpi identitySpi;
+
     /** The mutation path reads the principal from the (test-populated) security context. */
     @AfterEach
     void clearSecurityContext() {
