@@ -1,8 +1,11 @@
 package com.marketplace.catalog;
 
 import com.marketplace.catalog.spi.ProductAdminSpi;
+import org.springframework.data.domain.KeysetScrollPosition;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Window;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 
@@ -42,6 +45,12 @@ public class ProductAdminSpiAdapter implements ProductAdminSpi {
     @Override
     public Page<ProductView> listOwnedProducts(Authentication authentication, Pageable pageable) {
         return products.listOwnedProducts(authentication, pageable).map(ProductAdminSpiAdapter::toView);
+    }
+
+    @Override
+    public Window<ProductView> scrollOwnedProducts(
+            Authentication authentication, KeysetScrollPosition position, Limit limit) {
+        return products.scrollOwnedProducts(authentication, position, limit).map(ProductAdminSpiAdapter::toView);
     }
 
     @Override
