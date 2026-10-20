@@ -90,6 +90,13 @@ app:
 marketplace:
   cors:
     allowed-origins: http://localhost:3000
+  # Incident #682's root fix: the test channel's sender identity. The test
+  # profile activates the mail channel (spring.mail.host=localhost:3025,
+  # GreenMail), so the sender is as mandatory here as anywhere — a fixed
+  # local value keeps every test context booting while MailChannelProperties
+  # proves its binding-time validation in its own slice.
+  mail:
+    from: Marketplace Test <no-reply@marketplace.test>
   # L33: the test policy — a short window keeps the expiry tests fast; the
   # unset-policy case is covered by property-override tests (409).
   catalog:

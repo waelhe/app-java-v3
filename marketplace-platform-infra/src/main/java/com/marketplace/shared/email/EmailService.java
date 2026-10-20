@@ -35,6 +35,20 @@ import java.util.Map;
  * {@code MailSenderAutoConfiguration} registered the sender and the service
  * silently vanished from the context).
  *
+ * <p><b>The sender identity (incident #682's root fix):</b> every message now
+ * carries an explicit {@code From} — {@code helper.setFrom(from)} with the
+ * validated {@link MailChannelProperties#from} — exactly the shape the
+ * Framework reference documents. The channel previously shipped with no
+ * From at all: JavaMail derived the envelope from
+ * {@code user.name@hostname}, the provider rejected every submission at the
+ * MAIL FROM stage ({@code 550 Invalid `from` field} — measured by a raw-SMTP
+ * dialogue replay against the live credentials), and the mail leg of every
+ * {@code @ApplicationModuleListener} stayed incomplete, which the
+ * event-bus health indicator honestly reported as platform DOWN. The
+ * identity itself has no default: an activated channel without a sender
+ * fails at binding time (INV-2/D6) instead of silently mailing from a
+ * derived address.
+ *
  * <p><b>D.4 (compliance plan wave D — channel resilience):</b> the send is
  * the SMTP channel's single crossing, so it carries the same official
  * Resilience4j guards the payments PSP channel already wears (the
@@ -55,10 +69,13 @@ public class EmailService {
 
     private final JavaMailSender mailSender;
     private final TemplateEngine templateEngine;
+    private final String from;
 
-    public EmailService(JavaMailSender mailSender, TemplateEngine templateEngine) {
+    public EmailService(JavaMailSender mailSender, TemplateEngine templateEngine,
+            MailChannelProperties mailProperties) {
         this.mailSender = mailSender;
         this.templateEngine = templateEngine;
+        this.from = mailProperties.from();
     }
 
     /**
@@ -82,6 +99,7 @@ public class EmailService {
 
             MimeMessage mimeMessage = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, "UTF-8");
+            helper.setFrom(from);
             helper.setTo(to);
             helper.setSubject(subject);
             helper.setText(htmlContent, true);

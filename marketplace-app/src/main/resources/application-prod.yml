@@ -221,6 +221,14 @@ management:
 marketplace:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
+  # Incident #682's root fix: the mail channel's sender identity, explicit and
+  # mandatory (INV-2/D6). No default here — an unset MAIL_FROM fails at
+  # binding time with MailChannelProperties' operational message instead of
+  # the previous silent behavior: JavaMail deriving the envelope from
+  # user.name@hostname and the provider rejecting every submission at the
+  # MAIL FROM stage (550 Invalid `from` field — measured by raw-SMTP replay).
+  mail:
+    from: ${MAIL_FROM}
   security:
     jwt:
       audience: ${JWT_AUDIENCE:marketplace-api}

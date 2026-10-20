@@ -26,7 +26,11 @@ class EmailServiceTest {
     void setUp() {
         mailSender = mock();
         templateEngine = mock();
-        emailService = new EmailService(mailSender, templateEngine);
+        // Incident #682's root fix: the sender identity is a required,
+        // validated part of the channel — the unit seam carries a fixed
+        // one, mirroring the GreenMail proof test's binding.
+        emailService = new EmailService(mailSender, templateEngine,
+                new MailChannelProperties("Marketplace <no-reply@marketplace.test>"));
     }
 
     @Test

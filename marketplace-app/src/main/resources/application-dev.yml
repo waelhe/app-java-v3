@@ -76,6 +76,11 @@ logging:
 marketplace:
   cors:
     allowed-origins: http://localhost:3000
+  # Incident #682's root fix: the dev channel's sender identity — a local
+  # default (GreenMail/MailHog accept any sender) so the dev loop boots
+  # unchanged, overridable through MAIL_FROM to preview the real identity.
+  mail:
+    from: ${MAIL_FROM:Marketplace Dev <dev@marketplace.local>}
   security:
     jwt:
       audience: marketplace-api
