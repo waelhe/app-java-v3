@@ -2,6 +2,8 @@ type Query {
     # Dashboard's provider-owned catalog surface. This is a journey contract, not
     # a mirror of the catalog tables; the fetchers delegate to ProductAdminSpi.
     storeProduct(id: ID!): StoreProduct
+    # Forward-only keyset connection ordered by createdAt DESC, id DESC.
+    # The cursor is opaque to clients; do not parse or synthesize it.
     storeProducts(first: Int, after: String): StoreProductConnection!
     storeProductTypes: [StoreProductType!]!
     storeProductAttributeValues(productId: ID!): [StoreProductAttributeValue!]!
