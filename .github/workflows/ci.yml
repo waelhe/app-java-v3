@@ -22,7 +22,7 @@ on:
     # entries retired with the wave in the post-merge truth-sync exactly
     # as their own comments prescribed — inert weight otherwise. PRs
     # targeting main gate through the pull_request event as before.
-        # Temporary stacked Saleor PR target pattern; retire after #677-#681 are reconciled.
+        # Temporary stacked Saleor PR target pattern; retire after the stacked wave merges.
     branches: [ main, feat/saleor-commerce-product-keyset-pagination, 'feat/saleor-*' ]
 
 
