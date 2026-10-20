@@ -129,13 +129,15 @@ class OrderReturnsServiceTest {
         OrderReturn open = OrderReturn.requested(order.getId(), buyer,
                 OrderReturn.ReturnType.RETURN, "first", "SAR", Instant.now());
         when(returns.findByOrderIdAndStatusIn(org.mockito.ArgumentMatchers.eq(order.getId()), any())).thenReturn(List.of(open));
-        when(returnLines.findByOrderReturnId(open.getId())).thenReturn(List.of(
+        when(returnLines.findByOrderReturnIdIn(List.of(open.getId()))).thenReturn(List.of(
                 OrderReturnLine.of(open.getId(), item, 1)));
 
         assertThatThrownBy(() -> service.request(order.getId(), buyer,
                 OrderReturn.ReturnType.RETURN, "second", Map.of(item.getId(), 2)))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("already in open returns");
+        verify(returnLines).findByOrderReturnIdIn(List.of(open.getId()));
+        verify(returnLines, never()).findByOrderReturnId(open.getId());
     }
 
     @Test

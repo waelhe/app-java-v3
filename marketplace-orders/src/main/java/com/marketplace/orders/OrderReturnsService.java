@@ -107,8 +107,10 @@ public class OrderReturnsService {
                 OrderReturn.ReturnStatus.REQUESTED, OrderReturn.ReturnStatus.APPROVED,
                 OrderReturn.ReturnStatus.RECEIVED, OrderReturn.ReturnStatus.COMPLETED));
         Map<UUID, Integer> alreadyRequested = new HashMap<>();
+        Map<UUID, List<OrderReturnLine>> linesByOpenReturn = linesByReturnIds(
+                open.stream().map(OrderReturn::getId).toList());
         for (OrderReturn openReturn : open) {
-            for (OrderReturnLine line : returnLines.findByOrderReturnId(openReturn.getId())) {
+            for (OrderReturnLine line : linesByOpenReturn.getOrDefault(openReturn.getId(), List.of())) {
                 alreadyRequested.merge(line.getOrderItemId(), line.getQuantity(), Integer::sum);
             }
         }
