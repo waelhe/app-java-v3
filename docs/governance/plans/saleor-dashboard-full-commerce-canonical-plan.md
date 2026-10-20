@@ -165,7 +165,7 @@ Phase order is dependency-aware, not permission to skip a later category. Work c
 - Implement Saleor channel semantics as a real commercial context where Dashboard uses them: allowed catalog, currency, price/availability, discount/tax/shipping eligibility and order scoping.
 - Do not equate a neighbourhood, persona, provider ownership or authorization boundary to a channel without a distinct sales-context decision.
 - Map discounts, vouchers and tax configuration to marketplace-pricing; previews and mutations delegate to the same price engine used by checkout.
-- Gift cards require a real owner for liability/balance, issuance, redemption, expiry, cancellation/refund and ledger posting. If not approved, their 21 roots remain explicitly blocked by owner decision; no success-shaped placeholders.
+- Gift cards are part of the selected full-commerce target, not an indefinite deferral. Establish an owning domain capability (new module or explicitly selected existing owner) for liability/balance, issuance, redemption, expiry, cancellation/refund and ledger posting. Do not expose placeholder success responses; concurrency and ledger acceptance tests are release requirements.
 - Shop settings read/write authoritative configuration only; secrets never appear in API responses/logs.
 
 **Gate:** Dashboard changes channel/tax/promotion context and observes the same frozen price breakdown at order placement. Gift-card operations require race and double-redemption tests before activation.
@@ -201,7 +201,7 @@ Phase order is dependency-aware, not permission to skip a later category. Work c
 ### P7 — Final full Dashboard release gate
 
 Release only after:
-- the pinned reference inventory has 458/458 root dispositions; every root is ADOPT, ADAPT, DEFER (with trigger/owner), or N/A (with explicit ADR/route treatment);
+- the pinned reference inventory has 458/458 root dispositions. Every applicable commerce root is implemented and tested; true architectural non-applicability is permitted only with an owner-approved divergence ADR and an explicit Dashboard route disposition. An open DEFER is not acceptable at full release.
 - all Dashboard runtime operations in retained routes map to accepted contracts and are implemented/tested for the release;
 - operation signatures and required nested type/input/enum/scalar closure are verified, not just root names;
 - final-head backend CI, schema compatibility, generated code, Modulith boundaries and negative security tests pass;
