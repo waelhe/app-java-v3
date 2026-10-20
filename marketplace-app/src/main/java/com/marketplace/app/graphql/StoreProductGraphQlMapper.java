@@ -1,7 +1,11 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.app.graphql.generated.types.StoreProduct;
+import com.marketplace.app.graphql.generated.types.StoreCategory;
 import com.marketplace.app.graphql.generated.types.StoreProductAttributeOption;
+import com.marketplace.app.graphql.generated.types.StoreProductMedia;
+import com.marketplace.app.graphql.generated.types.StoreProductMediaStatus;
+import com.marketplace.app.graphql.generated.types.StoreProductMediaUpload;
 import com.marketplace.app.graphql.generated.types.StoreProductAttributeScope;
 import com.marketplace.app.graphql.generated.types.StoreProductAttributeValue;
 import com.marketplace.app.graphql.generated.types.StoreProductAttributeValueType;
@@ -11,6 +15,7 @@ import com.marketplace.app.graphql.generated.types.StoreProductTypeAttribute;
 import com.marketplace.app.graphql.generated.types.StoreProductVariant;
 import com.marketplace.app.graphql.generated.types.StoreProductVariantStatus;
 import com.marketplace.catalog.spi.ProductAdminSpi;
+import com.marketplace.shared.api.ProductMediaAdminPort;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
@@ -26,6 +31,20 @@ public interface StoreProductGraphQlMapper {
     @Mapping(target = "productTypeId", expression = "java(toTransportId(product.productTypeId()))")
     @Mapping(target = "status", expression = "java(toProductStatus(product.status()))")
     StoreProduct toResponse(ProductAdminSpi.ProductView product);
+
+    @Mapping(target = "id", expression = "java(toTransportId(category.id()))")
+    StoreCategory toResponse(ProductAdminSpi.StoreCategoryView category);
+
+    @Mapping(target = "id", expression = "java(toTransportId(media.id()))")
+    @Mapping(target = "productId", expression = "java(toTransportId(media.productId()))")
+    @Mapping(target = "sizeBytes", expression = "java(Long.toString(media.sizeBytes()))")
+    @Mapping(target = "status", expression = "java(toMediaStatus(media.status()))")
+    @Mapping(target = "createdAt", expression = "java(media.createdAt().toString())")
+    StoreProductMedia toResponse(ProductMediaAdminPort.MediaAssetView media);
+
+    @Mapping(target = "mediaId", expression = "java(toTransportId(upload.mediaId()))")
+    @Mapping(target = "urlLifetimeSeconds", expression = "java(Math.toIntExact(upload.urlLifetime().toSeconds()))")
+    StoreProductMediaUpload toResponse(ProductMediaAdminPort.UploadView upload);
 
     @Mapping(target = "id", expression = "java(toTransportId(productType.id()))")
     StoreProductType toResponse(ProductAdminSpi.ProductTypeView productType);
@@ -49,6 +68,10 @@ public interface StoreProductGraphQlMapper {
     @Mapping(target = "priceMinor", expression = "java(Long.toString(variant.priceMinor()))")
     @Mapping(target = "status", expression = "java(toVariantStatus(variant.status()))")
     StoreProductVariant toResponse(ProductAdminSpi.ProductVariantView variant);
+
+    default StoreProductMediaStatus toMediaStatus(String status) {
+        return StoreProductMediaStatus.valueOf(status);
+    }
 
     default StoreProductStatus toProductStatus(String status) {
         return StoreProductStatus.valueOf(status);
