@@ -15,7 +15,7 @@ import com.marketplace.app.graphql.generated.types.StoreProductTypeAttribute;
 import com.marketplace.app.graphql.generated.types.StoreProductVariant;
 import com.marketplace.app.graphql.generated.types.StoreProductVariantStatus;
 import com.marketplace.catalog.spi.ProductAdminSpi;
-import com.marketplace.shared.api.ProductMediaAdminPort;
+import com.marketplace.media.spi.ProductMediaAdminPort;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 

@@ -12,7 +12,7 @@ import com.marketplace.app.graphql.generated.types.StoreProductSortInput;
 import com.marketplace.app.graphql.generated.types.StoreProductType;
 import com.marketplace.app.graphql.generated.types.StoreProductVariant;
 import com.marketplace.catalog.spi.ProductAdminSpi;
-import com.marketplace.shared.api.ProductMediaAdminPort;
+import com.marketplace.media.spi.ProductMediaAdminPort;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;

@@ -1,7 +1,6 @@
 package com.marketplace.media.spi;
 
 import com.marketplace.media.MediaService;
-import com.marketplace.shared.api.ProductMediaAdminPort;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 

@@ -82,6 +82,11 @@ class HomeDgsDataFetcherTest {
     @MockitoBean
     private com.marketplace.catalog.spi.ProductAdminSpi productAdminSpi;
 
+    // The component scan includes the store-product fetcher; mock the media seam
+    // (the port moved to media.spi — the module-owned SPI, the ProductAdminSpi pattern).
+    @MockitoBean
+    private com.marketplace.media.spi.ProductMediaAdminPort productMediaAdminPort;
+
     @MockitoBean
     private DiscoverySpi discoverySpi;
 

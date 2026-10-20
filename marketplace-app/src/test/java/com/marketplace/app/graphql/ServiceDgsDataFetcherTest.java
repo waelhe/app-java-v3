@@ -87,6 +87,11 @@ class ServiceDgsDataFetcherTest {
     @MockitoBean
     private com.marketplace.catalog.spi.ProductAdminSpi productAdminSpi;
 
+    // The component scan includes the store-product fetcher; mock the media seam
+    // (the port moved to media.spi — the module-owned SPI, the ProductAdminSpi pattern).
+    @MockitoBean
+    private com.marketplace.media.spi.ProductMediaAdminPort productMediaAdminPort;
+
     // Phase 6 — the home journey's fetcher is now in the SAME scanned
     // package (the slice is the package as one unit): its two owning
     // seams join the outside-slice mocking set, exactly the way the
