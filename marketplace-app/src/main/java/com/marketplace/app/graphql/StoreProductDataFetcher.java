@@ -187,11 +187,11 @@ public class StoreProductDataFetcher {
     @RateLimiter(name = "graphqlStoreProductMutation")
     public StoreProductMediaUpload requestStoreProductMediaUpload(
             @InputArgument StoreProductMediaUploadInput input) {
-        if (input == null || input.getProductId() == null || input.getProductId().isBlank()
-                || input.getContentType() == null || input.getContentType().isBlank()
+        if (input == null || input.getProductId() == null || input.getContentType() == null
                 || input.getSizeBytes() == null || input.getSizeBytes().isBlank()) {
             throw new IllegalArgumentException("productId, contentType and sizeBytes are required");
         }
+        long sizeBytes = parsePositiveLong(input.getSizeBytes(), "sizeBytes");
         UUID productId;
         try {
             productId = UUID.fromString(input.getProductId());
