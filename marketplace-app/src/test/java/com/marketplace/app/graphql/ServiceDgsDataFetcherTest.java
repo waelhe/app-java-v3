@@ -14,14 +14,18 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.validation.autoconfigure.ValidationAutoConfiguration;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.KeysetScrollPosition;
+import org.springframework.data.domain.Limit;
+import org.springframework.data.domain.ScrollPosition;
+import org.springframework.data.domain.Window;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -144,12 +148,14 @@ class ServiceDgsDataFetcherTest {
      */
     @Test
     void servicesConnectionResolvesThroughTheDgsWiring() {
-        when(catalogSpi.findAll(any(Pageable.class))).thenAnswer(inv -> {
-            Pageable pageable = inv.getArgument(0);
+        when(catalogSpi.scrollActiveListings(
+                any(KeysetScrollPosition.class), any(Limit.class))).thenAnswer(inv -> {
             List<ProviderListingView> content = List.of(
                     view(UUID.randomUUID(), "Service 0", 1000L),
                     view(UUID.randomUUID(), "Service 1", 2000L));
-            return new PageImpl<>(content, pageable, 2);
+            return Window.from(content, index -> ScrollPosition.forward(Map.of(
+                    "createdAt", Instant.parse("2026-01-01T00:00:00Z").plusSeconds(2L - index),
+                    "id", content.get(index).id())), false);
         });
 
         var document = dgsQueryExecutor.executeAndGetDocumentContext("""
@@ -163,9 +169,7 @@ class ServiceDgsDataFetcherTest {
         assertThat(document.<List<String>>read("data.services.edges[*].node.name"))
                 .containsExactly("Service 0", "Service 1");
         assertThat(document.<Boolean>read("data.services.pageInfo.hasNextPage")).isFalse();
-        // The edges carry the framework's own base64 O_<offset> cursors —
-        // decodable back into offset positions (the same wire contract
-        // the HTTP pagination tests assert).
+        // The edges carry framework-encoded keyset cursors (not client-built offsets).
         List<String> cursors = document.read("data.services.edges[*].cursor");
         assertThat(cursors).hasSize(2);
     }

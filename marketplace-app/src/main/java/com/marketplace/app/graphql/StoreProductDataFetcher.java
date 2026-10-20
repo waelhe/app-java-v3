@@ -14,12 +14,10 @@ import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Validator;
-import org.springframework.data.domain.OffsetScrollPosition;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.KeysetScrollPosition;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.ScrollPosition;
-import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Window;
 import org.springframework.graphql.data.pagination.EncodingCursorStrategy;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.Authentication;
@@ -38,9 +36,6 @@ import java.util.UUID;
  */
 @DgsComponent
 public class StoreProductDataFetcher {
-
-    private static final Sort PRODUCT_ORDER =
-            Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id"));
 
     private final ProductAdminSpi productAdminSpi;
     private final StoreProductGraphQlMapper mapper;
@@ -68,15 +63,15 @@ public class StoreProductDataFetcher {
 
     @DgsQuery(field = DgsConstants.QUERY.StoreProducts)
     @RateLimiter(name = "graphqlStoreProductQuery")
-    public Page<StoreProduct> storeProducts(@InputArgument Integer first, @InputArgument String after) {
+    public Window<StoreProduct> storeProducts(@InputArgument Integer first, @InputArgument String after) {
         int requested = first == null ? properties.pagination().defaultPageSize() : first;
         if (requested <= 0) {
-            return Page.empty();
+            return Window.from(List.of(), index -> ScrollPosition.keyset(), false);
         }
         int pageSize = Math.min(requested, properties.pagination().maxPageSize());
-        int pageNumber = pageFor(after, pageSize);
-        Pageable pageable = PageRequest.of(pageNumber, pageSize, PRODUCT_ORDER);
-        return productAdminSpi.listOwnedProducts(currentAuthentication(), pageable).map(mapper::toResponse);
+        return productAdminSpi.scrollOwnedProducts(
+                        currentAuthentication(), keysetPosition(after), Limit.of(pageSize))
+                .map(mapper::toResponse);
     }
 
     @DgsQuery(field = DgsConstants.QUERY.StoreProductTypes)
@@ -199,33 +194,11 @@ public class StoreProductDataFetcher {
         return authentication;
     }
 
-    private int pageFor(String after, int pageSize) {
+    private KeysetScrollPosition keysetPosition(String after) {
         if (after == null) {
-            return 0;
+            return ScrollPosition.keyset();
         }
-        ScrollPosition position = cursorStrategy.fromCursor(after);
-        return pageIndex(OffsetPosition.pageOf(position), pageSize);
-    }
 
-    private static int pageIndex(long offset, int pageSize) {
-        long firstItem = offset + 1;
-        if (firstItem > Integer.MAX_VALUE - pageSize) {
-            throw new IllegalArgumentException("after cursor offset " + offset + " is outside the paginable range");
-        }
-        if (firstItem % pageSize != 0) {
-            throw new IllegalArgumentException(
-                    "after cursor offset " + offset + " is not aligned to the requested page size "
-                            + pageSize + " — paginate with the same first, or start over without after");
-        }
-        return (int) (firstItem / pageSize);
-    }
-
-    private static final class OffsetPosition {
-        static long pageOf(ScrollPosition position) {
-            if (position instanceof OffsetScrollPosition offsetPosition) {
-                return offsetPosition.getOffset();
-            }
-            throw new IllegalArgumentException("this field paginates by offset cursors; a keyset cursor is not valid here");
-        }
+        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, "storeProducts");
     }
 }

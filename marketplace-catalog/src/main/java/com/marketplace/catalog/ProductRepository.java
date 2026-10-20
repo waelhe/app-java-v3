@@ -2,6 +2,9 @@ package com.marketplace.catalog;
 
 import java.util.UUID;
 
+import org.springframework.data.domain.KeysetScrollPosition;
+import org.springframework.data.domain.Limit;
+import org.springframework.data.domain.Window;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -25,9 +28,17 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     /** Owner-scoped roster for the legacy REST list. */
     java.util.List<Product> findByProviderId(UUID providerId);
 
-    /** Bounded owner-scoped roster for cursor-paginated GraphQL administration. */
+    /** Bounded owner-scoped roster for the existing offset/page contract. */
     org.springframework.data.domain.Page<Product> findByProviderId(
             UUID providerId, org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * Keyset-backed owner roster for the Saleor-aligned catalog Connection.
+     * The non-null creation timestamp plus unique id form the stable sort;
+     * the matching partial index keeps continuation queries bounded.
+     */
+    Window<Product> findByProviderIdOrderByCreatedAtDescIdDesc(
+            UUID providerId, KeysetScrollPosition position, Limit limit);
 
     /**
      * Reserves {@code qty} units of an ACTIVE product whose free stock

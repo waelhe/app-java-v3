@@ -8,8 +8,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import org.springframework.data.domain.KeysetScrollPosition;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Window;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import io.micrometer.observation.annotation.Observed;
@@ -189,6 +192,19 @@ public class ProductService {
     public Page<Product> listOwnedProducts(Authentication authentication, Pageable pageable) {
         UUID caller = currentUserProvider.getCurrentUserId(authentication);
         return productRepository.findByProviderId(caller, pageable);
+    }
+
+    /**
+     * Keyset scrolling for the admin catalog Connection. The provider scope
+     * is always derived from the authenticated principal; only the opaque
+     * continuation position and bounded result limit cross this boundary.
+     */
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasRole('PROVIDER')")
+    public Window<Product> scrollOwnedProducts(
+            Authentication authentication, KeysetScrollPosition position, Limit limit) {
+        UUID caller = currentUserProvider.getCurrentUserId(authentication);
+        return productRepository.findByProviderIdOrderByCreatedAtDescIdDesc(caller, position, limit);
     }
 
     @Transactional

@@ -26,8 +26,11 @@ import com.marketplace.shared.api.ProviderNameResolver;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.domain.KeysetScrollPosition;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Window;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -164,6 +167,15 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     @Transactional(readOnly = true)
     public Page<ProviderListingView> findAll(Pageable pageable) {
         return listingRepository.findByStatus(ListingStatus.ACTIVE, pageable)
+                .map(this::toProviderListingView);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Window<ProviderListingView> scrollActiveListings(
+            KeysetScrollPosition position, Limit limit) {
+        return listingRepository.findByStatusOrderByCreatedAtDescIdDesc(
+                        ListingStatus.ACTIVE, position, limit)
                 .map(this::toProviderListingView);
     }
 

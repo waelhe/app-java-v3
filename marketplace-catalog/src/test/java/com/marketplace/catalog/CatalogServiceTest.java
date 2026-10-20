@@ -15,12 +15,18 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.KeysetScrollPosition;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.ScrollPosition;
+import org.springframework.data.domain.Window;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -92,6 +98,34 @@ class CatalogServiceTest {
         return Instancio.of(ProviderListing.class)
                 .set(field(ProviderListing::getStatus), status)
                 .create();
+    }
+
+    @Test
+    void scrollActiveListingsUsesActiveFilterAndMapsTheKeysetWindow() {
+        ProviderListing active = ProviderListing.create(
+                UUID.randomUUID(), "Service keyset", "Description", "general", 2500L, "SAR");
+        active.activate(Instant.parse("2027-01-01T00:00:00Z"));
+        KeysetScrollPosition initial = ScrollPosition.keyset();
+        KeysetScrollPosition next = ScrollPosition.forward(Map.of(
+                "createdAt", Instant.parse("2026-01-01T00:00:00Z"),
+                "id", active.getId()));
+        Limit limit = Limit.of(4);
+        Window<ProviderListing> source = Window.from(List.of(active), index -> next, true);
+        when(listingRepository.findByStatusOrderByCreatedAtDescIdDesc(
+                ListingStatus.ACTIVE, initial, limit)).thenReturn(source);
+
+        Window<ProviderListingView> result = catalogService.scrollActiveListings(initial, limit);
+
+        assertThat(result.getContent()).singleElement()
+                .satisfies(view -> {
+                    assertThat(view.id()).isEqualTo(active.getId());
+                    assertThat(view.title()).isEqualTo("Service keyset");
+                    assertThat(view.status()).isEqualTo("ACTIVE");
+                });
+        assertThat(result.hasNext()).isTrue();
+        assertThat(result.positionAt(0)).isEqualTo(next);
+        verify(listingRepository).findByStatusOrderByCreatedAtDescIdDesc(
+                ListingStatus.ACTIVE, initial, limit);
     }
 
     @Test

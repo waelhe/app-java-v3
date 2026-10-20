@@ -18,8 +18,11 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import test.config.IntegrationContainers;
 
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.Pageable;
+import com.marketplace.shared.api.ProviderListingView;
+import org.springframework.data.domain.KeysetScrollPosition;
+import org.springframework.data.domain.Limit;
+import org.springframework.data.domain.ScrollPosition;
+import org.springframework.data.domain.Window;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -87,10 +90,10 @@ class GraphQlLimitsIntegrationTest {
                 .build();
         when(jwtDecoder.decode(anyString())).thenReturn(testJwt);
 
-        when(catalogService.findAll(any(Pageable.class))).thenAnswer(inv -> {
-            Pageable pageable = inv.getArgument(0);
-            return new PageImpl<>(List.of(), pageable, 0);
-        });
+        when(catalogService.scrollActiveListings(
+                any(KeysetScrollPosition.class), any(Limit.class)))
+                .thenReturn(Window.<ProviderListingView>from(
+                        List.of(), index -> ScrollPosition.keyset(), false));
 
         graphQlTester = HttpGraphQlTester.builder(WebTestClient.bindToServer()
                         .baseUrl("http://localhost:" + port + "/graphql")

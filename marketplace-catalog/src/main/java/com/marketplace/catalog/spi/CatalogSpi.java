@@ -2,8 +2,11 @@ package com.marketplace.catalog.spi;
 
 import com.marketplace.shared.api.ProviderListingSummary;
 import com.marketplace.shared.api.ProviderListingView;
+import org.springframework.data.domain.KeysetScrollPosition;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Window;
 import org.springframework.modulith.NamedInterface;
 import org.springframework.security.core.Authentication;
 
@@ -20,6 +23,9 @@ public interface CatalogSpi {
     ProviderListingView getActiveById(UUID id);
 
     Page<ProviderListingView> findAll(Pageable pageable);
+
+    /** Bounded ACTIVE-only, keyset-scrolled read for the GraphQL services connection. */
+    Window<ProviderListingView> scrollActiveListings(KeysetScrollPosition position, Limit limit);
 
     /**
      * Creates a listing priced in the given ISO 4217 currency (roadmap B4);
