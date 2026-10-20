@@ -181,13 +181,13 @@ public class StoreProductDataFetcher {
     @RateLimiter(name = "graphqlStoreProductMutation")
     public StoreProductMediaUpload requestStoreProductMediaUpload(
             @InputArgument StoreProductMediaUploadInput input) {
-        if (input == null || input.productId() == null || input.contentType() == null
-                || input.sizeBytes() == null || input.sizeBytes().isBlank()) {
+        if (input == null || input.getProductId() == null || input.getContentType() == null
+                || input.getSizeBytes() == null || input.getSizeBytes().isBlank()) {
             throw new IllegalArgumentException("productId, contentType and sizeBytes are required");
         }
-        long sizeBytes = parsePositiveLong(input.sizeBytes(), "sizeBytes");
+        long sizeBytes = parsePositiveLong(input.getSizeBytes(), "sizeBytes");
         ProductMediaAdminPort.UploadView upload = productMediaAdminPort.requestUpload(
-                input.productId(), input.contentType(), sizeBytes, currentAuthentication());
+                input.getProductId(), input.getContentType(), sizeBytes, currentAuthentication());
         return mapper.toResponse(upload);
     }
 
