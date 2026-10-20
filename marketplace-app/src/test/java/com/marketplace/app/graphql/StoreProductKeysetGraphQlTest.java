@@ -132,6 +132,9 @@ class StoreProductKeysetGraphQlTest {
         products.save(Product.register(
                 categoryCode, "Product 2", "Matching search but another owner",
                 1002L, "SAR", UUID.randomUUID()));
+        products.save(Product.register(
+                categoryCode, "Product 2 USD", "Matching search but a different currency",
+                1002L, "USD", providerId));
 
         List<String> titles = new ArrayList<>();
         graphQlTester.document(CONNECTION_QUERY)
@@ -140,6 +143,7 @@ class StoreProductKeysetGraphQlTest {
                         "search", "pRoDuCt 2",
                         "storeCategoryCode", categoryCode,
                         "status", "ACTIVE",
+                        "currency", "SAR",
                         "minPriceMinor", "1002",
                         "maxPriceMinor", "1002"))
                 .variable("sortBy", java.util.Map.of("field", "TITLE", "direction", "ASC"))
@@ -155,6 +159,7 @@ class StoreProductKeysetGraphQlTest {
     void nonDefaultSortUsesItsOwnKeysetForContinuation() {
         java.util.Map<String, Object> filter = java.util.Map.of(
                 "storeCategoryCode", categoryCode,
+                "currency", "SAR",
                 "minPriceMinor", "1000",
                 "maxPriceMinor", "1004");
         java.util.Map<String, Object> sort = java.util.Map.of("field", "PRICE_MINOR", "direction", "ASC");
@@ -187,6 +192,19 @@ class StoreProductKeysetGraphQlTest {
 
         assertThat(secondIds).containsExactly(productIds.get(2).toString(), productIds.get(3).toString());
         assertThat(secondIds).doesNotContainAnyElementsOf(firstIds);
+    }
+
+    @Test
+    void priceSortRequiresCurrencyFilter() {
+        graphQlTester.document(CONNECTION_QUERY)
+                .variable("first", 2)
+                .variable("sortBy", java.util.Map.of("field", "PRICE_MINOR", "direction", "ASC"))
+                .execute()
+                .errors()
+                .satisfy(errors -> {
+                    assertThat(errors).isNotEmpty();
+                    assertThat(errors.getFirst().getExtensions()).containsEntry("errorCode", "VAL-001");
+                });
     }
 
     @Test

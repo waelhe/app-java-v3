@@ -234,6 +234,10 @@ public class ProductService {
                 ? ProductAdminSpi.ProductListFilter.all() : filter;
         ProductAdminSpi.ProductListSort safeSort = sort == null
                 ? ProductAdminSpi.ProductListSort.defaultSort() : sort;
+        if (safeSort.field() == ProductAdminSpi.ProductListSortField.PRICE_MINOR
+                && safeFilter.currency() == null) {
+            throw new IllegalArgumentException("currency is required when sorting by PRICE_MINOR");
+        }
 
         Specification<Product> specification = (root, query, criteria) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -255,6 +259,9 @@ public class ProductService {
             if (safeFilter.status() != null) {
                 StoreProductStatus status = StoreProductStatus.valueOf(safeFilter.status());
                 predicates.add(criteria.equal(root.get("status"), status));
+            }
+            if (safeFilter.currency() != null) {
+                predicates.add(criteria.equal(root.get("currency"), safeFilter.currency()));
             }
             if (safeFilter.minPriceMinor() != null) {
                 predicates.add(criteria.greaterThanOrEqualTo(

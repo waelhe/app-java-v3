@@ -222,6 +222,7 @@ public class StoreProductDataFetcher {
                 filter.getProductTypeId() == null || filter.getProductTypeId().isBlank()
                         ? null : UUID.fromString(filter.getProductTypeId()),
                 status,
+                filter.getCurrency(),
                 parsePriceBound(filter.getMinPriceMinor(), "minPriceMinor"),
                 parsePriceBound(filter.getMaxPriceMinor(), "maxPriceMinor"));
     }

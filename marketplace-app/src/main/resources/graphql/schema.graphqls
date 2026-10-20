@@ -396,12 +396,14 @@ enum StoreProductSortDirection {
 }
 
 # Adapted to the catalog fields the platform actually owns. Prices are minor-unit
-# decimal strings to avoid GraphQL Int/Float precision loss.
+# decimal strings to avoid GraphQL Int/Float precision loss. Bounds and PRICE_MINOR
+# sorting require currency because priceMinor values across currencies are incomparable.
 input StoreProductFilterInput {
     search: String
     storeCategoryCode: String
     productTypeId: ID
     status: StoreProductStatus
+    currency: String
     minPriceMinor: String
     maxPriceMinor: String
 }

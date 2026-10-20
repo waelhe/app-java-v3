@@ -86,7 +86,7 @@ class ProductAdminSpiAdapterTest {
         Product product = Product.register(
                 "home-appliances", "Espresso", "Pump", 149900L, "SAR", UUID.randomUUID());
         var filter = new ProductAdminSpi.ProductListFilter(
-                "espresso", "home-appliances", null, "ACTIVE", 100000L, 200000L);
+                "espresso", "home-appliances", null, "ACTIVE", "SAR", 100000L, 200000L);
         var sort = new ProductAdminSpi.ProductListSort(
                 ProductAdminSpi.ProductListSortField.PRICE_MINOR,
                 ProductAdminSpi.ProductListSortDirection.ASC);

@@ -24,18 +24,19 @@ class ProductListFilterTest {
         UUID productTypeId = UUID.randomUUID();
         var filter = new ProductAdminSpi.ProductListFilter(
                 "  Stainless steel  ", "  home-appliances ", productTypeId,
-                "ACTIVE", 100L, 900L);
+                "ACTIVE", "sar", 100L, 900L);
 
         assertThat(filter.search()).isEqualTo("Stainless steel");
         assertThat(filter.storeCategoryCode()).isEqualTo("home-appliances");
         assertThat(filter.productTypeId()).isEqualTo(productTypeId);
         assertThat(filter.status()).isEqualTo("ACTIVE");
+        assertThat(filter.currency()).isEqualTo("SAR");
     }
 
     @Test
     void rejectsRangeWithMinimumAboveMaximum() {
         assertThatThrownBy(() -> new ProductAdminSpi.ProductListFilter(
-                null, null, null, null, 101L, 100L))
+                null, null, null, null, "SAR", 101L, 100L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("minPriceMinor must not exceed maxPriceMinor");
     }
@@ -43,15 +44,23 @@ class ProductListFilterTest {
     @Test
     void rejectsNegativePriceBounds() {
         assertThatThrownBy(() -> new ProductAdminSpi.ProductListFilter(
-                null, null, null, null, -1L, null))
+                null, null, null, null, "SAR", -1L, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("price bounds must be non-negative");
     }
 
     @Test
+    void rejectsPriceBoundsWithoutCurrency() {
+        assertThatThrownBy(() -> new ProductAdminSpi.ProductListFilter(
+                null, null, null, null, null, 100L, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("currency is required when filtering by price bounds");
+    }
+
+    @Test
     void rejectsUnrecognisedLifecycleStatus() {
         assertThatThrownBy(() -> new ProductAdminSpi.ProductListFilter(
-                null, null, null, "PUBLISHED", null, null))
+                null, null, null, "PUBLISHED", null, null, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("supported product lifecycle");
     }

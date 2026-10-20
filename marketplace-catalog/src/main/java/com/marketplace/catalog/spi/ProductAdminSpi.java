@@ -9,6 +9,7 @@ import org.springframework.modulith.NamedInterface;
 import org.springframework.security.core.Authentication;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 /**
@@ -52,17 +53,23 @@ public interface ProductAdminSpi {
             String storeCategoryCode,
             UUID productTypeId,
             String status,
+            String currency,
             Long minPriceMinor,
             Long maxPriceMinor) {
         public ProductListFilter {
             search = search == null || search.isBlank() ? null : search.strip();
             storeCategoryCode = storeCategoryCode == null || storeCategoryCode.isBlank()
                     ? null : storeCategoryCode.strip();
+            currency = currency == null || currency.isBlank()
+                    ? null : currency.strip().toUpperCase(Locale.ROOT);
             if (search != null && search.length() > 100) {
                 throw new IllegalArgumentException("search must be at most 100 characters");
             }
             if (storeCategoryCode != null && storeCategoryCode.length() > 50) {
                 throw new IllegalArgumentException("storeCategoryCode must be at most 50 characters");
+            }
+            if (currency != null && !currency.matches("[A-Z]{3}")) {
+                throw new IllegalArgumentException("currency must be a three-letter code");
             }
             if (minPriceMinor != null && minPriceMinor < 0
                     || maxPriceMinor != null && maxPriceMinor < 0) {
@@ -71,13 +78,23 @@ public interface ProductAdminSpi {
             if (minPriceMinor != null && maxPriceMinor != null && minPriceMinor > maxPriceMinor) {
                 throw new IllegalArgumentException("minPriceMinor must not exceed maxPriceMinor");
             }
+            if ((minPriceMinor != null || maxPriceMinor != null) && currency == null) {
+                throw new IllegalArgumentException("currency is required when filtering by price bounds");
+            }
             if (status != null && !List.of("DRAFT", "ACTIVE", "SUSPENDED", "ARCHIVED").contains(status)) {
                 throw new IllegalArgumentException("status is not a supported product lifecycle value");
             }
         }
 
+        /** Compatibility for callers using the pre-currency filter shape. */
+        public ProductListFilter(
+                String search, String storeCategoryCode, UUID productTypeId, String status,
+                Long minPriceMinor, Long maxPriceMinor) {
+            this(search, storeCategoryCode, productTypeId, status, null, minPriceMinor, maxPriceMinor);
+        }
+
         public static ProductListFilter all() {
-            return new ProductListFilter(null, null, null, null, null, null);
+            return new ProductListFilter(null, null, null, null, null, null, null);
         }
     }
 
