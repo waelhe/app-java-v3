@@ -2,7 +2,7 @@
 
 ## قرار الحوكمة الحاكم لتكامل Saleor — D-SALEOR-FULL-001 (2026-10-20)
 
-- **المرجع التنفيذي الوحيد:** [الخطة النهائية للوحة الكاملة ومخطط التجارة الكامل](docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md). مصفوفة المجالات: `docs/governance/plans/saleor-commerce-domain-matrix.csv`; الـpins: `docs/governance/plans/saleor-source-pins.json`.
+- **المرجع التنفيذي الوحيد:** [الخطة النهائية للوحة الكاملة ومخطط التجارة الكامل](docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md). مصفوفة المجالات: `docs/governance/plans/saleor-commerce-domain-matrix.csv`; سجل الاختلافات: `docs/governance/plans/saleor-contract-divergences.csv`; الـpins: `docs/governance/plans/saleor-source-pins.json`.
 - **القرار:** كامل Saleor Dashboard 3.23.39 هو أساس الإدارة، ومخطط Saleor 3.23.43 (458 root operations/events) هو مرجع عقد التجارة. Spring Boot + DGS + Maven + وحدات Modulith القائمة تملك التنفيذ وقواعد العمل؛ لا يشغّل النظام محرك Saleor ثانيًا.
 - **إيقاف الخطط المتعارضة:** خطتا تكييف Dashboard القديمة وتكافؤ المخطط القديم موسومتان تاريخيًا فقط. يحظر الرجوع إليهما كخطتي تنفيذ؛ حارس CI يثبت علامة superseded والرابط المرجعي.
 - **إغلاق التنفيذ المتعارض:** #678، #679، #680، #681، #683 أُغلقت مع تعليق يشرح أن جذورها محفوظة لإعادة الاستخدام تحت عقد Saleor الصحيح؛ #676 و#677 كانا مغلقين وأُضيفت إليهما إحالة تاريخية. workflow `retired-saleor-pr-guard.yml` يفشل إذا أُعيد فتح أي منها. الإغلاق ليس حذفًا للشيفرة ولا ادعاءً بأن قدرات تلك الطلبات دُمجت.
