@@ -29,17 +29,20 @@ public class ProductAdminSpiAdapter implements ProductAdminSpi {
     private final ProductTypeAttributeService typeAttributes;
     private final CatalogAttributeService attributes;
     private final ProductVariantService variants;
+    private final StoreCategoryService storeCategories;
 
     public ProductAdminSpiAdapter(ProductService products,
                                   ProductTypeService productTypes,
                                   ProductTypeAttributeService typeAttributes,
                                   CatalogAttributeService attributes,
-                                  ProductVariantService variants) {
+                                  ProductVariantService variants,
+                                  StoreCategoryService storeCategories) {
         this.products = products;
         this.productTypes = productTypes;
         this.typeAttributes = typeAttributes;
         this.attributes = attributes;
         this.variants = variants;
+        this.storeCategories = storeCategories;
     }
 
     @Override
@@ -67,6 +70,14 @@ public class ProductAdminSpiAdapter implements ProductAdminSpi {
     @Override
     public ProductView getOwnedProduct(UUID id, Authentication authentication) {
         return toView(products.getOwnedProduct(id, authentication));
+    }
+
+    @Override
+    public List<StoreCategoryView> listStoreCategories() {
+        return storeCategories.listForConfiguration().stream()
+                .map(category -> new StoreCategoryView(category.getId(), category.getCode(),
+                        category.getNameEn(), category.getNameAr(), category.getPosition()))
+                .toList();
     }
 
     @Override
