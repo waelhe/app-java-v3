@@ -276,6 +276,25 @@ class ServiceGraphQlPaginationIntegrationTest {
     }
 
     @Test
+    void aKeysetCursorWithWellNamedButUnparseableValuesIsRejected() {
+        // The CodeRabbit round on #677: the gate used to check the key NAMES
+        // only, so a cursor with the right names but unparseable VALUES
+        // traveled on to the JPA keyset predicate and surfaced as an internal
+        // error. The shared gate normalizes createdAt/id to the contract's
+        // declared types and answers the same VAL-001 taxonomy instead.
+        String cursor = cursorStrategy.toCursor(ScrollPosition.forward(Map.of("createdAt", "x", "id", 42)));
+
+        graphQlTester.document(CONNECTION_QUERY)
+                .variable("after", cursor)
+                .execute()
+                .errors()
+                .satisfy(errors -> {
+                    assertThat(errors).isNotEmpty();
+                    assertThat(errors.getFirst().getExtensions()).containsEntry("errorCode", "VAL-001");
+                });
+    }
+
+    @Test
     void garbageCursorIsRejectedAsAValidationError() {
         graphQlTester.document(CONNECTION_QUERY)
                 .variable("after", "not-a-cursor-at-all")

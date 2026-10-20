@@ -199,13 +199,6 @@ public class StoreProductDataFetcher {
             return ScrollPosition.keyset();
         }
 
-        ScrollPosition decoded = cursorStrategy.fromCursor(after);
-        if (!(decoded instanceof KeysetScrollPosition keyset)
-                || !keyset.scrollsForward()
-                || !keyset.getKeys().keySet().equals(Set.of("createdAt", "id"))) {
-            throw new IllegalArgumentException(
-                    "after must be a forward keyset cursor emitted by storeProducts");
-        }
-        return keyset.forward();
+        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, "storeProducts");
     }
 }

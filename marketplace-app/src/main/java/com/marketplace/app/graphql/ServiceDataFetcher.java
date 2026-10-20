@@ -231,19 +231,17 @@ public class ServiceDataFetcher {
      * Decode only forward keyset cursors emitted by this connection. The
      * sort keys are part of the query contract and are deliberately opaque
      * to clients; foreign/offset cursors are rejected as validation errors.
+     * The ONE shared gate ({@link KeysetCursorGate}) also normalizes the
+     * key VALUES to the frozen contract's types ({@code createdAt} to
+     * {@code Instant}, {@code id} to {@code UUID}), so a client-crafted
+     * cursor with well-named but unparseable values answers the SAME
+     * validation error instead of failing inside the JPA keyset predicate.
      */
     private KeysetScrollPosition keysetPosition(String after) {
         if (after == null) {
             return ScrollPosition.keyset();
         }
-        ScrollPosition decoded = cursorStrategy.fromCursor(after);
-        if (!(decoded instanceof KeysetScrollPosition keyset)
-                || !keyset.scrollsForward()
-                || !keyset.getKeys().keySet().equals(Set.of("createdAt", "id"))) {
-            throw new IllegalArgumentException(
-                    "after must be a forward keyset cursor emitted by services");
-        }
-        return keyset.forward();
+        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, "services");
     }
 }
 
