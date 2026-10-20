@@ -207,9 +207,10 @@ jobs:
           ])
           out = Path(os.environ["RUNNER_TEMP"]) / "saleor-divergence-backlog.md"
           out.write_text("\n".join(body) + "\n", encoding="utf-8")
-          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
-              env.write(f"UNRESOLVED_COUNT={len(unresolved)}\n")
+          count = Path(os.environ["RUNNER_TEMP"]) / "saleor-unresolved-count.txt"
+          count.write_text(str(len(unresolved)), encoding="utf-8")
           PY
+          UNRESOLVED_COUNT="$(cat "${RUNNER_TEMP}/saleor-unresolved-count.txt")"
           TITLE='[Saleor divergence tracking] Unresolved compatibility adapters'
           EXISTING="$(gh issue list --repo "${GITHUB_REPOSITORY}" --state open --limit 100 --json number,title --jq '.[] | select(.title == "[Saleor divergence tracking] Unresolved compatibility adapters") | .number' | head -n 1)"
           if [ "${UNRESOLVED_COUNT}" -gt 0 ]; then
