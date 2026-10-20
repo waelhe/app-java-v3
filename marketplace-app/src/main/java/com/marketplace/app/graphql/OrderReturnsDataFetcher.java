@@ -114,8 +114,10 @@ public class OrderReturnsDataFetcher {
         List<OrderReturnsPort.ReturnLineInput> lines = new ArrayList<>();
         Set<UUID> seen = new HashSet<>();
         for (OrderReturnLineRequestInput line : input.getLines()) {
-            if (line == null || line.getOrderItemId() == null || line.getQuantity() == null
-                    || line.getQuantity() <= 0) {
+            // quantity is Int! in the SDL — the generated accessor is a primitive
+            // int (the GraphQL layer rejects null before the resolver), so the guard
+            // carries the semantic bound alone.
+            if (line == null || line.getOrderItemId() == null || line.getQuantity() <= 0) {
                 throw new IllegalArgumentException("each line needs an orderItemId and positive quantity");
             }
             UUID itemId = parseId(line.getOrderItemId(), "orderItemId");
