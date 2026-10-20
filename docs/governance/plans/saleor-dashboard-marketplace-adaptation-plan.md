@@ -1,3 +1,6 @@
+> **SUPERSEDED — HISTORICAL EVIDENCE ONLY (2026-10-20).**  
+> This file preserves its original research and decisions for audit/history. It is not an execution authority. The single governing plan is [saleor-dashboard-full-commerce-canonical-plan.md](saleor-dashboard-full-commerce-canonical-plan.md). CI rejects removal of this marker or its canonical pointer.  
+
 # Saleor Dashboard Adaptation Plan — Marketplace Administration Foundation
 
 **Status:** Architecture proposal for review; no frontend implementation is claimed by this document.  
