@@ -562,6 +562,25 @@ class RmaRefundJourneyIntegrationTest {
         UUID returnId = UUID.fromString(returnView.path("id").asString());
         assertThat(returnView.path("status").asString()).isEqualTo("REQUESTED");
 
+        // The seller cannot enumerate a buyer's return: the owner-scoped read
+        // returns a GraphQL error without disclosing the return payload.
+        HttpResponse<String> sellerRead = postGraphQl(sellerGate.accessToken(), """
+                query ReadOtherBuyersReturn($id: ID!) { myOrderReturn(id: $id) { id orderId status } }
+                """, Map.of("id", returnId.toString()));
+        assertThat(sellerRead.statusCode()).isEqualTo(200);
+        JsonNode sellerReadBody = objectMapper.readTree(sellerRead.body());
+        assertThat(sellerReadBody.path("errors").isArray()).isTrue();
+        assertThat(sellerReadBody.path("data").isNull()).isTrue();
+
+        // The buyer must not reach the ADMIN operations queue.
+        HttpResponse<String> forbiddenAdminQueue = postGraphQl(gate.accessToken(), """
+                query AdminQueue { adminOrderReturns(page: 0, first: 20) { totalElements } }
+                """, Map.of());
+        assertThat(forbiddenAdminQueue.statusCode()).isEqualTo(200);
+        JsonNode forbiddenAdminBody = objectMapper.readTree(forbiddenAdminQueue.body());
+        assertThat(forbiddenAdminBody.path("errors").isArray()).isTrue();
+        assertThat(forbiddenAdminBody.path("errors").size()).isGreaterThan(0);
+
         // (5) The admin APPROVE — the refund share FREEZES (1 x 1500).
         HttpResponse<String> approve = postGraphQl(adminGate.accessToken(), """
                 mutation ApproveReturn($id: ID!) {
