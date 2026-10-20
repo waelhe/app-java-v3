@@ -78,11 +78,12 @@ public class CommerceDataFetcher {
     @DgsMutation(field = DgsConstants.MUTATION.AddToCart)
     @RateLimiter(name = "graphqlStoreProductMutation")
     public CartLine addToCart(@InputArgument AddToCartInput input) {
-        if (input == null || input.getProductId() == null || input.getQuantity() == null
+        if (input == null || input.getProductId() == null || input.getProductId().isBlank()
                 || input.getQuantity() < 1 || input.getQuantity() > 1000) {
             throw new IllegalArgumentException("productId is required and quantity must be between 1 and 1000");
         }
-        return mapper.toResponse(commerce.addToCart(input.getProductId(), input.getVariantId(),
+        return mapper.toResponse(commerce.addToCart(parseId(input.getProductId(), "productId"),
+                parseOptionalId(input.getVariantId(), "variantId"),
                 input.getQuantity(), currentAuthentication()));
     }
 
@@ -135,6 +136,21 @@ public class CommerceDataFetcher {
     public PaymentIntentClient cancelPaymentIntent(@InputArgument UUID id) {
         if (id == null) throw new IllegalArgumentException("id is required");
         return mapper.toResponse(payments.cancel(id, currentAuthentication()));
+    }
+
+    private static UUID parseId(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(field + " is required");
+        }
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException(field + " must be a UUID", exception);
+        }
+    }
+
+    private static UUID parseOptionalId(String value, String field) {
+        return value == null || value.isBlank() ? null : parseId(value, field);
     }
 
     private static OrderCommercePort.CheckoutCommand toCommand(CheckoutInput input) {
