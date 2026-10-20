@@ -3,6 +3,8 @@ package com.marketplace.app.graphql;
 import com.marketplace.app.graphql.generated.DgsConstants;
 import com.marketplace.app.graphql.generated.types.StoreProduct;
 import com.marketplace.app.graphql.generated.types.StoreProductAttributeValue;
+import com.marketplace.app.graphql.generated.types.StoreProductFilterInput;
+import com.marketplace.app.graphql.generated.types.StoreProductSortInput;
 import com.marketplace.app.graphql.generated.types.StoreProductType;
 import com.marketplace.app.graphql.generated.types.StoreProductVariant;
 import com.marketplace.catalog.spi.ProductAdminSpi;
@@ -25,6 +27,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.function.Function;
 import java.util.Set;
 import java.util.UUID;
 
@@ -61,16 +64,31 @@ public class StoreProductDataFetcher {
         return mapper.toResponse(productAdminSpi.getOwnedProduct(id, currentAuthentication()));
     }
 
+    /**
+     * Source-compatible convenience for existing tests/callers. DGS binds the
+     * four-argument operation below; all request shapes converge on one path.
+     */
+    public Window<StoreProduct> storeProducts(Integer first, String after) {
+        return storeProducts(first, after, null, null);
+    }
+
     @DgsQuery(field = DgsConstants.QUERY.StoreProducts)
     @RateLimiter(name = "graphqlStoreProductQuery")
-    public Window<StoreProduct> storeProducts(@InputArgument Integer first, @InputArgument String after) {
+    public Window<StoreProduct> storeProducts(
+            @InputArgument Integer first,
+            @InputArgument String after,
+            @InputArgument StoreProductFilterInput filter,
+            @InputArgument StoreProductSortInput sortBy) {
         int requested = first == null ? properties.pagination().defaultPageSize() : first;
         if (requested <= 0) {
             return Window.from(List.of(), index -> ScrollPosition.keyset(), false);
         }
         int pageSize = Math.min(requested, properties.pagination().maxPageSize());
+        ProductAdminSpi.ProductListFilter mappedFilter = toListFilter(filter);
+        ProductAdminSpi.ProductListSort mappedSort = toListSort(sortBy);
         return productAdminSpi.scrollOwnedProducts(
-                        currentAuthentication(), keysetPosition(after), Limit.of(pageSize))
+                        currentAuthentication(), mappedFilter, mappedSort,
+                        keysetPosition(after, mappedSort), Limit.of(pageSize))
                 .map(mapper::toResponse);
     }
 
@@ -194,11 +212,67 @@ public class StoreProductDataFetcher {
         return authentication;
     }
 
-    private KeysetScrollPosition keysetPosition(String after) {
-        if (after == null) {
-            return ScrollPosition.keyset();
+    private static ProductAdminSpi.ProductListFilter toListFilter(StoreProductFilterInput filter) {
+        if (filter == null) {
+            return ProductAdminSpi.ProductListFilter.all();
         }
+        String status = filter.getStatus() == null ? null : filter.getStatus().name();
+        return new ProductAdminSpi.ProductListFilter(
+                filter.getSearch(),
+                filter.getStoreCategoryCode(),
+                filter.getProductTypeId() == null || filter.getProductTypeId().isBlank()
+                        ? null : UUID.fromString(filter.getProductTypeId()),
+                status,
+                filter.getCurrency(),
+                parsePriceBound(filter.getMinPriceMinor(), "minPriceMinor"),
+                parsePriceBound(filter.getMaxPriceMinor(), "maxPriceMinor"));
+    }
 
-        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, "storeProducts");
+    private static ProductAdminSpi.ProductListSort toListSort(StoreProductSortInput sortBy) {
+        if (sortBy == null) {
+            return ProductAdminSpi.ProductListSort.defaultSort();
+        }
+        ProductAdminSpi.ProductListSortField field =
+                sortBy.getField() == null
+                        ? ProductAdminSpi.ProductListSortField.CREATED_AT
+                        : ProductAdminSpi.ProductListSortField.valueOf(sortBy.getField().name());
+        ProductAdminSpi.ProductListSortDirection direction =
+                sortBy.getDirection() == null
+                        ? ProductAdminSpi.ProductListSortDirection.DESC
+                        : ProductAdminSpi.ProductListSortDirection.valueOf(sortBy.getDirection().name());
+        return new ProductAdminSpi.ProductListSort(field, direction);
+    }
+
+    private static Long parsePriceBound(String value, String field) {
+        if (value == null) {
+            return null;
+        }
+        if (!value.matches("0|[1-9][0-9]*")) {
+            throw new IllegalArgumentException(field + " must be a non-negative decimal integer string");
+        }
+        try {
+            return Long.valueOf(value);
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException(
+                    field + " must be within the signed 64-bit integer range", exception);
+        }
+    }
+
+    private KeysetScrollPosition keysetPosition(String after, ProductAdminSpi.ProductListSort sort) {
+        // The ONE shared gate (the #677 review adoption, generalized for
+        // the roster's own sort vocabulary): the key set is the sort's own
+        // (property, id) pair, and the VALUES normalize to the property's
+        // declared type — createdAt to Instant, title/status to text,
+        // priceMinor to long, id to UUID — so a client-crafted cursor with
+        // well-named but unparseable values answers the SAME VAL-001
+        // taxonomy instead of failing inside the JPA keyset predicate.
+        ProductAdminSpi.ProductListSortField field = sort.field();
+        Function<Object, Object> sortValue = switch (field) {
+            case CREATED_AT -> KeysetCursorGate::instantValue;
+            case TITLE, STATUS -> KeysetCursorGate::textValue;
+            case PRICE_MINOR -> KeysetCursorGate::longValue;
+        };
+        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, field.property(), sortValue,
+                "storeProducts with the same sortBy");
     }
 }

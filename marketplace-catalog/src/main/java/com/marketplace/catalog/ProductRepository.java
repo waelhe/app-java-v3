@@ -5,7 +5,9 @@ import java.util.UUID;
 import org.springframework.data.domain.KeysetScrollPosition;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Window;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -23,7 +25,7 @@ import org.springframework.data.repository.query.Param;
  * zero-updated-rows answer IS the refusal — the adapter turns it into the
  * house 409. No read-modify-write exists anywhere on these paths.
  */
-public interface ProductRepository extends JpaRepository<Product, UUID> {
+public interface ProductRepository extends JpaRepository<Product, UUID>, JpaSpecificationExecutor<Product> {
 
     /** Owner-scoped roster for the legacy REST list. */
     java.util.List<Product> findByProviderId(UUID providerId);
