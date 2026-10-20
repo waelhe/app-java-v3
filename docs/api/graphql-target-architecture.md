@@ -1,5 +1,8 @@
 # GraphQL Target Architecture and Evolution Plan
 
+> **Saleor commerce-contract authority (D-SALEOR-FULL-001):** For the adopted full commerce surface and Dashboard integration, follow [the canonical full Dashboard/schema plan](../governance/plans/saleor-dashboard-full-commerce-canonical-plan.md). It supersedes prior narrower schema-scope and custom-root naming assumptions. DGS-only resolvers, existing Spring-owned use cases, security and Modulith boundaries remain binding. This note defines target authority; it does not claim full parity is implemented.
+
+
 **Status:** Target architecture and staged implementation plan — not implementation-complete  
 **Last repository inspection:** 2026-10-19  
 **Repository baseline:** waelhe/app-java-v3, Java 25, Spring Boot 4.1.1, Spring Modulith 2.1.1, Maven modular monolith  
