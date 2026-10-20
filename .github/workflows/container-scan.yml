@@ -93,8 +93,8 @@ on:
     # post-merge truth-sync exactly as its own comment prescribed —
     # inert weight otherwise. PRs targeting main gate through the
     # pull_request event as before.
-        # Temporary stacked Saleor commerce base for PR #678; remove after the child PR merges.
-    branches: [ main, feat/saleor-commerce-product-keyset-pagination ]
+        # Temporary stacked Saleor commerce bases for PRs #678-#680; remove each base entry after its child PR merges.
+    branches: [ main, feat/saleor-commerce-product-keyset-pagination, feat/saleor-product-list-filters-sort ]
   schedule:
     - cron: '43 5 * * 1'
 
