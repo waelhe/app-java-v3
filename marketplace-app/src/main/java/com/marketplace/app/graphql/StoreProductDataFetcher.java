@@ -111,6 +111,12 @@ public class StoreProductDataFetcher {
         return productAdminSpi.listStoreCategories().stream().map(mapper::toResponse).toList();
     }
 
+    @DgsQuery(field = DgsConstants.QUERY.StoreCategory)
+    @RateLimiter(name = "graphqlStoreProductQuery")
+    public StoreCategory storeCategory(@InputArgument UUID id) {
+        return mapper.toResponse(productAdminSpi.getStoreCategory(id));
+    }
+
     @DgsQuery(field = DgsConstants.QUERY.StoreProductMedia)
     @RateLimiter(name = "graphqlStoreProductQuery")
     public List<StoreProductMedia> storeProductMedia(@InputArgument UUID productId) {
