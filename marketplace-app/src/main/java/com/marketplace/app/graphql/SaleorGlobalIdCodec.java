@@ -1,5 +1,7 @@
 package com.marketplace.app.graphql;
 
+import org.springframework.stereotype.Component;
+
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
@@ -23,6 +25,7 @@ import java.util.regex.Pattern;
  * any Saleor root operation, nested type closure, or Dashboard journey is
  * implemented by its presence.</p>
  */
+@Component
 public final class SaleorGlobalIdCodec {
 
     private static final Pattern GRAPHQL_NAME = Pattern.compile("[_A-Za-z][_0-9A-Za-z]*");
