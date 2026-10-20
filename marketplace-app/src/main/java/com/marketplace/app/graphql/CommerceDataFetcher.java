@@ -11,7 +11,7 @@ import com.marketplace.app.graphql.generated.types.OrderPaymentIntent;
 import com.marketplace.app.graphql.generated.types.PaymentIntentClient;
 import com.marketplace.orders.spi.OrderCommercePort;
 import com.marketplace.payments.spi.PaymentIntentClientPort;
-import com.marketplace.shared.api.SellerOrderManagementPort;
+import com.marketplace.orders.spi.SellerOrderManagementPort;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;

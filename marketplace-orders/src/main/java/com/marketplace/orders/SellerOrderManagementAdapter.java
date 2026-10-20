@@ -1,7 +1,7 @@
 package com.marketplace.orders;
 
-import com.marketplace.shared.api.OrderCommercePort;
-import com.marketplace.shared.api.SellerOrderManagementPort;
+import com.marketplace.orders.spi.OrderCommercePort;
+import com.marketplace.orders.spi.SellerOrderManagementPort;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
