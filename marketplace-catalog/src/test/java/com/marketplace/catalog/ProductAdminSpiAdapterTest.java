@@ -7,11 +7,17 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.KeysetScrollPosition;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.ScrollPosition;
+import org.springframework.data.domain.Window;
 import org.springframework.security.core.Authentication;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -52,6 +58,27 @@ class ProductAdminSpiAdapterTest {
         assertThat(page.getContent().get(0).title()).isEqualTo("Espresso");
         assertThat(page.getContent().get(0).priceMinor()).isEqualTo(149900L);
         assertThat(page.getContent().get(0).currency()).isEqualTo("SAR");
+    }
+
+    @Test
+    void keysetWindowMapsItsProjectionAndPreservesContinuationPosition() {
+        Product product = Product.register(
+                "home-appliances", "Espresso", "Pump", 149900L, "SAR", UUID.randomUUID());
+        KeysetScrollPosition cursor = ScrollPosition.forward(Map.of(
+                "createdAt", Instant.parse("2026-01-01T00:00:00Z"),
+                "id", product.getId()));
+        KeysetScrollPosition initial = ScrollPosition.keyset();
+        Limit limit = Limit.of(2);
+        Window<Product> source = Window.from(List.of(product), index -> cursor, true);
+        when(products.scrollOwnedProducts(authentication, initial, limit)).thenReturn(source);
+
+        Window<ProductAdminSpi.ProductView> mapped = adapter.scrollOwnedProducts(authentication, initial, limit);
+
+        assertThat(mapped.getContent()).hasSize(1);
+        assertThat(mapped.getContent().getFirst().title()).isEqualTo("Espresso");
+        assertThat(mapped.hasNext()).isTrue();
+        assertThat(mapped.positionAt(0)).isEqualTo(cursor);
+        verify(products).scrollOwnedProducts(authentication, initial, limit);
     }
 
     @Test
