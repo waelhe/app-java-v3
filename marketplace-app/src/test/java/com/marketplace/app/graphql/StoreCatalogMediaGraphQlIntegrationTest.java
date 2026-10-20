@@ -89,19 +89,21 @@ class StoreCatalogMediaGraphQlIntegrationTest {
     private HttpGraphQlTester graphQlTester;
     private UUID ownerId;
     private UUID productId;
+    private UUID categoryId;
     private String categoryCode;
 
     @BeforeEach
     void setUp() {
         ownerId = UUID.randomUUID();
         categoryCode = "media-journey-" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        categoryId = UUID.randomUUID();
 
         users.save(new User(ownerId, ownerId.toString(), null, "P1 media journey owner", UserRole.PROVIDER));
         jdbc.update("""
                 INSERT INTO store_categories
                     (id, code, name_en, name_ar, position, is_deleted, version, created_at, updated_at)
                 VALUES (?, ?, ?, ?, 4, FALSE, 0, now(), now())
-                """, UUID.randomUUID(), categoryCode, "Home essentials", "أساسيات المنزل");
+                """, categoryId, categoryCode, "Home essentials", "أساسيات المنزل");
 
         Product product = products.save(Product.register(
                 categoryCode, "P1 media journey product", "Seeded for GraphQL media lifecycle",
@@ -143,6 +145,18 @@ class StoreCatalogMediaGraphQlIntegrationTest {
                 .satisfies(categories::addAll);
 
         assertThat(categories).contains(categoryCode);
+
+        graphQlTester.document("""
+                        query($id: ID!) {
+                            storeCategory(id: $id) { id code nameEn nameAr position }
+                        }
+                        """)
+                .variable("id", categoryId.toString())
+                .execute()
+                .errors().verify()
+                .path("storeCategory.id").entity(String.class).isEqualTo(categoryId.toString())
+                .path("storeCategory.code").entity(String.class).isEqualTo(categoryCode)
+                .path("storeCategory.position").entity(Integer.class).isEqualTo(4);
 
         List<String> mediaIds = new ArrayList<>();
         graphQlTester.document("""
