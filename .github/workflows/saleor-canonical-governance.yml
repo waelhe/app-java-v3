@@ -10,6 +10,7 @@ on:
       - "docs/research/saleor-schema-parity-plan.md"
       - ".ci/check-saleor-canonical-plan.py"
       - ".github/workflows/saleor-canonical-governance.yml"
+      - ".github/workflows/retired-saleor-pr-guard.yml"
       - "SYSTEM.md"
       - "AGENTS.md"
       - "PROJECT_MAP.md"
