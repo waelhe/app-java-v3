@@ -22,7 +22,9 @@
 - **إصلاحات الجذر في جبهة الـDashboard أثناء الموجة (كلها بقياس):** (1) النسخة المولّدة المتعقّبة القديمة `e2e-marketplace-admin/` أُزيلت من التعقب + gitignore (انحراف 235/395 سطرًا عن المصدر `platform-e2e/`)؛ (2) زناد label: مرشّح paths على حدث `labeled` يُقيَّم ضد ملفات آخر دفعة فتسميتان بلا انطلاق بعد دفعة docs-only — حُذف المرشح (التسمية نفسها هي تأكيد المشرف)؛ (3) إقلاع البريفيو: قياس حي pnpm 10.34.7 — `pnpm run preview -- --host ...` يمرّر `--` نفسها إلى vite فتبتلع الأعلام (ربط ::1 بينما curl يضرب IPv4) — الآن `pnpm exec vite preview` مباشرة.
 - **الجبهة بعد القياس:** سير عمل E2E صار على الفرع الافتراضي لـ marketplace-admin (workflow_dispatch متاح)؛ CodeRabbit فُعّل يدويًا على الثلاثة (checkbox/تعليق) — #673: صفر ملاحظات ومخاطر ⚪ Minimal؛ #674: ملاحظتان اعتُمدتا؛ marketplace-admin#1: المراجعة قيد المعالجة عند الدمج (بوابة القبول بالإنتاج — البوابة الموثقة للـPR — نجحت مقيسةً).
 
-## Product scope and Saleor alignment — current work in progress (2026-10-19)
+## Historical snapshot: Product scope and Saleor alignment (2026-10-19; superseded for integration scope by D-SALEOR-FULL-001)
+
+> Historical product/domain observations below remain useful. Any Dashboard or commerce-schema integration scope stated in this dated snapshot is superseded by D-SALEOR-FULL-001 and must not be used as the current execution plan.
 
 - **Product definition:** the platform is an integrated social + commerce/business + tourism product. Community posts, business/provider identity, retail goods, services, property/jobs, and tourism bookings remain domain-owned; cross-surface discovery references source records instead of duplicating them.
 - **Current-state matrix:** `docs/research/social-commerce-business-tourism-saleor-alignment.md` supersedes the historic classifications in the initial Saleor fit/gap table where later PRs have changed the source. It records measured current evidence, deferrals, and the next slice; the document is being proposed in PR from branch `docs/social-commerce-tourism-saleor-alignment`.
