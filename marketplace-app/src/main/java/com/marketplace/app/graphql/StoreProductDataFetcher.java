@@ -198,13 +198,6 @@ public class StoreProductDataFetcher {
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException("productId must be a UUID", exception);
         }
-        long sizeBytes = parsePositiveLong(input.getSizeBytes(), "sizeBytes");
-        UUID productId;
-        try {
-            productId = UUID.fromString(input.getProductId());
-        } catch (IllegalArgumentException exception) {
-            throw new IllegalArgumentException("productId must be a UUID", exception);
-        }
         ProductMediaAdminPort.UploadView upload = productMediaAdminPort.requestUpload(
                 productId, input.getContentType(), sizeBytes, currentAuthentication());
         return mapper.toResponse(upload);
