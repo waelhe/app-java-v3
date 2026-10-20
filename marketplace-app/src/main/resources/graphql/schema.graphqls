@@ -24,6 +24,7 @@ type Query {
     myOrders(first: Int): [CommerceOrder!]!
     commerceOrder(id: ID!): CommerceOrder
     paymentIntent(id: ID!): PaymentIntentClient
+    checkoutPreview(input: CheckoutInput): [CommerceCheckoutPreview!]!
 
     service(id: ID!): Service
     # Forward-only keyset connection over ACTIVE catalog listings, ordered
@@ -155,7 +156,6 @@ type Mutation {
 
     addToCart(input: AddToCartInput!): CartLine!
     removeFromCart(itemId: ID!): Boolean!
-    checkoutPreview(input: CheckoutInput): [CommerceCheckoutPreview!]!
     placeOrder(input: CheckoutInput): CommerceOrder!
     cancelCommerceOrder(id: ID!, reason: String!): CommerceOrder!
     requestOrderPaymentIntent(orderId: ID!): OrderPaymentIntent!
