@@ -95,7 +95,7 @@ class StoreProductKeysetGraphQlTest {
                 .claim("roles", List.of("PROVIDER"))
                 .build();
         when(jwtDecoder.decode("test-token")).thenReturn(testJwt);
-        users.save(User.create(providerId.toString(), null, "Keyset test provider", UserRole.PROVIDER));
+        users.save(new User(providerId, providerId.toString(), null, "Keyset test provider", UserRole.PROVIDER));
 
         String categoryCode = "keyset-" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         jdbcTemplate.update("""
