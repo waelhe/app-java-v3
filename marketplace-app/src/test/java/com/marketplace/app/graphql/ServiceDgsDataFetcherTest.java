@@ -239,6 +239,89 @@ class ServiceDgsDataFetcherTest {
     }
 
     @Test
+    void sellerHistoryIsBoundedAndOrderDetailDelegatesThroughTheSellerPort() {
+        var auth = new TestingAuthenticationToken("seller", "pass", "ROLE_PROVIDER");
+        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+        securityContext.setAuthentication(auth);
+        SecurityContextHolder.setContext(securityContext);
+
+        UUID orderId = UUID.randomUUID();
+        var order = new OrderCommercePort.OrderView(orderId, "PLACED", List.of(),
+                "2500", "2500", "0", "0", "PICKUP", "0", null, "SAR",
+                Instant.parse("2026-10-20T00:00:00Z"), null, null, null, null, null, List.of());
+        int bounded = Math.min(50, graphQlProperties.pagination().maxPageSize());
+        when(sellerOrderManagementPort.listSoldOrders(bounded, auth)).thenReturn(List.of(order));
+        when(sellerOrderManagementPort.getSoldOrder(orderId, auth)).thenReturn(order);
+
+        var history = dgsQueryExecutor.executeAndGetDocumentContext("""
+                query SellerHistory($first: Int) {
+                    mySoldOrders(first: $first) { id status totalAmountMinor }
+                }
+                """, Map.of("first", 5000));
+
+        assertThat(history.<String>read("data.mySoldOrders[0].id")).isEqualTo(orderId.toString());
+        assertThat(history.<String>read("data.mySoldOrders[0].status")).isEqualTo("PLACED");
+        verify(sellerOrderManagementPort).listSoldOrders(bounded, auth);
+
+        var detail = dgsQueryExecutor.executeAndGetDocumentContext("""
+                query SellerOrder($id: ID!) {
+                    soldOrder(id: $id) { id status currency totalAmountMinor }
+                }
+                """, Map.of("id", orderId.toString()));
+
+        assertThat(detail.<String>read("data.soldOrder.id")).isEqualTo(orderId.toString());
+        assertThat(detail.<String>read("data.soldOrder.currency")).isEqualTo("SAR");
+        verify(sellerOrderManagementPort).getSoldOrder(orderId, auth);
+    }
+
+    @Test
+    void sellerFulfillmentAndCancellationMutationsDelegateToTheExistingOrderStateMachine() {
+        var auth = new TestingAuthenticationToken("seller", "pass", "ROLE_PROVIDER");
+        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+        securityContext.setAuthentication(auth);
+        SecurityContextHolder.setContext(securityContext);
+
+        UUID fulfilledId = UUID.randomUUID();
+        var fulfilled = new OrderCommercePort.OrderView(fulfilledId, "FULFILLED", List.of(),
+                "2500", "2500", "0", "0", "PICKUP", "0", null, "SAR",
+                Instant.parse("2026-10-20T00:00:00Z"), Instant.parse("2026-10-20T00:01:00Z"),
+                Instant.parse("2026-10-20T00:02:00Z"), null, null, null, List.of());
+        when(sellerOrderManagementPort.fulfillSoldOrder(fulfilledId, auth)).thenReturn(fulfilled);
+
+        var fulfilledResult = dgsQueryExecutor.executeAndGetDocumentContext("""
+                mutation Fulfill($id: ID!) {
+                    fulfillSoldOrder(id: $id) { id status fulfilledAt }
+                }
+                """, Map.of("id", fulfilledId.toString()));
+
+        assertThat(fulfilledResult.<String>read("data.fulfillSoldOrder.id"))
+                .isEqualTo(fulfilledId.toString());
+        assertThat(fulfilledResult.<String>read("data.fulfillSoldOrder.status")).isEqualTo("FULFILLED");
+        verify(sellerOrderManagementPort).fulfillSoldOrder(fulfilledId, auth);
+
+        UUID cancelledId = UUID.randomUUID();
+        var cancelled = new OrderCommercePort.OrderView(cancelledId, "CANCELLED", List.of(),
+                "2500", "2500", "0", "0", "PICKUP", "0", null, "SAR",
+                Instant.parse("2026-10-20T00:00:00Z"), Instant.parse("2026-10-20T00:01:00Z"),
+                null, Instant.parse("2026-10-20T00:03:00Z"), "seller unavailable", null, List.of());
+        when(sellerOrderManagementPort.cancelSoldOrder(cancelledId, "seller unavailable", auth))
+                .thenReturn(cancelled);
+
+        var cancelledResult = dgsQueryExecutor.executeAndGetDocumentContext("""
+                mutation Cancel($id: ID!, $reason: String!) {
+                    cancelSoldOrder(id: $id, reason: $reason) { id status cancelReason }
+                }
+                """, Map.of("id", cancelledId.toString(), "reason", "seller unavailable"));
+
+        assertThat(cancelledResult.<String>read("data.cancelSoldOrder.id"))
+                .isEqualTo(cancelledId.toString());
+        assertThat(cancelledResult.<String>read("data.cancelSoldOrder.status")).isEqualTo("CANCELLED");
+        assertThat(cancelledResult.<String>read("data.cancelSoldOrder.cancelReason"))
+                .isEqualTo("seller unavailable");
+        verify(sellerOrderManagementPort).cancelSoldOrder(cancelledId, "seller unavailable", auth);
+    }
+
+    @Test
     void orderCheckoutAndPaymentIntentCommandsMapTheirOwnerResponses() {
         var auth = new TestingAuthenticationToken("buyer", "pass", "ROLE_CONSUMER");
         SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
