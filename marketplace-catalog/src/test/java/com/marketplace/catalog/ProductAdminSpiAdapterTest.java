@@ -82,6 +82,35 @@ class ProductAdminSpiAdapterTest {
     }
 
     @Test
+    void filteredAndSortedKeysetWindowMapsThroughTheSameDomainService() {
+        Product product = Product.register(
+                "home-appliances", "Espresso", "Pump", 149900L, "SAR", UUID.randomUUID());
+        var filter = new ProductAdminSpi.ProductListFilter(
+                "espresso", "home-appliances", null, "ACTIVE", "SAR", 100000L, 200000L);
+        var sort = new ProductAdminSpi.ProductListSort(
+                ProductAdminSpi.ProductListSortField.PRICE_MINOR,
+                ProductAdminSpi.ProductListSortDirection.ASC);
+        KeysetScrollPosition initial = ScrollPosition.keyset();
+        KeysetScrollPosition next = ScrollPosition.forward(Map.of(
+                "priceMinor", 149900L, "id", product.getId()));
+        Limit limit = Limit.of(3);
+        Window<Product> source = Window.from(List.of(product), index -> next, true);
+        when(products.scrollOwnedProducts(authentication, filter, sort, initial, limit)).thenReturn(source);
+
+        Window<ProductAdminSpi.ProductView> result =
+                adapter.scrollOwnedProducts(authentication, filter, sort, initial, limit);
+
+        assertThat(result.getContent()).singleElement()
+                .satisfies(view -> {
+                    assertThat(view.title()).isEqualTo("Espresso");
+                    assertThat(view.priceMinor()).isEqualTo(149900L);
+                });
+        assertThat(result.hasNext()).isTrue();
+        assertThat(result.positionAt(0)).isEqualTo(next);
+        verify(products).scrollOwnedProducts(authentication, filter, sort, initial, limit);
+    }
+
+    @Test
     void ownedProductReadProjectsTheDomainShape() {
         Product product = Product.register("home-appliances", "Espresso", null, 149900L, "SAR", UUID.randomUUID());
         when(products.getOwnedProduct(product.getId(), authentication)).thenReturn(product);

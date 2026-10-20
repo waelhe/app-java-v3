@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 
 /**
  * The connections' ONE keyset-cursor gate — the shared form of what
@@ -20,56 +21,76 @@ import java.util.UUID;
  * other malformed cursor answers the VAL-001 validation taxonomy.
  *
  * <p>The gate keeps the measured contract (a forward keyset over exactly
- * {@code createdAt} and {@code id}) and adds value normalization:
- * {@code createdAt} parses to {@link Instant} — the declared type on
- * {@code BaseEntity} — and {@code id} to {@link UUID}, accepting either
- * the typed value or its string form (the JSON codec may deliver either),
- * then hands Spring Data a rebuilt position carrying the contract's own
- * types. Unparseable values answer the SAME {@link IllegalArgumentException}
- * the name check always threw, so the exception resolver maps them to the
- * identical VAL-001 error code the cursor taxonomy asserts.</p>
+ * the connection's own sort keys) and adds value normalization: each key's
+ * value parses to the property's declared type — {@code createdAt} to
+ * {@link Instant} (the declared type on {@code BaseEntity}), {@code id} to
+ * {@link UUID}, and the sort-aware callers pass their own property
+ * normalizer ({@code title}/{@code status} to text, {@code priceMinor} to
+ * long) — accepting either the typed value or its string form (the JSON
+ * codec may deliver either), then handing Spring Data a rebuilt position
+ * carrying the contract's own types. Unparseable values answer the SAME
+ * {@link IllegalArgumentException} the name check always threw, so the
+ * exception resolver maps them to the identical VAL-001 error code the
+ * cursor taxonomy asserts.</p>
  */
 final class KeysetCursorGate {
 
     private KeysetCursorGate() {
     }
 
+    /** {@code createdAt}'s declared type (BaseEntity) — measured. */
+    static Object instantValue(Object value) {
+        return value instanceof Instant instant ? instant : Instant.parse(String.valueOf(value));
+    }
+
+    /** {@code id}'s declared type — the unique tie-breaker on every connection. */
+    static Object uuidValue(Object value) {
+        return value instanceof UUID uuid ? uuid : UUID.fromString(String.valueOf(value));
+    }
+
+    /** Text-typed sort properties bind as their string form. */
+    static Object textValue(Object value) {
+        return String.valueOf(value);
+    }
+
+    /** Numeric sort properties bind as their long form. */
+    static Object longValue(Object value) {
+        return value instanceof Number number ? number.longValue() : Long.parseLong(String.valueOf(value));
+    }
+
     /**
-     * Decodes and normalizes the connection's {@code after} cursor into a
-     * forward keyset position over exactly {@code (createdAt: Instant, id: UUID)}.
-     *
-     * @param cursorStrategy the connection-cursor codec — the SAME
-     *                       auto-configured instance both fetchers inject
-     *                       ({@code GraphQlDataAutoConfiguration#cursorStrategy})
-     * @param after          the opaque cursor; {@code null} answers the
-     *                       unpositioned first page
-     * @param owner          the connection's own name, carried by the
-     *                       validation message exactly as the per-fetcher
-     *                       copies always did
-     * @return the normalized forward keyset position
-     * @throws IllegalArgumentException when the cursor is not a forward
-     *                                  {@code (createdAt, id)} keyset cursor — including values that do
-     *                                  not parse into the contract's declared types
+     * The single-sort form: a forward keyset over exactly
+     * {@code (createdAt: Instant, id: UUID)}.
      */
     static KeysetScrollPosition forwardKeyset(EncodingCursorStrategy<ScrollPosition> cursorStrategy,
                                               String after, String owner) {
+        return forwardKeyset(cursorStrategy, after, "createdAt", KeysetCursorGate::instantValue, owner);
+    }
+
+    /**
+     * The sort-aware form: a forward keyset over exactly
+     * {@code (sortProperty: its declared type, id: UUID)} — the caller owns
+     * the property-to-normalizer mapping of its own sort vocabulary.
+     */
+    static KeysetScrollPosition forwardKeyset(EncodingCursorStrategy<ScrollPosition> cursorStrategy,
+                                              String after, String sortProperty,
+                                              Function<Object, Object> sortValue, String owner) {
         if (after == null) {
             return ScrollPosition.keyset();
         }
         ScrollPosition decoded = cursorStrategy.fromCursor(after);
         if (!(decoded instanceof KeysetScrollPosition keyset)
                 || !keyset.scrollsForward()
-                || !keyset.getKeys().keySet().equals(Set.of("createdAt", "id"))) {
+                || !keyset.getKeys().keySet().equals(Set.of(sortProperty, "id"))) {
             throw new IllegalArgumentException(
                     "after must be a forward keyset cursor emitted by " + owner);
         }
         try {
-            Object createdAt = keyset.getKeys().get("createdAt");
-            Object id = keyset.getKeys().get("id");
-            Instant createdAtValue = createdAt instanceof Instant value
-                    ? value : Instant.parse(String.valueOf(createdAt));
-            UUID idValue = id instanceof UUID value ? value : UUID.fromString(String.valueOf(id));
-            return ScrollPosition.forward(Map.of("createdAt", createdAtValue, "id", idValue));
+            Object sortRaw = keyset.getKeys().get(sortProperty);
+            Object idRaw = keyset.getKeys().get("id");
+            return ScrollPosition.forward(Map.of(
+                    sortProperty, sortValue.apply(sortRaw),
+                    "id", uuidValue(idRaw)));
         } catch (RuntimeException exception) {
             throw new IllegalArgumentException(
                     "after must be a forward keyset cursor emitted by " + owner, exception);

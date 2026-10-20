@@ -54,6 +54,17 @@ public class ProductAdminSpiAdapter implements ProductAdminSpi {
     }
 
     @Override
+    public Window<ProductView> scrollOwnedProducts(
+            Authentication authentication,
+            ProductListFilter filter,
+            ProductListSort sort,
+            KeysetScrollPosition position,
+            Limit limit) {
+        return products.scrollOwnedProducts(authentication, filter, sort, position, limit)
+                .map(ProductAdminSpiAdapter::toView);
+    }
+
+    @Override
     public ProductView getOwnedProduct(UUID id, Authentication authentication) {
         return toView(products.getOwnedProduct(id, authentication));
     }

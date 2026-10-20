@@ -22,8 +22,8 @@ on:
     # post-merge truth-sync exactly as its own comment prescribed —
     # inert weight otherwise. PRs targeting main gate through the
     # pull_request event as before.
-        # Temporary stacked Saleor commerce base for PR #678; remove after the child PR merges.
-    branches: [ main, feat/saleor-commerce-product-keyset-pagination ]
+        # Temporary stacked Saleor PR target pattern; retire after #677-#681 are reconciled.
+    branches: [ main, feat/saleor-commerce-product-keyset-pagination, 'feat/saleor-*' ]
 
 
 # One test round per ref: a newer push supersedes the older round and
