@@ -1,13 +1,18 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.app.graphql.generated.DgsConstants;
+import com.marketplace.app.graphql.generated.types.StoreCategory;
 import com.marketplace.app.graphql.generated.types.StoreProduct;
 import com.marketplace.app.graphql.generated.types.StoreProductAttributeValue;
+import com.marketplace.app.graphql.generated.types.StoreProductMedia;
+import com.marketplace.app.graphql.generated.types.StoreProductMediaUpload;
+import com.marketplace.app.graphql.generated.types.StoreProductMediaUploadInput;
 import com.marketplace.app.graphql.generated.types.StoreProductFilterInput;
 import com.marketplace.app.graphql.generated.types.StoreProductSortInput;
 import com.marketplace.app.graphql.generated.types.StoreProductType;
 import com.marketplace.app.graphql.generated.types.StoreProductVariant;
 import com.marketplace.catalog.spi.ProductAdminSpi;
+import com.marketplace.shared.api.ProductMediaAdminPort;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
@@ -40,17 +45,20 @@ import java.util.UUID;
 public class StoreProductDataFetcher {
 
     private final ProductAdminSpi productAdminSpi;
+    private final ProductMediaAdminPort productMediaAdminPort;
     private final StoreProductGraphQlMapper mapper;
     private final GraphQlProperties properties;
     private final EncodingCursorStrategy<ScrollPosition> cursorStrategy;
     private final Validator validator;
 
     public StoreProductDataFetcher(ProductAdminSpi productAdminSpi,
+                                   ProductMediaAdminPort productMediaAdminPort,
                                    StoreProductGraphQlMapper mapper,
                                    GraphQlProperties properties,
                                    EncodingCursorStrategy<ScrollPosition> cursorStrategy,
                                    Validator validator) {
         this.productAdminSpi = productAdminSpi;
+        this.productMediaAdminPort = productMediaAdminPort;
         this.mapper = mapper;
         this.properties = properties;
         this.cursorStrategy = cursorStrategy;
@@ -95,6 +103,19 @@ public class StoreProductDataFetcher {
     @RateLimiter(name = "graphqlStoreProductQuery")
     public List<StoreProductType> storeProductTypes() {
         return productAdminSpi.listProductTypes().stream().map(mapper::toResponse).toList();
+    }
+
+    @DgsQuery(field = DgsConstants.QUERY.StoreCategories)
+    @RateLimiter(name = "graphqlStoreProductQuery")
+    public List<StoreCategory> storeCategories() {
+        return productAdminSpi.listStoreCategories().stream().map(mapper::toResponse).toList();
+    }
+
+    @DgsQuery(field = DgsConstants.QUERY.StoreProductMedia)
+    @RateLimiter(name = "graphqlStoreProductQuery")
+    public List<StoreProductMedia> storeProductMedia(@InputArgument UUID productId) {
+        return productMediaAdminPort.listByProduct(productId, currentAuthentication()).stream()
+                .map(mapper::toResponse).toList();
     }
 
     @DgsQuery(field = DgsConstants.QUERY.StoreProductAttributeValues)
@@ -156,6 +177,33 @@ public class StoreProductDataFetcher {
                 .stream().map(mapper::toResponse).toList();
     }
 
+    @DgsMutation(field = DgsConstants.MUTATION.RequestStoreProductMediaUpload)
+    @RateLimiter(name = "graphqlStoreProductMutation")
+    public StoreProductMediaUpload requestStoreProductMediaUpload(
+            @InputArgument StoreProductMediaUploadInput input) {
+        if (input == null || input.productId() == null || input.contentType() == null
+                || input.sizeBytes() == null || input.sizeBytes().isBlank()) {
+            throw new IllegalArgumentException("productId, contentType and sizeBytes are required");
+        }
+        long sizeBytes = parsePositiveLong(input.sizeBytes(), "sizeBytes");
+        ProductMediaAdminPort.UploadView upload = productMediaAdminPort.requestUpload(
+                input.productId(), input.contentType(), sizeBytes, currentAuthentication());
+        return mapper.toResponse(upload);
+    }
+
+    @DgsMutation(field = DgsConstants.MUTATION.ConfirmStoreProductMediaUpload)
+    @RateLimiter(name = "graphqlStoreProductMutation")
+    public StoreProductMedia confirmStoreProductMediaUpload(@InputArgument UUID mediaId) {
+        return mapper.toResponse(productMediaAdminPort.confirmUpload(mediaId, currentAuthentication()));
+    }
+
+    @DgsMutation(field = DgsConstants.MUTATION.DeleteStoreProductMedia)
+    @RateLimiter(name = "graphqlStoreProductMutation")
+    public Boolean deleteStoreProductMedia(@InputArgument UUID mediaId) {
+        productMediaAdminPort.delete(mediaId, currentAuthentication());
+        return Boolean.TRUE;
+    }
+
     @DgsMutation(field = DgsConstants.MUTATION.CreateStoreProductVariant)
     @RateLimiter(name = "graphqlStoreProductMutation")
     public StoreProductVariant createStoreProductVariant(
@@ -191,6 +239,18 @@ public class StoreProductDataFetcher {
         return values.stream().map(value -> new ProductAdminSpi.AttributeValueInput(
                 value.assignmentId(), value.textValue(), value.numberValue(),
                 value.booleanValue(), value.optionId())).toList();
+    }
+
+    private static long parsePositiveLong(String value, String field) {
+        if (value == null || !value.matches("[1-9][0-9]*")) {
+            throw new IllegalArgumentException(field + " must be a positive decimal integer string");
+        }
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException(field + " must be within the signed 64-bit integer range",
+                    exception);
+        }
     }
 
     private static long parsePriceMinor(String value) {
