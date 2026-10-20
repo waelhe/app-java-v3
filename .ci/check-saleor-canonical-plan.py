@@ -183,7 +183,10 @@ def main():
             f"source={dict(source_category_counts)}, matrix={dict(Counter(matrix_counts))}"
         )
 
+    matrix_by_category = {row["saleor_category"]: row for row in matrix_rows}
     totals = Counter()
+    category_status = Counter()
+    category_roots = Counter()
     records = []
     for typename in ("Query", "Mutation", "Subscription"):
         source_fields = fields_for(source_doc, typename)
@@ -198,10 +201,19 @@ def main():
             else:
                 status = "ROOT_SIGNATURE_MATCHES_TYPE_CLOSURE_UNVERIFIED"
             totals[status] += 1
+            category_status[(category, status)] += 1
+            category_roots[category] += 1
+            domain_row = matrix_by_category.get(category)
+            if domain_row is None:
+                fail(f"root {typename}.{name} has no reviewed matrix owner row for category {category}")
             records.append({
                 "root_type": typename,
                 "root_name": name,
                 "category": category,
+                "phase": domain_row["phase"],
+                "owner_modules": domain_row["owner_modules"],
+                "target_policy": domain_row["target_policy"],
+                "automatic_acceptance": domain_row["automatic_acceptance"],
                 "reference_signature": signature(field),
                 "published_signature": signature(target) if target else "",
                 "status": status,
@@ -210,7 +222,8 @@ def main():
     args.report.parent.mkdir(parents=True, exist_ok=True)
     with args.report.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=[
-            "root_type", "root_name", "category", "reference_signature",
+            "root_type", "root_name", "category", "phase", "owner_modules",
+            "target_policy", "automatic_acceptance", "reference_signature",
             "published_signature", "status"
         ])
         writer.writeheader()
@@ -234,8 +247,22 @@ def main():
         f"| MISSING_ROOT_NAME | {missing} |",
         f"| ROOT_SIGNATURE_DIFFERS | {diff} |",
         "",
-        f"Full per-root report: {args.report.name} (upload as workflow artifact).",
+        "| Domain | Phase | Roots | Exact root signatures | Missing roots | Signature differences |",
+        "|---|---|---:|---:|---:|---:|",
     ]
+    for category in sorted(matrix_by_category):
+        exact_in_category = category_status[(category, "ROOT_SIGNATURE_MATCHES_TYPE_CLOSURE_UNVERIFIED")]
+        missing_in_category = category_status[(category, "MISSING_ROOT_NAME")]
+        diff_in_category = category_status[(category, "ROOT_SIGNATURE_DIFFERS")]
+        report.append(
+            f"| {category} | {matrix_by_category[category]['phase']} | {category_roots[category]} | "
+            f"{exact_in_category} | {missing_in_category} | {diff_in_category} |"
+        )
+    report.extend([
+        "",
+        "Owner, phase, policy and acceptance fields in the CSV are inherited from the reviewed domain matrix.",
+        f"Full per-root report: {args.report.name} (upload as workflow artifact).",
+    ])
     output = "\n".join(report) + "\n"
     print(output)
     if args.summary:
