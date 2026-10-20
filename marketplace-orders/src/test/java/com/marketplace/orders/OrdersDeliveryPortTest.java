@@ -241,6 +241,28 @@ class OrdersDeliveryPortTest {
     }
 
     @Test
+    void ordinaryFulfillmentCannotBypassPlatformDeliveryBeforeALegIsLinked() {
+        Order order = Order.placedWithFulfillment(buyerId, "SAR", sellerId,
+                5_000L, 0L, 0L, true, FulfillmentMethod.PLATFORM_DELIVERY,
+                "Riyadh downtown", 24.7136, 46.6753, 800L);
+        order.confirm(Instant.now());
+        order.markStockReserved();
+        // Confirmation is committed but the after-commit delivery listener has not attached a leg yet.
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+
+        assertThat(order.getDeliveryRequestId()).isNull();
+        assertThatThrownBy(() -> service().fulfill(order.getId()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("delivery lifecycle");
+
+        verify(orderRepository, never()).save(any(Order.class));
+        verify(eventPublisher, never()).publishEvent(any(OrderFulfilledEvent.class));
+        verifyNoInteractions(productStockPort, checkoutDeliveryPort);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(order.isStockReserved()).isTrue();
+    }
+
+    @Test
     void reattachingTheSameDeliveryRequestIsSafe() {
         Order order = confirmedOrder();
         order.attachDeliveryRequest(deliveryRequestId);
