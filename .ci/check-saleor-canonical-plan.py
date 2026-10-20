@@ -186,8 +186,8 @@ def main():
     totals = Counter()
     records = []
     for typename in ("Query", "Mutation", "Subscription"):
-        source_fields = fields_for(args.schema, typename)
-        target_fields = fields_for(args.published, typename)
+        source_fields = fields_for(source_doc, typename)
+        target_fields = fields_for(published_doc, typename)
         for name, field in sorted(source_fields.items()):
             category = "Subscriptions" if typename == "Subscription" else category_of(field)
             target = target_fields.get(name)
