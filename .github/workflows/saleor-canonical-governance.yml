@@ -153,3 +153,71 @@ jobs:
           gh issue create --repo "${GITHUB_REPOSITORY}" \
             --title "${TITLE}" \
             --body "A newer official Saleor or Dashboard release is available. This is a review signal, not an automatic pin change. Update immutable pins only through a PR that reruns schema inventory, code generation, compatibility gates, retained-route E2E and upstream security/rebase review. Pinned: Saleor ${PINNED_SALEOR}; Dashboard ${PINNED_DASHBOARD}. Latest: Saleor ${LATEST_SALEOR}; Dashboard ${LATEST_DASHBOARD}."
+
+  track-divergences:
+    name: Track unresolved Saleor contract divergences
+    needs: inventory
+    if: >-
+      needs.inventory.result == 'success' &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout canonical registry
+        uses: actions/checkout@v7.0.1
+      - name: Regenerate single unresolved-divergence tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv
+          import os
+          from pathlib import Path
+
+          path = Path("docs/governance/plans/saleor-contract-divergences.csv")
+          with path.open(encoding="utf-8", newline="") as handle:
+              rows = list(csv.DictReader(handle))
+          unresolved = [row for row in rows if row["approval_status"] != "APPROVED"]
+          body = [
+              "# Canonical Saleor contract divergence backlog",
+              "",
+              "This issue is generated from `docs/governance/plans/saleor-contract-divergences.csv` by CI. Edit the registry in a reviewed PR; do not resolve this issue manually while a row remains unresolved.",
+              "",
+              f"Unresolved rows: **{len(unresolved)} / {len(rows)}**.",
+              "",
+              "| Surface | Disposition | Status | Owner modules | Required trigger |",
+              "|---|---|---|---|---|",
+          ]
+          for row in unresolved:
+              clean = lambda key: (row.get(key, "") or "").replace("|", "\\|").replace("\\n", " ")
+              body.append(
+                  f"| {clean('saleor_surface')} | {clean('disposition')} | {clean('approval_status')} | "
+                  f"{clean('owner_modules')} | {clean('review_trigger')} |"
+              )
+          body.extend([
+              "",
+              "## Close condition",
+              "Every row is approved with a real decision/ADR record, the canonical governance validation passes, and the relevant operation/route tests are green. The existence of an issue or an approved divergence is not itself proof of runtime compatibility.",
+          ])
+          out = Path(os.environ["RUNNER_TEMP"]) / "saleor-divergence-backlog.md"
+          out.write_text("\\n".join(body) + "\\n", encoding="utf-8")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write(f"UNRESOLVED_COUNT={len(unresolved)}\\n")
+          PY
+          TITLE='[Saleor divergence tracking] Unresolved compatibility adapters'
+          EXISTING="$(gh issue list --repo "${GITHUB_REPOSITORY}" --state open --limit 100 --json number,title --jq '.[] | select(.title == "[Saleor divergence tracking] Unresolved compatibility adapters") | .number' | head -n 1)"
+          if [ "${UNRESOLVED_COUNT}" -gt 0 ]; then
+            if [ -n "${EXISTING}" ]; then
+              gh issue edit --repo "${GITHUB_REPOSITORY}" "${EXISTING}" --body-file "${RUNNER_TEMP}/saleor-divergence-backlog.md"
+            else
+              gh issue create --repo "${GITHUB_REPOSITORY}" --title "${TITLE}" --body-file "${RUNNER_TEMP}/saleor-divergence-backlog.md"
+            fi
+          elif [ -n "${EXISTING}" ]; then
+            gh issue close --repo "${GITHUB_REPOSITORY}" "${EXISTING}" --reason completed --comment "Auto-closed because every registered divergence is approved in the canonical registry and the inventory job passed on ${GITHUB_SHA}."
+          fi
