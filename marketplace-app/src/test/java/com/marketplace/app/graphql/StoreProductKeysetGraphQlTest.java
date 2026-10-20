@@ -2,6 +2,9 @@ package com.marketplace.app.graphql;
 
 import com.marketplace.catalog.Product;
 import com.marketplace.catalog.ProductRepository;
+import com.marketplace.identity.User;
+import com.marketplace.identity.UserRepository;
+import com.marketplace.identity.UserRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -67,6 +70,9 @@ class StoreProductKeysetGraphQlTest {
     private ProductRepository products;
 
     @Autowired
+    private UserRepository users;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @PersistenceContext
@@ -89,6 +95,7 @@ class StoreProductKeysetGraphQlTest {
                 .claim("roles", List.of("PROVIDER"))
                 .build();
         when(jwtDecoder.decode("test-token")).thenReturn(testJwt);
+        users.save(User.create(providerId.toString(), null, "Keyset test provider", UserRole.PROVIDER));
 
         String categoryCode = "keyset-" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         jdbcTemplate.update("""
