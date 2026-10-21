@@ -4,6 +4,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.domain.KeysetScrollPosition;
+import org.springframework.data.domain.Limit;
+import org.springframework.data.domain.Window;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -41,6 +44,25 @@ import org.springframework.data.repository.query.Param;
  * its own generated SQL, not to hand-written native statements). Release and commit stay JPQL twins — they
  * guard only the variant row's own counters, the same single-row
  * discipline their product twins follow.
+ *
+ * <p><b>Campaign packet campaign-b5-a (the Saleor product-variant read
+ * roots): the read mirror of the write path's own two-row gate.</b> The
+ * PUBLIC population's scrolls are NATIVE keyset SQL for the same reason
+ * the reserve is: the population gate spans TWO rows (the variant's
+ * ACTIVE shelf AND the parent product's ACTIVE shelf — Saleor's own
+ * public-variant population is the variants of published products), and
+ * a derived method cannot express the parent EXISTS over the plain
+ * {@code product_id} column. Each scroll carries its OWN keyset
+ * predicate (the expanded row-value comparison over the executed sort
+ * keys — deterministic with the {@code id} tiebreaker), states BOTH
+ * soft-delete filters explicitly, and fetches one row PAST the page so
+ * the service's {@code hasNext} is the database's own answer — REAL SQL
+ * forward-only keyset scrolling, never an offset. The ADMIN
+ * population's scrolls are the derived {@code Window}-returning methods
+ * (the {@code scrollStaffUsers} precedent): no gate at all — the
+ * include-unpublished population is every live row — so the framework's
+ * own keyset machinery executes with Hibernate's {@code @SoftDelete}
+ * filter applied automatically.</p>
  */
 public interface ProductVariantRepository extends JpaRepository<ProductVariant, UUID> {
 
@@ -57,6 +79,132 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
 
     /** Friendly precheck for the database-unique canonical typed option combination. */
     boolean existsByProductIdAndOptionCombinationKey(UUID productId, String optionCombinationKey);
+
+    // ------------------------------------------------------------------
+    // Campaign packet campaign-b5-a (the Saleor productVariants read
+    // root): the ADMIN population's derived keyset scrolls — the
+    // scrollStaffUsers precedent (Window-returning, KeysetScrollPosition/
+    // Limit-taking, the static ordering baked into the method name with
+    // the id tiebreaker). No population gate: the include-unpublished
+    // population is every live row, so Hibernate's own @SoftDelete filter
+    // and the framework's own keyset predicate carry the whole contract.
+    // ------------------------------------------------------------------
+
+    /** The ADMIN (include-unpublished) population's LAST_MODIFIED_AT-ascending keyset scroll. */
+    Window<ProductVariant> findByOrderByUpdatedAtAscIdAsc(KeysetScrollPosition position, Limit limit);
+
+    /** The ADMIN (include-unpublished) population's LAST_MODIFIED_AT-descending keyset scroll. */
+    Window<ProductVariant> findByOrderByUpdatedAtDescIdDesc(KeysetScrollPosition position, Limit limit);
+
+    /** The ADMIN (include-unpublished) population's ID-ascending keyset scroll (the unique key alone). */
+    Window<ProductVariant> findByOrderByIdAsc(KeysetScrollPosition position, Limit limit);
+
+    /** The ADMIN (include-unpublished) population's ID-descending keyset scroll (the unique key alone). */
+    Window<ProductVariant> findByOrderByIdDesc(KeysetScrollPosition position, Limit limit);
+
+    // ------------------------------------------------------------------
+    // Campaign packet campaign-b5-a: the PUBLIC population's native
+    // keyset scrolls — the two-row gate (variant ACTIVE AND parent
+    // product ACTIVE) the reservation write itself carries, stated as
+    // the parent EXISTS over the plain product_id column with BOTH
+    // soft-delete filters explicit (native SQL gets no @SoftDelete).
+    // The keyset predicate is the expanded row-value comparison over
+    // the executed sort keys; :lastUpdatedAt/:lastId bind NULL on the
+    // initial page so the predicate passes every row. Each method
+    // fetches :fetchCount rows (the service passes pageSize+1) — a full
+    // fetch is the database's own hasNext answer.
+    // ------------------------------------------------------------------
+
+    /** The public population's LAST_MODIFIED_AT-ascending keyset scroll (the two-row gate). */
+    @Query(value = """
+            SELECT v.* FROM product_variants v
+             WHERE v.is_deleted = FALSE
+               AND v.variant_status = 'ACTIVE'
+               AND EXISTS (SELECT 1
+                             FROM products p
+                            WHERE p.id = v.product_id
+                              AND p.product_status = 'ACTIVE'
+                              AND p.is_deleted = FALSE)
+               AND (:lastUpdatedAt IS NULL
+                    OR v.updated_at > :lastUpdatedAt
+                    OR (v.updated_at = :lastUpdatedAt AND v.id > :lastId))
+             ORDER BY v.updated_at ASC, v.id ASC
+             LIMIT :fetchCount
+            """, nativeQuery = true)
+    List<ProductVariant> scrollPublicByUpdatedAtAsc(
+            @Param("lastUpdatedAt") java.time.OffsetDateTime lastUpdatedAt,
+            @Param("lastId") UUID lastId,
+            @Param("fetchCount") int fetchCount);
+
+    /** The public population's LAST_MODIFIED_AT-descending keyset scroll (the two-row gate). */
+    @Query(value = """
+            SELECT v.* FROM product_variants v
+             WHERE v.is_deleted = FALSE
+               AND v.variant_status = 'ACTIVE'
+               AND EXISTS (SELECT 1
+                             FROM products p
+                            WHERE p.id = v.product_id
+                              AND p.product_status = 'ACTIVE'
+                              AND p.is_deleted = FALSE)
+               AND (:lastUpdatedAt IS NULL
+                    OR v.updated_at < :lastUpdatedAt
+                    OR (v.updated_at = :lastUpdatedAt AND v.id < :lastId))
+             ORDER BY v.updated_at DESC, v.id DESC
+             LIMIT :fetchCount
+            """, nativeQuery = true)
+    List<ProductVariant> scrollPublicByUpdatedAtDesc(
+            @Param("lastUpdatedAt") java.time.OffsetDateTime lastUpdatedAt,
+            @Param("lastId") UUID lastId,
+            @Param("fetchCount") int fetchCount);
+
+    /** The public population's ID-ascending keyset scroll (the two-row gate, the unique key alone). */
+    @Query(value = """
+            SELECT v.* FROM product_variants v
+             WHERE v.is_deleted = FALSE
+               AND v.variant_status = 'ACTIVE'
+               AND EXISTS (SELECT 1
+                             FROM products p
+                            WHERE p.id = v.product_id
+                              AND p.product_status = 'ACTIVE'
+                              AND p.is_deleted = FALSE)
+               AND (:lastId IS NULL OR v.id > :lastId)
+             ORDER BY v.id ASC
+             LIMIT :fetchCount
+            """, nativeQuery = true)
+    List<ProductVariant> scrollPublicByIdAsc(
+            @Param("lastId") UUID lastId,
+            @Param("fetchCount") int fetchCount);
+
+    /** The public population's ID-descending keyset scroll (the two-row gate, the unique key alone). */
+    @Query(value = """
+            SELECT v.* FROM product_variants v
+             WHERE v.is_deleted = FALSE
+               AND v.variant_status = 'ACTIVE'
+               AND EXISTS (SELECT 1
+                             FROM products p
+                            WHERE p.id = v.product_id
+                              AND p.product_status = 'ACTIVE'
+                              AND p.is_deleted = FALSE)
+               AND (:lastId IS NULL OR v.id < :lastId)
+             ORDER BY v.id DESC
+             LIMIT :fetchCount
+            """, nativeQuery = true)
+    List<ProductVariant> scrollPublicByIdDesc(
+            @Param("lastId") UUID lastId,
+            @Param("fetchCount") int fetchCount);
+
+    /** The public population's own count — the same two-row gate (the honest caller-scoped totalCount). */
+    @Query(value = """
+            SELECT COUNT(*) FROM product_variants v
+             WHERE v.is_deleted = FALSE
+               AND v.variant_status = 'ACTIVE'
+               AND EXISTS (SELECT 1
+                             FROM products p
+                            WHERE p.id = v.product_id
+                              AND p.product_status = 'ACTIVE'
+                              AND p.is_deleted = FALSE)
+            """, nativeQuery = true)
+    long countPublicPopulation();
 
     /**
      * Reserves {@code qty} units of an ACTIVE variant whose free stock
