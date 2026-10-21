@@ -3,7 +3,13 @@
 # to the existing marketplace-orders lifecycle owner.
 
 extend type Mutation {
+    orderConfirm(id: ID!): OrderConfirm
     orderCancel(id: ID!): OrderCancel
+}
+
+type OrderConfirm {
+    order: Order
+    orderErrors: [OrderError!]!
 }
 
 type OrderCancel {

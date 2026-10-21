@@ -37,6 +37,30 @@ public class OrderMutationDataFetcher {
     }
 
     /**
+     * Confirm a Saleor order through the existing order lifecycle. The native
+     * payments owner, not this transport adapter, remains authoritative for
+     * PSP settlement.
+     */
+    @DgsMutation(field = "orderConfirm")
+    public Map<String, Object> orderConfirm(@InputArgument String id) {
+        final UUID orderId;
+        try {
+            orderId = globalIdCodec.decode(id, OrderGraphQlMapper.ORDER_TYPE);
+        } catch (IllegalArgumentException exception) {
+            return payload(null, List.of(orderError("id", "Invalid global ID", "INVALID")));
+        }
+
+        try {
+            OrderView confirmed = orderCommandSpi.confirmAsAdmin(orderId);
+            return payload(mapper.toGraphQlOrder(confirmed), List.of());
+        } catch (ResourceNotFoundException exception) {
+            return payload(null, List.of(orderError("id", exception.getMessage(), "NOT_FOUND")));
+        } catch (ConflictException exception) {
+            return payload(null, List.of(orderError("id", exception.getMessage(), "INVALID")));
+        }
+    }
+
+    /**
      * Cancel an order by typed global ID. Malformed IDs fail closed. Expected
      * domain failures are returned as the Saleor orderErrors payload instead
      * of being reported as successful mutations.

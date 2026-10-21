@@ -291,6 +291,28 @@ class OrderDataFetcherDgsTest {
     }
 
     @Test
+    void orderConfirmUsesTheSaleorPayloadOverTheRealDgsBinding() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        UUID orderId = UUID.randomUUID();
+        Instant placedAt = Instant.parse("2026-10-20T12:00:00Z");
+        when(orderCommandSpi.confirmAsAdmin(orderId))
+                .thenReturn(new OrderView(orderId, placedAt, "CONFIRMED"));
+
+        String globalId = new SaleorGlobalIdCodec().encode("Order", orderId);
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath(
+                "mutation($id: ID!) { orderConfirm(id: $id) { order { id created status } orderErrors { field message code } } }",
+                "data.orderConfirm", Map.of("id", globalId));
+
+        assertThat(payload.get("orderErrors")).isEqualTo(List.of());
+        assertThat(payload.get("order")).isInstanceOf(Map.class);
+        Map<?, ?> order = (Map<?, ?>) payload.get("order");
+        assertThat(order.get("id")).isEqualTo(globalId);
+        assertThat(order.get("created")).isEqualTo("2026-10-20T12:00:00Z");
+        assertThat(order.get("status")).isEqualTo("UNFULFILLED");
+        verify(orderCommandSpi).confirmAsAdmin(orderId);
+    }
+
+    @Test
     void sortMappingAndTheDeprecatedAliasReachTheOwningUseCase() {
         authenticateAs("dgs-admin-subject", "ADMIN");
         ArgumentCaptor<OrderSort> sortCaptor = ArgumentCaptor.forClass(OrderSort.class);

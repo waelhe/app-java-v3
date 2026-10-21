@@ -21,4 +21,7 @@ public interface OrderCommandSpi {
      * @return the cancelled order's bounded read projection
      */
     OrderView cancelAsAdmin(UUID orderId);
+
+    /** Confirm a placed order through the same guarded lifecycle owner. */
+    OrderView confirmAsAdmin(UUID orderId);
 }

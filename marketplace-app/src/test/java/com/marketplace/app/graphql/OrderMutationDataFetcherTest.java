@@ -39,6 +39,25 @@ class OrderMutationDataFetcherTest {
     }
 
     @Test
+    void confirmationDelegatesToOwnerAndReturnsReadBackWithEmptyErrors() {
+        UUID id = UUID.randomUUID();
+        Instant placedAt = Instant.parse("2026-10-20T12:00:00Z");
+        OrderView confirmed = new OrderView(id, placedAt, "CONFIRMED");
+        Order graphQlOrder = org.mockito.Mockito.mock(Order.class);
+        when(orderCommandSpi.confirmAsAdmin(id)).thenReturn(confirmed);
+        when(mapper.toGraphQlOrder(any(OrderView.class))).thenReturn(graphQlOrder);
+
+        Map<String, Object> result = fetcher.orderConfirm(codec.encode("Order", id));
+
+        assertThat(result).containsEntry("order", graphQlOrder);
+        assertThat((List<?>) result.get("orderErrors")).isEmpty();
+        ArgumentCaptor<OrderView> view = ArgumentCaptor.forClass(OrderView.class);
+        verify(mapper).toGraphQlOrder(view.capture());
+        assertThat(view.getValue()).isEqualTo(confirmed);
+        verify(orderCommandSpi).confirmAsAdmin(id);
+    }
+
+    @Test
     void cancellationDelegatesToOwnerAndReturnsReadBackWithEmptyErrors() {
         UUID id = UUID.randomUUID();
         Instant placedAt = Instant.parse("2026-10-20T12:00:00Z");
@@ -69,6 +88,21 @@ class OrderMutationDataFetcherTest {
         assertThat(((Map<?, ?>) errors.get(0)).get("field")).isEqualTo("id");
         assertThat(((Map<?, ?>) errors.get(0)).get("code")).isEqualTo("INVALID");
         verifyNoInteractions(orderCommandSpi, mapper);
+    }
+
+    @Test
+    void illegalConfirmationReturnsOrderErrorInsteadOfFalseSuccess() {
+        UUID id = UUID.randomUUID();
+        when(orderCommandSpi.confirmAsAdmin(id))
+                .thenThrow(new ConflictException("Order cannot be confirmed in its current state"));
+
+        Map<String, Object> result = fetcher.orderConfirm(codec.encode("Order", id));
+
+        assertThat(result.get("order")).isNull();
+        List<?> errors = (List<?>) result.get("orderErrors");
+        assertThat(errors).hasSize(1);
+        assertThat(((Map<?, ?>) errors.get(0)).get("code")).isEqualTo("INVALID");
+        verify(orderCommandSpi).confirmAsAdmin(id);
     }
 
     @Test

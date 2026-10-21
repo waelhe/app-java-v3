@@ -451,7 +451,8 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi {
     @Transactional
     @Observed(name = "order.confirm")
     public Order confirm(UUID orderId) {
-        Order order = requireOrder(orderId);
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
         requireStatus(order, OrderStatus.PLACED, "confirm");
         order.confirm(Instant.now());
         Order saved = orderRepository.save(order);
@@ -650,6 +651,20 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi {
     }
 
     /**
+     * Saleor P4 order-confirm management command. Confirmation remains the
+     * orders owner's existing state transition and event publication; this
+     * adapter does not add a second payment-capture path.
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    @Observed(name = "order.admin.confirm")
+    public OrderView confirmAsAdmin(UUID orderId) {
+        Order confirmed = confirm(orderId);
+        return new OrderView(confirmed.getId(), confirmed.getPlacedAt(), confirmed.getStatus().name());
+    }
+
+    /**
      * Saleor P4 order-management mutation backed by the existing domain
      * state machine. ADMIN authorization belongs at this service boundary.
      * Cancellation locks and transitions the order, releases its stock
@@ -696,14 +711,13 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi {
      */
     @Transactional
     public void confirmFromPayment(java.util.UUID paymentIntentId) {
+        // Serialize concurrent/delivered-again payment completion events on
+        // the authoritative order row. A redelivery that observes CONFIRMED
+        // after the lock is acquired is a no-op, not a stale-state conflict.
         orderRepository.findByPaymentIntentId(paymentIntentId)
-                .filter(order -> order.getStatus() == OrderStatus.PLACED)
-                .ifPresentOrElse(order -> confirm(order.getId()),
-                        () -> {
-                            // The honest no-op: the order moved past PLACED
-                            // (or carries no such intent) — the machine's
-                            // current state is already the newer truth.
-                        });
+                .ifPresent(order -> orderRepository.findByIdForUpdate(order.getId())
+                        .filter(locked -> locked.getStatus() == OrderStatus.PLACED)
+                        .ifPresent(locked -> confirm(locked.getId())));
     }
 
     /**

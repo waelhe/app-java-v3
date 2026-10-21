@@ -70,6 +70,8 @@ class OrdersServiceAuthorizationTest {
     void cancelAsAdminRejectsNonAdminBeforeAnyDomainSideEffect() {
         assertThatThrownBy(() -> orderCommandSpi.cancelAsAdmin(UUID.randomUUID()))
                 .isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> orderCommandSpi.confirmAsAdmin(UUID.randomUUID()))
+                .isInstanceOf(AccessDeniedException.class);
 
         verifyNoInteractions(
                 cartRepository, cartItemRepository, orderRepository, orderItemRepository,
