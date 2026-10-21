@@ -172,7 +172,7 @@ class UserGraphQlIntegrationTest {
                 .path("me.dateJoined").entity(String.class)
                 .satisfies(joined -> assertThat(joined).isNotBlank())
                 .path("me.userPermissions[*].code").entityList(String.class)
-                .containsExactly("MANAGE_ORDERS", "MANAGE_STAFF", "MANAGE_USERS");
+                .containsExactly("MANAGE_USERS", "MANAGE_STAFF", "MANAGE_ORDERS");
     }
 
     @Test
