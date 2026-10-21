@@ -41,11 +41,24 @@ No Flyway migration was needed because the change adds no persisted state.
 
 ## Root accounting
 
-The assignment inventory was parsed from the committed task file: 159 initially `NOT_STARTED` roots and 22 `BLOCKED_BY_DECISION` roots. The per-root file is `docs/agent-handoffs/agent-3-roots.csv` and deliberately does not edit the central inventory.
+The frozen assignment baseline remains 159 initially `NOT_STARTED` roots and 22 `BLOCKED_BY_DECISION` roots. The per-agent file `docs/agent-handoffs/agent-3-roots.csv` preserves `assignment_status_at_frozen_base` and does not edit the central inventory.
 
-- Implemented in code with tests added (not run): `orderCancel`, `orderConfirm`, and `orderBulkCancel` — 3 roots.
-- Other assigned `NOT_STARTED` roots remain unimplemented and explicitly reported as such.
-- The 22 roots already `BLOCKED_BY_DECISION` remain blocked with an evidence-based disposition recorded in the CSV. No placeholder resolvers or false-success behavior were added.
+- Code and tests added (not run): `orderCancel`, `orderConfirm`, and `orderBulkCancel` — 3 roots. These are not release-verified.
+- Based on the repository's actual owners and contracts, 145 roots originally marked `NOT_STARTED` were reclassified in this per-agent handoff as `BLOCKED_BY_DECISION` with root-specific evidence. This is not a claim that those roots are implemented; it prevents absent owners from being mistaken for merely unfinished resolvers.
+- 11 roots remain `NOT_STARTED`: `payment`, `payments`, `paymentRefund`, `paymentInitialize`, `orderConfirmed`, `orderPaid`, `orderFullyPaid`, `orderRefunded`, `orderFullyRefunded`, `orderFulfilled`, and `orderCancelled`. Their existing service/domain event sources are recorded, but this execution did not add their Saleor GraphQL projections/subscription adapters.
+- Resulting per-agent accounting: 167 `BLOCKED_BY_DECISION` (22 baseline + 145 evidence-based reclassifications), 11 `NOT_STARTED`, and 3 `IMPLEMENTED_CODE_AND_TESTS_ADDED_NOT_RUN`, across 181 rows (P4: 102 blocked, 4 not started, 3 coded-not-run; P5: 46 blocked; P6: 19 blocked, 7 not started). These are dispositions in this agent handoff only, not changes to the canonical 458-root inventory.
+- Important behavioral parity gap: pinned Saleor 3.23.43 `orderConfirm` captures an authorized/capturable payment when one exists ([upstream implementation](https://github.com/saleor/saleor/blob/3.23.43/saleor/graphql/order/mutations/order_confirm.py)). The current implementation only transitions native `PLACED → CONFIRMED`; `PaymentIntentStatus` has no `AUTHORIZED` state and `OrderPaymentPort` exposes intent creation, not capture. Therefore this is only a native lifecycle adaptation, not full Saleor behavior. The correct follow-up must add an explicit Payments-owned capture/transaction capability and integration tests; this PR does not invent a second PSP path.
+- The 22 roots already `BLOCKED_BY_DECISION` remain blocked. No placeholder resolvers or false-success behavior were added.
+
+## Evidence-based owner blockers (per-agent disposition)
+
+The CSV records root-specific reasons for the absent contracts:
+- Checkout roots need a persisted checkout aggregate/token/address and a resumable checkout-to-order lifecycle; the current cart is not a Saleor Checkout.
+- Transaction/capture/void/tokenization roots need a Payments-owned transaction/event model and authorized-payment capability. PaymentIntent and Payment records are not interchangeable with Saleor Transaction/Payment.
+- Shipping configuration, invoice, and post-placement order-edit roots need their real owner contracts plus atomic stock/money policy.
+- Fulfillment and order-note mutations need respectively a line-aware fulfillment lifecycle and append-only OrderEvent/note history; delivery legs and generic logs are not substitutes.
+- Export, outbound webhook, metadata, GraphQL file upload, app/plugin/extension roots require their corresponding durable owner models.
+- Subscription roots with no matching domain publisher are blocked; native events that exist remain not started until authenticated GraphQL Subscription transport, scope, ordering/replay and exact Saleor payload adapters are implemented. The central transport configuration and central divergence registry were not changed in this PR.
 
 ## Why other roots were not substituted with superficially similar operations
 
