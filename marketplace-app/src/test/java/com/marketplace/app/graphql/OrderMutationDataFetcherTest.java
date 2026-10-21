@@ -1,8 +1,7 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.app.graphql.generated.types.Order;
-import com.marketplace.orders.OrderStatus;
-import com.marketplace.orders.OrdersService;
+import com.marketplace.orders.spi.OrderCommandSpi;
 import com.marketplace.orders.spi.OrderView;
 import com.marketplace.shared.api.ConflictException;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,7 +26,7 @@ import static org.mockito.Mockito.when;
 class OrderMutationDataFetcherTest {
 
     @Mock
-    private OrdersService ordersService;
+    private OrderCommandSpi orderCommandSpi;
     @Mock
     private OrderGraphQlMapper mapper;
 
@@ -36,20 +35,16 @@ class OrderMutationDataFetcherTest {
 
     @BeforeEach
     void setUp() {
-        fetcher = new OrderMutationDataFetcher(ordersService, mapper, codec);
+        fetcher = new OrderMutationDataFetcher(orderCommandSpi, mapper, codec);
     }
 
     @Test
     void cancellationDelegatesToOwnerAndReturnsReadBackWithEmptyErrors() {
         UUID id = UUID.randomUUID();
         Instant placedAt = Instant.parse("2026-10-20T12:00:00Z");
-        com.marketplace.orders.Order cancelled = org.mockito.Mockito.mock(
-                com.marketplace.orders.Order.class);
+        OrderView cancelled = new OrderView(id, placedAt, "CANCELLED");
         Order graphQlOrder = org.mockito.Mockito.mock(Order.class);
-        when(cancelled.getId()).thenReturn(id);
-        when(cancelled.getPlacedAt()).thenReturn(placedAt);
-        when(cancelled.getStatus()).thenReturn(OrderStatus.CANCELLED);
-        when(ordersService.cancelAsAdmin(id)).thenReturn(cancelled);
+        when(orderCommandSpi.cancelAsAdmin(id)).thenReturn(cancelled);
         when(mapper.toGraphQlOrder(any(OrderView.class))).thenReturn(graphQlOrder);
 
         Map<String, Object> result = fetcher.orderCancel(codec.encode("Order", id));
@@ -58,8 +53,8 @@ class OrderMutationDataFetcherTest {
         assertThat((List<?>) result.get("orderErrors")).isEmpty();
         ArgumentCaptor<OrderView> view = ArgumentCaptor.forClass(OrderView.class);
         verify(mapper).toGraphQlOrder(view.capture());
-        assertThat(view.getValue()).isEqualTo(new OrderView(id, placedAt, "CANCELLED"));
-        verify(ordersService).cancelAsAdmin(id);
+        assertThat(view.getValue()).isEqualTo(cancelled);
+        verify(orderCommandSpi).cancelAsAdmin(id);
     }
 
     @Test
@@ -73,13 +68,13 @@ class OrderMutationDataFetcherTest {
         assertThat(errors).hasSize(1);
         assertThat(((Map<?, ?>) errors.get(0)).get("field")).isEqualTo("id");
         assertThat(((Map<?, ?>) errors.get(0)).get("code")).isEqualTo("INVALID");
-        verifyNoInteractions(ordersService, mapper);
+        verifyNoInteractions(orderCommandSpi, mapper);
     }
 
     @Test
     void illegalCancellationReturnsOrderErrorInsteadOfFalseSuccess() {
         UUID id = UUID.randomUUID();
-        when(ordersService.cancelAsAdmin(id))
+        when(orderCommandSpi.cancelAsAdmin(id))
                 .thenThrow(new ConflictException("Order cannot be cancelled in its current state"));
 
         Map<String, Object> result = fetcher.orderCancel(codec.encode("Order", id));
@@ -88,6 +83,6 @@ class OrderMutationDataFetcherTest {
         List<?> errors = (List<?>) result.get("orderErrors");
         assertThat(errors).hasSize(1);
         assertThat(((Map<?, ?>) errors.get(0)).get("code")).isEqualTo("CANNOT_CANCEL_ORDER");
-        verify(ordersService).cancelAsAdmin(id);
+        verify(orderCommandSpi).cancelAsAdmin(id);
     }
 }

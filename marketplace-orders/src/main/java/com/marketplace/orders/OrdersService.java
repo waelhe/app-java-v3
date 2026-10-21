@@ -1,5 +1,7 @@
 package com.marketplace.orders;
 
+import com.marketplace.orders.spi.OrderCommandSpi;
+import com.marketplace.orders.spi.OrderView;
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.CommercialPricingPort;
 import com.marketplace.shared.api.ConflictException;
@@ -74,7 +76,7 @@ import java.util.UUID;
  * the cart tombstones once, and PLACED still publishes nothing.
  */
 @Service
-public class OrdersService implements OrderDeliveryPort {
+public class OrdersService implements OrderDeliveryPort, OrderCommandSpi {
 
     private final CartRepository cartRepository;
     private final CartItemRepository cartItemRepository;
@@ -654,11 +656,13 @@ public class OrdersService implements OrderDeliveryPort {
      * reservation, and publishes OrderCancelledEvent so the existing
      * payments owner settles its intent. No PSP or ledger logic is duplicated.
      */
+    @Override
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     @Observed(name = "order.admin.cancel")
-    public Order cancelAsAdmin(UUID orderId) {
-        return cancel(orderId, "Cancelled through the order-management API");
+    public OrderView cancelAsAdmin(UUID orderId) {
+        Order cancelled = cancel(orderId, "Cancelled through the order-management API");
+        return new OrderView(cancelled.getId(), cancelled.getPlacedAt(), cancelled.getStatus().name());
     }
 
     /**

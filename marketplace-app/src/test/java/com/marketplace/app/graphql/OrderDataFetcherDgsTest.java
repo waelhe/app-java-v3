@@ -137,7 +137,7 @@ class OrderDataFetcherDgsTest {
     private IdentitySpi identitySpi;
 
     @MockitoBean
-    private com.marketplace.orders.OrdersService ordersService;
+    private com.marketplace.orders.spi.OrderCommandSpi orderCommandSpi;
 
     @AfterEach
     void clearSecurityContext() {
@@ -273,12 +273,8 @@ class OrderDataFetcherDgsTest {
         authenticateAs("dgs-admin-subject", "ADMIN");
         UUID orderId = UUID.randomUUID();
         Instant placedAt = Instant.parse("2026-10-20T12:00:00Z");
-        com.marketplace.orders.Order cancelled = org.mockito.Mockito.mock(
-                com.marketplace.orders.Order.class);
-        when(cancelled.getId()).thenReturn(orderId);
-        when(cancelled.getPlacedAt()).thenReturn(placedAt);
-        when(cancelled.getStatus()).thenReturn(com.marketplace.orders.OrderStatus.CANCELLED);
-        when(ordersService.cancelAsAdmin(orderId)).thenReturn(cancelled);
+        OrderView cancelled = new OrderView(orderId, placedAt, "CANCELLED");
+        when(orderCommandSpi.cancelAsAdmin(orderId)).thenReturn(cancelled);
 
         String globalId = new SaleorGlobalIdCodec().encode("Order", orderId);
         Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath(
@@ -291,7 +287,7 @@ class OrderDataFetcherDgsTest {
         assertThat(order.get("id")).isEqualTo(globalId);
         assertThat(order.get("created")).isEqualTo("2026-10-20T12:00:00Z");
         assertThat(order.get("status")).isEqualTo("CANCELED");
-        verify(ordersService).cancelAsAdmin(orderId);
+        verify(orderCommandSpi).cancelAsAdmin(orderId);
     }
 
     @Test

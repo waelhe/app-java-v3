@@ -106,7 +106,7 @@ class HomeDgsDataFetcherTest {
 
     /** The journey's fields read the principal from the (test-populated) security context. */
     @MockitoBean
-    private com.marketplace.orders.OrdersService ordersService;
+    private com.marketplace.orders.spi.OrderCommandSpi orderCommandSpi;
 
     @AfterEach
     void clearSecurityContext() {

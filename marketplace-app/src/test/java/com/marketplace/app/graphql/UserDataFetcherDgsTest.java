@@ -126,7 +126,7 @@ class UserDataFetcherDgsTest {
     private CategoryReadSpi categoryReadSpi;
 
     @MockitoBean
-    private com.marketplace.orders.OrdersService ordersService;
+    private com.marketplace.orders.spi.OrderCommandSpi orderCommandSpi;
 
     @AfterEach
     void clearSecurityContext() {

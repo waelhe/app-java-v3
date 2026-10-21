@@ -14,8 +14,9 @@
 
 ### Saleor `orderCancel` — code and tests added; execution not verified
 
-Files changed by the implementation commit:
+Files changed in this execution (implementation and test-wiring commits):
 - `marketplace-orders/src/main/java/com/marketplace/orders/OrdersService.java`
+- `marketplace-orders/src/main/java/com/marketplace/orders/spi/OrderCommandSpi.java`
 - `marketplace-app/src/main/java/com/marketplace/app/graphql/OrderMutationDataFetcher.java`
 - `marketplace-app/src/main/resources/graphql/agent-3-orders-events.graphqls`
 - `marketplace-app/src/test/java/com/marketplace/app/graphql/OrderMutationDataFetcherTest.java`
@@ -23,9 +24,9 @@ Files changed by the implementation commit:
 
 The additive SDL exposes Saleor-shaped `orderCancel(id: ID!)`, its payload, and the pinned order-error vocabulary without editing the central `schema.graphqls`. The DGS adapter strictly decodes the typed Order global ID and returns the order read-back on success. Malformed/mistyped IDs return `INVALID`; missing orders return `NOT_FOUND`; guarded lifecycle conflicts return `CANNOT_CANCEL_ORDER`. Authorization failures are not swallowed as successful mutations.
 
-The adapter delegates to `OrdersService.cancelAsAdmin`, which applies service-boundary `@PreAuthorize("hasRole('ADMIN')")` and calls the existing state-machine transition. That existing owner locks and transitions the order, releases a reservation as appropriate, and publishes `OrderCancelledEvent`; the payments listener remains responsible for payment cancellation/refund. No second payment/ledger state machine was added.
+The adapter calls the owning `OrderCommandSpi`, which exposes a bounded `OrderView` rather than a persistence entity across the Modulith boundary. `OrdersService` implements this SPI; its `cancelAsAdmin` method applies service-boundary `@PreAuthorize("hasRole('ADMIN')")` and calls the existing state-machine transition. That existing owner locks and transitions the order, releases a reservation as appropriate, and publishes `OrderCancelledEvent`; the payments listener remains responsible for payment cancellation/refund. No second payment/ledger state machine was added.
 
-The focused JUnit/Mockito test class covers: successful cancellation/read-back; rejecting a Product-typed ID without invoking the owner; and returning a domain error for an illegal transition. A second DGS test exercises the actual GraphQL SDL and argument/payload binding. Because the DGS test slices component-scan the whole GraphQL package, the existing five package-slice tests were also updated to provide the new OrdersService bean as a mock. These tests were **added but not run** in this remote-only execution. The code should not be described as verified until an execution on the exact resulting SHA is recorded.
+The focused JUnit/Mockito test class covers: successful cancellation/read-back; rejecting a Product-typed ID without invoking the owner; and returning a domain error for an illegal transition. A DGS test exercises the actual GraphQL SDL and argument/payload binding. Because the DGS test slices component-scan the whole GraphQL package, the existing five package-slice tests were updated to mock `OrderCommandSpi`; the new fetcher does not inject the concrete service or expose the JPA entity. These tests were **added but not run** in this remote-only execution. The code should not be described as verified until an execution on the exact resulting SHA is recorded.
 
 No Flyway migration was needed because the change adds no persisted state.
 

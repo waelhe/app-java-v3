@@ -1,7 +1,7 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.app.graphql.generated.types.Order;
-import com.marketplace.orders.OrdersService;
+import com.marketplace.orders.spi.OrderCommandSpi;
 import com.marketplace.orders.spi.OrderView;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
@@ -24,14 +24,14 @@ import java.util.UUID;
 @DgsComponent
 public class OrderMutationDataFetcher {
 
-    private final OrdersService ordersService;
+    private final OrderCommandSpi orderCommandSpi;
     private final OrderGraphQlMapper mapper;
     private final SaleorGlobalIdCodec globalIdCodec;
 
-    public OrderMutationDataFetcher(OrdersService ordersService,
+    public OrderMutationDataFetcher(OrderCommandSpi orderCommandSpi,
                                     OrderGraphQlMapper mapper,
                                     SaleorGlobalIdCodec globalIdCodec) {
-        this.ordersService = ordersService;
+        this.orderCommandSpi = orderCommandSpi;
         this.mapper = mapper;
         this.globalIdCodec = globalIdCodec;
     }
@@ -51,10 +51,8 @@ public class OrderMutationDataFetcher {
         }
 
         try {
-            com.marketplace.orders.Order cancelled = ordersService.cancelAsAdmin(orderId);
-            OrderView view = new OrderView(
-                    cancelled.getId(), cancelled.getPlacedAt(), cancelled.getStatus().name());
-            return payload(mapper.toGraphQlOrder(view), List.of());
+            OrderView cancelled = orderCommandSpi.cancelAsAdmin(orderId);
+            return payload(mapper.toGraphQlOrder(cancelled), List.of());
         } catch (ResourceNotFoundException exception) {
             return payload(null, List.of(orderError("id", exception.getMessage(), "NOT_FOUND")));
         } catch (ConflictException exception) {
