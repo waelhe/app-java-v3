@@ -137,6 +137,11 @@ class PostDetailDgsDataFetcherTest {
 
     @MockitoBean
     private com.marketplace.catalog.spi.ProductVariantReadSpi productVariantReadSpi;
+    // The voucher mutation roots' owning write seam (agent-2 packet) —
+    // the package slice wires every fetcher, so this seam gets its mock
+    // (the b5-a sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.pricing.spi.VoucherWriteSpi voucherWriteSpi;
 
     /** The journey's fields read the principal from the (test-populated) security context. */
     @AfterEach
