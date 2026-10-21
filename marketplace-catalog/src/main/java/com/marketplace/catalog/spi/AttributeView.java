@@ -1,5 +1,6 @@
 package com.marketplace.catalog.spi;
 
+import com.marketplace.catalog.CatalogAttributeType;
 import java.util.UUID;
 
 /**
