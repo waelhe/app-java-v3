@@ -94,16 +94,15 @@ class UserGraphQlIntegrationTest {
     @LocalServerPort
     private int port;
 
-    private HttpGraphQlTester adminTester;
-    private HttpGraphQlTester providerTester;
-    private HttpGraphQlTester consumerTester;
-
+    /**
+     * The JWT mock is stubbed ONCE per test — the decoder's {@code decode}
+     * stubbing is global to the mock, so creating multiple testers up front
+     * would leave only the LAST role's token decoding (measured: every
+     * request answered as the consumer). Each test builds the tester whose
+     * subject it acts as, immediately before its requests.
+     */
     @BeforeEach
     void setUp() {
-        adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
-        providerTester = testerFor(PROVIDER_SUBJECT, "PROVIDER");
-        consumerTester = testerFor(CONSUMER_SUBJECT, "CONSUMER");
-
         // The seeded roster: an ADMIN (the caller's own row), a PROVIDER, a
         // CONSUMER whose email is deliberately absent (the honest nullable
         // email divergence), and one extra roster row for pagination. The
@@ -159,6 +158,7 @@ class UserGraphQlIntegrationTest {
 
     @Test
     void adminMeReadsOwnProfileWithTypedGlobalIdAndPermissionMatrix() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
         adminTester.document("""
                         query { me { id email isStaff isActive dateJoined userPermissions { code name } } }
                         """)
@@ -177,6 +177,7 @@ class UserGraphQlIntegrationTest {
 
     @Test
     void providerMeAnswersOwnProfileWithTheOwnershipScopedPermission() {
+        HttpGraphQlTester providerTester = testerFor(PROVIDER_SUBJECT, "PROVIDER");
         providerTester.document("""
                         query { me { id email isStaff userPermissions { code } } }
                         """)
@@ -191,6 +192,7 @@ class UserGraphQlIntegrationTest {
 
     @Test
     void consumerMeAnswersTheHonestAbsenceOfAnEmailAndNoPermissions() {
+        HttpGraphQlTester consumerTester = testerFor(CONSUMER_SUBJECT, "CONSUMER");
         consumerTester.document("""
                         query { me { id email isStaff userPermissions { code } } }
                         """)
@@ -218,6 +220,7 @@ class UserGraphQlIntegrationTest {
 
     @Test
     void adminUserReadsBackByTypedGlobalId() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
         adminTester.document("""
                         query($id: ID!) { user(id: $id) { id email isStaff isActive userPermissions { code } } }
                         """)
@@ -234,6 +237,7 @@ class UserGraphQlIntegrationTest {
 
     @Test
     void adminUserReadsBackByEmail() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
         adminTester.document("""
                         query($email: String) { user(email: $email) { id isStaff } }
                         """)
@@ -246,6 +250,7 @@ class UserGraphQlIntegrationTest {
 
     @Test
     void adminUserReadsBackByExternalReferenceWhichIsTheOidcSubject() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
         adminTester.document("""
                         query($ref: String) { user(externalReference: $ref) { id email } }
                         """)
@@ -259,6 +264,7 @@ class UserGraphQlIntegrationTest {
 
     @Test
     void guessedButWellFormedGlobalIdAnswersNullNotAnError() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
         UUID guessed = UUID.randomUUID();
         adminTester.document("""
                         query($id: ID!) { user(id: $id) { id email } }
@@ -271,6 +277,7 @@ class UserGraphQlIntegrationTest {
 
     @Test
     void malformedGlobalIdAnswersTheClassifiedValidationError() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
         adminTester.document("""
                         query($id: ID!) { user(id: $id) { id } }
                         """)
@@ -288,6 +295,7 @@ class UserGraphQlIntegrationTest {
 
     @Test
     void rawUuidWhereAGlobalIdIsExpectedAnswersTheClassifiedValidationError() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
         adminTester.document("""
                         query($id: ID!) { user(id: $id) { id } }
                         """)
@@ -304,6 +312,7 @@ class UserGraphQlIntegrationTest {
 
     @Test
     void mistypedGlobalIdForAnotherGraphqlTypeIsRejected() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
         String productTaggedId = java.util.Base64.getEncoder()
                 .encodeToString(("Product:" + PROVIDER_ROW_ID).getBytes(java.nio.charset.StandardCharsets.UTF_8));
         adminTester.document("""
@@ -321,6 +330,7 @@ class UserGraphQlIntegrationTest {
 
     @Test
     void userWithoutArgumentsAnswersTheClassifiedValidationError() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
         adminTester.document("query { user { id } }")
                 .execute()
                 .errors()
@@ -333,6 +343,7 @@ class UserGraphQlIntegrationTest {
 
     @Test
     void userWithTwoArgumentsAnswersTheClassifiedValidationError() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
         adminTester.document("""
                         query($id: ID!) { user(id: $id, email: "p1-admin@example.com") { id } }
                         """)
@@ -348,6 +359,7 @@ class UserGraphQlIntegrationTest {
 
     @Test
     void providerCallerIsDeniedByTheOwningUseCaseWithTheAuthzTaxonomy() {
+        HttpGraphQlTester providerTester = testerFor(PROVIDER_SUBJECT, "PROVIDER");
         providerTester.document("""
                         query($id: ID!) { user(id: $id) { id email } }
                         """)
@@ -364,6 +376,7 @@ class UserGraphQlIntegrationTest {
 
     @Test
     void consumerCallerIsDeniedByTheOwningUseCaseWithTheAuthzTaxonomy() {
+        HttpGraphQlTester consumerTester = testerFor(CONSUMER_SUBJECT, "CONSUMER");
         consumerTester.document("""
                         query($email: String) { user(email: $email) { id } }
                         """)
@@ -383,6 +396,7 @@ class UserGraphQlIntegrationTest {
 
     @Test
     void adminStaffUsersAnswersTheSaleorConnectionEnvelopeWithKeysetCursors() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
         var firstPage = adminTester.document("""
                         query { staffUsers(first: 2) {
                             edges { node { id email isStaff } cursor }
@@ -424,6 +438,7 @@ class UserGraphQlIntegrationTest {
 
     @Test
     void staffUsersExecutesTheOwningSortFields() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
         adminTester.document("""
                         query { staffUsers(first: 2, sortBy: { field: CREATED_AT, direction: DESC }) {
                             edges { node { email dateJoined } }
@@ -436,6 +451,7 @@ class UserGraphQlIntegrationTest {
 
     @Test
     void staffUsersFilterAnswersTheExplicitNotImplementedError() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
         adminTester.document("""
                         query { staffUsers(first: 2, filter: { search: "p1" }) { totalCount } }
                         """)
@@ -450,6 +466,7 @@ class UserGraphQlIntegrationTest {
 
     @Test
     void staffUsersBackwardPaginationAnswersTheExplicitForwardOnlyError() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
         adminTester.document("query { staffUsers(last: 2) { totalCount } }")
                 .execute()
                 .errors()
@@ -462,6 +479,7 @@ class UserGraphQlIntegrationTest {
 
     @Test
     void staffUsersUnownedSortFieldAnswersTheExplicitNotImplementedError() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
         adminTester.document("""
                         query { staffUsers(first: 2, sortBy: { field: FIRST_NAME, direction: ASC }) { totalCount } }
                         """)
@@ -476,6 +494,7 @@ class UserGraphQlIntegrationTest {
 
     @Test
     void nonPositiveFirstAnswersTheEmptyPage() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
         adminTester.document("""
                         query { staffUsers(first: 0) { edges { node { id } } totalCount pageInfo { hasNextPage } } }
                         """)
@@ -488,6 +507,7 @@ class UserGraphQlIntegrationTest {
 
     @Test
     void providerCallerIsDeniedTheStaffListByTheOwningUseCase() {
+        HttpGraphQlTester providerTester = testerFor(PROVIDER_SUBJECT, "PROVIDER");
         providerTester.document("query { staffUsers(first: 1) { totalCount } }")
                 .execute()
                 .errors()
@@ -500,6 +520,7 @@ class UserGraphQlIntegrationTest {
 
     @Test
     void cursorFromAnotherSortAnswersTheClassifiedValidationError() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
         // A cursor emitted by a different sort (createdAt) is not valid for
         // the default email sort — the keyset gate rejects the mismatch.
         List<String> createdAtCursorCapture = new java.util.ArrayList<>();
