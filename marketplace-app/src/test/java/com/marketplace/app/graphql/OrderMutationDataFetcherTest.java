@@ -80,6 +80,18 @@ class OrderMutationDataFetcherTest {
     }
 
     @Test
+    void emptyBulkCancellationStillDelegatesToAuthorizedOwner() {
+        when(orderCommandSpi.bulkCancelAsAdmin(List.of()))
+                .thenReturn(new com.marketplace.orders.spi.OrderBulkCancelResult(0, List.of()));
+
+        Map<String, Object> result = fetcher.orderBulkCancel(List.of());
+
+        assertThat(result).containsEntry("count", 0);
+        assertThat((List<?>) result.get("orderErrors")).isEmpty();
+        verify(orderCommandSpi).bulkCancelAsAdmin(List.of());
+    }
+
+    @Test
     void bulkCancellationRejectsMalformedIdsBeforeCallingOwner() {
         Map<String, Object> result = fetcher.orderBulkCancel(List.of(codec.encode("Order", UUID.randomUUID()), "bad-id"));
 
