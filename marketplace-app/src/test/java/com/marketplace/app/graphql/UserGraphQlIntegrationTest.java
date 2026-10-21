@@ -49,7 +49,18 @@ import static org.mockito.Mockito.when;
  * declared-but-unexecuted Saleor arguments answering explicit classified
  * errors instead of silent no-ops).</p>
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+/**
+ * The real migrated schema, not Hibernate's ddl-auto approximation: the
+ * roster's keyset SQL and the seeded rows run against the Flyway V1..V247
+ * schema (the inline override the pristine-database house tests use —
+ * Hibernate's create-drop DDL omits the users.is_deleted column default
+ * the migrations own, which the plain test profile would surface as a
+ * phantom NOT NULL violation on every insert).
+ */
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
+        "spring.flyway.enabled=true",
+        "spring.jpa.hibernate.ddl-auto=none",
+})
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
 class UserGraphQlIntegrationTest {
