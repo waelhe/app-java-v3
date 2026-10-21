@@ -290,6 +290,55 @@ type Query {
     """ID of the product type."""
     id: ID!
     ): ProductType
+
+    # === Campaign packet campaign-b3-a1b (integrated by A0 — the SDL steward) ===
+    # "List of the shop's customers. This list includes all users who
+    # registered through the accountRegister mutation." — the Saleor
+    # customer list with its countable-connection envelope (edges/
+    # pageInfo/totalCount, byte-shape from the pinned schema). On this
+    # platform the population is the single identity store's
+    # customer-account slice (the CONSUMER primary role — the closed
+    # vocabulary's customer/consumer concept), the complementary
+    # population of the SAME store the staffUsers roster reads.
+    # FORWARD-ONLY keyset paging on this first slice: first/after ride
+    # the platform's ScrollPosition keyset contract (the staffUsers/
+    # permissionGroups precedent — cursors identify a row's sort key
+    # (email|createdAt|updatedAt, id), never an absolute offset);
+    # before/last stay declared (the exact Saleor argument shape) but
+    # answer an explicit classified error until a backward scroll
+    # exists — a recorded, tested boundary, not a silent no-op. filter
+    # (deprecated upstream in favor of where — the pinned schema's own
+    # directive kept), where and search are likewise the declared wire
+    # shape with explicit not-yet-supported errors. Sort vocabulary is
+    # the EXISTING shared UserSortField enum: the owned subset executes
+    # as real keyset sorts, the rest answer the same explicit error.
+    # MANAGE_ORDERS/MANAGE_USERS on Saleor → ADMIN here (the owning
+    # identity use case's gate).
+    customers(
+    """Filtering options for customers."""
+    filter: CustomerFilterInput @deprecated(reason: "Use `where` filter instead.")
+
+    """Where filtering options for customers."""
+    where: CustomerWhereInput
+
+    """Sort customers."""
+    sortBy: UserSortingInput
+
+    """Search customers."""
+    search: String
+
+    """Return the elements in the list that come before the specified cursor."""
+    before: String
+
+    """Return the elements in the list that come after the specified cursor."""
+    after: String
+
+    """Retrieve the first n elements from the list."""
+    first: Int
+
+    """Retrieve the last n elements from the list."""
+    last: Int
+): UserCountableConnection
 }
 
 type Mutation {
@@ -1016,4 +1065,23 @@ enum ProductTypeSortField {
 
     """Sort products by shipping."""
     SHIPPING_REQUIRED
+}
+
+# === Campaign packet campaign-b3-a1b: bounded type declarations (integrated by A0) ===
+# ---------------------------------------------------------------------
+# The bounded customer filter inputs — the platform-shaped declarations
+# of the pinned Saleor filter arguments (see the block comment above
+# for every undeclared field's reason). Declared-but-unexecuted wire
+# shapes: ANY non-null filter/where value answers the explicit
+# classified not-implemented error at runtime — the StaffUserInput
+# precedent.
+# ---------------------------------------------------------------------
+input CustomerFilterInput {
+    search: String
+    ids: [ID!]
+}
+
+input CustomerWhereInput {
+    ids: [ID!]
+    isActive: Boolean
 }
