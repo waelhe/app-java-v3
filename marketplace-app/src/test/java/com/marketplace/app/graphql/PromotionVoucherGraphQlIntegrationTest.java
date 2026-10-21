@@ -925,10 +925,14 @@ class PromotionVoucherGraphQlIntegrationTest {
         assertThat(row.getMaxRedemptions()).isEqualTo(9L);
         assertThat(row.getMaxRedemptionsPerUser()).isEqualTo(1L);
 
+        // The real-stack read-back rides the read root's OWN declared wire
+        // shape — the typed global ID emitted by the mutation itself (the
+        // Saleor voucher query carries id/externalReference/channel only;
+        // no code argument exists on this surface).
         adminTester.document("""
-                        query($code: String) { voucher(code: $code) { code usageLimit applyOncePerCustomer } }
+                        query($id: ID!) { voucher(id: $id) { code usageLimit applyOncePerCustomer } }
                         """)
-                .variable("code", "P3-CREATED-CODE")
+                .variable("id", emittedId)
                 .execute()
                 .errors().verify()
                 .path("voucher.code").entity(String.class).isEqualTo("P3-CREATED-CODE")

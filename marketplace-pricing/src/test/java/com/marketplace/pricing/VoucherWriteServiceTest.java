@@ -300,6 +300,69 @@ class VoucherWriteServiceTest {
     }
 
     @Test
+    void malformedCodeOnARedeemedRowAnswersTheShapeErrorNeverAnNpe() {
+        Voucher existing = row("USED-CODE");
+        when(voucherRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(redemptionRepository.countByVoucherId(existing.getId())).thenReturn(3L);
+
+        // The command's code is non-blank but fails the entity's shape —
+        // normalizeCode answers null WITH its recorded payload error, so
+        // the code-stability re-check must guard the null merged code and
+        // let the failure ladder answer (never a NullPointerException).
+        VoucherMutationResult result = service.updateVoucher(existing.getId(),
+                new VoucherUpdateCommand(null, "BAD CODE!", null, null, null, null,
+                        null, null, null, null));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(VoucherMutationError::code, VoucherMutationError::field)
+                .containsExactly(VoucherMutationErrorCode.INVALID, "code");
+        verify(voucherRepository, never()).save(any());
+    }
+
+    @Test
+    void typeChangeAloneRevalidatesThePreservedValueAgainstTheNewBounds() {
+        // A FIXED 50000-minor row switched to PERCENTAGE WITHOUT a new
+        // value: the preserved 50000 fails the percentage 1..10000
+        // basis-points bound — the MERGED (type, value) pair answers the
+        // INVALID error, never an out-of-range row.
+        Voucher existing = Voucher.of("TYPE-SWITCH", "Row", "SAR",
+                Voucher.DiscountType.FIXED, 50000L, 0L, null, null, null, null, true);
+        when(voucherRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+
+        VoucherMutationResult result = service.updateVoucher(existing.getId(),
+                new VoucherUpdateCommand(null, null, "PERCENTAGE", null, null, null,
+                        null, null, null, null));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(VoucherMutationError::code, VoucherMutationError::field)
+                .containsExactly(VoucherMutationErrorCode.INVALID, "discountValue");
+        verify(voucherRepository, never()).save(any());
+    }
+
+    @Test
+    void typeChangeWithThePreservedValueInsideTheNewBoundsSaves() {
+        // The mirrored happy path: a FIXED 500-minor row switched to
+        // PERCENTAGE alone — 500 sits inside the 1..10000 basis-points
+        // bound, so the merged pair persists.
+        Voucher existing = Voucher.of("TYPE-FITS", "Row", "SAR",
+                Voucher.DiscountType.FIXED, 500L, 0L, null, null, null, null, true);
+        when(voucherRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(voucherRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(redemptionRepository.countByVoucherId(existing.getId())).thenReturn(0L);
+
+        VoucherMutationResult result = service.updateVoucher(existing.getId(),
+                new VoucherUpdateCommand(null, null, "PERCENTAGE", null, null, null,
+                        null, null, null, null));
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.voucher().discountValueType())
+                .isEqualTo(com.marketplace.pricing.spi.VoucherView.DiscountType.PERCENTAGE);
+        verify(voucherRepository).save(any());
+    }
+
+    @Test
     void codeChangeOnAnUnredeemedVoucherExecutes() {
         Voucher existing = row("IDLE-CODE");
         when(voucherRepository.findById(existing.getId())).thenReturn(Optional.of(existing));

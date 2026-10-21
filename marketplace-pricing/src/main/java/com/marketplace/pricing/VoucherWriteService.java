@@ -122,7 +122,11 @@ public class VoucherWriteService implements VoucherWriteSpi {
         List<VoucherMutationError> errors = new ArrayList<>();
 
         String mergedCode = command.code() == null ? row.getCode() : normalizeCode(command.code(), errors);
+        // The merged code is null when the command's own code failed the
+        // entity's shape (recorded above as its payload error) — guarded
+        // here so the code-stability re-check never dereferences it.
         if (command.code() != null && !command.code().isBlank()
+                && mergedCode != null
                 && !mergedCode.equals(row.getCode())
                 && redemptionRepository.countByVoucherId(row.getId()) > 0) {
             errors.add(new VoucherMutationError("code", VoucherMutationErrorCode.VOUCHER_ALREADY_USED,
@@ -137,9 +141,15 @@ public class VoucherWriteService implements VoucherWriteSpi {
         Voucher.DiscountType mergedType = typeChanged
                 ? normalizeType(command.discountValueType(), errors, false)
                 : row.getDiscountType();
-        long mergedValue = command.discountValue() == null
+        // The MERGED (type, value) pair is re-validated together — never
+        // only the command's value: an update that changes the type alone
+        // re-runs the row's preserved value through the new type's own
+        // bounds (a FIXED 50000-minor row switched to PERCENTAGE answers
+        // the basis-points INVALID error, never an out-of-range row).
+        Long candidateValue = command.discountValue() == null
                 ? row.getDiscountValue()
-                : normalizeDiscountValue(command.discountValue(), mergedType, errors);
+                : command.discountValue();
+        long mergedValue = normalizeDiscountValue(candidateValue, mergedType, errors);
         String mergedCurrency = command.currency() == null
                 ? row.getCurrency()
                 : normalizeCurrency(command.currency(), errors);

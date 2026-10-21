@@ -17,9 +17,15 @@
 #   categoryCreate / categoryUpdate / categoryDelete /
 #   categoryBulkDelete — the registry's ADMIN write use case over the
 #   EXISTING categories table (no new migration).
+#   productTypeCreate / productTypeUpdate / productTypeDelete /
+#   productTypeBulkDelete — the goods-schema collection's ADMIN write
+#   use case over the EXISTING product_types table (no new migration).
 #   voucherCreate / voucherUpdate / voucherDelete / voucherBulkDelete —
 #   the pricing owner's voucher-policy ADMIN write use case over the
 #   EXISTING vouchers table (no new migration).
+#   productCreate / productUpdate / productDelete / productBulkDelete —
+#   the catalog owner's provider-scoped product write use case over the
+#   EXISTING products table (no new migration).
 #
 # Recorded owner decision (NOT a fake no-op): the Saleor 3.23
 # promotionCreate/Update/Delete model is the RULES-engine promotion
@@ -161,6 +167,223 @@ enum ProductErrorCode {
     INVALID_FILE_TYPE
     UNSUPPORTED_MIME_TYPE
     FILE_SIZE_LIMIT_EXCEEDED
+}
+
+# =====================================================================
+# The product-type mutation roots — the catalog owner's goods-schema
+# ADMIN write use case over the EXISTING product_types table (no new
+# migration). Signatures are the pinned 3.23.43 shapes (note the pinned
+# root's own REQUIRED id arguments — unlike the category roots, Saleor's
+# productTypeDelete/productTypeUpdate carry no externalReference
+# argument at all).
+# =====================================================================
+extend type Mutation {
+    """Creates a new product type."""
+    productTypeCreate(
+        """Fields required to create a product type."""
+        input: ProductTypeInput!
+    ): ProductTypeCreate
+
+    """Deletes a product type."""
+    productTypeDelete(
+        """ID of a product type to delete."""
+        id: ID!
+    ): ProductTypeDelete
+
+    """Deletes product types."""
+    productTypeBulkDelete(
+        """List of product type IDs to delete."""
+        ids: [ID!]!
+    ): ProductTypeBulkDelete
+
+    """Updates an existing product type."""
+    productTypeUpdate(
+        """ID of a product type to update."""
+        id: ID!
+
+        """Fields required to update a product type."""
+        input: ProductTypeInput!
+    ): ProductTypeUpdate
+}
+
+# =====================================================================
+# The bounded ProductTypeInput — the pinned Saleor input's OWNED field
+# set only: name and slug (the row's name_en / code columns). The
+# unowned members (kind — no kind column, hasVariants — deprecated and
+# unowned, productAttributes/variantAttributes — the assignment
+# capability is its own root family, isShippingRequired/isDigital — no
+# columns, weight — no scalar owner, taxCode — no tax owner) stay
+# undeclared — recorded divergences, never faked.
+# =====================================================================
+input ProductTypeInput {
+    """Name of the product type (the bilingual row's primary name — name_en)."""
+    name: String
+
+    """Product type slug (the row's stable public code)."""
+    slug: String
+}
+
+type ProductTypeCreate {
+    errors: [ProductError!]!
+    productType: ProductType
+}
+
+type ProductTypeUpdate {
+    errors: [ProductError!]!
+    productType: ProductType
+}
+
+type ProductTypeDelete {
+    errors: [ProductError!]!
+    productType: ProductType
+}
+
+type ProductTypeBulkDelete {
+    """Returns how many objects were affected."""
+    count: Int!
+    errors: [ProductError!]!
+}
+
+# =====================================================================
+# The product mutation roots — the catalog owner's PROVIDER-scoped
+# product write use case over the EXISTING products table (no new
+# migration). Signatures are the pinned 3.23.43 shapes; the
+# declared-but-unowned arguments (externalReference — no external-ID
+# column) answer the classified validation error when sent. The
+# platform's ownership law for provider-owned rows rides the owning
+# use case: the row's provider is the CALLER (the two-sided
+# marketplace's own boundary — the recorded RBAC divergence), so an
+# id the caller does not own answers the safe NOT_FOUND absence.
+# =====================================================================
+extend type Mutation {
+    """Creates a new product."""
+    productCreate(
+        """Fields required to create a product."""
+        input: ProductCreateInput!
+    ): ProductCreate
+
+    """Deletes a product."""
+    productDelete(
+        """
+        External ID of a product to delete. No external-ID column
+        exists on this platform (the registered divergence); a non-null
+        value answers the classified validation error.
+        """
+        externalReference: String
+
+        """ID of a product to delete."""
+        id: ID
+    ): ProductDelete
+
+    """Deletes products."""
+    productBulkDelete(
+        """List of product IDs to delete."""
+        ids: [ID!]!
+    ): ProductBulkDelete
+
+    """Updates an existing product."""
+    productUpdate(
+        """
+        External ID of a product to update. No external-ID column
+        exists on this platform; a non-null value answers the classified
+        validation error.
+        """
+        externalReference: String
+
+        """ID of a product to update."""
+        id: ID
+
+        """Fields required to update a product."""
+        input: ProductInput!
+    ): ProductUpdate
+}
+
+# =====================================================================
+# The bounded ProductCreateInput — the pinned Saleor input's OWNED field
+# set (name, description, productType — the row's title/description/
+# product_type_id columns) PLUS the platform-extension facts the row's
+# own NOT NULL policy requires (storeCategoryCode, priceMinor,
+# currency — the voucher slice's own "platform-only fields as
+# extensions" precedent). The Saleor `category: ID` argument family
+# stays undeclared: the products row's category reference is the
+# platform's store-categories dictionary BY CODE (a different taxonomy
+# than the Saleor categories registry — a recorded divergence). The
+# unowned members (the attributes family, the JSON rich-text
+# description, SEO/metadata, collections, chargeTaxes, slug,
+# externalReference, publication state, tax class, weight, rating,
+# media) stay undeclared — recorded divergences, never faked.
+# =====================================================================
+input ProductCreateInput {
+    """Product name (the entity's own display title)."""
+    name: String
+
+    """Product description (plain text on this surface)."""
+    description: String
+
+    """
+    ID of the product's reusable goods schema (typed global ID of the
+    ProductType root's type; null keeps pre-C1 and zero-variant
+    products compatible — a typed product starts as DRAFT).
+    """
+    productType: ID
+
+    """
+    PLATFORM EXTENSION (the row's NOT NULL category reference): the
+    stable code of the store-categories dictionary row the product
+    belongs to.
+    """
+    storeCategoryCode: String
+
+    """
+    PLATFORM EXTENSION (the row's NOT NULL price policy): the
+    authoritative unit price in minor units (a non-negative amount).
+    """
+    priceMinor: Int
+
+    """PLATFORM EXTENSION: the price's ISO-4217 currency code."""
+    currency: String
+}
+
+# =====================================================================
+# The bounded ProductInput — the pinned Saleor input's OWNED movable
+# set only: name, description and the price (the platform's own
+# product-update law; the row's ownership facts and lifecycle state
+# are each their own owning capability, never an update side effect).
+# Omitted (null) fields preserve the column.
+# =====================================================================
+input ProductInput {
+    """Product name (the entity's own display title)."""
+    name: String
+
+    """Product description (plain text on this surface)."""
+    description: String
+
+    """
+    PLATFORM EXTENSION: the authoritative unit price in minor units
+    (a non-negative amount; omitted preserves the column).
+    """
+    priceMinor: Int
+}
+
+type ProductCreate {
+    errors: [ProductError!]!
+    product: Product
+}
+
+type ProductUpdate {
+    errors: [ProductError!]!
+    product: Product
+}
+
+type ProductDelete {
+    errors: [ProductError!]!
+    product: Product
+}
+
+type ProductBulkDelete {
+    """Returns how many objects were affected."""
+    count: Int!
+    errors: [ProductError!]!
 }
 
 # =====================================================================
