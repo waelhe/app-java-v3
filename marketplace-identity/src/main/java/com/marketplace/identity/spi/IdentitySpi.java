@@ -271,6 +271,37 @@ public interface IdentitySpi {
                                      org.springframework.data.domain.Limit limit);
 
     /**
+     * P1 (the Saleor {@code customers} root): one bounded page of the
+     * CUSTOMER population — the accounts whose primary role is the
+     * platform's customer/consumer role ({@code CONSUMER}, the closed
+     * {@code UserRole} vocabulary's own customer concept) — as a
+     * forward-only keyset scroll in the requested sort (an owning column +
+     * the {@code id} tiebreaker — the exact {@code scrollStaffUsers} keyset
+     * contract, over the complementary customer-account population of the
+     * SAME single identity store: no duplicate identity store, staff
+     * accounts excluded by the population's own scoping). ADMIN-enforced at
+     * this owning use-case boundary (Saleor requires
+     * MANAGE_ORDERS/MANAGE_USERS — the catalog's mapped platform
+     * capability, the RBAC mapping row of the divergence registry); the
+     * returning page carries the CUSTOMER collection total Saleor's
+     * {@code totalCount} field expects (the population's own count, never
+     * the roster's).
+     *
+     * @param authentication the caller, whose ADMIN authority is verified
+     * @param sort           the executed sort (never {@code null})
+     * @param position       the keyset scroll position — the initial
+     *                       position, or the position decoded from the
+     *                       client's opaque {@code after} cursor
+     * @param limit          the bounded page size (the boundary's own cap)
+     * @return the page of customer account projections plus the customer
+     *         population total
+     */
+    UserAccountPage scrollCustomers(Authentication authentication,
+                                    UserAccountSort sort,
+                                    org.springframework.data.domain.KeysetScrollPosition position,
+                                    org.springframework.data.domain.Limit limit);
+
+    /**
      * P1 (the Saleor {@code permissionGroup} root): the permission-group
      * projection by the native UUID behind the typed global ID. Saleor
      * requires MANAGE_STAFF — enforced here as the platform's server-side

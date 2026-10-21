@@ -962,6 +962,56 @@ public class UserService implements IdentitySpi {
     }
 
     /**
+     * P1 (the Saleor {@code customers} root): the CUSTOMER population's
+     * forward-only keyset scroll — ADMIN-enforced at this owning use-case
+     * boundary (Saleor requires MANAGE_ORDERS/MANAGE_USERS — the platform's
+     * server-side ADMIN mapping of the merged SaleorPermissionCatalog
+     * contract), one owning sort with the {@code id} tiebreaker, plus the
+     * CUSTOMER population's own total Saleor's {@code totalCount} field
+     * carries (the population's count, never the whole roster's).
+     *
+     * <p><b>The population is the single identity store's customer-account
+     * slice</b> (the packet's ADAPT disposition: no duplicate identity
+     * store): the accounts whose primary role is {@code CONSUMER} — the
+     * closed {@link UserRole} vocabulary's own customer/consumer concept,
+     * the complementary population the {@code staffUsers} roster scroll
+     * reads in full. The scoping rides the SAME keyset SQL contract as the
+     * roster (one derived role predicate plus the fixed
+     * sort-and-tiebreaker), so cursors stay row-sort-key cursors over the
+     * identical column shapes — a cursor emitted by the roster's scroll of
+     * the same sort is accepted here only because the key set and ordering
+     * are literally the same; the populations differ, the contract does
+     * not. Soft-deleted rows are absent by the entity's own
+     * {@code @SoftDelete} filter (the same visibility every identity read
+     * applies).</p>
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional(readOnly = true)
+    public com.marketplace.identity.spi.UserAccountPage scrollCustomers(
+            Authentication authentication,
+            com.marketplace.identity.spi.UserAccountSort sort,
+            org.springframework.data.domain.KeysetScrollPosition position,
+            org.springframework.data.domain.Limit limit) {
+        if (sort == null || sort.field() == null) {
+            throw new IllegalArgumentException("A customer sort is required");
+        }
+        org.springframework.data.domain.Window<User> window = switch (sort.field()) {
+            case EMAIL -> sort.ascending()
+                    ? userRepository.findByRoleOrderByEmailAscIdAsc(UserRole.CONSUMER, position, limit)
+                    : userRepository.findByRoleOrderByEmailDescIdDesc(UserRole.CONSUMER, position, limit);
+            case CREATED_AT -> sort.ascending()
+                    ? userRepository.findByRoleOrderByCreatedAtAscIdAsc(UserRole.CONSUMER, position, limit)
+                    : userRepository.findByRoleOrderByCreatedAtDescIdDesc(UserRole.CONSUMER, position, limit);
+            case LAST_MODIFIED_AT -> sort.ascending()
+                    ? userRepository.findByRoleOrderByUpdatedAtAscIdAsc(UserRole.CONSUMER, position, limit)
+                    : userRepository.findByRoleOrderByUpdatedAtDescIdDesc(UserRole.CONSUMER, position, limit);
+        };
+        return new com.marketplace.identity.spi.UserAccountPage(
+                window.map(this::toAccountView), userRepository.countByRole(UserRole.CONSUMER));
+    }
+
+    /**
      * P1 (the canonical Saleor plan §5-P1 — the Saleor {@code permissionGroup}
      * root): the permission-group lookup by the native UUID behind the typed
      * global ID — ADMIN-enforced at the owning use-case boundary (the
