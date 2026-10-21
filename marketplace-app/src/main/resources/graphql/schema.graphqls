@@ -339,6 +339,75 @@ type Query {
     """Retrieve the last n elements from the list."""
     last: Int
 ): UserCountableConnection
+
+    # === Campaign packet campaign-b3-a2b (integrated by A0 — the SDL steward) ===
+    # "List of the shop's attributes." — the typed attribute reference
+    # collection with its countable-connection envelope (edges/pageInfo/
+    # totalCount, byte-shape from the pinned schema). FORWARD-ONLY
+    # keyset paging on this first slice: first/after ride the platform's
+    # ScrollPosition keyset contract (the staffUsers/permissionGroups/
+    # productTypes precedent — cursors identify a row's sort key (the
+    # executed sort field, id), never an absolute offset); before/last
+    # stay declared (the exact Saleor argument shape) but answer an
+    # explicit classified error until a backward scroll exists — a
+    # recorded, tested boundary, not a silent no-op. filter (deprecated
+    # upstream), where, search and channel are likewise the declared
+    # wire shapes with explicit not-yet-supported errors. The sort
+    # vocabulary is Saleor's own AttributeSortField enum: NAME and SLUG
+    # execute as real keyset sorts, deterministic with the id
+    # tiebreaker; the other seven values answer the explicit
+    # not-implemented error.
+    attributes(
+    """Filtering options for attributes."""
+    filter: AttributeFilterInput @deprecated(reason: "Use `where` filter instead.")
+
+    """Where filtering options for attributes."""
+    where: AttributeWhereInput
+
+    """Search attributes."""
+    search: String
+
+    """Sorting options for attributes."""
+    sortBy: AttributeSortingInput
+
+    """Slug of a channel for which the data should be returned."""
+    channel: String
+
+    """Return the elements in the list that come before the specified cursor."""
+    before: String
+
+    """Return the elements in the list that come after the specified cursor."""
+    after: String
+
+    """Retrieve the first n elements from the list."""
+    first: Int
+
+    """Retrieve the last n elements from the list."""
+    last: Int
+    ): AttributeCountableConnection
+
+    # "Look up an attribute by ID, slug or external reference." — the
+    # staff lookup over the typed global ID (Saleor requires staff
+    # permissions → ADMIN here, enforced in the owning catalog use
+    # case). id executes through the typed global-ID codec; slug
+    # executes through the owner's code lookup (upstream's id-first
+    # precedence when both are sent). An unknown but well-formed key
+    # answers null (the safe absence); a malformed or mistyped global ID
+    # answers the codec's classified validation error — never a raw UUID
+    # fallback. externalReference has no owning capability and answers
+    # the explicit classified error whenever it is sent; a keyless call
+    # answers the classified validation error (the recorded divergence
+    # from upstream's null answer).
+    attribute(
+    """ID of the attribute."""
+    id: ID
+
+    """Slug of the attribute."""
+    slug: String
+
+    """External ID of the attribute."""
+    externalReference: String
+    ): Attribute
 }
 
 type Mutation {
@@ -1084,4 +1153,153 @@ input CustomerFilterInput {
 input CustomerWhereInput {
     ids: [ID!]
     isActive: Boolean
+}
+
+# === Campaign packet campaign-b3-a2b: bounded type declarations (integrated by A0) ===
+# ---------------------------------------------------------------------
+# The bounded Attribute projection — see the block comment above for
+# the closure policy. id is the typed global ID over the native
+# catalog_attribute_definitions key; name is the bilingual row's
+# rendered primary display name; slug is the row's immutable public
+# code; inputType is the closed domain value shape's Saleor rendering;
+# withChoices is the CHOICE-typed fact.
+# ---------------------------------------------------------------------
+type Attribute {
+    """The ID of the attribute — typed global ID (opaque, never a raw UUID)."""
+    id: ID!
+
+    """Name of the attribute (the rendered primary display name)."""
+    name: String!
+
+    """Slug of the attribute (the row's immutable public code)."""
+    slug: String!
+
+    """The input type to use for entering attribute values in the dashboard (the closed domain value shape's rendering)."""
+    inputType: AttributeInputTypeEnum
+
+    """Flag indicating that attribute has predefined choices (the definition is CHOICE-typed)."""
+    withChoices: Boolean!
+}
+
+# Saleor's connection envelope for countable attribute lists —
+# declared (not runtime-generated) so the exact Saleor shape stands,
+# including totalCount. Spring's ConnectionTypeDefinitionConfigurer skips
+# already-declared connection types (the measured declared-types-skip
+# behavior the UserCountableConnection/GroupCountableConnection/
+# ProductTypeCountableConnection declarations recorded), so this
+# declaration wins and the generated connections elsewhere are
+# untouched. pageInfo reuses the EXISTING shared PageInfo type — not
+# redeclared.
+type AttributeCountableConnection {
+    """Pagination data for this connection."""
+    pageInfo: PageInfo!
+
+    edges: [AttributeCountableEdge!]!
+
+    """A total count of items in the collection."""
+    totalCount: Int
+}
+
+type AttributeCountableEdge {
+    """The item at the end of the edge."""
+    node: Attribute!
+
+    """A cursor for use in pagination (the row's keyset sort key)."""
+    cursor: String!
+}
+
+# The bounded input-type vocabulary — only the four values the closed
+# domain value shape (TEXT/NUMBER/BOOLEAN/CHOICE, V237's
+# chk_catalog_attr_type) renders; the other eight upstream values stay
+# undeclared until an owning value shape exists (see the block comment
+# above).
+enum AttributeInputTypeEnum {
+    """Predefined choices selected from a dropdown (the CHOICE value shape)."""
+    DROPDOWN
+
+    """A numeric value (the NUMBER value shape)."""
+    NUMERIC
+
+    """A plain text value (the TEXT value shape — plain, never rich text)."""
+    PLAIN_TEXT
+
+    """A boolean value (the BOOLEAN value shape)."""
+    BOOLEAN
+}
+
+# Saleor's attribute filter input — the declared wire shape of the
+# deprecated filter argument (see attributes: an explicit classified
+# error until the owning query capability exists). BOUNDED closure:
+# search/ids/slugs carry the scalar filter surface; valueRequired (an
+# assignment-level fact), isVariantOnly and visibleInStorefront (no
+# owning columns), metadata (its heavy MetadataFilter closure), type
+# (the unowned PRODUCT_TYPE/PAGE_TYPE/CUSTOMER_TYPE classification),
+# inCollection/inCategory (no collection/category relation on
+# definitions) and the deprecated no-effect flags stay undeclared until
+# an owning capability exists — any filter use answers the classified
+# not-implemented error before field-level semantics matter, and a
+# Dashboard query naming an undeclared sub-field fails schema
+# validation loudly (never a silent no-op).
+input AttributeFilterInput {
+    search: String
+    ids: [ID!]
+    slugs: [String!]
+}
+
+# Saleor's attribute where input — the declared wire shape of the where
+# argument (see attributes: an explicit classified error until the
+# owning query capability exists). BOUNDED closure: ids and withChoices
+# carry the owned scalar facts; metadata (its heavy MetadataFilter
+# closure), name/slug (the generic StringFilterInput input is not yet
+# declared by any integrated slice), inputType/entityType/type/unit
+# (enum filter inputs over unowned facts), inCollection/inCategory,
+# valueRequired (assignment-level fact), visibleInStorefront, the
+# deprecated filterableInDashboard flag and the AND/OR composition
+# capability stay undeclared until an owning capability exists — any
+# where use answers the classified not-implemented error.
+input AttributeWhereInput {
+    ids: [ID!]
+    withChoices: Boolean
+}
+
+# Saleor's attribute sorting input and field vocabulary — the full
+# pinned enum is declared verbatim (nine values with upstream's own
+# deprecation notes); NAME and SLUG execute as real keyset sorts, the
+# other seven answer the explicit not-implemented error. direction
+# reuses the EXISTING shared OrderDirection enum — not redeclared.
+input AttributeSortingInput {
+    """Specifies the direction in which to sort attributes."""
+    direction: OrderDirection!
+
+    """Sort attributes by the selected field."""
+    field: AttributeSortField!
+}
+
+enum AttributeSortField {
+    """Sort attributes by name"""
+    NAME
+
+    """Sort attributes by slug"""
+    SLUG
+
+    """Sort attributes by the value required flag"""
+    VALUE_REQUIRED
+
+    """Sort attributes by the variant only flag"""
+    IS_VARIANT_ONLY
+
+    """Sort attributes by visibility in the storefront"""
+    VISIBLE_IN_STOREFRONT
+
+    """Sort attributes by the filterable in storefront flag"""
+    FILTERABLE_IN_STOREFRONT @deprecated(reason: "This flag is not used by Saleor. Keep the logic in the storefront or use `Attribute` metadata instead.")
+
+    """Sort attributes by the filterable in dashboard flag"""
+    FILTERABLE_IN_DASHBOARD @deprecated(reason: "This flag is not used by Saleor. Keep the logic in the dashboard or use `Attribute` metadata instead.")
+
+    """Sort attributes by their position in storefront"""
+    STOREFRONT_SEARCH_POSITION @deprecated(reason: "This flag is not used by Saleor. Keep the logic in the storefront or use `Attribute` metadata instead.")
+
+    """Sort attributes based on whether they can be displayed or not in a product grid."""
+    AVAILABLE_IN_GRID @deprecated(reason: "This flag is not used by Saleor. Keep the logic in the storefront or use `Attribute` metadata instead.")
 }
