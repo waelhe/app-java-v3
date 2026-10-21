@@ -92,14 +92,13 @@ public class VoucherWriteService implements VoucherWriteSpi {
             errors.add(new VoucherMutationError("code", VoucherMutationErrorCode.ALREADY_EXISTS,
                     "A voucher with the code already exists"));
         }
-        if (!errors.isEmpty()) {
-            return VoucherMutationResult.failure(errors);
-        }
         String name = command.name() == null ? null : command.name().strip();
         if (name != null && name.length() > NAME_MAX_LENGTH) {
-            return VoucherMutationResult.failure(List.of(new VoucherMutationError(
-                    "name", VoucherMutationErrorCode.INVALID,
-                    "A voucher name is at most " + NAME_MAX_LENGTH + " characters")));
+            errors.add(new VoucherMutationError("name", VoucherMutationErrorCode.INVALID,
+                    "A voucher name is at most " + NAME_MAX_LENGTH + " characters"));
+        }
+        if (!errors.isEmpty()) {
+            return VoucherMutationResult.failure(errors);
         }
         Voucher created = voucherRepository.save(Voucher.of(code, name, currency, type,
                 discountValue, minSpend, startsAt, endsAt, usageLimit,
