@@ -19,6 +19,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.security.test.context.support.WithMockUser;
 
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -73,6 +74,8 @@ class OrdersServiceAuthorizationTest {
         assertThatThrownBy(() -> orderCommandSpi.confirmAsAdmin(UUID.randomUUID()))
                 .isInstanceOf(AccessDeniedException.class);
         assertThatThrownBy(() -> orderCommandSpi.bulkCancelAsAdmin(List.of(UUID.randomUUID())))
+                .isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> orderCommandSpi.bulkCancelAsAdmin(List.of()))
                 .isInstanceOf(AccessDeniedException.class);
 
         verifyNoInteractions(
