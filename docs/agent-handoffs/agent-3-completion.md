@@ -79,7 +79,8 @@ Blocked `draftOrders`, `shippingZone(s)`, `homepageEvents`, `ordersTotal`, `orde
 - The added unit tests were not executed; there is no claim that they passed.
 - The assignment records a pre-existing compile failure at the frozen base in `marketplace-catalog/src/main/java/com/marketplace/catalog/ProductVariantReadService.java` (four `Limit.value()` calls), outside this agent's ownership.
 - The lightweight GitHub workflow check on report commit `18c04b99f3d53154c39a05277e7ab4b0c2296db3` ran as [workflow 39600023635](https://github.com/waelhe/app-java-v3/actions/runs/39600023635) and failed only on the pre-existing unapproved `Address read roots (address/addressValidationRules)` divergence (`D-ADDR-001`) in the unchanged central divergence registry. This agent left that centrally owned decision untouched. No application-build/test pass is claimed from that run.
-- CI/CodeRabbit was not awaited. Any result must be associated with the precise commit SHA it reports. A manual CodeRabbit review request is posted to the PR timeline.
+- No CI or bot review was awaited. At the final inspection of SHA `5e262fb8be52e140c03626f0198c48ebfb510b9b`, Snyk was `pending` and workflow `39677562271` (`Saleor Canonical Plan and Schema Inventory`) was `in_progress`; no build/test pass is claimed from those checks. The Retired Saleor Plan and PR Guard was skipped as designed.
+- The manual CodeRabbit request was posted at the then-current head `0a4ea3a50f0c0343768fb298c2a0a3a2c72505a7` (comment `6326548153`), but the bot replied `Review rate limited` (comment `6326549968`). Thus there is no accepted CodeRabbit review of the final head. The `CodeRabbit: success` status context was not treated as proof of a fresh review.
 - Shared root/app POMs, central `schema.graphqls`, `application.yml`, workflows, security/Modulith configuration, central root ledger, divergence registry, domain matrix, pins, `SYSTEM.md`, and `PROJECT_MAP.md` were left untouched.
 
 ## Handoff status
