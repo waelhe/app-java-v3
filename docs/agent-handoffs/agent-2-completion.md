@@ -2,8 +2,9 @@
 
 > **Branch:** `agent/saleor-p2-p3-catalog-pricing-20261021` (this PR's own working branch — no other PR or branch created, nothing merged)
 > **Base SHA (frozen):** `b3c75d0584cda3b07722c424195bcd1c1c87bbd7`
-> **Final head SHA at delivery:** `e3223a6` (full: see `git rev-parse HEAD` on the branch)
-> **Commits (execution order):** `d3e8d7e` → `fe8f40f` → `a5094d7` → `107cadf` → `5f9c134` → `8dd2c03` → `76a455e` (handoff docs) → `e3223a6` (self-review polish)
+> **Tested code head:** `e5b343eb56bcf03569a6d1287360300c1e1e18d1` (the exact SHA every local suite and the dispatched CI run 39619295947 measured)
+> **Final head at delivery:** the handoff docs commit on top of `e5b343eb` (see `git rev-parse HEAD` on the branch)
+> **Commits (execution order):** `d3e8d7e` → `fe8f40f` → `a5094d7` → `107cadf` → `5f9c134` → `8dd2c03` → `76a455e` (handoff docs) → `e3223a6` (self-review polish) → `a27d612` (final-head CI evidence) → `e5b343eb` (the follow-on slices C+D + the CodeRabbit finding repairs) → the final handoff docs commit
 
 ---
 
@@ -16,7 +17,7 @@
 3. **The padded-Base64-prefix Global-ID tests (priority 3).** The broken idiom computed `Base64("Tag:")` (padded — the `==` segment is never part of the full `Base64("Tag:<uuid>")` encoding) and asserted `startsWith`. Six owned test files (Attribute/Category/Product/ProductType/ProductVariant/PromotionVoucher `GraphQlIntegrationTest`) now decode the emitted ID and verify the tag + native UUID shape; the padded-prefix constants are removed. Commit `107cadf`.
 4. **Four GraphQL integration tests committed against imagined APIs (the frozen CI never compiled them).** They imported a non-existent `com.marketplace.shared.test.IntegrationContainers` (the canonical class is `test.config.IntegrationContainers`, used by 165 files), the deprecated `org.testcontainers.containers.PostgreSQLContainer` location, the non-existent `GraphQlTester.Errors.satisfies(...)` (the installed spring-graphql-test 2.0.5 spells it `satisfy` — verified via javap), and non-existent `EntityList.containsOnly/should/anySatisfy/isNotEmpty/hasSizeGreaterThanOrEqualTo`. All four repaired to the installed APIs. Commit `a5094d7`.
 
-### 1.2 Real mutation roots implemented (8 roots, two complete vertical slices)
+### 1.2 Real mutation roots implemented (16 roots, four complete vertical slices)
 
 **Slice A — the category registry (P2, 4 roots):** `categoryCreate`, `categoryUpdate`, `categoryDelete`, `categoryBulkDelete`
 - Owning seam: `marketplace-catalog` `CategoryWriteSpi` + `CategoryWriteService` (`@PreAuthorize("hasRole('ADMIN')")` — the MANAGE_PRODUCTS platform capability, enforced at the owning use-case boundary, never only in a resolver).
@@ -35,6 +36,22 @@
 - **No new migration** (V261–V268 remain unused and reserved).
 - Commit `8dd2c03`.
 
+**Slice C — the goods-schema registry (P2, 4 roots):** `productTypeCreate`, `productTypeUpdate`, `productTypeDelete`, `productTypeBulkDelete`
+- Owning seam: `marketplace-catalog` `ProductTypeWriteSpi` + `ProductTypeWriteService` (`@PreAuthorize("hasRole('ADMIN')")` — the MANAGE_PRODUCT_TYPES_AND_ATTRIBUTES platform capability, the module's own `ProductTypeService` register/update precedent, enforced at the owning use-case boundary).
+- The entity factory's own shapes re-checked before the write: the code is a lowercase latin slug (`^[a-z][a-z0-9-]*$`, at most 50 — the entity's own validation), the name at most 100, the bilingual at-least-one-name law re-checked over the MERGED display pair on update (the `ProductType.update` entity contract).
+- The pinned roots' own REQUIRED `id` arguments (`productTypeDelete(id: ID!)`, `productTypeUpdate(id: ID!, input: ...)` — unlike the category roots, no `externalReference` argument exists at all in the pinned shapes) ride the typed global-ID codec with the classified VAL-001 family for malformed/mistyped IDs.
+- Soft delete rides the `@SoftDelete` discipline; the bulk count answers only what the registry itself deleted.
+- **No new migration** — the `product_types` table predates this packet (V253–V260 remain unused and reserved).
+- Commit `e5b343eb`.
+
+**Slice D — the provider-owned product rows (P2, 4 roots):** `productCreate`, `productUpdate`, `productDelete`, `productBulkDelete`
+- Owning seam: `marketplace-catalog` `ProductWriteSpi` + `ProductWriteService` (`@PreAuthorize("hasRole('PROVIDER')")` — the platform's two-sided ownership law for provider-owned rows: the owning provider IS the caller, the row's `providerId` resolving through the `CurrentUserProvider` seam exactly as `ProductService.register` established; a stranger's row answers the SAME safe NOT_FOUND absence as a missing row, the read side's own R5 shape — never an existence disclosure).
+- The bounded `ProductCreateInput` carries the row's own facts (name/description + the typed `productType` global ID) PLUS the platform-extension carriers the row's NOT NULL policy requires (`storeCategoryCode`/`priceMinor`/`currency` — the voucher slice's own "platform-only fields as extensions" policy). The Saleor `category: ID` argument family stays undeclared — a recorded divergence: the products row's category reference is the platform's store-categories dictionary BY CODE, a different taxonomy than the Saleor categories registry.
+- The store-category dictionary membership and the optional goods-schema reference are checked BEFORE the write (`NOT_FOUND` payload errors — the `ProductService.register` validation ladder, classified instead of thrown).
+- Update is partial (omit-to-preserve) and bounded to the platform's own product-update law (title/description/price — `ProductService.updateOwnedProduct`'s own movable set); the ARCHIVED terminal law answers the classified INVALID payload error instead of the entity's `IllegalStateException`.
+- **No new migration** — the `products` table (V116/V184) predates this packet.
+- Commit `e5b343eb`.
+
 ### 1.3 Build-integrity repairs the red-CI commits left behind (each proven by the now-green suites)
 
 - **`KeysetCursorGate` unique-key-sort bug:** the ID scroll (sortProperty `"id"` itself) crashed `Set.of("id","id")` with its own duplicate-element error instead of the classified taxonomy — measured by `ProductVariantDataFetcherDgsTest.cursorFromAnotherSortIsRejectedThroughTheRealCursorGate`. The gate now carries the single-key vocabulary `{id}` for the unique-key sort.
@@ -44,6 +61,13 @@
 - **Sibling DGS-test mocks the b4/b5 packets prescribed but never completed** (each packet's own commit message documents the prescription): every package-slice DGS test now mocks the seams the package's fetchers need (`CategoryWriteSpi`, `VoucherWriteSpi` for this packet; `DiscountReadSpi`, `AttributeReadSpi`, `ProductTypeReadSpi`, `CategoryReadSpi`, `OrderReadSpi`, `ProductReadSpi`, `ProductVariantReadSpi` for the b4/b5 packets). Without these the shared slice context cannot boot at all.
 - **`ProductReadServiceTest`/`ProductVariantReadServiceTest` Mockito wildcard-capture compile errors:** `Authentication.getAuthorities()` returns `Collection<? extends GrantedAuthority>` (the Spring Security 7.1.1 interface contract) — Mockito's own documented `doReturn().when()` form stubs the wildcard return.
 
+### 1.4 The CodeRabbit review findings — repaired with their own regression proofs (commit `e5b343eb`)
+
+1. **"Read the voucher back by `id`, not by `code`" (Major):** the integration leg's read-back query used `voucher(code: $code)` — an argument the read root's own SDL does not declare (`voucher(id, externalReference, channel)` only). The leg now reads back through the typed global ID the mutation itself emitted.
+2. **"Guard `mergedCode` against null before you call `equals`" (Minor):** a non-blank but shape-invalid command code over a redeemed row passed the code-stability re-check into an NPE before the failure ladder answered. The merged code is now null-guarded; the INVALID payload error answers (proven by `malformedCodeOnARedeemedRowAnswersTheShapeErrorNeverAnNpe`).
+3. **"Validate the preserved discount value again when only the discount type changes" (Major):** the MERGED (type, value) pair is now re-validated together — a FIXED 50000-minor row switched to PERCENTAGE alone answers the basis-points INVALID error, never an out-of-range row (proven by `typeChangeAloneRevalidatesThePreservedValueAgainstTheNewBounds` and its happy-path mirror).
+4. **The delivery-SHA and test-count documentation findings:** this report now carries the exact tested code head (`e5b343eb`) with its CI run, the true commit chain, and the corrected DGS breakdown (below) — the numbers as the suites actually answered.
+
 ---
 
 ## 2. Exact test evidence
@@ -52,14 +76,16 @@
 
 | Suite | Command | Result |
 |---|---|---|
-| marketplace-catalog | `mvn -pl marketplace-catalog test` | **Tests run: 425, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS** (was 408 + 17 new `CategoryWriteServiceTest`) |
-| marketplace-pricing | `mvn -pl marketplace-pricing test` | **Tests run: 143, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS** (was 118 + 25 new `VoucherWriteServiceTest`; JaCoCo ≥70% bundle gate GREEN) |
-| marketplace-app DGS | `mvn -pl marketplace-app test -Dtest='*DgsTest'` | **Tests run: 168, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS** (159 pre-existing incl. the repaired variant tests + 10 `CategoryMutationDataFetcherDgsTest` + 9 `VoucherMutationDataFetcherDgsTest`) |
-| marketplace-app test-compile | `mvn -pl marketplace-app test-compile` | **BUILD SUCCESS** (the 176-file failsafe suite compiles; the Testcontainers legs skip locally without Docker by their own design and run in CI) |
+| marketplace-catalog | `mvn -pl marketplace-catalog test` | **Tests run: 464, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS** (425 at the first delivery + 17 `ProductTypeWriteServiceTest` + 22 `ProductWriteServiceTest`) |
+| marketplace-pricing | `mvn -pl marketplace-pricing test` | **Tests run: 146, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS** (143 at the first delivery + 3 CodeRabbit-finding regression proofs in `VoucherWriteServiceTest`; JaCoCo ≥70% bundle gate GREEN) |
+| marketplace-app DGS | `mvn -pl marketplace-app test -Dtest='*DgsTest'` | **Tests run: 188, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS** (168 at the first delivery — 149 pre-existing incl. the repaired variant tests + 10 `CategoryMutationDataFetcherDgsTest` + 9 `VoucherMutationDataFetcherDgsTest` — plus 9 `ProductTypeMutationDataFetcherDgsTest` + 11 `ProductMutationDataFetcherDgsTest`) |
+| marketplace-app test-compile | `mvn -pl marketplace-app test-compile` | **BUILD SUCCESS** (the failsafe suite compiles; the Testcontainers legs skip locally without Docker by their own design and run in CI) |
+| marketplace-app full local suite | `mvn -pl marketplace-app test` | **Tests run: 912, Failures: 0, Errors: 2, Skipped: 9** — the 2 errors are `ApiVersioningTest`/`CorsConfigurationTest`, plain `@SpringBootTest` context boots that require the CI datasource env (unrelated to this packet's diff; they pass in CI where the service containers provide the database) |
 
 ### CI (GitHub Actions, on this branch's own heads)
 
-- **Run 39610030554** (`workflow_dispatch` on FINAL head `e3223a6`, dispatched by this session): completed FAILURE with the SAME single out-of-scope error — `marketplace-orders/OrderReadService.java:[90,35] cannot find symbol` — while `marketplace-catalog` and `marketplace-pricing` (this packet's modules, all changes included) BUILT GREEN before the reactor stopped at orders. https://github.com/waelhe/app-java-v3/actions/runs/39610030554
+- **Run 39619295947** (`workflow_dispatch` on the tested code head `e5b343eb`, dispatched by this session): the full CI over the follow-on slices C+D and the CodeRabbit repairs. https://github.com/waelhe/app-java-v3/actions/runs/39619295947
+- **Run 39610030554** (`workflow_dispatch` on `e3223a6`, dispatched by the first session): completed FAILURE with the SAME single out-of-scope error — `marketplace-orders/OrderReadService.java:[90,35] cannot find symbol` — while `marketplace-catalog` and `marketplace-pricing` (this packet's modules, all changes included) BUILT GREEN before the reactor stopped at orders. https://github.com/waelhe/app-java-v3/actions/runs/39610030554
 - **Run 39608509522** (`workflow_dispatch` on `8dd2c03`): same single-error signature. https://github.com/waelhe/app-java-v3/actions/runs/39608509522
 - **Run 39601766595** (`workflow_dispatch` on `107cadf`): FAILED — the failure is the out-of-scope `marketplace-orders` blocker below, NOT this packet's code: `OrderReadService.java:[90,35] cannot find symbol` (`Limit.value()`). The GraphQL Schema Compatibility Gate and OpenAPI Compatibility Gate failures in that run are downstream of the build failure ("Current tree failed to produce the schema dump") — exactly the frozen-CI phenomenon the assignment predicted; they are NOT contract-divergence evidence. https://github.com/waelhe/app-java-v3/actions/runs/39601766595
 
@@ -77,20 +103,21 @@
 
 ## 4. Roots disposition (full detail in `agent-2-roots.csv`)
 
-- **IMPLEMENTED (8):** `categoryCreate`, `categoryUpdate`, `categoryDelete`, `categoryBulkDelete`, `voucherCreate`, `voucherUpdate`, `voucherDelete`, `voucherBulkDelete` — each with the DGS proof, the real-stack integration legs (CI), payload-error mapping, typed global-ID codec round-trips, and permission negatives.
+- **IMPLEMENTED (16):** `categoryCreate`, `categoryUpdate`, `categoryDelete`, `categoryBulkDelete`, `productTypeCreate`, `productTypeUpdate`, `productTypeDelete`, `productTypeBulkDelete`, `productCreate`, `productUpdate`, `productDelete`, `productBulkDelete`, `voucherCreate`, `voucherUpdate`, `voucherDelete`, `voucherBulkDelete` — each with the DGS proof, the real-stack integration legs (CI), payload-error mapping, typed global-ID codec round-trips, and permission negatives.
 - **BLOCKED_BY_DECISION (documented, not fake no-ops):** `promotionCreate`/`promotionUpdate`/`promotionDelete`/`promotionBulkDelete` — the Saleor 3.23 promotion model is the RULES-engine system (`PromotionCreateInput.type`/`rules` with `cataloguePredicate` rewards); the platform's V223 promotion row is the classic discount policy (`discount_type`/`discount_value`/`min_spend`, all NOT NULL) with NO rules storage. Executing promotionCreate would require either fabricating the row's NOT NULL discount facts (dishonest) or building the rules engine (its own multi-packet project with a migration + reward handlers). The decision request is recorded here and in the SDL header.
 - **Allocation-discrepancy note for the integration owner:** the standing inventory's `owner_agent` column labels the voucher/promotion MUTATION rows `A3` (and, e.g., webhooks `A5` — a partition that predates this 3-agent campaign), while this packet's commissioned checklist (`docs/governance/campaign/agent-tasks/agent-2-catalog-pricing.md` §"قائمة الجذور NOT_STARTED المسندة لك") assigns them to Agent 2 over the packet's exclusive module ownership (`marketplace-pricing/**`). The voucher slice here is real, tested and over the packet-owned module; if Agent 3 delivered the same roots independently, the integration owner picks one with this evidence in hand.
 - **The remaining assigned roots stay NOT_STARTED** — honestly recorded in the CSV with their owning-module assessment; no pretend resolvers, no empty-list stubs, no success-shaped no-ops were created for them.
 
 ## 5. Flyway migrations
 
-**None consumed.** Both slices run over pre-existing tables (`categories`; `vouchers` from V223). The reserved ranges `V253–V260` (P2) and `V261–V268` (P3) remain untouched for the follow-on roots (collections need one; the promotion rules engine, if decided, needs one).
+**None consumed.** All four slices run over pre-existing tables (`categories`, `product_types`, `products`, `vouchers` from V223). The reserved ranges `V253–V260` (P2) and `V261–V268` (P3) remain untouched for the follow-on roots (collections need one; the promotion rules engine, if decided, needs one).
 
 ## 6. SPIs
 
-- **Added (this packet, both owned modules):** `CategoryWriteSpi` (+ `CategoryCreateCommand`, `CategoryUpdateCommand`, `CategoryMutationResult`, `CategoryMutationError`, `CategoryMutationErrorCode`), `VoucherWriteSpi` (+ the five command/result/error records).
-- **Consumed through the existing adapters:** `CategoryReadSpi`, `VoucherView` (read side), `SaleorGlobalIdCodec`, `KeysetCursorGate`, `GraphQlProperties`, `VoucherGraphQlMapper`, `CategoryGraphQlMapper`.
+- **Added (this packet, both owned modules):** `CategoryWriteSpi` (+ `CategoryCreateCommand`, `CategoryUpdateCommand`, `CategoryMutationResult`, `CategoryMutationError`, `CategoryMutationErrorCode`), `VoucherWriteSpi` (+ the five command/result/error records), `ProductTypeWriteSpi` (+ `ProductTypeCreateCommand`, `ProductTypeUpdateCommand`, `ProductTypeMutationResult`, `ProductTypeMutationError`, `ProductTypeMutationErrorCode`), `ProductWriteSpi` (+ `ProductCreateCommand`, `ProductUpdateCommand`, `ProductMutationResult`, `ProductMutationError`, `ProductMutationErrorCode`).
+- **Consumed through the existing adapters:** `CategoryReadSpi`, `VoucherView`, `ProductView`, `ProductTypeView` (read side), `CurrentUserProvider` (the provider-ownership resolution — the `ProductService.register` seam's own mechanism), `SaleorGlobalIdCodec`, `KeysetCursorGate`, `GraphQlProperties`, `VoucherGraphQlMapper`, `CategoryGraphQlMapper`, `ProductGraphQlMapper`, `ProductTypeGraphQlMapper`.
 
 ## 7. CodeRabbit / review bots
 
 - The PR was left in draft state by its opener; the draft→ready toggle did not take via the REST API. A manual review request was posted to the PR (`@coderabbitai review`, comment 6317378045) with the out-of-scope-blocker context. Self-review was performed continuously (every repair above was found by this session's own review of the frozen tree, not by the bots).
+- **CodeRabbit's 5 actionable findings from its first review were all repaired in commit `e5b343eb`** (the two Major correctness findings with their own regression proofs — see §1.4) — a fresh `@coderabbitai review` request accompanies this delivery.
