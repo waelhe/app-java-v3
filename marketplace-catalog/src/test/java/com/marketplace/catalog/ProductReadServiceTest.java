@@ -20,6 +20,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -56,10 +57,15 @@ class ProductReadServiceTest {
         repository = mock(ProductRepository.class);
         service = new ProductReadService(repository);
         publicCaller = mock(Authentication.class);
-        when(publicCaller.getAuthorities()).thenReturn(List.<GrantedAuthority>of());
+        // Authentication.getAuthorities() returns Collection<? extends
+        // GrantedAuthority> (the Spring Security 7.1.1 interface contract) —
+        // a wildcard-capture return Mockito's when(...).thenReturn(...) cannot
+        // type-check; doReturn().when(...) is Mockito's own documented form
+        // for stubbing wildcard-generic returns.
+        doReturn(List.<GrantedAuthority>of()).when(publicCaller).getAuthorities();
         adminCaller = mock(Authentication.class);
-        when(adminCaller.getAuthorities())
-                .thenReturn(List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+        doReturn(List.of(new SimpleGrantedAuthority("ROLE_ADMIN")))
+                .when(adminCaller).getAuthorities();
     }
 
     private static Product activeProduct(String title) {
