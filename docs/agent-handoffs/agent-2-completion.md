@@ -2,8 +2,8 @@
 
 > **Branch:** `agent/saleor-p2-p3-catalog-pricing-20261021` (this PR's own working branch — no other PR or branch created, nothing merged)
 > **Base SHA (frozen):** `b3c75d0584cda3b07722c424195bcd1c1c87bbd7`
-> **Final head SHA at delivery:** `8dd2c0372e24e0832108125ef2b4541ac6f0de4a`
-> **Commits (execution order):** `d3e8d7e` → `fe8f40f` → `a5094d7` → `107cadf` → `5f9c134` → `8dd2c03`
+> **Final head SHA at delivery:** `e3223a6` (full: see `git rev-parse HEAD` on the branch)
+> **Commits (execution order):** `d3e8d7e` → `fe8f40f` → `a5094d7` → `107cadf` → `5f9c134` → `8dd2c03` → `76a455e` (handoff docs) → `e3223a6` (self-review polish)
 
 ---
 
@@ -59,7 +59,8 @@
 
 ### CI (GitHub Actions, on this branch's own heads)
 
-- **Run 39608509522** (`workflow_dispatch` on final head `8dd2c03`, dispatched by this session): in progress at delivery time — https://github.com/waelhe/app-java-v3/actions/runs/39608509522
+- **Run 39610030554** (`workflow_dispatch` on FINAL head `e3223a6`, dispatched by this session): completed FAILURE with the SAME single out-of-scope error — `marketplace-orders/OrderReadService.java:[90,35] cannot find symbol` — while `marketplace-catalog` and `marketplace-pricing` (this packet's modules, all changes included) BUILT GREEN before the reactor stopped at orders. https://github.com/waelhe/app-java-v3/actions/runs/39610030554
+- **Run 39608509522** (`workflow_dispatch` on `8dd2c03`): same single-error signature. https://github.com/waelhe/app-java-v3/actions/runs/39608509522
 - **Run 39601766595** (`workflow_dispatch` on `107cadf`): FAILED — the failure is the out-of-scope `marketplace-orders` blocker below, NOT this packet's code: `OrderReadService.java:[90,35] cannot find symbol` (`Limit.value()`). The GraphQL Schema Compatibility Gate and OpenAPI Compatibility Gate failures in that run are downstream of the build failure ("Current tree failed to produce the schema dump") — exactly the frozen-CI phenomenon the assignment predicted; they are NOT contract-divergence evidence. https://github.com/waelhe/app-java-v3/actions/runs/39601766595
 
 ---
