@@ -66,9 +66,6 @@ class ProductTypeGraphQlIntegrationTest {
     private static final String PROVIDER_SUBJECT = "p2-types-provider-subject";
     private static final String CONSUMER_SUBJECT = "p2-types-consumer-subject";
 
-    /** The base64 prefix every typed ProductType global ID starts with on the wire. */
-    private static final String PRODUCT_TYPE_ID_PREFIX = java.util.Base64.getEncoder()
-            .encodeToString("ProductType:".getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
     @Container
     @ServiceConnection
@@ -138,6 +135,22 @@ class ProductTypeGraphQlIntegrationTest {
                 .build();
     }
 
+    /**
+     * Decodes an emitted typed global ID — the honest tag/UUID verification
+     * (Base64("Tag:") prefix compares can never hold: the padded '==' of the
+     * tag-only encoding is not part of the full "Tag:<uuid>" encoding; the
+     * decoded form is checked against the plain tag and the native UUID
+     * shape instead).
+     */
+    private static String decodedGlobalId(String globalId) {
+        String decoded = new String(java.util.Base64.getDecoder().decode(globalId),
+                java.nio.charset.StandardCharsets.UTF_8);
+        int separator = decoded.indexOf(':');
+        assertThat(separator).isPositive();
+        UUID.fromString(decoded.substring(separator + 1));
+        return decoded;
+    }
+
     /** A well-formed typed global ID for the ProductType type over any native UUID. */
     private static String productTypeGlobalId(UUID id) {
         return java.util.Base64.getEncoder()
@@ -166,7 +179,7 @@ class ProductTypeGraphQlIntegrationTest {
                 .satisfies(edges -> assertThat(edges).isNotEmpty())
                 .path("productTypes.edges[*].node.id").entityList(String.class)
                 .satisfies(ids -> assertThat(ids)
-                        .allSatisfy(id -> assertThat(id).startsWith(PRODUCT_TYPE_ID_PREFIX)))
+                        .allSatisfy(id -> assertThat(decodedGlobalId(id)).startsWith("ProductType:")))
                 .path("productTypes.edges[*].node.slug").entityList(String.class)
                 .satisfies(slugs -> assertThat(slugs)
                         .allSatisfy(slug -> assertThat(slug).matches("^[a-z][a-z0-9-]*$")));

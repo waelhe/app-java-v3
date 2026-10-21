@@ -80,9 +80,6 @@ class CategoryGraphQlIntegrationTest {
     private static final String CONSUMER_SUBJECT = "p2-cats-consumer-subject";
     private static final String ADMIN_SUBJECT = "p2-cats-admin-subject";
 
-    /** The base64 prefix every typed Category global ID starts with on the wire. */
-    private static final String CATEGORY_ID_PREFIX = java.util.Base64.getEncoder()
-            .encodeToString("Category:".getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
     @Container
     @ServiceConnection
@@ -154,6 +151,22 @@ class CategoryGraphQlIntegrationTest {
                         .baseUrl("http://localhost:" + port + "/graphql")
                         .defaultHeader("Authorization", "Bearer test-token"))
                 .build();
+    }
+
+    /**
+     * Decodes an emitted typed global ID — the honest tag/UUID verification
+     * (Base64("Tag:") prefix compares can never hold: the padded '==' of the
+     * tag-only encoding is not part of the full "Tag:<uuid>" encoding; the
+     * decoded form is checked against the plain tag and the native UUID
+     * shape instead).
+     */
+    private static String decodedGlobalId(String globalId) {
+        String decoded = new String(java.util.Base64.getDecoder().decode(globalId),
+                java.nio.charset.StandardCharsets.UTF_8);
+        int separator = decoded.indexOf(':');
+        assertThat(separator).isPositive();
+        UUID.fromString(decoded.substring(separator + 1));
+        return decoded;
     }
 
     /** A well-formed typed global ID for the Category type over any native UUID. */
@@ -286,7 +299,7 @@ class CategoryGraphQlIntegrationTest {
         // The list's own emitted typed global ID reads back through the
         // category root — the round-trip stability the codec contract
         // pins (same wire ID, same registry row).
-        assertThat(emittedId).startsWith(CATEGORY_ID_PREFIX);
+        assertThat(decodedGlobalId(emittedId)).startsWith("Category:");
         tester.document("""
                         query($id: ID!) { category(id: $id) { id slug name } }
                         """)

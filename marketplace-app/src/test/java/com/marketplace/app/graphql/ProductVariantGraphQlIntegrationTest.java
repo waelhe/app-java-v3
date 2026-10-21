@@ -88,9 +88,6 @@ class ProductVariantGraphQlIntegrationTest {
     private static final String CONSUMER_SUBJECT = "p2-vars-consumer-subject";
     private static final String ADMIN_SUBJECT = "p2-vars-admin-subject";
 
-    /** The base64 prefix every typed ProductVariant global ID starts with on the wire. */
-    private static final String VARIANT_ID_PREFIX = java.util.Base64.getEncoder()
-            .encodeToString("ProductVariant:".getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
     @Container
     @ServiceConnection
@@ -245,6 +242,22 @@ class ProductVariantGraphQlIntegrationTest {
                         .baseUrl("http://localhost:" + port + "/graphql")
                         .defaultHeader("Authorization", "Bearer test-token"))
                 .build();
+    }
+
+    /**
+     * Decodes an emitted typed global ID — the honest tag/UUID verification
+     * (Base64("Tag:") prefix compares can never hold: the padded '==' of the
+     * tag-only encoding is not part of the full "Tag:<uuid>" encoding; the
+     * decoded form is checked against the plain tag and the native UUID
+     * shape instead).
+     */
+    private static String decodedGlobalId(String globalId) {
+        String decoded = new String(java.util.Base64.getDecoder().decode(globalId),
+                java.nio.charset.StandardCharsets.UTF_8);
+        int separator = decoded.indexOf(':');
+        assertThat(separator).isPositive();
+        UUID.fromString(decoded.substring(separator + 1));
+        return decoded;
     }
 
     /** A well-formed typed global ID for the ProductVariant type over any native UUID. */
@@ -472,7 +485,7 @@ class ProductVariantGraphQlIntegrationTest {
                 .errors().verify()
                 .path("productVariants.edges[0].node.id").entity(String.class).get();
 
-        assertThat(emittedId).startsWith(VARIANT_ID_PREFIX);
+        assertThat(decodedGlobalId(emittedId)).startsWith("ProductVariant:");
         tester.document("""
                         query($id: ID!) { productVariant(id: $id) { id sku } }
                         """)

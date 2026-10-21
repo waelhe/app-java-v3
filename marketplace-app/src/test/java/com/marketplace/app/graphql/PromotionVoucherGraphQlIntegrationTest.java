@@ -74,11 +74,6 @@ class PromotionVoucherGraphQlIntegrationTest {
     private static final String PROVIDER_SUBJECT = "p3-discounts-provider-subject";
     private static final String CONSUMER_SUBJECT = "p3-discounts-consumer-subject";
 
-    /** The base64 prefixes every typed global ID starts with on the wire. */
-    private static final String PROMOTION_ID_PREFIX = java.util.Base64.getEncoder()
-            .encodeToString("Promotion:".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-    private static final String VOUCHER_ID_PREFIX = java.util.Base64.getEncoder()
-            .encodeToString("Voucher:".getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
     private static final Instant WINDOW_START = Instant.parse("2026-01-01T00:00:00Z");
     private static final Instant WINDOW_END = Instant.parse("2027-01-01T00:00:00Z");
@@ -210,6 +205,22 @@ class PromotionVoucherGraphQlIntegrationTest {
                 .build();
     }
 
+    /**
+     * Decodes an emitted typed global ID — the honest tag/UUID verification
+     * (Base64("Tag:") prefix compares can never hold: the padded '==' of the
+     * tag-only encoding is not part of the full "Tag:<uuid>" encoding; the
+     * decoded form is checked against the plain tag and the native UUID
+     * shape instead).
+     */
+    private static String decodedGlobalId(String globalId) {
+        String decoded = new String(java.util.Base64.getDecoder().decode(globalId),
+                java.nio.charset.StandardCharsets.UTF_8);
+        int separator = decoded.indexOf(':');
+        assertThat(separator).isPositive();
+        UUID.fromString(decoded.substring(separator + 1));
+        return decoded;
+    }
+
     /** A well-formed typed global ID for either discount type over any native UUID. */
     private static String globalId(String typeName, UUID id) {
         return java.util.Base64.getEncoder()
@@ -238,7 +249,7 @@ class PromotionVoucherGraphQlIntegrationTest {
                 .satisfies(edges -> assertThat(edges).isNotEmpty())
                 .path("promotions.edges[*].node.id").entityList(String.class)
                 .satisfies(ids -> assertThat(ids)
-                        .allSatisfy(id -> assertThat(id).startsWith(PROMOTION_ID_PREFIX)))
+                        .allSatisfy(id -> assertThat(decodedGlobalId(id)).startsWith("Promotion:")))
                 .path("promotions.edges[*].node.type").entityList(String.class)
                 .satisfies(types -> assertThat(types)
                         .allSatisfy(type -> assertThat(type).isEqualTo("ORDER")))
@@ -265,7 +276,7 @@ class PromotionVoucherGraphQlIntegrationTest {
                 .satisfies(edges -> assertThat(edges).isNotEmpty())
                 .path("vouchers.edges[*].node.id").entityList(String.class)
                 .satisfies(ids -> assertThat(ids)
-                        .allSatisfy(id -> assertThat(id).startsWith(VOUCHER_ID_PREFIX)))
+                        .allSatisfy(id -> assertThat(decodedGlobalId(id)).startsWith("Voucher:")))
                 .path("vouchers.edges[*].node.code").entityList(String.class)
                 .satisfies(codes -> assertThat(codes)
                         .contains("P3TEST-ALPHA", "P3TEST-BETA", "P3TEST-GAMMA"))

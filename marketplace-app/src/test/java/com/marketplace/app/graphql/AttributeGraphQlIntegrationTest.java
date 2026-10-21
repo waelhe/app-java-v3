@@ -70,9 +70,6 @@ class AttributeGraphQlIntegrationTest {
     private static final String PROVIDER_SUBJECT = "p2-attrs-provider-subject";
     private static final String CONSUMER_SUBJECT = "p2-attrs-consumer-subject";
 
-    /** The base64 prefix every typed Attribute global ID starts with on the wire. */
-    private static final String ATTRIBUTE_ID_PREFIX = java.util.Base64.getEncoder()
-            .encodeToString("Attribute:".getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
     @Container
     @ServiceConnection
@@ -145,6 +142,22 @@ class AttributeGraphQlIntegrationTest {
                 .build();
     }
 
+    /**
+     * Decodes an emitted typed global ID — the honest tag/UUID verification
+     * (Base64("Tag:") prefix compares can never hold: the padded '==' of the
+     * tag-only encoding is not part of the full "Tag:<uuid>" encoding; the
+     * decoded form is checked against the plain tag and the native UUID
+     * shape instead).
+     */
+    private static String decodedGlobalId(String globalId) {
+        String decoded = new String(java.util.Base64.getDecoder().decode(globalId),
+                java.nio.charset.StandardCharsets.UTF_8);
+        int separator = decoded.indexOf(':');
+        assertThat(separator).isPositive();
+        UUID.fromString(decoded.substring(separator + 1));
+        return decoded;
+    }
+
     /** A well-formed typed global ID for the Attribute type over any native UUID. */
     private static String attributeGlobalId(UUID id) {
         return java.util.Base64.getEncoder()
@@ -179,7 +192,7 @@ class AttributeGraphQlIntegrationTest {
                 .satisfies(edges -> assertThat(edges).isNotEmpty())
                 .path("attributes.edges[*].node.id").entityList(String.class)
                 .satisfies(ids -> assertThat(ids)
-                        .allSatisfy(id -> assertThat(id).startsWith(ATTRIBUTE_ID_PREFIX)))
+                        .allSatisfy(id -> assertThat(decodedGlobalId(id)).startsWith("Attribute:")))
                 .path("attributes.edges[*].node.slug").entityList(String.class)
                 .satisfies(slugs -> assertThat(slugs)
                         .allSatisfy(slug -> assertThat(slug).matches("^[a-z][a-z0-9-]*$")))
@@ -400,7 +413,7 @@ class AttributeGraphQlIntegrationTest {
                 .execute()
                 .errors().verify()
                 .path("attribute.id").entity(String.class)
-                .satisfies(id -> assertThat(id).startsWith(ATTRIBUTE_ID_PREFIX))
+                .satisfies(id -> assertThat(decodedGlobalId(id)).startsWith("Attribute:"))
                 .path("attribute.name").entity(String.class).isEqualTo("سمة بيتا للاختبار")
                 .path("attribute.slug").entity(String.class).isEqualTo("p2-attr-beta")
                 .path("attribute.inputType").entity(String.class).isEqualTo("DROPDOWN")
