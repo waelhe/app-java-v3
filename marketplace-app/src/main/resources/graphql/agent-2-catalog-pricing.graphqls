@@ -26,6 +26,14 @@
 #   productCreate / productUpdate / productDelete / productBulkDelete —
 #   the catalog owner's provider-scoped product write use case over the
 #   EXISTING products table (no new migration).
+#   attributeCreate / attributeUpdate / attributeDelete /
+#   attributeBulkDelete — the typed attribute collection's ADMIN write
+#   use case over the EXISTING catalog_attribute_definitions table
+#   (no new migration).
+#   attributeValueCreate / attributeValueUpdate / attributeValueDelete /
+#   attributeValueBulkDelete — the CHOICE attribute's option values'
+#   ADMIN write use case over the EXISTING catalog_attribute_options
+#   table (no new migration).
 #
 # Recorded owner decision (NOT a fake no-op): the Saleor 3.23
 # promotionCreate/Update/Delete model is the RULES-engine promotion
@@ -539,4 +547,290 @@ enum DiscountErrorCode {
     CANNOT_MANAGE_PRODUCT_WITHOUT_VARIANT
     DUPLICATED_INPUT_ITEM
     VOUCHER_ALREADY_USED
+}
+
+# =====================================================================
+# The attribute mutation roots — the catalog owner's typed attribute
+# ADMIN write use case over the EXISTING catalog_attribute_definitions
+# table (no new migration). Signatures are the pinned 3.23.43 shapes
+# (attributeDelete/attributeUpdate carry the externalReference argument
+# — no external-ID column exists on this platform, so a non-null value
+# answers the classified validation error, never a silent no-op).
+# =====================================================================
+extend type Mutation {
+    """Creates a new attribute."""
+    attributeCreate(
+        """Fields required to create an attribute."""
+        input: AttributeCreateInput!
+    ): AttributeCreate
+
+    """Deletes an attribute."""
+    attributeDelete(
+        """
+        External ID of an attribute to delete. No external-ID column
+        exists on this platform (the recorded divergence); a non-null
+        value answers the classified validation error.
+        """
+        externalReference: String
+
+        """ID of an attribute to delete."""
+        id: ID
+    ): AttributeDelete
+
+    """Updates an attribute."""
+    attributeUpdate(
+        """
+        External ID of an attribute to update. No external-ID column
+        exists on this platform; a non-null value answers the
+        classified validation error.
+        """
+        externalReference: String
+
+        """ID of an attribute to update."""
+        id: ID
+
+        """Fields required to update an attribute."""
+        input: AttributeUpdateInput!
+    ): AttributeUpdate
+
+    """Deletes attributes."""
+    attributeBulkDelete(
+        """List of attribute IDs to delete."""
+        ids: [ID!]!
+    ): AttributeBulkDelete
+}
+
+# =====================================================================
+# The bounded AttributeCreateInput — the pinned Saleor input's OWNED
+# field set only: name (the bilingual row's name_en), slug (the row's
+# immutable code), and inputType (the closed domain value shape's own
+# widget vocabulary — AttributeInputTypeEnum, the read surface's own
+# declared enum). The unowned members (entityType — no reference
+# entity owner, type — the deprecated discriminator with no column,
+# unit — no measurement owner, values — the attribute-value family is
+# its own root family (attributeValueCreate), valueRequired/
+# isVariantOnly/visibleInStorefront — no columns, the deprecated
+# filter flags, externalReference — no column, referenceTypes — no
+# reference owner) stay undeclared — recorded divergences, never
+# faked.
+# =====================================================================
+input AttributeCreateInput {
+    """Name of an attribute displayed in the interface (the bilingual row's name_en)."""
+    name: String!
+
+    """Internal representation of an attribute name (the row's stable public code)."""
+    slug: String
+
+    """The input type to use for entering attribute values in the dashboard."""
+    inputType: AttributeInputTypeEnum
+}
+
+# =====================================================================
+# The bounded AttributeUpdateInput — the pinned Saleor input's OWNED
+# field set only: name and slug (display metadata; the row's code and
+# value shape are immutable by the entity's own law — a different slug
+# answers the classified INVALID payload error, never a silent drop).
+# The unowned members (unit, removeValues/addValues — the
+# attribute-value root family, valueRequired, isVariantOnly,
+# visibleInStorefront, the deprecated flags, externalReference) stay
+# undeclared — recorded divergences, never faked.
+# =====================================================================
+input AttributeUpdateInput {
+    """Name of an attribute displayed in the interface."""
+    name: String
+
+    """Internal representation of an attribute name."""
+    slug: String
+}
+
+type AttributeCreate {
+    """The created attribute."""
+    attribute: Attribute
+    errors: [AttributeError!]!
+}
+
+type AttributeUpdate {
+    """The updated attribute."""
+    attribute: Attribute
+    errors: [AttributeError!]!
+}
+
+type AttributeDelete {
+    attribute: Attribute
+    errors: [AttributeError!]!
+}
+
+type AttributeBulkDelete {
+    """Returns how many objects were affected."""
+    count: Int!
+    errors: [AttributeError!]!
+}
+
+type AttributeError {
+    """
+    Name of a field that caused the error. A value of `null` indicates
+    that the error isn't associated with a particular field.
+    """
+    field: String
+
+    """The error message."""
+    message: String
+
+    """The error code."""
+    code: AttributeErrorCode!
+}
+
+# The pinned Saleor 3.23.43 AttributeErrorCode membership set (the
+# Attributes-domain payload error vocabulary; this surface currently
+# answers REQUIRED/INVALID/NOT_FOUND/ALREADY_EXISTS).
+enum AttributeErrorCode {
+    ALREADY_EXISTS
+    GRAPHQL_ERROR
+    INVALID
+    NOT_FOUND
+    REQUIRED
+    UNIQUE
+}
+
+# =====================================================================
+# The attribute-value mutation roots — the catalog owner's CHOICE-
+# attribute option-value ADMIN write use case over the EXISTING
+# catalog_attribute_options table (no new migration). Signatures are
+# the pinned 3.23.43 shapes (attributeValueDelete/attributeValueUpdate
+# carry the externalReference argument — no external-ID column exists
+# on this platform, so a non-null value answers the classified
+# validation error, never a silent no-op).
+# =====================================================================
+extend type Mutation {
+    """Creates a value for an attribute."""
+    attributeValueCreate(
+        """Attribute to which value will be assigned (the typed global ID of the CHOICE attribute)."""
+        attribute: ID!
+
+        """Fields required to create an attribute value."""
+        input: AttributeValueCreateInput!
+    ): AttributeValueCreate
+
+    """Deletes a value of an attribute."""
+    attributeValueDelete(
+        """
+        External ID of an attribute value to delete. No external-ID
+        column exists on this platform (the recorded divergence); a
+        non-null value answers the classified validation error.
+        """
+        externalReference: String
+
+        """ID of an attribute value to delete."""
+        id: ID
+    ): AttributeValueDelete
+
+    """Updates value of an attribute."""
+    attributeValueUpdate(
+        """
+        External ID of an attribute value to update. No external-ID
+        column exists on this platform; a non-null value answers the
+        classified validation error.
+        """
+        externalReference: String
+
+        """ID of an attribute value to update."""
+        id: ID
+
+        """Fields required to update an attribute value."""
+        input: AttributeValueUpdateInput!
+    ): AttributeValueUpdate
+
+    """Deletes values of attributes."""
+    attributeValueBulkDelete(
+        """List of attribute value IDs to delete."""
+        ids: [ID!]!
+    ): AttributeValueBulkDelete
+}
+
+# =====================================================================
+# The bounded AttributeValueCreateInput — the pinned Saleor input's
+# OWNED field set: name (the bilingual row's name_en — String! in the
+# pinned shape) PLUS the platform-extension slug carrier the row's own
+# NOT NULL code policy requires and the Saleor closure cannot declare
+# (the "platform-only fields as extensions" policy the VoucherInput's
+# discount facts established — Saleor derives the value slug from the
+# name; this platform's row owns an explicit stable code). The
+# unowned members (value — no swatch carrier, the deprecated
+# richText/plainText, fileUrl/contentType — no file owner,
+# externalReference — no column) stay undeclared — recorded
+# divergences, never faked. The append position is the owner's own
+# max+1 derivation — never a client-supplied fact.
+# =====================================================================
+input AttributeValueCreateInput {
+    """Name of a value displayed in the interface (the bilingual row's name_en)."""
+    name: String!
+
+    """
+    PLATFORM EXTENSION (the row's NOT NULL code policy — no Saleor
+    carrier in the declarable closure): the option's stable public
+    code, a lowercase latin slug unique within the owning attribute.
+    """
+    slug: String
+}
+
+# =====================================================================
+# The bounded AttributeValueUpdateInput — the pinned Saleor input's
+# OWNED field set: name (display metadata; the row's code is immutable
+# by the entity's own identity law — a different slug answers the
+# classified INVALID payload error, never a silent drop) plus the same
+# platform-extension slug carrier for the idempotent re-send. The
+# unowned members stay undeclared — recorded divergences, never faked.
+# =====================================================================
+input AttributeValueUpdateInput {
+    """Name of a value displayed in the interface."""
+    name: String
+
+    """The row's stable public code (the idempotent re-send carrier)."""
+    slug: String
+}
+
+# =====================================================================
+# The bounded AttributeValue wire type — the pinned Saleor type's
+# OWNED field set only: the typed global ID, the rendered primary
+# display name, and the row's immutable public code (the Saleor slug
+# mapping). The unowned members (value — no swatch carrier,
+# translation — no translation owner) stay undeclared — recorded
+# divergences, never faked.
+# =====================================================================
+type AttributeValue {
+    """The ID of the attribute value — typed global ID (opaque, never a raw UUID)."""
+    id: ID!
+
+    """Name of a value displayed in the interface (the rendered primary display name)."""
+    name: String
+
+    """Internal representation of a value (the row's immutable public code, unique per attribute)."""
+    slug: String
+}
+
+type AttributeValueCreate {
+    """The updated attribute (the owning CHOICE attribute's projection)."""
+    attribute: Attribute
+    errors: [AttributeError!]!
+    attributeValue: AttributeValue
+}
+
+type AttributeValueUpdate {
+    """The updated attribute (the owning CHOICE attribute's projection)."""
+    attribute: Attribute
+    errors: [AttributeError!]!
+    attributeValue: AttributeValue
+}
+
+type AttributeValueDelete {
+    """The updated attribute (the owning CHOICE attribute's projection)."""
+    attribute: Attribute
+    errors: [AttributeError!]!
+    attributeValue: AttributeValue
+}
+
+type AttributeValueBulkDelete {
+    """Returns how many objects were affected."""
+    count: Int!
+    errors: [AttributeError!]!
 }

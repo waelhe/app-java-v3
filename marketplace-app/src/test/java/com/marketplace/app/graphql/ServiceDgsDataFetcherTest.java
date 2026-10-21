@@ -165,6 +165,18 @@ class ServiceDgsDataFetcherTest {
     @MockitoBean
     private com.marketplace.catalog.spi.ProductWriteSpi productWriteSpi;
 
+
+    // The attribute mutation roots' owning write seam (agent-2 packet) —
+    // the package slice wires every fetcher, so this seam gets its mock
+    // (the b5-a sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.catalog.spi.AttributeWriteSpi attributeWriteSpi;
+
+    // The attribute-value mutation roots' owning write seam (agent-2
+    // packet) — the package slice wires every fetcher, so this seam
+    // gets its mock (the b5-a sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.catalog.spi.AttributeValueWriteSpi attributeValueWriteSpi;
     /** The mutation path reads the principal from the (test-populated) security context. */
     @AfterEach
     void clearSecurityContext() {

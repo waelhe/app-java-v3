@@ -2,6 +2,8 @@ package com.marketplace.app.graphql;
 
 import com.marketplace.catalog.CatalogAttributeDefinition;
 import com.marketplace.catalog.CatalogAttributeDefinitionRepository;
+import com.marketplace.catalog.CatalogAttributeOption;
+import com.marketplace.catalog.CatalogAttributeOptionRepository;
 import com.marketplace.catalog.CatalogAttributeType;
 
 import test.config.IntegrationContainers;
@@ -57,6 +59,28 @@ import static org.mockito.Mockito.when;
  * facts (the bilingual row's primary-name rendering, and the closed
  * domain value shape's inputType/withChoices renderings — the nameEn-null
  * CHOICE seed proves both honestly).</p>
+ *
+ * <p>The mutation legs (the agent-2 packet's {@code attributeCreate}/
+ * {@code attributeUpdate}/{@code attributeDelete}/
+ * {@code attributeBulkDelete} roots) prove the REAL write stack: the
+ * ADMIN-only gate at the owning use case (a consumer caller answers
+ * AUTHZ-001 with the row untouched), the create's honest ladder
+ * (REQUIRED name/slug/inputType entries, the duplicate slug's
+ * ALREADY_EXISTS), the update's partial-preserve semantics and the
+ * immutable-code law (a different slug answers the classified INVALID
+ * payload error — never a silent drop), the soft delete's last-known
+ * projection with the second delete's honest NOT_FOUND, and the bulk
+ * delete's honest count over unknown ids.</p>
+ *
+ * <p>The attribute-value mutation legs (the agent-2 packet's
+ * {@code attributeValueCreate}/{@code attributeValueUpdate}/
+ * {@code attributeValueDelete}/{@code attributeValueBulkDelete} roots)
+ * prove the same REAL write stack over the CHOICE attribute's option
+ * registry: the non-CHOICE parent's own refusal (the module's
+ * registerOption law), the append-position derivation, the
+ * value-slug uniqueness within the attribute, the immutable-code law,
+ * the soft delete's dual projection (the value AND its owning
+ * attribute), and the bulk delete's honest count.</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "spring.flyway.enabled=true",
@@ -87,11 +111,17 @@ class AttributeGraphQlIntegrationTest {
     @Autowired
     private CatalogAttributeDefinitionRepository attributeDefinitionRepository;
 
+    @Autowired
+    private CatalogAttributeOptionRepository attributeOptionRepository;
+
     @LocalServerPort
     private int port;
 
     /** The rows this test seeds — cleaned up after each leg, never touching reference data it does not own. */
     private final List<UUID> seededIds = new ArrayList<>();
+
+    /** The option rows this test seeds — cleaned up after each leg, never touching reference data it does not own. */
+    private final List<UUID> seededOptionIds = new ArrayList<>();
 
     @BeforeEach
     void seedReferenceRows() {
@@ -107,6 +137,10 @@ class AttributeGraphQlIntegrationTest {
 
     @AfterEach
     void removeSeededRows() {
+        if (!seededOptionIds.isEmpty()) {
+            attributeOptionRepository.deleteAllById(new ArrayList<>(seededOptionIds));
+            seededOptionIds.clear();
+        }
         if (!seededIds.isEmpty()) {
             attributeDefinitionRepository.deleteAllById(new ArrayList<>(seededIds));
             seededIds.clear();
@@ -118,6 +152,17 @@ class AttributeGraphQlIntegrationTest {
                 CatalogAttributeDefinition.create(code, nameEn, nameAr, valueType, null);
         attributeDefinitionRepository.save(definition);
         seededIds.add(definition.getId());
+    }
+
+    /** Seeds one option under the CHOICE-typed beta attribute — the value-family legs' own parent. */
+    private CatalogAttributeOption persistOption(String code, String nameEn, int position) {
+        CatalogAttributeDefinition parent =
+                attributeDefinitionRepository.findByCode("p2-attr-beta").orElseThrow();
+        CatalogAttributeOption option = CatalogAttributeOption.create(
+                parent.getId(), code, nameEn, null, position);
+        attributeOptionRepository.save(option);
+        seededOptionIds.add(option.getId());
+        return option;
     }
 
     /**
@@ -162,6 +207,12 @@ class AttributeGraphQlIntegrationTest {
     private static String attributeGlobalId(UUID id) {
         return java.util.Base64.getEncoder()
                 .encodeToString(("Attribute:" + id).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /** A well-formed typed global ID for the AttributeValue type over any native UUID. */
+    private static String attributeValueGlobalId(UUID id) {
+        return java.util.Base64.getEncoder()
+                .encodeToString(("AttributeValue:" + id).getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     /** A well-formed typed global ID for ANOTHER type — the mistyped-ID leg's own input. */
@@ -639,6 +690,484 @@ class AttributeGraphQlIntegrationTest {
                     assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
                     assertThat(error.getMessage()).contains("attribute requires one of id or slug");
                 });
+    }
+
+    // ------------------------------------------------------------------
+    // the mutation roots — the real write stack (the agent-2 packet)
+    // ------------------------------------------------------------------
+
+    @Test
+    void adminCreatesAnAttributeThroughTheRealMutationStack() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+
+        String emittedId = adminTester.document("""
+                        mutation { attributeCreate(input: {name: "P2 Created Attribute", slug: "p2-attr-created", inputType: DROPDOWN}) {
+                            errors { field code }
+                            attribute { id name slug inputType withChoices }
+                        } }
+                        """)
+                .execute()
+                .errors().verify()
+                .path("attributeCreate.attribute.id").entity(String.class).get();
+
+        // The payload's typed global ID decodes to the registry's own tag
+        // and native UUID — the row the real write stack persisted.
+        String decoded = decodedGlobalId(emittedId);
+        assertThat(decoded).startsWith("Attribute:");
+        UUID rowId = UUID.fromString(decoded.substring("Attribute:".length()));
+        seededIds.add(rowId);
+        CatalogAttributeDefinition row = attributeDefinitionRepository.findById(rowId).orElseThrow();
+        assertThat(row.getCode()).isEqualTo("p2-attr-created");
+        assertThat(row.getNameEn()).isEqualTo("P2 Created Attribute");
+        assertThat(row.getValueType()).isEqualTo(CatalogAttributeType.CHOICE);
+
+        adminTester.document("""
+                        query { attribute(slug: "p2-attr-created") { slug name inputType withChoices } }
+                        """)
+                .execute()
+                .errors().verify()
+                .path("attribute.slug").entity(String.class).isEqualTo("p2-attr-created")
+                .path("attribute.name").entity(String.class).isEqualTo("P2 Created Attribute")
+                .path("attribute.inputType").entity(String.class).isEqualTo("DROPDOWN")
+                .path("attribute.withChoices").entity(Boolean.class).isEqualTo(true);
+    }
+
+    @Test
+    void duplicateSlugCreateAnswersThePayloadError() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+
+        adminTester.document("""
+                        mutation { attributeCreate(input: {name: "Duplicate", slug: "p2-attr-alpha", inputType: PLAIN_TEXT}) {
+                            errors { field code message }
+                            attribute { id }
+                        } }
+                        """)
+                .execute()
+                .errors().verify()
+                .path("attributeCreate.errors[0].field").entity(String.class).isEqualTo("slug")
+                .path("attributeCreate.errors[0].code").entity(String.class).isEqualTo("ALREADY_EXISTS")
+                .path("attributeCreate.attribute").valueIsNull();
+    }
+
+    @Test
+    void requiredFieldViolationsAnswerThePayloadErrors() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+
+        // A blank name passes the SDL's own String! gate and answers the
+        // owner's REQUIRED domain error; the omitted slug and inputType
+        // answer their own REQUIRED entries — the honest ladder.
+        adminTester.document("""
+                        mutation { attributeCreate(input: {name: " "}) {
+                            errors { field code }
+                            attribute { id }
+                        } }
+                        """)
+                .execute()
+                .errors().verify()
+                .path("attributeCreate.errors[0].field").entity(String.class).isEqualTo("name")
+                .path("attributeCreate.errors[0].code").entity(String.class).isEqualTo("REQUIRED")
+                .path("attributeCreate.errors[1].field").entity(String.class).isEqualTo("slug")
+                .path("attributeCreate.errors[1].code").entity(String.class).isEqualTo("REQUIRED")
+                .path("attributeCreate.errors[2].field").entity(String.class).isEqualTo("inputType")
+                .path("attributeCreate.errors[2].code").entity(String.class).isEqualTo("REQUIRED");
+    }
+
+    @Test
+    void consumerIsDeniedTheCreateByTheOwningUseCase() {
+        HttpGraphQlTester consumerTester = testerFor(CONSUMER_SUBJECT, "CONSUMER");
+
+        consumerTester.document("""
+                        mutation { attributeCreate(input: {name: "Denied", slug: "p2-attr-denied", inputType: PLAIN_TEXT}) {
+                            errors { code }
+                            attribute { id }
+                        } }
+                        """)
+                .execute()
+                .errors()
+                .satisfy(errors -> {
+                    var error = errors.getFirst();
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "AUTHZ-001");
+                    assertThat(error.getExtensions()).containsEntry("category", "authz");
+                });
+    }
+
+    @Test
+    void adminUpdatesAnAttributeThroughTheRealMutationStack() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        CatalogAttributeDefinition seeded =
+                attributeDefinitionRepository.findByCode("p2-attr-gamma").orElseThrow();
+
+        adminTester.document("""
+                        mutation { attributeUpdate(id: "%s", input: {name: "P2 Attribute Gamma Refreshed"}) {
+                            errors { code }
+                            attribute { name slug inputType }
+                        } }
+                        """.formatted(attributeGlobalId(seeded.getId())))
+                .execute()
+                .errors().verify()
+                .path("attributeUpdate.attribute.name").entity(String.class)
+                .isEqualTo("P2 Attribute Gamma Refreshed")
+                .path("attributeUpdate.attribute.slug").entity(String.class).isEqualTo("p2-attr-gamma")
+                .path("attributeUpdate.attribute.inputType").entity(String.class).isEqualTo("NUMERIC");
+
+        CatalogAttributeDefinition row =
+                attributeDefinitionRepository.findById(seeded.getId()).orElseThrow();
+        assertThat(row.getNameEn()).isEqualTo("P2 Attribute Gamma Refreshed");
+        assertThat(row.getCode()).isEqualTo("p2-attr-gamma");
+        assertThat(row.getValueType()).isEqualTo(CatalogAttributeType.NUMBER);
+    }
+
+    @Test
+    void slugChangeAttemptAnswersTheImmutablePayloadError() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        CatalogAttributeDefinition seeded =
+                attributeDefinitionRepository.findByCode("p2-attr-gamma").orElseThrow();
+
+        // The entity's own law: "Type and code are stable identity; only
+        // display metadata can be amended" — a different slug answers the
+        // classified INVALID payload error, never a silent drop.
+        adminTester.document("""
+                        mutation { attributeUpdate(id: "%s", input: {slug: "p2-attr-moved"}) {
+                            errors { field code message }
+                            attribute { slug }
+                        } }
+                        """.formatted(attributeGlobalId(seeded.getId())))
+                .execute()
+                .errors().verify()
+                .path("attributeUpdate.errors[0].field").entity(String.class).isEqualTo("slug")
+                .path("attributeUpdate.errors[0].code").entity(String.class).isEqualTo("INVALID")
+                .path("attributeUpdate.errors[0].message").entity(String.class)
+                .isEqualTo("An attribute slug is immutable; it cannot change after creation");
+
+        CatalogAttributeDefinition row =
+                attributeDefinitionRepository.findById(seeded.getId()).orElseThrow();
+        assertThat(row.getCode()).isEqualTo("p2-attr-gamma");
+    }
+
+    @Test
+    void adminSoftDeletesAnAttributeAndTheSecondDeleteAnswersNotFound() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        persist("p2-attr-mutation-delete", "P2 Mutation Delete Row", null, CatalogAttributeType.BOOLEAN);
+        CatalogAttributeDefinition seeded =
+                attributeDefinitionRepository.findByCode("p2-attr-mutation-delete").orElseThrow();
+
+        adminTester.document("""
+                        mutation { attributeDelete(id: "%s") {
+                            errors { code }
+                            attribute { id name slug }
+                        } }
+                        """.formatted(attributeGlobalId(seeded.getId())))
+                .execute()
+                .errors().verify()
+                .path("attributeDelete.attribute.name").entity(String.class)
+                .isEqualTo("P2 Mutation Delete Row")
+                .path("attributeDelete.attribute.slug").entity(String.class)
+                .isEqualTo("p2-attr-mutation-delete");
+
+        assertThat(attributeDefinitionRepository.findById(seeded.getId())).isEmpty();
+        assertThat(attributeDefinitionRepository.findByCode("p2-attr-mutation-delete")).isEmpty();
+
+        adminTester.document("""
+                        mutation { attributeDelete(id: "%s") {
+                            errors { field code }
+                            attribute { id }
+                        } }
+                        """.formatted(attributeGlobalId(seeded.getId())))
+                .execute()
+                .errors().verify()
+                .path("attributeDelete.errors[0].field").entity(String.class).isEqualTo("id")
+                .path("attributeDelete.errors[0].code").entity(String.class).isEqualTo("NOT_FOUND")
+                .path("attributeDelete.attribute").valueIsNull();
+    }
+
+    @Test
+    void bulkDeleteAnswersTheHonestCountOverTheRealRegistry() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        persist("p2-attr-bulk-one", "P2 Bulk One", null, CatalogAttributeType.TEXT);
+        persist("p2-attr-bulk-two", "P2 Bulk Two", null, CatalogAttributeType.NUMBER);
+        CatalogAttributeDefinition first =
+                attributeDefinitionRepository.findByCode("p2-attr-bulk-one").orElseThrow();
+        CatalogAttributeDefinition second =
+                attributeDefinitionRepository.findByCode("p2-attr-bulk-two").orElseThrow();
+
+        // The unknown third id is the owner's own honest skip — the count
+        // answers only what the registry itself deleted.
+        adminTester.document("""
+                        mutation { attributeBulkDelete(ids: ["%s", "%s", "%s"]) {
+                            count
+                            errors { code }
+                        } }
+                        """.formatted(attributeGlobalId(first.getId()),
+                        attributeGlobalId(second.getId()),
+                        attributeGlobalId(UUID.randomUUID())))
+                .execute()
+                .errors().verify()
+                .path("attributeBulkDelete.count").entity(Integer.class).isEqualTo(2)
+                .path("attributeBulkDelete.errors").entityList(Object.class).hasSize(0);
+
+        assertThat(attributeDefinitionRepository.findById(first.getId())).isEmpty();
+        assertThat(attributeDefinitionRepository.findById(second.getId())).isEmpty();
+    }
+
+    @Test
+    void consumerIsDeniedTheDeleteByTheOwningUseCase() {
+        HttpGraphQlTester consumerTester = testerFor(CONSUMER_SUBJECT, "CONSUMER");
+        persist("p2-attr-denied-delete", "P2 Denied Delete Row", null, CatalogAttributeType.TEXT);
+        CatalogAttributeDefinition seeded =
+                attributeDefinitionRepository.findByCode("p2-attr-denied-delete").orElseThrow();
+
+        consumerTester.document("""
+                        mutation { attributeDelete(id: "%s") {
+                            errors { code }
+                            attribute { id }
+                        } }
+                        """.formatted(attributeGlobalId(seeded.getId())))
+                .execute()
+                .errors()
+                .satisfy(errors -> {
+                    var error = errors.getFirst();
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "AUTHZ-001");
+                });
+
+        // The denial never touched the row — the owning use case's gate
+        // closed before the write.
+        assertThat(attributeDefinitionRepository.findById(seeded.getId())).isPresent();
+    }
+
+    // ------------------------------------------------------------------
+    // the attribute-value mutation roots — the real write stack
+    // (the agent-2 packet)
+    // ------------------------------------------------------------------
+
+    @Test
+    void adminCreatesAnAttributeValueUnderTheChoiceAttribute() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        CatalogAttributeDefinition parent =
+                attributeDefinitionRepository.findByCode("p2-attr-beta").orElseThrow();
+
+        String emittedId = adminTester.document("""
+                        mutation { attributeValueCreate(attribute: "%s", input: {name: "P2 Value Cotton", slug: "p2-val-cotton"}) {
+                            errors { field code }
+                            attribute { slug }
+                            attributeValue { id name slug }
+                        } }
+                        """.formatted(attributeGlobalId(parent.getId())))
+                .execute()
+                .errors().verify()
+                .path("attributeValueCreate.attributeValue.id").entity(String.class).get();
+
+        // The payload's typed global ID decodes to the value registry's own
+        // tag and native UUID — the row the real write stack persisted.
+        String decoded = decodedGlobalId(emittedId);
+        assertThat(decoded).startsWith("AttributeValue:");
+        UUID rowId = UUID.fromString(decoded.substring("AttributeValue:".length()));
+        seededOptionIds.add(rowId);
+        CatalogAttributeOption row = attributeOptionRepository.findById(rowId).orElseThrow();
+        assertThat(row.getCode()).isEqualTo("p2-val-cotton");
+        assertThat(row.getNameEn()).isEqualTo("P2 Value Cotton");
+        assertThat(row.getAttributeDefinitionId()).isEqualTo(parent.getId());
+
+        adminTester.document("""
+                        mutation { attributeValueCreate(attribute: "%s", input: {name: "P2 Value Wool", slug: "p2-val-wool"}) {
+                            errors { code }
+                            attributeValue { id }
+                        } }
+                        """.formatted(attributeGlobalId(parent.getId())))
+                .execute()
+                .errors().verify()
+                .path("attributeValueCreate.attributeValue.id").entity(String.class)
+                .satisfies(id -> {
+                    seededOptionIds.add(UUID.fromString(
+                            decodedGlobalId(id).substring("AttributeValue:".length())));
+                });
+        // The append-position derivation: the second value rides max+1.
+        assertThat(attributeOptionRepository.findById(rowId).orElseThrow().getPosition()).isZero();
+    }
+
+    @Test
+    void nonChoiceParentRefusesTheValueCreate() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        CatalogAttributeDefinition textParent =
+                attributeDefinitionRepository.findByCode("p2-attr-alpha").orElseThrow();
+
+        adminTester.document("""
+                        mutation { attributeValueCreate(attribute: "%s", input: {name: "Denied", slug: "p2-val-denied"}) {
+                            errors { field code message }
+                            attributeValue { id }
+                        } }
+                        """.formatted(attributeGlobalId(textParent.getId())))
+                .execute()
+                .errors().verify()
+                .path("attributeValueCreate.errors[0].field").entity(String.class).isEqualTo("attribute")
+                .path("attributeValueCreate.errors[0].code").entity(String.class).isEqualTo("INVALID")
+                .path("attributeValueCreate.errors[0].message").entity(String.class)
+                .isEqualTo("Allowed values can only be added to CHOICE attributes")
+                .path("attributeValueCreate.attributeValue").valueIsNull();
+    }
+
+    @Test
+    void duplicateValueSlugWithinTheAttributeAnswersThePayloadError() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        persistOption("p2-val-taken", "Taken Value", 0);
+        CatalogAttributeDefinition parent =
+                attributeDefinitionRepository.findByCode("p2-attr-beta").orElseThrow();
+
+        adminTester.document("""
+                        mutation { attributeValueCreate(attribute: "%s", input: {name: "Duplicate", slug: "p2-val-taken"}) {
+                            errors { field code }
+                            attributeValue { id }
+                        } }
+                        """.formatted(attributeGlobalId(parent.getId())))
+                .execute()
+                .errors().verify()
+                .path("attributeValueCreate.errors[0].field").entity(String.class).isEqualTo("slug")
+                .path("attributeValueCreate.errors[0].code").entity(String.class).isEqualTo("ALREADY_EXISTS")
+                .path("attributeValueCreate.attributeValue").valueIsNull();
+    }
+
+    @Test
+    void valueRequiredViolationsAnswerThePayloadErrors() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        CatalogAttributeDefinition parent =
+                attributeDefinitionRepository.findByCode("p2-attr-beta").orElseThrow();
+
+        adminTester.document("""
+                        mutation { attributeValueCreate(attribute: "%s", input: {name: " "}) {
+                            errors { field code }
+                            attributeValue { id }
+                        } }
+                        """.formatted(attributeGlobalId(parent.getId())))
+                .execute()
+                .errors().verify()
+                .path("attributeValueCreate.errors[0].field").entity(String.class).isEqualTo("name")
+                .path("attributeValueCreate.errors[0].code").entity(String.class).isEqualTo("REQUIRED")
+                .path("attributeValueCreate.errors[1].field").entity(String.class).isEqualTo("slug")
+                .path("attributeValueCreate.errors[1].code").entity(String.class).isEqualTo("REQUIRED");
+    }
+
+    @Test
+    void consumerIsDeniedTheValueCreateByTheOwningUseCase() {
+        HttpGraphQlTester consumerTester = testerFor(CONSUMER_SUBJECT, "CONSUMER");
+        CatalogAttributeDefinition parent =
+                attributeDefinitionRepository.findByCode("p2-attr-beta").orElseThrow();
+
+        consumerTester.document("""
+                        mutation { attributeValueCreate(attribute: "%s", input: {name: "Denied", slug: "p2-val-consumer-denied"}) {
+                            errors { code }
+                            attributeValue { id }
+                        } }
+                        """.formatted(attributeGlobalId(parent.getId())))
+                .execute()
+                .errors()
+                .satisfy(errors -> {
+                    var error = errors.getFirst();
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "AUTHZ-001");
+                });
+    }
+
+    @Test
+    void adminUpdatesAnAttributeValueThroughTheRealMutationStack() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        CatalogAttributeOption seeded = persistOption("p2-val-keep", "Kept Value", 0);
+
+        adminTester.document("""
+                        mutation { attributeValueUpdate(id: "%s", input: {name: "P2 Value Refreshed"}) {
+                            errors { code }
+                            attribute { slug }
+                            attributeValue { name slug }
+                        } }
+                        """.formatted(attributeValueGlobalId(seeded.getId())))
+                .execute()
+                .errors().verify()
+                .path("attributeValueUpdate.attributeValue.name").entity(String.class)
+                .isEqualTo("P2 Value Refreshed")
+                .path("attributeValueUpdate.attributeValue.slug").entity(String.class)
+                .isEqualTo("p2-val-keep");
+
+        CatalogAttributeOption row = attributeOptionRepository.findById(seeded.getId()).orElseThrow();
+        assertThat(row.getNameEn()).isEqualTo("P2 Value Refreshed");
+        assertThat(row.getCode()).isEqualTo("p2-val-keep");
+    }
+
+    @Test
+    void valueSlugChangeAttemptAnswersTheImmutablePayloadError() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        CatalogAttributeOption seeded = persistOption("p2-val-keep", "Kept Value", 0);
+
+        adminTester.document("""
+                        mutation { attributeValueUpdate(id: "%s", input: {slug: "p2-val-moved"}) {
+                            errors { field code message }
+                            attributeValue { slug }
+                        } }
+                        """.formatted(attributeValueGlobalId(seeded.getId())))
+                .execute()
+                .errors().verify()
+                .path("attributeValueUpdate.errors[0].field").entity(String.class).isEqualTo("slug")
+                .path("attributeValueUpdate.errors[0].code").entity(String.class).isEqualTo("INVALID")
+                .path("attributeValueUpdate.errors[0].message").entity(String.class)
+                .isEqualTo("An attribute value slug is immutable; it cannot change after creation");
+
+        CatalogAttributeOption row = attributeOptionRepository.findById(seeded.getId()).orElseThrow();
+        assertThat(row.getCode()).isEqualTo("p2-val-keep");
+    }
+
+    @Test
+    void adminSoftDeletesAnAttributeValueAndTheSecondDeleteAnswersNotFound() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        CatalogAttributeOption seeded = persistOption("p2-val-gone", "Gone Value", 0);
+
+        adminTester.document("""
+                        mutation { attributeValueDelete(id: "%s") {
+                            errors { code }
+                            attribute { slug }
+                            attributeValue { name slug }
+                        } }
+                        """.formatted(attributeValueGlobalId(seeded.getId())))
+                .execute()
+                .errors().verify()
+                .path("attributeValueDelete.attributeValue.name").entity(String.class)
+                .isEqualTo("Gone Value")
+                .path("attributeValueDelete.attribute.slug").entity(String.class)
+                .isEqualTo("p2-attr-beta");
+
+        assertThat(attributeOptionRepository.findById(seeded.getId())).isEmpty();
+
+        adminTester.document("""
+                        mutation { attributeValueDelete(id: "%s") {
+                            errors { field code }
+                            attributeValue { id }
+                        } }
+                        """.formatted(attributeValueGlobalId(seeded.getId())))
+                .execute()
+                .errors().verify()
+                .path("attributeValueDelete.errors[0].field").entity(String.class).isEqualTo("id")
+                .path("attributeValueDelete.errors[0].code").entity(String.class).isEqualTo("NOT_FOUND")
+                .path("attributeValueDelete.attributeValue").valueIsNull();
+    }
+
+    @Test
+    void valueBulkDeleteAnswersTheHonestCountOverTheRealRegistry() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        CatalogAttributeOption first = persistOption("p2-val-bulk-one", "Bulk One", 0);
+        CatalogAttributeOption second = persistOption("p2-val-bulk-two", "Bulk Two", 1);
+
+        // The unknown third id is the owner's own honest skip — the count
+        // answers only what the registry itself deleted.
+        adminTester.document("""
+                        mutation { attributeValueBulkDelete(ids: ["%s", "%s", "%s"]) {
+                            count
+                            errors { code }
+                        } }
+                        """.formatted(attributeValueGlobalId(first.getId()),
+                        attributeValueGlobalId(second.getId()),
+                        attributeValueGlobalId(UUID.randomUUID())))
+                .execute()
+                .errors().verify()
+                .path("attributeValueBulkDelete.count").entity(Integer.class).isEqualTo(2)
+                .path("attributeValueBulkDelete.errors").entityList(Object.class).hasSize(0);
+
+        assertThat(attributeOptionRepository.findById(first.getId())).isEmpty();
+        assertThat(attributeOptionRepository.findById(second.getId())).isEmpty();
     }
 
 }

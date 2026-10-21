@@ -68,7 +68,7 @@ public class ProductTypeMutationDataFetcher {
      * owner's use case.
      */
     @DgsMutation(field = DgsConstants.MUTATION.ProductTypeCreate)
-    @RateLimiter(name = "graphqlCategoryQuery")
+    @RateLimiter(name = "graphqlProductTypeMutation")
     public ProductTypeCreate productTypeCreate(@InputArgument ProductTypeInput input) {
         requireInput(input, "productTypeCreate");
         ProductTypeMutationResult result = productTypeWriteSpi.createProductType(
@@ -88,7 +88,7 @@ public class ProductTypeMutationDataFetcher {
      * or mistyped ID answers the classified VAL-001 family).
      */
     @DgsMutation(field = DgsConstants.MUTATION.ProductTypeUpdate)
-    @RateLimiter(name = "graphqlCategoryQuery")
+    @RateLimiter(name = "graphqlProductTypeMutation")
     public ProductTypeUpdate productTypeUpdate(@InputArgument String id,
                                                @InputArgument ProductTypeInput input) {
         requireInput(input, "productTypeUpdate");
@@ -113,7 +113,7 @@ public class ProductTypeMutationDataFetcher {
      * validation error (never a fabricated absence).
      */
     @DgsMutation(field = DgsConstants.MUTATION.ProductTypeDelete)
-    @RateLimiter(name = "graphqlCategoryQuery")
+    @RateLimiter(name = "graphqlProductTypeMutation")
     public ProductTypeDelete productTypeDelete(@InputArgument String id) {
         if (id == null) {
             throw new IllegalArgumentException("productTypeDelete requires the id of the product type to delete");
@@ -137,7 +137,7 @@ public class ProductTypeMutationDataFetcher {
      * the count answers what the registry itself deleted.
      */
     @DgsMutation(field = DgsConstants.MUTATION.ProductTypeBulkDelete)
-    @RateLimiter(name = "graphqlCategoryQuery")
+    @RateLimiter(name = "graphqlProductTypeMutation")
     public ProductTypeBulkDelete productTypeBulkDelete(@InputArgument List<String> ids) {
         if (ids == null || ids.isEmpty()) {
             throw new IllegalArgumentException("productTypeBulkDelete requires a non-empty list of ids");

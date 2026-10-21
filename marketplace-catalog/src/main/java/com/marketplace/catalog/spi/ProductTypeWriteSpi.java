@@ -35,8 +35,11 @@ public interface ProductTypeWriteSpi {
     /**
      * Amends one goods schema's display metadata. {@code null} command
      * fields preserve the column (the Saleor omit-to-preserve
-     * semantics); the row's stable public code moves only through an
-     * explicit slug command (checked against the code's own uniqueness).
+     * semantics); the row's stable public code is immutable (the
+     * entity's own law — no code-mutating method exists): a slug equal
+     * to the row's own code is the idempotent re-send, and any
+     * DIFFERENT slug answers the classified INVALID domain error — a
+     * sent field is never a silent no-op.
      *
      * @param id      the native UUID (decoded by the boundary's codec)
      * @param command the partial update command

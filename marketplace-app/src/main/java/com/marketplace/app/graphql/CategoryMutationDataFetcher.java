@@ -70,7 +70,7 @@ public class CategoryMutationDataFetcher {
      * ignored argument.
      */
     @DgsMutation(field = DgsConstants.MUTATION.CategoryCreate)
-    @RateLimiter(name = "graphqlCategoryQuery")
+    @RateLimiter(name = "graphqlCategoryMutation")
     public CategoryCreate categoryCreate(@InputArgument CategoryInput input,
                                          @InputArgument String parent) {
         requireInput(input, "categoryCreate");
@@ -95,7 +95,7 @@ public class CategoryMutationDataFetcher {
      * answers the classified error when sent.
      */
     @DgsMutation(field = DgsConstants.MUTATION.CategoryUpdate)
-    @RateLimiter(name = "graphqlCategoryQuery")
+    @RateLimiter(name = "graphqlCategoryMutation")
     public CategoryUpdate categoryUpdate(@InputArgument String externalReference,
                                          @InputArgument String id,
                                          @InputArgument CategoryInput input) {
@@ -124,7 +124,7 @@ public class CategoryMutationDataFetcher {
      * absence).
      */
     @DgsMutation(field = DgsConstants.MUTATION.CategoryDelete)
-    @RateLimiter(name = "graphqlCategoryQuery")
+    @RateLimiter(name = "graphqlCategoryMutation")
     public CategoryDelete categoryDelete(@InputArgument String externalReference,
                                          @InputArgument String id) {
         if (externalReference != null) {
@@ -151,7 +151,7 @@ public class CategoryMutationDataFetcher {
      * itself deleted.
      */
     @DgsMutation(field = DgsConstants.MUTATION.CategoryBulkDelete)
-    @RateLimiter(name = "graphqlCategoryQuery")
+    @RateLimiter(name = "graphqlCategoryMutation")
     public CategoryBulkDelete categoryBulkDelete(@InputArgument List<String> ids) {
         if (ids == null || ids.isEmpty()) {
             throw new IllegalArgumentException("categoryBulkDelete requires a non-empty list of ids");

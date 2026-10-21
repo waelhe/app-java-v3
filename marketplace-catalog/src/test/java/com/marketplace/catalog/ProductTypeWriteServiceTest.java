@@ -36,8 +36,9 @@ import static org.mockito.Mockito.when;
  * the create's full validation ladder (blank/oversized name,
  * missing/invalid/duplicate slug, the happy path's row factory), the
  * update's partial-preserve semantics (the empty no-op, null fields
- * preserve, the blank-name INVALID, the duplicate-code negative
- * EXCLUDING the row's own id, the NOT_FOUND absence), the single
+ * preserve, the blank-name INVALID, the immutable-slug refusals — a
+ * different code, another row's code, an explicit blank — and the
+ * row's-own-code idempotent re-send, the NOT_FOUND absence), the single
  * delete's NOT_FOUND and soft-delete happy path, and the bulk delete's
  * honest count (unknown ids skipped, never fabricated).</p>
  */
@@ -195,7 +196,33 @@ class ProductTypeWriteServiceTest {
     }
 
     @Test
-    void slugChangeToAnotherRowsCodeAnswersTheAlreadyExistsDomainError() {
+    void slugChangeToADifferentCodeAnswersTheImmutableDomainError() {
+        // The entity's own law: the stable public code is IMMUTABLE —
+        // a different slug (whether free or taken by another row) is
+        // the classified INVALID refusal, never a silent drop and
+        // never an unauthorized move.
+        ProductType existing = row("keep-type", "Kept");
+        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByCode("fresh-name")).thenReturn(Optional.empty());
+
+        ProductTypeMutationResult result = service.updateProductType(existing.getId(),
+                new ProductTypeUpdateCommand(null, "fresh-name"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductTypeMutationError::code, ProductTypeMutationError::field)
+                .containsExactly(ProductTypeMutationErrorCode.INVALID, "slug");
+        assertThat(result.errors().get(0).message())
+                .isEqualTo("A product type slug is immutable; it cannot change after creation");
+        assertThat(existing.getCode()).isEqualTo("keep-type");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void slugChangeToAnotherRowsCodeAnswersTheImmutableDomainError() {
+        // Even a slug owned by another row answers the immutable
+        // refusal first — the code never moves, so the uniqueness
+        // ladder below it is unreachable for a different code.
         ProductType existing = row("keep-type", "Kept");
         when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
         when(repository.findByCode("taken")).thenReturn(Optional.of(row("taken", "Taken")));
@@ -203,9 +230,10 @@ class ProductTypeWriteServiceTest {
         ProductTypeMutationResult result = service.updateProductType(existing.getId(),
                 new ProductTypeUpdateCommand(null, "taken"));
 
+        assertThat(result.success()).isFalse();
         assertThat(result.errors()).singleElement()
                 .extracting(ProductTypeMutationError::code, ProductTypeMutationError::field)
-                .containsExactly(ProductTypeMutationErrorCode.ALREADY_EXISTS, "slug");
+                .containsExactly(ProductTypeMutationErrorCode.INVALID, "slug");
         verify(repository, never()).save(any());
     }
 
@@ -224,6 +252,23 @@ class ProductTypeWriteServiceTest {
         assertThat(result.success()).isTrue();
         assertThat(result.productType().slug()).isEqualTo("keep-type");
         verify(repository).save(any(ProductType.class));
+    }
+
+    @Test
+    void blankSlugOnUpdateAnswersTheImmutableDomainError() {
+        // An explicitly blank slug is a change attempt (to blank) —
+        // the immutable refusal answers it, never a silent drop.
+        ProductType existing = row("keep-type", "Kept");
+        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+
+        ProductTypeMutationResult result = service.updateProductType(existing.getId(),
+                new ProductTypeUpdateCommand(null, "   "));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductTypeMutationError::code, ProductTypeMutationError::field)
+                .containsExactly(ProductTypeMutationErrorCode.INVALID, "slug");
+        verify(repository, never()).save(any());
     }
 
     // ------------------------------------------------------------------

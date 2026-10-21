@@ -49,6 +49,12 @@ import java.util.regex.Pattern;
  * the column, the Saleor input's omit-to-preserve semantics; an
  * explicit blank name answers the INVALID domain error (the entity's
  * own at-least-one-name law, re-checked over the MERGED display pair).
+ * <b>The row's stable public code is immutable</b> (the entity's own
+ * {@code update} law — "the stable public code remains immutable",
+ * no code-mutating method exists): a slug command equal to the row's
+ * own code is the idempotent re-send; any DIFFERENT slug answers the
+ * classified INVALID domain error — never a silent drop, never an
+ * unauthorized move (the Saleor input's sent-field law).
  * <b>Soft delete</b> rides the {@code BaseEntity} {@code @SoftDelete}
  * discipline: {@code repository.delete} converts to the
  * {@code is_deleted} flag, and the deleted row's last-known projection
@@ -134,7 +140,15 @@ public class ProductTypeWriteService implements ProductTypeWriteSpi {
             }
         }
         if (code != null) {
-            if (!CODE_SHAPE.matcher(code).matches() || code.length() > CODE_MAX_LENGTH) {
+            // The entity's own law: "the stable public code remains
+            // immutable" (no code-mutating method exists on ProductType).
+            // A slug equal to the row's own code is the idempotent
+            // re-send; any DIFFERENT slug answers the classified INVALID
+            // domain error — a sent field is never a silent no-op.
+            if (!code.equals(addressed.get().getCode())) {
+                errors.add(new ProductTypeMutationError("slug", ProductTypeMutationErrorCode.INVALID,
+                        "A product type slug is immutable; it cannot change after creation"));
+            } else if (!CODE_SHAPE.matcher(code).matches() || code.length() > CODE_MAX_LENGTH) {
                 errors.add(new ProductTypeMutationError("slug", ProductTypeMutationErrorCode.INVALID,
                         "A product type slug is a lowercase latin slug (at most "
                                 + CODE_MAX_LENGTH + " characters)"));

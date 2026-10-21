@@ -69,7 +69,7 @@ public class VoucherMutationDataFetcher {
      * ranges regardless).
      */
     @DgsMutation(field = DgsConstants.MUTATION.VoucherCreate)
-    @RateLimiter(name = "graphqlVoucherQuery")
+    @RateLimiter(name = "graphqlVoucherMutation")
     public VoucherCreate voucherCreate(@InputArgument VoucherInput input) {
         if (input == null) {
             throw new IllegalArgumentException("voucherCreate requires a non-null input");
@@ -89,7 +89,7 @@ public class VoucherMutationDataFetcher {
      * answers the classified error when sent.
      */
     @DgsMutation(field = DgsConstants.MUTATION.VoucherUpdate)
-    @RateLimiter(name = "graphqlVoucherQuery")
+    @RateLimiter(name = "graphqlVoucherMutation")
     public VoucherUpdate voucherUpdate(@InputArgument String externalReference,
                                        @InputArgument String id,
                                        @InputArgument VoucherInput input) {
@@ -118,7 +118,7 @@ public class VoucherMutationDataFetcher {
      * the classified validation error.
      */
     @DgsMutation(field = DgsConstants.MUTATION.VoucherDelete)
-    @RateLimiter(name = "graphqlVoucherQuery")
+    @RateLimiter(name = "graphqlVoucherMutation")
     public VoucherDelete voucherDelete(@InputArgument String externalReference,
                                        @InputArgument String id) {
         if (externalReference != null) {
@@ -142,7 +142,7 @@ public class VoucherMutationDataFetcher {
      * codec and the count rides the owner's honest number.
      */
     @DgsMutation(field = DgsConstants.MUTATION.VoucherBulkDelete)
-    @RateLimiter(name = "graphqlVoucherQuery")
+    @RateLimiter(name = "graphqlVoucherMutation")
     public VoucherBulkDelete voucherBulkDelete(@InputArgument List<String> ids) {
         if (ids == null || ids.isEmpty()) {
             throw new IllegalArgumentException("voucherBulkDelete requires a non-empty list of ids");
