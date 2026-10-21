@@ -67,12 +67,12 @@ public class OrderMutationDataFetcher {
      */
     @DgsMutation(field = "orderBulkCancel")
     public Map<String, Object> orderBulkCancel(@InputArgument List<String> ids) {
-        if (ids == null || ids.isEmpty()) {
-            return bulkPayload(0, List.of());
-        }
-
-        final List<UUID> orderIds = new ArrayList<>(ids.size());
-        for (String id : ids) {
+        // Authorization belongs to the owning use case. Even an empty bulk
+        // request must cross that boundary rather than return a success-shaped
+        // payload before Spring method security has evaluated the caller.
+        List<String> submittedIds = ids == null ? List.of() : ids;
+        final List<UUID> orderIds = new ArrayList<>(submittedIds.size());
+        for (String id : submittedIds) {
             try {
                 orderIds.add(globalIdCodec.decode(id, OrderGraphQlMapper.ORDER_TYPE));
             } catch (IllegalArgumentException exception) {
