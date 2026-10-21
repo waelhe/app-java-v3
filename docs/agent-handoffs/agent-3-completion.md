@@ -6,7 +6,8 @@
 - Branch: `agent/saleor-p4-p5-p6-orders-events-20261021`.
 - Frozen base from the assignment: `b3c75d0584cda3b07722c424195bcd1c1c87bbd7`.
 - Starting head: `0a8b847c368ba2812d3b0d632e7836c72351e111`.
-- Implementation commit: `09fe0c0f01e5311da10b23929e602324207a7aeb`.
+- Initial implementation commit: `09fe0c0f01e5311da10b23929e602324207a7aeb`.
+- SPI/test-boundary correction commit: `0a919e821b5ec29b0ba6df87ff20be544dad91ff`.
 - Governing Saleor contract: `docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md`; upstream source pin Saleor 3.23.43.
 - Framework/build authority: Spring Boot 4.1.1, Maven reactor, DGS and existing Spring Modulith owners/SPIs. Relevant official reference for the GraphQL transport boundary: https://docs.spring.io/spring-boot/reference/web/spring-graphql.html and https://docs.spring.io/spring-graphql/reference/transports.html.
 
@@ -17,16 +18,23 @@
 Files changed in this execution (implementation and test-wiring commits):
 - `marketplace-orders/src/main/java/com/marketplace/orders/OrdersService.java`
 - `marketplace-orders/src/main/java/com/marketplace/orders/spi/OrderCommandSpi.java`
+- `marketplace-orders/pom.xml` (test scope only: `spring-security-test`)
+- `marketplace-orders/src/test/java/com/marketplace/orders/OrdersServiceAuthorizationTest.java`
 - `marketplace-app/src/main/java/com/marketplace/app/graphql/OrderMutationDataFetcher.java`
 - `marketplace-app/src/main/resources/graphql/agent-3-orders-events.graphqls`
 - `marketplace-app/src/test/java/com/marketplace/app/graphql/OrderMutationDataFetcherTest.java`
+- `marketplace-app/src/test/java/com/marketplace/app/graphql/OrderDataFetcherDgsTest.java`
+- `marketplace-app/src/test/java/com/marketplace/app/graphql/ServiceDgsDataFetcherTest.java`
+- `marketplace-app/src/test/java/com/marketplace/app/graphql/HomeDgsDataFetcherTest.java`
+- `marketplace-app/src/test/java/com/marketplace/app/graphql/UserDataFetcherDgsTest.java`
+- `marketplace-app/src/test/java/com/marketplace/app/graphql/PostDetailDgsDataFetcherTest.java`
 - `docs/agent-handoffs/agent-3-roots.csv`
 
 The additive SDL exposes Saleor-shaped `orderCancel(id: ID!)`, its payload, and the pinned order-error vocabulary without editing the central `schema.graphqls`. The DGS adapter strictly decodes the typed Order global ID and returns the order read-back on success. Malformed/mistyped IDs return `INVALID`; missing orders return `NOT_FOUND`; guarded lifecycle conflicts return `CANNOT_CANCEL_ORDER`. Authorization failures are not swallowed as successful mutations.
 
 The adapter calls the owning `OrderCommandSpi`, which exposes a bounded `OrderView` rather than a persistence entity across the Modulith boundary. `OrdersService` implements this SPI; its `cancelAsAdmin` method applies service-boundary `@PreAuthorize("hasRole('ADMIN')")` and calls the existing state-machine transition. That existing owner locks and transitions the order, releases a reservation as appropriate, and publishes `OrderCancelledEvent`; the payments listener remains responsible for payment cancellation/refund. No second payment/ledger state machine was added.
 
-The focused JUnit/Mockito test class covers: successful cancellation/read-back; rejecting a Product-typed ID without invoking the owner; and returning a domain error for an illegal transition. A DGS test exercises the actual GraphQL SDL and argument/payload binding. Because the DGS test slices component-scan the whole GraphQL package, the existing five package-slice tests were updated to mock `OrderCommandSpi`; the new fetcher does not inject the concrete service or expose the JPA entity. These tests were **added but not run** in this remote-only execution. The code should not be described as verified until an execution on the exact resulting SHA is recorded.
+The focused JUnit/Mockito test class covers: successful cancellation/read-back; rejecting a Product-typed ID without invoking the owner; and returning a domain error for an illegal transition. A DGS test exercises the actual GraphQL SDL and argument/payload binding. Because the DGS test slices component-scan the whole GraphQL package, the existing five package-slice tests were updated to mock `OrderCommandSpi`; the new fetcher does not inject the concrete service or expose the JPA entity. An additional owner-module test, `OrdersServiceAuthorizationTest`, starts a real Spring method-security proxy and proves a `ROLE_USER` call is denied before the repositories/stock/payment collaborators are touched; `spring-security-test` is a test-scope dependency in the owned orders module only. These tests were **added but not run** in this remote-only execution. The code should not be described as verified until an execution on the exact resulting SHA is recorded.
 
 No Flyway migration was needed because the change adds no persisted state.
 
