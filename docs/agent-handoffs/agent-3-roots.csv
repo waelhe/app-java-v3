@@ -160,7 +160,7 @@
 "productVariantBackInStockForClickAndCollect","P6","NOT_STARTED","NOT_STARTED","No implementation claimed in this session."
 "orderSettings","P4","BLOCKED_BY_DECISION","BLOCKED_BY_DECISION","No owned Saleor shipping-zone/settings registry or SPI exists. CheckoutDeliveryPort is a quote capability, not a shipping-zone administration model."
 "shippingZone","P4","BLOCKED_BY_DECISION","BLOCKED_BY_DECISION","No owned Saleor shipping-zone/settings registry or SPI exists. CheckoutDeliveryPort is a quote capability, not a shipping-zone administration model."
-"shippingZones","P5","BLOCKED_BY_DECISION","BLOCKED_BY_DECISION","No owned Saleor shipping-zone/settings registry or SPI exists. CheckoutDeliveryPort is a quote capability, not a shipping-zone administration model."
+"shippingZones","P4","BLOCKED_BY_DECISION","BLOCKED_BY_DECISION","No owned Saleor shipping-zone/settings registry or SPI exists. CheckoutDeliveryPort is a quote capability, not a shipping-zone administration model."
 "homepageEvents","P4","BLOCKED_BY_DECISION","BLOCKED_BY_DECISION","No authoritative owner exists for the requested homepage event feed/reporting aggregate."
 "draftOrders","P4","BLOCKED_BY_DECISION","BLOCKED_BY_DECISION","No DRAFT state exists in the current OrderStatus machine; adding a parallel draft-order lifecycle is not safe."
 "ordersTotal","P4","BLOCKED_BY_DECISION","BLOCKED_BY_DECISION","No authoritative owner exists for the requested homepage event feed/reporting aggregate."
