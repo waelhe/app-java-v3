@@ -161,14 +161,14 @@ class ProductTypeGraphQlIntegrationTest {
                 .execute()
                 .errors().verify()
                 .path("productTypes.totalCount").entity(Integer.class)
-                .satisfy(total -> assertThat(total).isGreaterThanOrEqualTo(3))
+                .satisfies(total -> assertThat(total).isGreaterThanOrEqualTo(3))
                 .path("productTypes.edges").entityList(Object.class)
-                .satisfy(edges -> assertThat(edges).isNotEmpty())
+                .satisfies(edges -> assertThat(edges).isNotEmpty())
                 .path("productTypes.edges[*].node.id").entityList(String.class)
-                .satisfy(ids -> assertThat(ids)
+                .satisfies(ids -> assertThat(ids)
                         .allSatisfy(id -> assertThat(id).startsWith(PRODUCT_TYPE_ID_PREFIX)))
                 .path("productTypes.edges[*].node.slug").entityList(String.class)
-                .satisfy(slugs -> assertThat(slugs)
+                .satisfies(slugs -> assertThat(slugs)
                         .allSatisfy(slug -> assertThat(slug).matches("^[a-z][a-z0-9-]*$")));
     }
 
@@ -184,7 +184,7 @@ class ProductTypeGraphQlIntegrationTest {
                 .execute()
                 .errors().verify()
                 .path("productTypes.edges[0].node.name").entity(String.class)
-                .satisfy(name -> assertThat(name).isNotBlank())
+                .satisfies(name -> assertThat(name).isNotBlank())
                 .path("productTypes.pageInfo.hasNextPage").entity(Boolean.class).isEqualTo(true)
                 .path("productTypes.edges").entityList(Object.class).hasSize(1);
         String firstName = firstPage.path("productTypes.edges[0].node.name").entity(String.class).get();
@@ -202,7 +202,7 @@ class ProductTypeGraphQlIntegrationTest {
                 .execute()
                 .errors().verify()
                 .path("productTypes.edges[0].node.name").entity(String.class)
-                .satisfy(secondName -> assertThat(secondName).isGreaterThan(firstName))
+                .satisfies(secondName -> assertThat(secondName).isGreaterThan(firstName))
                 .path("productTypes.pageInfo.hasPreviousPage").entity(Boolean.class).isEqualTo(true);
     }
 
@@ -217,7 +217,7 @@ class ProductTypeGraphQlIntegrationTest {
                 .execute()
                 .errors().verify()
                 .path("productTypes.edges[*].node.name").entityList(String.class)
-                .satisfy(names -> {
+                .satisfies(names -> {
                     assertThat(names).isNotEmpty();
                     assertThat(names).isSortedAccordingTo(java.util.Comparator.reverseOrder());
                 });
@@ -236,7 +236,7 @@ class ProductTypeGraphQlIntegrationTest {
                 .path("productTypes.edges[*].node.slug").entityList(String.class)
                 .contains("p2-test-beta")
                 .path("productTypes.edges[*].node.name").entityList(String.class)
-                .satisfy(names -> assertThat(names).contains("نوع بيتا للاختبار"));
+                .satisfies(names -> assertThat(names).contains("نوع بيتا للاختبار"));
     }
 
     @Test
@@ -251,7 +251,7 @@ class ProductTypeGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors().verify()
-                .path("productTypes.edges").entityList(Object.class).isEmpty()
+                .path("productTypes.edges").entityList(Object.class).hasSize(0)
                 .path("productTypes.totalCount").valueIsNull()
                 .path("productTypes.pageInfo.hasNextPage").entity(Boolean.class).isEqualTo(false)
                 .path("productTypes.pageInfo.hasPreviousPage").entity(Boolean.class).isEqualTo(false);
