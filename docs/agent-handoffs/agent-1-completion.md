@@ -131,7 +131,14 @@ Maven 3.9.16 / JDK 25 (`./mvnw`), on the working tree at the reported head:
 - `AgentOneMutationDgsTest`: **21 run, 0 failures** (the full list above).
 - `AgentOneMutationIntegrationTest`: **TESTS NOT RUN + REASON: no Docker daemon in the agent
   sandbox** — the class carries `@Testcontainers(disabledWithoutDocker = true)` per the frozen §9
-  contract; it executes in the GitHub Actions integration suite on this branch.
+  contract. It also **cannot execute in this branch's GitHub Actions suites**: both dispatched
+  suites die at the `marketplace-catalog` compile defect (blocker #1 below) before any test runs —
+  measured, not assumed: CI run [39668326640](https://github.com/waelhe/app-java-v3/actions/runs/39668326640)
+  and Integration Test run
+  [39668331861](https://github.com/waelhe/app-java-v3/actions/runs/39668331861) on head
+  `9597e0e9` both fail at the identical `Limit.value()` compilation error and never reach a test
+  phase. The journeys first execute in the assembly phase's suites once the branches combine (the
+  owning fix already sits on Agent 2's delivered head `0cc696df18`).
 - Full reactor `compile`: **BUILD SUCCESS**.
 
 ## Known blockers on the branch (pre-existing, outside this packet's scope — evidence)
@@ -151,6 +158,33 @@ Maven 3.9.16 / JDK 25 (`./mvnw`), on the working tree at the reported head:
    needs the owning agents' fixes for the app test phase to go green.**
 4. Two standing `ProductVariantDataFetcherDgsTest` legs fail on the branch as-committed (their
    prod module is defect #1's module) — pre-existing, not touched by this packet.
+
+## Post-delivery self-review pass (this branch, follow-up commit)
+
+The delivery was re-audited root-by-root against the packet and the platform's own house
+patterns; two defects were found and fixed in place (both inside this packet's own files, never
+a shared or teammate file):
+
+1. **V248 carried dead structure and a factually wrong comment**: a tautological CHECK
+   (`NOT is_default_shipping OR is_deleted OR TRUE` — always TRUE, enforced nothing) and two
+   NON-unique partial indexes over the default flags, while the comment claimed a partial
+   UNIQUE index "can't express" the one-default-per-type invariant. V250's own
+   `customer_types_one_default_live_uq` proves the opposite — a partial unique index expresses
+   exactly that guard. Fixed: the tautological constraint is gone and the two default read
+   indexes are now `user_addresses_user_default_{shipping,billing}_live_uq` partial UNIQUE
+   indexes (the V249/V250 house shape), with the service's clears-before-set swap order kept as
+   the working path and the guard as the backstop. The migration file was edited in place —
+   safe because it had never been applied by any run (the CI suites never reached Flyway on
+   this branch, and the local runs were Docker-less mock suites).
+2. **`PlatformTokenGrantService` carried a dead `encoder` field** (declared, assigned `null`,
+   never read — the working encoder is built per call over the lazily resolved `JWKSource`).
+   Removed.
+
+The audit also re-verified: all 89 roots against the assignment list (66 mutations + 11 queries
+implemented, 12 documented decision rows), the SDL's 77 declared roots and their extend-type
+composition, the migrations' allocation range (V248-V251, V281-V284 only), the transport-only
+fetcher discipline (authorization in the owning services), the cycle-guarded menu move, the
+oneof target CHECKs, and the additive-only edits to `User`/`UserService`.
 
 ## Contract-change requests to A0 (per the isolation rules — not applied by this agent)
 

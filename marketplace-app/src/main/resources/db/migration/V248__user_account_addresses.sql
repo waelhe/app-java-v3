@@ -52,20 +52,21 @@ CREATE TABLE user_addresses (
     updated_by              VARCHAR(200),
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT user_addresses_country_chk
-        CHECK (country ~ '^[A-Z]{2}$'),
-    CONSTRAINT user_addresses_one_default_shipping_chk
-        CHECK (NOT is_default_shipping OR is_deleted OR TRUE)
+        CHECK (country ~ '^[A-Z]{2}$')
 );
 
 CREATE INDEX user_addresses_user_idx ON user_addresses (user_id) WHERE is_deleted = FALSE;
 
--- The one-default-per-user-per-type invariant, enforced over live rows only
--- (a partial UNIQUE index can't express "at most one true per (user, type)"
--- directly; the owning service serializes the flip under the user row's
--- lock and these indexes carry the read paths).
-CREATE INDEX user_addresses_user_default_shipping_idx
+-- The one-default-per-user-per-type invariant: partial UNIQUE indexes over
+-- live rows express "at most one default of each type per account" directly
+-- (the same guard V250's customer_types_one_default_live_uq carries). The
+-- owning service still serializes the flip under the user row's lock and
+-- orders every swap clears-before-set (Hibernate's action queue executes
+-- updates in registration order), so the guard is the backstop, never the
+-- working path; these indexes carry the default read paths too.
+CREATE UNIQUE INDEX user_addresses_user_default_shipping_live_uq
     ON user_addresses (user_id) WHERE is_deleted = FALSE AND is_default_shipping = TRUE;
-CREATE INDEX user_addresses_user_default_billing_idx
+CREATE UNIQUE INDEX user_addresses_user_default_billing_live_uq
     ON user_addresses (user_id) WHERE is_deleted = FALSE AND is_default_billing = TRUE;
 
 CREATE TABLE user_addresses_aud (

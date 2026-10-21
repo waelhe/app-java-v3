@@ -108,7 +108,6 @@ public class PlatformTokenGrantService {
     private final IdentitySpi identitySpi;
     private final String audience;
     private final String publicClientId;
-    private final NimbusJwtEncoder encoder;
 
     public PlatformTokenGrantService(
             ObjectProvider<AuthenticationConfiguration> authenticationConfiguration,
@@ -130,7 +129,6 @@ public class PlatformTokenGrantService {
         this.identitySpi = identitySpi;
         this.audience = audience;
         this.publicClientId = publicClientId;
-        this.encoder = null;
     }
 
     /** The issued pair + the caller's own account projection. */
