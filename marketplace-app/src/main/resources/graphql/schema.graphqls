@@ -687,6 +687,97 @@ externalReference: String
 """Slug of a channel for which the data should be returned (no channel model — an explicit classified error)."""
 channel: String
 ): Product
+
+# === Campaign packet campaign-b5-a: the Saleor product-variant read roots ===
+# "List of product variants. Requires one of the following permissions to
+# include the unpublished items: MANAGE_ORDERS, MANAGE_DISCOUNTS,
+# MANAGE_PRODUCTS." — the store's variant population (the SAME
+# authoritative product_variants rows the cart's reservation arithmetic
+# writes — never a duplicate store) with its countable-connection envelope
+# (edges/pageInfo/totalCount, byte-shape from the pinned schema). These
+# are Saleor PUBLIC storefront roots whose include-unpublished variant
+# maps through the platform's ADMIN capability (the SaleorPermissionCatalog
+# contract): the public population is the TWO-ROW gate the platform's own
+# reservation write carries verbatim (the variant's ACTIVE shelf AND the
+# parent product's ACTIVE shelf); an ADMIN caller's scroll and lookup
+# widen to every state and every parent — the registered
+# permission-aware population mapping. FORWARD-ONLY keyset paging on this
+# first slice: first/after ride the platform's REAL SQL keyset scroll (the
+# staffUsers repository-keyset precedent — cursors identify a row's sort
+# key (updatedAt/id or the unique id), never an absolute offset);
+# before/last stay declared (the exact Saleor argument shape) but answer
+# an explicit classified error until a backward scroll exists — a
+# recorded, tested boundary, not a silent no-op. ids (no owning id-set
+# query capability yet), filter (deprecated upstream), where, search (no
+# owning search capability) and channel (no channel model — the
+# PENDING-ADR commercial-context row) are likewise the declared wire
+# shapes with explicit not-yet-supported errors. The sort vocabulary is
+# Saleor's own ProductVariantSortField enum and BOTH its values execute:
+# LAST_MODIFIED_AT (the entity's own non-null updated_at audit column,
+# id tiebreaker) and ID (the unique key — the pinned enum's own 3.23
+# value).
+productVariants(
+"""Filter product variants by given IDs (no owning id-set query capability yet — an explicit classified error)."""
+ids: [ID!]
+
+"""Slug of a channel for which the data should be returned (no channel model — an explicit classified error)."""
+channel: String
+
+"""Filtering options for product variants (no owning query capability yet — an explicit classified error)."""
+filter: ProductVariantFilterInput @deprecated(reason: "Use `where` filter instead.")
+
+"""Where filtering options for product variants (no owning query capability yet — an explicit classified error)."""
+where: ProductVariantWhereInput
+
+"""Search product variants (no owning search capability — an explicit classified error)."""
+search: String
+
+"""Sort products variants (both pinned fields execute as real keyset sorts)."""
+sortBy: ProductVariantSortingInput
+
+"""Return the elements in the list that come before the specified cursor (forward-only on this platform — an explicit classified error)."""
+before: String
+
+"""Return the elements in the list that come after the specified cursor."""
+after: String
+
+"""Retrieve the first n elements from the list."""
+first: Int
+
+"""Retrieve the last n elements from the list (forward-only on this platform — an explicit classified error)."""
+last: Int
+): ProductVariantCountableConnection
+
+# "Look up a product variant by ID or SKU. Requires one of the following
+# permissions to include the unpublished items: MANAGE_ORDERS,
+# MANAGE_DISCOUNTS, MANAGE_PRODUCTS." — the storefront lookup over the
+# owning use case's permission-aware readable population: an unknown but
+# well-formed id answers null; a KNOWN row outside the caller's
+# population — a non-ACTIVE variant, or an ACTIVE variant under a
+# non-ACTIVE parent product — answers null for non-ADMIN callers (the
+# two-row data-scope boundary the owning use case enforces), never an
+# error and never a leak. id executes through the typed global-ID codec
+# (a malformed or mistyped global ID answers the codec's classified
+# validation error — never a raw UUID fallback). sku (the platform's SKU
+# is seller-namespaced by the V219 uq_product_variants_provider_sku
+# index, not globally unique — a bare global lookup is ambiguous),
+# externalReference (no external-ID column) and channel (no channel
+# model) answer the explicit classified error whenever they are sent; a
+# keyless call answers the classified validation error (the recorded
+# divergence from upstream's null answer).
+productVariant(
+"""ID of the product variant."""
+id: ID
+
+"""SKU of the product variant (seller-namespaced on this platform, not globally unique — an explicit classified error)."""
+sku: String
+
+"""External ID of the product (no external-ID column — an explicit classified error)."""
+externalReference: String
+
+"""Slug of a channel for which the data should be returned (no channel model — an explicit classified error)."""
+channel: String
+): ProductVariant
 }
 
 type Mutation {
@@ -2158,4 +2249,123 @@ enum VoucherSortField {
     This option requires a channel filter to work as the values can vary between channels.
     """
     MINIMUM_SPENT_AMOUNT
+}
+
+
+# === Campaign packet campaign-b5-a: the Saleor product-variant wire types ===
+# "Represents a version of a product such as different size or color." —
+# the BOUNDED closure over the catalog owner's product_variants row: id
+# (the typed global ID), name (the variant's own optional display column —
+# NULLABLE on the wire because the row's own column carries no
+# non-null constraint; the registered nullable-name divergence from
+# upstream's non-null name), sku (the seller's own SKU — non-null on
+# this platform, nullable upstream stays compatible), product (the
+# parent's bounded projection through the EXISTING Product wire type —
+# one Product shape across the product roots and the variant roots),
+# and status (a PLATFORM EXTENSION fact: the variant's own
+# ACTIVE/SUSPENDED/ARCHIVED availability lifecycle). Unowned Saleor
+# fields (the metadata family, the channel-scoped pricing/
+# channelListings family, weight, the attribute selections,
+# quantityOrdered/revenue reporting, media, translations, updatedAt,
+# trackInventory, quantityLimitPerCustomer, preorder facts) stay
+# undeclared until an owning capability exists — never faked.
+type ProductVariant {
+    """The ID of the product variant — typed global ID (opaque, never a raw UUID)."""
+    id: ID!
+
+    """Name of the product variant (the entity's own optional display column — the honest null of a legacy free-form variant)."""
+    name: String
+
+    """The seller's own SKU (non-null on this platform)."""
+    sku: String
+
+    """The product to which the variant belongs (the parent's bounded projection — the SAME Product wire type the product roots serve)."""
+    product: Product!
+
+    """The variant's availability lifecycle (a platform extension fact: ACTIVE/SUSPENDED/ARCHIVED)."""
+    status: String!
+}
+
+# Saleor's connection envelope for countable product-variant lists —
+# declared (not runtime-generated) so the exact Saleor shape stands,
+# including totalCount. Spring's ConnectionTypeDefinitionConfigurer
+# skips already-declared connection types (the measured
+# declared-types-skip behavior the ProductCountableConnection
+# declaration recorded), so this declaration wins and the generated
+# connections elsewhere are untouched. pageInfo reuses the EXISTING
+# shared PageInfo type — not redeclared.
+type ProductVariantCountableConnection {
+    """Pagination data for this connection."""
+    pageInfo: PageInfo!
+
+    edges: [ProductVariantCountableEdge!]!
+
+    """A total count of items in the collection (the caller-scope population's own count)."""
+    totalCount: Int
+}
+
+# Saleor's edge for the countable product-variant connection — the
+# node/cursor pair the keyset scroll emits (per-element opaque cursors
+# over the executed sort's own keys).
+type ProductVariantCountableEdge {
+    """The item at the end of the edge."""
+    node: ProductVariant!
+
+    """A cursor for use in pagination."""
+    cursor: String!
+}
+
+# Saleor's product-variant filter input — the declared wire shape of the
+# filter argument (see productVariants: an explicit classified error
+# until the owning query capability exists). BOUNDED closure: search and
+# sku carry the scalar filter surface; metadata (its heavy MetadataFilter
+# closure), isPreorder (the deprecated preorder fact) and updatedAt
+# (DateTimeRangeInput) stay undeclared until an owning capability exists
+# — the same declared-shape rule the ProductTypeFilterInput precedents
+# established.
+input ProductVariantFilterInput {
+    search: String
+    sku: [String!]
+}
+
+# Saleor's product-variant where input — the declared wire shape of the
+# where argument (see productVariants: an explicit classified error
+# until the owning query capability exists). BOUNDED closure: ids
+# carries the scalar filter surface; sku (its StringFilterInput closure),
+# updatedAt (DateTimeRangeInput), metadata (its heavy MetadataFilter
+# closure), attributes (the AssignedAttributeWhereInput family) and the
+# AND/OR combinators stay undeclared until an owning capability exists —
+# any where use answers the classified not-implemented error before
+# field-level semantics matter, and a Dashboard query naming an
+# undeclared sub-field fails schema validation loudly (never a silent
+# no-op).
+input ProductVariantWhereInput {
+    ids: [ID!]
+}
+
+# Saleor's product-variant sorting input — the full pinned vocabulary
+# (upstream's own two values, verbatim): BOTH fields execute as the real
+# forward-only keyset sorts (LAST_MODIFIED_AT over the entity's own
+# non-null updated_at audit column, ID over the unique key), in both
+# directions, deterministic with the id tiebreaker where the sort field
+# is not already unique. direction reuses the EXISTING shared
+# OrderDirection enum — not redeclared.
+input ProductVariantSortingInput {
+    """Specifies the direction in which to sort productVariants."""
+    direction: OrderDirection!
+
+    """Sort productVariants by the selected field."""
+    field: ProductVariantSortField!
+}
+
+enum ProductVariantSortField {
+    """Sort product variants by last modification date."""
+    LAST_MODIFIED_AT
+
+    """
+    Sort product variants by ID.
+
+    Added in Saleor 3.23.
+    """
+    ID
 }

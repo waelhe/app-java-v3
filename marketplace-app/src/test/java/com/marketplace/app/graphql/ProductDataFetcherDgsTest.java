@@ -1,6 +1,7 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.catalog.spi.CatalogSpi;
+import com.marketplace.catalog.spi.ProductVariantReadSpi;
 import com.marketplace.catalog.spi.CategoryReadSpi;
 import com.marketplace.catalog.spi.AttributeReadSpi;
 import com.marketplace.catalog.spi.ProductAdminSpi;
@@ -122,6 +123,9 @@ class ProductDataFetcherDgsTest {
 
     @MockitoBean
     private IdentitySpi identitySpi;
+
+    @MockitoBean
+    private ProductVariantReadSpi variantReadSpi;
 
     @AfterEach
     void clearSecurityContext() {

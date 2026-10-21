@@ -775,6 +775,15 @@ resilience4j:
         base-config: default
         limit-for-period: 50
         timeout-duration: 0
+      # Campaign packet campaign-b5-a (A2 catalog read roots, applied
+      # in-branch by A0 — the sequential single-writer flow): the
+      # product-variant read roots' named instance at the shared catalog
+      # read budget (50/min, fail-fast — the catalog limiter
+      # precedent's own budget).
+      graphqlProductVariantQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
       # Campaign packet campaign-b3-a3 (A3 pricing agent request, applied
       # by A0): the promotion read roots' named instance at the shared
       # read budget (50/min, fail-fast).

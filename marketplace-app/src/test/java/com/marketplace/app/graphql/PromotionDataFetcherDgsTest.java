@@ -1,6 +1,9 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.catalog.spi.CatalogSpi;
+import com.marketplace.catalog.spi.ProductVariantReadSpi;
+import com.marketplace.catalog.spi.ProductReadSpi;
+import com.marketplace.catalog.spi.CategoryReadSpi;
 import com.marketplace.catalog.spi.ProductAdminSpi;
 import com.marketplace.catalog.spi.ProductTypeReadSpi;
 import com.marketplace.community.spi.NeighborhoodFeedPort;
@@ -109,6 +112,15 @@ class PromotionDataFetcherDgsTest {
 
     @MockitoBean
     private IdentitySpi identitySpi;
+
+    @MockitoBean
+    private ProductVariantReadSpi variantReadSpi;
+
+    @MockitoBean
+    private ProductReadSpi productReadSpi;
+
+    @MockitoBean
+    private CategoryReadSpi categoryReadSpi;
 
     @MockitoBean
     private DiscountReadSpi discountReadSpi;
