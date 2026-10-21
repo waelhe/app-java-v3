@@ -729,6 +729,13 @@ resilience4j:
         base-config: default
         limit-for-period: 50
         timeout-duration: 0
+      # Campaign packet campaign-b1-a1 (A1 identity agent request, applied by
+      # A0): the permission-group read roots' named instance at the same
+      # identity read budget as graphqlUserQuery (50/min, fail-fast).
+      graphqlPermissionGroupQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
       # Phase 6 (the GraphQL plan §11-Phase-6 — the first composite
       # journey, the inventory #599 §7 stage 4): the two home reads'
       # named instances, the same L29 fail-fast model. graphqlDiscovery-
