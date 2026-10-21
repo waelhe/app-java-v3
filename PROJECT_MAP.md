@@ -1,5 +1,15 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
+## قرار الحوكمة الحاكم لتكامل المجتمع — D-COMMUNITY-DISCOURSE-001 (2026-10-21)
+
+- **المرجع العقد مرجعيًا:** `discourse/discourse` **v2026.9.0** (sha `343b20f` — قياس يوم 2026-10-21 من واجهة tags الرسمية؛ آخر وسم ملاحظ `v2026.10.0-latest`/`a512516`). الملفات الحاكمة: `docs/governance/plans/community-discourse-canonical-plan.md` + مصفوفة القدرات `community-discourse-capability-matrix.csv` (17 صفًا مُقاس من حقائق الكود) + سجل الانحرافات `community-contract-divergences.csv` (9 انحرافات + 1 متطلب أدوات) + pins `discourse-source-pins.json`.
+- **القرار (كلمة المالك الصريحة «Discourse»):** Discourse هو المرجع الدلالي/العقدي حاكمًا لسطح المجتمع (النموذج الكينوني، طابور الإشراف، مفردات الصلاحيات، دلالة القدرات). **لا تشغيل Discourse ولا محرك مجتمع ثانٍ** — وحداتنا القائمة تملك التنفيذ كما هي.
+- **هيكل الفرق المُعلن منذ البداية (D-COMM-006):** عقد Discourse REST وعقدنا GraphQL/DGS — الترجمة الدلالية هي النمط المتبنّى، و«توافق أسماء نقاط REST» ليس مقياسَ إتمام قط. نقدرات المجهول چند لا تجريا مطابقة عنصرية: التفاعلات/الاستفتاءات/الفعاليات إضافات رسمية مُقاسة في المرجع (سجل الانحرافات)؛ الجغرافيا/السوق المجتمعي/المفقودات امتدادات منصية تُجرد خارج العداد.
+- **حدود الإثبات:** هذه الملفات تثبت القرار والأسس فقط. لا صف مصفوفة «إتمز» من نص — الإتمام يعني تفويضًا لمالك + تدقيقات + صلاحية + اختبار. حارس CI/الأدوات المرافقة (`ADV-COMM-001`) **ليس في هذا PR** عمدًا — يتسم القرار بمراجة البروتوكول لملفات `.github/workflows/` أولاً.
+- **علاقة الاستقلال:** هذا القرار بخُ/colors متجانس `D-SALEOR-FULL-001` لا يلغيه ولا يعدّله؛ التجار والحكومات تسيرُ يكانها.
+
+---
+
 ## قرار الحوكمة الحاكم لتكامل Saleor — D-SALEOR-FULL-001 (2026-10-20)
 
 - **المرجع التنفيذي الوحيد:** [الخطة النهائية للوحة الكاملة ومخطط التجارة الكامل](docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md). مصفوفة المجالات: `docs/governance/plans/saleor-commerce-domain-matrix.csv`; سجل الاختلافات: `docs/governance/plans/saleor-contract-divergences.csv`; الـpins: `docs/governance/plans/saleor-source-pins.json`.

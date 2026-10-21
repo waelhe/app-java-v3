@@ -1,0 +1,30 @@
+{
+  "decision_id": "D-COMMUNITY-DISCOURSE-001",
+  "measured_at": "2026-10-21",
+  "contract_source": {
+    "repository": "discourse/discourse",
+    "pinned_tag": "v2026.9.0",
+    "pinned_commit_sha": "343b20f97ef5f6bd70826ee0e993ba348b210fd5",
+    "latest_observed_tag": "v2026.10.0-latest",
+    "latest_observed_commit_sha": "a51251632c2dae3e0be8e0ba9119dc295b838128",
+    "measurement_source": "official GitHub tags API (api.github.com/repos/discourse/discourse/tags)"
+  },
+  "official_api_reference": "https://docs.discourse.org/",
+  "bundled_plugins_measured": [
+    "automation", "boards", "chat", "checklist", "discourse-adplugin", "discourse-affiliate",
+    "discourse-ai", "discourse-apple-auth", "discourse-assign", "discourse-cakeday",
+    "discourse-captcha", "discourse-chat-integration", "discourse-data-explorer",
+    "discourse-details", "discourse-events", "discourse-gamification", "discourse-github",
+    "discourse-graphviz", "discourse-lazy-videos", "discourse-local-dates",
+    "discourse-login-with-amazon", "discourse-lti", "discourse-math",
+    "discourse-microsoft-auth", "discourse-narrative-bot", "discourse-oauth2-basic",
+    "discourse-openid-connect", "discourse-patreon", "discourse-policy",
+    "discourse-post-voting", "discourse-presence", "discourse-reactions", "discourse-rewind",
+    "discourse-rss-polling", "discourse-solved", "discourse-subscriptions",
+    "discourse-templates", "discourse-topic-voting", "discourse-user-notes",
+    "discourse-workflows", "discourse-zendesk-plugin", "footnote", "live", "poll",
+    "spoiler-alert", "styleguide"
+  ],
+  "bundled_plugins_measurement_note": "measured on discourse/discourse@main (a512516) on 2026-10-21; re-measure on the pinned tag at the start of each wave",
+  "update_policy": "pins change only via a PR whose body carries the fresh official measurement (tag + commit SHA + URL); no automated bumps"
+}
