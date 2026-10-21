@@ -9,6 +9,7 @@ import com.marketplace.community.spi.NeighborhoodFeedPort;
 import com.marketplace.community.spi.NeighborhoodPostDetailPort;
 import com.marketplace.discovery.spi.DiscoverySpi;
 import com.marketplace.identity.spi.IdentitySpi;
+import com.marketplace.orders.spi.OrderReadSpi;
 import com.marketplace.identity.spi.UserAccountPage;
 import com.marketplace.identity.spi.UserAccountSort;
 import com.marketplace.identity.spi.UserAccountView;
@@ -111,6 +112,9 @@ class CustomerDataFetcherDgsTest {
 
     @MockitoBean
     private ProductVariantReadSpi variantReadSpi;
+
+    @MockitoBean
+    private OrderReadSpi orderReadSpi;
 
     @MockitoBean
     private ProductReadSpi productReadSpi;

@@ -778,6 +778,86 @@ externalReference: String
 """Slug of a channel for which the data should be returned (no channel model — an explicit classified error)."""
 channel: String
 ): ProductVariant
+
+# === Campaign packet campaign-b5-b: the Saleor order read roots ===
+# "List of orders. The query will not initiate any external requests,
+# including filtering available shipping methods, or performing
+# external tax calculations. Requires one of the following permissions:
+# MANAGE_ORDERS." — the store's order population (the SAME
+# authoritative orders rows the placement machine writes — never a
+# duplicate store) with its countable-connection envelope (edges/
+# pageInfo/totalCount, byte-shape from the pinned schema). These are
+# Saleor MANAGEMENT roots: MANAGE_ORDERS maps through the platform's
+# ADMIN capability (the SaleorPermissionCatalog contract) enforced at
+# the owning use-case boundary by Spring Security's method security —
+# there is NO public population on this root (a non-ADMIN caller
+# answers the AUTHZ-001 authorization failure; the buyer's own-order
+# surface is the User.orders field's own later slice). FORWARD-ONLY
+# keyset paging on this first slice: first/after ride the platform's
+# REAL SQL keyset scroll (the staffUsers repository-keyset precedent —
+# cursors identify a row's sort key (placedAt/updatedAt/status, id),
+# never an absolute offset); before/last stay declared (the exact
+# Saleor argument shape) but answer an explicit classified error until
+# a backward scroll exists — a recorded, tested boundary, not a silent
+# no-op. filter (deprecated upstream), where, search (no owning search
+# capability) and channel (no channel model — the PENDING-ADR
+# commercial-context row) are likewise the declared wire shapes with
+# explicit not-yet-supported errors. The sort vocabulary is Saleor's
+# own OrderSortField enum: CREATED_AT (the placement instant — the
+# D-N5 complete ordering key's own column; the deprecated
+# CREATION_DATE alias rides the SAME executed sort), LAST_MODIFIED_AT
+# (the entity's own audit column) and STATUS (the stored lifecycle
+# text) execute as real keyset sorts; NUMBER (no order-number column),
+# RANK (search-scoped upstream), CUSTOMER (an identity-side join this
+# surface does not own), PAYMENT and FULFILLMENT_STATUS (deprecated
+# upstream) answer the explicit not-implemented error.
+orders(
+"""Sort orders."""
+sortBy: OrderSortingInput
+
+"""Filtering options for orders (no owning query capability yet — an explicit classified error)."""
+filter: OrderFilterInput @deprecated(reason: "Use `where` filter instead.")
+
+"""Where filtering options for orders (no owning query capability yet — an explicit classified error)."""
+where: OrderWhereInput
+
+"""Slug of a channel for which the data should be returned (no channel model — an explicit classified error)."""
+channel: String
+
+"""Search orders (no owning search capability — an explicit classified error)."""
+search: String
+
+"""Return the elements in the list that come before the specified cursor (forward-only on this platform — an explicit classified error)."""
+before: String
+
+"""Return the elements in the list that come after the specified cursor."""
+after: String
+
+"""Retrieve the first n elements from the list."""
+first: Int
+
+"""Retrieve the last n elements from the list (forward-only on this platform — an explicit classified error)."""
+last: Int
+): OrderCountableConnection
+
+# "Look up an order by ID or external reference." — the management
+# lookup over the owning use case's ADMIN-enforced read (MANAGE_ORDERS
+# maps to the platform's ADMIN capability — the AUTHZ-001 denial for
+# every non-ADMIN caller, proven in the integration suite). id
+# executes through the typed global-ID codec (an unknown but
+# well-formed lookup answers null — the safe absence; a malformed or
+# mistyped global ID answers the codec's classified validation error —
+# never a raw UUID fallback). externalReference (no external-ID column
+# on this platform) answers the explicit classified error whenever it
+# is sent; a keyless call answers the classified validation error (the
+# recorded divergence from upstream's null answer).
+order(
+"""ID of an order."""
+id: ID
+
+"""External ID of an order (no external-ID column — an explicit classified error)."""
+externalReference: String
+): Order
 }
 
 type Mutation {
@@ -2368,4 +2448,179 @@ enum ProductVariantSortField {
     Added in Saleor 3.23.
     """
     ID
+}
+
+# === Campaign packet campaign-b5-b: the Saleor order wire types ===
+# "Represents a fulfillment order." — the BOUNDED closure over the
+# orders owner's own rows: id (the typed global ID), created (the
+# placement instant as the ISO-8601 string the house's deliberate
+# no-new-scalar decision carries on the whole surface — the locked
+# Boot 4.1.1 -> spring-graphql 2.0.5 -> graphql-java 25.0 chain adds
+# no temporal scalar; the registered divergence from upstream's
+# DateTime scalar), and status (the platform machine's own lifecycle
+# rendered through Saleor's OrderStatus vocabulary by the registered
+# ADAPT mapping: PLACED renders UNCONFIRMED, CONFIRMED renders
+# UNFULFILLED, FULFILLED and CANCELLED render their upstream
+# spellings; the other five upstream values stay inert SDL vocabulary
+# this platform never emits). Unowned Saleor fields (the metadata
+# family, number — no human-readable order-number column, user — the
+# identity projection lands with the buyer-surface slice, the
+# channel-scoped money/tax totals — money stays off the wire per the
+# frozen money contract, billing/shipping addresses — no address
+# store, the D-ADDR-001 decision, lines/fulfillments/deliveries,
+# trackingClientId, languageCode, externalReference, updatedAt,
+# events, discounts, payments, giftCards, invoices) stay undeclared
+# until an owning capability exists — never faked.
+type Order {
+    """The ID of the order — typed global ID (opaque, never a raw UUID)."""
+    id: ID!
+
+    """Date and time when the order was created (the placement instant, ISO-8601 string — the no-new-scalar house decision)."""
+    created: String!
+
+    """Status of the order (the platform lifecycle rendered through Saleor's own vocabulary)."""
+    status: OrderStatus!
+}
+
+# Saleor's connection envelope for countable order lists — declared
+# (not runtime-generated) so the exact Saleor shape stands, including
+# totalCount. Spring's ConnectionTypeDefinitionConfigurer skips
+# already-declared connection types (the measured declared-types-skip
+# behavior the ProductCountableConnection declaration recorded), so
+# this declaration wins and the generated connections elsewhere are
+# untouched. pageInfo reuses the EXISTING shared PageInfo type — not
+# redeclared.
+type OrderCountableConnection {
+    """Pagination data for this connection."""
+    pageInfo: PageInfo!
+
+    edges: [OrderCountableEdge!]!
+
+    """A total count of items in the collection (the whole live order population's own count)."""
+    totalCount: Int
+}
+
+# Saleor's edge for the countable order connection — the node/cursor
+# pair the keyset scroll emits (per-element opaque cursors over the
+# executed sort's own keys).
+type OrderCountableEdge {
+    """The item at the end of the edge."""
+    node: Order!
+
+    """A cursor for use in pagination."""
+    cursor: String!
+}
+
+# Saleor's order filter input — the declared wire shape of the filter
+# argument (see orders: an explicit classified error until the owning
+# query capability exists). BOUNDED closure: search and ids carry the
+# scalar filter surface; status (OrderStatusFilter list),
+# paymentStatus/authorizeStatus/chargeStatus (the deprecated legacy
+# payments family), customer, created (DateRangeInput),
+# channels/checkoutTokens/checkoutIds (the channel model the platform
+# does not own), updatedAt (DateTimeRangeInput), isClickAndCollect,
+# isPreorder, giftCardUsed/giftCardBought, numbers, metadata (its
+# heavy MetadataFilter closure) stay undeclared until an owning
+# capability exists — the same declared-shape rule the
+# ProductTypeFilterInput precedents established.
+input OrderFilterInput {
+    search: String
+    ids: [ID!]
+}
+
+# Saleor's order where input — the declared wire shape of the where
+# argument (see orders: an explicit classified error until the owning
+# query capability exists). BOUNDED closure: ids carries the scalar
+# filter surface; everything else stays undeclared until an owning
+# capability exists — any where use answers the classified
+# not-implemented error before field-level semantics matter.
+input OrderWhereInput {
+    ids: [ID!]
+}
+
+# Saleor's order sorting input — the full pinned vocabulary verbatim.
+# THREE fields execute as the real forward-only keyset sorts:
+# CREATED_AT (the placement instant, id tiebreaker — with the
+# deprecated CREATION_DATE alias riding the SAME executed sort,
+# exactly upstream's own deprecation mapping), LAST_MODIFIED_AT (the
+# entity's own audit column) and STATUS (the stored lifecycle text);
+# NUMBER, RANK, CUSTOMER, PAYMENT and FULFILLMENT_STATUS answer the
+# explicit not-implemented error. direction reuses the EXISTING
+# shared OrderDirection enum — not redeclared.
+input OrderSortingInput {
+    """Specifies the direction in which to sort orders."""
+    direction: OrderDirection!
+
+    """Sort orders by the selected field."""
+    field: OrderSortField!
+}
+
+enum OrderSortField {
+    """Sort orders by number (no order-number column on this platform — an explicit classified error)."""
+    NUMBER
+
+    """Sort orders by rank. Note that this option is available only with the `search` filter (search-scoped upstream — an explicit classified error)."""
+    RANK
+
+    """Sort orders by creation date (the deprecated alias of CREATED_AT — rides the SAME executed placement-instant sort)."""
+    CREATION_DATE @deprecated(reason: "Use `CREATED_AT` instead.")
+
+    """Sort orders by creation date (the placement instant)."""
+    CREATED_AT
+
+    """Sort orders by last modified date."""
+    LAST_MODIFIED_AT
+
+    """Sort orders by customer (an identity-side join this surface does not own — an explicit classified error)."""
+    CUSTOMER
+
+    """Sort orders by payment status (deprecated upstream against the legacy Payments API — an explicit classified error)."""
+    PAYMENT @deprecated(reason: "The legacy Payments API is deprecated and will be removed. Use the Transactions API instead.")
+
+    """Sort orders by fulfillment status (deprecated upstream — an explicit classified error)."""
+    FULFILLMENT_STATUS @deprecated(reason: "Use `STATUS` instead.")
+
+    """
+    Sort orders by order status.
+
+    Added in Saleor 3.22.
+    """
+    STATUS
+}
+
+# Saleor's order status vocabulary — declared VERBATIM (the full
+# pinned enum); the platform machine's own four states render through
+# it by the registered ADAPT mapping (PLACED -> UNCONFIRMED, CONFIRMED
+# -> UNFULFILLED, FULFILLED -> FULFILLED, CANCELLED -> CANCELED), and
+# the other five values stay inert SDL vocabulary this platform never
+# emits (DRAFT/EXPIRED have no platform lifecycle counterpart;
+# PARTIALLY_FULFILLED/PARTIALLY_RETURNED/RETURNED land with the
+# fulfillment/returns projections' own later slices).
+enum OrderStatus {
+    """The order is a draft (never emitted by this platform)."""
+    DRAFT
+
+    """The order is placed but not yet confirmed (the platform's PLACED)."""
+    UNCONFIRMED
+
+    """The order is confirmed but not yet fulfilled (the platform's CONFIRMED)."""
+    UNFULFILLED
+
+    """The order is partially fulfilled (never emitted by this platform yet)."""
+    PARTIALLY_FULFILLED
+
+    """The order is partially returned (never emitted by this platform yet)."""
+    PARTIALLY_RETURNED
+
+    """The order is returned (never emitted by this platform yet)."""
+    RETURNED
+
+    """The order is fulfilled (the platform's FULFILLED)."""
+    FULFILLED
+
+    """The order is canceled (the platform's CANCELLED)."""
+    CANCELED
+
+    """The order is expired (never emitted by this platform)."""
+    EXPIRED
 }

@@ -40,7 +40,14 @@
         // identity-spi/catalog-spi pattern every journey seam follows (the
         // declared interface plus its propagated signature types, never the
         // internals; the ADMIN enforcement lives in the owning use cases).
-        "pricing :: pricing-spi"
+        "pricing :: pricing-spi",
+        // Campaign packet campaign-b5-b (P4 order read roots, A0 stewardship):
+        // the GraphQL surface's order read fields delegate to the orders
+        // module's OWN named SPI — the same identity-spi/catalog-spi pattern
+        // every journey seam follows (the declared interface plus its
+        // propagated signature types, never the internals; the ADMIN
+        // enforcement lives in the owning use case's method security).
+        "orders :: orders-spi"
     }
 )
 package com.marketplace.app;

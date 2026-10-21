@@ -14,6 +14,7 @@ import com.marketplace.community.spi.NeighborhoodFeedPort;
 import com.marketplace.community.spi.NeighborhoodPostDetailPort;
 import com.marketplace.discovery.spi.DiscoverySpi;
 import com.marketplace.identity.spi.IdentitySpi;
+import com.marketplace.orders.spi.OrderReadSpi;
 import com.marketplace.shared.security.CurrentUserProvider;
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
@@ -126,6 +127,9 @@ class ProductDataFetcherDgsTest {
 
     @MockitoBean
     private ProductVariantReadSpi variantReadSpi;
+
+    @MockitoBean
+    private OrderReadSpi orderReadSpi;
 
     @AfterEach
     void clearSecurityContext() {
