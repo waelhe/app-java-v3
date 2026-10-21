@@ -50,6 +50,9 @@ The agent must not edit `saleor-contract-divergences.csv` or the central ledger;
 rows:
 - `D-ADDR-001`: owner decision = identity (ADOPTED); the pending-ADR flag may now be cleared with
   the implementation evidence above (`V248`, `AccountAddressService`, `AddressManagementSpi`,
-  `AgentOneMutationDgsTest`, `AgentOneMutationIntegrationTest`).
+  `AgentOneMutationDgsTest` — executed locally, 21/21 green — and `AgentOneMutationIntegrationTest`,
+  committed but not yet executed anywhere: no Docker in the sandbox, and this branch's dispatched
+  CI suites die at the frozen-base catalog compile defect before any test phase; see the
+  completion report's measured evidence).
 - `D-ADDR-001-b` (new row): `addressValidationRules` blocked — no validation-rules engine;
   proposed owner geo; safe behavior: undeclared.
