@@ -1,5 +1,12 @@
 package com.marketplace.app.graphql;
 
+import com.marketplace.catalog.spi.CategoryWriteSpi;
+import com.marketplace.catalog.spi.ProductVariantReadSpi;
+import com.marketplace.catalog.spi.ProductTypeReadSpi;
+import com.marketplace.catalog.spi.ProductReadSpi;
+import com.marketplace.orders.spi.OrderReadSpi;
+import com.marketplace.catalog.spi.CategoryReadSpi;
+import com.marketplace.catalog.spi.AttributeReadSpi;
 import com.marketplace.community.spi.NeighborhoodPostDetailPort;
 import com.marketplace.shared.api.NeighborhoodFeedMediaView;
 import com.marketplace.shared.api.NeighborhoodFeedPostView;
@@ -99,6 +106,37 @@ class PostDetailDgsDataFetcherTest {
     // outside-slice mocking set, exactly the way the seams above do.
     @MockitoBean
     private com.marketplace.identity.spi.IdentitySpi identitySpi;
+    // The category mutation roots' owning write seam (agent-2 packet) —
+    // the package slice wires every fetcher, so this seam gets its mock
+    // (the b5-a sibling-test precedent).
+    @MockitoBean
+    private CategoryWriteSpi categoryWriteSpi;
+    // The promotion/voucher read roots' owning seam (b5-b packet) — the
+    // sibling-test mock the packet's own precedent prescribed but did not
+    // complete; the package slice context cannot boot without it.
+    @MockitoBean
+    private com.marketplace.pricing.spi.DiscountReadSpi discountReadSpi;
+    // The package slice wires every fetcher; every seam the slice's other
+    // fetchers need gets its mock — the incomplete sibling fixes the
+    // b4/b5 packets left behind (committed against a red CI) completed
+    // here so the shared slice context can boot at all.
+    @MockitoBean
+    private com.marketplace.catalog.spi.AttributeReadSpi attributeReadSpi;
+
+    @MockitoBean
+    private com.marketplace.catalog.spi.CategoryReadSpi categoryReadSpi;
+
+    @MockitoBean
+    private com.marketplace.orders.spi.OrderReadSpi orderReadSpi;
+
+    @MockitoBean
+    private com.marketplace.catalog.spi.ProductReadSpi productReadSpi;
+
+    @MockitoBean
+    private com.marketplace.catalog.spi.ProductTypeReadSpi productTypeReadSpi;
+
+    @MockitoBean
+    private com.marketplace.catalog.spi.ProductVariantReadSpi productVariantReadSpi;
 
     /** The journey's fields read the principal from the (test-populated) security context. */
     @AfterEach

@@ -2,6 +2,7 @@ package com.marketplace.app.graphql;
 
 import com.marketplace.catalog.spi.CatalogSpi;
 import com.marketplace.catalog.spi.CategoryReadSpi;
+import com.marketplace.catalog.spi.CategoryWriteSpi;
 import com.marketplace.catalog.spi.AttributeReadSpi;
 import com.marketplace.catalog.spi.ProductAdminSpi;
 import com.marketplace.catalog.spi.ProductPage;
@@ -114,6 +115,11 @@ class ProductVariantDataFetcherDgsTest {
 
     @MockitoBean
     private CategoryReadSpi categoryReadSpi;
+    // The category mutation roots' owning write seam (agent-2 packet) —
+    // the package slice wires every fetcher, so this seam gets its mock
+    // (the b5-a sibling-test precedent).
+    @MockitoBean
+    private CategoryWriteSpi categoryWriteSpi;
 
     @MockitoBean
     private ProductReadSpi productReadSpi;
@@ -138,6 +144,11 @@ class ProductVariantDataFetcherDgsTest {
 
     @MockitoBean
     private IdentitySpi identitySpi;
+    // The promotion/voucher read roots' owning seam (b5-b packet) — the
+    // sibling-test mock the packet's own precedent prescribed but did not
+    // complete; the package slice context cannot boot without it.
+    @MockitoBean
+    private com.marketplace.pricing.spi.DiscountReadSpi discountReadSpi;
 
     @AfterEach
     void clearSecurityContext() {
@@ -240,8 +251,10 @@ class ProductVariantDataFetcherDgsTest {
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> edges = (List<Map<String, Object>>) connection.get("edges");
-        assertThat(edges.get(0).get("name")).isNull();
-        assertThat(edges.get(0).get("sku")).isEqualTo("b5a-sku-2");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> node = (Map<String, Object>) edges.get(0).get("node");
+        assertThat(node.get("name")).isNull();
+        assertThat(node.get("sku")).isEqualTo("b5a-sku-2");
     }
 
     /**

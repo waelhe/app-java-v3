@@ -75,6 +75,25 @@ public class Category extends BaseEntity {
         return id;
     }
 
+    /**
+     * The registry row's amendment shape — the ADMIN write use case's own
+     * seam (the Saleor {@code categoryUpdate} root mapped onto the
+     * registry's bilingual columns). Each argument is the ALREADY-VALIDATED
+     * replacement value (the use case owns validation and the code
+     * uniqueness precheck — the {@code uq_categories_code_active} partial
+     * unique index's own no-TOCTOU window); {@code null} preserves the
+     * column (partial update, the Saleor input's omit-to-preserve
+     * semantics).
+     */
+    void revise(String code, String nameEn) {
+        if (code != null) {
+            this.code = code;
+        }
+        if (nameEn != null) {
+            this.nameEn = nameEn;
+        }
+    }
+
     public String getCode() {
         return code;
     }

@@ -1,9 +1,11 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.catalog.spi.CatalogSpi;
+import com.marketplace.catalog.spi.AttributeReadSpi;
 import com.marketplace.catalog.spi.ProductVariantReadSpi;
 import com.marketplace.catalog.spi.ProductReadSpi;
 import com.marketplace.catalog.spi.CategoryReadSpi;
+import com.marketplace.catalog.spi.CategoryWriteSpi;
 import com.marketplace.catalog.spi.ProductAdminSpi;
 import com.marketplace.catalog.spi.ProductTypePage;
 import com.marketplace.catalog.spi.ProductTypeReadSpi;
@@ -122,6 +124,22 @@ class ProductTypeDataFetcherDgsTest {
 
     @MockitoBean
     private CategoryReadSpi categoryReadSpi;
+    // The category mutation roots' owning write seam (agent-2 packet) —
+    // the package slice wires every fetcher, so this seam gets its mock
+    // (the b5-a sibling-test precedent).
+    @MockitoBean
+    private CategoryWriteSpi categoryWriteSpi;
+    // The promotion/voucher read roots' owning seam (b5-b packet) — the
+    // sibling-test mock the packet's own precedent prescribed but did not
+    // complete; the package slice context cannot boot without it.
+    @MockitoBean
+    private com.marketplace.pricing.spi.DiscountReadSpi discountReadSpi;
+    // The package slice wires every fetcher; every seam the slice's other
+    // fetchers need gets its mock — the incomplete sibling fixes the
+    // b4/b5 packets left behind (committed against a red CI) completed
+    // here so the shared slice context can boot at all.
+    @MockitoBean
+    private com.marketplace.catalog.spi.AttributeReadSpi attributeReadSpi;
 
     @AfterEach
     void clearSecurityContext() {

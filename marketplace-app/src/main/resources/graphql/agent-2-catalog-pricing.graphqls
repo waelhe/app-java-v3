@@ -1,0 +1,153 @@
+# =====================================================================
+# Agent 2 — Catalog / Pricing / Discounts (P2 + P3) bounded SDL
+#
+# The agent-2 packet's own schema fragment (the campaign's SDL
+# isolation rule): every root below carries the EXACT Saleor 3.23.43
+# pinned signature (repository saleor/saleor, ref 3.23.43,
+# saleor/graphql/schema.graphql, blob b8fa0dd809081f76dc2834bb5c286561e
+# 5783276) for the arguments the platform's house no-new-scalar SDL can
+# declare. Saleor-only directives (@doc/@webhookEventsInfo) and fields
+# whose scalar owners do not exist on this surface (Upload, JSONString,
+# JSON) stay undeclared until an owning capability exists — the same
+# bounded-closure discipline the read roots' SDL established; every
+# declared-but-unowned ARGUMENT answers the explicit classified error
+# when sent, never a silent no-op.
+#
+# Bounded first slice (this packet's executable closure):
+#   categoryCreate / categoryUpdate / categoryDelete /
+#   categoryBulkDelete — the registry's ADMIN write use case over the
+#   EXISTING categories table (no new migration: the entity, the
+#   uq_categories_code_active partial unique index and the soft-delete
+#   discipline all predate this packet).
+# =====================================================================
+
+extend type Mutation {
+    """Creates a new category."""
+    categoryCreate(
+        """Fields required to create a category."""
+        input: CategoryInput!
+
+        """
+        ID of the parent category. The platform registry is FLAT (no
+        nesting tree owner — the registered read-root divergence); a
+        non-null value answers the classified validation error.
+        """
+        parent: ID
+    ): CategoryCreate
+
+    """Deletes a category."""
+    categoryDelete(
+        """
+        External ID of a category to delete. No external-ID column
+        exists on this platform (the registered divergence); a non-null
+        value answers the classified validation error.
+        """
+        externalReference: String
+
+        """ID of a category to delete."""
+        id: ID
+    ): CategoryDelete
+
+    """Deletes categories."""
+    categoryBulkDelete(
+        """List of category IDs to delete."""
+        ids: [ID!]!
+    ): CategoryBulkDelete
+
+    """Updates a category."""
+    categoryUpdate(
+        """
+        External ID of a category to update. No external-ID column
+        exists on this platform; a non-null value answers the classified
+        validation error.
+        """
+        externalReference: String
+
+        """ID of a category to update."""
+        id: ID
+
+        """Fields required to update a category."""
+        input: CategoryInput!
+    ): CategoryUpdate
+}
+
+# =====================================================================
+# The bounded CategoryInput — the pinned Saleor input's OWNED field set
+# only: name and slug (the registry's name_en / code columns). The
+# unowned members (description/fullDescription as JSONString, seo,
+# backgroundImage as Upload, backgroundImageAlt, externalReference,
+# metadata, privateMetadata) have neither scalar owners nor owning
+# capabilities on this surface and stay undeclared — recorded
+# divergences, never faked.
+# =====================================================================
+input CategoryInput {
+    """Category name — the registry's primary display name (name_en)."""
+    name: String
+
+    """Category slug — the registry's stable public code."""
+    slug: String
+}
+
+type CategoryCreate {
+    errors: [ProductError!]!
+    category: Category
+}
+
+type CategoryUpdate {
+    errors: [ProductError!]!
+    category: Category
+}
+
+type CategoryDelete {
+    errors: [ProductError!]!
+    category: Category
+}
+
+type CategoryBulkDelete {
+    """Returns how many objects were affected."""
+    count: Int!
+    errors: [ProductError!]!
+}
+
+type ProductError {
+    """
+    Name of a field that caused the error. A value of `null` indicates
+    that the error isn't associated with a particular field.
+    """
+    field: String
+
+    """The error message."""
+    message: String
+
+    """The error code."""
+    code: ProductErrorCode!
+}
+
+# The pinned Saleor 3.23.43 ProductErrorCode membership set — the
+# Products-domain mutation payload error vocabulary (declared whole:
+# enum members are wire vocabulary, not owned capabilities; this
+# surface currently answers REQUIRED/INVALID/NOT_FOUND/ALREADY_EXISTS).
+enum ProductErrorCode {
+    ALREADY_EXISTS
+    ATTRIBUTE_ALREADY_ASSIGNED
+    ATTRIBUTE_CANNOT_BE_ASSIGNED
+    ATTRIBUTE_VARIANTS_DISABLED
+    MEDIA_ALREADY_ASSIGNED
+    DUPLICATED_INPUT_ITEM
+    GRAPHQL_ERROR
+    INVALID
+    INVALID_PRICE
+    PRODUCT_WITHOUT_CATEGORY
+    NOT_PRODUCTS_IMAGE
+    NOT_PRODUCTS_VARIANT
+    NOT_FOUND
+    REQUIRED
+    UNIQUE
+    CANNOT_MANAGE_PRODUCT_WITHOUT_VARIANT
+    PRODUCT_NOT_ASSIGNED_TO_CHANNEL
+    UNSUPPORTED_MEDIA_PROVIDER
+    PREORDER_VARIANT_CANNOT_BE_DEACTIVATED
+    INVALID_FILE_TYPE
+    UNSUPPORTED_MIME_TYPE
+    FILE_SIZE_LIMIT_EXCEEDED
+}
