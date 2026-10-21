@@ -7,8 +7,7 @@ import com.marketplace.catalog.ProductTypeRepository;
 import com.marketplace.catalog.StoreProductStatus;
 import com.marketplace.identity.User;
 import com.marketplace.identity.UserRepository;
-import com.marketplace.shared.test.IntegrationContainers;
-import com.netflix.graphql.dgs.client.GraphQLError;
+import test.config.IntegrationContainers;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,7 +24,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -231,9 +230,9 @@ class ProductGraphQlIntegrationTest {
                 .execute()
                 .errors().verify()
                 .path("products.edges[*].node.status").entityList(String.class)
-                .containsOnly("ACTIVE")
+                .satisfies(values -> assertThat(values).containsOnly("ACTIVE"))
                 .path("products.edges[*].node.name").entityList(String.class)
-                .anySatisfy(name -> assertThat(name).startsWith("b4c "))
+                .satisfies(names -> assertThat(names).anySatisfy(name -> assertThat(name).startsWith("b4c ")))
                 .path("products.totalCount").entity(Integer.class)
                 .satisfies(total -> assertThat(total).isGreaterThanOrEqualTo(3));
     }
@@ -251,9 +250,10 @@ class ProductGraphQlIntegrationTest {
                 .execute()
                 .errors().verify()
                 .path("products.edges[*].node.status").entityList(String.class)
-                .should(c -> assertThat(c).containsAnyOf("DRAFT", "SUSPENDED"))
+                .satisfies(c -> assertThat(c).containsAnyOf("DRAFT", "SUSPENDED"))
                 .path("products.edges[*].node.name").entityList(String.class)
-                .anySatisfy(name -> assertThat(name).isEqualTo("b4c Unpublished Draft Widget"));
+                .satisfies(names -> assertThat(names)
+                        .anySatisfy(name -> assertThat(name).isEqualTo("b4c Unpublished Draft Widget")));
     }
 
     @Test
@@ -412,7 +412,7 @@ class ProductGraphQlIntegrationTest {
                 .variable("id", "not-a-global-id")
                 .execute()
                 .errors()
-                .satisfies(errors -> {
+                .satisfy(errors -> {
                     assertThat(errors).hasSize(1);
                     assertThat(errors.get(0).getExtensions()).containsEntry("errorCode", "VAL-001");
                 });
@@ -428,7 +428,7 @@ class ProductGraphQlIntegrationTest {
                 .variable("id", UUID.randomUUID().toString())
                 .execute()
                 .errors()
-                .satisfies(errors -> {
+                .satisfy(errors -> {
                     assertThat(errors).hasSize(1);
                     assertThat(errors.get(0).getExtensions()).containsEntry("errorCode", "VAL-001");
                 });
@@ -444,7 +444,7 @@ class ProductGraphQlIntegrationTest {
                 .variable("id", categoryGlobalId(UUID.randomUUID()))
                 .execute()
                 .errors()
-                .satisfies(errors -> {
+                .satisfy(errors -> {
                     assertThat(errors).hasSize(1);
                     assertThat(errors.get(0).getExtensions()).containsEntry("errorCode", "VAL-001");
                 });
@@ -487,8 +487,8 @@ class ProductGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("filter is not implemented")));
     }
 
@@ -501,8 +501,8 @@ class ProductGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("where filter is not implemented")));
     }
 
@@ -515,8 +515,8 @@ class ProductGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("search is not implemented")));
     }
 
@@ -529,8 +529,8 @@ class ProductGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("channel filtering is not implemented")));
     }
 
@@ -543,8 +543,8 @@ class ProductGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("forward-only")));
     }
 
@@ -557,8 +557,8 @@ class ProductGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("PRICE is not implemented")));
     }
 
@@ -572,8 +572,8 @@ class ProductGraphQlIntegrationTest {
                 .variable("slug", "widget")
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("slug lookup is not implemented")));
     }
 
@@ -587,8 +587,8 @@ class ProductGraphQlIntegrationTest {
                 .variable("externalReference", "erp-widget-1")
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("externalReference lookup is not implemented")));
     }
 
@@ -601,8 +601,8 @@ class ProductGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> {
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> {
                             assertThat(error.getMessage()).contains("product requires its id");
                             assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
                         }));

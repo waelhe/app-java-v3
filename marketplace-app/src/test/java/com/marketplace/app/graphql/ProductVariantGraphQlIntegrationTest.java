@@ -9,8 +9,7 @@ import com.marketplace.catalog.ProductVariantRepository;
 import com.marketplace.catalog.StoreProductStatus;
 import com.marketplace.identity.User;
 import com.marketplace.identity.UserRepository;
-import com.marketplace.shared.test.IntegrationContainers;
-import com.netflix.graphql.dgs.client.GraphQLError;
+import test.config.IntegrationContainers;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,7 +26,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -277,9 +276,9 @@ class ProductVariantGraphQlIntegrationTest {
                 .execute()
                 .errors().verify()
                 .path("productVariants.edges[*].node.status").entityList(String.class)
-                .containsOnly("ACTIVE")
+                .satisfies(values -> assertThat(values).containsOnly("ACTIVE"))
                 .path("productVariants.edges[*].node.product.status").entityList(String.class)
-                .containsOnly("ACTIVE")
+                .satisfies(values -> assertThat(values).containsOnly("ACTIVE"))
                 .path("productVariants.edges[*].node.sku").entityList(String.class)
                 .satisfies(skus -> {
                     // BOTH data-scope negatives: the ACTIVE variant under the
@@ -374,7 +373,7 @@ class ProductVariantGraphQlIntegrationTest {
                 .execute()
                 .errors().verify()
                 .path("productVariants.edges[*].node.sku").entityList(String.class)
-                .isNotEmpty();
+                .satisfies(values -> assertThat(values).isNotEmpty());
     }
 
     @Test
@@ -512,7 +511,7 @@ class ProductVariantGraphQlIntegrationTest {
                 .variable("id", "not-a-global-id")
                 .execute()
                 .errors()
-                .satisfies(errors -> {
+                .satisfy(errors -> {
                     assertThat(errors).hasSize(1);
                     assertThat(errors.get(0).getExtensions()).containsEntry("errorCode", "VAL-001");
                 });
@@ -528,7 +527,7 @@ class ProductVariantGraphQlIntegrationTest {
                 .variable("id", UUID.randomUUID().toString())
                 .execute()
                 .errors()
-                .satisfies(errors -> {
+                .satisfy(errors -> {
                     assertThat(errors).hasSize(1);
                     assertThat(errors.get(0).getExtensions()).containsEntry("errorCode", "VAL-001");
                 });
@@ -544,7 +543,7 @@ class ProductVariantGraphQlIntegrationTest {
                 .variable("id", productGlobalId(UUID.randomUUID()))
                 .execute()
                 .errors()
-                .satisfies(errors -> {
+                .satisfy(errors -> {
                     assertThat(errors).hasSize(1);
                     assertThat(errors.get(0).getExtensions()).containsEntry("errorCode", "VAL-001");
                 });
@@ -587,8 +586,8 @@ class ProductVariantGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("ids filtering is not implemented")));
     }
 
@@ -601,8 +600,8 @@ class ProductVariantGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("filter is not implemented")));
     }
 
@@ -615,8 +614,8 @@ class ProductVariantGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("where filter is not implemented")));
     }
 
@@ -629,8 +628,8 @@ class ProductVariantGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("search is not implemented")));
     }
 
@@ -643,8 +642,8 @@ class ProductVariantGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("channel filtering is not implemented")));
     }
 
@@ -657,8 +656,8 @@ class ProductVariantGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("forward-only pagination")));
     }
 
@@ -672,8 +671,8 @@ class ProductVariantGraphQlIntegrationTest {
                 .variable("sku", "b5a-sku")
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("sku lookup is not implemented")));
     }
 
@@ -687,8 +686,8 @@ class ProductVariantGraphQlIntegrationTest {
                 .variable("externalReference", "erp-variant-1")
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("externalReference lookup is not implemented")));
     }
 
@@ -701,8 +700,8 @@ class ProductVariantGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("productVariant requires its id")));
     }
 }
