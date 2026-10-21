@@ -252,6 +252,43 @@ public class UserService implements IdentitySpi {
         return user;
     }
 
+    /**
+     * Agent 1 (the Saleor 458-root campaign, assignment packet PR #696):
+     * the staff-account birth — the ADMIN-role projection row plus the
+     * login row in one transaction (the register() two-store discipline
+     * verbatim). The caller (the owning admin surface) supplies a
+     * generated unknowable secret; the set-password journey is the emailed
+     * reset right (Saleor's STAFF_SET_PASSWORD_REQUESTED shape), so no
+     * verification hold applies — staff accounts are born enabled (the
+     * admin who created them vouched for the address) unless the caller
+     * disables them.
+     *
+     * @param email       the staff account's address (becomes the subject)
+     * @param rawPassword the generated unknowable secret — encoded here
+     * @param displayName the optional display name
+     * @param enabled     whether the login row is born enabled
+     * @return the created domain row
+     * @throws ConflictException the address already owns an account
+     */
+    public User registerStaff(String email, String rawPassword, String displayName,
+                              boolean enabled) {
+        String subject = email;
+        if (userRepository.existsBySubject(subject)
+                || userDetailsManager.userExists(subject)) {
+            throw new ConflictException("An account already exists for this email");
+        }
+        User user = userRepository.save(
+                User.create(subject, email, displayName, UserRole.ADMIN));
+        userDetailsManager.createUser(org.springframework.security.core.userdetails.User
+                .withUsername(subject)
+                .password(passwordEncoder.getObject().encode(rawPassword))
+                .roles("ADMIN")
+                .disabled(!enabled)
+                .build());
+        log.info("Staff account registered: subject={}, role=ADMIN, enabled={}", subject, enabled);
+        return user;
+    }
+
     @Transactional(readOnly = true)
     public Page<UserSummary> findAllSummaries(Pageable pageable) {
         return findAll(pageable).map(this::toUserSummary);

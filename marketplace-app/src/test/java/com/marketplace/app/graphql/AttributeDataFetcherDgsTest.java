@@ -1,6 +1,13 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.catalog.CatalogAttributeType;
+import com.marketplace.shared.api.CmsNavigationPort;
+import com.marketplace.shared.api.CmsPagePort;
+import com.marketplace.identity.spi.UserManagementSpi;
+import com.marketplace.identity.spi.CustomerTypeSpi;
+import com.marketplace.identity.spi.AddressManagementSpi;
+import com.marketplace.identity.spi.AccountLifecycleSpi;
+import com.marketplace.pricing.spi.DiscountReadSpi;
 import com.marketplace.catalog.spi.AttributePage;
 import com.marketplace.catalog.spi.AttributeReadSpi;
 import com.marketplace.catalog.spi.AttributeSort;
@@ -133,6 +140,27 @@ class AttributeDataFetcherDgsTest {
     @MockitoBean
     private CategoryReadSpi categoryReadSpi;
 
+
+    @MockitoBean
+    private DiscountReadSpi discountReadSpi;
+
+    @MockitoBean
+    private AccountLifecycleSpi accountLifecycleSpi;
+
+    @MockitoBean
+    private AddressManagementSpi addressManagementSpi;
+
+    @MockitoBean
+    private CustomerTypeSpi customerTypeSpi;
+
+    @MockitoBean
+    private UserManagementSpi userManagementSpi;
+
+    @MockitoBean
+    private CmsPagePort cmsPagePort;
+
+    @MockitoBean
+    private CmsNavigationPort cmsNavigationPort;
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();

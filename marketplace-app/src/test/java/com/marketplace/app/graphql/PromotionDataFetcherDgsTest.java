@@ -1,6 +1,13 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.catalog.spi.CatalogSpi;
+import com.marketplace.shared.api.CmsNavigationPort;
+import com.marketplace.shared.api.CmsPagePort;
+import com.marketplace.identity.spi.UserManagementSpi;
+import com.marketplace.identity.spi.CustomerTypeSpi;
+import com.marketplace.identity.spi.AddressManagementSpi;
+import com.marketplace.identity.spi.AccountLifecycleSpi;
+import com.marketplace.catalog.spi.AttributeReadSpi;
 import com.marketplace.catalog.spi.ProductVariantReadSpi;
 import com.marketplace.catalog.spi.ProductReadSpi;
 import com.marketplace.catalog.spi.CategoryReadSpi;
@@ -129,6 +136,27 @@ class PromotionDataFetcherDgsTest {
     @MockitoBean
     private DiscountReadSpi discountReadSpi;
 
+
+    @MockitoBean
+    private AttributeReadSpi attributeReadSpi;
+
+    @MockitoBean
+    private AccountLifecycleSpi accountLifecycleSpi;
+
+    @MockitoBean
+    private AddressManagementSpi addressManagementSpi;
+
+    @MockitoBean
+    private CustomerTypeSpi customerTypeSpi;
+
+    @MockitoBean
+    private UserManagementSpi userManagementSpi;
+
+    @MockitoBean
+    private CmsPagePort cmsPagePort;
+
+    @MockitoBean
+    private CmsNavigationPort cmsNavigationPort;
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();

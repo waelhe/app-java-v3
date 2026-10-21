@@ -1,6 +1,19 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.catalog.spi.CatalogSpi;
+import com.marketplace.shared.api.CmsNavigationPort;
+import com.marketplace.shared.api.CmsPagePort;
+import com.marketplace.identity.spi.UserManagementSpi;
+import com.marketplace.identity.spi.CustomerTypeSpi;
+import com.marketplace.identity.spi.AddressManagementSpi;
+import com.marketplace.identity.spi.AccountLifecycleSpi;
+import com.marketplace.pricing.spi.DiscountReadSpi;
+import com.marketplace.orders.spi.OrderReadSpi;
+import com.marketplace.catalog.spi.AttributeReadSpi;
+import com.marketplace.catalog.spi.CategoryReadSpi;
+import com.marketplace.catalog.spi.ProductTypeReadSpi;
+import com.marketplace.catalog.spi.ProductVariantReadSpi;
+import com.marketplace.catalog.spi.ProductReadSpi;
 import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.security.CurrentUserProvider;
 import com.netflix.graphql.dgs.DgsQueryExecutor;
@@ -113,6 +126,45 @@ class ServiceDgsDataFetcherTest {
     @MockitoBean
     private com.marketplace.identity.spi.IdentitySpi identitySpi;
 
+
+    @MockitoBean
+    private ProductReadSpi productReadSpi;
+
+    @MockitoBean
+    private ProductVariantReadSpi variantReadSpi;
+
+    @MockitoBean
+    private ProductTypeReadSpi productTypeReadSpi;
+
+    @MockitoBean
+    private CategoryReadSpi categoryReadSpi;
+
+    @MockitoBean
+    private AttributeReadSpi attributeReadSpi;
+
+    @MockitoBean
+    private OrderReadSpi orderReadSpi;
+
+    @MockitoBean
+    private DiscountReadSpi discountReadSpi;
+
+    @MockitoBean
+    private AccountLifecycleSpi accountLifecycleSpi;
+
+    @MockitoBean
+    private AddressManagementSpi addressManagementSpi;
+
+    @MockitoBean
+    private CustomerTypeSpi customerTypeSpi;
+
+    @MockitoBean
+    private UserManagementSpi userManagementSpi;
+
+    @MockitoBean
+    private CmsPagePort cmsPagePort;
+
+    @MockitoBean
+    private CmsNavigationPort cmsNavigationPort;
     /** The mutation path reads the principal from the (test-populated) security context. */
     @AfterEach
     void clearSecurityContext() {

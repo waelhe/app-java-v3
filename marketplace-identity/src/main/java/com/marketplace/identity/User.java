@@ -27,6 +27,15 @@ public class User extends BaseEntity {
     @Column(name = "email", length = 320)
     private String email;
 
+    /**
+     * Agent 1 (V251 — the email-change journey): the requested NEW
+     * address awaiting redemption. {@code null} = no pending change; the
+     * request leg records the pair, the confirm leg consumes it (the
+     * single pending pair per account; a re-request overwrites it).
+     */
+    @Column(name = "pending_email", length = 320)
+    private String pendingEmail;
+
     @Column(name = "display_name", length = 200)
     private String displayName;
 
@@ -119,6 +128,19 @@ public class User extends BaseEntity {
         this.subject = replacementSubject;
         this.email = null;
         this.displayName = null;
+        this.pendingEmail = null;
         this.pseudonymizedAt = Instant.now();
+    }
+
+    /** Agent 1 (V251): records the pending email-change pair (one per account). */
+    void requestEmailChange(String newEmail) {
+        this.pendingEmail = newEmail == null ? null : newEmail.trim();
+    }
+
+    /** Agent 1 (V251): consumes the pending pair — null when none is outstanding. */
+    String consumePendingEmailChange() {
+        String pending = this.pendingEmail;
+        this.pendingEmail = null;
+        return pending;
     }
 }
