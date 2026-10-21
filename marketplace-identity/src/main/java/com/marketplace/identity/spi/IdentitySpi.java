@@ -4,6 +4,7 @@ import com.marketplace.shared.api.UserSummary;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.modulith.NamedInterface;
+import org.springframework.security.core.Authentication;
 
 import java.util.Set;
 import java.util.UUID;
@@ -197,4 +198,75 @@ public interface IdentitySpi {
      *         erasure flow (pseudonymize first)
      */
     AuditHistoryPurgeResult purgeAuditHistory(UUID userId, String reason, String actor);
+
+    /**
+     * P1 (the canonical Saleor plan §5-P1 — the Saleor {@code me} root):
+     * the caller's own account projection, resolved by the authentication's
+     * subject. Read-only: the REST {@code /me} bootstrap (profile sync from
+     * the token's freshest claims) keeps its own path — this read answers
+     * the stored projection, and a subject with no {@code users} row yet
+     * answers empty (the honest absence the nullable {@code me} carries,
+     * never a fabricated profile).
+     *
+     * @param authentication the caller's resource-server authentication
+     *                       (the JWT subject is the join key)
+     * @return the caller's account projection, empty when no row exists
+     */
+    java.util.Optional<UserAccountView> findCurrentUserAccount(Authentication authentication);
+
+    /**
+     * P1 (the Saleor {@code user} root): the account projection by the
+     * native UUID behind the typed global ID. Saleor requires
+     * MANAGE_STAFF/MANAGE_USERS/MANAGE_ORDERS — enforced here as the
+     * platform's server-side ADMIN capability at the owning use-case
+     * boundary (the RBAC mapping row of the divergence registry).
+     *
+     * @param id             the native UUID (decoded by the boundary's codec)
+     * @param authentication the caller, whose ADMIN authority is verified
+     * @return the account projection, empty when no row exists
+     */
+    java.util.Optional<UserAccountView> findUserAccountById(UUID id, Authentication authentication);
+
+    /**
+     * P1 (the Saleor {@code user} root's {@code email} argument): the
+     * account projection by email address. ADMIN-enforced as above.
+     *
+     * @param email          the account email
+     * @param authentication the caller, whose ADMIN authority is verified
+     * @return the account projection, empty when no row exists
+     */
+    java.util.Optional<UserAccountView> findUserAccountByEmail(String email, Authentication authentication);
+
+    /**
+     * P1 (the Saleor {@code user} root's {@code externalReference}
+     * argument): the account projection by the external identifier of
+     * record — the platform's OIDC {@code subject} column (the same join
+     * key the JWT {@code sub} uses). ADMIN-enforced as above.
+     *
+     * @param subject        the external identifier (the OIDC subject)
+     * @param authentication the caller, whose ADMIN authority is verified
+     * @return the account projection, empty when no row exists
+     */
+    java.util.Optional<UserAccountView> findUserAccountBySubject(String subject, Authentication authentication);
+
+    /**
+     * P1 (the Saleor {@code staffUsers} root): one bounded page of the
+     * staff/user roster as a forward-only keyset scroll in the requested
+     * sort (an owning column + the {@code id} tiebreaker — the
+     * storeProducts/services keyset precedent). ADMIN-enforced as above;
+     * the returning page carries the collection total Saleor's
+     * {@code totalCount} field expects.
+     *
+     * @param authentication the caller, whose ADMIN authority is verified
+     * @param sort           the executed sort (never {@code null})
+     * @param position       the keyset scroll position — the initial
+     *                       position, or the position decoded from the
+     *                       client's opaque {@code after} cursor
+     * @param limit          the bounded page size (the boundary's own cap)
+     * @return the page of account projections plus the collection total
+     */
+    UserAccountPage scrollStaffUsers(Authentication authentication,
+                                     UserAccountSort sort,
+                                     org.springframework.data.domain.KeysetScrollPosition position,
+                                     org.springframework.data.domain.Limit limit);
 }

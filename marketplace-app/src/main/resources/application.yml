@@ -720,6 +720,15 @@ resilience4j:
         base-config: default
         limit-for-period: 10
         timeout-duration: 0
+      # P1 (the canonical Saleor plan §5-P1 — the Saleor Users read roots):
+      # me/user/staffUsers share one named read instance at the catalog
+      # read budget (50/min) — bounded identity reads behind the same
+      # fail-fast model; the ADMIN-enforced legs delegate to the identity
+      # owner's use cases.
+      graphqlUserQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
       # Phase 6 (the GraphQL plan §11-Phase-6 — the first composite
       # journey, the inventory #599 §7 stage 4): the two home reads'
       # named instances, the same L29 fail-fast model. graphqlDiscovery-
