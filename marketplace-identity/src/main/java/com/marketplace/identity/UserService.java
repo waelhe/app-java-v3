@@ -962,6 +962,181 @@ public class UserService implements IdentitySpi {
     }
 
     /**
+     * P1 (the canonical Saleor plan §5-P1 — the Saleor {@code permissionGroup}
+     * root): the permission-group lookup by the native UUID behind the typed
+     * global ID — ADMIN-enforced at the owning use-case boundary (the
+     * platform's server-side mapping of Saleor's MANAGE_STAFF requirement —
+     * the divergence registry's RBAC row). An unknown but well-formed UUID
+     * answers empty: the nullable root's own honest absence, never an error
+     * and never a fabricated group.
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional(readOnly = true)
+    public java.util.Optional<com.marketplace.identity.spi.PermissionGroupView> findPermissionGroupById(
+            UUID id, Authentication authentication) {
+        if (id == null) {
+            return java.util.Optional.empty();
+        }
+        return permissionGroups(authentication).stream()
+                .filter(group -> group.id().equals(id))
+                .findFirst();
+    }
+
+    /**
+     * P1 (the Saleor {@code permissionGroups} root): the permission-group
+     * collection's forward-only keyset scroll — ADMIN-enforced, the owning
+     * NAME sort with the {@code id} tiebreaker, plus the collection total
+     * Saleor's {@code totalCount} field carries.
+     *
+     * <p><b>The collection is the closed role vocabulary</b> (no stored group
+     * table exists — the divergence registry's permission-group rows), so
+     * the scroll executes in memory with the SAME semantics the roster's SQL
+     * keyset executes: the cursor identifies one row's own sort key
+     * {@code (name, id)}, the page follows it strictly in the requested
+     * direction, and {@code hasNext} states whether elements remain — never
+     * an absolute offset. The boundary's {@code KeysetCursorGate} has already
+     * validated the cursor's {@code (name, id)} key set against this
+     * scroll's own vocabulary; a position that is not the initial one must
+     * still carry those keys here, or the honest
+     * {@link IllegalArgumentException} answers — never a silent no-op.</p>
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional(readOnly = true)
+    public com.marketplace.identity.spi.PermissionGroupPage scrollPermissionGroups(
+            Authentication authentication,
+            com.marketplace.identity.spi.PermissionGroupSort sort,
+            org.springframework.data.domain.KeysetScrollPosition position,
+            org.springframework.data.domain.Limit limit) {
+        if (sort == null || sort.field() == null) {
+            throw new IllegalArgumentException("A permission-group sort is required");
+        }
+        java.util.List<com.marketplace.identity.spi.PermissionGroupView> groups =
+                new java.util.ArrayList<>(permissionGroups(authentication));
+
+        // The deterministic ordering — the owning sort field with the id
+        // tiebreaker, both in the requested direction (the roster's SQL
+        // keyset methods' own shape: ...AscIdAsc / ...DescIdDesc).
+        java.util.Comparator<String> nameOrder = sort.ascending()
+                ? java.util.Comparator.naturalOrder()
+                : java.util.Comparator.reverseOrder();
+        java.util.Comparator<UUID> idOrder = sort.ascending()
+                ? java.util.Comparator.naturalOrder()
+                : java.util.Comparator.reverseOrder();
+        groups.sort(java.util.Comparator
+                .comparing(com.marketplace.identity.spi.PermissionGroupView::name, nameOrder)
+                .thenComparing(com.marketplace.identity.spi.PermissionGroupView::id, idOrder));
+
+        // The keyset predicate: elements strictly AFTER the cursor's own
+        // (name, id) sort key in the requested direction — the same
+        // "greater than the sort key" the framework's keyset predicate
+        // builds for the SQL scrolls.
+        java.util.List<com.marketplace.identity.spi.PermissionGroupView> scrollable = groups;
+        if (position != null && !position.isInitial()) {
+            if (!(position instanceof org.springframework.data.domain.KeysetScrollPosition keyset)
+                    || !keyset.scrollsForward()
+                    || keyset.getKeys().get("name") == null
+                    || keyset.getKeys().get("id") == null) {
+                throw new IllegalArgumentException(
+                        "The permission-group scroll position must be a forward keyset over (name, id)");
+            }
+            String cursorName = String.valueOf(keyset.getKeys().get("name"));
+            UUID cursorId = keyset.getKeys().get("id") instanceof UUID uuid
+                    ? uuid
+                    : UUID.fromString(String.valueOf(keyset.getKeys().get("id")));
+            scrollable = groups.stream()
+                    .filter(group -> {
+                        int byName = nameOrder.compare(group.name(), cursorName);
+                        return byName != 0 ? byName > 0
+                                : idOrder.compare(group.id(), cursorId) > 0;
+                    })
+                    .toList();
+        }
+
+        int pageSize = limit == null || !limit.isLimited()
+                ? scrollable.size()
+                : Math.min(limit.max(), scrollable.size());
+        boolean hasNext = scrollable.size() > pageSize;
+        java.util.List<com.marketplace.identity.spi.PermissionGroupView> content =
+                scrollable.subList(0, pageSize);
+        org.springframework.data.domain.Window<com.marketplace.identity.spi.PermissionGroupView> window =
+                org.springframework.data.domain.Window.from(content, index ->
+                        org.springframework.data.domain.ScrollPosition.forward(java.util.Map.of(
+                                "name", content.get(index).name(),
+                                "id", content.get(index).id())),
+                        hasNext);
+        return new com.marketplace.identity.spi.PermissionGroupPage(window, groups.size());
+    }
+
+    /**
+     * The stable wire-identity namespace of the permission-group
+     * collection: the platform's groups are the closed {@link UserRole}
+     * vocabulary (no stored group table exists), so each group's native
+     * handle is the deterministic name-based UUID (RFC 4122 v3) derived
+     * from {@code "<namespace><ROLE>"} — stable across restarts and
+     * services by construction, opaque behind the boundary's typed global
+     * ID, and never a capability in itself (the codec treats it purely as
+     * an identifier).
+     */
+    private static final String PERMISSION_GROUP_ID_NAMESPACE =
+            "marketplace-identity:user-role:";
+
+    /**
+     * P1: the permission-group collection — the closed role vocabulary
+     * rendered as the bounded group projections, one per {@link UserRole}
+     * (the V187 CHECK's own list; the collection's size is therefore the
+     * vocabulary's size — the honest {@code totalCount}).
+     *
+     * <p>{@code grantedRoles} carries the role whose capabilities the group
+     * grants — the owner's own vocabulary, the same seam
+     * {@code toAccountView} emits for accounts; the GraphQL boundary renders
+     * the Saleor permission codes from it (the tested catalog stays the one
+     * source of that rendering). {@code userCanManage} is computed from the
+     * caller's actual authorities — the honest manage-right fact (the same
+     * ADMIN capability the grant/revoke commands gate), never a
+     * constant.</p>
+     */
+    private java.util.List<com.marketplace.identity.spi.PermissionGroupView> permissionGroups(
+            Authentication authentication) {
+        boolean canManage = authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+        java.util.List<com.marketplace.identity.spi.PermissionGroupView> groups = new java.util.ArrayList<>();
+        for (UserRole role : UserRole.values()) {
+            groups.add(new com.marketplace.identity.spi.PermissionGroupView(
+                    permissionGroupIdOf(role),
+                    permissionGroupDisplayName(role),
+                    java.util.Set.of(role.name()),
+                    canManage));
+        }
+        return groups;
+    }
+
+    /**
+     * The group's native handle — the deterministic name-based UUID over the
+     * closed vocabulary's namespace (see
+     * {@link #PERMISSION_GROUP_ID_NAMESPACE}).
+     */
+    private static UUID permissionGroupIdOf(UserRole role) {
+        return UUID.nameUUIDFromBytes(
+                (PERMISSION_GROUP_ID_NAMESPACE + role.name())
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /**
+     * The role's display name — the humanized closed-vocabulary name (no
+     * separate group-name store exists; the rendering is deterministic and
+     * stable so the wire identity never drifts).
+     */
+    private static String permissionGroupDisplayName(UserRole role) {
+        return switch (role) {
+            case ADMIN -> "Admin";
+            case PROVIDER -> "Provider";
+            case CONSUMER -> "Consumer";
+        };
+    }
+
+    /**
      * The JWT subject extraction for the {@code me} read — the same join
      * key {@code IdentityUserProvider} uses ({@code JwtAuthenticationToken}
      * only; the resource-server chain guarantees the shape on this

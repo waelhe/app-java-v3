@@ -269,4 +269,43 @@ public interface IdentitySpi {
                                      UserAccountSort sort,
                                      org.springframework.data.domain.KeysetScrollPosition position,
                                      org.springframework.data.domain.Limit limit);
+
+    /**
+     * P1 (the Saleor {@code permissionGroup} root): the permission-group
+     * projection by the native UUID behind the typed global ID. Saleor
+     * requires MANAGE_STAFF — enforced here as the platform's server-side
+     * ADMIN capability at the owning use-case boundary (the RBAC mapping
+     * row of the divergence registry). An unknown but well-formed UUID
+     * answers empty (the safe absence the nullable root carries — never an
+     * error, never a fabricated group).
+     *
+     * @param id             the native UUID (decoded by the boundary's codec)
+     * @param authentication the caller, whose ADMIN authority is verified
+     * @return the permission-group projection, empty when no group matches
+     */
+    java.util.Optional<PermissionGroupView> findPermissionGroupById(UUID id, Authentication authentication);
+
+    /**
+     * P1 (the Saleor {@code permissionGroups} root): one bounded page of the
+     * permission-group collection as a forward-only keyset scroll in the
+     * requested sort (the owning sort field + the {@code id} tiebreaker —
+     * the {@code scrollStaffUsers} keyset precedent, over the closed role
+     * vocabulary that IS the platform's permission-group collection).
+     * ADMIN-enforced as above; the returning page carries the collection
+     * total Saleor's {@code totalCount} field expects.
+     *
+     * @param authentication the caller, whose ADMIN authority is verified
+     * @param sort           the executed sort (never {@code null})
+     * @param position       the keyset scroll position — the initial
+     *                       position, or the position decoded from the
+     *                       client's opaque {@code after} cursor
+     * @param limit          the bounded page size (the boundary's own cap;
+     *                       an unlimited limit answers the whole collection)
+     * @return the page of permission-group projections plus the collection
+     *         total
+     */
+    PermissionGroupPage scrollPermissionGroups(Authentication authentication,
+                                               PermissionGroupSort sort,
+                                               org.springframework.data.domain.KeysetScrollPosition position,
+                                               org.springframework.data.domain.Limit limit);
 }
