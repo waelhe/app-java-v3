@@ -3,6 +3,8 @@ package com.marketplace.pricing;
 import com.marketplace.shared.jpa.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.EnumType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import org.hibernate.envers.Audited;
@@ -48,6 +50,7 @@ public class Voucher extends BaseEntity {
     @Column(name = "currency", nullable = false, length = 3)
     private String currency;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "discount_type", nullable = false, length = 12)
     private DiscountType discountType;
 
