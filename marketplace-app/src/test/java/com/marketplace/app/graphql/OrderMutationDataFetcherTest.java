@@ -58,6 +58,39 @@ class OrderMutationDataFetcherTest {
     }
 
     @Test
+    void bulkCancellationReturnsOwnerCountAndPerOrderErrors() {
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        when(orderCommandSpi.bulkCancelAsAdmin(List.of(first, second)))
+                .thenReturn(new com.marketplace.orders.spi.OrderBulkCancelResult(
+                        1,
+                        List.of(new com.marketplace.orders.spi.OrderBulkCancelResult.Failure(
+                                second,
+                                com.marketplace.orders.spi.OrderBulkCancelResult.FailureKind.CONFLICT,
+                                "Order cannot be cancelled"))));
+
+        Map<String, Object> result = fetcher.orderBulkCancel(List.of(
+                codec.encode("Order", first), codec.encode("Order", second)));
+
+        assertThat(result).containsEntry("count", 1);
+        List<?> errors = (List<?>) result.get("orderErrors");
+        assertThat(errors).hasSize(1);
+        assertThat(((Map<?, ?>) errors.get(0)).get("code")).isEqualTo("CANNOT_CANCEL_ORDER");
+        verify(orderCommandSpi).bulkCancelAsAdmin(List.of(first, second));
+    }
+
+    @Test
+    void bulkCancellationRejectsMalformedIdsBeforeCallingOwner() {
+        Map<String, Object> result = fetcher.orderBulkCancel(List.of(codec.encode("Order", UUID.randomUUID()), "bad-id"));
+
+        assertThat(result).containsEntry("count", 0);
+        List<?> errors = (List<?>) result.get("orderErrors");
+        assertThat(errors).hasSize(1);
+        assertThat(((Map<?, ?>) errors.get(0)).get("code")).isEqualTo("INVALID");
+        verifyNoInteractions(orderCommandSpi);
+    }
+
+    @Test
     void cancellationDelegatesToOwnerAndReturnsReadBackWithEmptyErrors() {
         UUID id = UUID.randomUUID();
         Instant placedAt = Instant.parse("2026-10-20T12:00:00Z");

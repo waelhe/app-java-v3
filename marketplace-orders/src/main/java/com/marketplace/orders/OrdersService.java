@@ -622,22 +622,7 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi {
     public Order cancel(UUID orderId, String reason) {
         Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
-        if (order.getDeliveryRequestId() != null) {
-            throw new ConflictException("An order linked to an active delivery must be cancelled through its delivery lifecycle");
-        }
-        // The V224 multi-leg guard: a checkout-selected platform delivery
-        // blocks the order's cancellation while ANY leg is in flight — the
-        // primary link alone is not the whole truth when the order split
-        // into several packages (a cancelled primary with live siblings
-        // must not let the order — and its money — slip away).
-        if (order.getFulfillmentMethod() == FulfillmentMethod.PLATFORM_DELIVERY
-                && checkoutDeliveryPort.remainingActiveLegs(orderId) > 0) {
-            throw new ConflictException("An order with an in-flight platform delivery cannot be cancelled — cancel its delivery legs first");
-        }
-        if (order.getStatus() != OrderStatus.PLACED && order.getStatus() != OrderStatus.CONFIRMED) {
-            throw new ConflictException("Order " + orderId + " is " + order.getStatus()
-                    + " — cancel is legal from PLACED or CONFIRMED only");
-        }
+        requireCancellableOrder(order);
         order.cancel(reason, Instant.now());
         if (order.isStockReserved()) {
             productStockPort.release(productStockMapOf(order.getId()));
@@ -648,6 +633,23 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi {
         eventPublisher.publishEvent(new OrderCancelledEvent(
                 order.getId(), order.getConsumerId(), reason));
         return saved;
+    }
+
+    /** The shared lifecycle and delivery constraints for cancellation. */
+    private void requireCancellableOrder(Order order) {
+        if (order.getDeliveryRequestId() != null) {
+            throw new ConflictException("An order linked to an active delivery must be cancelled through its delivery lifecycle");
+        }
+        // A checkout-selected platform delivery cannot be cancelled while
+        // any leg is in flight; the primary request link is not sufficient.
+        if (order.getFulfillmentMethod() == FulfillmentMethod.PLATFORM_DELIVERY
+                && checkoutDeliveryPort.remainingActiveLegs(order.getId()) > 0) {
+            throw new ConflictException("An order with an in-flight platform delivery cannot be cancelled — cancel its delivery legs first");
+        }
+        if (order.getStatus() != OrderStatus.PLACED && order.getStatus() != OrderStatus.CONFIRMED) {
+            throw new ConflictException("Order " + order.getId() + " is " + order.getStatus()
+                    + " — cancel is legal from PLACED or CONFIRMED only");
+        }
     }
 
     /**
@@ -662,6 +664,68 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi {
     public OrderView confirmAsAdmin(UUID orderId) {
         Order confirmed = confirm(orderId);
         return new OrderView(confirmed.getId(), confirmed.getPlacedAt(), confirmed.getStatus().name());
+    }
+
+    /**
+     * Saleor's bulk-cancel semantics: inspect every unique order under a
+     * row lock before performing transitions. State refusals are item errors;
+     * unexpected execution failures escape the enclosing transaction.
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    @Observed(name = "order.admin.bulk-cancel")
+    public com.marketplace.orders.spi.OrderBulkCancelResult bulkCancelAsAdmin(List<UUID> orderIds) {
+        if (orderIds == null || orderIds.isEmpty()) {
+            return new com.marketplace.orders.spi.OrderBulkCancelResult(0, List.of());
+        }
+
+        java.util.Set<UUID> uniqueIds = new java.util.LinkedHashSet<>();
+        java.util.List<com.marketplace.orders.spi.OrderBulkCancelResult.Failure> failures =
+                new java.util.ArrayList<>();
+        for (UUID orderId : orderIds) {
+            if (!uniqueIds.add(orderId)) {
+                failures.add(new com.marketplace.orders.spi.OrderBulkCancelResult.Failure(
+                        orderId,
+                        com.marketplace.orders.spi.OrderBulkCancelResult.FailureKind.DUPLICATE,
+                        "The same order ID was supplied more than once"));
+            }
+        }
+
+        // Stable ordering prevents overlapping bulk requests from acquiring
+        // row locks in opposite order and unnecessarily deadlocking.
+        List<UUID> orderedIds = uniqueIds.stream().sorted().toList();
+
+        // Match Saleor's clean-input-before-bulk-action behavior: no order is
+        // transitioned until all unique IDs have had their locked state and
+        // delivery constraints checked.
+        java.util.List<UUID> cancellableIds = new java.util.ArrayList<>();
+        for (UUID orderId : orderedIds) {
+            Order order = orderRepository.findByIdForUpdate(orderId).orElse(null);
+            if (order == null) {
+                failures.add(new com.marketplace.orders.spi.OrderBulkCancelResult.Failure(
+                        orderId,
+                        com.marketplace.orders.spi.OrderBulkCancelResult.FailureKind.NOT_FOUND,
+                        "Order not found: " + orderId));
+                continue;
+            }
+            try {
+                requireCancellableOrder(order);
+                cancellableIds.add(orderId);
+            } catch (ConflictException exception) {
+                failures.add(new com.marketplace.orders.spi.OrderBulkCancelResult.Failure(
+                        orderId,
+                        com.marketplace.orders.spi.OrderBulkCancelResult.FailureKind.CONFLICT,
+                        exception.getMessage()));
+            }
+        }
+
+        int cancelledCount = 0;
+        for (UUID orderId : cancellableIds) {
+            cancel(orderId, "Cancelled through the order-management bulk API");
+            cancelledCount++;
+        }
+        return new com.marketplace.orders.spi.OrderBulkCancelResult(cancelledCount, failures);
     }
 
     /**

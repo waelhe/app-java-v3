@@ -61,6 +61,42 @@ public class OrderMutationDataFetcher {
     }
 
     /**
+     * Bulk cancellation follows Saleor's count-plus-errors payload. All IDs
+     * are decoded before the owner is called, so malformed input cannot cause
+     * a partial set of money-moving state transitions.
+     */
+    @DgsMutation(field = "orderBulkCancel")
+    public Map<String, Object> orderBulkCancel(@InputArgument List<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return bulkPayload(0, List.of());
+        }
+
+        final List<UUID> orderIds = new ArrayList<>(ids.size());
+        for (String id : ids) {
+            try {
+                orderIds.add(globalIdCodec.decode(id, OrderGraphQlMapper.ORDER_TYPE));
+            } catch (IllegalArgumentException exception) {
+                return bulkPayload(0, List.of(orderError(
+                        "ids", "Invalid global ID", "INVALID")));
+            }
+        }
+
+        com.marketplace.orders.spi.OrderBulkCancelResult outcome =
+                orderCommandSpi.bulkCancelAsAdmin(orderIds);
+        List<Map<String, Object>> errors = outcome.failures().stream()
+                .map(failure -> orderError(
+                        "ids",
+                        failure.message(),
+                        switch (failure.kind()) {
+                            case NOT_FOUND -> "NOT_FOUND";
+                            case CONFLICT -> "CANNOT_CANCEL_ORDER";
+                            case DUPLICATE -> "DUPLICATED_INPUT_ITEM";
+                        }))
+                .toList();
+        return bulkPayload(outcome.count(), errors);
+    }
+
+    /**
      * Cancel an order by typed global ID. Malformed IDs fail closed. Expected
      * domain failures are returned as the Saleor orderErrors payload instead
      * of being reported as successful mutations.
@@ -96,6 +132,13 @@ public class OrderMutationDataFetcher {
     private static Map<String, Object> payload(Order order, List<Map<String, Object>> errors) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("order", order);
+        result.put("orderErrors", new ArrayList<>(errors));
+        return result;
+    }
+
+    private static Map<String, Object> bulkPayload(int count, List<Map<String, Object>> errors) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("count", count);
         result.put("orderErrors", new ArrayList<>(errors));
         return result;
     }

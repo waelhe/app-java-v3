@@ -13,11 +13,12 @@
 
 ## Implemented in this session
 
-### Saleor `orderCancel` and `orderConfirm` — code and tests added; execution not verified
+### Saleor `orderCancel`, `orderConfirm`, and `orderBulkCancel` — code and tests added; execution not verified
 
 Files changed in this execution (implementation, SPI-boundary, and test-wiring commits):
 - `marketplace-orders/src/main/java/com/marketplace/orders/OrdersService.java`
 - `marketplace-orders/src/main/java/com/marketplace/orders/spi/OrderCommandSpi.java`
+- `marketplace-orders/src/main/java/com/marketplace/orders/spi/OrderBulkCancelResult.java`
 - `marketplace-orders/pom.xml` (test scope only: `spring-security-test`)
 - `marketplace-orders/src/test/java/com/marketplace/orders/OrdersServiceAuthorizationTest.java`
 - `marketplace-app/src/main/java/com/marketplace/app/graphql/OrderMutationDataFetcher.java`
@@ -30,11 +31,11 @@ Files changed in this execution (implementation, SPI-boundary, and test-wiring c
 - `marketplace-app/src/test/java/com/marketplace/app/graphql/PostDetailDgsDataFetcherTest.java`
 - `docs/agent-handoffs/agent-3-roots.csv`
 
-The additive SDL exposes Saleor-shaped `orderCancel(id: ID!)` and `orderConfirm(id: ID!)`, their payloads, and the pinned order-error vocabulary without editing the central `schema.graphqls`. The DGS adapter strictly decodes the typed Order global ID and returns the order read-back on success for both operations. Confirmation uses the existing PLACED→CONFIRMED edge and returns Saleor's UNFULFILLED wire status. Malformed/mistyped IDs return `INVALID`; missing orders return `NOT_FOUND`; guarded lifecycle conflicts return `CANNOT_CANCEL_ORDER`. Authorization failures are not swallowed as successful mutations.
+The additive SDL exposes Saleor-shaped `orderCancel(id: ID!)`, `orderConfirm(id: ID!)`, and `orderBulkCancel(ids: [ID!]!)`, their payloads, and the pinned order-error vocabulary without editing the central `schema.graphqls`. The DGS adapter strictly decodes typed Order global IDs and returns the order read-back on success for the single-order commands. Bulk cancellation pre-decodes every ID, then returns the count and per-order errors from the owning service. Confirmation uses the existing PLACED→CONFIRMED edge and returns Saleor's UNFULFILLED wire status. Malformed/mistyped IDs return `INVALID`; missing orders return `NOT_FOUND`; guarded lifecycle conflicts return `CANNOT_CANCEL_ORDER`. Authorization failures are not swallowed as successful mutations.
 
 The adapter calls the owning `OrderCommandSpi`, which exposes a bounded `OrderView` rather than a persistence entity across the Modulith boundary. `OrdersService` implements this SPI; its `cancelAsAdmin` method applies service-boundary `@PreAuthorize("hasRole('ADMIN')")` and calls the existing state-machine transition. That existing owner locks and transitions the order, releases a reservation as appropriate, and publishes `OrderCancelledEvent`; the payments listener remains responsible for payment cancellation/refund. Confirmation now acquires the order row lock, and duplicate payment-completion events re-check status after locking so concurrent redelivery becomes a no-op rather than a stale-state conflict. No second payment/ledger state machine was added.
 
-The focused JUnit/Mockito test class covers successful cancellation and confirmation read-back, rejecting a Product-typed ID without invoking the owner, and returning domain errors for illegal transitions. DGS tests exercise the actual GraphQL SDL and argument/payload binding for both mutations. Because the DGS test slices component-scan the whole GraphQL package, the existing five package-slice tests were updated to mock `OrderCommandSpi`; the new fetcher does not inject the concrete service or expose the JPA entity. An additional owner-module test, `OrdersServiceAuthorizationTest`, starts a real Spring method-security proxy and proves a `ROLE_USER` call is denied before the repositories/stock/payment collaborators are touched; `spring-security-test` is a test-scope dependency in the owned orders module only. These tests were **added but not run** in this remote-only execution. The code should not be described as verified until an execution on the exact resulting SHA is recorded.
+The focused JUnit/Mockito tests cover cancellation and confirmation read-back, bulk count/per-order-error behavior, rejecting malformed/mistyped IDs before invoking the owner, and returning domain errors for illegal transitions. DGS tests exercise the actual GraphQL SDL and argument/payload binding for all three mutations. Because the DGS test slices component-scan the whole GraphQL package, the existing five package-slice tests were updated to mock `OrderCommandSpi`; the new fetcher does not inject the concrete service or expose the JPA entity. An additional owner-module test, `OrdersServiceAuthorizationTest`, starts a real Spring method-security proxy and proves a `ROLE_USER` call is denied before the repositories/stock/payment collaborators are touched; `spring-security-test` is a test-scope dependency in the owned orders module only. These tests were **added but not run** in this remote-only execution. The code should not be described as verified until an execution on the exact resulting SHA is recorded.
 
 No Flyway migration was needed because the change adds no persisted state.
 
@@ -42,7 +43,7 @@ No Flyway migration was needed because the change adds no persisted state.
 
 The assignment inventory was parsed from the committed task file: 159 initially `NOT_STARTED` roots and 22 `BLOCKED_BY_DECISION` roots. The per-root file is `docs/agent-handoffs/agent-3-roots.csv` and deliberately does not edit the central inventory.
 
-- Implemented in code with tests added (not run): `orderCancel` and `orderConfirm` — 2 roots.
+- Implemented in code with tests added (not run): `orderCancel`, `orderConfirm`, and `orderBulkCancel` — 3 roots.
 - Other assigned `NOT_STARTED` roots remain unimplemented and explicitly reported as such.
 - The 22 roots already `BLOCKED_BY_DECISION` remain blocked with an evidence-based disposition recorded in the CSV. No placeholder resolvers or false-success behavior were added.
 
@@ -69,4 +70,4 @@ Blocked `draftOrders`, `shippingZone(s)`, `homepageEvents`, `ordersTotal`, `orde
 
 ## Handoff status
 
-This is a partial implementation with two real roots added, not completion of P4/P5/P6 or release acceptance. Preserve the domain ownership boundaries, implement further roots only after verifying each exact upstream signature and owner capability, and obtain explicit owner/ADR decisions for blocked surfaces.
+This is a partial implementation with three real roots added, not completion of P4/P5/P6 or release acceptance. Preserve the domain ownership boundaries, implement further roots only after verifying each exact upstream signature and owner capability, and obtain explicit owner/ADR decisions for blocked surfaces.

@@ -24,4 +24,7 @@ public interface OrderCommandSpi {
 
     /** Confirm a placed order through the same guarded lifecycle owner. */
     OrderView confirmAsAdmin(UUID orderId);
+
+    /** Bulk-cancel through the same transaction and guarded state machine. */
+    OrderBulkCancelResult bulkCancelAsAdmin(java.util.List<UUID> orderIds);
 }

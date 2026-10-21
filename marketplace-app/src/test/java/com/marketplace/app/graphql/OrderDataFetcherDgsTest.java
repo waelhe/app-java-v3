@@ -313,6 +313,23 @@ class OrderDataFetcherDgsTest {
     }
 
     @Test
+    void orderBulkCancelUsesTheSaleorBulkPayloadOverTheRealDgsBinding() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        UUID orderId = UUID.randomUUID();
+        when(orderCommandSpi.bulkCancelAsAdmin(List.of(orderId)))
+                .thenReturn(new com.marketplace.orders.spi.OrderBulkCancelResult(1, List.of()));
+
+        String globalId = new SaleorGlobalIdCodec().encode("Order", orderId);
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath(
+                "mutation($ids: [ID!]!) { orderBulkCancel(ids: $ids) { count orderErrors { field message code } } }",
+                "data.orderBulkCancel", Map.of("ids", List.of(globalId)));
+
+        assertThat(payload.get("count")).isEqualTo(1);
+        assertThat(payload.get("orderErrors")).isEqualTo(List.of());
+        verify(orderCommandSpi).bulkCancelAsAdmin(List.of(orderId));
+    }
+
+    @Test
     void sortMappingAndTheDeprecatedAliasReachTheOwningUseCase() {
         authenticateAs("dgs-admin-subject", "ADMIN");
         ArgumentCaptor<OrderSort> sortCaptor = ArgumentCaptor.forClass(OrderSort.class);

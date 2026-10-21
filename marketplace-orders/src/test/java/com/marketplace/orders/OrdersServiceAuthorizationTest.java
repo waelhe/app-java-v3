@@ -72,6 +72,8 @@ class OrdersServiceAuthorizationTest {
                 .isInstanceOf(AccessDeniedException.class);
         assertThatThrownBy(() -> orderCommandSpi.confirmAsAdmin(UUID.randomUUID()))
                 .isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> orderCommandSpi.bulkCancelAsAdmin(List.of(UUID.randomUUID())))
+                .isInstanceOf(AccessDeniedException.class);
 
         verifyNoInteractions(
                 cartRepository, cartItemRepository, orderRepository, orderItemRepository,

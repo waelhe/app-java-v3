@@ -72,7 +72,7 @@
 "orderUpdate","P4","NOT_STARTED","NOT_STARTED","No implementation claimed in this session."
 "orderUpdateShipping","P4","NOT_STARTED","NOT_STARTED","No implementation claimed in this session."
 "orderVoid","P4","NOT_STARTED","NOT_STARTED","No implementation claimed in this session."
-"orderBulkCancel","P4","NOT_STARTED","NOT_STARTED","No implementation claimed in this session."
+"orderBulkCancel","P4","NOT_STARTED","IMPLEMENTED_CODE_AND_TESTS_ADDED_NOT_RUN","OrderCommandSpi.bulkCancelAsAdmin; transactional guarded cancellation loop; unit/DGS/security tests added, not run."
 "orderBulkCreate","P4","NOT_STARTED","NOT_STARTED","No implementation claimed in this session."
 "invoiceRequest","P4","NOT_STARTED","NOT_STARTED","No implementation claimed in this session."
 "invoiceRequestDelete","P4","NOT_STARTED","NOT_STARTED","No implementation claimed in this session."
