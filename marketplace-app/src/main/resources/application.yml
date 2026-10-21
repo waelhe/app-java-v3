@@ -736,6 +736,14 @@ resilience4j:
         base-config: default
         limit-for-period: 50
         timeout-duration: 0
+      # Campaign packet campaign-b2-a2 (A2 catalog read roots, applied by
+      # A0): the product-type read roots' named instance at the shared
+      # catalog read budget (50/min, fail-fast — the catalog limiter
+      # precedent's own budget).
+      graphqlCatalogRead:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
       # Phase 6 (the GraphQL plan §11-Phase-6 — the first composite
       # journey, the inventory #599 §7 stage 4): the two home reads'
       # named instances, the same L29 fail-fast model. graphqlDiscovery-
