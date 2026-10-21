@@ -33,7 +33,14 @@
         // catalog-spi/discovery-spi pattern every journey seam follows
         // (the declared interface, never the internals; the ADMIN
         // enforcement lives in the owning use case, not here).
-        "identity :: identity-spi"
+        "identity :: identity-spi",
+        // Campaign packets campaign-b3-a2b/campaign-b3-a3 (A0 stewardship): the
+        // GraphQL surface's attribute and discount read fields delegate to the
+        // catalog and pricing modules' OWN named read SPIs — the same
+        // identity-spi/catalog-spi pattern every journey seam follows (the
+        // declared interface plus its propagated signature types, never the
+        // internals; the ADMIN enforcement lives in the owning use cases).
+        "pricing :: pricing-spi"
     }
 )
 package com.marketplace.app;

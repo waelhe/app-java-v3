@@ -6,6 +6,7 @@ import org.springframework.security.core.Authentication;
 
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.modulith.NamedInterface;
 
 /**
  * P2 (the canonical Saleor plan §5-P2 — the Saleor {@code attribute} and
@@ -18,6 +19,7 @@ import java.util.UUID;
  * divergence row), never in a UI route guard and never duplicated at the
  * GraphQL boundary.
  */
+@NamedInterface("catalog-spi")
 public interface AttributeReadSpi {
 
     /**

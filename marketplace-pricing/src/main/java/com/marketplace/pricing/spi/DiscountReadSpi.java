@@ -6,6 +6,7 @@ import org.springframework.security.core.Authentication;
 
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.modulith.NamedInterface;
 
 /**
  * P3 (the canonical Saleor plan §5-P3 — the Saleor Discounts-domain
@@ -17,6 +18,7 @@ import java.util.UUID;
  * requirement at the use-case boundary, the RBAC divergence row), never
  * in a UI route guard and never duplicated at the GraphQL boundary.
  */
+@NamedInterface("pricing-spi")
 public interface DiscountReadSpi {
 
     /**
