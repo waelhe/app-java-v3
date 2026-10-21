@@ -136,6 +136,9 @@ class OrderDataFetcherDgsTest {
     @MockitoBean
     private IdentitySpi identitySpi;
 
+    @MockitoBean
+    private com.marketplace.orders.OrdersService ordersService;
+
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();
@@ -265,6 +268,32 @@ class OrderDataFetcherDgsTest {
      * the CREATED_AT-descending default (the newest order first) —
      * never a silent fallback.
      */
+    @Test
+    void orderCancelUsesTheSaleorPayloadOverTheRealDgsBinding() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        UUID orderId = UUID.randomUUID();
+        Instant placedAt = Instant.parse("2026-10-20T12:00:00Z");
+        com.marketplace.orders.Order cancelled = org.mockito.Mockito.mock(
+                com.marketplace.orders.Order.class);
+        when(cancelled.getId()).thenReturn(orderId);
+        when(cancelled.getPlacedAt()).thenReturn(placedAt);
+        when(cancelled.getStatus()).thenReturn(com.marketplace.orders.OrderStatus.CANCELLED);
+        when(ordersService.cancelAsAdmin(orderId)).thenReturn(cancelled);
+
+        String globalId = new SaleorGlobalIdCodec().encode("Order", orderId);
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath(
+                "mutation($id: ID!) { orderCancel(id: $id) { order { id created status } orderErrors { field message code } } }",
+                "data.orderCancel", Map.of("id", globalId));
+
+        assertThat(payload.get("orderErrors")).isEqualTo(List.of());
+        assertThat(payload.get("order")).isInstanceOf(Map.class);
+        Map<?, ?> order = (Map<?, ?>) payload.get("order");
+        assertThat(order.get("id")).isEqualTo(globalId);
+        assertThat(order.get("created")).isEqualTo("2026-10-20T12:00:00Z");
+        assertThat(order.get("status")).isEqualTo("CANCELED");
+        verify(ordersService).cancelAsAdmin(orderId);
+    }
+
     @Test
     void sortMappingAndTheDeprecatedAliasReachTheOwningUseCase() {
         authenticateAs("dgs-admin-subject", "ADMIN");

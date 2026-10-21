@@ -25,7 +25,7 @@ The additive SDL exposes Saleor-shaped `orderCancel(id: ID!)`, its payload, and 
 
 The adapter delegates to `OrdersService.cancelAsAdmin`, which applies service-boundary `@PreAuthorize("hasRole('ADMIN')")` and calls the existing state-machine transition. That existing owner locks and transitions the order, releases a reservation as appropriate, and publishes `OrderCancelledEvent`; the payments listener remains responsible for payment cancellation/refund. No second payment/ledger state machine was added.
 
-The focused JUnit/Mockito test class covers: successful cancellation/read-back; rejecting a Product-typed ID without invoking the owner; and returning a domain error for an illegal transition. These tests were **added but not run** in this remote-only execution. The code should not be described as verified until an execution on the exact resulting SHA is recorded.
+The focused JUnit/Mockito test class covers: successful cancellation/read-back; rejecting a Product-typed ID without invoking the owner; and returning a domain error for an illegal transition. A second DGS test exercises the actual GraphQL SDL and argument/payload binding. Because the DGS test slices component-scan the whole GraphQL package, the existing five package-slice tests were also updated to provide the new OrdersService bean as a mock. These tests were **added but not run** in this remote-only execution. The code should not be described as verified until an execution on the exact resulting SHA is recorded.
 
 No Flyway migration was needed because the change adds no persisted state.
 
@@ -54,7 +54,8 @@ Blocked `draftOrders`, `shippingZone(s)`, `homepageEvents`, `ordersTotal`, `orde
 - Changes were committed directly to the existing PR branch through GitHub. No local tree or local Maven command was used because the request specified direct GitHub work.
 - The added unit tests were not executed; there is no claim that they passed.
 - The assignment records a pre-existing compile failure at the frozen base in `marketplace-catalog/src/main/java/com/marketplace/catalog/ProductVariantReadService.java` (four `Limit.value()` calls), outside this agent's ownership.
-- CI/CodeRabbit was not awaited. Any result must be associated with the precise commit SHA it reports. A manual CodeRabbit review request is posted to the PR timeline after the report commit.
+- The lightweight GitHub workflow check on report commit `18c04b99f3d53154c39a05277e7ab4b0c2296db3` ran as [workflow 39600023635](https://github.com/waelhe/app-java-v3/actions/runs/39600023635) and failed only on the pre-existing unapproved `Address read roots (address/addressValidationRules)` divergence (`D-ADDR-001`) in the unchanged central divergence registry. This agent left that centrally owned decision untouched. No application-build/test pass is claimed from that run.
+- CI/CodeRabbit was not awaited. Any result must be associated with the precise commit SHA it reports. A manual CodeRabbit review request is posted to the PR timeline.
 - Shared root/app POMs, central `schema.graphqls`, `application.yml`, workflows, security/Modulith configuration, central root ledger, divergence registry, domain matrix, pins, `SYSTEM.md`, and `PROJECT_MAP.md` were left untouched.
 
 ## Handoff status

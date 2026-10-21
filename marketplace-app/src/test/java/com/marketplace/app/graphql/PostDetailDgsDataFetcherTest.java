@@ -101,6 +101,9 @@ class PostDetailDgsDataFetcherTest {
     private com.marketplace.identity.spi.IdentitySpi identitySpi;
 
     /** The journey's fields read the principal from the (test-populated) security context. */
+    @MockitoBean
+    private com.marketplace.orders.OrdersService ordersService;
+
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();

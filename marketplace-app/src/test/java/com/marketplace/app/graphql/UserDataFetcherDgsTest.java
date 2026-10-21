@@ -125,6 +125,9 @@ class UserDataFetcherDgsTest {
     @MockitoBean
     private CategoryReadSpi categoryReadSpi;
 
+    @MockitoBean
+    private com.marketplace.orders.OrdersService ordersService;
+
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();

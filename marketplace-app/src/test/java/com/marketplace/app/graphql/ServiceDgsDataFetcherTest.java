@@ -114,6 +114,9 @@ class ServiceDgsDataFetcherTest {
     private com.marketplace.identity.spi.IdentitySpi identitySpi;
 
     /** The mutation path reads the principal from the (test-populated) security context. */
+    @MockitoBean
+    private com.marketplace.orders.OrdersService ordersService;
+
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();
