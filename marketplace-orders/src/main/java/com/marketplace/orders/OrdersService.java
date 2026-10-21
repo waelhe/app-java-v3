@@ -18,6 +18,7 @@ import io.micrometer.observation.annotation.Observed;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -644,6 +645,20 @@ public class OrdersService implements OrderDeliveryPort {
         eventPublisher.publishEvent(new OrderCancelledEvent(
                 order.getId(), order.getConsumerId(), reason));
         return saved;
+    }
+
+    /**
+     * Saleor P4 order-management mutation backed by the existing domain
+     * state machine. ADMIN authorization belongs at this service boundary.
+     * Cancellation locks and transitions the order, releases its stock
+     * reservation, and publishes OrderCancelledEvent so the existing
+     * payments owner settles its intent. No PSP or ledger logic is duplicated.
+     */
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    @Observed(name = "order.admin.cancel")
+    public Order cancelAsAdmin(UUID orderId) {
+        return cancel(orderId, "Cancelled through the order-management API");
     }
 
     /**

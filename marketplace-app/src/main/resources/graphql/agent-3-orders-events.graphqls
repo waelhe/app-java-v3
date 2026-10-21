@@ -1,0 +1,61 @@
+# Agent 3 additive SDL. The central schema.graphqls is intentionally untouched.
+# Order cancellation wire contract follows Saleor 3.23.43; execution delegates
+# to the existing marketplace-orders lifecycle owner.
+
+extend type Mutation {
+    orderCancel(id: ID!): OrderCancel
+}
+
+type OrderCancel {
+    order: Order
+    orderErrors: [OrderError!]!
+}
+
+type OrderError {
+    field: String
+    message: String
+    code: OrderErrorCode!
+    warehouse: ID
+    orderLines: [ID!]
+    variants: [ID!]
+}
+
+enum OrderErrorCode {
+    BILLING_ADDRESS_NOT_SET
+    CANNOT_CANCEL_FULFILLMENT
+    CANNOT_CANCEL_ORDER
+    CANNOT_DELETE
+    CANNOT_DISCOUNT
+    CANNOT_REFUND
+    CANNOT_FULFILL_UNPAID_ORDER
+    CAPTURE_INACTIVE_PAYMENT
+    GIFT_CARD_LINE
+    NOT_EDITABLE
+    FULFILL_ORDER_LINE
+    GRAPHQL_ERROR
+    INVALID
+    PRODUCT_NOT_PUBLISHED
+    PRODUCT_UNAVAILABLE_FOR_PURCHASE
+    NOT_FOUND
+    ORDER_NO_SHIPPING_ADDRESS
+    PAYMENT_ERROR
+    PAYMENT_MISSING
+    TRANSACTION_ERROR
+    REQUIRED
+    SHIPPING_METHOD_NOT_APPLICABLE
+    SHIPPING_METHOD_REQUIRED
+    TAX_ERROR
+    UNIQUE
+    VOID_INACTIVE_PAYMENT
+    ZERO_QUANTITY
+    INVALID_QUANTITY
+    INSUFFICIENT_STOCK
+    DUPLICATED_INPUT_ITEM
+    NOT_AVAILABLE_IN_CHANNEL
+    CHANNEL_INACTIVE
+    INVALID_VOUCHER
+    INVALID_VOUCHER_CODE
+    NON_EDITABLE_GIFT_LINE
+    NON_REMOVABLE_GIFT_LINE
+    MISSING_ADDRESS_DATA
+}
