@@ -2,6 +2,7 @@ package com.marketplace.catalog.spi;
 
 import org.springframework.modulith.NamedInterface;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -81,4 +82,37 @@ public interface TranslationWriteSpi {
      *         INVALID nameless merge)
      */
     CollectionMutationResult translateCollection(UUID id, TranslationAmendCommand command);
+
+    /**
+     * Amends a batch of attribute rows' language dimensions — the Saleor
+     * {@code attributeBulkTranslate} root's owning use case (the agent-2
+     * M-slice — the pinned {@code id + languageCode + translationFields}
+     * items over the single-item translate ladder, one transaction with
+     * the pinned error policy's own semantics: REJECT_EVERYTHING (the
+     * default) rolls the whole batch back through Spring's own official
+     * rollback-marking mechanism when any item is refused).
+     *
+     * @param items       the translation items (row id + the command)
+     * @param errorPolicy the pinned policy member name (null = the
+     *                    REJECT_EVERYTHING default)
+     * @return the per-item outcomes (the amended name in the addressed
+     *         dimension, or the item's domain errors)
+     */
+    List<TranslationBulkOutcome> bulkTranslateAttributes(List<TranslationBulkItem> items,
+                                                         String errorPolicy);
+
+    /**
+     * Amends a batch of attribute-value rows' language dimensions — the
+     * Saleor {@code attributeValueBulkTranslate} root's owning use case
+     * (the same one-transaction/policy semantics over the value
+     * registry's single-item translate ladder).
+     *
+     * @param items       the translation items (row id + the command)
+     * @param errorPolicy the pinned policy member name (null = the
+     *                    REJECT_EVERYTHING default)
+     * @return the per-item outcomes (the amended name in the addressed
+     *         dimension, or the item's domain errors)
+     */
+    List<TranslationBulkOutcome> bulkTranslateAttributeValues(List<TranslationBulkItem> items,
+                                                              String errorPolicy);
 }

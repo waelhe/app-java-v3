@@ -1983,3 +1983,170 @@ enum CollectionErrorCode {
     REQUIRED
     UNIQUE
 }
+
+# =====================================================================
+# The agent-2 M-slice — the Saleor attribute translation bulk family
+# (attributeBulkTranslate / attributeValueBulkTranslate over the same
+# single-item translation ladder the translate roots ride, one
+# transaction with the pinned error policy's own semantics). The
+# bounded per-locale translation projections carry the platform's own
+# two-language law (the amended name in the addressed dimension); the
+# unowned members (externalReference — no external-ID column; the
+# rich-text/plainText value-translation members — no scalar owner)
+# stay undeclared.
+# =====================================================================
+
+extend type Mutation {
+    """
+    Creates/updates translations for a batch of attributes — the pinned
+    per-item results entries with the bounded per-locale projections.
+    """
+    attributeBulkTranslate(
+        """Policies of error handling. DEFAULT: REJECT_EVERYTHING"""
+        errorPolicy: ErrorPolicyEnum
+
+        """List of attributes translations."""
+        translations: [AttributeBulkTranslateInput!]!
+    ): AttributeBulkTranslate
+
+    """
+    Creates/updates translations for a batch of attribute values — the
+    same one-transaction/policy semantics over the CHOICE option
+    registry.
+    """
+    attributeValueBulkTranslate(
+        """Policies of error handling. DEFAULT: REJECT_EVERYTHING"""
+        errorPolicy: ErrorPolicyEnum
+
+        """List of attributes values translations."""
+        translations: [AttributeValueBulkTranslateInput!]!
+    ): AttributeValueBulkTranslate
+}
+
+input AttributeBulkTranslateInput {
+    """Attribute ID."""
+    id: ID
+
+    """
+    External reference of an attribute. No external-ID column exists on
+    this platform (the registered divergence); a non-null value answers
+    the classified validation error.
+    """
+    externalReference: String
+
+    """Translation language code."""
+    languageCode: LanguageCodeEnum!
+
+    """Translation fields."""
+    translationFields: NameTranslationInput!
+}
+
+input AttributeValueBulkTranslateInput {
+    """Attribute value ID."""
+    id: ID
+
+    """
+    External reference of an attribute value. No external-ID column
+    exists on this platform (the registered divergence); a non-null
+    value answers the classified validation error.
+    """
+    externalReference: String
+
+    """Translation language code."""
+    languageCode: LanguageCodeEnum!
+
+    """Translation fields."""
+    translationFields: AttributeValueTranslationInput!
+}
+
+type AttributeBulkTranslate {
+    """Returns how many translations were created/updated."""
+    count: Int!
+
+    """List of the translations."""
+    results: [AttributeBulkTranslateResult!]!
+
+    errors: [TranslationBulkError!]!
+}
+
+type AttributeValueBulkTranslate {
+    """Returns how many translations were created/updated."""
+    count: Int!
+
+    """List of the translations."""
+    results: [AttributeValueBulkTranslateResult!]!
+
+    errors: [TranslationBulkError!]!
+}
+
+type AttributeBulkTranslateResult {
+    """Attribute translation data."""
+    translation: AttributeTranslation
+
+    """List of errors occurred on translation attempt."""
+    errors: [TranslationBulkError!]
+}
+
+type AttributeValueBulkTranslateResult {
+    """Attribute value translation data."""
+    translation: AttributeValueTranslation
+
+    """List of errors occurred on translation attempt."""
+    errors: [TranslationBulkError!]
+}
+
+type TranslationBulkError {
+    """
+    Path to field that caused the error. A value of `null` indicates
+    that the error isn't associated with a particular field.
+    """
+    path: String
+
+    """The error message."""
+    message: String
+
+    """The error code."""
+    code: TranslationBulkErrorCode!
+}
+
+enum TranslationBulkErrorCode {
+    GRAPHQL_ERROR
+    INVALID
+    NOT_FOUND
+    REQUIRED
+}
+
+# The bounded per-locale translation projections — the platform's own
+# two-language law's honest rendering of Saleor's per-locale translation
+# rows: the amended name in the addressed dimension (AR addresses the
+# name_ar column, EN the name_en column — the central schema's own
+# two-member LanguageCodeEnum closure).
+type AttributeTranslation {
+    """The ID of the attribute translation (the backing row's own typed ID)."""
+    id: ID!
+
+    """Translation language."""
+    language: LanguageDisplay!
+
+    """Translated attribute name (the amended name in the addressed dimension)."""
+    name: String!
+}
+
+type AttributeValueTranslation {
+    """The ID of the attribute value translation (the backing row's own typed ID)."""
+    id: ID!
+
+    """Translation language."""
+    language: LanguageDisplay!
+
+    """Translated attribute value name (the amended name in the addressed dimension)."""
+    name: String!
+}
+
+type LanguageDisplay {
+    """ISO 639 representation of the language name."""
+    code: LanguageCodeEnum!
+
+    """Full name of the language."""
+    language: String!
+}

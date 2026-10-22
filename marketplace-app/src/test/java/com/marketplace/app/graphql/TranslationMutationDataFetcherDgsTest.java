@@ -11,6 +11,8 @@ import com.marketplace.catalog.spi.CategoryMutationResult;
 import com.marketplace.catalog.spi.CategoryReadSpi;
 import com.marketplace.catalog.spi.CategoryView;
 import com.marketplace.catalog.spi.CategoryWriteSpi;
+import com.marketplace.catalog.spi.TranslationBulkItem;
+import com.marketplace.catalog.spi.TranslationBulkOutcome;
 import com.marketplace.catalog.spi.ProductAdminSpi;
 import com.marketplace.catalog.spi.ProductReadSpi;
 import com.marketplace.catalog.spi.ProductTypeReadSpi;
@@ -55,6 +57,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -418,5 +421,90 @@ class TranslationMutationDataFetcherDgsTest {
                 """.formatted(categoryGlobalId(UUID.randomUUID())), "$"))
                 .isInstanceOf(Exception.class);
         org.mockito.Mockito.verifyNoInteractions(translationWriteSpi);
+    }
+
+    // ------------------------------------------------------------------
+    // attributeBulkTranslate / attributeValueBulkTranslate — the agent-2
+    // M-slice's own DGS legs
+    // ------------------------------------------------------------------
+
+    @Test
+    void attributeBulkTranslateExecutesTheBatchAndSerializesThePerItemResults() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        when(translationWriteSpi.bulkTranslateAttributes(anyList(), any())).thenReturn(List.of(
+                new TranslationBulkOutcome(first, "AR", "ألفا", List.of()),
+                new TranslationBulkOutcome(second, "AR", null, List.of(
+                        new com.marketplace.catalog.spi.AttributeMutationError("id",
+                                com.marketplace.catalog.spi.AttributeMutationErrorCode.NOT_FOUND,
+                                "No attribute found for the id")))));
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { attributeBulkTranslate(translations: [
+                        {id: "%s", languageCode: AR, translationFields: {name: "ألفا"}},
+                        {id: "%s", languageCode: AR, translationFields: {name: "بيتا"}}]) {
+                    count
+                    results { translation { id language { code language } name } errors { path message code } }
+                    errors { path }
+                } }
+                """.formatted(attributeGlobalId(first), attributeGlobalId(second)),
+                "data.attributeBulkTranslate");
+
+        assertThat(payload.get("count")).isEqualTo(1);
+        java.util.List<Map<String, Object>> results = (java.util.List<Map<String, Object>>) payload.get("results");
+        assertThat(results).hasSize(2);
+        Map<String, Object> firstResult = results.get(0);
+        Map<String, Object> translation = (Map<String, Object>) firstResult.get("translation");
+        assertThat(translation.get("name")).isEqualTo("ألفا");
+        assertThat(translation.get("id")).isEqualTo(java.util.Base64.getEncoder().encodeToString(
+                ("AttributeTranslation:" + first).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        Map<String, Object> language = (Map<String, Object>) translation.get("language");
+        assertThat(language.get("code")).isEqualTo("AR");
+        assertThat(language.get("language")).isEqualTo("Arabic");
+        Map<String, Object> secondResult = results.get(1);
+        assertThat(secondResult.get("translation")).isNull();
+        java.util.List<Map<String, Object>> itemErrors = (java.util.List<Map<String, Object>>) secondResult.get("errors");
+        assertThat(itemErrors).singleElement().satisfies(error -> {
+            assertThat(error.get("path")).isEqualTo("1.id");
+            assertThat(error.get("code")).isEqualTo("NOT_FOUND");
+        });
+    }
+
+    @Test
+    void attributeValueBulkTranslateExecutesTheBatchOverTheValueSeam() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        UUID valueId = UUID.randomUUID();
+        when(translationWriteSpi.bulkTranslateAttributeValues(anyList(), any())).thenReturn(List.of(
+                new TranslationBulkOutcome(valueId, "EN", "Crimson", List.of())));
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { attributeValueBulkTranslate(translations: [
+                        {id: "%s", languageCode: EN, translationFields: {name: "Crimson"}}]) {
+                    count
+                    results { translation { id language { code } name } errors { path } }
+                } }
+                """.formatted(attributeValueGlobalId(valueId)), "data.attributeValueBulkTranslate");
+
+        assertThat(payload.get("count")).isEqualTo(1);
+        java.util.List<Map<String, Object>> results = (java.util.List<Map<String, Object>>) payload.get("results");
+        Map<String, Object> translation = (Map<String, Object>) results.get(0).get("translation");
+        assertThat(translation.get("name")).isEqualTo("Crimson");
+        assertThat(translation.get("id")).isEqualTo(java.util.Base64.getEncoder().encodeToString(
+                ("AttributeValueTranslation:" + valueId).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        verify(translationWriteSpi).bulkTranslateAttributeValues(argThat((java.util.List<TranslationBulkItem> items) ->
+                items.size() == 1 && items.get(0).rowId().equals(valueId)
+                        && "Crimson".equals(items.get(0).command().name())
+                        && "EN".equals(items.get(0).command().languageCode())), any());
+    }
+
+    @Test
+    void anEmptyBulkTranslateListAnswersTheClassifiedError() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { attributeBulkTranslate(translations: []) { count } }
+                """, "data.attributeBulkTranslate"))
+                .isInstanceOf(Exception.class);
     }
 }

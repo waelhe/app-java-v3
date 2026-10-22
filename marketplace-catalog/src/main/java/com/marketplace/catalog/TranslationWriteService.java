@@ -15,6 +15,8 @@ import com.marketplace.catalog.spi.CollectionMutationErrorCode;
 import com.marketplace.catalog.spi.CollectionMutationResult;
 import com.marketplace.catalog.spi.CollectionView;
 import com.marketplace.catalog.spi.TranslationAmendCommand;
+import com.marketplace.catalog.spi.TranslationBulkItem;
+import com.marketplace.catalog.spi.TranslationBulkOutcome;
 import com.marketplace.catalog.spi.TranslationWriteSpi;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
@@ -182,6 +184,74 @@ public class TranslationWriteService implements TranslationWriteSpi {
         }
         row.translate(mergedEn(command, row.getNameEn()), mergedAr(command, row.getNameAr()));
         return CollectionMutationResult.success(toView(collectionRepository.save(row)));
+    }
+
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    public List<TranslationBulkOutcome> bulkTranslateAttributes(List<TranslationBulkItem> items,
+                                                                String errorPolicy) {
+        List<TranslationBulkOutcome> outcomes = new ArrayList<>(items.size());
+        for (TranslationBulkItem item : items) {
+            // Self-invocation joins THIS transaction (the bulk boundary
+            // owns the authorization and the policy); the single-item
+            // ladder's own validation answers per item.
+            AttributeMutationResult result = translateAttribute(item.rowId(), item.command());
+            String name = result.attribute() == null ? null
+                    : attributeDefinitionRepository.findById(item.rowId())
+                            .map(row -> nameIn(row, item.command().languageCode()))
+                            .orElse(null);
+            outcomes.add(toOutcome(item, name, result.errors()));
+        }
+        if (atomic(errorPolicy) && outcomes.stream().anyMatch(outcome -> !outcome.success())) {
+            // The pinned default policy: one refused item refuses the
+            // whole batch — the official rollback-marking mechanism.
+            org.springframework.transaction.interceptor.TransactionAspectSupport
+                    .currentTransactionStatus().setRollbackOnly();
+        }
+        return outcomes;
+    }
+
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    public List<TranslationBulkOutcome> bulkTranslateAttributeValues(List<TranslationBulkItem> items,
+                                                                     String errorPolicy) {
+        List<TranslationBulkOutcome> outcomes = new ArrayList<>(items.size());
+        for (TranslationBulkItem item : items) {
+            AttributeValueMutationResult result = translateAttributeValue(item.rowId(), item.command());
+            String name = result.value() == null ? null
+                    : attributeOptionRepository.findById(item.rowId())
+                            .map(row -> nameIn(row, item.command().languageCode()))
+                            .orElse(null);
+            outcomes.add(toOutcome(item, name, result.errors()));
+        }
+        if (atomic(errorPolicy) && outcomes.stream().anyMatch(outcome -> !outcome.success())) {
+            org.springframework.transaction.interceptor.TransactionAspectSupport
+                    .currentTransactionStatus().setRollbackOnly();
+        }
+        return outcomes;
+    }
+
+    /** The pinned default policy's own verdict — REJECT_EVERYTHING unless another member is sent. */
+    private static boolean atomic(String errorPolicy) {
+        return errorPolicy == null || "REJECT_EVERYTHING".equals(errorPolicy);
+    }
+
+    /** The per-item outcome — the amended name in the addressed dimension, or the item's errors. */
+    private static TranslationBulkOutcome toOutcome(TranslationBulkItem item, String name,
+                                                     List<AttributeMutationError> errors) {
+        return new TranslationBulkOutcome(item.rowId(), item.command().languageCode(), name, errors);
+    }
+
+    /** The attribute definition's amended name in the addressed language dimension (the merged pair's own value). */
+    private static String nameIn(CatalogAttributeDefinition row, String languageCode) {
+        return "AR".equals(languageCode) ? row.getNameAr() : row.getNameEn();
+    }
+
+    /** The CHOICE option's amended name in the addressed language dimension. */
+    private static String nameIn(CatalogAttributeOption row, String languageCode) {
+        return "AR".equals(languageCode) ? row.getNameAr() : row.getNameEn();
     }
 
     // ------------------------------------------------------------------

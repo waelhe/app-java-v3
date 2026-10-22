@@ -10,6 +10,8 @@ import com.marketplace.catalog.spi.CategoryView;
 import com.marketplace.catalog.spi.CollectionMutationError;
 import com.marketplace.catalog.spi.CollectionMutationErrorCode;
 import com.marketplace.catalog.spi.CollectionMutationResult;
+import com.marketplace.catalog.spi.TranslationBulkItem;
+import com.marketplace.catalog.spi.TranslationBulkOutcome;
 import com.marketplace.catalog.spi.TranslationAmendCommand;
 import com.marketplace.catalog.spi.TranslationWriteSpi;
 import org.junit.jupiter.api.BeforeEach;
@@ -380,5 +382,76 @@ class TranslationWriteServiceTest {
                 .extracting(CollectionMutationError::code, CollectionMutationError::field)
                 .containsExactly(CollectionMutationErrorCode.INVALID, "name");
         verify(collectionRepository, never()).save(any(Collection.class));
+    }
+
+    // ------------------------------------------------------------------
+    // bulkTranslateAttributes / bulkTranslateAttributeValues — the agent-2
+    // M-slice's own batch legs (the single-item ladder + the policy)
+    // ------------------------------------------------------------------
+
+    @Test
+    void bulkTranslateAttributesAnswersThePerItemOutcomesOverTheLadder() {
+        CatalogAttributeDefinition alpha = CatalogAttributeDefinition.create(
+                "alpha", "Alpha", null, CatalogAttributeType.CHOICE, null);
+        CatalogAttributeDefinition beta = CatalogAttributeDefinition.create(
+                "beta", "Beta", null, CatalogAttributeType.CHOICE, null);
+        when(attributeDefinitionRepository.findById(alpha.getId())).thenReturn(Optional.of(alpha));
+        when(attributeDefinitionRepository.findById(beta.getId())).thenReturn(Optional.of(beta));
+        when(attributeDefinitionRepository.save(any(CatalogAttributeDefinition.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<TranslationBulkOutcome> outcomes = service.bulkTranslateAttributes(List.of(
+                new TranslationBulkItem(alpha.getId(), new TranslationAmendCommand("ألفا", "AR")),
+                new TranslationBulkItem(beta.getId(), new TranslationAmendCommand("بيتا", "AR"))),
+                null);
+
+        assertThat(outcomes).hasSize(2);
+        assertThat(outcomes.get(0).success()).isTrue();
+        assertThat(outcomes.get(0).name()).isEqualTo("ألفا");
+        assertThat(outcomes.get(0).languageCode()).isEqualTo("AR");
+        assertThat(outcomes.get(1).name()).isEqualTo("بيتا");
+    }
+
+    @Test
+    void aRefusedBulkTranslateItemCarriesItsOwnErrorsUnderTheIgnoreFailedPolicy() {
+        // The IGNORE_FAILED policy keeps the per-row granularity (the
+        // REJECT_EVERYTHING rollback-marking itself needs a real
+        // transaction — the integration legs' own proof, the J-slice's
+        // own test precedent).
+        UUID unknown = UUID.randomUUID();
+        when(attributeDefinitionRepository.findById(unknown)).thenReturn(Optional.empty());
+
+        List<TranslationBulkOutcome> outcomes = service.bulkTranslateAttributes(List.of(
+                new TranslationBulkItem(unknown, new TranslationAmendCommand("مجهول", "AR"))),
+                "IGNORE_FAILED");
+
+        assertThat(outcomes).hasSize(1);
+        assertThat(outcomes.get(0).success()).isFalse();
+        assertThat(outcomes.get(0).name()).isNull();
+        assertThat(outcomes.get(0).errors()).singleElement()
+                .extracting(AttributeMutationError::code, AttributeMutationError::field)
+                .containsExactly(AttributeMutationErrorCode.NOT_FOUND, "id");
+    }
+
+    @Test
+    void bulkTranslateAttributeValuesAnswersThePerItemOutcomes() {
+        CatalogAttributeDefinition parent = CatalogAttributeDefinition.create(
+                "color", "Color", null, CatalogAttributeType.CHOICE, null);
+        CatalogAttributeOption red = CatalogAttributeOption.create(
+                parent.getId(), "red", "Red", "أحمر", 1);
+        when(attributeOptionRepository.findById(red.getId())).thenReturn(Optional.of(red));
+        when(attributeDefinitionRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(attributeOptionRepository.save(any(CatalogAttributeOption.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<TranslationBulkOutcome> outcomes = service.bulkTranslateAttributeValues(List.of(
+                new TranslationBulkItem(red.getId(), new TranslationAmendCommand("Crimson", "EN"))),
+                null);
+
+        assertThat(outcomes).singleElement().satisfies(outcome -> {
+            assertThat(outcome.success()).isTrue();
+            assertThat(outcome.name()).isEqualTo("Crimson");
+            assertThat(outcome.languageCode()).isEqualTo("EN");
+        });
     }
 }

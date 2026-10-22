@@ -1,13 +1,22 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.app.graphql.generated.DgsConstants;
+import com.marketplace.app.graphql.generated.types.AttributeBulkTranslate;
+import com.marketplace.app.graphql.generated.types.AttributeBulkTranslateInput;
 import com.marketplace.app.graphql.generated.types.AttributeTranslate;
+import com.marketplace.app.graphql.generated.types.AttributeTranslation;
+import com.marketplace.app.graphql.generated.types.AttributeValueBulkTranslate;
+import com.marketplace.app.graphql.generated.types.AttributeValueBulkTranslateInput;
 import com.marketplace.app.graphql.generated.types.AttributeValueTranslate;
+import com.marketplace.app.graphql.generated.types.AttributeValueTranslation;
 import com.marketplace.app.graphql.generated.types.AttributeValueTranslationInput;
 import com.marketplace.app.graphql.generated.types.CategoryTranslate;
 import com.marketplace.app.graphql.generated.types.CollectionTranslate;
 import com.marketplace.app.graphql.generated.types.LanguageCodeEnum;
+import com.marketplace.app.graphql.generated.types.LanguageDisplay;
 import com.marketplace.app.graphql.generated.types.NameTranslationInput;
+import com.marketplace.app.graphql.generated.types.TranslationBulkError;
+import com.marketplace.app.graphql.generated.types.TranslationBulkErrorCode;
 import com.marketplace.app.graphql.generated.types.TranslationError;
 import com.marketplace.app.graphql.generated.types.TranslationErrorCode;
 import com.marketplace.app.graphql.generated.types.TranslationInput;
@@ -21,6 +30,8 @@ import com.marketplace.catalog.spi.CategoryMutationResult;
 import com.marketplace.catalog.spi.CollectionMutationError;
 import com.marketplace.catalog.spi.CollectionMutationResult;
 import com.marketplace.catalog.spi.TranslationAmendCommand;
+import com.marketplace.catalog.spi.TranslationBulkItem;
+import com.marketplace.catalog.spi.TranslationBulkOutcome;
 import com.marketplace.catalog.spi.TranslationWriteSpi;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
@@ -179,6 +190,151 @@ public class TranslationMutationDataFetcher {
                 .collection(result.collection() == null
                         ? null : collectionMapper.toGraphQlCollection(result.collection()))
                 .build();
+    }
+
+    /**
+     * Saleor {@code attributeBulkTranslate(errorPolicy: ErrorPolicyEnum,
+     * translations: [AttributeBulkTranslateInput!]!): AttributeBulkTranslate}
+     * — the attribute registry's batch bilingual amendment over the same
+     * seam (the agent-2 M-slice — the pinned per-item results entries with
+     * the bounded per-locale translation projections).
+     */
+    @DgsMutation(field = DgsConstants.MUTATION.AttributeBulkTranslate)
+    @RateLimiter(name = "graphqlAttributeMutation")
+    public AttributeBulkTranslate attributeBulkTranslate(
+            @InputArgument String errorPolicy,
+            @InputArgument List<AttributeBulkTranslateInput> translations) {
+        if (translations == null || translations.isEmpty()) {
+            throw new IllegalArgumentException("attributeBulkTranslate requires a non-empty list of translations");
+        }
+        List<TranslationBulkItem> items = new ArrayList<>(translations.size());
+        for (AttributeBulkTranslateInput translation : translations) {
+            requireInput(translation.getTranslationFields(), "attributeBulkTranslate translationFields");
+            if (translation.getId() == null) {
+                throw new IllegalArgumentException(
+                        "attributeBulkTranslate requires each translation's id");
+            }
+            items.add(new TranslationBulkItem(
+                    globalIdCodec.decode(translation.getId(), AttributeGraphQlMapper.ATTRIBUTE_TYPE),
+                    new TranslationAmendCommand(translation.getTranslationFields().getName(),
+                            translation.getLanguageCode().name())));
+        }
+        List<TranslationBulkOutcome> outcomes = translationWriteSpi.bulkTranslateAttributes(items, errorPolicy);
+        List<com.marketplace.app.graphql.generated.types.AttributeBulkTranslateResult> results =
+                new ArrayList<>(outcomes.size());
+        for (int index = 0; index < outcomes.size(); index++) {
+            TranslationBulkOutcome outcome = outcomes.get(index);
+            com.marketplace.app.graphql.generated.types.AttributeBulkTranslateResult.Builder builder =
+                    com.marketplace.app.graphql.generated.types.AttributeBulkTranslateResult.newBuilder();
+            if (outcome.success()) {
+                builder.translation(toAttributeTranslation(outcome));
+            }
+            builder.errors(toBulkErrors(outcome.errors(), index));
+            results.add(builder.build());
+        }
+        return AttributeBulkTranslate.newBuilder()
+                .count((int) outcomes.stream().filter(TranslationBulkOutcome::success).count())
+                .results(results)
+                .errors(List.of())
+                .build();
+    }
+
+    /**
+     * Saleor {@code attributeValueBulkTranslate(errorPolicy:
+     * ErrorPolicyEnum, translations: [AttributeValueBulkTranslateInput!]!):
+     * AttributeValueBulkTranslate} — the CHOICE option registry's batch
+     * bilingual amendment over the same seam.
+     */
+    @DgsMutation(field = DgsConstants.MUTATION.AttributeValueBulkTranslate)
+    @RateLimiter(name = "graphqlAttributeValueMutation")
+    public AttributeValueBulkTranslate attributeValueBulkTranslate(
+            @InputArgument String errorPolicy,
+            @InputArgument List<AttributeValueBulkTranslateInput> translations) {
+        if (translations == null || translations.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "attributeValueBulkTranslate requires a non-empty list of translations");
+        }
+        List<TranslationBulkItem> items = new ArrayList<>(translations.size());
+        for (AttributeValueBulkTranslateInput translation : translations) {
+            requireInput(translation.getTranslationFields(), "attributeValueBulkTranslate translationFields");
+            if (translation.getId() == null) {
+                throw new IllegalArgumentException(
+                        "attributeValueBulkTranslate requires each translation's id");
+            }
+            items.add(new TranslationBulkItem(
+                    globalIdCodec.decode(translation.getId(), AttributeGraphQlMapper.ATTRIBUTE_VALUE_TYPE),
+                    new TranslationAmendCommand(translation.getTranslationFields().getName(),
+                            translation.getLanguageCode().name())));
+        }
+        List<TranslationBulkOutcome> outcomes =
+                translationWriteSpi.bulkTranslateAttributeValues(items, errorPolicy);
+        List<com.marketplace.app.graphql.generated.types.AttributeValueBulkTranslateResult> results =
+                new ArrayList<>(outcomes.size());
+        for (int index = 0; index < outcomes.size(); index++) {
+            TranslationBulkOutcome outcome = outcomes.get(index);
+            com.marketplace.app.graphql.generated.types.AttributeValueBulkTranslateResult.Builder builder =
+                    com.marketplace.app.graphql.generated.types.AttributeValueBulkTranslateResult.newBuilder();
+            if (outcome.success()) {
+                builder.translation(toValueTranslation(outcome));
+            }
+            builder.errors(toBulkErrors(outcome.errors(), index));
+            results.add(builder.build());
+        }
+        return AttributeValueBulkTranslate.newBuilder()
+                .count((int) outcomes.stream().filter(TranslationBulkOutcome::success).count())
+                .results(results)
+                .errors(List.of())
+                .build();
+    }
+
+    /** The bounded per-locale attribute translation projection — the pinned wire shape over the amended name. */
+    private AttributeTranslation toAttributeTranslation(TranslationBulkOutcome outcome) {
+        return AttributeTranslation.newBuilder()
+                .id(globalIdCodec.encode("AttributeTranslation", outcome.rowId()))
+                .language(languageDisplay(outcome.languageCode()))
+                .name(outcome.name())
+                .build();
+    }
+
+    /** The bounded per-locale value translation projection — the pinned wire shape over the amended name. */
+    private AttributeValueTranslation toValueTranslation(TranslationBulkOutcome outcome) {
+        return AttributeValueTranslation.newBuilder()
+                .id(globalIdCodec.encode("AttributeValueTranslation", outcome.rowId()))
+                .language(languageDisplay(outcome.languageCode()))
+                .name(outcome.name())
+                .build();
+    }
+
+    /** The pinned language display — the addressed dimension's own rendering. */
+    private static LanguageDisplay languageDisplay(String languageCode) {
+        LanguageCodeEnum language = LanguageCodeEnum.valueOf(languageCode);
+        return LanguageDisplay.newBuilder()
+                .code(language)
+                .language("AR".equals(languageCode) ? "Arabic" : "English")
+                .build();
+    }
+
+    /** The item's domain error entries onto the pinned bulk error shape with the path pointer. */
+    private static List<TranslationBulkError> toBulkErrors(List<AttributeMutationError> errors, int index) {
+        List<TranslationBulkError> mapped = new ArrayList<>(errors.size());
+        for (AttributeMutationError error : errors) {
+            mapped.add(TranslationBulkError.newBuilder()
+                    .path(error.field() == null ? String.valueOf(index) : index + "." + error.field())
+                    .message(error.message())
+                    .code(toBulkErrorCode(error.code()))
+                    .build());
+        }
+        return mapped;
+    }
+
+    /** The domain code onto the pinned bulk error vocabulary's own member. */
+    private static TranslationBulkErrorCode toBulkErrorCode(AttributeMutationErrorCode code) {
+        return switch (code) {
+            case REQUIRED -> TranslationBulkErrorCode.REQUIRED;
+            case INVALID -> TranslationBulkErrorCode.INVALID;
+            case NOT_FOUND -> TranslationBulkErrorCode.NOT_FOUND;
+            case ALREADY_EXISTS -> TranslationBulkErrorCode.INVALID;
+        };
     }
 
     /**
