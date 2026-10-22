@@ -153,6 +153,15 @@ class VoucherDataFetcherDgsTest {
 
     @MockitoBean
     private DiscountReadSpi discountReadSpi;
+
+    // The collection read/mutation roots' owning seams (agent-2 L-slice) —
+    // the package slice wires every fetcher, so these seams get their
+    // mocks (the sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.catalog.spi.CollectionReadSpi collectionReadSpi;
+
+    @MockitoBean
+    private com.marketplace.catalog.spi.CollectionWriteSpi collectionWriteSpi;
     // The package slice wires every fetcher; every seam the slice's other
     // fetchers need gets its mock — the incomplete sibling fixes the
     // b4/b5 packets left behind (committed against a red CI) completed

@@ -173,6 +173,15 @@ class ProductVariantMutationDataFetcherDgsTest {
     @MockitoBean
     private AttributeValueWriteSpi attributeValueWriteSpi;
 
+    // The collection read/mutation roots' owning seams (agent-2 L-slice) —
+    // the package slice wires every fetcher, so these seams get their
+    // mocks (the sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.catalog.spi.CollectionReadSpi collectionReadSpi;
+
+    @MockitoBean
+    private com.marketplace.catalog.spi.CollectionWriteSpi collectionWriteSpi;
+
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();

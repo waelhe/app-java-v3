@@ -7,6 +7,9 @@ import com.marketplace.catalog.spi.CategoryMutationError;
 import com.marketplace.catalog.spi.CategoryMutationErrorCode;
 import com.marketplace.catalog.spi.CategoryMutationResult;
 import com.marketplace.catalog.spi.CategoryView;
+import com.marketplace.catalog.spi.CollectionMutationError;
+import com.marketplace.catalog.spi.CollectionMutationErrorCode;
+import com.marketplace.catalog.spi.CollectionMutationResult;
 import com.marketplace.catalog.spi.TranslationAmendCommand;
 import com.marketplace.catalog.spi.TranslationWriteSpi;
 import org.junit.jupiter.api.BeforeEach;
@@ -50,6 +53,7 @@ class TranslationWriteServiceTest {
     private CategoryRepository categoryRepository;
     private CatalogAttributeDefinitionRepository attributeDefinitionRepository;
     private CatalogAttributeOptionRepository attributeOptionRepository;
+    private CollectionRepository collectionRepository;
     private TranslationWriteSpi service;
     private final Authentication caller = new TestingAuthenticationToken("admin-subject", "n/a", "ROLE_ADMIN");
 
@@ -58,8 +62,9 @@ class TranslationWriteServiceTest {
         categoryRepository = mock(CategoryRepository.class);
         attributeDefinitionRepository = mock(CatalogAttributeDefinitionRepository.class);
         attributeOptionRepository = mock(CatalogAttributeOptionRepository.class);
+        collectionRepository = mock(CollectionRepository.class);
         service = new TranslationWriteService(categoryRepository, attributeDefinitionRepository,
-                attributeOptionRepository);
+                attributeOptionRepository, collectionRepository);
     }
 
     // ------------------------------------------------------------------
@@ -309,5 +314,71 @@ class TranslationWriteServiceTest {
                 .extracting(AttributeMutationError::code, AttributeMutationError::field)
                 .containsExactly(AttributeMutationErrorCode.INVALID, "name");
         verify(attributeOptionRepository, never()).save(any(CatalogAttributeOption.class));
+    }
+
+    // ------------------------------------------------------------------
+    // translateCollection — the agent-2 L-slice's own collection legs
+    // ------------------------------------------------------------------
+
+    @Test
+    void anUnknownCollectionAnswersTheNotFoundDomainError() {
+        UUID id = UUID.randomUUID();
+        when(collectionRepository.findById(id)).thenReturn(Optional.empty());
+
+        CollectionMutationResult result = service.translateCollection(
+                id, new TranslationAmendCommand("Curated", "AR"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(CollectionMutationError::code, CollectionMutationError::field)
+                .containsExactly(CollectionMutationErrorCode.NOT_FOUND, "id");
+    }
+
+    @Test
+    void aNullCollectionNameAnswersTheCurrentProjectionWithoutAWrite() {
+        Collection row = Collection.create("curated", "Curated", "منتقى", true);
+        when(collectionRepository.findById(row.getId())).thenReturn(Optional.of(row));
+
+        CollectionMutationResult result = service.translateCollection(
+                row.getId(), new TranslationAmendCommand(null, "AR"));
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.collection().name()).isEqualTo("Curated");
+        assertThat(result.collection().nameAr()).isEqualTo("منتقى");
+        verify(collectionRepository, never()).save(any(Collection.class));
+    }
+
+    @Test
+    void theArabicDimensionAmendmentMovesOnlyTheNameArColumn() {
+        Collection row = Collection.create("curated", "Curated", null, true);
+        when(collectionRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(collectionRepository.save(any(Collection.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        CollectionMutationResult result = service.translateCollection(
+                row.getId(), new TranslationAmendCommand("منتقى", "AR"));
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.collection().name()).isEqualTo("Curated");
+        assertThat(result.collection().nameAr()).isEqualTo("منتقى");
+        verify(collectionRepository).save(
+                org.mockito.ArgumentMatchers.argThat((Collection amended) ->
+                        "Curated".equals(amended.getNameEn())
+                                && "منتقى".equals(amended.getNameAr())));
+    }
+
+    @Test
+    void aBlankCollectionNameAnswersTheInvalidDomainError() {
+        Collection row = Collection.create("curated", "Curated", "منتقى", true);
+        when(collectionRepository.findById(row.getId())).thenReturn(Optional.of(row));
+
+        CollectionMutationResult result = service.translateCollection(
+                row.getId(), new TranslationAmendCommand("   ", "EN"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(CollectionMutationError::code, CollectionMutationError::field)
+                .containsExactly(CollectionMutationErrorCode.INVALID, "name");
+        verify(collectionRepository, never()).save(any(Collection.class));
     }
 }

@@ -5,6 +5,7 @@ import com.marketplace.app.graphql.generated.types.AttributeTranslate;
 import com.marketplace.app.graphql.generated.types.AttributeValueTranslate;
 import com.marketplace.app.graphql.generated.types.AttributeValueTranslationInput;
 import com.marketplace.app.graphql.generated.types.CategoryTranslate;
+import com.marketplace.app.graphql.generated.types.CollectionTranslate;
 import com.marketplace.app.graphql.generated.types.LanguageCodeEnum;
 import com.marketplace.app.graphql.generated.types.NameTranslationInput;
 import com.marketplace.app.graphql.generated.types.TranslationError;
@@ -17,6 +18,8 @@ import com.marketplace.catalog.spi.AttributeValueMutationResult;
 import com.marketplace.catalog.spi.CategoryMutationError;
 import com.marketplace.catalog.spi.CategoryMutationErrorCode;
 import com.marketplace.catalog.spi.CategoryMutationResult;
+import com.marketplace.catalog.spi.CollectionMutationError;
+import com.marketplace.catalog.spi.CollectionMutationResult;
 import com.marketplace.catalog.spi.TranslationAmendCommand;
 import com.marketplace.catalog.spi.TranslationWriteSpi;
 import com.netflix.graphql.dgs.DgsComponent;
@@ -59,15 +62,18 @@ public class TranslationMutationDataFetcher {
     private final TranslationWriteSpi translationWriteSpi;
     private final CategoryGraphQlMapper categoryMapper;
     private final AttributeGraphQlMapper attributeMapper;
+    private final CollectionGraphQlMapper collectionMapper;
     private final SaleorGlobalIdCodec globalIdCodec;
 
     public TranslationMutationDataFetcher(TranslationWriteSpi translationWriteSpi,
                                           CategoryGraphQlMapper categoryMapper,
                                           AttributeGraphQlMapper attributeMapper,
+                                          CollectionGraphQlMapper collectionMapper,
                                           SaleorGlobalIdCodec globalIdCodec) {
         this.translationWriteSpi = translationWriteSpi;
         this.categoryMapper = categoryMapper;
         this.attributeMapper = attributeMapper;
+        this.collectionMapper = collectionMapper;
         this.globalIdCodec = globalIdCodec;
     }
 
@@ -151,6 +157,31 @@ public class TranslationMutationDataFetcher {
     }
 
     /**
+     * Saleor {@code collectionTranslate(id: ID!, input: TranslationInput!,
+     * languageCode: LanguageCodeEnum!): CollectionTranslate} — the
+     * storefront collection registry's bilingual amendment over the same
+     * seam (the agent-2 L-slice).
+     */
+    @DgsMutation(field = DgsConstants.MUTATION.CollectionTranslate)
+    @RateLimiter(name = "graphqlCollectionMutation")
+    public CollectionTranslate collectionTranslate(@InputArgument String id,
+                                                    @InputArgument TranslationInput input,
+                                                    @InputArgument LanguageCodeEnum languageCode) {
+        requireInput(input, "collectionTranslate");
+        if (id == null) {
+            throw new IllegalArgumentException("collectionTranslate requires the id of the collection to translate");
+        }
+        UUID nativeId = globalIdCodec.decode(id, CollectionGraphQlMapper.COLLECTION_TYPE);
+        CollectionMutationResult result = translationWriteSpi.translateCollection(
+                nativeId, new TranslationAmendCommand(input.getName(), languageCode.name()));
+        return CollectionTranslate.newBuilder()
+                .errors(toTranslationErrors(mapCollectionErrors(result.errors())))
+                .collection(result.collection() == null
+                        ? null : collectionMapper.toGraphQlCollection(result.collection()))
+                .build();
+    }
+
+    /**
      * The input presence guard — the SDL's own {@code input: ...!}
      * contract mirrored at the boundary (a null input is a client error,
      * never a NullPointerException).
@@ -192,6 +223,21 @@ public class TranslationMutationDataFetcher {
                         case INVALID -> TranslationErrorCode.INVALID;
                         case NOT_FOUND -> TranslationErrorCode.NOT_FOUND;
                         case ALREADY_EXISTS -> TranslationErrorCode.UNIQUE;
+                    }));
+        }
+        return mapped;
+    }
+
+    private static List<TransportError> mapCollectionErrors(List<CollectionMutationError> errors) {
+        List<TransportError> mapped = new ArrayList<>(errors.size());
+        for (CollectionMutationError error : errors) {
+            mapped.add(new TransportError(error.field(), error.message(),
+                    switch (error.code()) {
+                        case REQUIRED -> TranslationErrorCode.REQUIRED;
+                        case INVALID, GRAPHQL_ERROR, DUPLICATED_INPUT_ITEM ->
+                                TranslationErrorCode.INVALID;
+                        case NOT_FOUND -> TranslationErrorCode.NOT_FOUND;
+                        case UNIQUE -> TranslationErrorCode.UNIQUE;
                     }));
         }
         return mapped;

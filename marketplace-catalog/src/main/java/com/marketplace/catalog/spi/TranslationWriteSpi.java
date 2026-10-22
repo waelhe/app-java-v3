@@ -6,10 +6,11 @@ import java.util.UUID;
 
 /**
  * P2 (the canonical Saleor plan §5-P2 — the Saleor
- * {@code categoryTranslate}, {@code attributeTranslate} and
- * {@code attributeValueTranslate} mutation roots, the agent-2
- * follow-on packet): the catalog owner's write seam for the bilingual
- * translation family. These are Saleor MANAGE_TRANSLATIONS roots
+ * {@code categoryTranslate}, {@code attributeTranslate},
+ * {@code attributeValueTranslate} and {@code collectionTranslate}
+ * mutation roots, the agent-2 follow-on packet): the catalog owner's
+ * write seam for the bilingual translation family. These are Saleor
+ * MANAGE_TRANSLATIONS roots
  * ("Requires one of the following permissions: MANAGE_TRANSLATIONS")
  * mapped through the platform's ADMIN capability and enforced HERE at
  * the owning use-case boundary by Spring Security's method security —
@@ -65,4 +66,19 @@ public interface TranslationWriteSpi {
      *         payload), or the domain errors (NOT_FOUND, INVALID)
      */
     AttributeValueMutationResult translateAttributeValue(UUID id, TranslationAmendCommand command);
+
+    /**
+     * Amends one collection row's language dimension — the Saleor
+     * {@code collectionTranslate} root's owning use case (the agent-2
+     * L-slice — the storefront collection registry's own bilingual
+     * columns).
+     *
+     * @param id      the row's native UUID (the typed global ID is
+     *                decoded at the transport boundary)
+     * @param command the translation command (name, languageCode)
+     * @return the result with the amended row's projection, or the
+     *         domain errors (NOT_FOUND, INVALID blank/oversized name,
+     *         INVALID nameless merge)
+     */
+    CollectionMutationResult translateCollection(UUID id, TranslationAmendCommand command);
 }

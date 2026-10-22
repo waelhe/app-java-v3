@@ -1568,3 +1568,418 @@ enum ProductVariantBulkErrorCode {
     PRODUCT_NOT_ASSIGNED_TO_CHANNEL
     STOCK_ALREADY_EXISTS
 }
+
+# =====================================================================
+# The agent-2 L-slice — the Saleor collection family (the storefront
+# collection registry and its product membership over the V253
+# migration): the collection/collections read roots, the
+# Collection.products field, and the collectionCreate/Update/Delete/
+# BulkDelete/Translate/AddProducts/RemoveProducts/ReorderProducts
+# mutation roots. Every root carries the EXACT Saleor 3.23.43 pinned
+# signature for the arguments the platform's house no-new-scalar SDL
+# can declare; Saleor-only directives and fields whose scalar owners
+# do not exist on this surface (Upload, JSONString) stay undeclared —
+# recorded divergences, never faked.
+# =====================================================================
+
+extend type Query {
+    """
+    Look up a collection by ID or slug. The include-unpublished surface
+    (the pinned MANAGE_ORDERS/MANAGE_DISCOUNTS/MANAGE_PRODUCTS
+    permission family) maps to the platform's ADMIN capability at the
+    owning use case; the declared-but-unowned arguments answer the
+    classified validation error when sent.
+    """
+    collection(
+        """ID of the collection."""
+        id: ID
+
+        """Slug of the collection"""
+        slug: String
+
+        """
+        Language code of the collection slug. No slug-translation owner
+        exists on this platform (the registered divergence); a non-null
+        value answers the classified validation error.
+        """
+        slugLanguageCode: LanguageCodeEnum
+
+        """
+        External ID of the collection. No external-ID column exists on
+        this platform (the registered divergence); a non-null value
+        answers the classified validation error.
+        """
+        externalReference: String
+
+        """
+        Slug of a channel for which the data should be returned. No
+        commerce-channel model exists on this platform (the channel
+        decision family); a non-null value answers the classified
+        validation error.
+        """
+        channel: String
+    ): Collection
+
+    """
+    List of the storefront's collections. Forward-only keyset
+    pagination (first/after) in the owning NAME sort; the
+    declared-but-unowned arguments (filter, where, the PRODUCT_COUNT
+    sort field, channel, before/last) answer the classified validation
+    error when sent.
+    """
+    collections(
+        """Filtering options for collections."""
+        filter: CollectionFilterInput
+
+        """Where filtering options for collections."""
+        where: CollectionWhereInput
+
+        """Sort collections."""
+        sortBy: CollectionSortingInput
+
+        """
+        Slug of a channel for which the data should be returned. No
+        commerce-channel model exists on this platform.
+        """
+        channel: String
+
+        """Return the elements in the list that come before the specified cursor."""
+        before: String
+
+        """Return the elements in the list that come after the specified cursor."""
+        after: String
+
+        """Retrieve the first n elements from the list."""
+        first: Int
+
+        """Retrieve the last n elements from the list."""
+        last: Int
+    ): CollectionCountableConnection
+}
+
+"""
+The storefront collection — the curated product grouping. The bounded
+closure carries the registry's own facts: the typed global ID, the
+rendered display name, the stable public slug, the member products
+(over the membership registry's own display order), and the two
+PLATFORM EXTENSION facts the registry owns and the Saleor wire shape
+does not carry on this bounded surface: the bilingual second name
+(nameAr) and the row's own publication fact (isPublished). Unowned
+Saleor fields (the metadata family, SEO fields, rich-text descriptions,
+externalReference, the channel family, backgroundImage) stay undeclared
+until an owning capability exists — never faked.
+"""
+type Collection {
+    """The ID of the collection."""
+    id: ID!
+
+    """Name of the collection (the rendered primary display name)."""
+    name: String
+
+    """Slug of the collection (the registry's stable public key)."""
+    slug: String!
+
+    """The bilingual second name — the platform's own extension fact."""
+    nameAr: String
+
+    """
+    The row's own publication fact — the platform's own extension fact
+    (the include-unpublished read law's own wire fact; the Saleor wire
+    shape carries publication per channel, and no commerce-channel
+    model exists on this platform).
+    """
+    isPublished: Boolean
+
+    """
+    List of products in this collection, in the membership registry's
+    own display order. Forward-only keyset pagination (first/after);
+    the declared-but-unowned arguments answer the classified validation
+    error when sent.
+    """
+    products(
+        """Filtering options for products. No owning query capability exists yet."""
+        filter: ProductFilterInput
+
+        """Where filtering options for products. No owning query capability exists yet."""
+        where: ProductWhereInput
+
+        """Search products. No search owner exists on this field yet."""
+        search: String
+
+        """
+        Sort products. The collection's own display order IS the
+        field's ordering law — no alternative sort exists.
+        """
+        sortBy: ProductOrder
+
+        """Return the elements in the list that come before the specified cursor."""
+        before: String
+
+        """Return the elements in the list that come after the specified cursor."""
+        after: String
+
+        """Retrieve the first n elements from the list."""
+        first: Int
+
+        """Retrieve the last n elements from the list."""
+        last: Int
+
+        """Slug of a channel. No commerce-channel model exists on this platform."""
+        channel: String
+    ): ProductCountableConnection
+}
+
+type CollectionCountableConnection {
+    """Pagination data for this connection."""
+    pageInfo: PageInfo!
+
+    edges: [CollectionCountableEdge!]!
+
+    """A total count of items in the collection (the caller's own visible population)."""
+    totalCount: Int
+}
+
+type CollectionCountableEdge {
+    """The item at the end of the edge."""
+    node: Collection!
+
+    """A cursor for use in pagination (the row's keyset sort key)."""
+    cursor: String!
+}
+
+extend type Mutation {
+    """Creates a new collection."""
+    collectionCreate(
+        """Fields required to create a collection."""
+        input: CollectionCreateInput!
+    ): CollectionCreate
+
+    """
+    Deletes a collection (the live membership rides the owner's own
+    transaction).
+    """
+    collectionDelete(
+        """
+        External ID of a collection to delete. No external-ID column
+        exists on this platform (the registered divergence); a non-null
+        value answers the classified validation error.
+        """
+        externalReference: String
+
+        """ID of a collection to delete."""
+        id: ID
+    ): CollectionDelete
+
+    """Deletes collections."""
+    collectionBulkDelete(
+        """List of collection IDs to delete."""
+        ids: [ID!]!
+    ): CollectionBulkDelete
+
+    """
+    Updates a collection. Partial update — omitted input fields
+    preserve the column.
+    """
+    collectionUpdate(
+        """
+        External ID of a collection to update. No external-ID column
+        exists on this platform; a non-null value answers the
+        classified validation error.
+        """
+        externalReference: String
+
+        """ID of a collection to update."""
+        id: ID
+
+        """Fields required to update a collection."""
+        input: CollectionInput!
+    ): CollectionUpdate
+
+    """
+    Creates/updates translations for a collection — the platform's own
+    two-language law over the registry's bilingual columns.
+    """
+    collectionTranslate(
+        """Collection ID or CollectionTranslatableContent ID."""
+        id: ID!
+
+        """Fields required to update collection translations."""
+        input: TranslationInput!
+
+        """Translation language code."""
+        languageCode: LanguageCodeEnum!
+    ): CollectionTranslate
+
+    """Adds products to a collection."""
+    collectionAddProducts(
+        """ID of a collection."""
+        collectionId: ID!
+
+        """List of product IDs."""
+        products: [ID!]!
+    ): CollectionAddProducts
+
+    """Remove products from a collection."""
+    collectionRemoveProducts(
+        """ID of a collection."""
+        collectionId: ID!
+
+        """List of product IDs."""
+        products: [ID!]!
+    ): CollectionRemoveProducts
+
+    """
+    Reorder the products of a collection — the pinned relative moves
+    resolve against the membership's current order (never a
+    client-supplied absolute position).
+    """
+    collectionReorderProducts(
+        """ID of a collection."""
+        collectionId: ID!
+
+        """The collection products position operations."""
+        moves: [MoveProductInput!]!
+    ): CollectionReorderProducts
+}
+
+# =====================================================================
+# The bounded collection inputs — the pinned Saleor inputs' OWNED field
+# sets only. The unowned members (description/fullDescription as
+# JSONString, seo, backgroundImage as Upload, backgroundImageAlt,
+# externalReference, metadata, privateMetadata, publicationDate) have
+# neither scalar owners nor owning capabilities on this surface and
+# stay undeclared — recorded divergences, never faked.
+# =====================================================================
+input CollectionCreateInput {
+    """Informs whether a collection is published."""
+    isPublished: Boolean
+
+    """Name of the collection."""
+    name: String
+
+    """Slug of the collection."""
+    slug: String
+
+    """List of products to be added to the collection."""
+    products: [ID!]
+}
+
+input CollectionInput {
+    """Informs whether a collection is published."""
+    isPublished: Boolean
+
+    """Name of the collection."""
+    name: String
+
+    """Slug of the collection."""
+    slug: String
+}
+
+# The declared-but-unowned filter shapes — every field stays refused
+# with the classified validation error until an owning query
+# capability exists (the honest boundary, never a silent no-op).
+input CollectionFilterInput {
+    """The slug filtering shape (no owning query capability yet)."""
+    slug: String
+}
+
+input CollectionWhereInput {
+    """The name searching shape (no owning query capability yet)."""
+    name: String
+}
+
+input CollectionSortingInput {
+    """The sort direction."""
+    direction: OrderDirection
+
+    """The sort field (NAME has the owning fact; PRODUCT_COUNT answers the classified error)."""
+    field: CollectionSortField
+}
+
+enum CollectionSortField {
+    NAME
+    PRODUCT_COUNT
+}
+
+input MoveProductInput {
+    """The ID of the product to move."""
+    productId: ID!
+
+    """
+    The relative sorting position of the product (from -inf to +inf)
+    starting from the first given product's actual position. 1 moves
+    the item one position forward, -1 moves the item one position
+    backward, 0 leaves the item unchanged.
+    """
+    sortOrder: Int
+}
+
+type CollectionCreate {
+    errors: [CollectionError!]!
+    collection: Collection
+}
+
+type CollectionUpdate {
+    errors: [CollectionError!]!
+    collection: Collection
+}
+
+type CollectionDelete {
+    errors: [CollectionError!]!
+    collection: Collection
+}
+
+type CollectionBulkDelete {
+    """Returns how many objects were affected."""
+    count: Int!
+    errors: [CollectionError!]!
+}
+
+type CollectionTranslate {
+    errors: [TranslationError!]!
+    collection: Collection
+}
+
+type CollectionAddProducts {
+    """Collection to which products will be added."""
+    collection: Collection
+    errors: [CollectionError!]!
+}
+
+type CollectionRemoveProducts {
+    """Collection from which products will be removed."""
+    collection: Collection
+    errors: [CollectionError!]!
+}
+
+type CollectionReorderProducts {
+    """Collection from which products are reordered."""
+    collection: Collection
+    errors: [CollectionError!]!
+}
+
+type CollectionError {
+    """
+    Name of a field that caused the error. A value of `null` indicates
+    that the error isn't associated with a particular field.
+    """
+    field: String
+
+    """The error message."""
+    message: String
+
+    """List of products IDs which causes the error."""
+    products: [ID!]
+
+    """The error code."""
+    code: CollectionErrorCode!
+}
+
+enum CollectionErrorCode {
+    DUPLICATED_INPUT_ITEM
+    GRAPHQL_ERROR
+    INVALID
+    NOT_FOUND
+    REQUIRED
+    UNIQUE
+}

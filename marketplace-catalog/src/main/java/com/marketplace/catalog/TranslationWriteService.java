@@ -10,6 +10,10 @@ import com.marketplace.catalog.spi.CategoryMutationError;
 import com.marketplace.catalog.spi.CategoryMutationErrorCode;
 import com.marketplace.catalog.spi.CategoryMutationResult;
 import com.marketplace.catalog.spi.CategoryView;
+import com.marketplace.catalog.spi.CollectionMutationError;
+import com.marketplace.catalog.spi.CollectionMutationErrorCode;
+import com.marketplace.catalog.spi.CollectionMutationResult;
+import com.marketplace.catalog.spi.CollectionView;
 import com.marketplace.catalog.spi.TranslationAmendCommand;
 import com.marketplace.catalog.spi.TranslationWriteSpi;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -64,13 +68,16 @@ public class TranslationWriteService implements TranslationWriteSpi {
     private final CategoryRepository categoryRepository;
     private final CatalogAttributeDefinitionRepository attributeDefinitionRepository;
     private final CatalogAttributeOptionRepository attributeOptionRepository;
+    private final CollectionRepository collectionRepository;
 
     public TranslationWriteService(CategoryRepository categoryRepository,
                                    CatalogAttributeDefinitionRepository attributeDefinitionRepository,
-                                   CatalogAttributeOptionRepository attributeOptionRepository) {
+                                   CatalogAttributeOptionRepository attributeOptionRepository,
+                                   CollectionRepository collectionRepository) {
         this.categoryRepository = categoryRepository;
         this.attributeDefinitionRepository = attributeDefinitionRepository;
         this.attributeOptionRepository = attributeOptionRepository;
+        this.collectionRepository = collectionRepository;
     }
 
     @Override
@@ -154,8 +161,31 @@ public class TranslationWriteService implements TranslationWriteSpi {
         return AttributeValueMutationResult.success(toView(parent), toValueView(updated));
     }
 
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    public CollectionMutationResult translateCollection(UUID id, TranslationAmendCommand command) {
+        Optional<Collection> addressed = id == null ? Optional.empty() : collectionRepository.findById(id);
+        if (addressed.isEmpty()) {
+            return CollectionMutationResult.failure(List.of(new CollectionMutationError(
+                    "id", CollectionMutationErrorCode.NOT_FOUND, "No collection found for the id")));
+        }
+        List<CollectionMutationError> errors = ladder(command,
+                (field, message) -> new CollectionMutationError(field,
+                        CollectionMutationErrorCode.INVALID, message));
+        if (!errors.isEmpty()) {
+            return CollectionMutationResult.failure(errors);
+        }
+        Collection row = addressed.get();
+        if (command.name() == null) {
+            return CollectionMutationResult.success(toView(row));
+        }
+        row.translate(mergedEn(command, row.getNameEn()), mergedAr(command, row.getNameAr()));
+        return CollectionMutationResult.success(toView(collectionRepository.save(row)));
+    }
+
     // ------------------------------------------------------------------
-    // the shared bilingual ladder — the three registries' own error
+    // the shared bilingual ladder — the four registries' own error
     // records are mapped through the shared (field, message) findings
     // (the INVALID member is the only classification the ladder emits)
     // ------------------------------------------------------------------
@@ -218,5 +248,11 @@ public class TranslationWriteService implements TranslationWriteSpi {
     private static AttributeValueView toValueView(CatalogAttributeOption option) {
         String name = option.getNameEn() != null ? option.getNameEn() : option.getNameAr();
         return new AttributeValueView(option.getId(), name, option.getCode());
+    }
+
+    private static CollectionView toView(Collection collection) {
+        String name = collection.getNameEn() != null ? collection.getNameEn() : collection.getNameAr();
+        return new CollectionView(collection.getId(), name, collection.getNameAr(),
+                collection.getSlug(), collection.isPublished());
     }
 }

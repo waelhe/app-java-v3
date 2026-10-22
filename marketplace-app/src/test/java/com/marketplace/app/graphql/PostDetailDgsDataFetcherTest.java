@@ -182,6 +182,15 @@ class PostDetailDgsDataFetcherTest {
     // gets its mock (the b5-a sibling-test precedent).
     @MockitoBean
     private com.marketplace.catalog.spi.AttributeValueWriteSpi attributeValueWriteSpi;
+
+    // The collection read/mutation roots' owning seams (agent-2 L-slice) —
+    // the package slice wires every fetcher, so these seams get their
+    // mocks (the sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.catalog.spi.CollectionReadSpi collectionReadSpi;
+
+    @MockitoBean
+    private com.marketplace.catalog.spi.CollectionWriteSpi collectionWriteSpi;
     /** The journey's fields read the principal from the (test-populated) security context. */
     @AfterEach
     void clearSecurityContext() {
