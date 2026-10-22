@@ -48,7 +48,7 @@
 "orderAddNote","P4","NOT_STARTED","BLOCKED_BY_DECISION","No persisted OrderEvent/note timeline owner or append-only note-update audit exists."
 "orderCancel","P4","NOT_STARTED","IMPLEMENTED_UNVERIFIED","Implemented on this branch; current corrective-head tests are not yet verified. See PR and agent-3-completion.md."
 "orderCapture","P4","NOT_STARTED","BLOCKED_BY_DECISION","No Saleor-compatible order transaction/refund-grant lifecycle exists. The existing order refund SPI is return-scoped and needs a stable return ID."
-"orderConfirm","P4","NOT_STARTED"
+"orderConfirm","P4","NOT_STARTED","BLOCKED_BY_DECISION","Saleor orderConfirm remains unexposed: OrderPaymentPort only creates or returns an intent; no Payments-owned capture/transaction contract or idempotency, replay, concurrency and reconciliation test suite exists. State-only confirmation would falsely report Saleor-compatible success."
 "orderFulfill","P4","NOT_STARTED","BLOCKED_BY_DECISION","Delivery requests/legs are not Saleor Fulfillment records with line quantities, tracking and cancellation lifecycle."
 "orderFulfillmentCancel","P4","NOT_STARTED","BLOCKED_BY_DECISION","Delivery requests/legs are not Saleor Fulfillment records with line quantities, tracking and cancellation lifecycle."
 "orderFulfillmentApprove","P4","NOT_STARTED","BLOCKED_BY_DECISION","Delivery requests/legs are not Saleor Fulfillment records with line quantities, tracking and cancellation lifecycle."
