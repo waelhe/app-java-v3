@@ -2222,28 +2222,20 @@ extend type Mutation {
     productMediaDelete(
         """ID of a product media to delete."""
         id: ID!
-    ): ProductMediaDelete!
+    ): ProductMediaDelete
 
-    """
-    Deletes product media.
-
-    Requires one of the following permissions: MANAGE_PRODUCTS.
-    """
+    """Deletes product media."""
     productMediaBulkDelete(
         """List of product media IDs to delete."""
         ids: [ID!]!
-    ): ProductMediaBulkDelete!
+    ): ProductMediaBulkDelete
 
-    """
-    Changes ordering of the product media.
-
-    Requires one of the following permissions: MANAGE_PRODUCTS.
-    """
+    """Changes ordering of the product media."""
     productMediaReorder(
         """IDs of a product media in the desired order."""
         mediaIds: [ID!]!
 
         """ID of product that media order will be altered."""
         productId: ID!
-    ): ProductMediaReorder!
+    ): ProductMediaReorder
 }
