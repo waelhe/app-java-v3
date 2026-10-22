@@ -7,9 +7,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.provisioning.UserDetailsManager;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -55,18 +52,15 @@ public class UserAccountAdminService implements com.marketplace.identity.spi.Use
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final UserRepository userRepository;
-    private final UserDetailsManager userDetailsManager;
     private final UserService userService;
     private final PasswordResetService passwordResetService;
     private final StaffNotificationRecipientService recipientService;
 
     public UserAccountAdminService(UserRepository userRepository,
-                                    UserDetailsManager userDetailsManager,
                                     UserService userService,
                                     PasswordResetService passwordResetService,
                                     StaffNotificationRecipientService recipientService) {
         this.userRepository = userRepository;
-        this.userDetailsManager = userDetailsManager;
         this.userService = userService;
         this.passwordResetService = passwordResetService;
         this.recipientService = recipientService;
@@ -282,29 +276,9 @@ public class UserAccountAdminService implements com.marketplace.identity.spi.Use
     // Internals
     // ---------------------------------------------------------------------
 
-    /** The login-side email move (createUser at the new name + old row death). */
+    /** The login-side email move, owned by the identity invariant. */
     private void moveEmail(User user, String newEmail) {
-        if (userRepository.existsBySubject(newEmail) || userDetailsManager.userExists(newEmail)) {
-            throw new ConflictException("The email address already owns an account: " + newEmail);
-        }
-        UserDetails stored;
-        try {
-            stored = userDetailsManager.loadUserByUsername(user.getSubject());
-        } catch (UsernameNotFoundException ex) {
-            throw new ResourceNotFoundException(
-                    "No authentication account for user: " + user.getId());
-        }
-        userDetailsManager.createUser(org.springframework.security.core.userdetails.User
-                .withUsername(newEmail)
-                .password(stored.getPassword())
-                .authorities(stored.getAuthorities())
-                .accountExpired(!stored.isAccountNonExpired())
-                .accountLocked(!stored.isAccountNonLocked())
-                .credentialsExpired(!stored.isCredentialsNonExpired())
-                .disabled(!stored.isEnabled())
-                .build());
-        userDetailsManager.deleteUser(user.getSubject());
-        user.updateProfile(newEmail, null);
+        userService.moveLoginEmail(user, newEmail);
     }
 
     private void applyActivation(User user, boolean active) {

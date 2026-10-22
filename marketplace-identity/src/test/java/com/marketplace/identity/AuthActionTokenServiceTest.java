@@ -170,6 +170,22 @@ class AuthActionTokenServiceTest {
     }
 
     @Test
+    void moveToUsername_revokesLiveRightsAndMovesEveryHistoryRow() {
+        AuthActionToken live = liveTokenIssuedAt(NOW.minus(Duration.ofMinutes(2)));
+        AuthActionToken spent = liveTokenIssuedAt(NOW.minus(Duration.ofDays(1)));
+        ReflectionTestUtils.setField(spent, "consumedAt", NOW.minus(Duration.ofDays(1)));
+        when(repository.findOutstanding(USERNAME)).thenReturn(List.of(live));
+        when(repository.findAllByUsername(USERNAME)).thenReturn(List.of(live, spent));
+
+        service.moveToUsername(USERNAME, "new@example.com");
+
+        assertThat(live.getConsumedAt()).isEqualTo(NOW);
+        assertThat(live.getUsername()).isEqualTo("new@example.com");
+        assertThat(spent.getUsername()).isEqualTo("new@example.com");
+        verify(repository).saveAllAndFlush(List.of(live, spent));
+    }
+
+    @Test
     void invalidateOutstanding_consumesEveryLiveRowForTheAccount() {
         AuthActionToken reset = liveTokenIssuedAt(NOW.minus(Duration.ofMinutes(2)));
         AuthActionToken verification = AuthActionToken.issue(

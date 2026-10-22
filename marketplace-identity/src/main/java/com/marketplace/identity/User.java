@@ -132,6 +132,13 @@ public class User extends BaseEntity {
         this.pseudonymizedAt = Instant.now();
     }
 
+    /** Agent 1: moves the native login identity (subject) with the profile email. */
+    void changeLoginIdentity(String newEmail) {
+        this.subject = newEmail;
+        this.email = newEmail;
+        this.pendingEmail = null;
+    }
+
     /** Agent 1 (V251): records the pending email-change pair (one per account). */
     void requestEmailChange(String newEmail) {
         this.pendingEmail = newEmail == null ? null : newEmail.trim();

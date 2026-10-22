@@ -44,4 +44,7 @@ public interface AuthActionTokenRepository extends JpaRepository<AuthActionToken
      */
     @Query("select t from AuthActionToken t where t.username = :username and t.consumedAt is null")
     List<AuthActionToken> findOutstanding(@Param("username") String username);
+
+    /** Every token row (live and historical) owned by the login username. */
+    List<AuthActionToken> findAllByUsername(String username);
 }

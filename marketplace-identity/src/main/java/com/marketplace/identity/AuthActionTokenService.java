@@ -16,6 +16,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -191,6 +192,22 @@ public class AuthActionTokenService {
         if (log.isDebugEnabled()) {
             log.debug("Outstanding auth action tokens invalidated: username={}", username);
         }
+    }
+
+    /**
+     * Moves every token row to the account's new login username. Live rights
+     * are consumed first (an email change must not leave a redeemable right
+     * addressed to the old mailbox), then the history follows the identity so
+     * the V112 FK permits the old {@code auth_users} row's death.
+     */
+    public void moveToUsername(String oldUsername, String newUsername) {
+        invalidateOutstanding(oldUsername);
+        List<AuthActionToken> tokens = repository.findAllByUsername(oldUsername);
+        if (tokens.isEmpty()) {
+            return;
+        }
+        tokens.forEach(token -> token.moveToUsername(newUsername));
+        repository.saveAllAndFlush(tokens);
     }
 
     /** The latest token row for the account+purpose — the verification state read. */

@@ -164,6 +164,55 @@ public class UserService implements IdentitySpi {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + subject));
     }
 
+    /**
+     * Agent 1: moves the native login identity atomically — the framework
+     * login row, the token history's FK owner, the account subject/email, the
+     * old authorization grants, and the cached copies. Callers validate their
+     * own business preconditions; this method owns the identity invariant.
+     */
+    public void moveLoginEmail(User user, String newEmail) {
+        String oldSubject = user.getSubject();
+        if (newEmail == null || newEmail.isBlank()) {
+            throw new IllegalArgumentException("A new email address is required");
+        }
+        if (newEmail.equals(oldSubject)) {
+            return;
+        }
+        if (userRepository.existsBySubject(newEmail) || userDetailsManager.userExists(newEmail)) {
+            throw new ConflictException("The email address already owns an account: " + newEmail);
+        }
+        UserDetails stored;
+        try {
+            stored = userDetailsManager.loadUserByUsername(oldSubject);
+        } catch (UsernameNotFoundException ex) {
+            throw new ResourceNotFoundException(
+                    "No authentication account for user: " + user.getId());
+        }
+        userDetailsManager.createUser(org.springframework.security.core.userdetails.User
+                .withUsername(newEmail)
+                .password(stored.getPassword())
+                .authorities(stored.getAuthorities())
+                .accountExpired(!stored.isAccountNonExpired())
+                .accountLocked(!stored.isAccountNonLocked())
+                .credentialsExpired(!stored.isCredentialsNonExpired())
+                .disabled(!stored.isEnabled())
+                .build());
+        authActionTokenService.moveToUsername(oldSubject, newEmail);
+        userDetailsManager.deleteUser(oldSubject);
+        jdbcTemplate.update(DELETE_AUTHORIZATIONS_BY_PRINCIPAL, oldSubject);
+        user.changeLoginIdentity(newEmail);
+        eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));
+    }
+
+    /** Agent 1: the self-service profile write must load a managed row, never a cache copy. */
+    public void updateOwnDisplayName(String subject, String displayName) {
+        User user = userRepository.findBySubject(subject)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + subject));
+        if (user.updateProfile(null, displayName)) {
+            eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));
+        }
+    }
+
     @Transactional(readOnly = true)
     public Page<User> findAll(Pageable pageable) {
         return userRepository.findAll(pageable);

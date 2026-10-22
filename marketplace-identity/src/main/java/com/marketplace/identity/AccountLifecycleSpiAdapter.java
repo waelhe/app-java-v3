@@ -81,7 +81,7 @@ public class AccountLifecycleSpiAdapter implements AccountLifecycleSpi {
 
     @Override
     public void updateOwnProfile(Authentication caller, String displayName) {
-        userService.getBySubject(caller.getName()).updateProfile(null, displayName);
+        userService.updateOwnDisplayName(caller.getName(), displayName);
     }
 
     @Override

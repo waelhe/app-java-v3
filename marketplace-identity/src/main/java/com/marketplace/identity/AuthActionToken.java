@@ -92,6 +92,10 @@ public class AuthActionToken extends BaseEntity {
         this.consumedAt = now;
     }
 
+    void moveToUsername(String newUsername) {
+        this.username = newUsername;
+    }
+
     boolean isConsumed() {
         return consumedAt != null;
     }

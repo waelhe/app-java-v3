@@ -972,6 +972,46 @@ class UserServiceTest {
     }
 
     @Test
+    void updateOwnDisplayName_loadsTheManagedRowAndInvalidatesTheCachedCopy() {
+        User user = User.create("member@example.com", "member@example.com", "Old",
+                UserRole.CONSUMER);
+        when(userRepository.findBySubject("member@example.com")).thenReturn(Optional.of(user));
+
+        userService.updateOwnDisplayName("member@example.com", "New Name");
+
+        assertThat(user.getDisplayName()).isEqualTo("New Name");
+        verify(userRepository, never()).findById(any());
+        verify(eventPublisher).publishEvent(any(CacheInvalidationRequested.class));
+    }
+
+    @Test
+    void moveLoginEmail_movesTheSubjectAndBothStoresAndRevokesTheOldSession() {
+        User user = User.create("old@example.com", "old@example.com", "Alice",
+                UserRole.CONSUMER);
+        UserDetails stored = org.springframework.security.core.userdetails.User
+                .withUsername("old@example.com")
+                .password("{bcrypt}stored")
+                .roles("CONSUMER")
+                .build();
+        when(userRepository.existsBySubject("new@example.com")).thenReturn(false);
+        when(userDetailsManager.userExists("new@example.com")).thenReturn(false);
+        when(userDetailsManager.loadUserByUsername("old@example.com")).thenReturn(stored);
+
+        userService.moveLoginEmail(user, "new@example.com");
+
+        assertThat(user.getSubject()).isEqualTo("new@example.com");
+        assertThat(user.getEmail()).isEqualTo("new@example.com");
+        ArgumentCaptor<UserDetails> created = ArgumentCaptor.forClass(UserDetails.class);
+        verify(userDetailsManager).createUser(created.capture());
+        assertThat(created.getValue().getUsername()).isEqualTo("new@example.com");
+        verify(userDetailsManager).deleteUser("old@example.com");
+        verify(authActionTokenService).moveToUsername("old@example.com", "new@example.com");
+        verify(jdbcTemplate).update(eq(UserService.DELETE_AUTHORIZATIONS_BY_PRINCIPAL),
+                eq("old@example.com"));
+        verify(eventPublisher).publishEvent(any(CacheInvalidationRequested.class));
+    }
+
+    @Test
     void findAllSummaries_rendersTheNeutralLabelForPseudonymizedAccounts() {
         UUID id = UUID.randomUUID();
         User live = new User(id, "live-subject", "l@b.com", "Live", UserRole.CONSUMER);

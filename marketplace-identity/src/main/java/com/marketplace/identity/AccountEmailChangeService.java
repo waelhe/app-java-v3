@@ -47,17 +47,20 @@ public class AccountEmailChangeService {
 
     private final UserRepository userRepository;
     private final UserDetailsManager userDetailsManager;
+    private final UserService userService;
     private final AuthActionTokenService authActionTokenService;
     private final ObjectProvider<PasswordEncoder> encoder;
     private final ApplicationEventPublisher eventPublisher;
 
     public AccountEmailChangeService(UserRepository userRepository,
                                       UserDetailsManager userDetailsManager,
+                                      UserService userService,
                                       AuthActionTokenService authActionTokenService,
                                       ObjectProvider<PasswordEncoder> encoder,
                                       ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
         this.userDetailsManager = userDetailsManager;
+        this.userService = userService;
         this.authActionTokenService = authActionTokenService;
         this.encoder = encoder;
         this.eventPublisher = eventPublisher;
@@ -103,21 +106,7 @@ public class AccountEmailChangeService {
         if (newEmail == null) {
             throw new ConflictException("No pending email change for the redeemed right");
         }
-        if (userRepository.existsBySubject(newEmail) || userDetailsManager.userExists(newEmail)) {
-            throw new ConflictException("The new email address already owns an account");
-        }
-        UserDetails stored = requireLogin(oldSubject);
-        userDetailsManager.createUser(org.springframework.security.core.userdetails.User
-                .withUsername(newEmail)
-                .password(stored.getPassword())
-                .authorities(stored.getAuthorities())
-                .accountExpired(!stored.isAccountNonExpired())
-                .accountLocked(!stored.isAccountNonLocked())
-                .credentialsExpired(!stored.isCredentialsNonExpired())
-                .disabled(!stored.isEnabled())
-                .build());
-        userDetailsManager.deleteUser(oldSubject);
-        user.updateProfile(newEmail, null);
+        userService.moveLoginEmail(user, newEmail);
         log.info("Email change confirmed: oldSubject={}, newEmail={}", oldSubject, newEmail);
         return newEmail;
     }
