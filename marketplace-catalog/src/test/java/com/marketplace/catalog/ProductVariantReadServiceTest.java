@@ -427,8 +427,8 @@ class ProductVariantReadServiceTest {
                 .extracting(ProductVariantView::sku)
                 .containsExactly("b5a-sku-15", "b5a-sku-16");
         // the page's own emitted keyset — the last RETURNED row's key
-        ScrollPosition continuation = pageOne.window().positionAt(1);
-        assertThat(((KeysetScrollPosition) continuation).getKeys())
+        KeysetScrollPosition continuation = (KeysetScrollPosition) pageOne.window().positionAt(1);
+        assertThat(continuation.getKeys())
                 .isEqualTo(Map.of("id", second.getId()));
 
         // page two: the continuation cursor reaches the repository as the
