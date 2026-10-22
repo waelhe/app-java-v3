@@ -1,6 +1,8 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.catalog.CatalogAttributeType;
+import com.marketplace.catalog.spi.AttributeBulkOutcome;
+import com.marketplace.catalog.spi.AttributeBulkUpdateItem;
 import com.marketplace.catalog.spi.AttributeMutationError;
 import com.marketplace.catalog.spi.AttributeMutationErrorCode;
 import com.marketplace.catalog.spi.AttributeMutationResult;
@@ -461,6 +463,80 @@ class AttributeMutationDataFetcherDgsTest {
                 """, "$"))
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
                 .hasMessageContaining("Invalid global ID");
+        org.mockito.Mockito.verifyNoInteractions(attributeWriteSpi);
+    }
+    // ------------------------------------------------------------------
+    // the bulk roots (the agent-2 follow-on packet)
+    // ------------------------------------------------------------------
+
+    @Test
+    void attributeBulkCreateRendersThePerItemResultsWithThePathPointer() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        when(attributeWriteSpi.bulkCreateAttributes(anyList(), any())).thenReturn(List.of(
+                new AttributeBulkOutcome(
+                        new AttributeView(UUID.randomUUID(), "Bulk One", "bulk-one",
+                                com.marketplace.catalog.CatalogAttributeType.TEXT), List.of()),
+                new AttributeBulkOutcome(null, List.of(new AttributeMutationError(
+                        "slug", AttributeMutationErrorCode.ALREADY_EXISTS,
+                        "An attribute with the slug already exists")))));
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { attributeBulkCreate(attributes: [
+                            {name: "Bulk One", slug: "bulk-one", inputType: PLAIN_TEXT},
+                            {name: "Taken", slug: "taken"}],
+                        errorPolicy: IGNORE_FAILED) {
+                    count
+                    errors { code }
+                    results { attribute { name slug } errors { path message code } }
+                } }
+                """, "data.attributeBulkCreate");
+
+        assertThat(payload.get("count")).isEqualTo(1);
+        assertThat(payload.get("errors")).isEqualTo(List.of());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> results = (List<Map<String, Object>>) payload.get("results");
+        assertThat(results).hasSize(2);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> first = (Map<String, Object>) results.get(0).get("attribute");
+        assertThat(first.get("slug")).isEqualTo("bulk-one");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> itemErrors = (List<Map<String, Object>>) results.get(1).get("errors");
+        assertThat(itemErrors).hasSize(1);
+        assertThat(itemErrors.get(0).get("path")).isEqualTo("attributes.1.slug");
+        assertThat(itemErrors.get(0).get("code")).isEqualTo("ALREADY_EXISTS");
+    }
+
+    @Test
+    void attributeBulkUpdateRendersThePerItemResults() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        UUID rowId = UUID.randomUUID();
+        when(attributeWriteSpi.bulkUpdateAttributes(anyList(), any())).thenReturn(List.of(
+                new AttributeBulkOutcome(
+                        new AttributeView(rowId, "Renamed", "kept",
+                                com.marketplace.catalog.CatalogAttributeType.TEXT), List.of())));
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { attributeBulkUpdate(attributes: [{id: "%s", fields: {name: "Renamed"}}]) {
+                    count
+                    errors { code }
+                    results { attribute { id name } errors { path } }
+                } }
+                """.formatted(attributeGlobalId(rowId)), "data.attributeBulkUpdate");
+
+        assertThat(payload.get("count")).isEqualTo(1);
+        verify(attributeWriteSpi).bulkUpdateAttributes(argThat((List<AttributeBulkUpdateItem> items) ->
+                items.size() == 1 && items.get(0).id().equals(rowId)
+                        && "Renamed".equals(items.get(0).fields().name())), any());
+    }
+
+    @Test
+    void attributeBulkCreateWithAnEmptyListAnswersTheClassifiedValidationError() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { attributeBulkCreate(attributes: []) { count errors { code } results { errors { path } } } }
+                """, "$"))
+                .isInstanceOf(Exception.class);
         org.mockito.Mockito.verifyNoInteractions(attributeWriteSpi);
     }
 }

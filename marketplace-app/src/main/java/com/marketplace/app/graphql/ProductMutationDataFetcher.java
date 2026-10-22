@@ -1,7 +1,13 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.app.graphql.generated.DgsConstants;
+import com.marketplace.app.graphql.generated.types.ErrorPolicyEnum;
+import com.marketplace.app.graphql.generated.types.ProductBulkCreate;
+import com.marketplace.app.graphql.generated.types.ProductBulkCreateError;
+import com.marketplace.app.graphql.generated.types.ProductBulkCreateErrorCode;
+import com.marketplace.app.graphql.generated.types.ProductBulkCreateInput;
 import com.marketplace.app.graphql.generated.types.ProductBulkDelete;
+import com.marketplace.app.graphql.generated.types.ProductBulkResult;
 import com.marketplace.app.graphql.generated.types.ProductCreate;
 import com.marketplace.app.graphql.generated.types.ProductCreateInput;
 import com.marketplace.app.graphql.generated.types.ProductDelete;
@@ -9,6 +15,7 @@ import com.marketplace.app.graphql.generated.types.ProductError;
 import com.marketplace.app.graphql.generated.types.ProductErrorCode;
 import com.marketplace.app.graphql.generated.types.ProductInput;
 import com.marketplace.app.graphql.generated.types.ProductUpdate;
+import com.marketplace.catalog.spi.ProductBulkOutcome;
 import com.marketplace.catalog.spi.ProductCreateCommand;
 import com.marketplace.catalog.spi.ProductMutationError;
 import com.marketplace.catalog.spi.ProductMutationErrorCode;
@@ -173,10 +180,84 @@ public class ProductMutationDataFetcher {
                 .build();
     }
 
+
+    /**
+     * Saleor {@code productBulkCreate(errorPolicy: ErrorPolicyEnum,
+     * products: [ProductBulkCreateInput!]!): ProductBulkCreate} — the
+     * registry's bulk create over the same owning use case (the caller
+     * is every created row's owning provider). The bounded input binds
+     * by name per item (the pinned REQUIRED {@code productType}
+     * reference decodes through the typed global-ID codec); the pinned
+     * policy rides the command (null = the REJECT_EVERYTHING default);
+     * the per-item domain outcomes render as Saleor's per-item results
+     * entries.
+     */
+    @DgsMutation(field = DgsConstants.MUTATION.ProductBulkCreate)
+    @RateLimiter(name = "graphqlStoreProductMutation")
+    public ProductBulkCreate productBulkCreate(
+            @InputArgument ErrorPolicyEnum errorPolicy,
+            @InputArgument List<ProductBulkCreateInput> products) {
+        if (products == null || products.isEmpty()) {
+            throw new IllegalArgumentException("productBulkCreate requires a non-empty list of products");
+        }
+        List<ProductCreateCommand> commands = new ArrayList<>(products.size());
+        for (ProductBulkCreateInput product : products) {
+            if (product.getProductType() == null) {
+                throw new IllegalArgumentException(
+                        "productBulkCreate requires every item to carry its productType reference");
+            }
+            UUID productTypeId = globalIdCodec.decode(
+                    product.getProductType(), ProductGraphQlMapper.PRODUCT_TYPE_REFERENCE);
+            commands.add(new ProductCreateCommand(product.getName(), product.getDescription(),
+                    product.getStoreCategoryCode(), toLongMinor(product.getPriceMinor()),
+                    product.getCurrency(), productTypeId));
+        }
+        List<ProductBulkOutcome> outcomes = productWriteSpi.bulkCreateProducts(
+                commands, currentAuthentication(), errorPolicy == null ? null : errorPolicy.name());
+        List<ProductBulkResult> results = new ArrayList<>(outcomes.size());
+        int count = 0;
+        for (int i = 0; i < outcomes.size(); i++) {
+            ProductBulkOutcome outcome = outcomes.get(i);
+            if (outcome.success()) {
+                count++;
+            }
+            results.add(ProductBulkResult.newBuilder()
+                    .product(outcome.product() == null
+                            ? null : productMapper.toGraphQlProduct(outcome.product()))
+                    .errors(toBulkCreateErrors(outcome.errors(), "products." + i))
+                    .build());
+        }
+        return ProductBulkCreate.newBuilder()
+                .count(count)
+                .results(results)
+                .errors(List.of())
+                .build();
+    }
+
+    /**
+     * The per-item domain error entries onto Saleor's bulk error
+     * objects — the {@code path} pointer is the item's own index + the
+     * domain error's field (the registered ADAPT mapping's own pointer
+     * shape).
+     */
+    private static List<ProductBulkCreateError> toBulkCreateErrors(List<ProductMutationError> errors,
+                                                                   String itemPath) {
+        List<ProductBulkCreateError> mapped = new ArrayList<>(errors.size());
+        for (ProductMutationError error : errors) {
+            mapped.add(ProductBulkCreateError.newBuilder()
+                    .path(error.field() == null ? itemPath : itemPath + "." + error.field())
+                    .message(error.message())
+                    .code(ProductBulkCreateErrorCode.valueOf(toProductErrorCode(error.code()).name()))
+                    .build());
+        }
+        return mapped;
+    }
+
     /**
      * The GraphQL Int's own widening onto the row's long minor units —
      * the codegen's Integer boundary meeting the entity's long fact.
      */
+
     private static Long toLongMinor(Integer minor) {
         return minor == null ? null : minor.longValue();
     }

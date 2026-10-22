@@ -82,4 +82,34 @@ public interface AttributeWriteSpi {
      *         attribute/value, INVALID out-of-range move)
      */
     AttributeMutationResult reorderValues(UUID attributeId, List<AttributeReorderMove> moves);
+
+    /**
+     * Registers a batch of typed attribute definitions — the Saleor
+     * {@code attributeBulkCreate} root's owning use case. The whole
+     * batch rides ONE transaction; the pinned error policy's own
+     * semantics answer: {@code REJECT_EVERYTHING} (the default)
+     * rolls the whole batch back when any item is refused,
+     * {@code IGNORE_FAILED}/{@code REJECT_FAILED_ROWS} persist the
+     * passing items (the per-row granularity the flat create carries).
+     *
+     * @param commands     the bounded create commands (one per item)
+     * @param errorPolicy  the pinned policy member name (null = the
+     *                     REJECT_EVERYTHING default)
+     * @return the per-item outcomes (the single-item ladder's own
+     *         answers at their bulk positions)
+     */
+    List<AttributeBulkOutcome> bulkCreateAttributes(List<AttributeCreateCommand> commands, String errorPolicy);
+
+    /**
+     * Amends a batch of attribute definitions — the Saleor
+     * {@code attributeBulkUpdate} root's owning use case (the pinned
+     * {@code id + fields} items over the single-item amendment ladder;
+     * the same one-transaction/policy semantics the bulk create rides).
+     *
+     * @param items       the update items (row id + the partial fields)
+     * @param errorPolicy the pinned policy member name (null = the
+     *                    REJECT_EVERYTHING default)
+     * @return the per-item outcomes
+     */
+    List<AttributeBulkOutcome> bulkUpdateAttributes(List<AttributeBulkUpdateItem> items, String errorPolicy);
 }

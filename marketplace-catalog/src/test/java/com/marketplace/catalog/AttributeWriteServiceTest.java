@@ -1,5 +1,6 @@
 package com.marketplace.catalog;
 
+import com.marketplace.catalog.spi.AttributeBulkUpdateItem;
 import com.marketplace.catalog.spi.AttributeCreateCommand;
 import com.marketplace.catalog.spi.AttributeMutationError;
 import com.marketplace.catalog.spi.AttributeMutationErrorCode;
@@ -448,5 +449,52 @@ class AttributeWriteServiceTest {
 
         assertThat(result.success()).isTrue();
         verify(optionRepository, never()).saveAll(any());
+    }
+    // ------------------------------------------------------------------
+    // the bulk roots — the pinned policy's own semantics (the agent-2
+    // follow-on packet)
+    // ------------------------------------------------------------------
+
+    @Test
+    void bulkCreateReturnsThePerItemOutcomes() {
+        when(repository.findByCode("bulk-one")).thenReturn(Optional.empty());
+        when(repository.findByCode("bulk-two")).thenReturn(Optional.empty());
+        when(repository.findByCode("taken")).thenReturn(Optional.of(row("taken", "Taken")));
+        when(repository.save(any(CatalogAttributeDefinition.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        var outcomes = service.bulkCreateAttributes(List.of(
+                new AttributeCreateCommand("Bulk One", "bulk-one", CatalogAttributeType.TEXT),
+                new AttributeCreateCommand("Bulk Two", "bulk-two", CatalogAttributeType.TEXT),
+                new AttributeCreateCommand("Taken Name", "taken", CatalogAttributeType.TEXT)),
+                "IGNORE_FAILED");
+
+        assertThat(outcomes).hasSize(3);
+        assertThat(outcomes.get(0).success()).isTrue();
+        assertThat(outcomes.get(1).success()).isTrue();
+        assertThat(outcomes.get(2).success()).isFalse();
+        assertThat(outcomes.get(2).errors()).singleElement()
+                .extracting(AttributeMutationError::code)
+                .isEqualTo(AttributeMutationErrorCode.ALREADY_EXISTS);
+    }
+
+    @Test
+    void bulkUpdateReturnsThePerItemOutcomes() {
+        CatalogAttributeDefinition row = row("bulk-upd", "Bulk Upd");
+        when(repository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(repository.save(any(CatalogAttributeDefinition.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        var outcomes = service.bulkUpdateAttributes(List.of(
+                new AttributeBulkUpdateItem(row.getId(), new AttributeUpdateCommand("Renamed", null)),
+                new AttributeBulkUpdateItem(UUID.randomUUID(), new AttributeUpdateCommand("Ghost", null))),
+                "IGNORE_FAILED");
+
+        assertThat(outcomes.get(0).success()).isTrue();
+        assertThat(outcomes.get(0).attribute().name()).isEqualTo("Renamed");
+        assertThat(outcomes.get(1).success()).isFalse();
+        assertThat(outcomes.get(1).errors()).singleElement()
+                .extracting(AttributeMutationError::code)
+                .isEqualTo(AttributeMutationErrorCode.NOT_FOUND);
     }
 }

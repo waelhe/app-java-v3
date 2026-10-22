@@ -1,7 +1,17 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.app.graphql.generated.DgsConstants;
+import com.marketplace.app.graphql.generated.types.AttributeBulkCreate;
 import com.marketplace.app.graphql.generated.types.AttributeBulkDelete;
+import com.marketplace.app.graphql.generated.types.AttributeBulkCreateError;
+import com.marketplace.app.graphql.generated.types.AttributeBulkCreateErrorCode;
+
+import com.marketplace.app.graphql.generated.types.AttributeBulkCreateResult;
+import com.marketplace.app.graphql.generated.types.AttributeBulkUpdate;
+import com.marketplace.app.graphql.generated.types.AttributeBulkUpdateError;
+import com.marketplace.app.graphql.generated.types.AttributeBulkUpdateErrorCode;
+import com.marketplace.app.graphql.generated.types.AttributeBulkUpdateInput;
+import com.marketplace.app.graphql.generated.types.AttributeBulkUpdateResult;
 import com.marketplace.app.graphql.generated.types.AttributeCreate;
 import com.marketplace.app.graphql.generated.types.AttributeCreateInput;
 import com.marketplace.app.graphql.generated.types.AttributeError;
@@ -9,8 +19,12 @@ import com.marketplace.app.graphql.generated.types.AttributeErrorCode;
 import com.marketplace.app.graphql.generated.types.AttributeReorderValues;
 import com.marketplace.app.graphql.generated.types.AttributeUpdate;
 import com.marketplace.app.graphql.generated.types.AttributeUpdateInput;
+import com.marketplace.app.graphql.generated.types.ErrorPolicyEnum;
 import com.marketplace.app.graphql.generated.types.ReorderInput;
 import com.marketplace.catalog.CatalogAttributeType;
+import com.marketplace.catalog.spi.AttributeBulkOutcome;
+import com.marketplace.catalog.spi.AttributeBulkUpdateItem;
+import com.marketplace.catalog.spi.AttributeCreateCommand;
 import com.marketplace.catalog.spi.AttributeMutationError;
 import com.marketplace.catalog.spi.AttributeMutationErrorCode;
 import com.marketplace.catalog.spi.AttributeMutationResult;
@@ -214,11 +228,139 @@ public class AttributeMutationDataFetcher {
                 .build();
     }
 
+
+    /**
+     * Saleor {@code attributeBulkCreate(attributes:
+     * [AttributeCreateInput!]!, errorPolicy: ErrorPolicyEnum):
+     * AttributeBulkCreate} — the registry's bulk create. The bounded
+     * input binds by name per item; the pinned policy rides the
+     * command (null = the REJECT_EVERYTHING default); the per-item
+     * domain outcomes render as Saleor's per-item results entries
+     * (the {@code path} pointer carries the item's index + the domain
+     * error's field).
+     */
+    @DgsMutation(field = DgsConstants.MUTATION.AttributeBulkCreate)
+    @RateLimiter(name = "graphqlAttributeMutation")
+    public AttributeBulkCreate attributeBulkCreate(
+            @InputArgument List<AttributeCreateInput> attributes,
+            @InputArgument ErrorPolicyEnum errorPolicy) {
+        if (attributes == null || attributes.isEmpty()) {
+            throw new IllegalArgumentException("attributeBulkCreate requires a non-empty list of attributes");
+        }
+        List<AttributeCreateCommand> commands = new ArrayList<>(attributes.size());
+        for (AttributeCreateInput attribute : attributes) {
+            commands.add(new AttributeCreateCommand(
+                    attribute.getName(),
+                    attribute.getSlug(),
+                    attribute.getInputType() == null
+                            ? null : AttributeGraphQlMapper.fromInputType(attribute.getInputType())));
+        }
+        List<AttributeBulkOutcome> outcomes = attributeWriteSpi.bulkCreateAttributes(
+                commands, errorPolicy == null ? null : errorPolicy.name());
+        List<AttributeBulkCreateResult> results = new ArrayList<>(outcomes.size());
+        int count = 0;
+        for (int i = 0; i < outcomes.size(); i++) {
+            AttributeBulkOutcome outcome = outcomes.get(i);
+            if (outcome.success()) {
+                count++;
+            }
+            results.add(AttributeBulkCreateResult.newBuilder()
+                    .attribute(outcome.attribute() == null
+                            ? null : attributeMapper.toGraphQlAttribute(outcome.attribute()))
+                    .errors(toBulkCreateErrors(outcome.errors(), "attributes." + i))
+                    .build());
+        }
+        return AttributeBulkCreate.newBuilder()
+                .count(count)
+                .results(results)
+                .errors(List.of())
+                .build();
+    }
+
+    /**
+     * Saleor {@code attributeBulkUpdate(attributes:
+     * [AttributeBulkUpdateInput!]!, errorPolicy: ErrorPolicyEnum):
+     * AttributeBulkUpdate} — the registry's bulk amendment over the
+     * pinned {@code id + fields} items.
+     */
+    @DgsMutation(field = DgsConstants.MUTATION.AttributeBulkUpdate)
+    @RateLimiter(name = "graphqlAttributeMutation")
+    public AttributeBulkUpdate attributeBulkUpdate(
+            @InputArgument List<AttributeBulkUpdateInput> attributes,
+            @InputArgument ErrorPolicyEnum errorPolicy) {
+        if (attributes == null || attributes.isEmpty()) {
+            throw new IllegalArgumentException("attributeBulkUpdate requires a non-empty list of attributes");
+        }
+        List<AttributeBulkUpdateItem> items = new ArrayList<>(attributes.size());
+        for (AttributeBulkUpdateInput attribute : attributes) {
+            if (attribute.getId() == null) {
+                throw new IllegalArgumentException(
+                        "attributeBulkUpdate requires every item to carry the id of the attribute to update");
+            }
+            items.add(new AttributeBulkUpdateItem(
+                    globalIdCodec.decode(attribute.getId(), AttributeGraphQlMapper.ATTRIBUTE_TYPE),
+                    new AttributeUpdateCommand(attribute.getFields() == null ? null : attribute.getFields().getName(),
+                            attribute.getFields() == null ? null : attribute.getFields().getSlug())));
+        }
+        List<AttributeBulkOutcome> outcomes = attributeWriteSpi.bulkUpdateAttributes(
+                items, errorPolicy == null ? null : errorPolicy.name());
+        List<AttributeBulkUpdateResult> results = new ArrayList<>(outcomes.size());
+        int count = 0;
+        for (int i = 0; i < outcomes.size(); i++) {
+            AttributeBulkOutcome outcome = outcomes.get(i);
+            if (outcome.success()) {
+                count++;
+            }
+            results.add(AttributeBulkUpdateResult.newBuilder()
+                    .attribute(outcome.attribute() == null
+                            ? null : attributeMapper.toGraphQlAttribute(outcome.attribute()))
+                    .errors(toBulkUpdateErrors(outcome.errors(), "attributes." + i))
+                    .build());
+        }
+        return AttributeBulkUpdate.newBuilder()
+                .count(count)
+                .results(results)
+                .errors(List.of())
+                .build();
+    }
+
+    /**
+     * The per-item domain error entries onto Saleor's bulk error objects
+     * — the {@code path} pointer is the item's own index + the domain
+     * error's field (the registered ADAPT mapping's own pointer shape).
+     */
+    private static List<AttributeBulkCreateError> toBulkCreateErrors(List<AttributeMutationError> errors,
+                                                                     String itemPath) {
+        List<AttributeBulkCreateError> mapped = new ArrayList<>(errors.size());
+        for (AttributeMutationError error : errors) {
+            mapped.add(AttributeBulkCreateError.newBuilder()
+                    .path(error.field() == null ? itemPath : itemPath + "." + error.field())
+                    .message(error.message())
+                    .code(AttributeBulkCreateErrorCode.valueOf(toAttributeErrorCode(error.code()).name()))
+                    .build());
+        }
+        return mapped;
+    }
+
+    private static List<AttributeBulkUpdateError> toBulkUpdateErrors(List<AttributeMutationError> errors,
+                                                                     String itemPath) {
+        List<AttributeBulkUpdateError> mapped = new ArrayList<>(errors.size());
+        for (AttributeMutationError error : errors) {
+            mapped.add(AttributeBulkUpdateError.newBuilder()
+                    .path(error.field() == null ? itemPath : itemPath + "." + error.field())
+                    .message(error.message())
+                    .code(AttributeBulkUpdateErrorCode.valueOf(toAttributeErrorCode(error.code()).name()))
+                    .build());
+        }
+        return mapped;
+    }
+
     /**
      * The input presence guard — the SDL's own {@code input: ...!}
      * contract mirrored at the boundary (a null input is a client error,
      * never a NullPointerException).
      */
+
     private static void requireInput(Object input, String rootName) {
         if (input == null) {
             throw new IllegalArgumentException(rootName + " requires a non-null input");

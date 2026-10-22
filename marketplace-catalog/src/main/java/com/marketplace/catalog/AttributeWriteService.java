@@ -1,5 +1,7 @@
 package com.marketplace.catalog;
 
+import com.marketplace.catalog.spi.AttributeBulkOutcome;
+import com.marketplace.catalog.spi.AttributeBulkUpdateItem;
 import com.marketplace.catalog.spi.AttributeCreateCommand;
 import com.marketplace.catalog.spi.AttributeMutationError;
 import com.marketplace.catalog.spi.AttributeMutationErrorCode;
@@ -280,6 +282,56 @@ public class AttributeWriteService implements AttributeWriteSpi {
             }
         }
         return -1;
+    }
+
+    // ------------------------------------------------------------------
+    // the bulk roots (the agent-2 follow-on packet) — the single-item
+    // ladder's own answers at their bulk positions, riding ONE
+    // transaction with the pinned error policy's own semantics
+    // ------------------------------------------------------------------
+
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    public List<AttributeBulkOutcome> bulkCreateAttributes(List<AttributeCreateCommand> commands,
+                                                           String errorPolicy) {
+        List<AttributeBulkOutcome> outcomes = new ArrayList<>(commands.size());
+        for (AttributeCreateCommand command : commands) {
+            // Self-invocation joins THIS transaction (the bulk boundary
+            // owns the authorization and the policy); the single-item
+            // ladder's own validation answers per item.
+            AttributeMutationResult result = createAttribute(command);
+            outcomes.add(new AttributeBulkOutcome(result.attribute(), result.errors()));
+        }
+        if (atomic(errorPolicy) && outcomes.stream().anyMatch(outcome -> !outcome.success())) {
+            // The pinned default policy: one refused item refuses the
+            // whole batch — the official rollback-marking mechanism.
+            org.springframework.transaction.interceptor.TransactionAspectSupport
+                    .currentTransactionStatus().setRollbackOnly();
+        }
+        return outcomes;
+    }
+
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    public List<AttributeBulkOutcome> bulkUpdateAttributes(List<AttributeBulkUpdateItem> items,
+                                                            String errorPolicy) {
+        List<AttributeBulkOutcome> outcomes = new ArrayList<>(items.size());
+        for (AttributeBulkUpdateItem item : items) {
+            AttributeMutationResult result = updateAttribute(item.id(), item.fields());
+            outcomes.add(new AttributeBulkOutcome(result.attribute(), result.errors()));
+        }
+        if (atomic(errorPolicy) && outcomes.stream().anyMatch(outcome -> !outcome.success())) {
+            org.springframework.transaction.interceptor.TransactionAspectSupport
+                    .currentTransactionStatus().setRollbackOnly();
+        }
+        return outcomes;
+    }
+
+    /** The pinned default policy's own verdict — REJECT_EVERYTHING unless another member is sent. */
+    private static boolean atomic(String errorPolicy) {
+        return errorPolicy == null || "REJECT_EVERYTHING".equals(errorPolicy);
     }
 
     /** The bounded projection — the read service's own rendering rule. */

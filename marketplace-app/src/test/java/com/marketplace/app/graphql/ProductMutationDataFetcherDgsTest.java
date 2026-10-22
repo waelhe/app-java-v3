@@ -5,6 +5,7 @@ import com.marketplace.catalog.spi.CategoryReadSpi;
 import com.marketplace.catalog.spi.CategoryWriteSpi;
 import com.marketplace.catalog.spi.ProductAdminSpi;
 import com.marketplace.catalog.spi.ProductCreateCommand;
+import com.marketplace.catalog.spi.ProductBulkOutcome;
 import com.marketplace.catalog.spi.ProductMutationError;
 import com.marketplace.catalog.spi.ProductMutationErrorCode;
 import com.marketplace.catalog.spi.ProductMutationResult;
@@ -497,5 +498,48 @@ class ProductMutationDataFetcherDgsTest {
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
                 .hasMessageContaining("Invalid global ID");
         org.mockito.Mockito.verifyNoInteractions(productWriteSpi);
+    }
+    // ------------------------------------------------------------------
+    // the bulk create root (the agent-2 follow-on packet)
+    // ------------------------------------------------------------------
+
+    @Test
+    void productBulkCreateRendersThePerItemResults() {
+        authenticateAs("dgs-provider-subject", "PROVIDER");
+        UUID typeId = UUID.randomUUID();
+        when(productWriteSpi.bulkCreateProducts(anyList(), any(), any())).thenReturn(List.of(
+                new ProductBulkOutcome(
+                        new ProductView(UUID.randomUUID(), "Bulk Widget", typeId, "ACTIVE"), List.of()),
+                new ProductBulkOutcome(null, List.of(new ProductMutationError(
+                        "storeCategoryCode", ProductMutationErrorCode.NOT_FOUND,
+                        "No store category found for the code")))));
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { productBulkCreate(products: [
+                            {name: "Bulk Widget", productType: "%s", storeCategoryCode: "widgets",
+                             priceMinor: 1250, currency: "SAR"},
+                            {name: "Bulk Missing", productType: "%s", storeCategoryCode: "missing",
+                             priceMinor: 1250, currency: "SAR"}],
+                        errorPolicy: IGNORE_FAILED) {
+                    count
+                    errors { code }
+                    results { product { name } errors { path message code } }
+                } }
+                """.formatted(productTypeGlobalId(typeId), productTypeGlobalId(typeId)),
+                "data.productBulkCreate");
+
+        assertThat(payload.get("count")).isEqualTo(1);
+        assertThat(payload.get("errors")).isEqualTo(List.of());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> results = (List<Map<String, Object>>) payload.get("results");
+        assertThat(results).hasSize(2);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> first = (Map<String, Object>) results.get(0).get("product");
+        assertThat(first.get("name")).isEqualTo("Bulk Widget");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> itemErrors = (List<Map<String, Object>>) results.get(1).get("errors");
+        assertThat(itemErrors).hasSize(1);
+        assertThat(itemErrors.get(0).get("path")).isEqualTo("products.1.storeCategoryCode");
+        assertThat(itemErrors.get(0).get("code")).isEqualTo("NOT_FOUND");
     }
 }

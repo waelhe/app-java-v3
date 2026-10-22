@@ -69,4 +69,24 @@ public interface ProductWriteSpi {
      * @return the number of the caller's rows the registry deleted
      */
     int deleteProducts(List<UUID> ids, Authentication authentication);
+
+    /**
+     * Registers a batch of product rows — the Saleor
+     * {@code productBulkCreate} root's owning use case. The whole batch
+     * rides ONE transaction; the pinned error policy's own semantics
+     * answer: {@code REJECT_EVERYTHING} (the default) rolls the whole
+     * batch back when any item is refused,
+     * {@code IGNORE_FAILED}/{@code REJECT_FAILED_ROWS} persist the
+     * passing items (the per-row granularity the flat create carries).
+     *
+     * @param commands       the bounded create commands (one per item)
+     * @param authentication the caller — the owning provider of every
+     *                       row the batch creates
+     * @param errorPolicy    the pinned policy member name (null = the
+     *                       REJECT_EVERYTHING default)
+     * @return the per-item outcomes (the single-item ladder's own
+     *         answers at their bulk positions)
+     */
+    List<ProductBulkOutcome> bulkCreateProducts(List<ProductCreateCommand> commands,
+                                                Authentication authentication, String errorPolicy);
 }

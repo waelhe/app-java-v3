@@ -1239,3 +1239,200 @@ type AttributeReorderValues {
     errors: [AttributeError!]!
     attribute: Attribute
 }
+
+# =====================================================================
+# The bulk mutation roots — the registries' batch write use cases over
+# the SAME owning single-item ladders (the agent-2 follow-on packet).
+# The whole batch rides ONE transaction; the pinned error policy's own
+# semantics answer (REJECT_EVERYTHING — the default — rolls the whole
+# batch back when any item is refused; IGNORE_FAILED/
+# REJECT_FAILED_ROWS persist the passing items at the per-row
+# granularity the flat create carries). The per-item outcomes render
+# as Saleor's per-item results entries with the path pointer
+# (item index + the domain error's field); the top-level errors field
+# stays the bounded closure's own empty list (no call-level failure
+# mode exists in this closure — per-item domain errors answer in
+# their own results entries).
+# =====================================================================
+extend type Mutation {
+    """Creates attributes."""
+    attributeBulkCreate(
+        """Input list of attributes to create (the bounded owned field set per item)."""
+        attributes: [AttributeCreateInput!]!
+
+        """Policies of error handling. DEFAULT: REJECT_EVERYTHING"""
+        errorPolicy: ErrorPolicyEnum
+    ): AttributeBulkCreate
+
+    """Updates attributes."""
+    attributeBulkUpdate(
+        """Input list of attributes to update (the pinned id + bounded fields per item)."""
+        attributes: [AttributeBulkUpdateInput!]!
+
+        """Policies of error handling. DEFAULT: REJECT_EVERYTHING"""
+        errorPolicy: ErrorPolicyEnum
+    ): AttributeBulkUpdate
+
+    """Creates products."""
+    productBulkCreate(
+        """Policies of error handling. DEFAULT: REJECT_EVERYTHING"""
+        errorPolicy: ErrorPolicyEnum
+
+        """
+        Input list of products to create (the bounded owned field set
+        per item — the pinned REQUIRED productType reference plus the
+        platform-extension carriers the row's NOT NULL policy
+        requires).
+        """
+        products: [ProductBulkCreateInput!]!
+    ): ProductBulkCreate
+}
+
+enum ErrorPolicyEnum {
+    IGNORE_FAILED
+    REJECT_EVERYTHING
+    REJECT_FAILED_ROWS
+}
+
+input AttributeBulkUpdateInput {
+    """ID of the attribute to update (typed global ID of the Attribute root's type)."""
+    id: ID!
+
+    """Fields required to update the attribute (the bounded owned movable set: name and slug)."""
+    fields: AttributeUpdateInput!
+}
+
+# =====================================================================
+# The bounded ProductBulkCreateInput — the SAME owned field set the
+# single-item ProductCreateInput carries (the pinned input's REQUIRED
+# productType reference plus the platform-extension carriers). The
+# unowned members (attributes/category/collections/chargeTaxes/
+# taxClass/taxCode/seo/weight/rating/metadata/privateMetadata/
+# externalReference/media/channelListings/variants) have no owning
+# capabilities on this surface and stay undeclared — recorded
+# divergences, never faked.
+# =====================================================================
+input ProductBulkCreateInput {
+    """Product name (the entity's own display title)."""
+    name: String
+
+    """Product description (plain text on this surface)."""
+    description: String
+
+    """
+    ID of the product's reusable goods schema (typed global ID of the
+    ProductType root's type — REQUIRED per the pinned input's own
+    contract).
+    """
+    productType: ID!
+
+    """
+    PLATFORM EXTENSION (the row's NOT NULL category reference): the
+    stable code of the store-categories dictionary row the product
+    belongs to.
+    """
+    storeCategoryCode: String
+
+    """
+    PLATFORM EXTENSION (the row's NOT NULL price policy): the
+    authoritative unit price in minor units (a non-negative amount).
+    """
+    priceMinor: Int
+
+    """PLATFORM EXTENSION: the price's ISO-4217 currency code."""
+    currency: String
+}
+
+type AttributeBulkCreate {
+    count: Int!
+    results: [AttributeBulkCreateResult!]!
+    errors: [AttributeBulkCreateError!]!
+}
+
+type AttributeBulkCreateResult {
+    attribute: Attribute
+    errors: [AttributeBulkCreateError!]
+}
+
+type AttributeBulkCreateError {
+    path: String
+    message: String
+    code: AttributeBulkCreateErrorCode!
+}
+
+enum AttributeBulkCreateErrorCode {
+    ALREADY_EXISTS
+    BLANK
+    GRAPHQL_ERROR
+    INVALID
+    NOT_FOUND
+    REQUIRED
+    UNIQUE
+    DUPLICATED_INPUT_ITEM
+    MAX_LENGTH
+}
+
+type AttributeBulkUpdate {
+    count: Int!
+    results: [AttributeBulkUpdateResult!]!
+    errors: [AttributeBulkUpdateError!]!
+}
+
+type AttributeBulkUpdateResult {
+    attribute: Attribute
+    errors: [AttributeBulkUpdateError!]
+}
+
+type AttributeBulkUpdateError {
+    path: String
+    message: String
+    code: AttributeBulkUpdateErrorCode!
+}
+
+enum AttributeBulkUpdateErrorCode {
+    ALREADY_EXISTS
+    BLANK
+    GRAPHQL_ERROR
+    INVALID
+    NOT_FOUND
+    REQUIRED
+    UNIQUE
+    DUPLICATED_INPUT_ITEM
+    MAX_LENGTH
+}
+
+type ProductBulkCreate {
+    count: Int!
+    results: [ProductBulkResult!]!
+    errors: [ProductBulkCreateError!]!
+}
+
+type ProductBulkResult {
+    product: Product
+    errors: [ProductBulkCreateError!]
+}
+
+type ProductBulkCreateError {
+    path: String
+    message: String
+    code: ProductBulkCreateErrorCode!
+}
+
+enum ProductBulkCreateErrorCode {
+    ATTRIBUTE_ALREADY_ASSIGNED
+    ATTRIBUTE_CANNOT_BE_ASSIGNED
+    ATTRIBUTE_VARIANTS_DISABLED
+    BLANK
+    MAX_LENGTH
+    DUPLICATED_INPUT_ITEM
+    GRAPHQL_ERROR
+    INVALID
+    INVALID_PRICE
+    PRODUCT_WITHOUT_CATEGORY
+    NOT_FOUND
+    REQUIRED
+    UNIQUE
+    PRODUCT_NOT_ASSIGNED_TO_CHANNEL
+    UNSUPPORTED_MEDIA_PROVIDER
+    FILE_SIZE_LIMIT_EXCEEDED
+}

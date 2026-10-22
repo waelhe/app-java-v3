@@ -376,4 +376,31 @@ class ProductWriteServiceTest {
         assertThat(service.deleteProducts(null, caller)).isZero();
         verify(productRepository, never()).delete(any(Product.class));
     }
+    // ------------------------------------------------------------------
+    // the bulk create root — the pinned policy's own semantics (the
+    // agent-2 follow-on packet)
+    // ------------------------------------------------------------------
+
+    @Test
+    void bulkCreateReturnsThePerItemOutcomesWithTheCallerAsEveryRowsOwner() {
+        when(storeCategoryRepository.findByCode("widgets")).thenReturn(Optional.of(mock(StoreCategory.class)));
+        when(storeCategoryRepository.findByCode("missing")).thenReturn(Optional.empty());
+        when(productRepository.save(any(Product.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        var outcomes = service.bulkCreateProducts(List.of(
+                create("Bulk Widget One", null, "widgets", 1000L, "SAR", null),
+                create("Bulk Widget Two", null, "widgets", 2000L, "SAR", null),
+                create("Bulk Missing", null, "missing", 1000L, "SAR", null)),
+                caller, "IGNORE_FAILED");
+
+        assertThat(outcomes).hasSize(3);
+        assertThat(outcomes.get(0).success()).isTrue();
+        assertThat(outcomes.get(1).success()).isTrue();
+        assertThat(outcomes.get(2).success()).isFalse();
+        assertThat(outcomes.get(2).errors()).singleElement()
+                .extracting(ProductMutationError::code)
+                .isEqualTo(ProductMutationErrorCode.NOT_FOUND);
+        verify(productRepository, org.mockito.Mockito.times(2)).save(any(Product.class));
+    }
 }

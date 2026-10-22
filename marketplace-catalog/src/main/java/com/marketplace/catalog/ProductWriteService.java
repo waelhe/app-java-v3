@@ -1,5 +1,6 @@
 package com.marketplace.catalog;
 
+import com.marketplace.catalog.spi.ProductBulkOutcome;
 import com.marketplace.catalog.spi.ProductCreateCommand;
 import com.marketplace.catalog.spi.ProductMutationError;
 import com.marketplace.catalog.spi.ProductMutationErrorCode;
@@ -217,6 +218,30 @@ public class ProductWriteService implements ProductWriteSpi {
             }
         }
         return deleted;
+    }
+
+    @Override
+    @PreAuthorize("hasRole('PROVIDER')")
+    @Transactional
+    public List<ProductBulkOutcome> bulkCreateProducts(List<ProductCreateCommand> commands,
+                                                       Authentication authentication, String errorPolicy) {
+        List<ProductBulkOutcome> outcomes = new ArrayList<>(commands.size());
+        for (ProductCreateCommand command : commands) {
+            // Self-invocation joins THIS transaction (the bulk boundary
+            // owns the authorization and the policy); the single-item
+            // ladder's own validation answers per item with the caller
+            // as every created row's owning provider.
+            ProductMutationResult result = createProduct(command, authentication);
+            outcomes.add(new ProductBulkOutcome(result.product(), result.errors()));
+        }
+        if ((errorPolicy == null || "REJECT_EVERYTHING".equals(errorPolicy))
+                && outcomes.stream().anyMatch(outcome -> !outcome.success())) {
+            // The pinned default policy: one refused item refuses the
+            // whole batch — the official rollback-marking mechanism.
+            org.springframework.transaction.interceptor.TransactionAspectSupport
+                    .currentTransactionStatus().setRollbackOnly();
+        }
+        return outcomes;
     }
 
     /**
