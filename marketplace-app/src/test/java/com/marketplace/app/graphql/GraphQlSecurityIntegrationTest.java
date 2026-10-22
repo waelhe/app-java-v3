@@ -33,19 +33,29 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 401/403 and private-field access. Keep anonymous GraphQL protected
  * until a public-discovery journey explicitly reopens the decision").
  *
- * <p><b>The measured chain fact (SecurityConfig):</b> {@code /graphql}
- * rides the resource-server securityMatcher chain under
- * {@code anyRequest().authenticated()} — the anonymous contract is the
- * shared problem+json 401 AUTHN-001 entry point the REST surface already
- * regression-tests ({@code SecurityProblemDetailIntegrationTest}), and
- * the three anonymous legs below are the exact tripartite contract the
- * live production smoke has measured since Phase 1 (POST a valid query /
- * GET / POST a broken payload — all 401 for the anonymous caller). This
- * class pins that contract INSIDE the suite, so the protected-contract
- * decision (§13 decision record: "Anonymous GraphQL reads: protected
- * contract retained — anonymous /graphql returns 401. Reopen only for an
- * approved public-discovery journey after tested per-field/object
- * authorization") can no longer regress silently between smokes.</p>
+ * <p><b>The reopened contract (A0's landing of Agent 1's
+ * handoff-a0-prelogin-graphql-security.md — the Saleor 458-root
+ * campaign):</b> the anonymous POST surface is now EXACTLY as wide as
+ * the Saleor authentication contract — the chain permits the anonymous
+ * POST (the register/password-reset public-POST precedent family) and
+ * {@code PreLoginGraphQlGate} is the wall: the gate parses the ACTUAL
+ * GraphQL document and lets an anonymous caller reach execution ONLY
+ * for the enumerated pre-login family (tokenCreate, tokenRefresh,
+ * tokenVerify, requestPasswordReset, confirmAccount, setPassword,
+ * confirmEmailChange, accountRegister, accountDelete — every one
+ * carries its own proof in the payload or CREATES the account).
+ * Everything else answers the classified AUTHN-001 GraphQL error before
+ * dispatch. This is the §13 decision record's documented reopening
+ * condition satisfied — "an approved public-discovery journey after
+ * tested per-field/object authorization": the campaign's per-root
+ * role-matrix legs are that tested authorization, and the legs below pin
+ * the reopened anonymous contract inside the suite: the valid-query POST
+ * is answered by the gate (not the 401 problem+json), the GET surface
+ * and the invalid-bearer challenge keep the standing 401 problem+json
+ * contract, and the gate's own decision table (operationName spoof,
+ * fragment spread, inline fragment, unparsable document — all refused)
+ * is pinned over the REAL security chain exactly as the handoff's
+ * acceptance criteria demand.</p>
  *
  * <p><b>The 403 leg, measured honestly:</b> no 403 can arise from
  * {@code /graphql} in the bounded surface — the route declares
@@ -107,23 +117,26 @@ class GraphQlSecurityIntegrationTest {
      * realm challenge — validity of the query is irrelevant before
      * authentication, and the body never reaches the GraphQL handler.
      */
+    /**
+     * Leg 1 of the reopened contract: a POST carrying a perfectly valid
+     * GraphQL query is now answered by the GATE — the pre-login
+     * operation wall parses the document, finds {@code services} outside
+     * the enumerated family, and answers the classified AUTHN-001
+     * GraphQL error envelope (HTTP 200 + application/json, the error
+     * before dispatch) — the security chain no longer 401s the POST
+     * itself; the wall moved to where the operation is actually known.
+     */
     @Test
-    void anonymousValidQueryPostIsRejectedAs401ProblemDetail() throws Exception {
+    void anonymousValidQueryPostIsAnsweredByThePreLoginGate() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"query\":\"{ services(first: 1) { edges { node { id } } } }\"}"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(content().contentType("application/problem+json"))
-                .andExpect(jsonPath("$.type").value("https://marketplace.com/errors/unauthorized"))
-                .andExpect(jsonPath("$.title").value("Unauthorized"))
-                .andExpect(jsonPath("$.status").value(401))
-                .andExpect(jsonPath("$.instance").value("/graphql"))
-                .andExpect(jsonPath("$.errorCode").value("AUTHN-001"))
-                .andExpect(jsonPath("$.category").value("authz"))
-                .andExpect(jsonPath("$.traceId").exists())
-                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE,
-                        "Bearer realm=\"marketplace\""))
-                .andExpect(header().exists("X-Correlation-ID"));
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.errors[0].extensions.errorCode").value("AUTHN-001"))
+                .andExpect(jsonPath("$.errors[0].extensions.category").value("authz"))
+                .andExpect(jsonPath("$.errors[0].message")
+                        .value("Authentication is required for this GraphQL operation"));
     }
 
     /**
@@ -150,28 +163,103 @@ class GraphQlSecurityIntegrationTest {
     }
 
     /**
-     * Leg 3: a POST with a broken payload is STILL the authentication
-     * leg first — the security chain rejects the anonymous caller before
-     * any JSON parsing happens, so a malformed body cannot smuggle a
-     * different failure mode past the 401 contract.
+     * Leg 3 (the handoff's own leg): a POST whose document does not
+     * PARSE is denied by default — the gate refuses what it cannot read,
+     * answering the classified AUTHN-001 GraphQL error exactly like an
+     * unknown operation.
      */
     @Test
-    void anonymousBrokenPostIsStillAuthenticationFirst() throws Exception {
+    void anonymousUnparsableDocumentIsDeniedByDefault() throws Exception {
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"{ this is not a graphql document\"}"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.errors[0].extensions.errorCode").value("AUTHN-001"))
+                .andExpect(jsonPath("$.errors[0].extensions.category").value("authz"));
+    }
+
+    /**
+     * Leg 3b (the old broken-payload leg's honest continuation): a POST
+     * whose JSON BODY itself is malformed never becomes a GraphQL
+     * request at all — the transport's own unreadable-message failure
+     * answers the caller (the 400 the MVC message-conversion contract
+     * prescribes) before the gate, the schema, or any resolver is
+     * involved. The body cannot smuggle a different failure mode past
+     * the reopened surface.
+     */
+    @Test
+    void anonymousMalformedJsonBodyIsTheTransport400() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{not-json"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(content().contentType("application/problem+json"))
-                .andExpect(jsonPath("$.type").value("https://marketplace.com/errors/unauthorized"))
-                .andExpect(jsonPath("$.title").value("Unauthorized"))
-                .andExpect(jsonPath("$.status").value(401))
-                .andExpect(jsonPath("$.errorCode").value("AUTHN-001"))
-                .andExpect(jsonPath("$.category").value("authz"))
-                .andExpect(jsonPath("$.instance").value("/graphql"))
-                .andExpect(jsonPath("$.traceId").exists())
-                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE,
-                        "Bearer realm=\"marketplace\""))
-                .andExpect(header().exists("X-Correlation-ID"));
+                .andExpect(status().isBadRequest());
+    }
+
+    /**
+     * The handoff's spoof leg: the {@code operationName} parameter is
+     * client-controlled metadata — the gate parses the DOCUMENT, and a
+     * protected root under a spoofed allowed name is refused.
+     */
+    @Test
+    void anonymousOperationNameSpoofDoesNotBypassTheGate() throws Exception {
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"{ services(first: 1) { edges { node { id } } } }\","
+                                + "\"operationName\":\"tokenCreate\"}"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.errors[0].extensions.errorCode").value("AUTHN-001"))
+                .andExpect(jsonPath("$.errors[0].extensions.category").value("authz"));
+    }
+
+    /**
+     * The handoff's execution leg: an operation INSIDE the pre-login
+     * family executes cleanly for the anonymous caller —
+     * {@code tokenVerify} answers its own honest payload ({@code
+     * isValid: false} for a garbage token, NO GraphQL error).
+     */
+    @Test
+    void anonymousPreLoginOperationExecutesCleanly() throws Exception {
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"mutation { tokenVerify(token: \\\"not-a-real-jwt\\\") { isValid } }\"}"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.data.tokenVerify.isValid").value(false));
+    }
+
+    /**
+     * The handoff's fragment-spread leg: a fragment SPREAD riding an
+     * allowed field is refused — a spread can select any protected root,
+     * so the pre-login family cannot be decided without resolving the
+     * fragment graph; the gate never resolves what it cannot decide.
+     */
+    @Test
+    void anonymousFragmentSpreadRidingAnAllowedFieldIsRefused() throws Exception {
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"mutation { tokenVerify(token: \\\"x\\\") { isValid } ...Protected } fragment Protected on Mutation { passwordChange(newPassword: \\\"whatever-123\\\") { errors { code } } }\"}"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.errors[0].extensions.errorCode").value("AUTHN-001"))
+                .andExpect(jsonPath("$.errors[0].extensions.category").value("authz"));
+    }
+
+    /**
+     * The handoff's inline-fragment leg: an INLINE fragment selecting a
+     * protected root is refused — the same shape rule, the same
+     * deny-by-default verdict.
+     */
+    @Test
+    void anonymousInlineFragmentSelectingAProtectedRootIsRefused() throws Exception {
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"mutation { ... on Mutation { passwordChange(newPassword: \\\"whatever-123\\\") { errors { code } } } }\"}"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.errors[0].extensions.errorCode").value("AUTHN-001"))
+                .andExpect(jsonPath("$.errors[0].extensions.category").value("authz"));
     }
 
     /**

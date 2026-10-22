@@ -424,6 +424,34 @@ public class SecurityConfig {
                         // caller's); a click on an unpromoted listing is
                         // the controller's honest 404 no-op.
                         .requestMatchers(HttpMethod.POST, "/api/v1/ads/listings/*/clicks").permitAll()
+                        // A0 (the Saleor 458-root campaign — Agent 1's
+                        // handoff-a0-prelogin-graphql-security.md, landed by
+                        // the integrator's own decision): the GraphQL
+                        // transport's anonymous POST surface — EXACTLY as
+                        // wide as the Saleor authentication contract and not
+                        // one operation wider. POST only: the GET surface
+                        // keeps the standing 401 problem+json contract. The
+                        // gate is the wall, not the matcher:
+                        // PreLoginGraphQlGate (a WebGraphQlInterceptor,
+                        // spring-graphql's officially supported interception
+                        // point — delivered in the app module with the
+                        // agent's packet) parses the ACTUAL GraphQL document
+                        // and denies-by-default: an anonymous caller reaches
+                        // execution ONLY when every top-level selection is a
+                        // plain Field whose name is in the enumerated
+                        // pre-login family (tokenCreate, tokenRefresh,
+                        // tokenVerify, requestPasswordReset, confirmAccount,
+                        // setPassword, confirmEmailChange, accountRegister,
+                        // accountDelete — every one carries its own proof in
+                        // the payload or CREATES the account). Fragment
+                        // shapes and unparsable documents are refused
+                        // outright; the operationName parameter is ignored
+                        // (client-controlled metadata, not the operation).
+                        // The handoff's sequencing constraint is honored:
+                        // the gate reached this branch in the same tree as
+                        // this line — the anonymous surface opens WITH its
+                        // wall, never a line before it.
+                        .requestMatchers(HttpMethod.POST, "/graphql").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
