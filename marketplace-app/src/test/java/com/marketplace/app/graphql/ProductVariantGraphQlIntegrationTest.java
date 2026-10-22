@@ -76,6 +76,20 @@ import static org.mockito.Mockito.when;
  * standing shape (the seed migration's own rows are part of the
  * population the assertions reason about relatively, never by absolute
  * count).</p>
+ *
+ * <p>The mutation legs (the agent-2 follow-on packet's
+ * {@code productVariantCreate}/{@code productVariantUpdate}/
+ * {@code productVariantDelete}/{@code productVariantBulkDelete} roots)
+ * prove the REAL write stack: the PROVIDER-only gate at the owning use
+ * case (an ADMIN caller is denied — the platform's two-sided ownership
+ * law for provider-owned rows, a stranger's product answers the same
+ * REQUIRED refusal shape as a missing one), the create's ownership
+ * fact copy from the parent (the ADR's decision 3 — provider and
+ * currency, stock zero), the duplicate SKU's ALREADY_EXISTS over the
+ * real unique namespace, the update's movable set with the ARCHIVED
+ * terminal refusal, the soft delete's last-known projection with the
+ * second delete's honest NOT_FOUND, and the bulk delete's honest count
+ * over unknown ids.</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "spring.flyway.enabled=true",
@@ -716,5 +730,194 @@ class ProductVariantGraphQlIntegrationTest {
                 .satisfy(errors -> assertThat(errors)
                         .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("productVariant requires its id")));
+    }
+
+    // ------------------------------------------------------------------
+    // the product-variant mutation roots — the real provider-scoped write
+    // stack (agent-2 follow-on): the owning provider IS the caller — the
+    // seeded provider user's subject rides the JWT exactly as
+    // IdentityUserProvider resolves it.
+    // ------------------------------------------------------------------
+
+    @Test
+    void providerCreatesAVariantThroughTheRealMutationStack() {
+        HttpGraphQlTester providerTester = testerFor(providerId.toString(), "PROVIDER");
+        Product parent = persistActiveParent();
+        String sku = "b5a-mut-" + UUID.randomUUID().toString().substring(0, 8);
+
+        String emittedId = providerTester.document("""
+                        mutation { productVariantCreate(input: {product: "%s", sku: "%s",
+                                name: "b5a Created Variant", priceMinor: 149900}) {
+                            errors { field code }
+                            productVariant { id name sku status product { id } }
+                        } }
+                        """.formatted(productGlobalId(parent.getId()), sku))
+                .execute()
+                .errors().verify()
+                .path("productVariantCreate.errors").entityList(Object.class).hasSize(0)
+                .path("productVariantCreate.productVariant.id").entity(String.class).get();
+
+        String decoded = new String(java.util.Base64.getDecoder().decode(emittedId),
+                java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(decoded).startsWith("ProductVariant:");
+        UUID rowId = UUID.fromString(decoded.substring("ProductVariant:".length()));
+        seededVariantIds.add(rowId);
+
+        // The real-stack read-back: the row persisted with the caller's
+        // ownership facts copied from the parent (the ADR's decision 3)
+        // and the stock starting at zero.
+        ProductVariant row = variantRepository.findById(rowId).orElseThrow();
+        assertThat(row.getSku()).isEqualTo(sku);
+        assertThat(row.getProviderId()).isEqualTo(providerId);
+        assertThat(row.getProductId()).isEqualTo(parent.getId());
+        assertThat(row.getCurrency()).isEqualTo("SAR");
+        assertThat(row.getPriceMinor()).isEqualTo(149900L);
+        assertThat(row.getStockQuantity()).isZero();
+
+        providerTester.document("""
+                        query($id: ID!) { productVariant(id: $id) { sku name status } }
+                        """)
+                .variable("id", emittedId)
+                .execute()
+                .errors().verify()
+                .path("productVariant.sku").entity(String.class).isEqualTo(sku)
+                .path("productVariant.status").entity(String.class).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void duplicateSkuCreateAnswersThePayloadError() {
+        HttpGraphQlTester providerTester = testerFor(providerId.toString(), "PROVIDER");
+        Product parent = persistActiveParent();
+
+        providerTester.document("""
+                        mutation { productVariantCreate(input: {product: "%s", sku: "%s", priceMinor: 100}) {
+                            errors { field code }
+                            productVariant { id }
+                        } }
+                        """.formatted(productGlobalId(parent.getId()), publicSkuOne))
+                .execute()
+                .errors().verify()
+                .path("productVariantCreate.errors[0].field").entity(String.class).isEqualTo("sku")
+                .path("productVariantCreate.errors[0].code").entity(String.class).isEqualTo("ALREADY_EXISTS")
+                .path("productVariantCreate.productVariant").valueIsNull();
+    }
+
+    @Test
+    void adminIsDeniedTheVariantCreateByTheOwningUseCase() {
+        // The owning use case enforces the PROVIDER capability for
+        // provider-owned rows — the platform's two-sided ownership law
+        // (the recorded RBAC divergence), proven by the real stack.
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        Product parent = persistActiveParent();
+
+        adminTester.document("""
+                        mutation { productVariantCreate(input: {product: "%s", sku: "b5a-admin-deny", priceMinor: 100}) {
+                            errors { code }
+                            productVariant { id }
+                        } }
+                        """.formatted(productGlobalId(parent.getId())))
+                .execute()
+                .errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
+                                .contains("Access Denied")));
+    }
+
+    @Test
+    void providerUpdatesTheMovableSetThroughTheRealMutationStack() {
+        HttpGraphQlTester providerTester = testerFor(providerId.toString(), "PROVIDER");
+        UUID rowId = persistVariantUnderActiveParent(
+                "b5a-upd-" + UUID.randomUUID().toString().substring(0, 8), "b5a Before");
+
+        providerTester.document("""
+                        mutation { productVariantUpdate(id: "%s", input: {sku: "%s", name: "b5a After", priceMinor: 123400}) {
+                            errors { field code }
+                            productVariant { sku name }
+                        } }
+                        """.formatted(variantGlobalId(rowId),
+                        "b5a-upd-new-" + UUID.randomUUID().toString().substring(0, 6)))
+                .execute()
+                .errors().verify()
+                .path("productVariantUpdate.errors").entityList(Object.class).hasSize(0)
+                .path("productVariantUpdate.productVariant.name").entity(String.class).isEqualTo("b5a After");
+
+        ProductVariant row = variantRepository.findById(rowId).orElseThrow();
+        assertThat(row.getPriceMinor()).isEqualTo(123400L);
+        assertThat(row.getProviderId()).isEqualTo(providerId);
+    }
+
+    @Test
+    void anArchivedVariantIsTerminalAndAnswersTheInvalidPayloadError() {
+        HttpGraphQlTester providerTester = testerFor(providerId.toString(), "PROVIDER");
+        UUID rowId = persistVariantUnderActiveParent(
+                "b5a-arch-" + UUID.randomUUID().toString().substring(0, 8), "b5a Terminal");
+        ProductVariant row = variantRepository.findById(rowId).orElseThrow();
+        row.archive();
+        variantRepository.save(row);
+
+        providerTester.document("""
+                        mutation { productVariantUpdate(id: "%s", input: {name: "b5a No Move"}) {
+                            errors { code }
+                            productVariant { id }
+                        } }
+                        """.formatted(variantGlobalId(rowId)))
+                .execute()
+                .errors().verify()
+                .path("productVariantUpdate.errors[0].code").entity(String.class).isEqualTo("INVALID")
+                .path("productVariantUpdate.productVariant").valueIsNull();
+    }
+
+    @Test
+    void providerSoftDeletesAVariantAndTheSecondDeleteAnswersTheHonestAbsence() {
+        HttpGraphQlTester providerTester = testerFor(providerId.toString(), "PROVIDER");
+        UUID rowId = persistVariantUnderActiveParent(
+                "b5a-del-" + UUID.randomUUID().toString().substring(0, 8), "b5a Doomed");
+
+        providerTester.document("""
+                        mutation { productVariantDelete(id: "%s") {
+                            errors { code }
+                            productVariant { sku }
+                        } }
+                        """.formatted(variantGlobalId(rowId)))
+                .execute()
+                .errors().verify()
+                .path("productVariantDelete.errors").entityList(Object.class).hasSize(0)
+                .path("productVariantDelete.productVariant.sku").entity(String.class)
+                .satisfies(sku -> assertThat(sku).startsWith("b5a-del-"));
+
+        // The soft-delete discipline: the row is gone from the living
+        // population (the @SoftDelete filter the repository rides).
+        assertThat(variantRepository.findById(rowId)).isEmpty();
+
+        providerTester.document("""
+                        mutation { productVariantDelete(id: "%s") {
+                            errors { code }
+                            productVariant { sku }
+                        } }
+                        """.formatted(variantGlobalId(rowId)))
+                .execute()
+                .errors().verify()
+                .path("productVariantDelete.errors[0].code").entity(String.class).isEqualTo("NOT_FOUND");
+    }
+
+    @Test
+    void theBulkDeleteAnswersTheHonestCountOverUnknownIds() {
+        HttpGraphQlTester providerTester = testerFor(providerId.toString(), "PROVIDER");
+        UUID owned = persistVariantUnderActiveParent(
+                "b5a-bulk-" + UUID.randomUUID().toString().substring(0, 8), "b5a Bulk");
+        UUID unknown = UUID.randomUUID();
+
+        providerTester.document("""
+                        mutation { productVariantBulkDelete(ids: ["%s", "%s"]) {
+                            count
+                            errors { code }
+                        } }
+                        """.formatted(variantGlobalId(owned), variantGlobalId(unknown)))
+                .execute()
+                .errors().verify()
+                .path("productVariantBulkDelete.count").entity(Integer.class).isEqualTo(1)
+                .path("productVariantBulkDelete.errors").entityList(Object.class).hasSize(0);
+
+        assertThat(variantRepository.findById(owned)).isEmpty();
     }
 }

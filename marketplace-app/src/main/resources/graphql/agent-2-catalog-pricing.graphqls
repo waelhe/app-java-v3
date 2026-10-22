@@ -395,6 +395,169 @@ type ProductBulkDelete {
 }
 
 # =====================================================================
+# The product-variant mutation roots — the catalog owner's variant
+# write use case over the EXISTING product_variants table (V219, the
+# ADR-0012 registry). Signatures are the pinned 3.23.43 shapes for the
+# owned argument set; the declared-but-unowned arguments
+# (externalReference — no external-ID column; sku/skus — the id is the
+# addressing key on this platform, the SKU is seller-namespaced)
+# answer the classified validation error when sent.
+# =====================================================================
+extend type Mutation {
+    """Creates a new product variant."""
+    productVariantCreate(
+        """
+        Fields required to create a product variant. The bounded owned
+        set: the owning product, the seller's SKU, the display name and
+        the platform-extension price carrier (the row's NOT NULL
+        price_minor policy). The typed-attribute selection family
+        (attributes — the platform's own assignment-addressed
+        vocabulary on its store-product surface) and the
+        warehouse-scoped stocks family (D-WHSE-001) stay undeclared —
+        recorded divergences, never faked.
+        """
+        input: ProductVariantCreateInput!
+    ): ProductVariantCreate
+
+    """Updates a product variant."""
+    productVariantUpdate(
+        """
+        External ID of a product variant to update. No external-ID
+        column exists on this platform; a non-null value answers the
+        classified validation error.
+        """
+        externalReference: String
+
+        """ID of a product variant to update."""
+        id: ID
+
+        """
+        Fields required to update a product variant (the bounded
+        movable set: sku, name and the platform-extension price
+        carrier; omitted fields preserve the column).
+        """
+        input: ProductVariantInput!
+
+        """
+        SKU of a product variant to update. The id is the addressing
+        key on this platform (the SKU is seller-namespaced, not a
+        global key); a non-null value answers the classified validation
+        error.
+        """
+        sku: String
+    ): ProductVariantUpdate
+
+    """Deletes a product variant."""
+    productVariantDelete(
+        """
+        External ID of a product variant to delete. No external-ID
+        column exists on this platform; a non-null value answers the
+        classified validation error.
+        """
+        externalReference: String
+
+        """ID of a product variant to delete."""
+        id: ID
+
+        """
+        SKU of a product variant to delete. The id is the addressing
+        key on this platform; a non-null value answers the classified
+        validation error.
+        """
+        sku: String
+    ): ProductVariantDelete
+
+    """Deletes product variants."""
+    productVariantBulkDelete(
+        """List of product variant IDs to delete."""
+        ids: [ID!]
+
+        """
+        List of product variant SKUs to delete. The ids are the
+        addressing keys on this platform; a non-null value answers the
+        classified validation error.
+        """
+        skus: [String!]
+    ): ProductVariantBulkDelete
+}
+
+# =====================================================================
+# The bounded ProductVariantCreateInput — the pinned Saleor input's
+# OWNED field set only: the owning product reference and the row's own
+# direct facts (sku, name) plus the platform-extension price carrier
+# (the row's NOT NULL price policy — the voucher slice's own
+# "platform-only fields as extensions" policy). The unowned members
+# (attributes — the platform's own assignment-addressed vocabulary on
+# its store-product surface; stocks — warehouse-scoped, D-WHSE-001;
+# trackInventory/weight/preorder/quantityLimitPerCustomer/metadata/
+# privateMetadata/externalReference) have no owning capabilities on
+# this surface and stay undeclared — recorded divergences, never
+# faked.
+# =====================================================================
+input ProductVariantCreateInput {
+    """ID of the product the variant registers under (typed global ID of the Product root's type)."""
+    product: ID!
+
+    """The seller's own SKU (unique within the seller's namespace)."""
+    sku: String
+
+    """The option's display name (e.g. «Large / Red»)."""
+    name: String
+
+    """
+    PLATFORM EXTENSION (the row's NOT NULL price policy): the
+    variant's authoritative unit price in minor units (a non-negative
+    amount).
+    """
+    priceMinor: Int
+}
+
+# =====================================================================
+# The bounded ProductVariantInput — the pinned Saleor input's OWNED
+# movable set only: the SKU, the display name and the
+# platform-extension price carrier (the row's own amendable facts —
+# the entity's reviseDetails seam). The ownership facts (product,
+# provider, currency — the denormalized copies), the reserved counter
+# and the availability lifecycle are each their own owning
+# capability, never an update side effect. Omitted (null) fields
+# preserve the column.
+# =====================================================================
+input ProductVariantInput {
+    """The seller's own SKU (null preserves; a new value must stay free in the seller's namespace)."""
+    sku: String
+
+    """The option's display name (null preserves)."""
+    name: String
+
+    """
+    PLATFORM EXTENSION: the authoritative unit price in minor units (a
+    non-negative amount; null preserves the column).
+    """
+    priceMinor: Int
+}
+
+type ProductVariantCreate {
+    errors: [ProductError!]!
+    productVariant: ProductVariant
+}
+
+type ProductVariantUpdate {
+    errors: [ProductError!]!
+    productVariant: ProductVariant
+}
+
+type ProductVariantDelete {
+    errors: [ProductError!]!
+    productVariant: ProductVariant
+}
+
+type ProductVariantBulkDelete {
+    """Returns how many objects were affected."""
+    count: Int!
+    errors: [ProductError!]!
+}
+
+# =====================================================================
 # The voucher mutation roots — the pricing owner's voucher-policy ADMIN
 # write use case over the EXISTING vouchers table (V223). Signatures are
 # the pinned 3.23.43 shapes; the declared-but-unowned arguments
