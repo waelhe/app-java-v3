@@ -86,3 +86,40 @@ Blocked `draftOrders`, `shippingZone(s)`, `homepageEvents`, `ordersTotal`, `orde
 ## Handoff status
 
 This is a partial implementation with three real roots added, not completion of P4/P5/P6 or release acceptance. Preserve the domain ownership boundaries, implement further roots only after verifying each exact upstream signature and owner capability, and obtain explicit owner/ADR decisions for blocked surfaces.
+
+## Execution verification and correction (same session, local reactor)
+
+The prior execution added tests but never ran them. Running them on the branch proved the claim was premature and exposed two real build defects, both corrected here:
+
+1. `OrderReadService` (and, as a build dependency, `ProductVariantReadService`) called `Limit.value()`, which does not exist in the measured `spring-data-commons 4.1.1` API (`Limit` exposes `unlimited()`, `of(int)`, `max()`, `isLimited()`, `isUnlimited()`). Both call sites now use `max()`; the catalog file is outside this agent's ownership and is documented as a build unblock only.
+2. `OrdersService.confirm` acquires the order row lock via `findByIdForUpdate` (added by this campaign for concurrent-redelivery safety), but five existing `OrdersServiceTest` cases still stubbed `findById`, so confirmation reported a false `ResourceNotFound`. The five stubs now target the locked read; no production behavior changed.
+3. `ProductReadServiceTest` and `ProductVariantReadServiceTest` used `when(authentication.getAuthorities()).thenReturn(List...)`, which does not compile against Mockito's wildcard capture. They now use `doReturn(...).when(authentication).getAuthorities()`; again a compile unblock, not a behavior change.
+
+Measured result on this head:
+
+```text
+.\mvnw -pl marketplace-orders -am "-Djacoco.skip=true" test
+Tests run: 107, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+The GraphQL DGS/unit tests compile (the reactor advanced past `marketplace-catalog`, which had previously failed on the Mockito generics). Their execution was deferred because this host intermittently cannot resolve `repo1.maven.org`; the failure is dependency resolution, not a test failure, and no pass is claimed for them.
+
+## Root disposition after verification
+
+`docs/agent-handoffs/agent-3-roots.csv` now disposes every one of the 181 roots; none is left `NOT_STARTED`:
+
+- `IMPLEMENTED_VERIFIED` (3): `orderCancel`, `orderConfirm`, `orderBulkCancel` -- orders suite 107/107 green on this head.
+- `BLOCKED_BY_DECISION` (178), each with the exact governing blocker in `evidence_or_blocker`, not a placeholder: checkout family (no Checkout aggregate; D-ADDR-001 for addresses), draft orders and `orderBulkCreate` (no DRAFT state; no second lifecycle), fulfillment family (no warehouse/line-level aggregate), order-edit/note/discount roots (immutable placement snapshots), money and PSP roots (frozen money contract section 6 plus the `IMPLEMENTATION_REQUIRED` Decimal/PositiveDecimal row; no admin capture/void SPI; no duplicate Transaction/ledger machine), shipping-zone family (D-SHPZ-001), invoices, reports, token lookup, apps/plugins, metadata, outbound webhooks/exports/files, translations, shop, federation, and all 26 subscriptions (section 5.8: WebSocket transport deliberately absent, no `DgsSubscription`).
+
+No `paymentRefund` surface was added. It cannot be rendered honestly while the money contract is frozen: its `amount` input and every `Payment` money field require the exact-decimal wire that the divergence registry still marks `IMPLEMENTATION_REQUIRED`. Adding a float or a scaled integer without that decision would violate the frozen contract, so the root is handed off rather than faked. The same reasoning blocks `paymentCapture`, `paymentVoid`, `orderMarkAsPaid`, `orderFulfill`, `orderRefund`, and the transaction family, which additionally lack an admin-scoped owner SPI.
+
+All 26 subscriptions are blocked by the recorded transport decision, not by missing code: `application.yml` documents that WebSocket transport is intentionally not configured (design section 5.8), and no `DgsSubscription` exists. Overturning that is an owner/ADR decision, not an agent-local resolver.
+
+## Out-of-scope files touched (build unblocks, documented)
+
+- `marketplace-catalog/src/main/java/com/marketplace/catalog/ProductVariantReadService.java` -- four `Limit.max()` calls.
+- `marketplace-catalog/src/test/java/com/marketplace/catalog/ProductReadServiceTest.java` -- `doReturn` stubs and one import.
+- `marketplace-catalog/src/test/java/com/marketplace/catalog/ProductVariantReadServiceTest.java` -- `doReturn` stubs and one import.
+
+These are the minimum changes that let any downstream module compile and test. They change no behavior and no public contract; Agent 2 still owns the catalog/pricing slice.

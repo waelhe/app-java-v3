@@ -564,7 +564,7 @@ class OrdersServiceTest {
     @Test
     void confirmMovesPlacedToConfirmedAndPublishes() {
         Order order = placedOrder();
-        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Order confirmed = service.confirm(order.getId());
@@ -623,7 +623,7 @@ class OrdersServiceTest {
     void confirmFromConfirmedAnswers409() {
         Order order = placedOrder();
         order.confirm(java.time.Instant.now());
-        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
 
         assertThatThrownBy(() -> service.confirm(order.getId()))
                 .isInstanceOf(ConflictException.class)
@@ -658,7 +658,7 @@ class OrdersServiceTest {
     void cancelledIsTerminalConfirmAnswers409() {
         Order order = placedOrder();
         order.cancel("done", java.time.Instant.now());
-        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
 
         assertThatThrownBy(() -> service.confirm(order.getId()))
                 .isInstanceOf(ConflictException.class);
@@ -785,6 +785,7 @@ class OrdersServiceTest {
     void confirmForSellerMovesTheMachineAndAnswersTheReadBack() {
         Order order = soldOrder();
         when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         // No isAdmin stub: the seller match short-circuits the gate — the
@@ -861,6 +862,7 @@ class OrdersServiceTest {
         Order order = soldOrder();
         order.confirm(java.time.Instant.now()); // CONFIRMED: confirm is illegal now
         when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         // No isAdmin stub: the seller match short-circuits the gate — the
         // 409 comes from the machine's own edge, past the scope check.
