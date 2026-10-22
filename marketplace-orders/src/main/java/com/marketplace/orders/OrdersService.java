@@ -282,6 +282,7 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
     }
 
     @Override
+    @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     public void deleteAsAdmin(UUID cartId) {
         Cart cart = cartRepository.findById(cartId)

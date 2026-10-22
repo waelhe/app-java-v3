@@ -1,5 +1,6 @@
 package com.marketplace.orders;
 
+import com.marketplace.orders.spi.CheckoutSpi;
 import com.marketplace.orders.spi.OrderCommandSpi;
 import com.marketplace.shared.api.CheckoutDeliveryPort;
 import com.marketplace.shared.api.CommercialPricingPort;
@@ -66,10 +67,15 @@ class OrdersServiceAuthorizationTest {
     @Autowired
     private OrderCommandSpi orderCommandSpi;
 
+    @Autowired
+    private CheckoutSpi checkoutSpi;
+
     @Test
     @WithMockUser(roles = "USER")
     void cancelAsAdminRejectsNonAdminBeforeAnyDomainSideEffect() {
         assertThatThrownBy(() -> orderCommandSpi.requireAdmin())
+                .isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> checkoutSpi.deleteAsAdmin(UUID.randomUUID()))
                 .isInstanceOf(AccessDeniedException.class);
         assertThatThrownBy(() -> orderCommandSpi.cancelAsAdmin(UUID.randomUUID()))
                 .isInstanceOf(AccessDeniedException.class);
