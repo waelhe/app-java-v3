@@ -4,12 +4,24 @@ import com.marketplace.app.graphql.generated.DgsConstants;
 import com.marketplace.app.graphql.generated.types.ProductError;
 import com.marketplace.app.graphql.generated.types.ProductErrorCode;
 import com.marketplace.app.graphql.generated.types.ProductVariant;
+import com.marketplace.app.graphql.generated.types.BulkProductError;
+import com.marketplace.app.graphql.generated.types.ErrorPolicyEnum;
+import com.marketplace.app.graphql.generated.types.ProductErrorCode;
+import com.marketplace.app.graphql.generated.types.ProductVariantBulkCreate;
+import com.marketplace.app.graphql.generated.types.ProductVariantBulkCreateInput;
 import com.marketplace.app.graphql.generated.types.ProductVariantBulkDelete;
+import com.marketplace.app.graphql.generated.types.ProductVariantBulkError;
+import com.marketplace.app.graphql.generated.types.ProductVariantBulkErrorCode;
+import com.marketplace.app.graphql.generated.types.ProductVariantBulkResult;
+import com.marketplace.app.graphql.generated.types.ProductVariantBulkUpdate;
+import com.marketplace.app.graphql.generated.types.ProductVariantBulkUpdateInput;
 import com.marketplace.app.graphql.generated.types.ProductVariantCreate;
 import com.marketplace.app.graphql.generated.types.ProductVariantCreateInput;
 import com.marketplace.app.graphql.generated.types.ProductVariantDelete;
 import com.marketplace.app.graphql.generated.types.ProductVariantInput;
 import com.marketplace.app.graphql.generated.types.ProductVariantUpdate;
+import com.marketplace.catalog.spi.ProductVariantBulkOutcome;
+import com.marketplace.catalog.spi.ProductVariantBulkUpdateItem;
 import com.marketplace.catalog.spi.ProductVariantCreateCommand;
 import com.marketplace.catalog.spi.ProductVariantMutationError;
 import com.marketplace.catalog.spi.ProductVariantMutationErrorCode;
@@ -207,10 +219,156 @@ public class ProductVariantMutationDataFetcher {
                 .build();
     }
 
+
+    /**
+     * Saleor {@code productVariantBulkCreate(product: ID!, variants:
+     * [ProductVariantBulkCreateInput!]!, errorPolicy: ErrorPolicyEnum):
+     * ProductVariantBulkCreate} — the registry's bulk create under one
+     * owning product. The bounded input binds by name per item; the
+     * pinned policy rides the command (null = the REJECT_EVERYTHING
+     * default); the per-item domain outcomes render as Saleor's
+     * per-item results entries (the {@code BulkProductError} family
+     * over the existing ProductError vocabulary).
+     */
+    @DgsMutation(field = DgsConstants.MUTATION.ProductVariantBulkCreate)
+    @RateLimiter(name = "graphqlProductVariantMutation")
+    public ProductVariantBulkCreate productVariantBulkCreate(
+            @InputArgument String product,
+            @InputArgument List<ProductVariantBulkCreateInput> variants,
+            @InputArgument ErrorPolicyEnum errorPolicy) {
+        if (product == null) {
+            throw new IllegalArgumentException(
+                    "productVariantBulkCreate requires the owning product's id");
+        }
+        if (variants == null || variants.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "productVariantBulkCreate requires a non-empty list of variants");
+        }
+        UUID productId = globalIdCodec.decode(product, ProductGraphQlMapper.PRODUCT_TYPE);
+        List<ProductVariantCreateCommand> commands = new ArrayList<>(variants.size());
+        for (ProductVariantBulkCreateInput variant : variants) {
+            commands.add(new ProductVariantCreateCommand(productId, variant.getSku(),
+                    variant.getName(), toLongMinor(variant.getPriceMinor())));
+        }
+        List<ProductVariantBulkOutcome> outcomes = variantWriteSpi.bulkCreateVariants(
+                productId, commands, currentAuthentication(),
+                errorPolicy == null ? null : errorPolicy.name());
+        List<com.marketplace.app.graphql.generated.types.ProductVariant> created = new ArrayList<>(outcomes.size());
+        List<ProductVariantBulkResult> results = new ArrayList<>(outcomes.size());
+        int count = 0;
+        for (int i = 0; i < outcomes.size(); i++) {
+            ProductVariantBulkOutcome outcome = outcomes.get(i);
+            com.marketplace.app.graphql.generated.types.ProductVariant wire = outcome.variant() == null
+                    ? null : variantMapper.toGraphQlProductVariant(outcome.variant());
+            if (outcome.success()) {
+                count++;
+                created.add(wire);
+            }
+            results.add(ProductVariantBulkResult.newBuilder()
+                    .productVariant(wire)
+                    .errors(toBulkVariantErrors(outcome.errors(), i))
+                    .build());
+        }
+        return ProductVariantBulkCreate.newBuilder()
+                .count(count)
+                .productVariants(created)
+                .results(results)
+                .errors(List.of())
+                .build();
+    }
+
+    /**
+     * Saleor {@code productVariantBulkUpdate(product: ID!, variants:
+     * [ProductVariantBulkUpdateInput!]!, errorPolicy: ErrorPolicyEnum):
+     * ProductVariantBulkUpdate} — the registry's bulk amendment over
+     * the pinned {@code id + fields} items (the product argument is
+     * the pinned root's own owning context — the platform addresses
+     * the rows by their own ids).
+     */
+    @DgsMutation(field = DgsConstants.MUTATION.ProductVariantBulkUpdate)
+    @RateLimiter(name = "graphqlProductVariantMutation")
+    public ProductVariantBulkUpdate productVariantBulkUpdate(
+            @InputArgument String product,
+            @InputArgument List<ProductVariantBulkUpdateInput> variants,
+            @InputArgument ErrorPolicyEnum errorPolicy) {
+        if (product == null) {
+            throw new IllegalArgumentException(
+                    "productVariantBulkUpdate requires the owning product's id");
+        }
+        if (variants == null || variants.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "productVariantBulkUpdate requires a non-empty list of variants");
+        }
+        globalIdCodec.decode(product, ProductGraphQlMapper.PRODUCT_TYPE);
+        List<ProductVariantBulkUpdateItem> items = new ArrayList<>(variants.size());
+        for (ProductVariantBulkUpdateInput variant : variants) {
+            if (variant.getId() == null) {
+                throw new IllegalArgumentException(
+                        "productVariantBulkUpdate requires every item to carry the id of the variant to update");
+            }
+            items.add(new ProductVariantBulkUpdateItem(
+                    globalIdCodec.decode(variant.getId(), ProductVariantGraphQlMapper.PRODUCT_VARIANT_TYPE),
+                    new ProductVariantUpdateCommand(variant.getSku(), variant.getName(),
+                            toLongMinor(variant.getPriceMinor()))));
+        }
+        List<ProductVariantBulkOutcome> outcomes = variantWriteSpi.bulkUpdateVariants(
+                items, currentAuthentication(), errorPolicy == null ? null : errorPolicy.name());
+        List<ProductVariantBulkResult> results = new ArrayList<>(outcomes.size());
+        int count = 0;
+        for (int i = 0; i < outcomes.size(); i++) {
+            ProductVariantBulkOutcome outcome = outcomes.get(i);
+            if (outcome.success()) {
+                count++;
+            }
+            results.add(ProductVariantBulkResult.newBuilder()
+                    .productVariant(outcome.variant() == null
+                            ? null : variantMapper.toGraphQlProductVariant(outcome.variant()))
+                    .errors(toBulkVariantErrors(outcome.errors(), i))
+                    .build());
+        }
+        return ProductVariantBulkUpdate.newBuilder()
+                .count(count)
+                .results(results)
+                .errors(List.of())
+                .build();
+    }
+
+    /**
+     * The per-item domain error entries onto Saleor's bulk error
+     * objects — the {@code path} pointer is the item's own index + the
+     * domain error's field (the registered ADAPT mapping's own pointer
+     * shape).
+     */
+    private static List<ProductVariantBulkError> toBulkVariantErrors(List<ProductVariantMutationError> errors,
+                                                                     int index) {
+        List<ProductVariantBulkError> mapped = new ArrayList<>(errors.size());
+        for (ProductVariantMutationError error : errors) {
+            mapped.add(ProductVariantBulkError.newBuilder()
+                    .field(error.field())
+                    .path(error.field() == null ? "variants." + index
+                            : "variants." + index + "." + error.field())
+                    .message(error.message())
+                    .code(toBulkVariantErrorCode(error.code()))
+                    .build());
+        }
+        return mapped;
+    }
+
+    /** The domain code onto the Saleor bulk enum's own member. */
+    private static ProductVariantBulkErrorCode toBulkVariantErrorCode(ProductVariantMutationErrorCode code) {
+        return switch (code) {
+            case REQUIRED -> ProductVariantBulkErrorCode.REQUIRED;
+            case INVALID -> ProductVariantBulkErrorCode.INVALID;
+            case NOT_FOUND -> ProductVariantBulkErrorCode.NOT_FOUND;
+            case ALREADY_EXISTS -> ProductVariantBulkErrorCode.UNIQUE;
+        };
+    }
+
     /**
      * The GraphQL Int's own widening onto the row's long minor units —
      * the codegen's Integer boundary meeting the entity's long fact.
      */
+
     private static Long toLongMinor(Integer minor) {
         return minor == null ? null : minor.longValue();
     }

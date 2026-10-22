@@ -1436,3 +1436,135 @@ enum ProductBulkCreateErrorCode {
     UNSUPPORTED_MEDIA_PROVIDER
     FILE_SIZE_LIMIT_EXCEEDED
 }
+
+# =====================================================================
+# The product-variant bulk mutation roots — the variant registry's
+# batch write use cases over the SAME owning single-item ladder (the
+# agent-2 follow-on packet). The same one-transaction/policy semantics
+# the other bulk families ride.
+# =====================================================================
+extend type Mutation {
+    """Creates product variants under one owning product."""
+    productVariantBulkCreate(
+        """Policies of error handling. DEFAULT: REJECT_EVERYTHING"""
+        errorPolicy: ErrorPolicyEnum
+
+        """ID of the owning product every variant registers under (typed global ID of the Product root's type)."""
+        product: ID!
+
+        """Input list of variants to create (the bounded owned field set per item)."""
+        variants: [ProductVariantBulkCreateInput!]!
+    ): ProductVariantBulkCreate
+
+    """Updates product variants."""
+    productVariantBulkUpdate(
+        """Policies of error handling. DEFAULT: REJECT_EVERYTHING"""
+        errorPolicy: ErrorPolicyEnum
+
+        """
+        ID of the owning product (the pinned root's own owning context;
+        the rows address by their own ids — typed global ID of the
+        Product root's type).
+        """
+        product: ID!
+
+        """Input list of variants to update (the pinned id + bounded fields per item)."""
+        variants: [ProductVariantBulkUpdateInput!]!
+    ): ProductVariantBulkUpdate
+}
+
+# =====================================================================
+# The bounded ProductVariantBulkCreateInput — the SAME owned field set
+# the single-item ProductVariantCreateInput carries minus the product
+# reference (the pinned root's own product argument owns it). The
+# unowned members (attributes/stocks/trackInventory/weight/preorder/
+# quantityLimitPerCustomer/metadata/privateMetadata/externalReference/
+# channelListings) have no owning capabilities on this surface and stay
+# undeclared — recorded divergences, never faked.
+# =====================================================================
+input ProductVariantBulkCreateInput {
+    """The seller's own SKU (unique within the seller's namespace)."""
+    sku: String
+
+    """The option's display name (e.g. «Large / Red»)."""
+    name: String
+
+    """
+    PLATFORM EXTENSION (the row's NOT NULL price policy): the
+    variant's authoritative unit price in minor units (a non-negative
+    amount).
+    """
+    priceMinor: Int
+}
+
+input ProductVariantBulkUpdateInput {
+    """ID of the variant to update (typed global ID of the ProductVariant root's type)."""
+    id: ID!
+
+    """The seller's own SKU (null preserves; a new value must stay free in the seller's namespace)."""
+    sku: String
+
+    """The option's display name (null preserves)."""
+    name: String
+
+    """
+    PLATFORM EXTENSION: the authoritative unit price in minor units (a
+    non-negative amount; null preserves the column).
+    """
+    priceMinor: Int
+}
+
+type ProductVariantBulkCreate {
+    count: Int!
+    productVariants: [ProductVariant!]!
+    results: [ProductVariantBulkResult!]!
+    errors: [BulkProductError!]!
+}
+
+type ProductVariantBulkUpdate {
+    count: Int!
+    results: [ProductVariantBulkResult!]!
+    errors: [ProductVariantBulkError!]!
+}
+
+type ProductVariantBulkResult {
+    productVariant: ProductVariant
+    errors: [ProductVariantBulkError!]
+}
+
+# =====================================================================
+# The bounded BulkProductError — the pinned error object's OWNED field
+# set only: field/message/code/index (the ProductError vocabulary's
+# own codes). The unowned members (attributes/values/warehouses/
+# channels) have no owning capabilities on this surface and stay
+# undeclared — recorded divergences, never faked.
+# =====================================================================
+type BulkProductError {
+    field: String
+    message: String
+    code: ProductErrorCode!
+    index: Int
+}
+
+type ProductVariantBulkError {
+    field: String
+    message: String
+    code: ProductVariantBulkErrorCode!
+    path: String
+}
+
+enum ProductVariantBulkErrorCode {
+    ATTRIBUTE_ALREADY_ASSIGNED
+    ATTRIBUTE_CANNOT_BE_ASSIGNED
+    ATTRIBUTE_VARIANTS_DISABLED
+    DUPLICATED_INPUT_ITEM
+    GRAPHQL_ERROR
+    INVALID
+    INVALID_PRICE
+    NOT_PRODUCTS_VARIANT
+    NOT_FOUND
+    REQUIRED
+    UNIQUE
+    PRODUCT_NOT_ASSIGNED_TO_CHANNEL
+    STOCK_ALREADY_EXISTS
+}

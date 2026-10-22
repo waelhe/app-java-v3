@@ -6,6 +6,8 @@ import com.marketplace.catalog.spi.CategoryWriteSpi;
 import com.marketplace.catalog.spi.ProductAdminSpi;
 import com.marketplace.catalog.spi.ProductReadSpi;
 import com.marketplace.catalog.spi.ProductTypeReadSpi;
+import com.marketplace.catalog.spi.ProductVariantBulkOutcome;
+import com.marketplace.catalog.spi.ProductVariantBulkUpdateItem;
 import com.marketplace.catalog.spi.ProductVariantMutationError;
 import com.marketplace.catalog.spi.ProductVariantMutationErrorCode;
 import com.marketplace.catalog.spi.ProductVariantMutationResult;
@@ -452,5 +454,68 @@ class ProductVariantMutationDataFetcherDgsTest {
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
                 .hasMessageContaining("Invalid global ID");
         org.mockito.Mockito.verifyNoInteractions(productVariantWriteSpi);
+    }
+    // ------------------------------------------------------------------
+    // the bulk roots (the agent-2 follow-on packet)
+    // ------------------------------------------------------------------
+
+    @Test
+    void productVariantBulkCreateRendersThePerItemResults() {
+        authenticateAs("dgs-provider-subject", "PROVIDER");
+        UUID productId = UUID.randomUUID();
+        when(productVariantWriteSpi.bulkCreateVariants(any(UUID.class), anyList(), any(), any())).thenReturn(List.of(
+                new ProductVariantBulkOutcome(variantView(UUID.randomUUID(), productId, "SKU-A"), List.of()),
+                new ProductVariantBulkOutcome(null, List.of(new ProductVariantMutationError(
+                        "sku", ProductVariantMutationErrorCode.ALREADY_EXISTS,
+                        "The SKU is already used in this seller's namespace")))));
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { productVariantBulkCreate(product: "%s",
+                        variants: [{sku: "SKU-A", name: "A", priceMinor: 100},
+                                   {sku: "taken", name: "T", priceMinor: 100}],
+                        errorPolicy: IGNORE_FAILED) {
+                    count
+                    productVariants { sku }
+                    errors { code }
+                    results { productVariant { sku } errors { path message code } }
+                } }
+                """.formatted(productGlobalId(productId)), "data.productVariantBulkCreate");
+
+        assertThat(payload.get("count")).isEqualTo(1);
+        assertThat(payload.get("errors")).isEqualTo(List.of());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> created = (List<Map<String, Object>>) payload.get("productVariants");
+        assertThat(created).hasSize(1);
+        assertThat(created.get(0).get("sku")).isEqualTo("SKU-A");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> results = (List<Map<String, Object>>) payload.get("results");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> itemErrors = (List<Map<String, Object>>) results.get(1).get("errors");
+        assertThat(itemErrors.get(0).get("path")).isEqualTo("variants.1.sku");
+        assertThat(itemErrors.get(0).get("code")).isEqualTo("UNIQUE");
+    }
+
+    @Test
+    void productVariantBulkUpdateRendersThePerItemResults() {
+        authenticateAs("dgs-provider-subject", "PROVIDER");
+        UUID productId = UUID.randomUUID();
+        UUID rowId = UUID.randomUUID();
+        when(productVariantWriteSpi.bulkUpdateVariants(anyList(), any(), any())).thenReturn(List.of(
+                new ProductVariantBulkOutcome(variantView(rowId, productId, "SKU-2"), List.of())));
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { productVariantBulkUpdate(product: "%s",
+                        variants: [{id: "%s", sku: "SKU-2", priceMinor: 999}]) {
+                    count
+                    errors { code }
+                    results { productVariant { sku } errors { path } }
+                } }
+                """.formatted(productGlobalId(productId), variantGlobalId(rowId)),
+                "data.productVariantBulkUpdate");
+
+        assertThat(payload.get("count")).isEqualTo(1);
+        verify(productVariantWriteSpi).bulkUpdateVariants(argThat((List<ProductVariantBulkUpdateItem> items) ->
+                items.size() == 1 && items.get(0).id().equals(rowId)
+                        && "SKU-2".equals(items.get(0).fields().sku())), any(), any());
     }
 }

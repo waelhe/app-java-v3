@@ -1,5 +1,6 @@
 package com.marketplace.catalog;
 
+import com.marketplace.catalog.spi.ProductVariantBulkUpdateItem;
 import com.marketplace.catalog.spi.ProductVariantCreateCommand;
 import com.marketplace.catalog.spi.ProductVariantMutationError;
 import com.marketplace.catalog.spi.ProductVariantMutationErrorCode;
@@ -440,5 +441,62 @@ class ProductVariantWriteServiceTest {
         assertThat(service.deleteVariants(List.of(), caller)).isZero();
         assertThat(service.deleteVariants(null, caller)).isZero();
         verify(variantRepository, never()).delete(any(ProductVariant.class));
+    }
+    // ------------------------------------------------------------------
+    // the bulk roots — the pinned policy's own semantics (the agent-2
+    // follow-on packet)
+    // ------------------------------------------------------------------
+
+    @Test
+    void bulkCreateReturnsThePerItemOutcomes() {
+        Product parent = productOwnedBy(ProviderIds.CALLER);
+        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(variantRepository.findByProviderIdAndSku(ProviderIds.CALLER, "SKU-A")).thenReturn(Optional.empty());
+        when(variantRepository.findByProviderIdAndSku(ProviderIds.CALLER, "SKU-B")).thenReturn(Optional.empty());
+        when(variantRepository.findByProviderIdAndSku(ProviderIds.CALLER, "SKU-9")).thenReturn(
+                Optional.of(variantUnder(parent, "SKU-9")));
+        when(variantRepository.save(any(ProductVariant.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        var outcomes = service.bulkCreateVariants(parent.getId(), List.of(
+                new ProductVariantCreateCommand(null, "SKU-A", "A", 100L),
+                new ProductVariantCreateCommand(null, "SKU-B", "B", 200L),
+                new ProductVariantCreateCommand(null, "SKU-9", "Nine", 300L)),
+                caller, "IGNORE_FAILED");
+
+        assertThat(outcomes).hasSize(3);
+        assertThat(outcomes.get(0).success()).isTrue();
+        assertThat(outcomes.get(1).success()).isTrue();
+        assertThat(outcomes.get(2).success()).isFalse();
+        assertThat(outcomes.get(2).errors()).singleElement()
+                .extracting(ProductVariantMutationError::code)
+                .isEqualTo(ProductVariantMutationErrorCode.ALREADY_EXISTS);
+        // every item registers under the pinned root's own product
+        verify(variantRepository, org.mockito.Mockito.times(2)).save(argThat((ProductVariant row) ->
+                row.getProductId().equals(parent.getId())));
+    }
+
+    @Test
+    void bulkUpdateReturnsThePerItemOutcomes() {
+        Product parent = productOwnedBy(ProviderIds.CALLER);
+        ProductVariant row = variantUnder(parent, "SKU-1");
+        when(variantRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByProviderIdAndSku(ProviderIds.CALLER, "SKU-2")).thenReturn(Optional.empty());
+        when(variantRepository.save(any(ProductVariant.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+
+        var outcomes = service.bulkUpdateVariants(List.of(
+                new ProductVariantBulkUpdateItem(row.getId(),
+                        new ProductVariantUpdateCommand("SKU-2", "Renamed", 500L)),
+                new ProductVariantBulkUpdateItem(UUID.randomUUID(),
+                        new ProductVariantUpdateCommand("X", null, null))),
+                caller, "IGNORE_FAILED");
+
+        assertThat(outcomes.get(0).success()).isTrue();
+        assertThat(outcomes.get(1).success()).isFalse();
+        assertThat(outcomes.get(1).errors()).singleElement()
+                .extracting(ProductVariantMutationError::code)
+                .isEqualTo(ProductVariantMutationErrorCode.NOT_FOUND);
     }
 }

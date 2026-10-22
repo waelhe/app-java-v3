@@ -104,4 +104,44 @@ public interface ProductVariantWriteSpi {
      * @return the count of rows actually soft-deleted
      */
     int deleteVariants(List<UUID> ids, org.springframework.security.core.Authentication authentication);
+
+    /**
+     * Registers a batch of variants under one owned product — the
+     * Saleor {@code productVariantBulkCreate} root's owning use case.
+     * The whole batch rides ONE transaction; the pinned error policy's
+     * own semantics answer ({@code REJECT_EVERYTHING} — the default —
+     * rolls the whole batch back when any item is refused,
+     * {@code IGNORE_FAILED}/{@code REJECT_FAILED_ROWS} persist the
+     * passing items).
+     *
+     * @param productId      the owning product's native UUID (every
+     *                       item registers under it — the pinned root's
+     *                       own product argument)
+     * @param commands       the bounded create commands (one per item)
+     * @param authentication the caller's authentication
+     * @param errorPolicy    the pinned policy member name (null = the
+     *                       REJECT_EVERYTHING default)
+     * @return the per-item outcomes (the single-item ladder's own
+     *         answers at their bulk positions)
+     */
+    List<ProductVariantBulkOutcome> bulkCreateVariants(UUID productId,
+                                                       List<ProductVariantCreateCommand> commands,
+                                                       org.springframework.security.core.Authentication authentication,
+                                                       String errorPolicy);
+
+    /**
+     * Amends a batch of variant rows — the Saleor
+     * {@code productVariantBulkUpdate} root's owning use case (the
+     * pinned {@code id + fields} items over the single-item amendment
+     * ladder; the same one-transaction/policy semantics).
+     *
+     * @param items          the update items (row id + the partial fields)
+     * @param authentication the caller's authentication
+     * @param errorPolicy    the pinned policy member name (null = the
+     *                       REJECT_EVERYTHING default)
+     * @return the per-item outcomes
+     */
+    List<ProductVariantBulkOutcome> bulkUpdateVariants(List<ProductVariantBulkUpdateItem> items,
+                                                       org.springframework.security.core.Authentication authentication,
+                                                       String errorPolicy);
 }

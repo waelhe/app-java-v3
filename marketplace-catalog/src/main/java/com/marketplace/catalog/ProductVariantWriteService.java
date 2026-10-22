@@ -1,5 +1,7 @@
 package com.marketplace.catalog;
 
+import com.marketplace.catalog.spi.ProductVariantBulkOutcome;
+import com.marketplace.catalog.spi.ProductVariantBulkUpdateItem;
 import com.marketplace.catalog.spi.ProductVariantCreateCommand;
 import com.marketplace.catalog.spi.ProductVariantMutationError;
 import com.marketplace.catalog.spi.ProductVariantMutationErrorCode;
@@ -225,6 +227,54 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
             }
         }
         return deleted;
+    }
+
+    @Override
+    @PreAuthorize("hasRole('PROVIDER')")
+    @Transactional
+    public List<ProductVariantBulkOutcome> bulkCreateVariants(UUID productId,
+                                                              List<ProductVariantCreateCommand> commands,
+                                                              Authentication authentication,
+                                                              String errorPolicy) {
+        List<ProductVariantBulkOutcome> outcomes = new ArrayList<>(commands.size());
+        for (ProductVariantCreateCommand command : commands) {
+            // Self-invocation joins THIS transaction (the bulk boundary
+            // owns the authorization and the policy); the single-item
+            // ladder's own validation answers per item.
+            ProductVariantMutationResult result = createVariant(
+                    new ProductVariantCreateCommand(productId, command.sku(), command.name(),
+                            command.priceMinor()),
+                    authentication);
+            outcomes.add(new ProductVariantBulkOutcome(result.variant(), result.errors()));
+        }
+        if (atomic(errorPolicy) && outcomes.stream().anyMatch(outcome -> !outcome.success())) {
+            org.springframework.transaction.interceptor.TransactionAspectSupport
+                    .currentTransactionStatus().setRollbackOnly();
+        }
+        return outcomes;
+    }
+
+    @Override
+    @PreAuthorize("hasRole('PROVIDER')")
+    @Transactional
+    public List<ProductVariantBulkOutcome> bulkUpdateVariants(List<ProductVariantBulkUpdateItem> items,
+                                                              Authentication authentication,
+                                                              String errorPolicy) {
+        List<ProductVariantBulkOutcome> outcomes = new ArrayList<>(items.size());
+        for (ProductVariantBulkUpdateItem item : items) {
+            ProductVariantMutationResult result = updateVariant(item.id(), item.fields(), authentication);
+            outcomes.add(new ProductVariantBulkOutcome(result.variant(), result.errors()));
+        }
+        if (atomic(errorPolicy) && outcomes.stream().anyMatch(outcome -> !outcome.success())) {
+            org.springframework.transaction.interceptor.TransactionAspectSupport
+                    .currentTransactionStatus().setRollbackOnly();
+        }
+        return outcomes;
+    }
+
+    /** The pinned default policy's own verdict — REJECT_EVERYTHING unless another member is sent. */
+    private static boolean atomic(String errorPolicy) {
+        return errorPolicy == null || "REJECT_EVERYTHING".equals(errorPolicy);
     }
 
     /**
