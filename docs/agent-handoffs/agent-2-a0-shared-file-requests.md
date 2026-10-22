@@ -41,3 +41,30 @@ The full 31-row table lives in `agent-2-completion.md` §1.0.2 (root / ledger st
 (a) The failsafe selection line: "**176**" → "**179**" (the measured tree: 178 on the clean frozen head + `CollectionGraphQlIntegrationTest`; the `DocumentationNumbersGuardTest` legs fail identically on this branch head until the central edit).
 (b) The migration inventory: "194 ترحيلة نسخية `V1..V247` — **197 ملفًا في الشجرة**" → "195 ترحيلة نسخية `V1..V253` — **198 ملفًا في الشجرة**".
 Both live in the central `SYSTEM.md` this packet must not edit; the exact edits are recorded here for A0's collection pass.
+
+## 5. Modulith allowlist entry — `marketplace-app/src/main/java/com/marketplace/app/package-info.java`
+
+**Discovered by the candidate's own test run** ([CI run 39788683724](https://github.com/waelhe/app-java-v3/actions/runs/39788683724) on the collected candidate `74ffd914` — the first run ever to reach the test steps): `ModulithVerificationTest.verifyModulesAndWriteDocs` (and every `@ApplicationModuleTest` context boot in the app module) fails with:
+
+```
+- Module 'app' depends on named interface(s) 'media :: media-spi' via
+  com.marketplace.app.graphql.ProductMediaMutationDataFetcher ->
+  com.marketplace.media.spi.ProductMediaWriteSpi (and the spi package's
+  companion types: ProductMediaView, ProductMediaMutationError, ...)
+```
+
+The cause is the agent-2 N-slice's own `ProductMediaWriteSpi` (the media module's first write SPI, declared `@NamedInterface("media-spi")` in `com.marketplace.media.spi`) — the app module's Modulith allowlist carries no `media` entry at all (the file's own established pattern: every cross-module SPI entry was added by **A0 stewardship** with its documenting comment — the campaign-b3-a2b/a3 attribute/discount read entries are the direct precedents).
+
+**The request:** add the allowlist entry (the file's own comment convention, this packet's wording):
+
+```java
+        // Agent-2 packet campaign-b5-a (the canonical Saleor plan §5-P2 — the
+        // product-media mutation roots): the GraphQL surface's media
+        // mutation fields delegate to the media module's OWN declared write
+        // SPI — the same catalog-spi/identity-spi pattern every journey
+        // seam follows (the declared interface, never the internals; the
+        // PROVIDER ownership enforcement lives in the owning use case).
+        "media :: media-spi",
+```
+
+**DECLARED CONSEQUENCE of leaving it unregistered:** every app-module test context fails Modulith verification on this candidate until A0 lands the entry — a BLOCKING integration condition, recorded here exactly like the V253 checksum registration. The entry is one line + comment in a shared Modulith-list file this packet must not edit directly (the isolation rule).

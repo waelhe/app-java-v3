@@ -981,6 +981,61 @@ resilience4j:
         base-config: default
         limit-for-period: 30
         timeout-duration: 0
+      # A0's central pass (the Saleor 458-root campaign): the agents'
+      # declared named instances, applied by the integrator exactly as the
+      # handoffs requested — the @RateLimiter annotations were landing on
+      # the registry's default budget (100/min, 5s wait) until these keys
+      # existed; now every write family sits at the platform's own write
+      # budget (10/min fail-fast, the graphqlStoreProductMutation
+      # precedent) and the collection read at the shared catalog read
+      # budget (50/min, the graphqlCategoryQuery precedent).
+      # Agent 1 (P1 identity — TokenDataFetcher's own request): the token
+      # mutation family — tokenCreate IS the password grant (the
+      # unauthenticated sign-in surface), tokenRefresh the rotation;
+      # the write budget with fail-fast is the family's own posture.
+      graphqlTokenMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      # Agent 2 (campaign-b5/a — the catalog/pricing write roots): each
+      # mutation family its own instance at the same write budget, so one
+      # family's burst cannot exhaust another's window.
+      graphqlCategoryMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlProductTypeMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlVoucherMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlAttributeMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlAttributeValueMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlProductVariantMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlCollectionMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlProductMediaMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlCollectionQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
 
 app:
   commission:

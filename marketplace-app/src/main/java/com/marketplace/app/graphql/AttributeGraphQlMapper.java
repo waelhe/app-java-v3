@@ -106,6 +106,15 @@ public class AttributeGraphQlMapper {
      * here, never defaulted.
      */
     public static CatalogAttributeType fromInputType(AttributeInputTypeEnum inputType) {
+        if (inputType == null) {
+            // The OMITTED inputType rides to the owning use case — its own
+            // REQUIRED ladder classifies the omission (AttributeWriteService's
+            // "inputType" REQUIRED entry, the same classification the omitted
+            // name/slug receive). The transport NEVER converts an absence into
+            // an NPE: switch-on-null-enum throws, and the client's omission is
+            // a payload-classified fact, not an internal error.
+            return null;
+        }
         return switch (inputType) {
             case PLAIN_TEXT -> CatalogAttributeType.TEXT;
             case NUMERIC -> CatalogAttributeType.NUMBER;

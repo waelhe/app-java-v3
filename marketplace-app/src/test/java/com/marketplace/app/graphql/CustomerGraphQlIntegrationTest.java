@@ -78,6 +78,12 @@ class CustomerGraphQlIntegrationTest {
     private static final UUID CONSUMER_ONE_ROW_ID = UUID.fromString("56565656-5656-4656-8656-565656565603");
     private static final UUID CONSUMER_TWO_ROW_ID = UUID.fromString("56565656-5656-4656-8656-565656565604");
     private static final UUID CONSUMER_THREE_ROW_ID = UUID.fromString("56565656-5656-4656-8656-565656565605");
+    // The deterministic pagination surface: the class's own seeding now
+    // guarantees FIVE customer rows regardless of the seed migration's
+    // own population — two full pages of two plus a fifth row beyond,
+    // so the forward-only follow-through always has a next page.
+    private static final UUID CONSUMER_FOUR_ROW_ID = UUID.fromString("56565656-5656-4656-8656-565656565606");
+    private static final UUID CONSUMER_FIVE_ROW_ID = UUID.fromString("56565656-5656-4656-8656-565656565607");
 
     @Container
     @ServiceConnection
@@ -108,15 +114,19 @@ class CustomerGraphQlIntegrationTest {
      */
     @BeforeEach
     void setUp() {
-        jdbcTemplate.update("DELETE FROM user_role_assignments WHERE user_id IN (?, ?, ?, ?, ?)",
-                ADMIN_ROW_ID, PROVIDER_ROW_ID, CONSUMER_ONE_ROW_ID, CONSUMER_TWO_ROW_ID, CONSUMER_THREE_ROW_ID);
-        jdbcTemplate.update("DELETE FROM users WHERE id IN (?, ?, ?, ?, ?)",
-                ADMIN_ROW_ID, PROVIDER_ROW_ID, CONSUMER_ONE_ROW_ID, CONSUMER_TWO_ROW_ID, CONSUMER_THREE_ROW_ID);
+        jdbcTemplate.update("DELETE FROM user_role_assignments WHERE user_id IN (?, ?, ?, ?, ?, ?, ?)",
+                ADMIN_ROW_ID, PROVIDER_ROW_ID, CONSUMER_ONE_ROW_ID, CONSUMER_TWO_ROW_ID,
+                CONSUMER_THREE_ROW_ID, CONSUMER_FOUR_ROW_ID, CONSUMER_FIVE_ROW_ID);
+        jdbcTemplate.update("DELETE FROM users WHERE id IN (?, ?, ?, ?, ?, ?, ?)",
+                ADMIN_ROW_ID, PROVIDER_ROW_ID, CONSUMER_ONE_ROW_ID, CONSUMER_TWO_ROW_ID,
+                CONSUMER_THREE_ROW_ID, CONSUMER_FOUR_ROW_ID, CONSUMER_FIVE_ROW_ID);
         insertUser(ADMIN_ROW_ID, ADMIN_SUBJECT, "p1c-admin@example.com", "P1C Admin", "ADMIN");
         insertUser(PROVIDER_ROW_ID, PROVIDER_SUBJECT, "p1c-provider@example.com", "P1C Provider", "PROVIDER");
         insertUser(CONSUMER_ONE_ROW_ID, "p1c-customer-one-subject", "p1c-customer-one@example.com", "P1C Customer One", "CONSUMER");
         insertUser(CONSUMER_TWO_ROW_ID, "p1c-customer-two-subject", "p1c-customer-two@example.com", "P1C Customer Two", "CONSUMER");
         insertUser(CONSUMER_THREE_ROW_ID, "p1c-customer-three-subject", "p1c-customer-three@example.com", "P1C Customer Three", "CONSUMER");
+        insertUser(CONSUMER_FOUR_ROW_ID, "p1c-customer-four-subject", "p1c-customer-four@example.com", "P1C Customer Four", "CONSUMER");
+        insertUser(CONSUMER_FIVE_ROW_ID, "p1c-customer-five-subject", "p1c-customer-five@example.com", "P1C Customer Five", "CONSUMER");
     }
 
     private void insertUser(UUID id, String subject, String email, String displayName, String role) {
@@ -240,7 +250,10 @@ class CustomerGraphQlIntegrationTest {
                 .path("customers.edges").entityList(Object.class).hasSize(2)
                 .path("customers.edges[0].node.email").entity(String.class)
                 .satisfies(email -> assertThat(email).isGreaterThan(firstPageEmails.get(1)))
-                .path("customers.pageInfo.hasPreviousPage").entity(Boolean.class).isEqualTo(true);
+                .path("customers.pageInfo.hasPreviousPage").entity(Boolean.class).isEqualTo(true)
+                // The class's own fifth consumer row sits beyond the second
+                // page — the honest hasNextPage fact of the follow-through.
+                .path("customers.pageInfo.hasNextPage").entity(Boolean.class).isEqualTo(true);
     }
 
     @Test
