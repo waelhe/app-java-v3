@@ -91,6 +91,22 @@ class AttributeMutationDataFetcherDgsTest {
     @Configuration(proxyBeanMethods = false)
     @ComponentScan("com.marketplace.app.graphql")
     static class GraphQLAdapterSlice {
+
+        // The containerless slice binds the GraphQL operational budgets
+        // directly (the record's own documented defaults — the same values
+        // the full application context binds through
+        // @EnableConfigurationProperties). The slice carries no
+        // configuration-property binding infrastructure of its own, and the
+        // @Primary registration keeps the scanned GraphQlConfig's own
+        // binding-backed definition from ever being instantiated here.
+        @org.springframework.context.annotation.Bean
+        @org.springframework.context.annotation.Primary
+        GraphQlProperties graphQlProperties() {
+            return new GraphQlProperties(
+                    new GraphQlProperties.Errors(false),
+                    new GraphQlProperties.Pagination(20, 100),
+                    new GraphQlProperties.Limits(10, 200));
+        }
     }
 
     // The token-rotation JDBC store rides the package component scan; its
