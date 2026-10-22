@@ -539,7 +539,7 @@ void anonymousCategoryQueryIsRejectedByTheGraphQlGateBeforeDispatch() {
                 .variable("after", slugCursor)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
+                .satisfy(errors -> assertThat(errors)
                         .anySatisfy(error -> {
                             // The framework's own cursor-decoding failure message
                             // for a non-keyset cursor shape (the gate's
