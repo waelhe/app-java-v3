@@ -2,6 +2,7 @@ package com.marketplace.app.graphql;
 
 import com.marketplace.catalog.spi.CatalogSpi;
 import com.marketplace.catalog.spi.CategoryReadSpi;
+import com.marketplace.catalog.spi.CategoryWriteSpi;
 import com.marketplace.catalog.spi.AttributeReadSpi;
 import com.marketplace.catalog.spi.ProductAdminSpi;
 import com.marketplace.catalog.spi.ProductPage;
@@ -114,12 +115,41 @@ class ProductVariantDataFetcherDgsTest {
 
     @MockitoBean
     private CategoryReadSpi categoryReadSpi;
+    // The category mutation roots' owning write seam (agent-2 packet) —
+    // the package slice wires every fetcher, so this seam gets its mock
+    // (the b5-a sibling-test precedent).
+    @MockitoBean
+    private CategoryWriteSpi categoryWriteSpi;
 
     @MockitoBean
     private ProductReadSpi productReadSpi;
 
+    // The product-media mutation roots' owning seam (agent-2 N-slice) —
+    // the package slice wires every fetcher, so this seam gets its mock
+    // (the sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.media.spi.ProductMediaWriteSpi productMediaWriteSpi;
+
     @MockitoBean
     private ProductVariantReadSpi variantReadSpi;
+
+    // The product-variant mutation roots' owning write seam (agent-2
+    // follow-on packet) — the package slice wires every fetcher, so
+    // this seam gets its mock (the b5-a sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.catalog.spi.ProductVariantWriteSpi productVariantWriteSpi;
+
+    // The translation mutation roots' owning write seam (agent-2
+    // follow-on packet) — the package slice wires every fetcher, so
+    // this seam gets its mock (the b5-a sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.catalog.spi.TranslationWriteSpi translationWriteSpi;
+
+    // The product-type attribute schema mutation roots' owning write
+    // seam (agent-2 follow-on packet) — the package slice wires every
+    // fetcher, so this seam gets its mock (the sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.catalog.spi.ProductTypeAttributeWriteSpi productTypeAttributeWriteSpi;
 
     @MockitoBean
     private OrderReadSpi orderReadSpi;
@@ -139,6 +169,46 @@ class ProductVariantDataFetcherDgsTest {
     @MockitoBean
     private IdentitySpi identitySpi;
 
+    // The collection read/mutation roots' owning seams (agent-2 L-slice) —
+    // the package slice wires every fetcher, so these seams get their
+    // mocks (the sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.catalog.spi.CollectionReadSpi collectionReadSpi;
+
+    @MockitoBean
+    private com.marketplace.catalog.spi.CollectionWriteSpi collectionWriteSpi;
+    // The promotion/voucher read roots' owning seam (b5-b packet) — the
+    // sibling-test mock the packet's own precedent prescribed but did not
+    // complete; the package slice context cannot boot without it.
+    @MockitoBean
+    private com.marketplace.pricing.spi.DiscountReadSpi discountReadSpi;
+    // The voucher mutation roots' owning write seam (agent-2 packet) —
+    // the package slice wires every fetcher, so this seam gets its mock
+    // (the b5-a sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.pricing.spi.VoucherWriteSpi voucherWriteSpi;
+
+    // The product-type and product mutation roots' owning write seams
+    // (agent-2 packet) — the package slice wires every fetcher, so
+    // these seams get their mocks (the b5-a sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.catalog.spi.ProductTypeWriteSpi productTypeWriteSpi;
+
+    @MockitoBean
+    private com.marketplace.catalog.spi.ProductWriteSpi productWriteSpi;
+
+
+    // The attribute mutation roots' owning write seam (agent-2 packet) —
+    // the package slice wires every fetcher, so this seam gets its mock
+    // (the b5-a sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.catalog.spi.AttributeWriteSpi attributeWriteSpi;
+
+    // The attribute-value mutation roots' owning write seam (agent-2
+    // packet) — the package slice wires every fetcher, so this seam
+    // gets its mock (the b5-a sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.catalog.spi.AttributeValueWriteSpi attributeValueWriteSpi;
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();
@@ -240,7 +310,6 @@ class ProductVariantDataFetcherDgsTest {
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> edges = (List<Map<String, Object>>) connection.get("edges");
-        // The Saleor connection envelope: the node rides INSIDE the edge.
         @SuppressWarnings("unchecked")
         Map<String, Object> node = (Map<String, Object>) edges.get(0).get("node");
         assertThat(node.get("name")).isNull();

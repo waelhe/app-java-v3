@@ -57,10 +57,15 @@ class ProductReadServiceTest {
         repository = mock(ProductRepository.class);
         service = new ProductReadService(repository);
         publicCaller = mock(Authentication.class);
+        // Authentication.getAuthorities() returns Collection<? extends
+        // GrantedAuthority> (the Spring Security 7.1.1 interface contract) —
+        // a wildcard-capture return Mockito's when(...).thenReturn(...) cannot
+        // type-check; doReturn().when(...) is Mockito's own documented form
+        // for stubbing wildcard-generic returns.
         doReturn(List.<GrantedAuthority>of()).when(publicCaller).getAuthorities();
         adminCaller = mock(Authentication.class);
-        doReturn(List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))).when(adminCaller)
-                .getAuthorities();
+        doReturn(List.of(new SimpleGrantedAuthority("ROLE_ADMIN")))
+                .when(adminCaller).getAuthorities();
     }
 
     private static Product activeProduct(String title) {

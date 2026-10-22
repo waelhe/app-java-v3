@@ -35,6 +35,9 @@ public class AttributeGraphQlMapper {
     /** The GraphQL type tag of the Saleor Attribute type — the codec's own contract. */
     static final String ATTRIBUTE_TYPE = "Attribute";
 
+    /** The GraphQL type tag of the Saleor AttributeValue type — the codec's own contract. */
+    static final String ATTRIBUTE_VALUE_TYPE = "AttributeValue";
+
     private final SaleorGlobalIdCodec globalIdCodec;
 
     public AttributeGraphQlMapper(SaleorGlobalIdCodec globalIdCodec) {
@@ -58,6 +61,26 @@ public class AttributeGraphQlMapper {
     }
 
     /**
+     * Maps one attribute-value projection onto the wire type — the
+     * agent-2 packet's value-family rendering: the typed global ID over
+     * the option's native key, the rendered primary display name, and
+     * the row's immutable public code (the Saleor {@code slug} mapping).
+     * Unowned Saleor members ({@code value}, {@code translation}) stay
+     * undeclared — never faked.
+     *
+     * @param view the catalog owner's bounded attribute-value projection
+     * @return the Saleor-shaped attribute-value projection
+     */
+    public com.marketplace.app.graphql.generated.types.AttributeValue toGraphQlAttributeValue(
+            com.marketplace.catalog.spi.AttributeValueView view) {
+        return com.marketplace.app.graphql.generated.types.AttributeValue.newBuilder()
+                .id(globalIdCodec.encode(ATTRIBUTE_VALUE_TYPE, view.id()))
+                .name(view.name())
+                .slug(view.slug())
+                .build();
+    }
+
+    /**
      * The closed domain value shape's Saleor rendering — every vocabulary
      * value maps (the enum is closed), so the mapping is total and never
      * null: the domain {@code valueType} column is NOT NULL and the Saleor
@@ -69,6 +92,25 @@ public class AttributeGraphQlMapper {
             case NUMBER -> AttributeInputTypeEnum.NUMERIC;
             case BOOLEAN -> AttributeInputTypeEnum.BOOLEAN;
             case CHOICE -> AttributeInputTypeEnum.DROPDOWN;
+        };
+    }
+
+    /**
+     * The Saleor widget vocabulary's domain value shape — the exact
+     * inverse of {@link #toInputType(CatalogAttributeType)} (the
+     * agent-2 packet's {@code attributeCreate} root binding). Every
+     * vocabulary value maps (the declared closure is the closed domain
+     * vocabulary's own four members), so the mapping is total; a
+     * {@code null} input type is the omit case the create command
+     * carries to the owner's own REQUIRED domain error — never mapped
+     * here, never defaulted.
+     */
+    public static CatalogAttributeType fromInputType(AttributeInputTypeEnum inputType) {
+        return switch (inputType) {
+            case PLAIN_TEXT -> CatalogAttributeType.TEXT;
+            case NUMERIC -> CatalogAttributeType.NUMBER;
+            case BOOLEAN -> CatalogAttributeType.BOOLEAN;
+            case DROPDOWN -> CatalogAttributeType.CHOICE;
         };
     }
 }

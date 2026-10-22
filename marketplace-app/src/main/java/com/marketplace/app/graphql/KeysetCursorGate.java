@@ -70,11 +70,13 @@ final class KeysetCursorGate {
     /**
      * The sort-aware form: a forward keyset over exactly
      * {@code (sortProperty: its declared type, id: UUID)} — the caller owns
-     * the property-to-normalizer mapping of its own sort vocabulary. A
-     * sort whose property IS the id tie-breaker (the ID sort) carries the
-     * single-key keyset {@code (id: UUID)} — the two-key construction
-     * would build {@code Set.of("id", "id")} and die on the duplicate
-     * element instead of validating the cursor.
+     * the property-to-normalizer mapping of its own sort vocabulary. The
+     * unique-key sort (sortProperty "id" itself — the variant scroll's
+     * own ID sort) carries the SINGLE-key vocabulary {id}: the expected
+     * key set and the rebuilt position both collapse to the one key (the
+     * naive Set.of("id", "id") would throw its own duplicate-element
+     * error instead of the classified taxonomy — the gap the variant
+     * ID-sort leg measured).
      */
     static KeysetScrollPosition forwardKeyset(EncodingCursorStrategy<ScrollPosition> cursorStrategy,
                                               String after, String sortProperty,
@@ -82,9 +84,9 @@ final class KeysetCursorGate {
         if (after == null) {
             return ScrollPosition.keyset();
         }
+        boolean uniqueKeySort = "id".equals(sortProperty);
+        Set<String> expectedKeys = uniqueKeySort ? Set.of("id") : Set.of(sortProperty, "id");
         ScrollPosition decoded = cursorStrategy.fromCursor(after);
-        boolean idSorted = "id".equals(sortProperty);
-        Set<String> expectedKeys = idSorted ? Set.of("id") : Set.of(sortProperty, "id");
         if (!(decoded instanceof KeysetScrollPosition keyset)
                 || !keyset.scrollsForward()
                 || !keyset.getKeys().keySet().equals(expectedKeys)) {
@@ -92,12 +94,15 @@ final class KeysetCursorGate {
                     "after must be a forward keyset cursor emitted by " + owner);
         }
         try {
-            Map<String, Object> normalized = new java.util.LinkedHashMap<>(2);
-            normalized.put(sortProperty, sortValue.apply(keyset.getKeys().get(sortProperty)));
-            if (!idSorted) {
-                normalized.put("id", uuidValue(keyset.getKeys().get("id")));
+            Object idRaw = keyset.getKeys().get("id");
+            if (uniqueKeySort) {
+                return ScrollPosition.forward(Map.of(
+                        "id", uuidValue(idRaw)));
             }
-            return ScrollPosition.forward(normalized);
+            Object sortRaw = keyset.getKeys().get(sortProperty);
+            return ScrollPosition.forward(Map.of(
+                    sortProperty, sortValue.apply(sortRaw),
+                    "id", uuidValue(idRaw)));
         } catch (RuntimeException exception) {
             throw new IllegalArgumentException(
                     "after must be a forward keyset cursor emitted by " + owner, exception);

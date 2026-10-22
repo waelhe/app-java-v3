@@ -119,7 +119,11 @@ public class ProductVariantReadService implements ProductVariantReadSpi {
         if (sort == null || sort.field() == null) {
             throw new IllegalArgumentException("A product-variant sort is required");
         }
-        if (limit == null || limit.max() <= 0) {
+        if (limit == null || !limit.isLimited() || limit.max() <= 0) {
+            // The installed Spring Data 4.1.1 Limit contract: max() is only
+            // readable on a limited instance (Unlimited.max() throws) — and
+            // the keyset scroll REQUIRES a bounded page (an unlimited fetch
+            // would replace the SQL keyset with an unbounded load).
             throw new IllegalArgumentException("A positive page size is required");
         }
         if (isAdmin(authentication)) {

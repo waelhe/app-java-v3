@@ -5,7 +5,6 @@ import com.marketplace.identity.UserRepository;
 import com.marketplace.orders.Order;
 import com.marketplace.orders.OrderRepository;
 import test.config.IntegrationContainers;
-import org.springframework.graphql.ResponseError;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -322,7 +321,7 @@ class OrderGraphQlIntegrationTest {
                 .execute()
                 .errors().verify()
                 .path("orders.edges[*].node.status").entityList(String.class)
-                .hasSizeGreaterThan(0);
+                .satisfies(values -> assertThat(values).isNotEmpty());
     }
 
     @Test
@@ -337,7 +336,7 @@ class OrderGraphQlIntegrationTest {
                 .execute()
                 .errors().verify()
                 .path("orders.edges[*].node.id").entityList(String.class)
-                .hasSizeGreaterThan(3);
+                .satisfies(values -> assertThat(values).hasSizeGreaterThanOrEqualTo(4));
     }
 
     @Test
@@ -505,7 +504,7 @@ class OrderGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> assertThat(errors)
-                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("filter is not implemented")));
     }
 
@@ -519,7 +518,7 @@ class OrderGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> assertThat(errors)
-                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("where filter is not implemented")));
     }
 
@@ -533,7 +532,7 @@ class OrderGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> assertThat(errors)
-                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("search is not implemented")));
     }
 
@@ -547,7 +546,7 @@ class OrderGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> assertThat(errors)
-                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("channel filtering is not implemented")));
     }
 
@@ -561,7 +560,7 @@ class OrderGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> assertThat(errors)
-                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("forward-only pagination")));
     }
 
@@ -575,7 +574,7 @@ class OrderGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> assertThat(errors)
-                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("sort field NUMBER is not implemented")));
     }
 
@@ -590,7 +589,7 @@ class OrderGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> assertThat(errors)
-                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("externalReference lookup is not implemented")));
     }
 
@@ -604,7 +603,7 @@ class OrderGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> assertThat(errors)
-                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("order requires its id")));
     }
 }

@@ -11,6 +11,7 @@ import org.springframework.data.domain.ScrollPosition;
 import org.springframework.data.domain.Window;
 import org.springframework.security.core.Authentication;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -64,6 +65,18 @@ class CategoryReadServiceTest {
     private static Category row(String code, String nameEn, String nameAr, int position) {
         // The registry's own factory (the entity's documented write shape).
         return Category.create(code, nameEn, nameAr, position);
+    }
+
+    /** The registry factory assigns a random id — keyset-tiebreak proofs need FIXED ids. */
+    private static Category withId(Category row, UUID id) {
+        try {
+            Field field = Category.class.getDeclaredField("id");
+            field.setAccessible(true);
+            field.set(row, id);
+            return row;
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("test id stamp failed", exception);
+        }
     }
 
     private static CategoryView viewOf(Category row) {
@@ -305,21 +318,37 @@ class CategoryReadServiceTest {
 
     @Test
     void theTiebreakerDecidesWhenTheCursorSharesTheSortKey() {
-        Category tieA = row("tie-a", "Tie", null, 5);
-        Category tieB = row("tie-b", "Tie", null, 6);
+        // FIXED ids (the factory's random ids made this proof flaky — the
+        // tiebreak decision must be deterministic, not a coin flip):
+        // under the shared NAME key, strictly-after means the id order.
+        UUID lesserId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID greaterId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        Category tieA = withId(row("tie-a", "Tie", null, 5), lesserId);
+        Category tieB = withId(row("tie-b", "Tie", null, 6), greaterId);
         List<Category> rows = List.of(tieA, tieB);
         when(repository.findAll()).thenReturn(rows);
 
-        // The cursor IS tieA's key: only tieB (the strictly-greater id
+        // The cursor IS the lesser key: only tieB (the strictly-greater id
         // under the same name) may follow.
-        KeysetScrollPosition afterTieA = ScrollPosition.forward(
-                Map.of("name", "Tie", "id", tieA.getId()));
+        KeysetScrollPosition afterTheLesser = ScrollPosition.forward(
+                Map.of("name", "Tie", "id", lesserId));
 
         CategoryPage page = service.scrollCategories(authentication,
-                CategorySort.of(CategorySort.Field.NAME, true), afterTieA, Limit.of(10));
+                CategorySort.of(CategorySort.Field.NAME, true), afterTheLesser, Limit.of(10));
 
         assertThat(page.window().getContent()).extracting(CategoryView::slug)
-                .containsExactly(tieA.getId().compareTo(tieB.getId()) < 0 ? "tie-b" : "tie-a");
+                .containsExactly("tie-b");
+
+        // The GREATER key is the last row under the shared name — nothing
+        // strictly follows it (the honest empty page, never a wrap-around
+        // and never the cursor's own row).
+        KeysetScrollPosition afterTheGreater = ScrollPosition.forward(
+                Map.of("name", "Tie", "id", greaterId));
+
+        CategoryPage tail = service.scrollCategories(authentication,
+                CategorySort.of(CategorySort.Field.NAME, true), afterTheGreater, Limit.of(10));
+
+        assertThat(tail.window().getContent()).isEmpty();
     }
 
     // ------------------------------------------------------------------

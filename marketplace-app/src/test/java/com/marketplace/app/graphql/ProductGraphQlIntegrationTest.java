@@ -8,7 +8,6 @@ import com.marketplace.catalog.StoreProductStatus;
 import com.marketplace.identity.User;
 import com.marketplace.identity.UserRepository;
 import test.config.IntegrationContainers;
-import org.springframework.graphql.ResponseError;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -85,9 +84,6 @@ class ProductGraphQlIntegrationTest {
     private static final String CONSUMER_SUBJECT = "p2-prods-consumer-subject";
     private static final String ADMIN_SUBJECT = "p2-prods-admin-subject";
 
-    /** The base64 prefix every typed Product global ID starts with on the wire. */
-    private static final String PRODUCT_ID_PREFIX = java.util.Base64.getEncoder()
-            .encodeToString("Product:".getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
     @Container
     @ServiceConnection
@@ -202,6 +198,22 @@ class ProductGraphQlIntegrationTest {
                 .build();
     }
 
+    /**
+     * Decodes an emitted typed global ID — the honest tag/UUID verification
+     * (Base64("Tag:") prefix compares can never hold: the padded '==' of the
+     * tag-only encoding is not part of the full "Tag:<uuid>" encoding; the
+     * decoded form is checked against the plain tag and the native UUID
+     * shape instead).
+     */
+    private static String decodedGlobalId(String globalId) {
+        String decoded = new String(java.util.Base64.getDecoder().decode(globalId),
+                java.nio.charset.StandardCharsets.UTF_8);
+        int separator = decoded.indexOf(':');
+        assertThat(separator).isPositive();
+        UUID.fromString(decoded.substring(separator + 1));
+        return decoded;
+    }
+
     /** A well-formed typed global ID for the Product type over any native UUID. */
     private static String productGlobalId(UUID id) {
         return java.util.Base64.getEncoder()
@@ -231,9 +243,9 @@ class ProductGraphQlIntegrationTest {
                 .execute()
                 .errors().verify()
                 .path("products.edges[*].node.status").entityList(String.class)
-                .containsExactly("ACTIVE")
+                .satisfies(values -> assertThat(values).containsOnly("ACTIVE"))
                 .path("products.edges[*].node.name").entityList(String.class)
-                .satisfies(__lst -> assertThat(__lst).anySatisfy(name -> assertThat(name).startsWith("b4c ")))
+                .satisfies(names -> assertThat(names).anySatisfy(name -> assertThat(name).startsWith("b4c ")))
                 .path("products.totalCount").entity(Integer.class)
                 .satisfies(total -> assertThat(total).isGreaterThanOrEqualTo(3));
     }
@@ -253,7 +265,8 @@ class ProductGraphQlIntegrationTest {
                 .path("products.edges[*].node.status").entityList(String.class)
                 .satisfies(c -> assertThat(c).containsAnyOf("DRAFT", "SUSPENDED"))
                 .path("products.edges[*].node.name").entityList(String.class)
-                .satisfies(__lst -> assertThat(__lst).anySatisfy(name -> assertThat(name).isEqualTo("b4c Unpublished Draft Widget")));
+                .satisfies(names -> assertThat(names)
+                        .anySatisfy(name -> assertThat(name).isEqualTo("b4c Unpublished Draft Widget")));
     }
 
     @Test
@@ -343,7 +356,7 @@ class ProductGraphQlIntegrationTest {
                 .errors().verify()
                 .path("products.edges[0].node.id").entity(String.class).get();
 
-        assertThat(emittedId).startsWith(PRODUCT_ID_PREFIX);
+        assertThat(decodedGlobalId(emittedId)).startsWith("Product:");
         tester.document("""
                         query($id: ID!) { product(id: $id) { id name } }
                         """)
@@ -488,7 +501,7 @@ class ProductGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> assertThat(errors)
-                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("filter is not implemented")));
     }
 
@@ -502,7 +515,7 @@ class ProductGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> assertThat(errors)
-                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("where filter is not implemented")));
     }
 
@@ -516,7 +529,7 @@ class ProductGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> assertThat(errors)
-                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("search is not implemented")));
     }
 
@@ -530,7 +543,7 @@ class ProductGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> assertThat(errors)
-                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("channel filtering is not implemented")));
     }
 
@@ -544,7 +557,7 @@ class ProductGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> assertThat(errors)
-                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("forward-only")));
     }
 
@@ -558,7 +571,7 @@ class ProductGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> assertThat(errors)
-                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("PRICE is not implemented")));
     }
 
@@ -573,7 +586,7 @@ class ProductGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> assertThat(errors)
-                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("slug lookup is not implemented")));
     }
 
@@ -588,7 +601,7 @@ class ProductGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> assertThat(errors)
-                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("externalReference lookup is not implemented")));
     }
 
@@ -602,9 +615,191 @@ class ProductGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> assertThat(errors)
-                        .anySatisfy((ResponseError error) -> {
+                        .anySatisfy(error -> {
                             assertThat(error.getMessage()).contains("product requires its id");
                             assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
                         }));
+    }
+
+    // ------------------------------------------------------------------
+    // the product mutation roots — the real provider-scoped write stack
+    // (agent-2): the owning provider IS the caller — the seeded provider
+    // user's subject rides the JWT exactly as IdentityUserProvider
+    // resolves it.
+    // ------------------------------------------------------------------
+
+    @Test
+    void providerCreatesAProductThroughTheRealMutationStack() {
+        HttpGraphQlTester providerTester = testerFor(providerId.toString(), "PROVIDER");
+
+        String emittedId = providerTester.document("""
+                        mutation { productCreate(input: {name: "P2 Created Widget", description: "P2 fixture",
+                                storeCategoryCode: "%s", priceMinor: 1250, currency: "SAR"}) {
+                            errors { field code }
+                            product { id name status }
+                        } }
+                        """.formatted(storeCategoryCode))
+                .execute()
+                .errors().verify()
+                .path("productCreate.errors").entityList(Object.class).hasSize(0)
+                .path("productCreate.product.id").entity(String.class).get();
+
+        String decoded = new String(java.util.Base64.getDecoder().decode(emittedId),
+                java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(decoded).startsWith("Product:");
+        UUID rowId = UUID.fromString(decoded.substring("Product:".length()));
+        seededProductIds.add(rowId);
+
+        // The real-stack read-back: the row persisted with the caller as
+        // its owning provider and the untyped register's ACTIVE start.
+        Product row = productRepository.findById(rowId).orElseThrow();
+        assertThat(row.getTitle()).isEqualTo("P2 Created Widget");
+        assertThat(row.getProviderId()).isEqualTo(providerId);
+        assertThat(row.getPriceMinor()).isEqualTo(1250L);
+        assertThat(row.getStatus()).isEqualTo(com.marketplace.catalog.StoreProductStatus.ACTIVE);
+
+        providerTester.document("""
+                        query($id: ID!) { product(id: $id) { name status } }
+                        """)
+                .variable("id", emittedId)
+                .execute()
+                .errors().verify()
+                .path("product.name").entity(String.class).isEqualTo("P2 Created Widget")
+                .path("product.status").entity(String.class).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void unknownStoreCategoryCreateAnswersThePayloadError() {
+        HttpGraphQlTester providerTester = testerFor(providerId.toString(), "PROVIDER");
+
+        providerTester.document("""
+                        mutation { productCreate(input: {name: "P2 Missing Category", storeCategoryCode: "missing-cat",
+                                priceMinor: 1250, currency: "SAR"}) {
+                            errors { field code }
+                            product { id }
+                        } }
+                        """)
+                .execute()
+                .errors().verify()
+                .path("productCreate.errors[0].field").entity(String.class).isEqualTo("storeCategoryCode")
+                .path("productCreate.errors[0].code").entity(String.class).isEqualTo("NOT_FOUND")
+                .path("productCreate.product").valueIsNull();
+    }
+
+    @Test
+    void adminIsDeniedTheProductCreateByTheOwningUseCase() {
+        // The owning use case enforces the PROVIDER capability for
+        // provider-owned rows — the platform's two-sided ownership law
+        // (the recorded RBAC divergence), proven by the real stack.
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+
+        adminTester.document("""
+                        mutation { productCreate(input: {name: "P2 Admin Deny", storeCategoryCode: "%s",
+                                priceMinor: 1250, currency: "SAR"}) {
+                            errors { code }
+                            product { id }
+                        } }
+                        """.formatted(storeCategoryCode))
+                .execute()
+                .errors()
+                .satisfy(errors -> {
+                    var error = errors.getFirst();
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "AUTHZ-001");
+                    assertThat(error.getExtensions()).containsEntry("category", "authz");
+                });
+    }
+
+    @Test
+    void providerUpdatesAProductThroughTheRealMutationStack() {
+        HttpGraphQlTester providerTester = testerFor(providerId.toString(), "PROVIDER");
+        UUID rowId = seededProductIds.get(0);
+
+        providerTester.document("""
+                        mutation { productUpdate(id: "%s", input: {name: "P2 Updated Widget", priceMinor: 2000}) {
+                            errors { code }
+                            product { name status }
+                        } }
+                        """.formatted(productGlobalId(rowId)))
+                .execute()
+                .errors().verify()
+                .path("productUpdate.errors").entityList(Object.class).hasSize(0)
+                .path("productUpdate.product.name").entity(String.class).isEqualTo("P2 Updated Widget");
+
+        // The partial-preserve law: the description column is untouched
+        // by the name+price command.
+        Product row = productRepository.findById(rowId).orElseThrow();
+        assertThat(row.getTitle()).isEqualTo("P2 Updated Widget");
+        assertThat(row.getPriceMinor()).isEqualTo(2000L);
+        assertThat(row.getDescription()).isEqualTo("b4c fixture");
+    }
+
+    @Test
+    void aStrangersRowAnswersTheSafeAbsenceOnUpdate() {
+        // The ownership law's own R5 shape: a row the caller does not
+        // own answers the same NOT_FOUND as a missing row — never an
+        // existence disclosure. The seeded rows belong to the seeded
+        // provider; a DIFFERENT provider's subject gets its own row.
+        UUID strangerProviderId = UUID.randomUUID();
+        userRepository.save(new User(strangerProviderId, strangerProviderId.toString(), null,
+                "p2 stranger provider", com.marketplace.identity.UserRole.PROVIDER));
+        try {
+            Product strangers = productRepository.save(Product.register(storeCategoryCode,
+                    "P2 Stranger Widget", "fixture", 1000L, "SAR", strangerProviderId));
+            seededProductIds.add(strangers.getId());
+
+            HttpGraphQlTester providerTester = testerFor(providerId.toString(), "PROVIDER");
+            providerTester.document("""
+                            mutation { productUpdate(id: "%s", input: {name: "P2 Hijack"}) {
+                                errors { field code }
+                                product { id }
+                            } }
+                            """.formatted(productGlobalId(strangers.getId())))
+                    .execute()
+                    .errors().verify()
+                    .path("productUpdate.errors[0].field").entity(String.class).isEqualTo("id")
+                    .path("productUpdate.errors[0].code").entity(String.class).isEqualTo("NOT_FOUND")
+                    .path("productUpdate.product").valueIsNull();
+        } finally {
+            userRepository.deleteById(strangerProviderId);
+        }
+    }
+
+    @Test
+    void providerDeletesAndBulkDeletesProductsThroughTheRealMutationStack() {
+        HttpGraphQlTester providerTester = testerFor(providerId.toString(), "PROVIDER");
+        UUID rowId = seededProductIds.get(0);
+        UUID secondRowId = seededProductIds.get(1);
+
+        providerTester.document("""
+                        mutation { productDelete(id: "%s") {
+                            errors { code }
+                            product { name }
+                        } }
+                        """.formatted(productGlobalId(rowId)))
+                .execute()
+                .errors().verify()
+                .path("productDelete.errors").entityList(Object.class).hasSize(0)
+                .path("productDelete.product.name").entity(String.class).isEqualTo("b4c Alpha Widget");
+
+        // The soft-deleted row is absent to the read root (the honest
+        // absence, never an error).
+        providerTester.document("""
+                        query($id: ID!) { product(id: $id) { id } }
+                        """)
+                .variable("id", productGlobalId(rowId))
+                .execute()
+                .errors().verify()
+                .path("product").valueIsNull();
+
+        providerTester.document("""
+                        mutation { productBulkDelete(ids: ["%s"]) {
+                            count
+                            errors { code }
+                        } }
+                        """.formatted(productGlobalId(secondRowId)))
+                .execute()
+                .errors().verify()
+                .path("productBulkDelete.count").entity(Integer.class).isEqualTo(1)
+                .path("productBulkDelete.errors").entityList(Object.class).hasSize(0);
     }
 }
