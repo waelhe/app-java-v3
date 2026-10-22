@@ -6,7 +6,8 @@
 - Branch: `agent/saleor-p4-p5-p6-orders-events-20261021`.
 - Frozen base: `b3c75d0584cda3b07722c424195bcd1c1c87bbd7`.
 - Starting head: `0a8b847c368ba2812d3b0d632e7836c72351e111`.
-- Verified checkout-slice base: `c56790f9a62c94acaa3a0262005529aa26d4b634`. The final code head is recorded after this slice is pushed to PR #698.
+- Verified checkout-slice base: `c56790f9a62c94acaa3a0262005529aa26d4b634`.
+- Final verified code head: `56cd09f` (the checkout-slice commit preceding this documentation update).
 - Governing plan: `docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md`.
 - Upstream pin: Saleor `3.23.43`, schema Git blob SHA `b8fa0dd809081f76dc2834bb5c286561e5783276`.
 - Framework authority: Spring Boot 4.1.1, Spring Modulith 2.1.1, Java 25, DGS, measured from the reactor.
