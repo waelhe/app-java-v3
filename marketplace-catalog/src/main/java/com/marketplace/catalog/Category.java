@@ -94,6 +94,21 @@ public class Category extends BaseEntity {
         }
     }
 
+    /**
+     * The registry row's bilingual translation seam — the ADMIN
+     * translate use case's own seam (the Saleor {@code categoryTranslate}
+     * root mapped onto the registry's bilingual columns; the option
+     * registry's own {@code revise} precedent). The arguments are the
+     * ALREADY-VALIDATED replacement values for the whole bilingual pair
+     * (the use case owns validation and computes the merged pair — the
+     * at-least-one-name law over the result, the 100-character column
+     * ceilings).
+     */
+    void translate(String newNameEn, String newNameAr) {
+        this.nameEn = newNameEn;
+        this.nameAr = newNameAr;
+    }
+
     public String getCode() {
         return code;
     }

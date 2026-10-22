@@ -126,6 +126,12 @@ class AttributeMutationDataFetcherDgsTest {
     @MockitoBean
     private com.marketplace.catalog.spi.ProductVariantWriteSpi productVariantWriteSpi;
 
+    // The translation mutation roots' owning write seam (agent-2
+    // follow-on packet) — the package slice wires every fetcher, so
+    // this seam gets its mock (the b5-a sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.catalog.spi.TranslationWriteSpi translationWriteSpi;
+
     @MockitoBean
     private DiscoverySpi discoverySpi;
 

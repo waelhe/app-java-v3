@@ -997,3 +997,114 @@ type AttributeValueBulkDelete {
     count: Int!
     errors: [AttributeError!]!
 }
+
+# =====================================================================
+# The translation mutation roots — the catalog registries' bilingual
+# translation ADMIN write use case (the MANAGE_TRANSLATIONS family).
+# The platform's own two-language law is the honest bounded mapping of
+# Saleor's per-locale translation rows: the bilingual columns
+# (name_en/name_ar) ARE the platform's translation storage — AR
+# addresses the name_ar dimension, EN the name_en dimension (the
+# central schema's own two-member LanguageCodeEnum). Signatures are
+# the pinned 3.23.43 shapes for the owned field set; the unowned
+# input members (the JSONString description family, the SEO fields,
+# the richText/plainText pair) have no owning capabilities on this
+# surface and stay undeclared — recorded divergences, never faked.
+# =====================================================================
+extend type Mutation {
+    """Updates a category's translation for the addressed language dimension."""
+    categoryTranslate(
+        """Category ID or CategoryTranslatableContent ID."""
+        id: ID!
+
+        """Fields required to update category translations (the bounded owned set: the display name)."""
+        input: TranslationInput!
+
+        """Translation language code — the platform's own AR/EN bilingual closure."""
+        languageCode: LanguageCodeEnum!
+    ): CategoryTranslate
+
+    """Updates an attribute's translation for the addressed language dimension."""
+    attributeTranslate(
+        """Attribute ID or AttributeTranslatableContent ID."""
+        id: ID!
+
+        """Fields required to update attribute translations (the bounded owned set: the display name)."""
+        input: NameTranslationInput!
+
+        """Translation language code — the platform's own AR/EN bilingual closure."""
+        languageCode: LanguageCodeEnum!
+    ): AttributeTranslate
+
+    """Updates an attribute value's translation for the addressed language dimension."""
+    attributeValueTranslate(
+        """AttributeValue ID or AttributeValueTranslatableContent ID."""
+        id: ID!
+
+        """
+        Fields required to update attribute value translations (the
+        bounded owned set: the display name; the richText/plainText
+        pair stays undeclared — no owning columns).
+        """
+        input: AttributeValueTranslationInput!
+
+        """Translation language code — the platform's own AR/EN bilingual closure."""
+        languageCode: LanguageCodeEnum!
+    ): AttributeValueTranslate
+}
+
+# =====================================================================
+# The bounded TranslationInput — the pinned Saleor input's OWNED field
+# set only: the display name (the registry's bilingual column family).
+# The unowned members (description/fullDescription as JSONString,
+# slug/seoTitle/seoDescription) have no owning capabilities on this
+# surface and stay undeclared — recorded divergences, never faked.
+# =====================================================================
+input TranslationInput {
+    """The addressed language's display name (null preserves the column)."""
+    name: String
+}
+
+input NameTranslationInput {
+    """The addressed language's display name (null preserves the column)."""
+    name: String
+}
+
+input AttributeValueTranslationInput {
+    """The addressed language's display name (null preserves the column)."""
+    name: String
+}
+
+type TranslationError {
+    """Name of a field that caused the error (null = not field-associated)."""
+    field: String
+
+    """The error message."""
+    message: String
+
+    """The error code."""
+    code: TranslationErrorCode!
+}
+
+enum TranslationErrorCode {
+    GRAPHQL_ERROR
+    INVALID
+    NOT_FOUND
+    REQUIRED
+    UNIQUE
+}
+
+type CategoryTranslate {
+    errors: [TranslationError!]!
+    category: Category
+}
+
+type AttributeTranslate {
+    errors: [TranslationError!]!
+    attribute: Attribute
+}
+
+type AttributeValueTranslate {
+    errors: [TranslationError!]!
+    attributeValue: AttributeValue
+}
