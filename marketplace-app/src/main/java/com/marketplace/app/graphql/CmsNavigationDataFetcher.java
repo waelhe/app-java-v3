@@ -29,6 +29,7 @@ import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
+import org.springframework.data.domain.KeysetScrollPosition;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.ScrollPosition;
 import org.springframework.graphql.data.pagination.EncodingCursorStrategy;
@@ -302,7 +303,7 @@ public class CmsNavigationDataFetcher {
                 || com.marketplace.app.graphql.generated.types.OrderDirection.ASC
                         .equals(sortBy.getDirection());
         CmsNavigationPort.MenuWindow window = navigationPort.scrollMenus(currentAuthentication(),
-                field, ascending, org.springframework.data.domain.ScrollPosition.keyset(),
+                field, ascending, navigationKeysetPosition(after, field, "menus with the same sortBy"),
                 Limit.of(Math.min(requested, properties.pagination().maxPageSize())));
         List<com.marketplace.app.graphql.generated.types.MenuCountableEdge> edges =
                 new ArrayList<>(window.window().getContent().size());
@@ -356,7 +357,7 @@ public class CmsNavigationDataFetcher {
         }
         CmsNavigationPort.MenuItemWindow window = navigationPort.scrollMenuItems(
                 currentAuthentication(), "NAME", true,
-                org.springframework.data.domain.ScrollPosition.keyset(),
+                navigationKeysetPosition(after, "NAME", "menu items with the same sortBy"),
                 Limit.of(Math.min(requested, properties.pagination().maxPageSize())));
         List<com.marketplace.app.graphql.generated.types.MenuItemCountableEdge> edges =
                 new ArrayList<>(window.window().getContent().size());
@@ -455,6 +456,13 @@ public class CmsNavigationDataFetcher {
                 .slug(view.slug() == null ? "" : view.slug())
                 .items(List.of())
                 .build();
+    }
+
+    private KeysetScrollPosition navigationKeysetPosition(String after, String sortField,
+                                                          String owner) {
+        String property = "SLUG".equals(sortField) ? "slug" : "name";
+        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, property,
+                KeysetCursorGate::textValue, owner);
     }
 
     private static com.marketplace.app.graphql.generated.types.PageInfo pageInfoOf(boolean hasNext) {

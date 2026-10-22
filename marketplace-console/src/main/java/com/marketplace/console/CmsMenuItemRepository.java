@@ -1,5 +1,8 @@
 package com.marketplace.console;
 
+import org.springframework.data.domain.KeysetScrollPosition;
+import org.springframework.data.domain.Limit;
+import org.springframework.data.domain.Window;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.repository.history.RevisionRepository;
 
@@ -22,4 +25,8 @@ public interface CmsMenuItemRepository extends JpaRepository<CmsMenuItem, UUID>,
     long countByMenuId(UUID menuId);
 
     boolean existsByPageId(UUID pageId);
+
+    Window<CmsMenuItem> findAllByOrderByNameAscIdAsc(KeysetScrollPosition position, Limit limit);
+
+    Window<CmsMenuItem> findAllByOrderByNameDescIdDesc(KeysetScrollPosition position, Limit limit);
 }

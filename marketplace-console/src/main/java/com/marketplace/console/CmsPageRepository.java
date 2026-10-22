@@ -6,7 +6,6 @@ import org.springframework.data.domain.Window;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.repository.history.RevisionRepository;
 
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -25,8 +24,6 @@ public interface CmsPageRepository extends JpaRepository<CmsPage, UUID>,
 
     boolean existsByPageTypeId(UUID pageTypeId);
 
-    List<CmsPage> findByIsPublishedTrue();
-
     Window<CmsPage> findAllByOrderBySlugAscIdAsc(KeysetScrollPosition position, Limit limit);
 
     Window<CmsPage> findAllByOrderBySlugDescIdDesc(KeysetScrollPosition position, Limit limit);
@@ -39,9 +36,5 @@ public interface CmsPageRepository extends JpaRepository<CmsPage, UUID>,
 
     Window<CmsPage> findAllByOrderByCreatedAtDescIdDesc(KeysetScrollPosition position, Limit limit);
 
-    List<CmsPage> findByIsPublishedOrderBySlugAscIdAsc(boolean published, KeysetScrollPosition position, Limit limit);
-
     long count();
-
-    long countByIsPublishedTrue();
 }

@@ -261,7 +261,6 @@ public class CmsNavigationAdminService implements CmsNavigationPort {
                                             List<Integer> sortOrders) {
         requireAdmin(caller);
         requireMenu(menuId);
-        List<MenuItemView> moved = new ArrayList<>(itemIds.size());
         for (int i = 0; i < itemIds.size(); i++) {
             CmsMenuItem item = requireItem(itemIds.get(i));
             if (!item.getMenuId().equals(menuId)) {
@@ -282,19 +281,33 @@ public class CmsNavigationAdminService implements CmsNavigationPort {
                 }
             }
             item.reParent(newParent);
-            moved.add(toView(item));
         }
-        // The relative sort orders apply AFTER the re-parenting: each item's
-        // position shifts by its delta, then every sibling group resequences dense.
+        // The relative sort orders apply AFTER the re-parenting. Remove each
+        // item from its destination sibling group, then reinsert it at the
+        // clamped delta so duplicate positions can never decide the order.
+        Map<UUID, CmsMenuItem> itemsById = new HashMap<>();
+        Map<UUID, List<CmsMenuItem>> byParent = new HashMap<>();
+        for (CmsMenuItem item : itemRepository.findAllByMenuIdOrderByPositionAscIdAsc(menuId)) {
+            itemsById.put(item.getId(), item);
+            byParent.computeIfAbsent(item.getParentId(), key -> new ArrayList<>()).add(item);
+        }
         for (int i = 0; i < itemIds.size(); i++) {
-            CmsMenuItem item = requireItem(itemIds.get(i));
+            CmsMenuItem item = itemsById.get(itemIds.get(i));
+            List<CmsMenuItem> group = byParent.get(item.getParentId());
+            int currentIndex = group.indexOf(item);
+            group.remove(currentIndex);
             int delta = sortOrders.get(i) == null ? 0 : sortOrders.get(i);
-            item.moveTo(Math.max(0, item.getPosition() + delta));
+            int target = Math.max(0, Math.min(group.size(), currentIndex + delta));
+            group.add(target, item);
         }
-        resequence(menuId);
+        for (List<CmsMenuItem> group : byParent.values()) {
+            for (int i = 0; i < group.size(); i++) {
+                group.get(i).moveTo(i);
+            }
+        }
         log.info("CMS menu items moved: menuId={}, moves={}, actor={}", menuId, itemIds.size(),
                 caller.getName());
-        return moved;
+        return itemIds.stream().map(itemsById::get).map(this::toView).toList();
     }
 
     // ---------------------------------------------------------------------
@@ -363,26 +376,9 @@ public class CmsNavigationAdminService implements CmsNavigationPort {
         // The item collection's owning sorts: NAME (the item's own column)
         // and SLUG (rendered from the name composition the same way).
         Window<CmsMenuItem> window = ascending
-                ? itemsWindow(position, limit, true)
-                : itemsWindow(position, limit, false);
+                ? itemRepository.findAllByOrderByNameAscIdAsc(position, limit)
+                : itemRepository.findAllByOrderByNameDescIdDesc(position, limit);
         return new MenuItemWindow(window.map(this::toView), itemRepository.count());
-    }
-
-    private Window<CmsMenuItem> itemsWindow(KeysetScrollPosition position, Limit limit,
-                                            boolean ascending) {
-        // The item scroll rides the whole-collection name sorts; the tree
-        // composition happens per-menu at the boundary.
-        return ascending
-                ? org.springframework.data.domain.Window.from(
-                        itemRepository.findAll(org.springframework.data.domain.Sort.by(
-                                org.springframework.data.domain.Sort.Direction.ASC, "name", "id"))
-                                .stream().limit(limit.max()).toList(),
-                        org.springframework.data.domain.ScrollPosition::offset)
-                : org.springframework.data.domain.Window.from(
-                        itemRepository.findAll(org.springframework.data.domain.Sort.by(
-                                org.springframework.data.domain.Sort.Direction.DESC, "name", "id"))
-                                .stream().limit(limit.max()).toList(),
-                        org.springframework.data.domain.ScrollPosition::offset);
     }
 
     // ---------------------------------------------------------------------

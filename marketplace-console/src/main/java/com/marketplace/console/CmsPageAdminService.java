@@ -324,10 +324,10 @@ public class CmsPageAdminService implements CmsPagePort {
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "The attribute is not assigned to the page type: " + attributeId));
             int delta = deltas.get(i) == null ? 0 : deltas.get(i);
-            pair.moveTo(Math.max(0, pair.getPosition() + delta));
+            int currentIndex = pairs.indexOf(pair);
+            pairs.remove(currentIndex);
+            pairs.add(Math.max(0, Math.min(currentIndex + delta, pairs.size())), pair);
         }
-        pairs.sort(java.util.Comparator.comparingInt(CmsPageTypeAttribute::getPosition)
-                .thenComparing(CmsPageTypeAttribute::getId));
         for (int i = 0; i < pairs.size(); i++) {
             pairs.get(i).moveTo(i);
         }

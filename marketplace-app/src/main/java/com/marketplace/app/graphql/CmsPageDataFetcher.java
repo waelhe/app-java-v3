@@ -332,7 +332,7 @@ public class CmsPageDataFetcher {
                 || com.marketplace.app.graphql.generated.types.OrderDirection.ASC
                         .equals(sortBy.getDirection());
         CmsPagePort.PageWindow window = cmsPagePort.scrollPages(currentAuthentication(), field,
-                ascending, keysetPosition(after, field),
+                ascending, keysetPosition(after, field, "pages with the same sortBy"),
                 Limit.of(Math.min(requested, properties.pagination().maxPageSize())));
         return toConnection(window, PageCountableConnection.newBuilder(), field);
     }
@@ -374,7 +374,7 @@ public class CmsPageDataFetcher {
                 || com.marketplace.app.graphql.generated.types.OrderDirection.ASC
                         .equals(sortBy.getDirection());
         CmsPagePort.PageTypeWindow window = cmsPagePort.scrollPageTypes(currentAuthentication(),
-                field, ascending, keysetPosition(after, field),
+                field, ascending, keysetPosition(after, field, "page types with the same sortBy"),
                 Limit.of(Math.min(requested, properties.pagination().maxPageSize())));
         return toTypeConnection(window);
     }
@@ -453,16 +453,16 @@ public class CmsPageDataFetcher {
                 .build();
     }
 
-    private KeysetScrollPosition keysetPosition(String after, String sortField) {
+    private KeysetScrollPosition keysetPosition(String after, String sortField, String owner) {
         String property = switch (sortField) {
+            case "NAME" -> "name";
             case "TITLE" -> "title";
             case "CREATED_AT", "PUBLICATION_DATE" -> "createdAt";
             default -> "slug";
         };
         java.util.function.Function<Object, Object> value = "createdAt".equals(property)
                 ? KeysetCursorGate::instantValue : KeysetCursorGate::textValue;
-        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, property, value,
-                "pages with the same sortBy");
+        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, property, value, owner);
     }
 
     private List<UUID> validatedAttributes(List<String> attributeIds) {

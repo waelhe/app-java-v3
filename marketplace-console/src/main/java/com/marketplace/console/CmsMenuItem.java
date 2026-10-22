@@ -99,7 +99,12 @@ public class CmsMenuItem extends BaseEntity {
             this.name = name.trim();
         }
         if (url != null) {
-            this.url = url.isBlank() ? null : url.trim();
+            String trimmedUrl = url.isBlank() ? null : url.trim();
+            this.url = trimmedUrl;
+            if (trimmedUrl != null) {
+                this.categoryId = null;
+                this.pageId = null;
+            }
         }
         if (categoryId != null) {
             this.categoryId = categoryId;
