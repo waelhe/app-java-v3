@@ -312,9 +312,9 @@ class ProductTypeAttributeWriteServiceTest {
         // settled state of the entities themselves (the same facts the
         // integration leg proves against the real unique index).
         verify(assignmentRepository, times(2)).saveAll(org.mockito.ArgumentMatchers.anyList());
-        assertThat(third.getPosition()).isEqualTo(1);
-        assertThat(first.getPosition()).isEqualTo(2);
-        assertThat(second.getPosition()).isEqualTo(3);
+        assertThat(three.getPosition()).isEqualTo(1);
+        assertThat(one.getPosition()).isEqualTo(2);
+        assertThat(two.getPosition()).isEqualTo(3);
     }
 
     @Test
