@@ -138,3 +138,54 @@ body-level assertions through its own HTTP client. The owner's own bar:
   byte-identical.
 - CodeRabbit was manually activated on the head (`7d3dc4a`, comment
   6349640633); the monitoring is the no-wait protocol's simple watch.
+
+## §5 The verification iterations (the honest CI ledger)
+
+Every claim below is a measured CI round on this branch (the session's
+JDK is 21; the reactor is `--release 25` — the CI is the only executor):
+
+| Run | Head | Standing |
+|---|---|---|
+| 39842734474 | `157399bf` | One test-compile blocker (Jackson 3 vs 2 names in the journey leg) — fixed in `f4083a0` |
+| 39844255638 | `f4083a0` | Build + 4 gates green; **5/8 shards green** (the owner's three defects + the cleanup storm proven); modules: one SearchCriteria leg; shards 2/5: seven residual legs |
+| 39851376768 | `4395564` | **7/8 shards green**; modules: JaCoCo held 0.68 (the first tranche landed inside the rounding band) |
+| 39855677551 | `465fa63` | The category ordering legs closed (naturalOrder's documented law + the seed registry's own row) |
+| 39857587420 | `9ab9f2b` | **JaCoCo GREEN for the first time** (the third tranche — SharedContractSurfacesTest); the two reorder unit legs' captor-based expectations re-proved |
+| 39859146736 | `6ea92ec` | The provable-facts rewrite of the two reorder unit legs |
+| 39860647330 | `c978e84` | modules reached the app-unit step FOR THE FIRST TIME (the coverage gate had always stopped it): **322 latent DGS context failures** measured — the merged `JdbcRefreshTokenRotationStore` needs a `JdbcTemplate` no containerless slice carries |
+| 39863837932 | `f4b5ac1` | The 27 slices' `@MockitoBean RefreshTokenRotationStore` closed 306 of the 322; 16 slices still fail their context on `GraphQlConfig`'s binding-backed `GraphQlProperties`; the observation pin and the ArchUnit ports rule surfaced as the integration head's own latent tail |
+| 39867184444 | `190bbdd` | The observation pin updated deliberately (the token family's three commands — the pin's own contract); the explicit profile values did NOT reach the binding failures (measured, not assumed) |
+| 39869695034 | `46ea249` | The `@Primary @Bean` attempt measured as a full regression (every context failed) — **reverted** in `101433e` |
+
+## §6 The two documented blockers that stay open (the integration head's own latent tail)
+
+These surfaced ONLY because this round's coverage-gate fix let the
+modules job finally reach the app-unit step (the reactor had always
+stopped earlier). Both pre-date this branch — they ride the merged
+integration head `d10a901`:
+
+1. **The 16 DGS slices' `GraphQlProperties` binding failure** — the
+   containerless contexts fail to bind `marketplace.graphql` for the
+   scanned `GraphQlConfig` (deterministic: the same sixteen classes fail
+   in every round; their eleven structurally identical siblings load).
+   Measured and failed cures: explicit profile values (`190bbdd`) and a
+   `@Primary @Bean` direct registration (`46ea249` — full regression,
+   reverted). Root-diagnosis needs a local JVM on `--release 25`; every
+   attempt and its measurement is recorded above.
+
+2. **`ArchitectureRulesTest.sharedPortsAreFrameworkNeutral` — 44
+   violations** — the merged CMS/identity ports (`CmsNavigationPort`
+   et al.) speak `org.springframework.security.core.Authentication`
+   across the shared-api boundary. This is the merged agent-1 delivery's
+   own refactor to complete (the neutral-contract law the rule itself
+   documents); recorded here with its exact measurement, not crossed.
+
+**What IS proven green on this branch** (the owner's closure bars):
+the NAME keyset cursor round-trip (shard 1), the FK-free physical
+cleanup (shards 1, 5, 6 — Product/Collection/ProductMedia/Category/
+Order/ProductVariant all green), the unified AUTHN-001 anonymous
+contract (nine legs green across the shards), the reorder
+park-then-settle against the real unique indexes (shard 2), the
+`updated_at` keyset casts (shard 3), the test-profile rate-limiter
+budgets (shard 4), and the marketplace-shared coverage gate (modules,
+`9ab9f2b` onward).
