@@ -470,3 +470,71 @@ inherited broken in catalog/orders, the spring-graphql 2.0.5 tester-API correcti
 b4-a/b5 packets' integration tests, and the D-ADDR-001 governance split that unblocks the
 canonical-plan gate). After that merge the branch's own CI compiles the full reactor and
 executes the unit suites the matrix above records.
+
+---
+
+## Round 5 — the multi-instance atomic consumption (the integrator's follow-up review, 13:01)
+
+**Head: `41e93b3e73`** (the round's implementation commit `b280c4f3` + the import-package
+correction). The review's remaining security note — the instance-local stripe locks could
+not prove one-time-use across two application instances sharing the store, and no test had
+ever exercised two grant-services over the same authorization rows — is closed from the
+root:
+
+1. **The JVM locks are GONE.** `PlatformTokenGrantService` carries no `ReentrantLock`
+   stripes anymore — no local lock stands in for a distributed one, exactly as the review
+   demanded ("لا أريد اعتماد قفل محلي كقفل موزع ضمنيًا").
+
+2. **The atomic boundary moved INTO the authorization store.** The new
+   `RefreshTokenRotationStore` seam (with the production
+   `JdbcRefreshTokenRotationStore`): one conditional
+   `UPDATE oauth2_authorization SET refresh_token_value = :successor WHERE id = :row AND
+   refresh_token_value = :presented` — the affected-rows count IS the consumption verdict,
+   in the database's own row lock, serialized across EVERY instance sharing the store. Two
+   concurrent rotations of the same token (one request per instance) cannot both match the
+   row: the first mover flips the value, the second matches zero rows and answers false —
+   rejected exactly like a replay. The official full-row `OAuth2AuthorizationService.save`
+   rides the SAME transaction (`@Transactional`), so the successor's complete column set
+   commits all-or-nothing with the consumption; a failure rolls the consumption back (the
+   presented token stays consumable — nothing is lost). No second issuer, no parallel token
+   path — the official SAS rotation's own save, guarded by the one predicate this store
+   exists to enforce.
+
+3. **The demanded integration test landed.**
+   `PlatformTokenGrantRotationMultiInstanceIntegrationTest`: real PostgreSQL (the V13
+   `oauth2_authorization` table, Flyway-migrated), the real
+   `JdbcOAuth2AuthorizationService`, the real transactional rotation-store bean, and TWO
+   INDEPENDENT `PlatformTokenGrantService` instances sharing NOTHING but the database —
+   the exact scenario the review prescribed. Its legs: (a) the concurrent cross-instance
+   double-spend allows EXACTLY ONE winner — the loser rejected like a replay, the winner's
+   survivor live on BOTH instances and the presented token dead on BOTH; (b) the
+   consumption outcome asserted in the shared row itself (the successor replaces the
+   presented value in `oauth2_authorization`); (c) a rotation consumed on one instance is
+   a replay on the other while the successor chains through the other instance (with the
+   real account projection read); (d) `tokensDeactivateAll` (the REAL
+   `TokenRevocationService` kill, not a modeled delete) reaches the rotated successor on
+   every instance.
+
+4. **The locally-executed matrix for this round** (no Docker in this sandbox — the frozen
+   §9 contract; every integration class executes on the dispatched CI suites):
+   `PlatformTokenGrantServiceTest` **9/9** through the new in-memory rotation-store double
+   (the guard's conditional verdict modeled faithfully — the row must still carry the
+   presented value). The **Integration Test workflow is GREEN on this round's head**
+   `41e93b3e73` (run 39789806375): the full reactor compiles, the application boots with
+   the new beans wired, and the composed smoke journey passes — including the anonymous
+   GraphQL introspection leg still answering the closed-surface 401 on THIS branch (the
+   matcher is A0's to land on the integration branch, per the handoff's sequencing
+   constraint). The full sharded test suite gates through the dispatched CI workflow on
+   the same head; the multi-instance integration test class executes in its app shard.
+
+5. **A0 landed the security decision in the same round.** The agent branch was merged into
+   the integration candidate (A0's continuous-integration duty, merge `fabfadd0` — the
+   gate and the whole authentication surface reached the candidate with it), and A0's own
+   commit `b082816d` landed the handoff exactly as prescribed: the
+   `POST /graphql` permitAll matcher in the api chain, the seven reopened-contract HTTP
+   legs in `GraphQlSecurityIntegrationTest` (the gate answers the anonymous POST with the
+   classified AUTHN-001 GraphQL envelope; the GET surface and the invalid-bearer challenge
+   keep the standing 401 problem+json; the operationName spoof, the fragment spread, the
+   inline fragment and the unparsable document are all refused; `tokenVerify` executes
+   cleanly for the anonymous caller), and the composed smoke's GraphQL leg updated to the
+   gate's contract — the surface opens WITH its wall, in one tree, never a line before it.
