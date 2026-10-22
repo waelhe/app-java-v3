@@ -28,6 +28,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -121,6 +122,21 @@ class AccountEmailChangeServiceTest {
         assertThatThrownBy(() -> service.requestChange(caller, NEW_EMAIL, "wrong"))
                 .isInstanceOf(BadCredentialsException.class);
         verify(userRepository, never()).findBySubject(any());
+    }
+
+    @Test
+    void theRequestLegRefusesAnAddressBeyondTheLoginStoresDomain() {
+        // The round-2 CodeRabbit finding: the address becomes the login
+        // username — auth_users.username caps at 50 characters (V13), and
+        // the failure would otherwise surface at confirm time as a storage
+        // error AFTER the mail leg, instead of the clean 400 at the request
+        // boundary (before the password check and the token issue).
+        String tooLong = "a".repeat(40) + "@example.com";
+
+        assertThatThrownBy(() -> service.requestChange(caller, tooLong, "pw"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("exceeds 50 characters");
+        verify(userDetailsManager, never()).loadUserByUsername(anyString());
     }
 
     @Test

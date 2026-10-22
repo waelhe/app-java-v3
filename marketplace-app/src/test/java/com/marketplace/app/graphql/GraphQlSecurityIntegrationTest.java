@@ -216,6 +216,47 @@ class GraphQlSecurityIntegrationTest {
     }
 
     /**
+     * Leg 7 (round 2, the fragment-spread bypass): an allowed field plus a
+     * fragment SPREAD that selects a protected root is refused — the gate
+     * refuses any top-level selection it cannot decide without resolving
+     * the fragment graph (deny-by-default; the previous shape passed the
+     * gate and executed the protected field for the anonymous caller).
+     */
+    @Test
+    void anonymousFragmentSpreadRidingAnAllowedFieldIsRefused() throws Exception {
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"mutation { tokenVerify(token: \\\"x\\\")"
+                                + " { isValid } ...Protected }"
+                                + " fragment Protected on Mutation {"
+                                + " passwordChange(newPassword: \\\"whatever-123\\\")"
+                                + " { errors { code } } }\"}"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.errors[0].extensions.errorCode").value("AUTHN-001"))
+                .andExpect(jsonPath("$.errors[0].extensions.category").value("authz"));
+    }
+
+    /**
+     * Leg 8 (round 2, the inline-fragment bypass): an INLINE fragment
+     * selecting a protected root under an allowed operation is refused by
+     * the same rule — the shape the gate cannot decide never reaches
+     * execution.
+     */
+    @Test
+    void anonymousInlineFragmentSelectingAProtectedRootIsRefused() throws Exception {
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"mutation { ... on Mutation {"
+                                + " passwordChange(newPassword: \\\"whatever-123\\\")"
+                                + " { errors { code } } } }\"}"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.errors[0].extensions.errorCode").value("AUTHN-001"))
+                .andExpect(jsonPath("$.errors[0].extensions.category").value("authz"));
+    }
+
+    /**
      * RFC 6750 §3: a request that supplied a bearer token which failed
      * validation (the real JwtDecoder rejects a garbage token) must be
      * challenged with {@code error="invalid_token"} and the same

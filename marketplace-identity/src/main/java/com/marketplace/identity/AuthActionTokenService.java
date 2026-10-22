@@ -195,21 +195,24 @@ public class AuthActionTokenService {
 
     /**
      * Agent 1 (the CodeRabbit integrity round — the login-identity move's
-     * FK leg): deletes EVERY token row for the account, outstanding AND
-     * consumed. V112's FK from {@code auth_action_tokens.username} to
-     * {@code auth_users(username)} means the login row cannot die while
-     * ANY row still references it — consumption alone (the A-04
-     * administrative leg above) leaves the reference in place, so both
-     * email-change paths purge the history BEFORE {@code deleteUser}.
-     * The delete is Envers-audited: every removed row leaves a DEL
-     * revision, so the account's redemption history stays recoverable
-     * from the audit trail exactly like the declared pseudonymization
-     * residuals.
+     * FK leg): PHYSICALLY removes every token row for the account,
+     * outstanding AND consumed. Two layers force the physical form:
+     * (1) BaseEntity's Hibernate {@code @SoftDelete} turns
+     * {@code repository.delete(...)} into an {@code is_deleted} UPDATE —
+     * the row survives and V112's plain FK to {@code auth_users} keeps
+     * rejecting the login row's death; (2) the bulk JPQL delete would be
+     * rewritten the same way. The native statement bypasses the
+     * soft-delete translation — the base rows physically leave, so the
+     * FK releases the login row. The audit trail stays where it already
+     * lives: the token rows' lifecycle revisions (issue + consumption)
+     * remain in {@code auth_action_tokens_aud}; what the native delete
+     * omits is only the purge's own DEL marker, a housekeeping fact, not
+     * a redemption event.
      */
     public void purgeHistory(String username) {
-        repository.findAllByUsername(username).forEach(repository::delete);
+        repository.physicallyDeleteByUsername(username);
         if (log.isDebugEnabled()) {
-            log.debug("Auth action token history purged for the login-identity move: username={}",
+            log.debug("Auth action token history physically purged for the login-identity move: username={}",
                     username);
         }
     }

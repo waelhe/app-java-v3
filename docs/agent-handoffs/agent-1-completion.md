@@ -263,7 +263,10 @@ packet's own files only:
    (`User.changeLoginIdentity` — the platform's subject==username invariant; the account was
    effectively broken after a confirmed change before), the V112 token history purges BEFORE
    the old login row dies (`AuthActionTokenService.purgeHistory` — the FK rejects the delete
-   otherwise; Envers DEL revisions keep the audit trail), and the shared aftermath runs
+   otherwise — a PHYSICAL native delete, because BaseEntity's Hibernate
+   `@SoftDelete` turns `repository.delete()` into an `is_deleted` update and the
+   row would survive to keep rejecting the login row's death; the token rows'
+   lifecycle revisions stay in `auth_action_tokens_aud`), and the shared aftermath runs
    (`UserService.loginIdentityMoved`: the old principal's authorizations die with their refresh
    grants + the two user caches drop their stale subject-keyed copies).
 9. **`accountUpdate` persistence:** the adapter delegates to the new transactional
@@ -304,9 +307,17 @@ problem+json contract for the GET surface and the invalid-bearer challenge (legs
 
 **Local verification (the honest numbers, Maven 3.9.16 / JDK 25 on this round's head):**
 
-- Full reactor `compile` (with the two documented cross-module scratch fixes applied locally,
-  uncommitted — Agent 2's `ProductVariantReadService`/test-shape fixes and Agent 3's
-  `OrderReadService`, both already delivered on their own branches): **BUILD SUCCESS**.
+- **The branch AS PUSHED does not compile the full reactor** — the frozen base's
+  `marketplace-catalog` `ProductVariantReadService` (`Limit.value()`, 4 call sites) and
+  `marketplace-orders` `OrderReadService` (the same defect) fail before `marketplace-app`;
+  the owning fixes sit on Agents 2/3's delivered branches (blockers 1–2 above). Every module
+  UP TO those defects compiles green on the pushed head — including all three this packet
+  owns (`marketplace-platform-infra`, `marketplace-identity`, `marketplace-console`), measured
+  by the dispatched CI run on 43fef706 (the build log's compile order proves it).
+- The verification numbers below were measured on a working tree that ALSO carried the two
+  documented cross-module scratch fixes (uncommitted — Agent 2's `ProductVariantReadService`
+  + catalog test-shape fixes and Agent 3's `OrderReadService`, each already delivered on
+  their own branches): with those in place the full reactor compiles **BUILD SUCCESS**.
 - `marketplace-identity` `verify`: **244 tests run, 0 failures, 0 errors** — the JaCoCo 0.70
   instruction gate PASSES on the unit tests alone (CI adds the Testcontainers legs).
 - `marketplace-console` `verify`: **116 tests run, 0 failures, 0 errors** — the JaCoCo 0.70
@@ -326,3 +337,32 @@ problem+json contract for the GET surface and the invalid-bearer challenge (legs
   head), so the branch CI's app legs stay red-by-design until the assembly pass combines the
   branches. The journeys' updated assertions (the IDOR leg's NF-001 classification and the
   admin-row integrity check; the reopened anonymous-contract legs) first execute there.
+
+## The CodeRabbit round 2 (follow-up commit — 5 incremental findings, all closed)
+
+The incremental review of the closure round posted **2 major + 3 minor** findings on the new
+code itself; every one is closed:
+
+1. **The fragment bypass (Major, the gate):** the gate's top-level walk collected only plain
+   `Field` selections — a fragment SPREAD (or an INLINE fragment) riding an allowed field could
+   select any protected root and execute it for the anonymous caller. The gate now refuses any
+   top-level selection that is not a plain `Field`: a shape it cannot decide without resolving
+   the fragment graph never reaches execution. `PreLoginGraphQlGateTest` (9 legs — the gate's
+   full decision table: authenticated pass-through, the pre-login pass, the protected denial,
+   the operationName spoof, the fragment spread, the inline fragment, the unparsable document,
+   the empty document, the mixed document) and the integration legs 7–8 pin it.
+2. **The soft-delete FK trap (Major, the login-identity move):** `BaseEntity` carries
+   Hibernate `@SoftDelete` — `repository.delete(...)` (and a bulk JPQL delete) translate into
+   `is_deleted` UPDATEs, so the token rows would SURVIVE the purge and V112's plain FK keeps
+   rejecting the login row's death. `purgeHistory` now rides a native
+   `DELETE FROM auth_action_tokens WHERE username = :username` — the physical removal the FK
+   leg actually requires; the token rows' lifecycle revisions (issue + consumption) stay in
+   `auth_action_tokens_aud`.
+3. **The 50-character login limit on the self-service email change (Minor):** the target is
+   rejected at the request boundary — before the password check and the token issue — instead
+   of surfacing at confirm time as a storage error after the mail leg.
+4. **The `requireEmail` contract on the administrative move (Minor):** `moveEmail` rides the
+   SAME shape + length validation the create paths carry (`requireEmail` now enforces the
+   50-character login-store domain for both).
+5. **The report's own compile-claim separation (Minor):** the branch-as-pushed compile state
+   and the locally-scratch-verified state are now stated as two distinct claims above.

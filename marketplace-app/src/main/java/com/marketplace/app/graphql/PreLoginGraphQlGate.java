@@ -130,6 +130,15 @@ public class PreLoginGraphQlGate implements WebGraphQlInterceptor {
      * non-empty and entirely contained in the enumerated family. A
      * document that fails to parse is NOT trusted — deny-by-default
      * answers the classified error, exactly like an unknown operation.
+     *
+     * <p><b>The fragment discipline (round 2, the CodeRabbit security
+     * round):</b> a top-level selection that is anything other than a
+     * plain {@link Field} — a fragment SPREAD or an INLINE fragment — is
+     * refused outright. A spread can select ANY protected root
+     * ({@code mutation { tokenVerify(...) {...} ...F } fragment F on
+     * Mutation { protectedMutation {...} }}), so the pre-login family
+     * cannot be decided without resolving the fragment graph; the gate
+     * never resolves what it cannot decide — deny-by-default holds.</p>
      */
     private boolean isPreLoginOnly(String document) {
         if (document == null || document.isBlank()) {
@@ -141,9 +150,13 @@ public class PreLoginGraphQlGate implements WebGraphQlInterceptor {
             for (Definition<?> definition : parsed.getDefinitions()) {
                 if (definition instanceof OperationDefinition operation) {
                     for (Selection<?> selection : operation.getSelectionSet().getSelections()) {
-                        if (selection instanceof Field field) {
-                            operations.add(field.getName());
+                        if (!(selection instanceof Field field)) {
+                            // A fragment (spread or inline) at the top level
+                            // can select any protected root — the gate
+                            // refuses the shape it cannot decide.
+                            return false;
                         }
+                        operations.add(field.getName());
                     }
                 }
             }

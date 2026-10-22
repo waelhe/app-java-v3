@@ -82,6 +82,15 @@ public class AccountEmailChangeService {
         // at confirm time (two accounts for one address, logins that never
         // resolve).
         String target = newEmail.trim().toLowerCase(Locale.ROOT);
+        // The login store's own domain (the round-2 CodeRabbit finding): the
+        // address becomes the login username — auth_users.username caps at
+        // 50 characters (V13), and the failure would otherwise surface at
+        // confirm time as a storage error AFTER the mail leg, instead of the
+        // clean 400 at the request boundary.
+        if (target.length() > 50) {
+            throw new IllegalArgumentException(
+                    "The new email address exceeds 50 characters — the login store's own limit");
+        }
         if (target.equalsIgnoreCase(subject)) {
             throw new IllegalArgumentException("The new email address equals the current one");
         }

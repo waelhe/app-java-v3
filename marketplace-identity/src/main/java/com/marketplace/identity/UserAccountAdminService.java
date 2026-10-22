@@ -320,7 +320,13 @@ public class UserAccountAdminService implements com.marketplace.identity.spi.Use
      * shared {@link UserService#loginIdentityMoved} aftermath.
      */
     private void moveEmail(User user, String newEmail) {
-        String normalized = newEmail.trim().toLowerCase(Locale.ROOT);
+        // The round-2 CodeRabbit finding: the move path rides the SAME
+        // requireEmail contract as the create paths — the address shape AND
+        // the 50-character login-store domain are validated before any
+        // write (an arbitrary string or an over-long address would otherwise
+        // become the login username and users.subject, and fail at
+        // createUser with a storage error).
+        String normalized = requireEmail(newEmail);
         if (userRepository.existsBySubject(normalized) || userDetailsManager.userExists(normalized)) {
             throw new ConflictException("The email address already owns an account: " + normalized);
         }
@@ -360,8 +366,14 @@ public class UserAccountAdminService implements com.marketplace.identity.spi.Use
     }
 
     private static String requireEmail(String email) {
-        if (email == null || email.isBlank() || !email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
-            throw new IllegalArgumentException("A valid email address is required");
+        // The round-2 CodeRabbit finding: the length cap lives HERE so the
+        // create paths and the move path share it — auth_users.username is
+        // VARCHAR(50) (V13), the login store's own domain.
+        if (email == null || email.isBlank()
+                || !email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
+                || email.trim().length() > 50) {
+            throw new IllegalArgumentException(
+                    "A valid email address of at most 50 characters is required");
         }
         return email.trim().toLowerCase(Locale.ROOT);
     }
