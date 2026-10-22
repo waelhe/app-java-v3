@@ -91,7 +91,7 @@ This is a partial implementation with three real roots added, not completion of 
 
 The prior execution added tests but never ran them. Running them on the branch proved the claim was premature and exposed two real build defects, both corrected here:
 
-1. `OrderReadService` (and, as a build dependency, `ProductVariantReadService`) called `Limit.value()`, which does not exist in the measured `spring-data-commons 4.1.1` API (`Limit` exposes `unlimited()`, `of(int)`, `max()`, `isLimited()`, `isUnlimited()`). Both call sites now use `max()`; the catalog file is outside this agent's ownership and is documented as a build unblock only.
+1. `OrderReadService` called `Limit.value()`, which does not exist in the measured `spring-data-commons 4.1.1` API (`Limit` exposes `unlimited()`, `of(int)`, `max()`, `isLimited()`, `isUnlimited()`). The orders call site now uses `max()`. The identical defect in `ProductVariantReadService` is outside this agent's ownership; per assignment rule 262 it is not committed on this branch and is recorded below as a required integration fix.
 2. `OrdersService.confirm` acquires the order row lock via `findByIdForUpdate` (added by this campaign for concurrent-redelivery safety), but five existing `OrdersServiceTest` cases still stubbed `findById`, so confirmation reported a false `ResourceNotFound`. The five stubs now target the locked read; no production behavior changed.
 3. `ProductReadServiceTest` and `ProductVariantReadServiceTest` used `when(authentication.getAuthorities()).thenReturn(List...)`, which does not compile against Mockito's wildcard capture. They now use `doReturn(...).when(authentication).getAuthorities()`; again a compile unblock, not a behavior change.
 
@@ -103,7 +103,7 @@ Tests run: 107, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 
-The GraphQL DGS/unit tests compile (the reactor advanced past `marketplace-catalog`, which had previously failed on the Mockito generics). Their execution was deferred because this host intermittently cannot resolve `repo1.maven.org`; the failure is dependency resolution, not a test failure, and no pass is claimed for them.
+The app-level DGS/unit tests cannot compile on this branch while the frozen catalog baseline still fails on `Limit.value()`. They were compile-checked transiently in the local working tree with the catalog correction applied, but that correction is not part of this branch (assignment rule 262). No app-level pass is claimed. The separate attempt to run them was additionally interrupted by an intermittent `repo1.maven.org` DNS failure, which is a dependency-resolution failure, not a test failure.
 
 ## Root disposition after verification
 
@@ -116,10 +116,11 @@ No `paymentRefund` surface was added. It cannot be rendered honestly while the m
 
 All 26 subscriptions are blocked by the recorded transport decision, not by missing code: `application.yml` documents that WebSocket transport is intentionally not configured (design section 5.8), and no `DgsSubscription` exists. Overturning that is an owner/ADR decision, not an agent-local resolver.
 
-## Out-of-scope files touched (build unblocks, documented)
+## Required out-of-scope integration fix (not committed here)
 
-- `marketplace-catalog/src/main/java/com/marketplace/catalog/ProductVariantReadService.java` -- four `Limit.max()` calls.
-- `marketplace-catalog/src/test/java/com/marketplace/catalog/ProductReadServiceTest.java` -- `doReturn` stubs and one import.
-- `marketplace-catalog/src/test/java/com/marketplace/catalog/ProductVariantReadServiceTest.java` -- `doReturn` stubs and one import.
+The frozen baseline cannot compile `marketplace-app` because `ProductVariantReadService` calls the nonexistent `Limit.value()` in four places. A local working tree was used transiently to prove the rest of the reactor compiles, then the changes were removed from this branch per assignment rule 262 ("do not include a fix from a colleague's scope in your commit"). The required integration fix is:
 
-These are the minimum changes that let any downstream module compile and test. They change no behavior and no public contract; Agent 2 still owns the catalog/pricing slice.
+- `marketplace-catalog/src/main/java/com/marketplace/catalog/ProductVariantReadService.java` -- replace the four `limit.value()` calls with `limit.max()` (measured `spring-data-commons 4.1.1` API).
+- `marketplace-catalog/src/test/java/com/marketplace/catalog/ProductReadServiceTest.java` and `.../ProductVariantReadServiceTest.java` -- replace `when(authentication.getAuthorities()).thenReturn(List...)` with `doReturn(...).when(authentication).getAuthorities()` to satisfy Mockito wildcard capture.
+
+Agent 2 owns the catalog/pricing slice and must land these before the integration branch can run the app-level suites. The orders module does not depend on them for its own green suite.

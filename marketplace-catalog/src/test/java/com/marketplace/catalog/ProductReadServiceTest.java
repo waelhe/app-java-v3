@@ -20,7 +20,6 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -57,9 +56,10 @@ class ProductReadServiceTest {
         repository = mock(ProductRepository.class);
         service = new ProductReadService(repository);
         publicCaller = mock(Authentication.class);
-        doReturn(List.<GrantedAuthority>of()).when(publicCaller).getAuthorities();
+        when(publicCaller.getAuthorities()).thenReturn(List.<GrantedAuthority>of());
         adminCaller = mock(Authentication.class);
-        doReturn(List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))).when(adminCaller).getAuthorities();
+        when(adminCaller.getAuthorities())
+                .thenReturn(List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
     }
 
     private static Product activeProduct(String title) {
