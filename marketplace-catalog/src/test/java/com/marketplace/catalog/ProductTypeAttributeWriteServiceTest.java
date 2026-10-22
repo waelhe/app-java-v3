@@ -304,26 +304,17 @@ class ProductTypeAttributeWriteServiceTest {
                 List.of(new AttributeReorderMove(third.getId(), -2)));
 
         assertThat(result.success()).isTrue();
-        // The park-then-settle rewrite: the first saveAll parks every moved
-        // row on a DISTINCT position ABOVE the live 1..n range (the
-        // entity's reposition law rejects negatives), the second settles
-        // the final compacted 1..n order.
-        org.mockito.ArgumentCaptor<List<ProductTypeAttributeAssignment>> reorderCaptor =
-                org.mockito.ArgumentCaptor.forClass(List.class);
-        verify(assignmentRepository, times(2)).saveAll(reorderCaptor.capture());
-        List<ProductTypeAttributeAssignment> parked = reorderCaptor.getAllValues().get(0);
-        assertThat(parked).extracting(ProductTypeAttributeAssignment::getPosition)
-                .allSatisfy(position -> assertThat(position).isGreaterThan(3));
-        assertThat(parked.stream().map(ProductTypeAttributeAssignment::getPosition).distinct().count())
-                .isEqualTo(parked.size());
-        List<ProductTypeAttributeAssignment> settled = reorderCaptor.getAllValues().get(1);
-        assertThat(settled).hasSize(3);
-        assertThat(settled.get(0).getAttributeDefinitionId()).isEqualTo(third.getId());
-        assertThat(settled.get(0).getPosition()).isEqualTo(1);
-        assertThat(settled.get(1).getAttributeDefinitionId()).isEqualTo(first.getId());
-        assertThat(settled.get(1).getPosition()).isEqualTo(2);
-        assertThat(settled.get(2).getAttributeDefinitionId()).isEqualTo(second.getId());
-        assertThat(settled.get(2).getPosition()).isEqualTo(3);
+        // The park-then-settle rewrite: saveAll rides TWICE (the park pass
+        // over the live range, the settle pass over the full compacted
+        // order). The captured lists share the SAME mutable entity
+        // references, so the captor cannot freeze the parked values —
+        // the provable facts are the two-pass interaction and the final
+        // settled state of the entities themselves (the same facts the
+        // integration leg proves against the real unique index).
+        verify(assignmentRepository, times(2)).saveAll(org.mockito.ArgumentMatchers.anyList());
+        assertThat(third.getPosition()).isEqualTo(1);
+        assertThat(first.getPosition()).isEqualTo(2);
+        assertThat(second.getPosition()).isEqualTo(3);
     }
 
     @Test
