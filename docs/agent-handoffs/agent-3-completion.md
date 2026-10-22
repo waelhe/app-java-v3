@@ -50,13 +50,13 @@ marketplace-orders: 111 tests, 0 failures, 0 errors, 0 skipped (9 surefire repor
 
 Coverage includes the ADMIN gate before decoding, silent bulk deduplication, per-item missing/conflict failures, stable lock ordering, read-back views, and real method-security proxy denial for non-ADMIN callers.
 
-App-level DGS/unit tests cannot compile on this branch because of pre-existing defects outside this agent's ownership (assignment rule 262):
+Maven app test-compile cannot complete on this branch because of pre-existing defects outside this agent's ownership (assignment rule 262):
 
 - `marketplace-catalog/.../ProductVariantReadService.java`: four `Limit.value()` calls; measured `spring-data-commons 4.1.1` exposes `max()`.
 - `ProductReadServiceTest` and `ProductVariantReadServiceTest`: `when(authentication.getAuthorities()).thenReturn(...)` fails Mockito wildcard capture; `doReturn` is required.
 - Four app GraphQL integration tests import nonexistent `com.marketplace.shared.test.IntegrationContainers`, call removed `GraphQlTester.Errors.satisfies(...)`, and mix `org.testcontainers.postgresql.PostgreSQLContainer` with `org.testcontainers.containers.PostgreSQLContainer`.
 
-A transient local application of the catalog correction proved `marketplace-app` main sources compile, including the new fetcher; it was reverted and is not part of this branch. No app-test pass is claimed.
+A transient local application of the catalog correction proved `marketplace-app` main sources compile, including the new fetcher; it was reverted and is not part of this branch. The compiled `OrderMutationDataFetcherTest` was then executed directly with a JUnit Platform launcher against the exact class output: 9 tests found, 9 succeeded, 0 failed, 0 skipped. That verifies the adapter at runtime, but it is not a Maven app-suite pass; the remaining app tests stay blocked by the pre-existing defects above.
 
 ## Review and CI state
 
