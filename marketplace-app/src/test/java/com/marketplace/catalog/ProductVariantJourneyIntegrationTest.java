@@ -434,10 +434,10 @@ class ProductVariantJourneyIntegrationTest {
         assertThat(anonymous.statusCode())
                 .as("GraphQL catalog reads stay closed to the anonymous caller through the pre-login gate")
                 .isEqualTo(200);
-        com.fasterxml.jackson.databind.JsonNode anonymousBody = objectMapper.readTree(anonymous.body());
+        JsonNode anonymousBody = objectMapper.readTree(anonymous.body());
         assertThat(anonymousBody.has("data")).as("no data key may leak").isFalse();
         assertThat(anonymousBody.path("errors").size()).isEqualTo(1);
-        assertThat(anonymousBody.path("errors").get(0).path("extensions").path("errorCode").asText())
+        assertThat(anonymousBody.path("errors").get(0).path("extensions").path("errorCode").asString())
                 .isEqualTo("AUTHN-001");
 
         String createQuery = """
