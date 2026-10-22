@@ -1,11 +1,25 @@
 package com.marketplace.app.graphql;
 
-import com.marketplace.catalog.spi.*;
+import com.marketplace.catalog.spi.AttributeReadSpi;
+import com.marketplace.catalog.spi.CatalogSpi;
+import com.marketplace.catalog.spi.CategoryReadSpi;
+import com.marketplace.catalog.spi.ProductAdminSpi;
+import com.marketplace.catalog.spi.ProductReadSpi;
+import com.marketplace.catalog.spi.ProductTypeReadSpi;
+import com.marketplace.catalog.spi.ProductVariantReadSpi;
+import com.marketplace.catalog.spi.ProductVariantView;
+import com.marketplace.catalog.spi.ProductView;
 import com.marketplace.community.spi.NeighborhoodFeedPort;
 import com.marketplace.community.spi.NeighborhoodPostDetailPort;
 import com.marketplace.discovery.spi.DiscoverySpi;
 import com.marketplace.identity.spi.IdentitySpi;
-import com.marketplace.orders.spi.*;
+import com.marketplace.orders.spi.CheckoutSpi;
+import com.marketplace.orders.spi.CheckoutView;
+import com.marketplace.orders.spi.OrderBulkCancelResult;
+import com.marketplace.orders.spi.OrderPage;
+import com.marketplace.orders.spi.OrderReadSpi;
+import com.marketplace.orders.spi.OrderSort;
+import com.marketplace.orders.spi.OrderView;
 import com.marketplace.pricing.spi.DiscountReadSpi;
 import com.marketplace.shared.security.CurrentUserProvider;
 import com.netflix.graphql.dgs.DgsQueryExecutor;
@@ -65,69 +79,54 @@ class OrderDataFetcherDgsTest {
     @MockitoBean NeighborhoodPostDetailPort postDetail;
     @MockitoBean CurrentUserProvider currentUser;
     @MockitoBean IdentitySpi identity;
-    @MockitoBean OrderCommandSpi orderCommands;
+    @MockitoBean com.marketplace.orders.spi.OrderCommandSpi orderCommands;
     @MockitoBean CheckoutSpi checkouts;
     @MockitoBean DiscountReadSpi discounts;
 
     @AfterEach void clearContext() { SecurityContextHolder.clearContext(); }
 
-    private static void auth(String subject, String... roles) {
-        var authorities = java.util.Arrays.stream(roles)
-                .map(role -> new SimpleGrantedAuthority("ROLE_" + role)).toList();
+    private static void auth(String subject,String... roles) {
+        var authorities=java.util.Arrays.stream(roles).map(r->new SimpleGrantedAuthority("ROLE_"+r)).toList();
         SecurityContextHolder.getContext().setAuthentication(
-                UsernamePasswordAuthenticationToken.authenticated(subject, "n/a", authorities));
+                UsernamePasswordAuthenticationToken.authenticated(subject,"n/a",authorities));
     }
-    private static OrderView view(UUID id, Instant date, String status) {
-        return new OrderView(id, date, status);
-    }
-    private static String gid(String type, UUID id) {
-        return java.util.Base64.getEncoder().encodeToString(
-                (type + ":" + id).getBytes(java.nio.charset.StandardCharsets.UTF_8));
-    }
-    private static CheckoutView checkout(UUID cart, UUID line, UUID variant) {
-        return new CheckoutView(cart, List.of(new CheckoutView.Line(line, variant, 2)), 2);
-    }
-    private static ProductVariantView variant(UUID id, UUID product) {
-        return new ProductVariantView(id, "Default", "SKU-1", "ACTIVE",
-                new ProductView(product, "Checkout Product", null, "ACTIVE"));
-    }
+    private static OrderView view(UUID id,Instant date,String status){return new OrderView(id,date,status);}
+    private static String gid(String type,UUID id){return java.util.Base64.getEncoder().encodeToString(
+            (type+":"+id).getBytes(java.nio.charset.StandardCharsets.UTF_8));}
+    private static CheckoutView checkout(UUID cart,UUID line,UUID variant){return new CheckoutView(
+            cart,List.of(new CheckoutView.Line(line,variant,2)),2);}
+    private static ProductVariantView variant(UUID id,UUID product){return new ProductVariantView(
+            id,"Default","SKU-1","ACTIVE",new ProductView(product,"Checkout Product",null,"ACTIVE"));}
 
     @Test void ordersSerializeTheRealConnectionAndKeysetCursor() {
-        auth("admin", "ADMIN");
-        UUID id = UUID.randomUUID(); Instant date = Instant.parse("2026-10-20T09:30:00Z");
-        when(orders.scrollOrders(any(Authentication.class), any(OrderSort.class), any(), any(Limit.class)))
-                .thenReturn(new OrderPage(Window.from(List.of(view(id, date, "PLACED")),
-                        i -> ScrollPosition.forward(Map.of("placedAt", date, "id", id)), true), 9));
-        Map<String,Object> conn = dgs.executeAndExtractJsonPath(
-                "query { orders(first: 1) { edges { node { id created status } cursor } totalCount } }","data.orders");
+        auth("admin","ADMIN"); UUID id=UUID.randomUUID(); Instant date=Instant.parse("2026-10-20T09:30:00Z");
+        when(orders.scrollOrders(any(Authentication.class),any(OrderSort.class),any(),any(Limit.class)))
+                .thenReturn(new OrderPage(Window.from(List.of(view(id,date,"PLACED")),
+                        i->ScrollPosition.forward(Map.of("placedAt",date,"id",id)),true),9));
+        Map<String,Object> conn=dgs.executeAndExtractJsonPath(
+                "query{orders(first:1){edges{node{id created status} cursor} totalCount}}","data.orders");
         assertThat(conn.get("totalCount")).isEqualTo(9);
         @SuppressWarnings("unchecked") List<Map<String,Object>> edges=(List<Map<String,Object>>)conn.get("edges");
-        assertThat(edges).hasSize(1);
-        assertThat(edges.get(0).get("cursor")).isEqualTo(cursors.toCursor(
-                ScrollPosition.forward(Map.of("placedAt",date,"id",id))));
+        assertThat(edges).hasSize(1).first().containsEntry("cursor",
+                cursors.toCursor(ScrollPosition.forward(Map.of("placedAt",date,"id",id))));
         @SuppressWarnings("unchecked") Map<String,Object> node=(Map<String,Object>)edges.get(0).get("node");
-        assertThat(node.get("id")).isEqualTo(gid("Order",id));
-        assertThat(node.get("created")).isEqualTo("2026-10-20T09:30:00Z");
-        assertThat(node.get("status")).isEqualTo("UNCONFIRMED");
+        assertThat(node).containsEntry("id",gid("Order",id)).containsEntry("created","2026-10-20T09:30:00Z")
+                .containsEntry("status","UNCONFIRMED");
     }
 
-    @Test void orderLookupMapsItsLifecycleVocabularyThroughTypedId() {
+    @Test void orderLookupUsesTypedIdAndLifecycleWireNames() {
         auth("admin","ADMIN"); UUID id=UUID.randomUUID(); Instant date=Instant.parse("2026-10-19T08:15:00Z");
         when(orders.findOrderById(eq(id),any(Authentication.class))).thenReturn(Optional.of(view(id,date,"CONFIRMED")));
         Map<String,Object> result=dgs.executeAndExtractJsonPath(
-                "query($id: ID!) { order(id:$id) { id created status } }","data.order",Map.of("id",gid("Order",id)));
-        assertThat(result).containsEntry("id",gid("Order",id)).containsEntry("status","UNFULFILLED")
-                .containsEntry("created","2026-10-19T08:15:00Z");
-    }
-
-    @Test void allPlatformOrderStatesUseTheSaleorWireNames() {
-        auth("admin","ADMIN"); UUID id=UUID.randomUUID(); Instant date=Instant.parse("2026-10-20T10:00:00Z");
+                "query($id:ID!){order(id:$id){id created status}}","data.order",Map.of("id",gid("Order",id)));
+        assertThat(result).containsEntry("id",gid("Order",id)).containsEntry("created","2026-10-19T08:15:00Z")
+                .containsEntry("status","UNFULFILLED");
         for(String[] pair:new String[][]{{"PLACED","UNCONFIRMED"},{"CONFIRMED","UNFULFILLED"},
                 {"FULFILLED","FULFILLED"},{"CANCELLED","CANCELED"}}) {
             when(orders.findOrderById(eq(id),any(Authentication.class))).thenReturn(Optional.of(view(id,date,pair[0])));
-            Map<String,Object> result=dgs.executeAndExtractJsonPath(
+            Map<String,Object> state=dgs.executeAndExtractJsonPath(
                     "query($id:ID!){order(id:$id){status}}","data.order",Map.of("id",gid("Order",id)));
-            assertThat(result.get("status")).isEqualTo(pair[1]);
+            assertThat(state.get("status")).isEqualTo(pair[1]);
         }
     }
 
@@ -175,7 +174,7 @@ class OrderDataFetcherDgsTest {
         assertThat(sort.getValue()).isEqualTo(OrderSort.of(OrderSort.Field.LAST_MODIFIED_AT,true));
     }
 
-    @Test void unsupportedOrderArgumentsAreRejectedInsteadOfIgnored() {
+    @Test void unsupportedOrderArgumentsAndSortsFailClosed() {
         auth("admin","ADMIN");
         String[][] cases={
             {"query{orders(first:2,filter:{search:\"x\"}){totalCount}}","filter is not implemented"},
@@ -187,6 +186,11 @@ class OrderDataFetcherDgsTest {
         };
         for(String[] item:cases) assertThatThrownBy(()->dgs.executeAndExtractJsonPath(item[0],"$"))
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class).hasMessageContaining(item[1]);
+        for(String field:new String[]{"NUMBER","RANK","CUSTOMER","PAYMENT","FULFILLMENT_STATUS"})
+            assertThatThrownBy(()->dgs.executeAndExtractJsonPath(
+                    "query{orders(first:2,sortBy:{direction:ASC,field:"+field+"}){totalCount}}","$"))
+                    .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                    .hasMessageContaining("sort field "+field+" is not implemented");
     }
 
     @Test void rawUuidAndKeylessOrderIdsAreRejected() {
@@ -198,7 +202,7 @@ class OrderDataFetcherDgsTest {
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class).hasMessageContaining("order requires its id");
     }
 
-    @Test void cursorEmittedForAnotherSortIsRejected() {
+    @Test void cursorFromAnotherSortIsRejectedWithTheValidationCode() {
         auth("admin","ADMIN");
         String cursor=cursors.toCursor(ScrollPosition.forward(Map.of("status","PLACED","id",UUID.randomUUID())));
         assertThatThrownBy(()->dgs.executeAndExtractJsonPath(
@@ -224,7 +228,7 @@ class OrderDataFetcherDgsTest {
         assertThat(limit.getValue().max()).isEqualTo(7);
     }
 
-    @Test void checkoutReadsTheOwnedCartAndMapsVariantThroughExistingCatalogSpi() {
+    @Test void checkoutReadsOwnedCartAndUsesTheExistingCatalogSpi() {
         auth("buyer","USER"); UUID cart=UUID.randomUUID(),line=UUID.randomUUID(),variantId=UUID.randomUUID(),product=UUID.randomUUID();
         when(checkouts.findCheckout(eq(cart),any(Authentication.class))).thenReturn(checkout(cart,line,variantId));
         when(variants.findVariantById(eq(variantId),any(Authentication.class))).thenReturn(Optional.of(variant(variantId,product)));
@@ -238,15 +242,15 @@ class OrderDataFetcherDgsTest {
         assertThat(v).containsEntry("id",gid("ProductVariant",variantId)).containsEntry("sku","SKU-1");
     }
 
-    @Test void checkoutLinesAddBindsTheSaleorInputAndReturnsTheOwnerProjection() {
+    @Test void checkoutLinesAddBindsInputsAndReturnsTheOwnerProjection() {
         auth("buyer","USER"); UUID cart=UUID.randomUUID(),line=UUID.randomUUID(),variantId=UUID.randomUUID();
         when(checkouts.addLines(eq(cart),any(),any(Authentication.class))).thenReturn(checkout(cart,line,variantId));
         when(variants.findVariantById(eq(variantId),any(Authentication.class))).thenReturn(Optional.of(variant(variantId,UUID.randomUUID())));
         Map<String,Object> result=dgs.executeAndExtractJsonPath(
                 "mutation($id:ID!,$lines:[CheckoutLineInput!]!){checkoutLinesAdd(id:$id,lines:$lines){checkout{id quantity lines{id quantity}} checkoutErrors{code} errors{code}}}",
                 "data.checkoutLinesAdd",Map.of("id",gid("Checkout",cart),"lines",List.of(Map.of("variantId",gid("ProductVariant",variantId),"quantity",2))));
-        @SuppressWarnings("unchecked") Map<String,Object> resultCheckout=(Map<String,Object>)result.get("checkout");
-        assertThat(resultCheckout.get("id")).isEqualTo(gid("Checkout",cart));
+        @SuppressWarnings("unchecked") Map<String,Object> c=(Map<String,Object>)result.get("checkout");
+        assertThat(c.get("id")).isEqualTo(gid("Checkout",cart));
         assertThat(result.get("checkoutErrors")).isEqualTo(List.of()); assertThat(result.get("errors")).isEqualTo(List.of());
         @SuppressWarnings("unchecked") ArgumentCaptor<List<CheckoutSpi.LineAdd>> captured=ArgumentCaptor.forClass(List.class);
         verify(checkouts).addLines(eq(cart),captured.capture(),any(Authentication.class));
