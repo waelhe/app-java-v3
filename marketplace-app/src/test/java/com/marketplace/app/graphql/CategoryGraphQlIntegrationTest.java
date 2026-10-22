@@ -97,6 +97,9 @@ class CategoryGraphQlIntegrationTest {
     @Autowired
     private CategoryRepository categoryRepository;
 
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
     @LocalServerPort
     private int port;
 
@@ -123,6 +126,13 @@ class CategoryGraphQlIntegrationTest {
             categoryRepository.deleteAllById(new ArrayList<>(seededIds));
             seededIds.clear();
         }
+        // The categories code index is GLOBAL (V70's documented decision:
+        // a reserved code never recycles — even a soft-deleted row holds
+        // it), so the class's fixed p2-cat-* codes must leave the table
+        // entirely for the next test's seed. The repository delete above
+        // is the SOFT kind (BaseEntity's @SoftDelete keeps rows); this is
+        // the hard sweep of THIS class's own rows only.
+        jdbcTemplate.update("DELETE FROM categories WHERE code LIKE 'p2-cat-%'");
     }
 
     private void persist(String code, String nameEn, String nameAr, Integer position) {

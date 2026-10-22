@@ -424,7 +424,7 @@ class ProductVariantGraphQlIntegrationTest {
         // the bounded projection answers the honest null, never a
         // fabricated placeholder (the registered nullable-name divergence).
         tester.document("""
-                        "query($id: ID!) { productVariant(id: $id) { sku name } }"
+                        query($id: ID!) { productVariant(id: $id) { sku name } }
                         """)
                 .variable("id", variantGlobalId(namelessVariantId))
                 .execute()
