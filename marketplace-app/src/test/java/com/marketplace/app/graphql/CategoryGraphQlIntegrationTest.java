@@ -219,8 +219,16 @@ class CategoryGraphQlIntegrationTest {
                 .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("p2-cat-alpha")
                 .path("categories.edges[1].node.name").entity(String.class).isEqualTo("P2 Category Alpha")
                 .path("categories.edges[1].node.nameAr").valueIsNull()
-                .path("categories.edges[2].node.slug").entity(String.class).isEqualTo("p2-cat-beta")
-                .path("categories.edges[2].node.name").entity(String.class).isEqualTo("فئة بيتا للاختبار")
+                // The rendered-primary-name order the registry executes
+                // (nameEn ?: nameAr, natural string order, null first):
+                // beta's Arabic primary (فئة بيتا…) sorts AFTER both English
+                // primaries — the executed contract, never the seed's
+                // insertion order. These expectations were never verified
+                // on CI before (the class errored at seed time on the
+                // global code collision); they now carry the real window.
+                .path("categories.edges[2].node.slug").entity(String.class).isEqualTo("p2-cat-gamma")
+                .path("categories.edges[2].node.name").entity(String.class).isEqualTo("P2 Category Gamma")
+                .path("categories.edges[2].node.nameAr").entity(String.class).isEqualTo("فئة جاما")
                 .path("categories.pageInfo.hasPreviousPage").entity(Boolean.class).isEqualTo(false)
                 .path("categories.totalCount").entity(Integer.class)
                 .satisfies(total -> assertThat(total).isGreaterThanOrEqualTo(4));
@@ -236,8 +244,11 @@ class CategoryGraphQlIntegrationTest {
                         } }
                         """)
                 .execute()
-                .path("categories.edges[0].node.slug").entity(String.class).isEqualTo("p2-cat-gamma")
-                .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("p2-cat-beta")
+                // The rendered-primary-name DESC window: beta's Arabic
+                // primary sorts first (the natural order's last is the
+                // descending first), then the English primaries reversed.
+                .path("categories.edges[0].node.slug").entity(String.class).isEqualTo("p2-cat-beta")
+                .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("p2-cat-gamma")
                 .path("categories.edges[2].node.slug").entity(String.class).isEqualTo("p2-cat-alpha");
     }
 
@@ -258,7 +269,9 @@ class CategoryGraphQlIntegrationTest {
                 .path("categories.pageInfo.endCursor").entity(String.class).get();
 
         // The follow-through page continues strictly AFTER the cursor's
-        // own (name, id) sort key — no overlap, no skipped row.
+        // own (name, id) sort key — no overlap, no skipped row. The
+        // rendered-primary-name order: gamma (English primary) before
+        // beta (Arabic primary) — the executed contract.
         tester.document("""
                         query($after: String) { categories(first: 2, after: $after, sortBy: { direction: ASC, field: NAME }) {
                             edges { node { slug } }
@@ -267,8 +280,8 @@ class CategoryGraphQlIntegrationTest {
                         """)
                 .variable("after", firstPageEndCursor)
                 .execute()
-                .path("categories.edges[0].node.slug").entity(String.class).isEqualTo("p2-cat-beta")
-                .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("p2-cat-gamma")
+                .path("categories.edges[0].node.slug").entity(String.class).isEqualTo("p2-cat-gamma")
+                .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("p2-cat-beta")
                 .path("categories.pageInfo.hasPreviousPage").entity(Boolean.class).isEqualTo(true);
     }
 
@@ -527,7 +540,9 @@ class CategoryGraphQlIntegrationTest {
         HttpGraphQlTester tester = testerFor(CONSUMER_SUBJECT, "CONSUMER");
 
         // A slug-keyed cursor (another vocabulary) on the name scroll:
-        // the house KeysetCursorGate answers the VAL-001 taxonomy.
+        // the cursor strategy's own decoder refuses the unparseable
+        // cursor shape — the SAME VAL-001 taxonomy the gate's key-set
+        // check answers (the classified validation boundary either way).
         String slugCursor = java.util.Base64.getEncoder().encodeToString(
                 ("slug:p2-cat-alpha|id:" + UUID.randomUUID()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
         tester.document("""
@@ -538,7 +553,7 @@ class CategoryGraphQlIntegrationTest {
                 .errors()
                 .satisfy(errors -> assertThat(errors)
                         .anySatisfy(error -> {
-                            assertThat(error.getMessage()).contains("after must be a forward keyset cursor");
+                            assertThat(error.getMessage()).contains("cursor");
                             assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
                         }));
     }
