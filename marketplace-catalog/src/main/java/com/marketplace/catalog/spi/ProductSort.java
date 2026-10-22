@@ -71,7 +71,7 @@ public record ProductSort(Field field, boolean ascending) {
      * scroll's keyset positions (and the boundary's cursor gate) key by,
      * next to the {@code id} tiebreaker.
      *
-     * @return the sort property name ({@code name})
+     * @return the sort property name ({@code title})
      */
     public String property() {
         return field.property();
