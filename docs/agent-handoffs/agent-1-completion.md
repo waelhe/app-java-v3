@@ -366,3 +366,102 @@ code itself; every one is closed:
    50-character login-store domain for both).
 5. **The report's own compile-claim separation (Minor):** the branch-as-pushed compile state
    and the locally-scratch-verified state are now stated as two distinct claims above.
+
+## The integrator's security round (the 2026-10-22 directive — the five tasks, all closed)
+
+The integrator posted the follow-up directive directly on the PR (2026-10-22T09:36Z): five
+tasks required before the PR can be re-evaluated for independent review. Every one is closed
+on this branch:
+
+1. **The refresh-token rotation (the security blocker) — CLOSED.**
+   `PlatformTokenGrantService.refresh(...)` now implements the OFFICIAL one-time-use rotation,
+   the `OAuth2RefreshTokenAuthenticationProvider` pattern verbatim on the platform's own
+   primitives: the find leg requires the token to be ACTIVE (`Token#isActive()` — the official
+   rule: invalidated, expired and before-use all refuse, replacing the earlier `isExpired()`
+   half-check); the rotation mints the FRESH pair (a new access token AND a successor refresh
+   token) with the SAME principal/roles claims and saves the SAME authorization row riding the
+   new pair through the EXISTING `OAuth2AuthorizationService` — no second issuer, no second
+   authentication path. The successor's value REPLACES the presented token's value on save (the
+   Jdbc service's update-by-id), which IS the one-time-use invalidation: `findByToken(old)`
+   answers `null` ever after. The critical section (find → validate → rotate → save) is
+   exclusive per token through a fixed stripe of locks keyed by the token's hash, so two
+   concurrent rotations of the SAME token cannot both succeed — the loser re-reads the store
+   after the winner replaced the row and is rejected exactly like a replay. `tokensDeactivateAll`
+   (the identity owner's `DELETE FROM oauth2_authorization WHERE principal_name = ?`) kills the
+   successor too — the row the rotation kept is the row the kill deletes.
+   `PlatformTokenGrantServiceTest` (new, 9 legs, all green locally): the rotation mints a fresh
+   pair with the same principal/roles; the presented token is DEAD after the rotation (replay
+   rejected); the successor itself rotates exactly once; an EXPIRED token is rejected; an
+   INVALIDATED token is rejected; an unknown token is rejected; two CONCURRENT rotations of the
+   same token allow exactly ONE (the survivor is the only live token); deactivating all tokens
+   kills the ROTATED successor; the grant keeps minting distinct pairs and refusing bad
+   credentials.
+   The wire contract follows: `RefreshToken.refreshToken` (this packet's OWN SDL fragment —
+   the central schema is untouched) exposes the successor, and `tokenRefresh` returns it —
+   the client's stored token dies with the rotation, so the payload MUST carry the
+   replacement. This is the packet's recorded ADAPT row over Saleor's cookie/CSRF-mode refresh
+   contract (Saleor's own `RefreshToken` type carries no successor field — its refresh tokens
+   are long-lived and unrotated; the platform's one-time-use posture is the security decision
+   the integrator demanded).
+
+2. **The `tokenVerify.payload` JSON shape — CLOSED.** The payload is now the claims map
+   serialized through the application's OWN approved serializer — the Spring Boot 4.1.1
+   auto-configured Jackson 3 `JsonMapper` (the same serializer SystemSettingsService and the
+   platform's JSON surfaces ride) — never `Map.toString()`. `AgentOneMutationDgsTest`
+   (`tokenVerifyAnswersAStrictJsonPayloadDocument`, green locally): the payload parses as a
+   strict JSON document (parsed through Jackson 3 itself in the test), carries the claim
+   contract (`sub`, `iss`, `aud`, `roles`, `exp`), contains no `=` artifact, and the invalid
+   token answers the honest `isValid: false` with a `null` payload — the platform's
+   nullability contract on the `VerifyToken` shape.
+
+3. **The shared-security modification returned to A0 — CLOSED.** The direct
+   `SecurityConfig.java` modification is REMOVED from this PR (the file now carries no diff
+   against the integration base — the assignment's ownership boundary restored). The change
+   itself — `POST /graphql` joining the public-POST precedent with the gate's precise
+   nine-operation allowlist as the per-operation wall — is delivered as the handoff
+   `docs/agent-handoffs/handoff-a0-prelogin-graphql-security.md`: the proposal, the exact
+   matcher, the allowlist, the acceptance criteria, the seven verbatim HTTP legs A0 lands
+   WITH the decision, and the sequencing constraint (the gate must reach the integration
+   branch before the matcher does — otherwise the anonymous surface becomes the whole schema).
+   `PreLoginGraphQlGate` and `PreLoginGraphQlGateTest` (9/9, green locally) stay in this
+   packet's scope; `GraphQlSecurityIntegrationTest` is restored to the integration base's
+   closed-surface contract (the reopened-contract anonymous legs belong to A0's landing, per
+   the directive's own closure criteria: "an actual anonymous-path security test after A0's
+   decision is merged").
+
+4. **The D-ADDR-001 governance handoff — CLOSED.** The explicit decision is delivered as
+   `docs/agent-handoffs/handoff-a0-d-addr-001.md`: the account address book (the `address`
+   read root + the `accountAddress*` family + `Account.addresses` — the V248 store, the
+   service, the SPI seam, the tests) is SUPPORTED with implementation evidence, while
+   `addressValidationRules` (the per-country address-FORMAT rules engine) is UNSUPPORTED and
+   stays undeclared on the wire — proposed future owner: the geo module, behind its own ADR.
+   The handoff carries the two gate-format-compliant divergence rows verbatim (the central
+   registries stay A0's to edit — this packet touches neither the central ledger, the central
+   SDL, `application.yml`, nor CI files).
+
+5. **The delivery proof — CLOSED.** The `CustomerTypeService` one-default flush ordering and
+   the `REQUIRES_NEW` row-rollback for `IGNORE_FAILED` are unchanged and re-verified (the
+   identity module's full suite re-run after this round's changes: **129 tests, 0 failures**
+   — including `CustomerTypeServiceTest` 8/8 and `UserAccountAdminServiceTest` 12/12, the
+   single-row-failure rollback legs among them; console: **116 tests, 0 failures**). The
+   locally-executed matrix for THIS round: `PlatformTokenGrantServiceTest` **9/9**,
+   `PreLoginGraphQlGateTest` **9/9**, `AgentOneMutationDgsTest` **23/23** (21 carried + the
+   two new token legs), `marketplace-identity` **129/129**, `marketplace-console` **116/116**,
+   the full-reactor `install` **BUILD SUCCESS** (compile + test-compile across all 29 modules —
+   after A0's reactor-unblock landing, which this branch merges in), and the ENTIRE
+   `com.marketplace.app.graphql` package suite **533 tests run, 0 failures, 0 errors**
+   (269 skipped = the Testcontainers classes without Docker, exactly the frozen §9 contract —
+   including the b5-a packet's own `ProductVariantDataFetcherDgsTest` 18/18 after A0's
+   reactor-unblock also fixes the frozen `KeysetCursorGate`'s id-sort keyset explosion
+   (`Set.of("id","id")` — the duplicate-element death) and that test's own edge/node
+   envelope read). The Testcontainers
+   integration classes still carry `@Testcontainers(disabledWithoutDocker = true)` — no Docker
+   in this sandbox — and their CI execution remains pending on the dispatched suites; nothing
+   in this report claims an integration or CI result that has not actually run.
+
+**Branch CI path to green (A0's assembly):** this branch merges A0's integration-side
+commits (the reactor unblock: the Spring Data 4.0 `Limit.max()` accessor fix the frozen base
+inherited broken in catalog/orders, the spring-graphql 2.0.5 tester-API corrections in the
+b4-a/b5 packets' integration tests, and the D-ADDR-001 governance split that unblocks the
+canonical-plan gate). After that merge the branch's own CI compiles the full reactor and
+executes the unit suites the matrix above records.

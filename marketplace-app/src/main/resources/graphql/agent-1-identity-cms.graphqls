@@ -670,6 +670,7 @@ type CreateToken {
 
 type RefreshToken {
     token: String
+    refreshToken: String
     user: User
     accountErrors: [AccountError!]! @deprecated(reason: "Use `errors` field instead.")
     errors: [AccountError!]!

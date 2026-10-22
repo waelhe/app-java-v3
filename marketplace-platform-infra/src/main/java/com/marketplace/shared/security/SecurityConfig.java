@@ -407,35 +407,6 @@ public class SecurityConfig {
                                 "/api/v1/auth/password-reset/complete",
                                 "/api/v1/auth/email-verification/resend",
                                 "/api/v1/auth/email-verification/complete").permitAll()
-                        // Agent 1 / B3 (the Saleor 458-root campaign, PR #696 —
-                        // the CodeRabbit security round): the GraphQL
-                        // transport's own pre-login family joins the public-POST
-                        // precedent above. Saleor's contract makes the
-                        // authentication roots anonymous-callable BY DEFINITION
-                        // (tokenCreate is the password grant itself — a caller
-                        // with a bearer token never needs it; tokenRefresh and
-                        // tokenVerify carry their own proof in the payload;
-                        // requestPasswordReset / confirmAccount / setPassword /
-                        // confirmEmailChange / accountRegister / accountDelete
-                        // redeem single-use out-of-band tokens or create the
-                        // account). The transport opens for POST ONLY — the
-                        // anonymous surface is NOT the whole schema: the
-                        // app layer's PreLoginGraphQlGate (a WebGraphQlInterceptor,
-                        // the officially supported interception point) parses
-                        // the actual GraphQL document and denies-by-default —
-                        // an anonymous caller reaches ONLY the enumerated
-                        // pre-login operations, everything else answers the
-                        // classified AUTHN-001 GraphQL error before dispatch,
-                        // and every authenticated request passes through to
-                        // the per-fetcher permission catalog unchanged. This
-                        // is the §13 decision record's documented reopening
-                        // condition satisfied: "an approved public-discovery
-                        // journey after tested per-field/object
-                        // authorization" — the campaign's role-matrix tests
-                        // (anonymous/CONSUMER/PROVIDER/ADMIN legs) are that
-                        // tested authorization, and the gate is the
-                        // per-operation wall.
-                        .requestMatchers(HttpMethod.POST, "/graphql").permitAll()
                         // L34 (realestate systems plan §5): the public lead
                         // submission — the plan's "بلا مصادقة إلزامية" (the
                         // guest fills name and phone). A public POST is the

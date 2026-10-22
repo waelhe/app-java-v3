@@ -6,6 +6,7 @@ import com.marketplace.identity.spi.AddressManagementSpi;
 import com.marketplace.identity.spi.AddressView;
 import com.marketplace.identity.spi.CustomerTypeSpi;
 import com.marketplace.identity.spi.IdentitySpi;
+import com.marketplace.identity.spi.UserAccountView;
 import com.marketplace.identity.spi.UserManagementSpi;
 import com.marketplace.shared.api.CmsNavigationPort;
 import com.marketplace.shared.api.CmsPagePort;
@@ -102,6 +103,8 @@ class AgentOneMutationDgsTest {
     private com.marketplace.pricing.spi.DiscountReadSpi discountReadSpi;
     @MockitoBean
     private com.marketplace.shared.security.CurrentUserProvider currentUserProvider;
+    @MockitoBean
+    private PlatformTokenGrantService tokenGrantService;
 
     private static final UUID ADDRESS_ID = UUID.randomUUID();
     private static final UUID USER_ID = UUID.randomUUID();
@@ -382,6 +385,93 @@ class AgentOneMutationDgsTest {
                 mutation { tokenRefresh { token } }
                 """, "data.tokenRefresh"))
                 .hasMessageContaining("A refresh token is required");
+    }
+
+    // ---------------------------------------------------------------------
+    // The rotation's wire contract — the successor rides the payload
+    // ---------------------------------------------------------------------
+
+    @Test
+    void tokenRefreshReturnsTheSuccessorRefreshTokenOnTheWire() {
+        UserAccountView account = new UserAccountView(USER_ID,
+                "agent-one@example.com", false, true, java.time.Instant.now(),
+                java.time.Instant.now(), java.util.Set.of("CONSUMER"));
+        when(tokenGrantService.refresh("the-presented-refresh-token"))
+                .thenReturn(new PlatformTokenGrantService.IssuedTokens(
+                        "successor-access-token", "successor-refresh-token",
+                        "successor-csrf-token", account));
+        when(identitySpi.findCurrentUserAccount(any())).thenReturn(java.util.Optional.of(account));
+
+        Object payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { tokenRefresh(refreshToken: "the-presented-refresh-token") {
+                    token refreshToken user { email }
+                } }
+                """, "data.tokenRefresh");
+
+        assertThat(payload).isNotNull();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> fields = (Map<String, Object>) payload;
+        // The rotation is one-time-use: the payload MUST carry the
+        // successor — the presented token is dead after this call.
+        assertThat(fields.get("token")).isEqualTo("successor-access-token");
+        assertThat(fields.get("refreshToken")).isEqualTo("successor-refresh-token");
+        assertThat(fields.get("user")).isNotNull();
+    }
+
+    @Test
+    void tokenVerifyAnswersAStrictJsonPayloadDocument() throws Exception {
+        // The integrator's security round: Map.toString() output is NOT
+        // JSON — the payload must be the claims serialized through the
+        // application's own ObjectMapper, parseable as a JSON object
+        // with the Saleor contract's claim fields.
+        when(tokenGrantService.verify("a-valid-token"))
+                .thenReturn(new PlatformTokenGrantService.VerifiedToken(true,
+                        new java.util.LinkedHashMap<>(Map.of(
+                                "iss", "https://auth.example.com",
+                                "sub", "agent-one@example.com",
+                                "aud", List.of("marketplace-api"),
+                                "roles", List.of("CONSUMER"),
+                                "iat", 1777000000L,
+                                "exp", 1777000900L,
+                                "jti", "token-id-1")),
+                        "agent-one@example.com"));
+        when(tokenGrantService.verify("not-a-real-jwt"))
+                .thenReturn(new PlatformTokenGrantService.VerifiedToken(false,
+                        Map.of(), null));
+
+        Object payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { tokenVerify(token: "a-valid-token") { isValid payload } }
+                """, "data.tokenVerify");
+
+        assertThat(payload).isNotNull();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> fields = (Map<String, Object>) payload;
+        assertThat(fields.get("isValid")).isEqualTo(true);
+        String document = (String) fields.get("payload");
+        assertThat(document).isNotBlank();
+        // The proof: the payload parses as a strict JSON document and
+        // carries the claim contract (subject, issuer, audience, roles
+        // — never a "{key=value}" toString artifact). Parsed through
+        // the platform's own approved serializer (Jackson 3).
+        assertThat(document).startsWith("{").endsWith("}").doesNotContain("=");
+        tools.jackson.databind.JsonNode claims =
+                tools.jackson.databind.json.JsonMapper.builder().build().readTree(document);
+        assertThat(claims.get("sub").asText()).isEqualTo("agent-one@example.com");
+        assertThat(claims.get("iss").asText()).isEqualTo("https://auth.example.com");
+        assertThat(claims.get("aud").get(0).asText()).isEqualTo("marketplace-api");
+        assertThat(claims.get("roles").get(0).asText()).isEqualTo("CONSUMER");
+        assertThat(claims.has("exp")).isTrue();
+
+        // And the invalid token answers the honest null payload — the
+        // platform's nullability contract on the VerifyToken shape.
+        Object invalid = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { tokenVerify(token: "not-a-real-jwt") { isValid payload } }
+                """, "data.tokenVerify");
+        assertThat(invalid).isNotNull();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> invalidFields = (Map<String, Object>) invalid;
+        assertThat(invalidFields.get("isValid")).isEqualTo(false);
+        assertThat(invalidFields.get("payload")).isNull();
     }
 
     @Test

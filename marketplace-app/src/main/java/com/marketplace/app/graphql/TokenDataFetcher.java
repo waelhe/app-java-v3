@@ -12,6 +12,9 @@ import com.netflix.graphql.dgs.InputArgument;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import tools.jackson.databind.json.JsonMapper;
+
+import java.util.Map;
 
 /**
  * Agent 1 (the Saleor 458-root campaign, assignment packet PR #696): the
@@ -27,6 +30,19 @@ import org.springframework.security.core.context.SecurityContextHolder;
  * named instance falls back to the shared resilience4j {@code default}
  * budget (100/min, measured) with the tighter yml instance proposed for
  * A0's integration pass.</p>
+ *
+ * <p><b>The rotation's wire contract:</b> {@code tokenRefresh} returns the
+ * SUCCESSOR refresh token ({@code RefreshToken.refreshToken}) — the
+ * platform's rotation is one-time-use (the official SAS semantics the
+ * grant service implements), so the client's stored token dies with the
+ * rotation and the payload must carry its replacement. This is a
+ * platform ADAPT row over Saleor's cookie/CSRF-mode refresh contract,
+ * recorded in the completion report's divergence table. The
+ * {@code tokenVerify.payload} is the claims map serialized through the
+ * application's OWN serializer — the Spring Boot 4.1.1 auto-configured
+ * Jackson 3 {@code JsonMapper} (the same bean SystemSettingsService and
+ * the platform's JSON surfaces ride) — a strict JSON document, never
+ * {@code Map.toString()} output.</p>
  */
 @DgsComponent
 public class TokenDataFetcher {
@@ -36,17 +52,20 @@ public class TokenDataFetcher {
     private final com.marketplace.identity.spi.IdentitySpi identitySpi;
     private final AgentOneGraphQlMappers mappers;
     private final UserGraphQlMapper userMapper;
+    private final JsonMapper jsonMapper;
 
     public TokenDataFetcher(PlatformTokenGrantService tokenGrantService,
                             AccountLifecycleSpi accountLifecycleSpi,
                             com.marketplace.identity.spi.IdentitySpi identitySpi,
                             AgentOneGraphQlMappers mappers,
-                            UserGraphQlMapper userMapper) {
+                            UserGraphQlMapper userMapper,
+                            JsonMapper jsonMapper) {
         this.tokenGrantService = tokenGrantService;
         this.accountLifecycleSpi = accountLifecycleSpi;
         this.identitySpi = identitySpi;
         this.mappers = mappers;
         this.userMapper = userMapper;
+        this.jsonMapper = jsonMapper;
     }
 
     /** Saleor {@code tokenCreate(audience, email, password)} — the password grant. */
@@ -77,7 +96,12 @@ public class TokenDataFetcher {
                 .build();
     }
 
-    /** Saleor {@code tokenRefresh(csrfToken, refreshToken)} — the rotation. */
+    /**
+     * Saleor {@code tokenRefresh(csrfToken, refreshToken)} — the rotation.
+     * The payload carries the SUCCESSOR refresh token: the platform's
+     * rotation is one-time-use, so the successor is the only live token
+     * after this call (the presented one is gone from the store).
+     */
     @DgsMutation(field = DgsConstants.MUTATION.TokenRefresh)
     @RateLimiter(name = "graphqlTokenMutation")
     public RefreshToken tokenRefresh(@InputArgument String csrfToken,
@@ -96,12 +120,20 @@ public class TokenDataFetcher {
         PlatformTokenGrantService.IssuedTokens issued = tokenGrantService.refresh(refreshToken);
         return RefreshToken.newBuilder()
                 .token(issued.accessToken())
+                .refreshToken(issued.refreshToken())
                 .user(issued.user() == null ? null : userMapper.toGraphQlUser(issued.user()))
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
 
-    /** Saleor {@code tokenVerify(token)} — the resource server's own decoder. */
+    /**
+     * Saleor {@code tokenVerify(token)} — the resource server's own decoder.
+     * The {@code payload} is the claims map serialized through the
+     * application's own serializer (the auto-configured Jackson 3
+     * {@code JsonMapper}) — a strict JSON document the Dashboard can
+     * parse directly ({@code Map.toString()} output is NOT JSON and
+     * never was).
+     */
     @DgsMutation(field = DgsConstants.MUTATION.TokenVerify)
     @RateLimiter(name = "graphqlTokenMutation")
     public VerifyToken tokenVerify(@InputArgument String token) {
@@ -111,7 +143,7 @@ public class TokenDataFetcher {
         PlatformTokenGrantService.VerifiedToken verified = tokenGrantService.verify(token);
         VerifyToken.Builder builder = VerifyToken.newBuilder()
                 .isValid(verified.valid())
-                .payload(verified.claims().isEmpty() ? null : verified.claims().toString())
+                .payload(verified.claims().isEmpty() ? null : jsonMapper.writeValueAsString(verified.claims()))
                 .errors(mappers.emptyAccountErrors());
         if (verified.valid() && verified.subject() != null) {
             identitySpi.findCurrentUserAccount(
