@@ -244,12 +244,18 @@ class CategoryGraphQlIntegrationTest {
                         } }
                         """)
                 .execute()
-                // The rendered-primary-name DESC window: beta's Arabic
-                // primary sorts first (the natural order's last is the
-                // descending first), then the English primaries reversed.
+                // The rendered-primary-name DESC window over the WHOLE
+                // standing registry: beta's Arabic primary sorts first
+                // (the natural order's last is the descending first), then
+                // the V70 starter vocabulary's own row ("stay" — its
+                // English primary "Stay" sorts after every "P2 …" primary
+                // and before the Arabic one), then the test's English
+                // primaries reversed. The seed's rows are part of the
+                // registry the window executes over — the class javadoc's
+                // own rule — never a count these assertions own.
                 .path("categories.edges[0].node.slug").entity(String.class).isEqualTo("p2-cat-beta")
-                .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("p2-cat-gamma")
-                .path("categories.edges[2].node.slug").entity(String.class).isEqualTo("p2-cat-alpha");
+                .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("stay")
+                .path("categories.edges[2].node.slug").entity(String.class).isEqualTo("p2-cat-gamma");
     }
 
     @Test
@@ -271,7 +277,11 @@ class CategoryGraphQlIntegrationTest {
         // The follow-through page continues strictly AFTER the cursor's
         // own (name, id) sort key — no overlap, no skipped row. The
         // rendered-primary-name order: gamma (English primary) before
-        // beta (Arabic primary) — the executed contract.
+        // the V70 starter vocabulary's own row ("stay" — its English
+        // primary "Stay" sorts after every "P2 …" primary and before
+        // the Arabic one) before beta (Arabic primary — the natural
+        // order's last) — the executed contract over the registry's
+        // REAL standing rows, seed included.
         tester.document("""
                         query($after: String) { categories(first: 2, after: $after, sortBy: { direction: ASC, field: NAME }) {
                             edges { node { slug } }
@@ -281,7 +291,7 @@ class CategoryGraphQlIntegrationTest {
                 .variable("after", firstPageEndCursor)
                 .execute()
                 .path("categories.edges[0].node.slug").entity(String.class).isEqualTo("p2-cat-gamma")
-                .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("p2-cat-beta")
+                .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("stay")
                 .path("categories.pageInfo.hasPreviousPage").entity(Boolean.class).isEqualTo(true);
     }
 
