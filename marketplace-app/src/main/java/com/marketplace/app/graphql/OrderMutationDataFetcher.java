@@ -43,6 +43,7 @@ public class OrderMutationDataFetcher {
      */
     @DgsMutation(field = "orderConfirm")
     public Map<String, Object> orderConfirm(@InputArgument String id) {
+        orderCommandSpi.requireAdmin();
         final UUID orderId;
         try {
             orderId = globalIdCodec.decode(id, OrderGraphQlMapper.ORDER_TYPE);
@@ -67,9 +68,9 @@ public class OrderMutationDataFetcher {
      */
     @DgsMutation(field = "orderBulkCancel")
     public Map<String, Object> orderBulkCancel(@InputArgument List<String> ids) {
-        // Authorization belongs to the owning use case. Even an empty bulk
-        // request must cross that boundary rather than return a success-shaped
-        // payload before Spring method security has evaluated the caller.
+        // Permission is decided before any caller-supplied ID is decoded, and
+        // before an empty request can return a success-shaped payload.
+        orderCommandSpi.requireAdmin();
         List<String> submittedIds = ids == null ? List.of() : ids;
         final List<UUID> orderIds = new ArrayList<>(submittedIds.size());
         for (String id : submittedIds) {
@@ -90,7 +91,6 @@ public class OrderMutationDataFetcher {
                         switch (failure.kind()) {
                             case NOT_FOUND -> "NOT_FOUND";
                             case CONFLICT -> "CANNOT_CANCEL_ORDER";
-                            case DUPLICATE -> "DUPLICATED_INPUT_ITEM";
                         }))
                 .toList();
         return bulkPayload(outcome.count(), errors);
@@ -103,6 +103,7 @@ public class OrderMutationDataFetcher {
      */
     @DgsMutation(field = "orderCancel")
     public Map<String, Object> orderCancel(@InputArgument String id) {
+        orderCommandSpi.requireAdmin();
         final UUID orderId;
         try {
             orderId = globalIdCodec.decode(id, OrderGraphQlMapper.ORDER_TYPE);

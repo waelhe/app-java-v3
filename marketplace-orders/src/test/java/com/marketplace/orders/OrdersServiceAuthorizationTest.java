@@ -69,6 +69,8 @@ class OrdersServiceAuthorizationTest {
     @Test
     @WithMockUser(roles = "USER")
     void cancelAsAdminRejectsNonAdminBeforeAnyDomainSideEffect() {
+        assertThatThrownBy(() -> orderCommandSpi.requireAdmin())
+                .isInstanceOf(AccessDeniedException.class);
         assertThatThrownBy(() -> orderCommandSpi.cancelAsAdmin(UUID.randomUUID()))
                 .isInstanceOf(AccessDeniedException.class);
         assertThatThrownBy(() -> orderCommandSpi.confirmAsAdmin(UUID.randomUUID()))

@@ -1024,10 +1024,9 @@ class OrdersServiceTest {
                 List.of(order.getId(), order.getId()));
 
         assertThat(result.count()).isEqualTo(1);
-        assertThat(result.failures()).hasSize(1);
-        assertThat(result.failures().get(0).kind())
-                .isEqualTo(OrderBulkCancelResult.FailureKind.DUPLICATE);
-        assertThat(result.failures().get(0).orderId()).isEqualTo(order.getId());
+        assertThat(result.failures())
+                .as("Saleor dedupes repeated IDs silently instead of reporting an error")
+                .isEmpty();
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
         verify(orderRepository).save(order);
         verify(eventPublisher).publishEvent(new OrderCancelledEvent(

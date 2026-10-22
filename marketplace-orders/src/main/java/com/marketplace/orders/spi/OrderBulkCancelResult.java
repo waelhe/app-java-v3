@@ -22,7 +22,6 @@ public record OrderBulkCancelResult(int count, List<Failure> failures) {
 
     public enum FailureKind {
         NOT_FOUND,
-        CONFLICT,
-        DUPLICATE
+        CONFLICT
     }
 }

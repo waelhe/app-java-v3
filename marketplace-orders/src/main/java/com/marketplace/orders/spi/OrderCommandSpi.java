@@ -14,6 +14,13 @@ import java.util.UUID;
 public interface OrderCommandSpi {
 
     /**
+     * Enforce the management boundary before a transport adapter decodes
+     * caller-supplied IDs, so an unauthorized caller cannot probe validation
+     * behavior and always receives the permission decision first.
+     */
+    void requireAdmin();
+
+    /**
      * Cancel an order through the orders owner's guarded state machine.
      * The implementation restricts this management command to ADMIN callers.
      *

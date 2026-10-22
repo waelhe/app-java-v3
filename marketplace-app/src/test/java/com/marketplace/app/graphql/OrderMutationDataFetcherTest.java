@@ -10,6 +10,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.time.Instant;
 import java.util.List;
@@ -17,7 +18,10 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -105,7 +109,8 @@ class OrderMutationDataFetcherTest {
         assertThat(((Map<?, ?>) errors.get(0)).get("field")).isEqualTo("id");
         assertThat(((Map<?, ?>) errors.get(0)).get("code")).isEqualTo("INVALID");
         assertThat(result.get("errors")).isEqualTo(result.get("orderErrors"));
-        verifyNoInteractions(orderCommandSpi);
+        verify(orderCommandSpi).requireAdmin();
+        verify(orderCommandSpi, never()).bulkCancelAsAdmin(any());
     }
 
     @Test
@@ -140,7 +145,21 @@ class OrderMutationDataFetcherTest {
         assertThat(((Map<?, ?>) errors.get(0)).get("field")).isEqualTo("id");
         assertThat(((Map<?, ?>) errors.get(0)).get("code")).isEqualTo("INVALID");
         assertThat(result.get("errors")).isEqualTo(result.get("orderErrors"));
-        verifyNoInteractions(orderCommandSpi, mapper);
+        verify(orderCommandSpi).requireAdmin();
+        verify(orderCommandSpi, never()).cancelAsAdmin(any());
+        verifyNoInteractions(mapper);
+    }
+
+    @Test
+    void authorizationDenialWinsBeforeAnyCallerSuppliedIdIsDecoded() {
+        doThrow(new AccessDeniedException("ADMIN required"))
+                .when(orderCommandSpi).requireAdmin();
+
+        assertThatThrownBy(() -> fetcher.orderBulkCancel(List.of("bad-id")))
+                .isInstanceOf(AccessDeniedException.class);
+
+        verify(orderCommandSpi, never()).bulkCancelAsAdmin(any());
+        verifyNoInteractions(mapper);
     }
 
     @Test

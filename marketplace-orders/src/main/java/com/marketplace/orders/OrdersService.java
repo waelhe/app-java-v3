@@ -653,6 +653,15 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi {
     }
 
     /**
+     * Enforce the management boundary before a transport adapter decodes
+     * caller-supplied IDs. The method has no domain side effect.
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    public void requireAdmin() {
+    }
+
+    /**
      * Saleor P4 order-confirm management command. Confirmation remains the
      * orders owner's existing state transition and event publication; this
      * adapter does not add a second payment-capture path.
@@ -680,17 +689,9 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi {
             return new com.marketplace.orders.spi.OrderBulkCancelResult(0, List.of());
         }
 
-        java.util.Set<UUID> uniqueIds = new java.util.LinkedHashSet<>();
+        java.util.Set<UUID> uniqueIds = new java.util.LinkedHashSet<>(orderIds);
         java.util.List<com.marketplace.orders.spi.OrderBulkCancelResult.Failure> failures =
                 new java.util.ArrayList<>();
-        for (UUID orderId : orderIds) {
-            if (!uniqueIds.add(orderId)) {
-                failures.add(new com.marketplace.orders.spi.OrderBulkCancelResult.Failure(
-                        orderId,
-                        com.marketplace.orders.spi.OrderBulkCancelResult.FailureKind.DUPLICATE,
-                        "The same order ID was supplied more than once"));
-            }
-        }
 
         // Stable ordering prevents overlapping bulk requests from acquiring
         // row locks in opposite order and unnecessarily deadlocking.
