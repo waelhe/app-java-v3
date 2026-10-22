@@ -143,6 +143,19 @@ class OrderMutationDataFetcherTest {
     }
 
     @Test
+    void cancellationAuthorizationDenialWinsBeforeAnyCallerSuppliedIdIsDecoded() {
+        doThrow(new AccessDeniedException("ADMIN required"))
+                .when(orderCommandSpi).requireAdmin();
+
+        assertThatThrownBy(() -> fetcher.orderCancel("not-an-order-global-id"))
+                .isInstanceOf(AccessDeniedException.class);
+
+        verify(orderCommandSpi).requireAdmin();
+        verify(orderCommandSpi, never()).cancelAsAdmin(any());
+        verifyNoInteractions(mapper);
+    }
+
+    @Test
     void illegalCancellationReturnsOrderErrorInsteadOfFalseSuccess() {
         UUID id = UUID.randomUUID();
         when(orderCommandSpi.cancelAsAdmin(id))
