@@ -242,16 +242,38 @@ class OrderDataFetcherDgsTest {
         assertThat(v).containsEntry("id",gid("ProductVariant",variantId)).containsEntry("sku","SKU-1");
     }
 
+    @Test void checkoutKeepsAnExplicitReferenceWhenTheVariantIsNoLongerReadable() {
+        auth("buyer","USER");
+        UUID cart=UUID.randomUUID(), line=UUID.randomUUID(), variantId=UUID.randomUUID();
+        when(checkouts.findCheckout(eq(cart),any(Authentication.class))).thenReturn(checkout(cart,line,variantId));
+        when(variants.findVariantById(eq(variantId),any(Authentication.class))).thenReturn(Optional.empty());
+
+        Map<String,Object> result=dgs.executeAndExtractJsonPath(
+                "query($id:ID!){checkout(id:$id){id lines{id quantity variant{id availableInCatalog productVariant{id}}}}}",
+                "data.checkout",Map.of("id",gid("Checkout",cart)));
+        assertThat(result).containsEntry("id",gid("Checkout",cart));
+        @SuppressWarnings("unchecked") List<Map<String,Object>> lines=(List<Map<String,Object>>)result.get("lines");
+        assertThat(lines).hasSize(1);
+        @SuppressWarnings("unchecked") Map<String,Object> variantReference=(Map<String,Object>)lines.get(0).get("variant");
+        assertThat(variantReference).containsEntry("id",gid("ProductVariant",variantId))
+                .containsEntry("availableInCatalog",false).containsEntry("productVariant",null);
+    }
+
     @Test void checkoutLinesAddBindsInputsAndReturnsTheOwnerProjection() {
         auth("buyer","USER"); UUID cart=UUID.randomUUID(),line=UUID.randomUUID(),variantId=UUID.randomUUID();
         when(checkouts.addLines(eq(cart),any(),any(Authentication.class))).thenReturn(checkout(cart,line,variantId));
-        when(variants.findVariantById(eq(variantId),any(Authentication.class))).thenReturn(Optional.of(variant(variantId,UUID.randomUUID())));
+        when(variants.findVariantById(eq(variantId),any(Authentication.class))).thenReturn(Optional.empty());
         Map<String,Object> result=dgs.executeAndExtractJsonPath(
-                "mutation($id:ID!,$lines:[CheckoutLineInput!]!){checkoutLinesAdd(id:$id,lines:$lines){checkout{id quantity lines{id quantity}} checkoutErrors{code} errors{code}}}",
+                "mutation($id:ID!,$lines:[CheckoutLineInput!]!){checkoutLinesAdd(id:$id,lines:$lines){checkout{id quantity lines{id quantity variant{id availableInCatalog productVariant{id}}}} checkoutErrors{code} errors{code}}}",
                 "data.checkoutLinesAdd",Map.of("id",gid("Checkout",cart),"lines",List.of(Map.of("variantId",gid("ProductVariant",variantId),"quantity",2))));
         @SuppressWarnings("unchecked") Map<String,Object> c=(Map<String,Object>)result.get("checkout");
         assertThat(c.get("id")).isEqualTo(gid("Checkout",cart));
         assertThat(result.get("checkoutErrors")).isEqualTo(List.of()); assertThat(result.get("errors")).isEqualTo(List.of());
+        @SuppressWarnings("unchecked") List<Map<String,Object>> resultLines=(List<Map<String,Object>>)c.get("lines");
+        assertThat(resultLines).hasSize(1);
+        @SuppressWarnings("unchecked") Map<String,Object> variantReference=(Map<String,Object>)resultLines.get(0).get("variant");
+        assertThat(variantReference).containsEntry("id",gid("ProductVariant",variantId))
+                .containsEntry("availableInCatalog",false).containsEntry("productVariant",null);
         @SuppressWarnings("unchecked") ArgumentCaptor<List<CheckoutSpi.LineAdd>> captured=ArgumentCaptor.forClass(List.class);
         verify(checkouts).addLines(eq(cart),captured.capture(),any(Authentication.class));
         assertThat(captured.getValue()).containsExactly(new CheckoutSpi.LineAdd(variantId,2));

@@ -95,10 +95,19 @@ type Checkout {
     quantity: Int!
 }
 
+# A persisted cart line can outlive current catalog visibility. This is an
+# explicitly partial checkout contract until a catalog-owned historical
+# reference projection is approved; it does not invent product details.
 type CheckoutLine {
     id: ID!
-    variant: ProductVariant!
+    variant: CheckoutVariantReference!
     quantity: Int!
+}
+
+type CheckoutVariantReference {
+    id: ID!
+    availableInCatalog: Boolean!
+    productVariant: ProductVariant
 }
 
 input CheckoutLineInput {

@@ -1,8 +1,9 @@
 package com.marketplace.app.graphql;
 
+import com.marketplace.app.graphql.generated.types.ProductVariant;
 import com.marketplace.catalog.spi.ProductVariantReadSpi;
+import com.marketplace.catalog.spi.ProductVariantView;
 import com.marketplace.orders.spi.CheckoutView;
-import com.marketplace.shared.api.ResourceNotFoundException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -10,17 +11,20 @@ import org.springframework.stereotype.Component;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
- * Maps the orders owner's bounded checkout projection onto the Saleor-shaped
- * wire type. The adapter owns typed IDs and transport shape only; ownership
- * and lifecycle gates stay in the owning use case.
+ * Maps a persisted checkout-line variant reference separately from the
+ * catalog's current readable projection. A cart line may outlive public
+ * catalog visibility, so the committed line remains representable without
+ * pretending an unreadable variant is a not-found checkout.
  */
 @Component
 public class CheckoutGraphQlMapper {
 
     static final String CHECKOUT_TYPE = "Checkout";
     static final String CHECKOUT_LINE_TYPE = "CheckoutLine";
+    static final String PRODUCT_VARIANT_TYPE = "ProductVariant";
 
     private final SaleorGlobalIdCodec globalIdCodec;
     private final ProductVariantReadSpi variantReadSpi;
@@ -47,12 +51,17 @@ public class CheckoutGraphQlMapper {
     }
 
     private Map<String, Object> toGraphQlLine(CheckoutView.Line line, Authentication authentication) {
-        var variant = variantReadSpi.findVariantById(line.variantId(), authentication)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "ProductVariant", line.variantId()));
+        Optional<ProductVariantView> variant =
+                variantReadSpi.findVariantById(line.variantId(), authentication);
+        Map<String, Object> variantReference = new LinkedHashMap<>();
+        variantReference.put("id", globalIdCodec.encode(PRODUCT_VARIANT_TYPE, line.variantId()));
+        variantReference.put("availableInCatalog", variant.isPresent());
+        ProductVariant catalogProjection = variant.map(variantMapper::toGraphQlProductVariant).orElse(null);
+        variantReference.put("productVariant", catalogProjection);
+
         Map<String, Object> mapped = new LinkedHashMap<>();
         mapped.put("id", globalIdCodec.encode(CHECKOUT_LINE_TYPE, line.id()));
-        mapped.put("variant", variantMapper.toGraphQlProductVariant(variant));
+        mapped.put("variant", variantReference);
         mapped.put("quantity", line.quantity());
         return mapped;
     }
