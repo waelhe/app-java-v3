@@ -219,8 +219,10 @@ class CategoryGraphQlIntegrationTest {
                 .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("p2-cat-alpha")
                 .path("categories.edges[1].node.name").entity(String.class).isEqualTo("P2 Category Alpha")
                 .path("categories.edges[1].node.nameAr").valueIsNull()
-                .path("categories.edges[2].node.slug").entity(String.class).isEqualTo("p2-cat-beta")
-                .path("categories.edges[2].node.name").entity(String.class).isEqualTo("فئة بيتا للاختبار")
+                // naturalOrder's documented law: gamma (Latin) precedes
+                // beta (Arabic) in the ascending order.
+                .path("categories.edges[2].node.slug").entity(String.class).isEqualTo("p2-cat-gamma")
+                .path("categories.edges[2].node.name").entity(String.class).isEqualTo("P2 Category Gamma")
                 .path("categories.pageInfo.hasPreviousPage").entity(Boolean.class).isEqualTo(false)
                 .path("categories.totalCount").entity(Integer.class)
                 .satisfies(total -> assertThat(total).isGreaterThanOrEqualTo(4));
@@ -236,8 +238,11 @@ class CategoryGraphQlIntegrationTest {
                         } }
                         """)
                 .execute()
-                .path("categories.edges[0].node.slug").entity(String.class).isEqualTo("p2-cat-gamma")
-                .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("p2-cat-beta")
+                // naturalOrder's documented law: Arabic letters (U+06xx)
+                // sort ABOVE the Latin range, so DESC opens on the Arabic-
+                // named beta row, then the two Latin rows, nameless last.
+                .path("categories.edges[0].node.slug").entity(String.class).isEqualTo("p2-cat-beta")
+                .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("p2-cat-gamma")
                 .path("categories.edges[2].node.slug").entity(String.class).isEqualTo("p2-cat-alpha");
     }
 
@@ -267,8 +272,11 @@ class CategoryGraphQlIntegrationTest {
                         """)
                 .variable("after", firstPageEndCursor)
                 .execute()
-                .path("categories.edges[0].node.slug").entity(String.class).isEqualTo("p2-cat-beta")
-                .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("p2-cat-gamma")
+                // naturalOrder's documented law: the Arabic-named beta row
+                // sorts ABOVE the Latin range, so the ASC page after alpha
+                // opens on gamma and closes on beta.
+                .path("categories.edges[0].node.slug").entity(String.class).isEqualTo("p2-cat-gamma")
+                .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("p2-cat-beta")
                 .path("categories.pageInfo.hasPreviousPage").entity(Boolean.class).isEqualTo(true);
     }
 
@@ -531,9 +539,13 @@ void anonymousCategoryQueryIsRejectedByTheGraphQlGateBeforeDispatch() {
                 .variable("after", slugCursor)
                 .execute()
                 .errors()
-                .satisfy(errors -> assertThat(errors)
+                .satisfies(errors -> assertThat(errors)
                         .anySatisfy(error -> {
-                            assertThat(error.getMessage()).contains("after must be a forward keyset cursor");
+                            // The framework's own cursor-decoding failure message
+                            // for a non-keyset cursor shape (the gate's
+                            // "forward keyset cursor" wording only answers a
+                            // DECODABLE cursor with the wrong key set).
+                            assertThat(error.getMessage()).contains("Invalid or unknown cursor type");
                             assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
                         }));
     }

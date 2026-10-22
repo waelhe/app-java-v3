@@ -399,15 +399,15 @@ class AttributeWriteServiceTest {
         assertThat(result.success()).isTrue();
         assertThat(result.attribute().slug()).isEqualTo("choice-attr");
         // The park-then-settle rewrite: the first saveAll parks every moved
-        // row on a DISTINCT negative position (outside the live 1..n range,
-        // so no live unique slot is contested mid-flight), the second
-        // settles the final compacted 1..n order.
+        // row on a DISTINCT position ABOVE the live 1..n range (the
+        // entity's reposition law rejects negatives), the second settles
+        // the final compacted 1..n order.
         org.mockito.ArgumentCaptor<List<CatalogAttributeOption>> reorderCaptor =
                 org.mockito.ArgumentCaptor.forClass(List.class);
         verify(optionRepository, times(2)).saveAll(reorderCaptor.capture());
         List<CatalogAttributeOption> parked = reorderCaptor.getAllValues().get(0);
         assertThat(parked).extracting(CatalogAttributeOption::getPosition)
-                .allSatisfy(position -> assertThat(position).isNegative());
+                .allSatisfy(position -> assertThat(position).isGreaterThan(3));
         assertThat(parked.stream().map(CatalogAttributeOption::getPosition).distinct().count())
                 .isEqualTo(parked.size());
         List<CatalogAttributeOption> settled = reorderCaptor.getAllValues().get(1);

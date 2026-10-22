@@ -268,10 +268,11 @@ public class AttributeWriteService implements AttributeWriteSpi {
         // position another row still holds trips the unique index BEFORE
         // that row moves (the CI-measured duplicate-key internal error).
         // The standard two-phase rewrite inside the SAME transaction: every
-        // moved row first parks on a distinct negative position (outside
-        // the live 1..n range, so no live slot is contested), the flush
-        // materializes the park, and the settle then writes the final
-        // compacted 1..n positions onto freed slots only.
+        // moved row first parks on a distinct position ABOVE the live
+        // 1..n range (the entity's own reposition law rejects negatives;
+        // n+1..n+k are non-negative, distinct, and disjoint from every
+        // live slot), the flush materializes the park, and the settle then
+        // writes the final compacted 1..n positions onto freed slots only.
         List<CatalogAttributeOption> toSave = new ArrayList<>();
         for (int i = 0; i < ordered.size(); i++) {
             CatalogAttributeOption option = ordered.get(i);
@@ -280,8 +281,9 @@ public class AttributeWriteService implements AttributeWriteSpi {
             }
         }
         if (!toSave.isEmpty()) {
+            int parkBase = ordered.size() + 1;
             for (int i = 0; i < toSave.size(); i++) {
-                toSave.get(i).reposition(-(i + 1));
+                toSave.get(i).reposition(parkBase + i);
             }
             attributeOptionRepository.saveAll(toSave);
             attributeOptionRepository.flush();

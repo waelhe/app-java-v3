@@ -152,14 +152,137 @@ management:
 # test class fires a whole root family's legs within seconds, far past
 # the per-minute window, so the production numbers would answer RL-001
 # mid-class (the CI-measured failure on attributeValueCreate's sixth leg)
-# before the root's own behavior is proven. This profile-only override
-# raises the shared default window (the documented relaxed-binding
-# property override) so the tests exercise the roots' real behavior;
-# production limits stay exactly as application.yml pins them.
+# before the root's own behavior is proven. The per-NAMED-instance
+# overrides are required because application.yml's own instances carry
+# EXPLICIT limit-for-period values — a base-config default alone cannot
+# reach them (resilience4j's documented instance-over-base precedence).
+# This profile-only override raises every GraphQL root family's window
+# (the documented relaxed-binding property override) so the tests
+# exercise the roots' real behavior; production limits stay exactly as
+# application.yml pins them, and every existing rate-limit test pins its
+# OWN instance budgets through @SpringBootTest(properties=...) which
+# take precedence over this profile file.
 resilience4j:
   ratelimiter:
-    configs:
-      default:
+    instances:
+      graphqlAttributeMutation:
         limit-for-period: 10000
         limit-refresh-period: 1m
         timeout-duration: 0
+      graphqlAttributeValueMutation:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlCatalogAttributeQuery:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlCatalogRead:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlCategoryMutation:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlCategoryQuery:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlCollectionMutation:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlCollectionQuery:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlCreateService:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlCustomerQuery:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlDiscoveryQuery:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlNeighborhoodFeedQuery:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlOrderQuery:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlPermissionGroupQuery:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlPostCommentsQuery:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlPostQuery:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlProductMediaMutation:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlProductQuery:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlProductTypeMutation:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlProductVariantMutation:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlProductVariantQuery:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlPromotionQuery:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlServiceQuery:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlStoreProductMutation:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlStoreProductQuery:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlTokenMutation:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlUserQuery:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlVoucherMutation:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlVoucherQuery:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      graphqlobservation:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0
+

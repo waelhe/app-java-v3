@@ -291,10 +291,12 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
         // uq_product_type_attribute_position_live over
         // (product_type_id, scope, position)): a direct saveAll(toSave)
         // lands UPDATEs on positions sibling rows still hold mid-flight.
-        // Every moved row first parks on a distinct negative position
-        // (outside the live 1..n range), the flush materializes the park,
-        // and the settle rewrites the final compacted 1..n positions onto
-        // freed slots only — all inside the SAME transaction.
+        // Every moved row first parks on a distinct position ABOVE the
+        // live 1..n range (the entity's own reposition law rejects
+        // negatives; n+1..n+k are non-negative, distinct, and disjoint
+        // from every live slot), the flush materializes the park, and the
+        // settle rewrites the final compacted 1..n positions onto freed
+        // slots only — all inside the SAME transaction.
         List<ProductTypeAttributeAssignment> toSave = new ArrayList<>();
         for (int i = 0; i < ordered.size(); i++) {
             ProductTypeAttributeAssignment assignment = ordered.get(i);
@@ -303,8 +305,9 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
             }
         }
         if (!toSave.isEmpty()) {
+            int parkBase = ordered.size() + 1;
             for (int i = 0; i < toSave.size(); i++) {
-                toSave.get(i).reposition(-(i + 1));
+                toSave.get(i).reposition(parkBase + i);
             }
             assignmentRepository.saveAll(toSave);
             assignmentRepository.flush();

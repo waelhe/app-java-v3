@@ -12,7 +12,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.graphql.test.tester.HttpGraphQlTester;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -493,7 +492,12 @@ class OrderGraphQlIntegrationTest {
     // ------------------------------------------------------------------
 
     @Test
-    void anonymousOrderQueryIsRejectedAs401ProblemDetail() {
+void anonymousOrderQueryIsRejectedByTheGraphQlGateBeforeDispatch() {
+        // No Authorization header: PreLoginGraphQlGate answers the
+        // classified AUTHN-001 GraphQL error BEFORE dispatch (HTTP 200,
+        // ONE error with the canonical taxonomy pair, NO data key —
+        // nothing leaked, no resolver executed). The unified post-gate
+        // contract every root now shares.
         WebTestClient anonymousClient = WebTestClient.bindToServer()
                 .baseUrl("http://localhost:" + port + "/graphql")
                 .build();
@@ -501,15 +505,14 @@ class OrderGraphQlIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("{\"query\":\"{ orders(first: 1) { totalCount } }\"}")
                 .exchange()
-                .expectStatus().isUnauthorized()
-                .expectHeader().contentType("application/problem+json")
-                .expectHeader().valueEquals(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"marketplace\"")
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
                 .expectBody()
-                .jsonPath("$.type").isEqualTo("https://marketplace.com/errors/unauthorized")
-                .jsonPath("$.title").isEqualTo("Unauthorized")
-                .jsonPath("$.status").isEqualTo(401)
-                .jsonPath("$.instance").isEqualTo("/graphql")
-                .jsonPath("$.errorCode").isEqualTo("AUTHN-001");
+                .jsonPath("$.errors.length()").isEqualTo(1)
+                .jsonPath("$.errors[0].extensions.errorCode").isEqualTo("AUTHN-001")
+                .jsonPath("$.errors[0].extensions.category").isEqualTo("authz")
+                .jsonPath("$.errors[0].extensions.classification").isEqualTo("UNAUTHORIZED")
+                .jsonPath("$.data").doesNotExist();
     }
 
     // ------------------------------------------------------------------
