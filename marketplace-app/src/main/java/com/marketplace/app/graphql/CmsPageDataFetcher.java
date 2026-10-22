@@ -26,7 +26,7 @@ import com.marketplace.app.graphql.generated.types.PageAttributeAssign;
 import com.marketplace.app.graphql.generated.types.PageAttributeUnassign;
 import com.marketplace.app.graphql.generated.types.PageTypeReorderAttributes;
 import com.marketplace.app.graphql.generated.types.ReorderInput;
-import com.marketplace.shared.api.CmsPagePort;
+import com.marketplace.console.spi.CmsPageSpi;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
@@ -50,8 +50,11 @@ import java.util.UUID;
  * page/page-type surfaces — the Saleor {@code page*}/{@code pageType*}/
  * {@code pageAttribute*} mutations and the {@code page(s)}/
  * {@code pageType(s)} read roots, delegating through the declared
- * {@link CmsPagePort} seam to the console module's owning use case.
- * Transport-only (the frozen §7 contract).
+ * {@link CmsPageSpi} seam to the console module's owning use case.
+ * Transport-only (the frozen §7 contract). The seam moved from the
+ * shared-api {@code CmsPagePort} to the console-owned named SPI in the
+ * post-merge integration round (the {@code sharedPortsAreFrameworkNeutral}
+ * repair — the recorded agent-1 handoff migration path, executed).
  */
 @DgsComponent
 public class CmsPageDataFetcher {
@@ -59,20 +62,20 @@ public class CmsPageDataFetcher {
     static final String PAGE_TYPE_TAG = "Page";
     static final String PAGE_TYPE_TYPE_TAG = "PageType";
 
-    private final CmsPagePort cmsPagePort;
+    private final CmsPageSpi cmsPageSpi;
     private final com.marketplace.catalog.spi.AttributeReadSpi attributeReadSpi;
     private final AgentOneGraphQlMappers mappers;
     private final SaleorGlobalIdCodec globalIdCodec;
     private final EncodingCursorStrategy<ScrollPosition> cursorStrategy;
     private final GraphQlProperties properties;
 
-    public CmsPageDataFetcher(CmsPagePort cmsPagePort,
+    public CmsPageDataFetcher(CmsPageSpi cmsPageSpi,
                               com.marketplace.catalog.spi.AttributeReadSpi attributeReadSpi,
                               AgentOneGraphQlMappers mappers,
                               SaleorGlobalIdCodec globalIdCodec,
                               EncodingCursorStrategy<ScrollPosition> cursorStrategy,
                               GraphQlProperties properties) {
-        this.cmsPagePort = cmsPagePort;
+        this.cmsPageSpi = cmsPageSpi;
         this.attributeReadSpi = attributeReadSpi;
         this.mappers = mappers;
         this.globalIdCodec = globalIdCodec;
@@ -91,7 +94,7 @@ public class CmsPageDataFetcher {
             throw new IllegalArgumentException("A page title is required");
         }
         return PageCreate.newBuilder()
-                .page(toGraphQlPage(cmsPagePort.createPage(currentAuthentication(),
+                .page(toGraphQlPage(cmsPageSpi.createPage(currentAuthentication(),
                         input.getTitle(), input.getSlug(), input.getContent(),
                         input.getIsPublished(), seoTitle(input), seoDescription(input),
                         decodeId(input.getPageType(), PAGE_TYPE_TYPE_TAG,
@@ -106,7 +109,7 @@ public class CmsPageDataFetcher {
                                  @InputArgument PageInput input) {
         requireInput(input);
         return PageUpdate.newBuilder()
-                .page(toGraphQlPage(cmsPagePort.updatePage(currentAuthentication(),
+                .page(toGraphQlPage(cmsPageSpi.updatePage(currentAuthentication(),
                         decodeId(id, PAGE_TYPE_TAG, "A page ID is required"),
                         input.getTitle(), input.getSlug(), input.getContent(),
                         input.getIsPublished(), seoTitle(input), seoDescription(input))))
@@ -118,7 +121,7 @@ public class CmsPageDataFetcher {
     @RateLimiter(name = "graphqlCmsMutation")
     public PageDelete pageDelete(@InputArgument String id) {
         return PageDelete.newBuilder()
-                .page(toGraphQlPage(cmsPagePort.deletePage(currentAuthentication(),
+                .page(toGraphQlPage(cmsPageSpi.deletePage(currentAuthentication(),
                         decodeId(id, PAGE_TYPE_TAG, "A page ID is required"))))
                 .errors(mappers.emptyPageErrors())
                 .build();
@@ -127,7 +130,7 @@ public class CmsPageDataFetcher {
     @DgsMutation(field = DgsConstants.MUTATION.PageBulkDelete)
     @RateLimiter(name = "graphqlCmsMutation")
     public PageBulkDelete pageBulkDelete(@InputArgument List<String> ids) {
-        int count = cmsPagePort.bulkDeletePages(currentAuthentication(),
+        int count = cmsPageSpi.bulkDeletePages(currentAuthentication(),
                 decodeIds(ids, PAGE_TYPE_TAG, "A list of page IDs is required"));
         return PageBulkDelete.newBuilder()
                 .count(count)
@@ -142,7 +145,7 @@ public class CmsPageDataFetcher {
         if (isPublished == null) {
             throw new IllegalArgumentException("The isPublished flag is required");
         }
-        int count = cmsPagePort.bulkPublishPages(currentAuthentication(),
+        int count = cmsPageSpi.bulkPublishPages(currentAuthentication(),
                 decodeIds(ids, PAGE_TYPE_TAG, "A list of page IDs is required"), isPublished);
         return PageBulkPublish.newBuilder()
                 .count(count)
@@ -160,7 +163,7 @@ public class CmsPageDataFetcher {
             throw new IllegalArgumentException("A language code is required");
         }
         return PageTranslate.newBuilder()
-                .page(toGraphQlPage(cmsPagePort.translatePage(currentAuthentication(),
+                .page(toGraphQlPage(cmsPageSpi.translatePage(currentAuthentication(),
                         decodeId(id, PAGE_TYPE_TAG, "A page ID is required"),
                         languageCode.name(), input.getSlug(), input.getTitle(),
                         input.getContent(), input.getSeoTitle(), input.getSeoDescription())))
@@ -179,7 +182,7 @@ public class CmsPageDataFetcher {
             throw new IllegalArgumentException("A page type name is required");
         }
         return PageTypeCreate.newBuilder()
-                .pageType(toGraphQlPageType(cmsPagePort.createPageType(currentAuthentication(),
+                .pageType(toGraphQlPageType(cmsPageSpi.createPageType(currentAuthentication(),
                         input.getName(), input.getSlug(),
                         validatedAttributes(input.getAddAttributes()))))
                 .errors(mappers.emptyPageErrors())
@@ -192,7 +195,7 @@ public class CmsPageDataFetcher {
                                          @InputArgument PageTypeUpdateInput input) {
         requireInput(input);
         return PageTypeUpdate.newBuilder()
-                .pageType(toGraphQlPageType(cmsPagePort.updatePageType(currentAuthentication(),
+                .pageType(toGraphQlPageType(cmsPageSpi.updatePageType(currentAuthentication(),
                         decodeId(id, PAGE_TYPE_TYPE_TAG, "A page type ID is required"),
                         input.getName(), input.getSlug(),
                         validatedAttributes(input.getAddAttributes()),
@@ -205,7 +208,7 @@ public class CmsPageDataFetcher {
     @RateLimiter(name = "graphqlCmsMutation")
     public PageTypeDelete pageTypeDelete(@InputArgument String id) {
         return PageTypeDelete.newBuilder()
-                .pageType(toGraphQlPageType(cmsPagePort.deletePageType(currentAuthentication(),
+                .pageType(toGraphQlPageType(cmsPageSpi.deletePageType(currentAuthentication(),
                         decodeId(id, PAGE_TYPE_TYPE_TAG, "A page type ID is required"))))
                 .errors(mappers.emptyPageErrors())
                 .build();
@@ -215,7 +218,7 @@ public class CmsPageDataFetcher {
     @RateLimiter(name = "graphqlCmsMutation")
     public com.marketplace.app.graphql.generated.types.PageTypeBulkDelete pageTypeBulkDelete(
             @InputArgument List<String> ids) {
-        int count = cmsPagePort.bulkDeletePageTypes(currentAuthentication(),
+        int count = cmsPageSpi.bulkDeletePageTypes(currentAuthentication(),
                 decodeIds(ids, PAGE_TYPE_TYPE_TAG, "A list of page type IDs is required"));
         return com.marketplace.app.graphql.generated.types.PageTypeBulkDelete.newBuilder()
                 .count(count)
@@ -228,7 +231,7 @@ public class CmsPageDataFetcher {
     public PageAttributeAssign pageAttributeAssign(@InputArgument List<String> attributeIds,
                                                    @InputArgument String pageTypeId) {
         return PageAttributeAssign.newBuilder()
-                .pageType(toGraphQlPageType(cmsPagePort.assignPageTypeAttributes(
+                .pageType(toGraphQlPageType(cmsPageSpi.assignPageTypeAttributes(
                         currentAuthentication(),
                         decodeId(pageTypeId, PAGE_TYPE_TYPE_TAG, "A page type ID is required"),
                         validatedAttributes(attributeIds))))
@@ -241,7 +244,7 @@ public class CmsPageDataFetcher {
     public PageAttributeUnassign pageAttributeUnassign(@InputArgument List<String> attributeIds,
                                                        @InputArgument String pageTypeId) {
         return PageAttributeUnassign.newBuilder()
-                .pageType(toGraphQlPageType(cmsPagePort.unassignPageTypeAttributes(
+                .pageType(toGraphQlPageType(cmsPageSpi.unassignPageTypeAttributes(
                         currentAuthentication(),
                         decodeId(pageTypeId, PAGE_TYPE_TYPE_TAG, "A page type ID is required"),
                         validatedAttributes(attributeIds))))
@@ -264,7 +267,7 @@ public class CmsPageDataFetcher {
             deltas.add(move.getSortOrder());
         }
         return PageTypeReorderAttributes.newBuilder()
-                .pageType(toGraphQlPageType(cmsPagePort.reorderPageTypeAttributes(
+                .pageType(toGraphQlPageType(cmsPageSpi.reorderPageTypeAttributes(
                         currentAuthentication(),
                         decodeId(pageTypeId, PAGE_TYPE_TYPE_TAG, "A page type ID is required"),
                         attributeIds, deltas)))
@@ -288,12 +291,12 @@ public class CmsPageDataFetcher {
                     "page slugLanguageCode is not implemented on this platform yet");
         }
         if (id != null && !id.isBlank()) {
-            return cmsPagePort.findPageById(currentAuthentication(),
+            return cmsPageSpi.findPageById(currentAuthentication(),
                             decodeId(id, PAGE_TYPE_TAG, "A page ID is required"))
                     .map(this::toGraphQlPage).orElse(null);
         }
         if (slug != null && !slug.isBlank()) {
-            return cmsPagePort.findPageBySlug(currentAuthentication(), slug)
+            return cmsPageSpi.findPageBySlug(currentAuthentication(), slug)
                     .map(this::toGraphQlPage).orElse(null);
         }
         throw new IllegalArgumentException("A page ID or a slug is required");
@@ -331,7 +334,7 @@ public class CmsPageDataFetcher {
         boolean ascending = sortBy == null || sortBy.getDirection() == null
                 || com.marketplace.app.graphql.generated.types.OrderDirection.ASC
                         .equals(sortBy.getDirection());
-        CmsPagePort.PageWindow window = cmsPagePort.scrollPages(currentAuthentication(), field,
+        CmsPageSpi.PageWindow window = cmsPageSpi.scrollPages(currentAuthentication(), field,
                 ascending, keysetPosition(after, field),
                 Limit.of(Math.min(requested, properties.pagination().maxPageSize())));
         return toConnection(window, PageCountableConnection.newBuilder(), field);
@@ -340,7 +343,7 @@ public class CmsPageDataFetcher {
     @DgsQuery(field = DgsConstants.QUERY.PageType)
     @RateLimiter(name = "graphqlCmsQuery")
     public PageType pageType(@InputArgument String id) {
-        return cmsPagePort.findPageTypeById(currentAuthentication(),
+        return cmsPageSpi.findPageTypeById(currentAuthentication(),
                         decodeId(id, PAGE_TYPE_TYPE_TAG, "A page type ID is required"))
                 .map(this::toGraphQlPageType).orElse(null);
     }
@@ -373,7 +376,7 @@ public class CmsPageDataFetcher {
         boolean ascending = sortBy == null || sortBy.getDirection() == null
                 || com.marketplace.app.graphql.generated.types.OrderDirection.ASC
                         .equals(sortBy.getDirection());
-        CmsPagePort.PageTypeWindow window = cmsPagePort.scrollPageTypes(currentAuthentication(),
+        CmsPageSpi.PageTypeWindow window = cmsPageSpi.scrollPageTypes(currentAuthentication(),
                 field, ascending, keysetPosition(after, field),
                 Limit.of(Math.min(requested, properties.pagination().maxPageSize())));
         return toTypeConnection(window);
@@ -383,7 +386,7 @@ public class CmsPageDataFetcher {
     // Internals
     // ---------------------------------------------------------------------
 
-    private Page toGraphQlPage(CmsPagePort.PageView view) {
+    private Page toGraphQlPage(CmsPageSpi.PageView view) {
         return Page.newBuilder()
                 .id(globalIdCodec.encode(PAGE_TYPE_TAG, view.id()))
                 .seoTitle(view.seoTitle())
@@ -404,7 +407,7 @@ public class CmsPageDataFetcher {
                 .build();
     }
 
-    PageType toGraphQlPageType(CmsPagePort.PageTypeView view) {
+    PageType toGraphQlPageType(CmsPageSpi.PageTypeView view) {
         return PageType.newBuilder()
                 .id(globalIdCodec.encode(PAGE_TYPE_TYPE_TAG, view.id()))
                 .name(view.name() == null ? "" : view.name())
@@ -413,7 +416,7 @@ public class CmsPageDataFetcher {
                 .build();
     }
 
-    private PageCountableConnection toConnection(CmsPagePort.PageWindow window,
+    private PageCountableConnection toConnection(CmsPageSpi.PageWindow window,
                                                  PageCountableConnection.Builder builder,
                                                  String sortField) {
         List<com.marketplace.app.graphql.generated.types.PageCountableEdge> edges =
@@ -430,7 +433,7 @@ public class CmsPageDataFetcher {
                 .build();
     }
 
-    private PageTypeCountableConnection toTypeConnection(CmsPagePort.PageTypeWindow window) {
+    private PageTypeCountableConnection toTypeConnection(CmsPageSpi.PageTypeWindow window) {
         List<com.marketplace.app.graphql.generated.types.PageTypeCountableEdge> edges =
                 new ArrayList<>(window.window().getContent().size());
         for (int i = 0; i < window.window().getContent().size(); i++) {

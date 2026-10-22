@@ -8,8 +8,8 @@ import com.marketplace.identity.spi.CustomerTypeSpi;
 import com.marketplace.identity.spi.IdentitySpi;
 import com.marketplace.identity.spi.UserAccountView;
 import com.marketplace.identity.spi.UserManagementSpi;
-import com.marketplace.shared.api.CmsNavigationPort;
-import com.marketplace.shared.api.CmsPagePort;
+import com.marketplace.console.spi.CmsNavigationSpi;
+import com.marketplace.console.spi.CmsPageSpi;
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import org.junit.jupiter.api.AfterEach;
@@ -74,9 +74,9 @@ class AgentOneMutationDgsTest {
     @MockitoBean
     private UserManagementSpi userManagementSpi;
     @MockitoBean
-    private CmsPagePort cmsPagePort;
+    private CmsPageSpi cmsPageSpi;
     @MockitoBean
-    private CmsNavigationPort cmsNavigationPort;
+    private CmsNavigationSpi cmsNavigationSpi;
     @MockitoBean
     private AttributeReadSpi attributeReadSpi;
     @MockitoBean
@@ -105,6 +105,46 @@ class AgentOneMutationDgsTest {
     private com.marketplace.shared.security.CurrentUserProvider currentUserProvider;
     @MockitoBean
     private PlatformTokenGrantService tokenGrantService;
+    // The post-merge integration round (PR #696 review): the slice scans
+    // ALL of com.marketplace.app.graphql, so it discovers the multi-instance
+    // rotation round's JdbcRefreshTokenRotationStore — a real @Component
+    // whose constructor needs a JdbcTemplate the containerless slice has
+    // no DataSource for. The mock satisfies the wiring; the store's REAL
+    // behavior (including the two-instance atomicity) is proven over real
+    // PostgreSQL/Flyway in PlatformTokenGrantRotationMultiInstanceIntegrationTest.
+    @MockitoBean
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+    // The post-merge integration round's completion of the same wiring
+    // contract: A0's central assembly landed the sibling agents' catalog/
+    // media/pricing write fetchers in this package, so the full-package
+    // slice discovers them too — their owning write SPIs join the mocked
+    // seam set (the declared interfaces, never the internals; the REAL
+    // implementations are proven in the owning modules' own suites and
+    // the full-stack integration tests over real PostgreSQL/Flyway).
+    @MockitoBean
+    private com.marketplace.catalog.spi.AttributeValueWriteSpi attributeValueWriteSpi;
+    @MockitoBean
+    private com.marketplace.catalog.spi.AttributeWriteSpi attributeWriteSpi;
+    @MockitoBean
+    private com.marketplace.catalog.spi.CategoryWriteSpi categoryWriteSpi;
+    @MockitoBean
+    private com.marketplace.catalog.spi.CollectionReadSpi collectionReadSpi;
+    @MockitoBean
+    private com.marketplace.catalog.spi.CollectionWriteSpi collectionWriteSpi;
+    @MockitoBean
+    private com.marketplace.media.spi.ProductMediaWriteSpi productMediaWriteSpi;
+    @MockitoBean
+    private com.marketplace.catalog.spi.ProductTypeAttributeWriteSpi productTypeAttributeWriteSpi;
+    @MockitoBean
+    private com.marketplace.catalog.spi.ProductTypeWriteSpi productTypeWriteSpi;
+    @MockitoBean
+    private com.marketplace.catalog.spi.ProductVariantWriteSpi productVariantWriteSpi;
+    @MockitoBean
+    private com.marketplace.catalog.spi.ProductWriteSpi productWriteSpi;
+    @MockitoBean
+    private com.marketplace.catalog.spi.TranslationWriteSpi translationWriteSpi;
+    @MockitoBean
+    private com.marketplace.pricing.spi.VoucherWriteSpi voucherWriteSpi;
 
     private static final UUID ADDRESS_ID = UUID.randomUUID();
     private static final UUID USER_ID = UUID.randomUUID();

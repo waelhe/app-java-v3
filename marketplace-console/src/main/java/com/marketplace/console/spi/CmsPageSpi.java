@@ -1,4 +1,4 @@
-package com.marketplace.shared.api;
+package com.marketplace.console.spi;
 
 import org.springframework.data.domain.KeysetScrollPosition;
 import org.springframework.data.domain.Limit;
@@ -11,20 +11,33 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Agent 1 (the Saleor 458-root campaign, assignment packet PR #696 — the
- * D-CMS-001 ownership decision): the CMS page+page-type port — the
- * composition boundary's declared seam to the console module's
- * dashboard-managed content registry (the shared-api port idiom: the app
- * layer consumes the interface, the console module provides the
- * implementation; the handoff records the A0 migration path to a
- * console-owned named SPI when the allowlist entry lands).
+ * Agent 1 / A0 (the Saleor 458-root campaign — the post-merge integration
+ * review of PR #696): the CMS page+page-type SPI — the composition
+ * boundary's declared seam to the console module's dashboard-managed
+ * content registry (the D-CMS-001 ownership decision's final home).
+ *
+ * <p><b>Why this interface moved out of {@code shared/api}:</b> it was
+ * born there as {@code CmsPagePort} riding the shared-api port idiom, but
+ * its contract speaks Spring ({@code Authentication}, Spring Data's
+ * {@code KeysetScrollPosition}/{@code Limit}/{@code Window}) — exactly
+ * what the house rule {@code sharedPortsAreFrameworkNeutral} forbids in
+ * the shared-contract module (a port speaking Spring Data's types drags
+ * every consumer module into that type system). The recorded migration
+ * path in the agent-1 handoff — "a console-owned named SPI when the
+ * allowlist entry lands" — is executed here: the seam now lives where the
+ * owning domain owns it, the same {@code IdentitySpi}/{@code catalog-spi}
+ * precedent every journey seam follows (the module's declared SPI may
+ * speak Spring; the SHARED module may not).</p>
  *
  * <p>The house seam discipline verbatim (the IdentitySpi precedent):
  * typed view records, {@code Authentication}-carrying use-case methods
- * (ADMIN enforcement lives in the owning implementation), and the
- * forward-only keyset window contract for the collection reads.</p>
+ * (ADMIN enforcement lives in the owning implementation — Saleor's
+ * MANAGE_PAGES/MANAGE_PAGE_TYPES_AND_ATTRIBUTES mapped to the platform's
+ * ADMIN capability), and the forward-only keyset window contract for the
+ * collection reads.</p>
  */
-public interface CmsPagePort {
+@org.springframework.modulith.NamedInterface("console-spi")
+public interface CmsPageSpi {
 
     /** The page translation projection. */
     record PageTranslationView(String languageCode, String slug, String title,

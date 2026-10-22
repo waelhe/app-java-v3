@@ -1,6 +1,6 @@
 package com.marketplace.console;
 
-import com.marketplace.shared.api.CmsPagePort;
+import com.marketplace.console.spi.CmsPageSpi;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import io.micrometer.observation.annotation.Observed;
@@ -28,13 +28,13 @@ import java.util.regex.Pattern;
  * D-CMS-001 ownership decision): the console module's CMS page+page-type
  * owning use case — the {@code page*}/{@code pageType*}/{@code pageAttribute*}
  * mutations and the {@code page(s)}/{@code pageType(s)} reads behind the
- * {@link CmsPagePort} seam. ADMIN-enforced at this boundary (Saleor
+ * {@link CmsPageSpi} seam. ADMIN-enforced at this boundary (Saleor
  * requires MANAGE_PAGES/MANAGE_PAGE_TYPES_AND_ATTRIBUTES — the platform's
  * mapped ADMIN capability, the RBAC mapping divergence row).
  */
 @Service
 @Transactional
-public class CmsPageAdminService implements CmsPagePort {
+public class CmsPageAdminService implements CmsPageSpi {
 
     private static final Logger log = LoggerFactory.getLogger(CmsPageAdminService.class);
     private static final Pattern SLUG_SHAPE = Pattern.compile("^[a-z0-9]+(?:-[a-z0-9]+)*$");

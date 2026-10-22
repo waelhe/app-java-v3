@@ -23,7 +23,7 @@ import com.marketplace.app.graphql.generated.types.MenuSortingInput;
 import com.marketplace.app.graphql.generated.types.MenuUpdate;
 import com.marketplace.app.graphql.generated.types.NameTranslationInput;
 import com.marketplace.app.graphql.generated.types.NavigationType;
-import com.marketplace.shared.api.CmsNavigationPort;
+import com.marketplace.console.spi.CmsNavigationSpi;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
@@ -47,9 +47,13 @@ import java.util.UUID;
  * surfaces — {@code assignNavigation}, the {@code menu*} and
  * {@code menuItem*} mutations, and the {@code menu(s)}/
  * {@code menuItem(s)} read roots, delegating through the declared
- * {@link CmsNavigationPort} seam. The tree composition (children lists,
+ * {@link CmsNavigationSpi} seam. The tree composition (children lists,
  * levels) is computed here from the owner's flat item set; the cycle
- * guard and the cross-menu invariants live in the owning use case.
+ * guard and the cross-menu invariants live in the owning use case. The
+ * seam moved from the shared-api {@code CmsNavigationPort} to the
+ * console-owned named SPI in the post-merge integration round (the
+ * {@code sharedPortsAreFrameworkNeutral} repair — the recorded agent-1
+ * handoff migration path, executed).
  */
 @DgsComponent
 public class CmsNavigationDataFetcher {
@@ -57,12 +61,12 @@ public class CmsNavigationDataFetcher {
     static final String MENU_TAG = "Menu";
     static final String MENU_ITEM_TAG = "MenuItem";
 
-    private final CmsNavigationPort navigationPort;
+    private final CmsNavigationSpi navigationPort;
     private final SaleorGlobalIdCodec globalIdCodec;
     private final EncodingCursorStrategy<ScrollPosition> cursorStrategy;
     private final GraphQlProperties properties;
 
-    public CmsNavigationDataFetcher(CmsNavigationPort navigationPort,
+    public CmsNavigationDataFetcher(CmsNavigationSpi navigationPort,
                                     SaleorGlobalIdCodec globalIdCodec,
                                     EncodingCursorStrategy<ScrollPosition> cursorStrategy,
                                     GraphQlProperties properties) {
@@ -239,7 +243,7 @@ public class CmsNavigationDataFetcher {
         navigationPort.moveMenuItems(currentAuthentication(), menuId, itemIds, parentIds,
                 sortOrders);
         return MenuItemMove.newBuilder()
-                .menu(toGraphQlMenu(new CmsNavigationPort.MenuView(menuId, null, null)))
+                .menu(toGraphQlMenu(new CmsNavigationSpi.MenuView(menuId, null, null)))
                 .errors(mappersEmpty())
                 .build();
     }
@@ -301,7 +305,7 @@ public class CmsNavigationDataFetcher {
         boolean ascending = sortBy == null || sortBy.getDirection() == null
                 || com.marketplace.app.graphql.generated.types.OrderDirection.ASC
                         .equals(sortBy.getDirection());
-        CmsNavigationPort.MenuWindow window = navigationPort.scrollMenus(currentAuthentication(),
+        CmsNavigationSpi.MenuWindow window = navigationPort.scrollMenus(currentAuthentication(),
                 field, ascending, keysetPosition(after, field),
                 Limit.of(Math.min(requested, properties.pagination().maxPageSize())));
         List<com.marketplace.app.graphql.generated.types.MenuCountableEdge> edges =
@@ -354,7 +358,7 @@ public class CmsNavigationDataFetcher {
                     .pageInfo(pageInfoOf(false))
                     .build();
         }
-        CmsNavigationPort.MenuItemWindow window = navigationPort.scrollMenuItems(
+        CmsNavigationSpi.MenuItemWindow window = navigationPort.scrollMenuItems(
                 currentAuthentication(), "NAME", true, keysetPosition(after, "NAME"),
                 Limit.of(Math.min(requested, properties.pagination().maxPageSize())));
         List<com.marketplace.app.graphql.generated.types.MenuItemCountableEdge> edges =
@@ -393,15 +397,15 @@ public class CmsNavigationDataFetcher {
                 KeysetCursorGate::textValue, "the connection with the same sortBy");
     }
 
-    private Menu toMenuWithItems(Authentication caller, CmsNavigationPort.MenuView view) {
-        List<CmsNavigationPort.MenuItemView> items = navigationPort.listMenuItems(caller,
+    private Menu toMenuWithItems(Authentication caller, CmsNavigationSpi.MenuView view) {
+        List<CmsNavigationSpi.MenuItemView> items = navigationPort.listMenuItems(caller,
                 view.id());
-        Map<UUID, List<CmsNavigationPort.MenuItemView>> byParent = new HashMap<>();
-        for (CmsNavigationPort.MenuItemView item : items) {
+        Map<UUID, List<CmsNavigationSpi.MenuItemView>> byParent = new HashMap<>();
+        for (CmsNavigationSpi.MenuItemView item : items) {
             byParent.computeIfAbsent(item.parentId(), key -> new ArrayList<>()).add(item);
         }
         Map<UUID, Integer> levels = new HashMap<>();
-        for (CmsNavigationPort.MenuItemView item : items) {
+        for (CmsNavigationSpi.MenuItemView item : items) {
             levels.put(item.id(), levelOf(item, byParent));
         }
         List<MenuItem> roots = byParent.getOrDefault(null, List.of()).stream()
@@ -415,8 +419,8 @@ public class CmsNavigationDataFetcher {
                 .build();
     }
 
-    private static int levelOf(CmsNavigationPort.MenuItemView item,
-                               Map<UUID, List<CmsNavigationPort.MenuItemView>> byParent) {
+    private static int levelOf(CmsNavigationSpi.MenuItemView item,
+                               Map<UUID, List<CmsNavigationSpi.MenuItemView>> byParent) {
         // The flat set is ordered by (parent, position); levels computed by
         // walking the parent chain — the owner's cycle guard guarantees it
         // terminates.
@@ -428,18 +432,18 @@ public class CmsNavigationDataFetcher {
             parentId = byParent.values().stream()
                     .flatMap(List::stream)
                     .filter(candidate -> candidate.id().equals(current))
-                    .map(CmsNavigationPort.MenuItemView::parentId)
+                    .map(CmsNavigationSpi.MenuItemView::parentId)
                     .findFirst().orElse(null);
         }
         return level;
     }
 
-    private MenuItem toGraphQlMenuItem(CmsNavigationPort.MenuItemView view) {
+    private MenuItem toGraphQlMenuItem(CmsNavigationSpi.MenuItemView view) {
         return toGraphQlMenuItem(view, Map.of(), Map.of());
     }
 
-    private MenuItem toGraphQlMenuItem(CmsNavigationPort.MenuItemView view,
-                                       Map<UUID, List<CmsNavigationPort.MenuItemView>> byParent,
+    private MenuItem toGraphQlMenuItem(CmsNavigationSpi.MenuItemView view,
+                                       Map<UUID, List<CmsNavigationSpi.MenuItemView>> byParent,
                                        Map<UUID, Integer> levels) {
         List<MenuItem> children = byParent.getOrDefault(view.id(), List.of()).stream()
                 .map(child -> toGraphQlMenuItem(child, byParent, levels))
@@ -464,7 +468,7 @@ public class CmsNavigationDataFetcher {
                 .build();
     }
 
-    private Menu toGraphQlMenu(CmsNavigationPort.MenuView view) {
+    private Menu toGraphQlMenu(CmsNavigationSpi.MenuView view) {
         return Menu.newBuilder()
                 .id(globalIdCodec.encode(MENU_TAG, view.id()))
                 .name(view.name() == null ? "" : view.name())

@@ -1,8 +1,8 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.catalog.spi.CatalogSpi;
-import com.marketplace.shared.api.CmsNavigationPort;
-import com.marketplace.shared.api.CmsPagePort;
+import com.marketplace.console.spi.CmsNavigationSpi;
+import com.marketplace.console.spi.CmsPageSpi;
 import com.marketplace.identity.spi.UserManagementSpi;
 import com.marketplace.identity.spi.CustomerTypeSpi;
 import com.marketplace.identity.spi.AddressManagementSpi;
@@ -210,9 +210,31 @@ class PromotionDataFetcherDgsTest {
     @MockitoBean
     private UserManagementSpi userManagementSpi;
     @MockitoBean
-    private CmsPagePort cmsPagePort;
+    private CmsPageSpi cmsPageSpi;
     @MockitoBean
-    private CmsNavigationPort cmsNavigationPort;
+    private CmsNavigationSpi cmsNavigationSpi;
+
+    // The post-merge integration round (PR #696 review): the slice scans
+    // ALL of com.marketplace.app.graphql, so it discovers the multi-instance
+    // rotation round's JdbcRefreshTokenRotationStore — a real @Component
+    // whose constructor needs a JdbcTemplate the containerless slice has
+    // no DataSource for. The mock satisfies the wiring; the store's REAL
+    // behavior (including the two-instance atomicity) is proven over real
+    // PostgreSQL/Flyway in PlatformTokenGrantRotationMultiInstanceIntegrationTest.
+    @MockitoBean
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    // The post-merge integration round's wiring completion (PR #696
+    // review): the slice scans ALL of com.marketplace.app.graphql, and
+    // A0's central assembly landed EVERY campaign fetcher in that one
+    // package — so the slice must satisfy the constructor seam of every
+    // discovered fetcher, not just its own domain's. The missing owning
+    // SPIs join the mocked seam set here (the declared interfaces, never
+    // the internals; the REAL implementations are proven in the owning
+    // modules' suites and the full-stack integration tests over real
+    // PostgreSQL/Flyway).
+    @MockitoBean
+    private PlatformTokenGrantService platformTokenGrantService;
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();

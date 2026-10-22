@@ -1,6 +1,6 @@
 package com.marketplace.console;
 
-import com.marketplace.shared.api.CmsNavigationPort;
+import com.marketplace.console.spi.CmsNavigationSpi;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import io.micrometer.observation.annotation.Observed;
@@ -27,7 +27,7 @@ import java.util.regex.Pattern;
  * Agent 1 (the Saleor 458-root campaign, assignment packet PR #696 — the
  * D-CMS-001 ownership decision): the console module's navigation owning
  * use case — the {@code assignNavigation}/{@code menu*}/{@code menuItem*}
- * mutations and reads behind the {@link CmsNavigationPort} seam.
+ * mutations and reads behind the {@link CmsNavigationSpi} seam.
  * ADMIN-enforced at this boundary (Saleor requires MANAGE_MENUS).
  *
  * <p><b>The tree invariants, both enforced here:</b> a parent edge never
@@ -38,7 +38,7 @@ import java.util.regex.Pattern;
  */
 @Service
 @Transactional
-public class CmsNavigationAdminService implements CmsNavigationPort {
+public class CmsNavigationAdminService implements CmsNavigationSpi {
 
     private static final Logger log = LoggerFactory.getLogger(CmsNavigationAdminService.class);
     private static final Pattern SLUG_SHAPE = Pattern.compile("^[a-z0-9]+(?:-[a-z0-9]+)*$");

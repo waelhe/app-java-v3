@@ -15,7 +15,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.graphql.test.tester.HttpGraphQlTester;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -59,7 +58,8 @@ import static org.mockito.Mockito.when;
  * forward-only keyset scroll with cursor follow-through, the
  * round-trip global-ID stability, the guessed-ID null, the
  * malformed/raw/mistyped-ID VAL-001 legs, the anonymous rejection
- * (the /graphql chain's 401 problem+json contract), the schema-less
+ * (the reopened pre-login gate contract — the classified AUTHN-001
+ * GraphQL error inside the envelope, no data), the schema-less
  * product's honest null productType, the empty page, and the
  * classified errors for the declared-but-unexecuted arguments
  * (filter/where/search/channel/attribute-sort/unowned sort fields/
@@ -464,11 +464,21 @@ class ProductGraphQlIntegrationTest {
     }
 
     // ------------------------------------------------------------------
-    // the anonymous boundary — the /graphql chain's 401 problem+json
+    // the anonymous boundary — the reopened pre-login gate contract
     // ------------------------------------------------------------------
 
     @Test
-    void anonymousProductQueryIsRejectedAs401ProblemDetail() {
+    void anonymousProductQueryIsAnsweredByThePreLoginGateEnvelope() {
+        // No Authorization header: the security chain now permits the
+        // anonymous POST and PreLoginGraphQlGate is the wall — the gate
+        // parses the document, finds the protected `products` root, and
+        // answers the classified AUTHN-001 GraphQL error INSIDE the
+        // envelope (HTTP 200 + application/json, the error before any
+        // dispatch). The same reopened contract GraphQlSecurityIntegration
+        // Test pins at the surface level, asserted here for the products
+        // root's own journey: the classified error pair, and NO data —
+        // the protected collection never resolves for the anonymous
+        // caller.
         WebTestClient anonymousClient = WebTestClient.bindToServer()
                 .baseUrl("http://localhost:" + port + "/graphql")
                 .build();
@@ -476,15 +486,14 @@ class ProductGraphQlIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("{\"query\":\"{ products(first: 1) { totalCount } }\"}")
                 .exchange()
-                .expectStatus().isUnauthorized()
-                .expectHeader().contentType("application/problem+json")
-                .expectHeader().valueEquals(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"marketplace\"")
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
                 .expectBody()
-                .jsonPath("$.type").isEqualTo("https://marketplace.com/errors/unauthorized")
-                .jsonPath("$.title").isEqualTo("Unauthorized")
-                .jsonPath("$.status").isEqualTo(401)
-                .jsonPath("$.instance").isEqualTo("/graphql")
-                .jsonPath("$.errorCode").isEqualTo("AUTHN-001");
+                .jsonPath("$.errors[0].extensions.errorCode").isEqualTo("AUTHN-001")
+                .jsonPath("$.errors[0].extensions.category").isEqualTo("authz")
+                .jsonPath("$.errors[0].message")
+                .isEqualTo("Authentication is required for this GraphQL operation")
+                .jsonPath("$.data").doesNotExist();
     }
 
     // ------------------------------------------------------------------
