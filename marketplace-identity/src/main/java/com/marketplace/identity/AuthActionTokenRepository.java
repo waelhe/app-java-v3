@@ -44,4 +44,15 @@ public interface AuthActionTokenRepository extends JpaRepository<AuthActionToken
      */
     @Query("select t from AuthActionToken t where t.username = :username and t.consumedAt is null")
     List<AuthActionToken> findOutstanding(@Param("username") String username);
+
+    /**
+     * Agent 1 (the CodeRabbit integrity round — the login-identity move's
+     * FK leg): EVERY row for the account, outstanding AND consumed. V112's
+     * FK from {@code auth_action_tokens.username} to
+     * {@code auth_users(username)} means the login row cannot die while any
+     * row still references it — consumption alone leaves the reference in
+     * place. The entity-per-entity delete keeps the Envers audit trail
+     * (a DEL revision per removed row).
+     */
+    List<AuthActionToken> findAllByUsername(String username);
 }

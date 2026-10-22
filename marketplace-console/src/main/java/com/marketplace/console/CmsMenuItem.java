@@ -99,7 +99,21 @@ public class CmsMenuItem extends BaseEntity {
             this.name = name.trim();
         }
         if (url != null) {
-            this.url = url.isBlank() ? null : url.trim();
+            // A non-blank URL switches the oneof target: the category and
+            // page pointers must clear in the SAME write, or the merged row
+            // carries two targets and the V283 at-most-one-target CHECK
+            // rejects the flush (the CodeRabbit data-integrity round: the
+            // update path failed with a raw database error instead of
+            // switching the target). A blank URL is the explicit clear of
+            // the URL target alone — it leaves the other pointers untouched
+            // (the row may then carry no target at all, which the CHECK
+            // allows).
+            boolean switchingToUrl = !url.isBlank();
+            this.url = switchingToUrl ? url.trim() : null;
+            if (switchingToUrl) {
+                this.categoryId = null;
+                this.pageId = null;
+            }
         }
         if (categoryId != null) {
             this.categoryId = categoryId;

@@ -30,22 +30,30 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * The Phase-4 security legs of the GraphQL surface (target design
  * §11-Phase-4: "retain the existing stateless Bearer chain … test
- * 401/403 and private-field access. Keep anonymous GraphQL protected
- * until a public-discovery journey explicitly reopens the decision").
+ * 401/403 and private-field access"), carried into the Saleor-458 era
+ * by the Agent 1 / B3 pre-login reopening (the CodeRabbit security
+ * round on PR #696).
  *
- * <p><b>The measured chain fact (SecurityConfig):</b> {@code /graphql}
- * rides the resource-server securityMatcher chain under
- * {@code anyRequest().authenticated()} — the anonymous contract is the
- * shared problem+json 401 AUTHN-001 entry point the REST surface already
- * regression-tests ({@code SecurityProblemDetailIntegrationTest}), and
- * the three anonymous legs below are the exact tripartite contract the
- * live production smoke has measured since Phase 1 (POST a valid query /
- * GET / POST a broken payload — all 401 for the anonymous caller). This
- * class pins that contract INSIDE the suite, so the protected-contract
- * decision (§13 decision record: "Anonymous GraphQL reads: protected
- * contract retained — anonymous /graphql returns 401. Reopen only for an
- * approved public-discovery journey after tested per-field/object
- * authorization") can no longer regress silently between smokes.</p>
+ * <p><b>The reopened anonymous contract, end to end:</b> the §13 decision
+ * record ("Anonymous GraphQL reads: protected contract retained —
+ * anonymous /graphql returns 401. Reopen only for an approved
+ * public-discovery journey after tested per-field/object authorization")
+ * found its approved journey — the Saleor authentication roots are
+ * anonymous-callable BY DEFINITION (tokenCreate is the password grant
+ * itself), and the campaign's per-root role-matrix tests are the tested
+ * authorization the record demanded. The transport now permits the
+ * anonymous POST (the register/password-reset public-POST precedent,
+ * SecurityConfig), and the app layer's PreLoginGraphQlGate — a
+ * WebGraphQlInterceptor parsing the ACTUAL document — is the
+ * per-operation wall: an anonymous caller reaches ONLY the enumerated
+ * pre-login family; everything else answers the classified AUTHN-001
+ * GraphQL error before dispatch (leg 1: a valid query; leg 3: an
+ * unparsable document — deny-by-default; leg 5: the operationName
+ * spoof, which the gate ignores because it parses the document, not
+ * the name). The pre-login family itself executes cleanly for the
+ * anonymous caller (leg 6: tokenVerify answers its own payload). The
+ * GET surface and the invalid-bearer challenge keep the standing 401
+ * problem+json contract (legs 2 and 4).</p>
  *
  * <p><b>The 403 leg, measured honestly:</b> no 403 can arise from
  * {@code /graphql} in the bounded surface — the route declares
@@ -101,29 +109,28 @@ class GraphQlSecurityIntegrationTest {
     }
 
     /**
-     * Leg 1 of the tripartite anonymous contract: a POST carrying a
-     * perfectly valid GraphQL query must be answered by the security
-     * chain's 401 problem+json (AUTHN-001) with the RFC 6750 §3.1 bare
-     * realm challenge — validity of the query is irrelevant before
-     * authentication, and the body never reaches the GraphQL handler.
+     * Leg 1 of the reopened anonymous contract: a POST carrying a
+     * perfectly valid GraphQL QUERY is answered by the pre-login gate —
+     * the anonymous caller's document contains a protected operation
+     * ({@code services}), so the gate answers the classified AUTHN-001
+     * GraphQL error (the same canonical taxonomy pair the exception
+     * resolver emits) BEFORE dispatch: HTTP 200 with the error envelope
+     * over the application/json media type (the GraphQL-over-JSON
+     * contract — the 4xx status belongs to the
+     * application/graphql-response+json media type negotiation), and the
+     * query never executes.
      */
     @Test
-    void anonymousValidQueryPostIsRejectedAs401ProblemDetail() throws Exception {
+    void anonymousValidQueryPostIsAnsweredByThePreLoginGate() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"query\":\"{ services(first: 1) { edges { node { id } } } }\"}"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(content().contentType("application/problem+json"))
-                .andExpect(jsonPath("$.type").value("https://marketplace.com/errors/unauthorized"))
-                .andExpect(jsonPath("$.title").value("Unauthorized"))
-                .andExpect(jsonPath("$.status").value(401))
-                .andExpect(jsonPath("$.instance").value("/graphql"))
-                .andExpect(jsonPath("$.errorCode").value("AUTHN-001"))
-                .andExpect(jsonPath("$.category").value("authz"))
-                .andExpect(jsonPath("$.traceId").exists())
-                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE,
-                        "Bearer realm=\"marketplace\""))
-                .andExpect(header().exists("X-Correlation-ID"));
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.errors[0].extensions.errorCode").value("AUTHN-001"))
+                .andExpect(jsonPath("$.errors[0].extensions.category").value("authz"))
+                .andExpect(jsonPath("$.errors[0].message")
+                        .value("Authentication is required for this GraphQL operation"));
     }
 
     /**
@@ -150,28 +157,62 @@ class GraphQlSecurityIntegrationTest {
     }
 
     /**
-     * Leg 3: a POST with a broken payload is STILL the authentication
-     * leg first — the security chain rejects the anonymous caller before
-     * any JSON parsing happens, so a malformed body cannot smuggle a
-     * different failure mode past the 401 contract.
+     * Leg 3 of the reopened anonymous contract: a POST whose document
+     * CANNOT be parsed is denied by the same gate rule — the gate never
+     * forwards what it cannot read (deny-by-default), so the anonymous
+     * caller answers the classified AUTHN-001 error, not a smuggled
+     * execution failure.
      */
     @Test
-    void anonymousBrokenPostIsStillAuthenticationFirst() throws Exception {
+    void anonymousUnparsableDocumentIsDeniedByDefault() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{not-json"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(content().contentType("application/problem+json"))
-                .andExpect(jsonPath("$.type").value("https://marketplace.com/errors/unauthorized"))
-                .andExpect(jsonPath("$.title").value("Unauthorized"))
-                .andExpect(jsonPath("$.status").value(401))
-                .andExpect(jsonPath("$.errorCode").value("AUTHN-001"))
-                .andExpect(jsonPath("$.category").value("authz"))
-                .andExpect(jsonPath("$.instance").value("/graphql"))
-                .andExpect(jsonPath("$.traceId").exists())
-                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE,
-                        "Bearer realm=\"marketplace\""))
-                .andExpect(header().exists("X-Correlation-ID"));
+                        .content("{\"query\":\"{ this is not a graphql document\"}"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.errors[0].extensions.errorCode").value("AUTHN-001"))
+                .andExpect(jsonPath("$.errors[0].extensions.category").value("authz"));
+    }
+
+    /**
+     * Leg 5 (the anti-spoofing proof): the gate parses the ACTUAL GraphQL
+     * document and ignores the {@code operationName} parameter — a
+     * spoofed {@code operationName: "tokenCreate"} riding a protected
+     * query document is denied exactly like the bare query of leg 1. The
+     * operation NAME is client-controlled metadata; the document is the
+     * operation.
+     */
+    @Test
+    void anonymousOperationNameSpoofDoesNotBypassTheGate() throws Exception {
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"{ services(first: 1) { edges { node { id } } } }\","
+                                + "\"operationName\":\"tokenCreate\"}"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.errors[0].extensions.errorCode").value("AUTHN-001"))
+                .andExpect(jsonPath("$.errors[0].extensions.category").value("authz"));
+    }
+
+    /**
+     * Leg 6 (the pre-login family executes for the anonymous caller):
+     * {@code tokenVerify} is a member of the gate's enumerated pre-login
+     * operations — its own proof rides in the payload (the token it
+     * verifies). The request passes the gate, reaches the owning fetcher
+     * and service, and answers the honest clean payload: a garbage token
+     * is {@code isValid: false} with NO GraphQL error — the proof that
+     * the anonymous surface is exactly as wide as the Saleor
+     * authentication contract and not one operation wider.
+     */
+    @Test
+    void anonymousPreLoginOperationExecutesCleanly() throws Exception {
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"mutation { tokenVerify(token: \""
+                                + "not-a-real-jwt\") { isValid } }\"}"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.data.tokenVerify.isValid").value(false));
     }
 
     /**

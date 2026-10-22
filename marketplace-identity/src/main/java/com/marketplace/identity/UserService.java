@@ -546,6 +546,45 @@ public class UserService implements IdentitySpi {
     }
 
     /**
+     * Agent 1 (the CodeRabbit integrity round — the login-identity move's
+     * shared aftermath): the legs EVERY path that moves a login identity
+     * owes once the login row lands under the new address — the OLD
+     * principal's issued authorizations die with their refresh grants (the
+     * same L23 documented SAS basis as {@link #updateUserRole}: the
+     * old-name rows survive the rename as orphans otherwise, and a leaked
+     * refresh token minted for the dead name keeps rotating), and the two
+     * user caches drop their stale subject-keyed copies through the
+     * standing AFTER_COMMIT channel (the I5-guarded mechanism, not a new
+     * one). Package-private on purpose: both owning paths (the
+     * self-service email change and the administrative moveEmail) live in
+     * this module and call this after their own writes.
+     */
+    void loginIdentityMoved(String oldSubject) {
+        jdbcTemplate.update(DELETE_AUTHORIZATIONS_BY_PRINCIPAL, oldSubject);
+        eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));
+    }
+
+    /**
+     * Agent 1 (the CodeRabbit correctness round — the {@code accountUpdate}
+     * leg): the TRANSACTIONAL own-profile write. {@link #getBySubject} is
+     * {@code @Cacheable} and read-only: the returned {@link User} is a
+     * JDK-deserialized cache copy or an entity detached at the read-only
+     * boundary, so {@code updateProfile} on it is invisible to dirty
+     * checking — the adapter's one-liner returned success while the
+     * display name never changed. This method loads the LIVE row through
+     * the repository, applies the update inside the transaction, and
+     * publishes the standing cache invalidation (the
+     * {@code updateUserRole} hazard comment documents the same trap).
+     */
+    public void updateOwnProfileBySubject(String subject, String displayName) {
+        User user = userRepository.findBySubject(subject)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No account for the authenticated subject: " + subject));
+        user.updateProfile(null, displayName);
+        eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));
+    }
+
+    /**
      * Phase 1 (the unified plan §10, D-03) — the multi-role grant, the
      * SPI leg over the assignment model: {@link RoleAssignmentService}
      * owns the command (the ADMIN gate, the duplicate-active 409, the

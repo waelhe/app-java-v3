@@ -11,7 +11,10 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.security.SecureRandom;
 import com.marketplace.identity.spi.BulkRowResult;
@@ -59,17 +62,36 @@ public class UserAccountAdminService implements com.marketplace.identity.spi.Use
     private final UserService userService;
     private final PasswordResetService passwordResetService;
     private final StaffNotificationRecipientService recipientService;
+    private final AuthActionTokenService authActionTokenService;
+    /**
+     * Agent 1 (the CodeRabbit integrity round — {@code customerBulkUpdate}'s
+     * IGNORE_FAILED policy): the per-row REQUIRES_NEW template, built per
+     * the official programmatic-transaction pattern (TransactionTemplate
+     * over the platform's single {@link PlatformTransactionManager}). Each
+     * row commits or rolls back on its own, so a failing row neither marks
+     * the shared transaction rollback-only (the local catch used to record
+     * a per-row error and then die on {@code UnexpectedRollbackException})
+     * nor commits its own half-applied writes (the email move's new login
+     * row used to survive a later failure in the same row).
+     */
+    private final TransactionTemplate perRowTransaction;
 
     public UserAccountAdminService(UserRepository userRepository,
                                     UserDetailsManager userDetailsManager,
                                     UserService userService,
                                     PasswordResetService passwordResetService,
-                                    StaffNotificationRecipientService recipientService) {
+                                    StaffNotificationRecipientService recipientService,
+                                    AuthActionTokenService authActionTokenService,
+                                    PlatformTransactionManager transactionManager) {
         this.userRepository = userRepository;
         this.userDetailsManager = userDetailsManager;
         this.userService = userService;
         this.passwordResetService = passwordResetService;
         this.recipientService = recipientService;
+        this.authActionTokenService = authActionTokenService;
+        this.perRowTransaction = new TransactionTemplate(transactionManager);
+        this.perRowTransaction.setPropagationBehavior(
+                TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
 
@@ -151,7 +173,14 @@ public class UserAccountAdminService implements com.marketplace.identity.spi.Use
         return count;
     }
 
-    /** {@code customerBulkUpdate}: the error-policy semantics exactly. */
+    /**
+     * {@code customerBulkUpdate}: the error-policy semantics exactly.
+     * REJECT_EVERYTHING (the default) stays all-or-nothing in the ONE
+     * class-level transaction; IGNORE_FAILED runs each row in its own
+     * REQUIRES_NEW transaction (the CodeRabbit integrity round) — a
+     * failing row rolls back its own partial writes, records its per-row
+     * result, and NEVER marks the caller's transaction rollback-only.
+     */
     @Observed(name = "customer.admin.bulk_update")
     public List<BulkRowResult> bulkUpdateCustomers(Authentication caller,
                                                    List<UUID> userIds,
@@ -162,23 +191,20 @@ public class UserAccountAdminService implements com.marketplace.identity.spi.Use
         for (int i = 0; i < userIds.size(); i++) {
             UUID id = userIds.get(i);
             UserWriteFields fields = rows.get(i);
-            try {
+            if (!ignoreFailed) {
                 updateCustomer(caller, id, fields);
                 results.add(new BulkRowResult(id, null, null));
+                continue;
+            }
+            try {
+                perRowTransaction.executeWithoutResult(
+                        status -> updateCustomer(caller, id, fields));
+                results.add(new BulkRowResult(id, null, null));
             } catch (com.marketplace.shared.api.ResourceNotFoundException failure) {
-                if (!ignoreFailed) {
-                    throw failure;
-                }
                 results.add(new BulkRowResult(id, "NOT_FOUND", failure.getMessage()));
             } catch (com.marketplace.shared.api.ConflictException failure) {
-                if (!ignoreFailed) {
-                    throw failure;
-                }
                 results.add(new BulkRowResult(id, "ALREADY_EXISTS", failure.getMessage()));
             } catch (IllegalArgumentException failure) {
-                if (!ignoreFailed) {
-                    throw failure;
-                }
                 results.add(new BulkRowResult(id, "INVALID", failure.getMessage()));
             }
         }
@@ -282,20 +308,32 @@ public class UserAccountAdminService implements com.marketplace.identity.spi.Use
     // Internals
     // ---------------------------------------------------------------------
 
-    /** The login-side email move (createUser at the new name + old row death). */
+    /**
+     * The login-side email move (createUser at the new name + old row
+     * death + the projection row's identity move). The CodeRabbit
+     * integrity round closed the three missing legs: the subject moves
+     * TOGETHER with the email (the platform's subject==username
+     * invariant — moving only the email broke every findBySubject
+     * lookup), the V112 token history purges BEFORE the old login row
+     * dies (its FK would reject the delete otherwise), and the old
+     * principal's authorizations + the user caches follow through the
+     * shared {@link UserService#loginIdentityMoved} aftermath.
+     */
     private void moveEmail(User user, String newEmail) {
-        if (userRepository.existsBySubject(newEmail) || userDetailsManager.userExists(newEmail)) {
-            throw new ConflictException("The email address already owns an account: " + newEmail);
+        String normalized = newEmail.trim().toLowerCase(Locale.ROOT);
+        if (userRepository.existsBySubject(normalized) || userDetailsManager.userExists(normalized)) {
+            throw new ConflictException("The email address already owns an account: " + normalized);
         }
+        String oldSubject = user.getSubject();
         UserDetails stored;
         try {
-            stored = userDetailsManager.loadUserByUsername(user.getSubject());
+            stored = userDetailsManager.loadUserByUsername(oldSubject);
         } catch (UsernameNotFoundException ex) {
             throw new ResourceNotFoundException(
                     "No authentication account for user: " + user.getId());
         }
         userDetailsManager.createUser(org.springframework.security.core.userdetails.User
-                .withUsername(newEmail)
+                .withUsername(normalized)
                 .password(stored.getPassword())
                 .authorities(stored.getAuthorities())
                 .accountExpired(!stored.isAccountNonExpired())
@@ -303,8 +341,17 @@ public class UserAccountAdminService implements com.marketplace.identity.spi.Use
                 .credentialsExpired(!stored.isCredentialsNonExpired())
                 .disabled(!stored.isEnabled())
                 .build());
-        userDetailsManager.deleteUser(user.getSubject());
-        user.updateProfile(newEmail, null);
+        // V112's FK leg: every token row for the old subject still
+        // references the login row — the history purges BEFORE the row
+        // dies (the Envers DEL revisions keep the redemption audit
+        // trail).
+        authActionTokenService.purgeHistory(oldSubject);
+        userDetailsManager.deleteUser(oldSubject);
+        user.changeLoginIdentity(normalized);
+        // The shared aftermath: the old principal's authorizations die
+        // with their refresh grants, and the two user caches drop their
+        // stale subject-keyed copies.
+        userService.loginIdentityMoved(oldSubject);
     }
 
     private void applyActivation(User user, boolean active) {

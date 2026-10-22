@@ -166,16 +166,34 @@ class AgentOneMutationIntegrationTest {
                 .errors().verify()
                 .path("accountAddressCreate.address.id").entity(String.class).get();
 
+        // m10 (the CodeRabbit test-quality round): a COMPLETE valid address
+        // — the IDOR wall itself is the only thing that can fail this
+        // request (the previous { city } patch failed input validation
+        // first, so the test passed even with the wall removed), the
+        // classification is the not-found taxonomy (the wall's honest
+        // 404-shape answer), and the admin's row is provably untouched
+        // afterwards.
         HttpGraphQlTester consumer = testerFor(CONSUMER_SUBJECT, "CONSUMER");
         consumer.document("""
-                        mutation { accountAddressUpdate(id: "%s", input: { city: "Hijacked" }) {
-                            errors { code }
+                        mutation { accountAddressUpdate(id: "%s", input: {
+                                streetAddress1: "Hijacked Street", city: "Hijacked", country: US }) {
+                            address { id }
                         } }
                         """.formatted(addressId))
                 .execute()
-                .errors()
-                .satisfy(errors -> assertThat(errors).isNotEmpty())
+                .errors().satisfy(errors -> {
+                    assertThat(errors).hasSize(1);
+                    org.junit.jupiter.api.Assertions.assertEquals("NF-001",
+                            errors.get(0).getExtensions().get("errorCode"));
+                })
                 .path("accountAddressUpdate").valueIsNull();
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM user_addresses WHERE city = 'Hijacked'", Integer.class))
+                .isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM user_addresses WHERE city = 'Admin City'", Integer.class))
+                .isEqualTo(1);
     }
 
     @Test

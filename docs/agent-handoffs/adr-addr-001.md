@@ -22,7 +22,13 @@ default shipping/billing pointers) — the platform had no owner at all.
 ## 2. The adopted owner
 
 `marketplace-identity` — the single identity store's own module — owns a NEW bounded table
-`user_addresses` (V248, BaseEntity columns + Envers mirror + partial unique read indexes), the
+`user_addresses` (V248, BaseEntity columns + Envers mirror + the two partial
+UNIQUE live-row indexes `user_addresses_user_default_shipping_live_uq` /
+`user_addresses_user_default_billing_live_uq` — the one-default-per-type
+store backstop over `(user_id) WHERE is_deleted = FALSE AND is_default_*`,
+the same guard shape V250's `customer_types_one_default_live_uq` carries;
+the owning service orders every swap clears-before-flush-set so the guard
+is the backstop, never the working path), the
 `AccountAddress` entity, `AccountAddressService` (the owning use case with the IDOR wall for the
 self-service legs and the ADMIN/MANAGE_USERS enforcement for the staff-managed legs), and the
 `AddressManagementSpi` seam inside the existing `identity-spi` named interface (additive — the

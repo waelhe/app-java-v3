@@ -165,7 +165,25 @@ public class AccountLifecycleDataFetcher {
                 || input.getPassword() == null || input.getPassword().isBlank()) {
             throw new IllegalArgumentException("An email and a password are required");
         }
-        accountLifecycleSpi.register(input.getEmail().trim(), input.getPassword(),
+        // m9 (the CodeRabbit security round): the REST registration DTO's
+        // own request-layer contract, mirrored at THIS transport's boundary
+        // — the email is a valid address capped at 50 characters (the
+        // login store's own domain: auth_users.username VARCHAR(50), V13 —
+        // a longer address answers the classified 400, never a
+        // storage-time 500), the password is 8..72 (the bcrypt byte
+        // ceiling — rejected, never silently truncated), and the address
+        // lowercases as the case-insensitive account identifier (the
+        // requireEmail discipline: one address owns exactly one account).
+        String email = input.getEmail().trim().toLowerCase(java.util.Locale.ROOT);
+        if (!email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$") || email.length() > 50) {
+            throw new IllegalArgumentException(
+                    "A valid email address of at most 50 characters is required");
+        }
+        String password = input.getPassword();
+        if (password.length() < 8 || password.length() > 72) {
+            throw new IllegalArgumentException("The password must be between 8 and 72 characters");
+        }
+        accountLifecycleSpi.register(email, password,
                 composeDisplayName(input.getFirstName(), input.getLastName()));
         return AccountRegister.newBuilder()
                 .user(null)

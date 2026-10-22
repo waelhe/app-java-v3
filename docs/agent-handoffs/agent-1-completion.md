@@ -199,7 +199,7 @@ oneof target CHECKs, and the additive-only edits to `User`/`UserService`.
    `graphqlTokenMutation` (proposed 10/min, timeout 0 — the password-grant surface),
    `graphqlAccountMutation` (proposed 50/min, timeout 0), `graphqlCmsMutation` /
    `graphqlCmsQuery` (proposed 50/min, timeout 0).
-3. **Ledger + divergence registry:** the root-status flips for the 78 implemented/blocked roots
+3. **Ledger + divergence registry:** the root-status flips for the 89 implemented/blocked roots
    in `agent-1-roots.csv`, the `D-ADDR-001` closure, and the new decision rows (`D-ADDR-001-b`,
    `D-EXTAUTH-001`, `D-AVATAR-001`, `D-PGRP-001`, `D-PAGE-ATTR-001`).
 4. **Notifications follow-up (gap, documented):** the `EmailChangeRequestedEvent` and
@@ -212,3 +212,117 @@ oneof target CHECKs, and the additive-only edits to `User`/`UserService`.
 6. **The campaign-b6-b report mismatch** (the assignment's known blocker 4): the report claims
    37/50/11 Query dispositions (sum 98 ≠ 90) against the ledger's 22/57/379-of-458 — flagged for
    A0's assembly pass, untouched here per the isolation rules.
+
+## The CodeRabbit closure round (follow-up commit — 11 major + 11 minor findings, all closed)
+
+The manually-triggered CodeRabbit review on this branch's delivery posted **11 major (1
+Critical) + 11 minor** actionable findings. Every one is closed in this round, inside this
+packet's own files only:
+
+**Major findings — the fixes:**
+
+1. **CmsPageRepository derived queries (🔴 Critical):** the entity's JavaBean property is
+   `published` (`isPublished()` reader) — `IsPublished` in a derived name resolves to a property
+   named `isPublished` that does not exist, and the bootstrap-time `QueryCreationException`
+   kills the whole context. The three declared-but-never-called broken shapes
+   (`findByIsPublishedTrue` / `findByIsPublishedOrderBySlugAscIdAsc` /
+   `countByIsPublishedTrue`) were removed — dead declarations that broke startup.
+2. **`pageTypes` NAME-sort cursor key:** `keysetPosition` now maps `NAME` → the `name` property —
+   the service orders that window by `(name, id)`, and the previous slug fall-through handed the
+   gate a cursor the next request's `(name, id)` window rejects.
+3. **The pre-login operation gate (the security reopening):** `tokenCreate`/`tokenRefresh`/
+   `tokenVerify`, the reset/confirmation/redemption family and `accountRegister`/
+   `accountDelete` were unreachable — `/graphql` rode the blanket
+   `anyRequest().authenticated()` and anonymous callers died at 401 before dispatch. The fix is
+   the documented house pattern: the security chain permits the anonymous POST (the
+   register/password-reset public-POST precedent, one `requestMatchers` line in the
+   resource-server chain), and the NEW `PreLoginGraphQlGate` — a `WebGraphQlInterceptor`, the
+   officially supported interception point — parses the ACTUAL GraphQL document (never the
+   spoofable `operationName`) and denies-by-default: an anonymous caller reaches ONLY the
+   enumerated pre-login family; everything else answers the classified AUTHN-001 GraphQL error
+   (the same canonical taxonomy pair the exception resolver emits) before dispatch. This is the
+   §13 decision record's reopening condition satisfied — "an approved public-discovery journey
+   after tested per-field/object authorization": the campaign's per-root role-matrix tests are
+   that authorization, the gate is the per-operation wall.
+4. **`menus`/`menuItems` ignored the `after` cursor:** both connections now decode `after`
+   through `KeysetCursorGate.forwardKeyset` against the connection's own sort keys — every
+   request no longer returns the first page.
+5. **`CmsMenuItem.apply` oneof switch:** a non-blank URL write now clears `categoryId`/`pageId`
+   in the SAME write — the merged row previously carried two targets and the V283
+   at-most-one-target CHECK rejected the flush with a raw database error.
+6. **Deterministic relative moves:** `moveMenuItems` and `reorderPageTypeAttributes` apply
+   remove-and-reinsert at `clamp(index + delta)` then dense positions — a shifted position
+   never ties with a sibling, so the UUID tie-breaker never decides the order. The groups load
+   AFTER re-parenting, so the delta applies to the index in the NEW sibling group.
+7. **`menuItems` pagination:** `itemsWindow` (whole-table load, memory truncation, offset
+   cursors, always-false hasNext) is gone — `CmsMenuItemRepository` carries the real keyset
+   window queries (`findAllByOrderByNameAscIdAsc/Desc`), `scrollMenuItems` honors `sortField`
+   with the classified error for unknown fields, and `hasNext` comes from the window itself.
+8. **The login-identity move (`AccountEmailChangeService.confirmChange` +
+   `UserAccountAdminService.moveEmail`):** the subject now moves TOGETHER with the email
+   (`User.changeLoginIdentity` — the platform's subject==username invariant; the account was
+   effectively broken after a confirmed change before), the V112 token history purges BEFORE
+   the old login row dies (`AuthActionTokenService.purgeHistory` — the FK rejects the delete
+   otherwise; Envers DEL revisions keep the audit trail), and the shared aftermath runs
+   (`UserService.loginIdentityMoved`: the old principal's authorizations die with their refresh
+   grants + the two user caches drop their stale subject-keyed copies).
+9. **`accountUpdate` persistence:** the adapter delegates to the new transactional
+   `UserService.updateOwnProfileBySubject` — the previous one-liner mutated a `@Cacheable`,
+   read-only, detached copy whose `updateProfile` was invisible to dirty checking.
+10. **`CustomerTypeService` default swap:** the cleared default FLUSHES
+    (`saveAndFlush`) before the new default writes — Hibernate's action queue runs inserts
+    before updates, so the pending clear + insert previously hit V250's
+    `customer_types_one_default_live_uq` with the old row still TRUE.
+11. **`customerBulkUpdate` IGNORE_FAILED:** each row now runs in its own REQUIRES_NEW
+    transaction (a `TransactionTemplate` over the platform's transaction manager — the official
+    programmatic pattern): a failing row rolls back its own partial writes and records its
+    per-row result without marking the caller's transaction rollback-only;
+    REJECT_EVERYTHING keeps the single all-or-nothing transaction.
+
+**Minor findings — the fixes:** the duplicate-ID seen-set in `assignPairs` and
+`assignAttributes` (a request like `[a, a]` answers the classified conflict, never the pair
+unique index's raw error); the root-name uniqueness on EVERY create/rename/promote path
+(`requireFreeRootName` — move-to-root, delete-time promotion, root rename previously flushed
+into the V283 partial unique index); the merged-state address validation (partial updates
+validate the merged row, not the patch); the email normalization on the self-service path
+(`toLowerCase(Locale.ROOT)` — the requireEmail discipline); the address-default flush ordering
+(`addressRepository.flush()` between clears and set — the V248 partial unique indexes'
+backstop); the subject-shaped authentication in the password grant (`tokenCreate.user` was
+always null); the registration input validation at the GraphQL boundary (the REST DTO's own
+contract: email ≤50 + shape, password 8..72, the lowercase key); the IDOR test's completeness
+(a full valid address, the NF-001 classification, and the admin row's provable integrity); the
+search leg's real keyset windows in `CustomerTypeRepository` (both sort fields, both
+directions — the missing descending slug method completes the vocabulary); the ADR's V248 index
+description; and this report's own root-count typo (89, not 78).
+
+**The gate's test contract:** `GraphQlSecurityIntegrationTest` now pins the reopened anonymous
+contract end to end — the pre-login gate's classified denial (leg 1: a valid query; leg 3: an
+unparsable document — deny-by-default; leg 5: the `operationName` spoof, which the gate ignores
+because it parses the document), the clean execution of the pre-login family (leg 6:
+`tokenVerify` answers its own payload for the anonymous caller), and the standing 401
+problem+json contract for the GET surface and the invalid-bearer challenge (legs 2 and 4).
+
+**Local verification (the honest numbers, Maven 3.9.16 / JDK 25 on this round's head):**
+
+- Full reactor `compile` (with the two documented cross-module scratch fixes applied locally,
+  uncommitted — Agent 2's `ProductVariantReadService`/test-shape fixes and Agent 3's
+  `OrderReadService`, both already delivered on their own branches): **BUILD SUCCESS**.
+- `marketplace-identity` `verify`: **244 tests run, 0 failures, 0 errors** — the JaCoCo 0.70
+  instruction gate PASSES on the unit tests alone (CI adds the Testcontainers legs).
+- `marketplace-console` `verify`: **116 tests run, 0 failures, 0 errors** — the JaCoCo 0.70
+  instruction gate PASSES on the unit tests alone.
+- `AgentOneMutationDgsTest`: **21 run, 0 failures** — the real DGS wiring boots with the
+  `PreLoginGraphQlGate` in the interceptor chain.
+- The new unit suites in this round: `AccountAddressServiceTest` (8), `AccountEmailChangeServiceTest`
+  (6), `UserAccountAdminServiceTest` (12), `CustomerTypeServiceTest` (8),
+  `AccountSelfServiceTokenServiceTest` (7), `AccountLifecycleSpiAdapterTest` (4),
+  `StaffNotificationRecipientServiceTest` (12), `CmsPageAdminServiceTest` (16),
+  `CmsNavigationAdminServiceTest` (27) — every fix above carries its own regression leg.
+- The Testcontainers integration classes (`AgentOneMutationIntegrationTest`,
+  `GraphQlSecurityIntegrationTest`, the deterministic customers keyset test) carry
+  `@Testcontainers(disabledWithoutDocker = true)` per the frozen §9 contract and execute in the
+  GitHub suites; on THIS branch the dispatched suites still die at the frozen base's
+  `marketplace-catalog` compile defect (blocker 1 — the owning fix sits on Agent 2's delivered
+  head), so the branch CI's app legs stay red-by-design until the assembly pass combines the
+  branches. The journeys' updated assertions (the IDOR leg's NF-001 classification and the
+  admin-row integrity check; the reopened anonymous-contract legs) first execute there.

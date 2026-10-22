@@ -315,19 +315,26 @@ public class CmsPageAdminService implements CmsPagePort {
         requireAdmin(caller);
         CmsPageType row = requirePageType(pageTypeId);
         List<CmsPageTypeAttribute> pairs =
-                attributeRepository.findAllByPageTypeIdOrderByPositionAscIdAsc(pageTypeId);
+                new ArrayList<>(attributeRepository.findAllByPageTypeIdOrderByPositionAscIdAsc(pageTypeId));
+        // The deterministic relative-move semantics (the CodeRabbit
+        // correctness round — the same fix the menu-item move carries):
+        // each moved attribute is REMOVED from the ordered list and
+        // reinserted at clamp(index + delta), so a shifted position never
+        // ties with a sibling and the UUID tie-breaker never decides the
+        // order; dense positions follow. The list is a mutable copy —
+        // repository queries may return immutable lists.
         for (int i = 0; i < attributeIds.size(); i++) {
             UUID attributeId = attributeIds.get(i);
-            CmsPageTypeAttribute pair = pairs.stream()
-                    .filter(candidate -> candidate.getAttributeId().equals(attributeId))
-                    .findFirst()
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "The attribute is not assigned to the page type: " + attributeId));
+            int from = indexByAttributeId(pairs, attributeId);
+            if (from < 0) {
+                throw new ResourceNotFoundException(
+                        "The attribute is not assigned to the page type: " + attributeId);
+            }
             int delta = deltas.get(i) == null ? 0 : deltas.get(i);
-            pair.moveTo(Math.max(0, pair.getPosition() + delta));
+            CmsPageTypeAttribute pair = pairs.remove(from);
+            int to = Math.max(0, Math.min(from + delta, pairs.size()));
+            pairs.add(to, pair);
         }
-        pairs.sort(java.util.Comparator.comparingInt(CmsPageTypeAttribute::getPosition)
-                .thenComparing(CmsPageTypeAttribute::getId));
         for (int i = 0; i < pairs.size(); i++) {
             pairs.get(i).moveTo(i);
         }
@@ -372,16 +379,33 @@ public class CmsPageAdminService implements CmsPagePort {
                 attributeRepository.findAllByPageTypeIdOrderByPositionAscIdAsc(pageTypeId);
         int nextPosition = existing.isEmpty() ? 0
                 : existing.get(existing.size() - 1).getPosition() + 1;
+        // The seen-set carries BOTH the pre-existing assignments and every
+        // ID this request already accepted (the CodeRabbit integrity
+        // round): a request such as [a, a] previously compared each entry
+        // only against the pre-existing list, saved two pairs, and answered
+        // the (type, attribute) unique index's raw database error instead
+        // of the classified ConflictException.
+        java.util.Set<UUID> seen = new java.util.HashSet<>();
+        for (CmsPageTypeAttribute pair : existing) {
+            seen.add(pair.getAttributeId());
+        }
         for (UUID attributeId : attributeIds) {
-            boolean already = existing.stream()
-                    .anyMatch(pair -> pair.getAttributeId().equals(attributeId));
-            if (already) {
+            if (!seen.add(attributeId)) {
                 throw new ConflictException(
                         "The attribute is already assigned to the page type: " + attributeId);
             }
             attributeRepository.save(
                     CmsPageTypeAttribute.create(pageTypeId, attributeId, nextPosition++));
         }
+    }
+
+    private static int indexByAttributeId(List<CmsPageTypeAttribute> pairs, UUID attributeId) {
+        for (int i = 0; i < pairs.size(); i++) {
+            if (pairs.get(i).getAttributeId().equals(attributeId)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private void resequence(UUID pageTypeId) {

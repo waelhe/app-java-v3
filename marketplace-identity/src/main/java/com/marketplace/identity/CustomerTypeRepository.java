@@ -30,11 +30,20 @@ public interface CustomerTypeRepository extends JpaRepository<CustomerType, UUID
 
     List<CustomerType> findAllByOrderByCreatedAtAscIdAsc();
 
-    List<CustomerType> findByNameContainingIgnoreCaseOrderByNameAscIdAsc(String name, KeysetScrollPosition position, Limit limit);
+    /**
+     * The search legs (the CodeRabbit pagination round): the same real
+     * keyset window form the unfiltered sorts carry — Window results with
+     * their own hasNext, KeysetScrollPosition cursors the fetcher's
+     * forward gate consumes. The sort vocabulary covers both fields, both
+     * directions (the descending slug method completes it).
+     */
+    Window<CustomerType> findByNameContainingIgnoreCaseOrderByNameAscIdAsc(String name, KeysetScrollPosition position, Limit limit);
 
-    List<CustomerType> findByNameContainingIgnoreCaseOrderByNameDescIdDesc(String name, KeysetScrollPosition position, Limit limit);
+    Window<CustomerType> findByNameContainingIgnoreCaseOrderByNameDescIdDesc(String name, KeysetScrollPosition position, Limit limit);
 
-    List<CustomerType> findByNameContainingIgnoreCaseOrderBySlugAscIdAsc(String name, KeysetScrollPosition position, Limit limit);
+    Window<CustomerType> findByNameContainingIgnoreCaseOrderBySlugAscIdAsc(String name, KeysetScrollPosition position, Limit limit);
+
+    Window<CustomerType> findByNameContainingIgnoreCaseOrderBySlugDescIdDesc(String name, KeysetScrollPosition position, Limit limit);
 
     Window<CustomerType> findAllByOrderByNameAscIdAsc(KeysetScrollPosition position, Limit limit);
 

@@ -201,15 +201,46 @@ public class AccountAddressService implements com.marketplace.identity.spi.Addre
         return toView(row);
     }
 
+    /**
+     * The merged-state address contract — the SAME rules
+     * {@code AddressFields.validate()} enforces on a whole input, checked
+     * against the row AFTER a partial apply (m4, the CodeRabbit
+     * correctness round): {@code applyFields} treats null fields as
+     * "keep", so the patch {@code { city: "X" }} is a valid update of a
+     * row that already carries the country and spine — the previous
+     * patch-side validation rejected it.
+     */
+    private static void validateMergedState(AccountAddress row) {
+        if (row.getCountry() == null || !row.getCountry().matches("^[A-Z]{2}$")) {
+            throw new IllegalArgumentException(
+                    "A two-letter ISO 3166-1 country code is required for an address");
+        }
+        if (isBlank(row.getCity()) && isBlank(row.getStreetAddress1())
+                && isBlank(row.getPostalCode())) {
+            throw new IllegalArgumentException(
+                    "An address requires at least a city, a street line or a postal code");
+        }
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
     private AddressView updateInternal(UUID addressId, UUID userId, AddressFields fields) {
-        fields.validate();
+        // The IDOR wall LEADS (m10, the CodeRabbit test-quality round): the
+        // (id, userId) pair resolves before any input validation, so another
+        // account's address id answers the same 404 an unknown id would —
+        // regardless of what the patch carries.
         AccountAddress row = addressRepository.findByIdAndUserId(addressId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "No address " + addressId + " for the owning account"));
+        // The partial apply (m4): null fields mean "keep", and the MERGED
+        // state carries the address contract — not the patch.
         row.applyFields(fields.firstName(), fields.lastName(), fields.companyName(),
                 fields.streetAddress1(), fields.streetAddress2(), fields.city(),
                 fields.cityArea(), fields.postalCode(), normalizeCountry(fields.country()),
                 fields.countryArea(), fields.phone());
+        validateMergedState(row);
         log.info("Account address updated: addressId={}, userId={}", addressId, userId);
         return toView(row);
     }
@@ -231,10 +262,21 @@ public class AccountAddressService implements com.marketplace.identity.spi.Addre
         if ("SHIPPING".equals(normalized)) {
             addressRepository.findByUserIdAndDefaultShippingTrue(userId)
                     .forEach(previous -> previous.markDefaultShipping(false));
-            row.markDefaultShipping(true);
         } else {
             addressRepository.findByUserIdAndDefaultBillingTrue(userId)
                     .forEach(previous -> previous.markDefaultBilling(false));
+        }
+        // M6 (the CodeRabbit integrity round): the cleared holders FLUSH
+        // before the new default writes. V248's
+        // user_addresses_user_default_{shipping,billing}_live_uq partial
+        // unique indexes reject the swap otherwise — Hibernate's action
+        // queue runs INSERTs before UPDATEs (the create-with-default path)
+        // and two dirty UPDATEs carry no guaranteed order. The flush is the
+        // working clears-before-set path; the unique index is the backstop.
+        addressRepository.flush();
+        if ("SHIPPING".equals(normalized)) {
+            row.markDefaultShipping(true);
+        } else {
             row.markDefaultBilling(true);
         }
         log.info("Account default {} address set: addressId={}, userId={}", normalized, addressId, userId);

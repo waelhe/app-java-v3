@@ -454,9 +454,16 @@ public class CmsPageDataFetcher {
     }
 
     private KeysetScrollPosition keysetPosition(String after, String sortField) {
+        // The connection's own sort keys (B2, the CodeRabbit correctness
+        // round): pageTypes defaults to NAME and the service orders that
+        // window by (name, id) — the cursor key must match the requested
+        // sort or the gate rejects the emitted cursor on the next request
+        // (the previous fall-through handed pageTypes' NAME windows a
+        // slug-keyed cursor).
         String property = switch (sortField) {
             case "TITLE" -> "title";
             case "CREATED_AT", "PUBLICATION_DATE" -> "createdAt";
+            case "NAME" -> "name";
             default -> "slug";
         };
         java.util.function.Function<Object, Object> value = "createdAt".equals(property)

@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
@@ -48,17 +49,20 @@ public class AccountEmailChangeService {
     private final UserRepository userRepository;
     private final UserDetailsManager userDetailsManager;
     private final AuthActionTokenService authActionTokenService;
+    private final UserService userService;
     private final ObjectProvider<PasswordEncoder> encoder;
     private final ApplicationEventPublisher eventPublisher;
 
     public AccountEmailChangeService(UserRepository userRepository,
                                       UserDetailsManager userDetailsManager,
                                       AuthActionTokenService authActionTokenService,
+                                      UserService userService,
                                       ObjectProvider<PasswordEncoder> encoder,
                                       ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
         this.userDetailsManager = userDetailsManager;
         this.authActionTokenService = authActionTokenService;
+        this.userService = userService;
         this.encoder = encoder;
         this.eventPublisher = eventPublisher;
     }
@@ -70,7 +74,14 @@ public class AccountEmailChangeService {
         if (newEmail == null || !EMAIL_SHAPE.matcher(newEmail.trim()).matches()) {
             throw new IllegalArgumentException("A valid new email address is required");
         }
-        String target = newEmail.trim();
+        // The case-insensitive account-identifier discipline (the CodeRabbit
+        // integrity round): the admin path's requireEmail lowercases before
+        // storing, so the self-service path must too — a mixed-case target
+        // would otherwise store as-is, compare equal case-insensitively here,
+        // and then MISS the case-sensitive existsBySubject/userExists lookups
+        // at confirm time (two accounts for one address, logins that never
+        // resolve).
+        String target = newEmail.trim().toLowerCase(Locale.ROOT);
         if (target.equalsIgnoreCase(subject)) {
             throw new IllegalArgumentException("The new email address equals the current one");
         }
@@ -116,8 +127,23 @@ public class AccountEmailChangeService {
                 .credentialsExpired(!stored.isCredentialsNonExpired())
                 .disabled(!stored.isEnabled())
                 .build());
+        // V112's FK leg (the CodeRabbit integrity round): EVERY token row
+        // for the old subject — including the one this redemption just
+        // consumed — still references auth_users(oldSubject), so the login
+        // row cannot die until the history moves out of the way. The
+        // entity-per-entity delete leaves an Envers DEL revision per row:
+        // the redemption audit trail survives the move.
+        authActionTokenService.purgeHistory(oldSubject);
         userDetailsManager.deleteUser(oldSubject);
-        user.updateProfile(newEmail, null);
+        // The projection row's login identity moves TOGETHER (the
+        // subject==username invariant): subject AND email in the same
+        // write — moving only the email left the subject pointing at the
+        // dead login name and broke every findBySubject lookup.
+        user.changeLoginIdentity(newEmail);
+        // The shared aftermath: the old principal's authorizations die
+        // with their refresh grants, and the two user caches drop their
+        // stale subject-keyed copies (the standing channels).
+        userService.loginIdentityMoved(oldSubject);
         log.info("Email change confirmed: oldSubject={}, newEmail={}", oldSubject, newEmail);
         return newEmail;
     }

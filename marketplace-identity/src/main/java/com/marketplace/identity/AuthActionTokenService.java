@@ -193,6 +193,27 @@ public class AuthActionTokenService {
         }
     }
 
+    /**
+     * Agent 1 (the CodeRabbit integrity round — the login-identity move's
+     * FK leg): deletes EVERY token row for the account, outstanding AND
+     * consumed. V112's FK from {@code auth_action_tokens.username} to
+     * {@code auth_users(username)} means the login row cannot die while
+     * ANY row still references it — consumption alone (the A-04
+     * administrative leg above) leaves the reference in place, so both
+     * email-change paths purge the history BEFORE {@code deleteUser}.
+     * The delete is Envers-audited: every removed row leaves a DEL
+     * revision, so the account's redemption history stays recoverable
+     * from the audit trail exactly like the declared pseudonymization
+     * residuals.
+     */
+    public void purgeHistory(String username) {
+        repository.findAllByUsername(username).forEach(repository::delete);
+        if (log.isDebugEnabled()) {
+            log.debug("Auth action token history purged for the login-identity move: username={}",
+                    username);
+        }
+    }
+
     /** The latest token row for the account+purpose — the verification state read. */
     public Optional<AuthActionToken> latest(String username, AuthActionTokenPurpose purpose) {
         return repository.findFirstByUsernameAndPurposeOrderByCreatedAtDesc(username, purpose);

@@ -81,7 +81,12 @@ public class AccountLifecycleSpiAdapter implements AccountLifecycleSpi {
 
     @Override
     public void updateOwnProfile(Authentication caller, String displayName) {
-        userService.getBySubject(caller.getName()).updateProfile(null, displayName);
+        // Agent 1 (the CodeRabbit correctness round): the TRANSACTIONAL
+        // write, not the cached/detached read. The previous one-liner
+        // called getBySubject (@Cacheable + read-only), whose returned
+        // copy absorbed updateProfile invisibly — accountUpdate answered
+        // success while the display name never changed.
+        userService.updateOwnProfileBySubject(caller.getName(), displayName);
     }
 
     @Override

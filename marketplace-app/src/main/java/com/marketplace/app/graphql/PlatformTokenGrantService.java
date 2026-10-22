@@ -158,7 +158,16 @@ public class PlatformTokenGrantService {
         String refreshToken = opaqueToken();
         authorizationService().save(authorizationRow(principal, roles, accessToken,
                 refreshToken, now));
-        UserAccountView user = identitySpi.findCurrentUserAccount(authentication).orElse(null);
+        // m7 (the CodeRabbit correctness round): the account projection read
+        // needs the SAME subject-shaped authentication the refresh leg
+        // passes — the DaoAuthenticationProvider's own Authentication
+        // carries a UserDetails principal, and UserService.jwtSubjectOf
+        // only resolves a JwtAuthenticationToken or a String principal, so
+        // the provider-shaped token answered an empty account and
+        // CreateToken.user was always null.
+        UserAccountView user = identitySpi.findCurrentUserAccount(
+                        new UsernamePasswordAuthenticationToken(principal, null, java.util.List.of()))
+                .orElse(null);
         log.info("Platform password grant issued: principal={}, roles={}", principal, roles);
         return new IssuedTokens(accessToken, refreshToken, opaqueToken(), user);
     }

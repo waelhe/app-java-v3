@@ -302,7 +302,7 @@ public class CmsNavigationDataFetcher {
                 || com.marketplace.app.graphql.generated.types.OrderDirection.ASC
                         .equals(sortBy.getDirection());
         CmsNavigationPort.MenuWindow window = navigationPort.scrollMenus(currentAuthentication(),
-                field, ascending, org.springframework.data.domain.ScrollPosition.keyset(),
+                field, ascending, keysetPosition(after, field),
                 Limit.of(Math.min(requested, properties.pagination().maxPageSize())));
         List<com.marketplace.app.graphql.generated.types.MenuCountableEdge> edges =
                 new ArrayList<>(window.window().getContent().size());
@@ -355,8 +355,7 @@ public class CmsNavigationDataFetcher {
                     .build();
         }
         CmsNavigationPort.MenuItemWindow window = navigationPort.scrollMenuItems(
-                currentAuthentication(), "NAME", true,
-                org.springframework.data.domain.ScrollPosition.keyset(),
+                currentAuthentication(), "NAME", true, keysetPosition(after, "NAME"),
                 Limit.of(Math.min(requested, properties.pagination().maxPageSize())));
         List<com.marketplace.app.graphql.generated.types.MenuItemCountableEdge> edges =
                 new ArrayList<>(window.window().getContent().size());
@@ -376,6 +375,23 @@ public class CmsNavigationDataFetcher {
     // ---------------------------------------------------------------------
     // Internals
     // ---------------------------------------------------------------------
+
+    /**
+     * The connections' forward keyset position (B4, the CodeRabbit
+     * correctness round): the resolvers previously declared {@code after}
+     * and always passed the INITIAL keyset position — every request
+     * returned the first page, and a client following {@code endCursor}
+     * looped forever. The cursor gate now decodes the emitted cursor
+     * against the connection's own sort keys: the menus' NAME|SLUG
+     * vocabulary and the items' NAME vocabulary, both (own-column, id)
+     * keysets.
+     */
+    private org.springframework.data.domain.KeysetScrollPosition keysetPosition(
+            String after, String sortField) {
+        String property = "SLUG".equals(sortField) ? "slug" : "name";
+        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, property,
+                KeysetCursorGate::textValue, "the connection with the same sortBy");
+    }
 
     private Menu toMenuWithItems(Authentication caller, CmsNavigationPort.MenuView view) {
         List<CmsNavigationPort.MenuItemView> items = navigationPort.listMenuItems(caller,

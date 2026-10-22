@@ -66,7 +66,18 @@ public class CustomerTypeService implements com.marketplace.identity.spi.Custome
         boolean makeDefault = Boolean.TRUE.equals(isDefault);
         CustomerType row = CustomerType.create(trimmed, resolvedSlug, makeDefault);
         if (makeDefault) {
-            typeRepository.findByDefaultTrue().ifPresent(previous -> previous.markDefault(false));
+            // B10 (the CodeRabbit integrity round): the cleared default
+            // FLUSHES before the new default INSERTS. Hibernate's
+            // ActionQueue executes inserts before updates, so the pending
+            // clear + pending insert previously hit V250's
+            // customer_types_one_default_live_uq with the old row still
+            // TRUE — the unique violation killed every default swap on
+            // create. The saveAndFlush writes the clear NOW; the insert
+            // lands after it.
+            typeRepository.findByDefaultTrue().ifPresent(previous -> {
+                previous.markDefault(false);
+                typeRepository.saveAndFlush(previous);
+            });
         }
         typeRepository.save(row);
         log.info("Customer type created: id={}, slug={}, actor={}", row.getId(), resolvedSlug,
@@ -93,9 +104,18 @@ public class CustomerTypeService implements com.marketplace.identity.spi.Custome
         }
         if (isDefault != null) {
             if (isDefault && !row.isDefault()) {
+                // B10 (the CodeRabbit integrity round): the same
+                // clears-before-set flush ordering as create — two dirty
+                // UPDATEs have no guaranteed execution order, so the clear
+                // of the previous default writes NOW and the new default's
+                // update lands after it, never against V250's partial
+                // unique index.
                 typeRepository.findByDefaultTrue()
                         .filter(previous -> !previous.getId().equals(id))
-                        .ifPresent(previous -> previous.markDefault(false));
+                        .ifPresent(previous -> {
+                            previous.markDefault(false);
+                            typeRepository.saveAndFlush(previous);
+                        });
                 row.markDefault(true);
             } else if (!isDefault && row.isDefault()) {
                 // Saleor keeps exactly one default: unsetting the only
@@ -123,7 +143,16 @@ public class CustomerTypeService implements com.marketplace.identity.spi.Custome
         return toView(row);
     }
 
-    /** {@code customerTypeAssignAttributes}: appends the missing pairs (idempotent re-assign refused). */
+    /**
+     * {@code customerTypeAssignAttributes}: appends the missing pairs
+     * (idempotent re-assign refused). The seen-set carries both the
+     * pre-existing assignments and every ID this request already
+     * accepted (the CodeRabbit integrity round): a request such as
+     * [a, a] previously compared each entry only against the
+     * pre-existing list, saved two pairs, and answered the pair unique
+     * index's raw database error instead of the classified
+     * ConflictException.
+     */
     @Observed(name = "customer_type.assign_attributes")
     public CustomerTypeView assignAttributes(Authentication caller, UUID customerTypeId,
                                              List<UUID> attributeIds) {
@@ -134,10 +163,12 @@ public class CustomerTypeService implements com.marketplace.identity.spi.Custome
                 attributeRepository.findAllByCustomerTypeIdOrderByPositionAscIdAsc(customerTypeId);
         int nextPosition = existing.isEmpty() ? 0
                 : existing.get(existing.size() - 1).getPosition() + 1;
+        java.util.Set<UUID> seen = new java.util.HashSet<>();
+        for (CustomerTypeAttribute pair : existing) {
+            seen.add(pair.getAttributeId());
+        }
         for (UUID attributeId : attributeIds) {
-            boolean already = existing.stream()
-                    .anyMatch(pair -> pair.getAttributeId().equals(attributeId));
-            if (already) {
+            if (!seen.add(attributeId)) {
                 throw new ConflictException(
                         "The attribute is already assigned to the customer type: " + attributeId);
             }
@@ -171,28 +202,33 @@ public class CustomerTypeService implements com.marketplace.identity.spi.Custome
 
     /**
      * {@code customerTypeReorderAttributes}: Saleor's relative-move
-     * semantics ({@code moves: [{id, sortOrder}]} — each move shifts the
-     * row by the relative delta, then positions are resequenced dense).
+     * semantics ({@code moves: [{id, sortOrder}]}). The CodeRabbit
+     * correctness round made the move deterministic: each moved pair is
+     * REMOVED from the ordered list and reinserted at
+     * clamp(index + delta) — a shifted position never ties with a
+     * sibling, so the UUID tie-breaker never decides the order — then
+     * dense positions follow. The list is a mutable copy: repository
+     * queries may return immutable lists.
      */
     @Observed(name = "customer_type.reorder_attributes")
     public CustomerTypeView reorderAttributes(Authentication caller, UUID customerTypeId,
                                               List<UUID> attributeIds, List<Integer> deltas) {
         requireAdmin(caller);
         CustomerType row = requireType(customerTypeId);
-        List<CustomerTypeAttribute> pairs =
-                attributeRepository.findAllByCustomerTypeIdOrderByPositionAscIdAsc(customerTypeId);
+        List<CustomerTypeAttribute> pairs = new java.util.ArrayList<>(
+                attributeRepository.findAllByCustomerTypeIdOrderByPositionAscIdAsc(customerTypeId));
         for (int i = 0; i < attributeIds.size(); i++) {
             UUID attributeId = attributeIds.get(i);
-            CustomerTypeAttribute pair = pairs.stream()
-                    .filter(candidate -> candidate.getAttributeId().equals(attributeId))
-                    .findFirst()
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "The attribute is not assigned to the customer type: " + attributeId));
+            int from = indexByAttributeId(pairs, attributeId);
+            if (from < 0) {
+                throw new ResourceNotFoundException(
+                        "The attribute is not assigned to the customer type: " + attributeId);
+            }
             int delta = deltas.get(i) == null ? 0 : deltas.get(i);
-            pair.moveTo(Math.max(0, pair.getPosition() + delta));
+            CustomerTypeAttribute pair = pairs.remove(from);
+            int to = Math.max(0, Math.min(from + delta, pairs.size()));
+            pairs.add(to, pair);
         }
-        pairs.sort(java.util.Comparator.comparingInt(CustomerTypeAttribute::getPosition)
-                .thenComparing(CustomerTypeAttribute::getId));
         for (int i = 0; i < pairs.size(); i++) {
             pairs.get(i).moveTo(i);
         }
@@ -220,19 +256,25 @@ public class CustomerTypeService implements com.marketplace.identity.spi.Custome
         requireAdmin(caller);
         if (search != null && !search.isBlank()) {
             String needle = search.trim();
-            // The search leg: the derived Containing methods return the
-            // bounded page slice (position + limit honored in SQL); the
-            // wrapped window carries offset-identified cursors for THIS leg
-            // only — the recorded divergence (the registry's keyset sorts
-            // stay cursor-keyset; the search slice's boundaries are
-            // offset-shaped like the catalog's search precedent).
-            Window<CustomerType> window = Window.from(
-                    sort.ascending()
-                            ? typeRepository.findByNameContainingIgnoreCaseOrderByNameAscIdAsc(
-                                    needle, position, limit)
-                            : typeRepository.findByNameContainingIgnoreCaseOrderByNameDescIdDesc(
-                                    needle, position, limit),
-                    org.springframework.data.domain.ScrollPosition::offset);
+            // The search leg (the CodeRabbit pagination round): the SAME
+            // real keyset windows as the unfiltered leg — the derived
+            // Containing methods return Window results (hasNext comes from
+            // the window itself, and the cursors are KeysetScrollPositions
+            // the fetcher's forward gate consumes), the method selection
+            // honors the requested sort field, and the descending slug
+            // method completes the vocabulary.
+            Window<CustomerType> window = switch (sort.field()) {
+                case NAME -> sort.ascending()
+                        ? typeRepository.findByNameContainingIgnoreCaseOrderByNameAscIdAsc(
+                                needle, position, limit)
+                        : typeRepository.findByNameContainingIgnoreCaseOrderByNameDescIdDesc(
+                                needle, position, limit);
+                case SLUG -> sort.ascending()
+                        ? typeRepository.findByNameContainingIgnoreCaseOrderBySlugAscIdAsc(
+                                needle, position, limit)
+                        : typeRepository.findByNameContainingIgnoreCaseOrderBySlugDescIdDesc(
+                                needle, position, limit);
+            };
             return new com.marketplace.identity.spi.CustomerTypeSpi.CustomerTypePage(window.map(this::toView),
                     typeRepository.countByNameContainingIgnoreCase(needle));
         }
@@ -264,6 +306,15 @@ public class CustomerTypeService implements com.marketplace.identity.spi.Custome
         for (int i = 0; i < pairs.size(); i++) {
             pairs.get(i).moveTo(i);
         }
+    }
+
+    private static int indexByAttributeId(List<CustomerTypeAttribute> pairs, UUID attributeId) {
+        for (int i = 0; i < pairs.size(); i++) {
+            if (pairs.get(i).getAttributeId().equals(attributeId)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private CustomerType requireType(UUID id) {

@@ -159,10 +159,8 @@ public class CmsNavigationAdminService implements CmsNavigationPort {
         requireAdmin(caller);
         requireMenu(menuId);
         String trimmed = requireName(name);
-        if (parentId == null && itemRepository.findByMenuIdAndNameAndParentIdIsNull(
-                menuId, trimmed).isPresent()) {
-            throw new ConflictException(
-                    "A root menu item with this name already exists in the menu: " + trimmed);
+        if (parentId == null) {
+            requireFreeRootName(menuId, trimmed, null);
         }
         validateTarget(url, categoryId, pageId);
         if (parentId != null) {
@@ -190,6 +188,14 @@ public class CmsNavigationAdminService implements CmsNavigationPort {
         requireAdmin(caller);
         CmsMenuItem row = requireItem(id);
         validateTarget(url, categoryId, pageId);
+        // A root item's rename carries the per-menu root-name invariant
+        // (the V283 partial unique index) — checked HERE so the client
+        // receives the classified ConflictException instead of the raw
+        // DataIntegrityViolationException the flush would otherwise throw
+        // (the CodeRabbit integrity round).
+        if (row.getParentId() == null && name != null && !name.isBlank()) {
+            requireFreeRootName(row.getMenuId(), name.trim(), row.getId());
+        }
         row.apply(name, url, categoryId, pageId);
         log.info("CMS menu item updated: id={}, actor={}", id, caller.getName());
         return toView(row);
@@ -201,11 +207,17 @@ public class CmsNavigationAdminService implements CmsNavigationPort {
         requireAdmin(caller);
         CmsMenuItem row = requireItem(id);
         // The subtree re-parents to the deleted node's parent (the tree
-        // never orphans), then positions resequence.
-        // The subtree re-parents to the deleted node's parent (the tree
-        // never orphans), then positions resequence.
+        // never orphans), then positions resequence. A child promoted into
+        // the ROOT group carries the per-menu root-name invariant too —
+        // checked HERE so the client receives the classified
+        // ConflictException instead of the raw database error the V283
+        // partial unique index would otherwise throw (the CodeRabbit
+        // integrity round).
         for (CmsMenuItem child : itemRepository.findAllByMenuIdOrderByPositionAscIdAsc(row.getMenuId())) {
             if (id.equals(child.getParentId())) {
+                if (row.getParentId() == null) {
+                    requireFreeRootName(child.getMenuId(), child.getName(), child.getId());
+                }
                 child.reParent(row.getParentId());
             }
         }
@@ -261,7 +273,7 @@ public class CmsNavigationAdminService implements CmsNavigationPort {
                                             List<Integer> sortOrders) {
         requireAdmin(caller);
         requireMenu(menuId);
-        List<MenuItemView> moved = new ArrayList<>(itemIds.size());
+        List<CmsMenuItem> movedItems = new ArrayList<>(itemIds.size());
         for (int i = 0; i < itemIds.size(); i++) {
             CmsMenuItem item = requireItem(itemIds.get(i));
             if (!item.getMenuId().equals(menuId)) {
@@ -280,21 +292,21 @@ public class CmsNavigationAdminService implements CmsNavigationPort {
                     throw new ConflictException(
                             "The move would create a cycle in the menu tree");
                 }
+            } else {
+                // The item joins the menu's ROOT group on this path — the
+                // per-menu root-name invariant applies here too, with the
+                // classified ConflictException instead of the raw database
+                // error the V283 partial unique index would otherwise throw
+                // (the CodeRabbit integrity round).
+                requireFreeRootName(menuId, item.getName(), item.getId());
             }
             item.reParent(newParent);
-            moved.add(toView(item));
+            movedItems.add(item);
         }
-        // The relative sort orders apply AFTER the re-parenting: each item's
-        // position shifts by its delta, then every sibling group resequences dense.
-        for (int i = 0; i < itemIds.size(); i++) {
-            CmsMenuItem item = requireItem(itemIds.get(i));
-            int delta = sortOrders.get(i) == null ? 0 : sortOrders.get(i);
-            item.moveTo(Math.max(0, item.getPosition() + delta));
-        }
-        resequence(menuId);
+        applyRelativeSortOrders(menuId, itemIds, sortOrders);
         log.info("CMS menu items moved: menuId={}, moves={}, actor={}", menuId, itemIds.size(),
                 caller.getName());
-        return moved;
+        return movedItems.stream().map(this::toView).toList();
     }
 
     // ---------------------------------------------------------------------
@@ -361,33 +373,66 @@ public class CmsNavigationAdminService implements CmsNavigationPort {
                                           Limit limit) {
         requireAdmin(caller);
         // The item collection's owning sorts: NAME (the item's own column)
-        // and SLUG (rendered from the name composition the same way).
-        Window<CmsMenuItem> window = ascending
-                ? itemsWindow(position, limit, true)
-                : itemsWindow(position, limit, false);
+        // and SLUG (the Saleor enum value rides the same name sort — the
+        // item carries no slug column of its own). The window rides the
+        // repository's real keyset queries (the CodeRabbit pagination
+        // round): the cursors are KeysetScrollPositions over (name, id),
+        // hasNext comes from the window itself, and no request reads the
+        // whole table into memory. An unknown sort field answers the
+        // classified error — never a silent fallback.
+        Window<CmsMenuItem> window = switch (sortField == null ? "NAME" : sortField) {
+            case "NAME", "SLUG" -> ascending
+                    ? itemRepository.findAllByOrderByNameAscIdAsc(position, limit)
+                    : itemRepository.findAllByOrderByNameDescIdDesc(position, limit);
+            default -> throw new IllegalArgumentException(
+                    "Unsupported menu item sort field: " + sortField);
+        };
         return new MenuItemWindow(window.map(this::toView), itemRepository.count());
-    }
-
-    private Window<CmsMenuItem> itemsWindow(KeysetScrollPosition position, Limit limit,
-                                            boolean ascending) {
-        // The item scroll rides the whole-collection name sorts; the tree
-        // composition happens per-menu at the boundary.
-        return ascending
-                ? org.springframework.data.domain.Window.from(
-                        itemRepository.findAll(org.springframework.data.domain.Sort.by(
-                                org.springframework.data.domain.Sort.Direction.ASC, "name", "id"))
-                                .stream().limit(limit.max()).toList(),
-                        org.springframework.data.domain.ScrollPosition::offset)
-                : org.springframework.data.domain.Window.from(
-                        itemRepository.findAll(org.springframework.data.domain.Sort.by(
-                                org.springframework.data.domain.Sort.Direction.DESC, "name", "id"))
-                                .stream().limit(limit.max()).toList(),
-                        org.springframework.data.domain.ScrollPosition::offset);
     }
 
     // ---------------------------------------------------------------------
     // Internals
     // ---------------------------------------------------------------------
+
+    /**
+     * The deterministic relative-move semantics (the CodeRabbit correctness
+     * round): each moved item is REMOVED from its sibling list and
+     * reinserted at clamp(index + delta) — a shifted position never ties
+     * with a sibling, so the UUID tie-breaker never decides the order —
+     * then every sibling group receives dense positions. The groups are
+     * loaded AFTER the re-parenting pass, so the delta always applies to
+     * the item's index in its NEW sibling group (the stale stored position
+     * only seeds the deterministic load order — it has no cross-group
+     * meaning). The group lists are mutable copies: repository queries may
+     * return immutable lists.
+     */
+    private void applyRelativeSortOrders(UUID menuId, List<UUID> itemIds,
+                                         List<Integer> sortOrders) {
+        Map<UUID, List<CmsMenuItem>> byParent = new HashMap<>();
+        for (CmsMenuItem item : itemRepository.findAllByMenuIdOrderByPositionAscIdAsc(menuId)) {
+            byParent.computeIfAbsent(item.getParentId(), key -> new ArrayList<>()).add(item);
+        }
+        for (int i = 0; i < itemIds.size(); i++) {
+            CmsMenuItem item = requireItem(itemIds.get(i));
+            List<CmsMenuItem> siblings = byParent.get(item.getParentId());
+            if (siblings == null) {
+                continue;
+            }
+            int from = siblings.indexOf(item);
+            if (from < 0) {
+                continue;
+            }
+            int delta = sortOrders.get(i) == null ? 0 : sortOrders.get(i);
+            siblings.remove(from);
+            int to = Math.max(0, Math.min(from + delta, siblings.size()));
+            siblings.add(to, item);
+        }
+        for (List<CmsMenuItem> group : byParent.values()) {
+            for (int i = 0; i < group.size(); i++) {
+                group.get(i).moveTo(i);
+            }
+        }
+    }
 
     /** Walks the ancestor chain — true when candidate is below the node. */
     private boolean isDescendant(CmsMenuItem candidate, UUID ancestorId) {
@@ -400,6 +445,24 @@ public class CmsNavigationAdminService implements CmsNavigationPort {
             parentId = itemRepository.findById(current).map(CmsMenuItem::getParentId).orElse(null);
         }
         return false;
+    }
+
+    /**
+     * The per-menu root-name invariant (the V283 partial unique index):
+     * at most one ROOT item per (menu, name). Every path that creates,
+     * renames, or promotes a root passes through this check (the
+     * CodeRabbit integrity round): move-to-root, delete-time promotion,
+     * and root rename previously flushed straight into the unique index's
+     * raw DataIntegrityViolationException instead of the classified
+     * {@link ConflictException} the create path already answers.
+     */
+    private void requireFreeRootName(UUID menuId, String name, UUID excludeId) {
+        itemRepository.findByMenuIdAndNameAndParentIdIsNull(menuId, name)
+                .filter(existing -> !existing.getId().equals(excludeId))
+                .ifPresent(existing -> {
+                    throw new ConflictException(
+                            "A root menu item with this name already exists in the menu: " + name);
+                });
     }
 
     private void resequence(UUID menuId) {
