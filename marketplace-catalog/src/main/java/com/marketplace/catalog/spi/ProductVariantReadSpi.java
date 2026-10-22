@@ -48,14 +48,6 @@ public interface ProductVariantReadSpi {
     Optional<ProductVariantView> findVariantById(UUID id, Authentication authentication);
 
     /**
-     * Resolve a variant already referenced by an owned aggregate (for example
-     * a cart line) without re-applying the public shelf filter. The caller
-     * owns the authorization decision; lifecycle states stay observable so a
-     * suspended product does not vanish from the owner's own record.
-     */
-    Optional<ProductVariantView> findVariantSnapshot(UUID id);
-
-    /**
      * One bounded page of the variant population as a REAL SQL
      * forward-only keyset scroll in the requested sort (the owning
      * field + the {@code id} tiebreaker — the

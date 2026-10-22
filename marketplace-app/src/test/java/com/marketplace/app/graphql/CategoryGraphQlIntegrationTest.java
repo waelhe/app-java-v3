@@ -2,7 +2,7 @@ package com.marketplace.app.graphql;
 
 import com.marketplace.catalog.Category;
 import com.marketplace.catalog.CategoryRepository;
-import test.config.IntegrationContainers;
+import com.marketplace.shared.test.IntegrationContainers;
 import com.netflix.graphql.dgs.client.GraphQLError;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

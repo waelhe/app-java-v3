@@ -56,10 +56,10 @@ class ProductReadServiceTest {
         repository = mock(ProductRepository.class);
         service = new ProductReadService(repository);
         publicCaller = mock(Authentication.class);
-        when(publicCaller.getAuthorities()).thenAnswer(invocation -> List.<GrantedAuthority>of());
+        when(publicCaller.getAuthorities()).thenReturn(List.<GrantedAuthority>of());
         adminCaller = mock(Authentication.class);
         when(adminCaller.getAuthorities())
-                .thenAnswer(invocation -> List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+                .thenReturn(List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
     }
 
     private static Product activeProduct(String title) {

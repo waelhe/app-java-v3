@@ -103,21 +103,6 @@ public class ProductVariantReadService implements ProductVariantReadSpi {
     }
 
     /**
-     * The owned-reference lookup: the caller (for example the checkout
-     * adapter) already proved ownership of the aggregate that references
-     * this variant, so the public shelf gate does not apply. Referential
-     * honesty still holds: a missing parent answers empty.
-     */
-    @Override
-    @Transactional(readOnly = true)
-    public Optional<ProductVariantView> findVariantSnapshot(UUID id) {
-        if (id == null) {
-            return Optional.empty();
-        }
-        return variantRepository.findById(id).flatMap(this::resolveView);
-    }
-
-    /**
      * The variant population's REAL SQL forward-only keyset scroll — the
      * caller's own population: the two-row-gated public population
      * (variant ACTIVE AND parent product ACTIVE) for non-ADMIN callers,
@@ -134,7 +119,7 @@ public class ProductVariantReadService implements ProductVariantReadSpi {
         if (sort == null || sort.field() == null) {
             throw new IllegalArgumentException("A product-variant sort is required");
         }
-        if (limit == null || limit.max() <= 0) {
+        if (limit == null || limit.value() <= 0) {
             throw new IllegalArgumentException("A positive page size is required");
         }
         if (isAdmin(authentication)) {
@@ -187,7 +172,7 @@ public class ProductVariantReadService implements ProductVariantReadSpi {
                                                       Limit limit) {
         OffsetDateTime lastUpdatedAt = lastUpdatedAt(sort, position);
         UUID lastId = lastId(sort, position);
-        int fetchCount = limit.max() + 1;
+        int fetchCount = limit.value() + 1;
         List<ProductVariant> rows = switch (sort.field()) {
             case LAST_MODIFIED_AT -> sort.ascending()
                     ? variantRepository.scrollPublicByUpdatedAtAsc(lastUpdatedAt, lastId, fetchCount)
@@ -196,9 +181,9 @@ public class ProductVariantReadService implements ProductVariantReadSpi {
                     ? variantRepository.scrollPublicByIdAsc(lastId, fetchCount)
                     : variantRepository.scrollPublicByIdDesc(lastId, fetchCount);
         };
-        boolean hasNext = rows.size() > limit.max();
+        boolean hasNext = rows.size() > limit.value();
         List<ProductVariant> content =
-                hasNext ? new ArrayList<>(rows.subList(0, limit.max())) : rows;
+                hasNext ? new ArrayList<>(rows.subList(0, limit.value())) : rows;
         Map<UUID, ProductView> parents = parentProjections(content);
         List<ProductVariantView> views = new ArrayList<>(content.size());
         List<ScrollPosition> positions = new ArrayList<>(content.size());

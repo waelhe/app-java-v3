@@ -70,10 +70,10 @@ class ProductVariantReadServiceTest {
         productRepository = mock(ProductRepository.class);
         service = new ProductVariantReadService(variantRepository, productRepository);
         publicCaller = mock(Authentication.class);
-        when(publicCaller.getAuthorities()).thenAnswer(invocation -> List.<GrantedAuthority>of());
+        when(publicCaller.getAuthorities()).thenReturn(List.<GrantedAuthority>of());
         adminCaller = mock(Authentication.class);
         when(adminCaller.getAuthorities())
-                .thenAnswer(invocation -> List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+                .thenReturn(List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
     }
 
     private static Product activeProduct(String title) {
@@ -180,30 +180,6 @@ class ProductVariantReadServiceTest {
         // Referential honesty: include-unpublished widens lifecycle
         // states, never integrity — a null Product! is never rendered.
         assertThat(service.findVariantById(variant.getId(), adminCaller)).isEmpty();
-    }
-
-    @Test
-    void ownedSnapshotResolvesTheSuspendedVariantWithoutThePublicShelfGate() {
-        Product parent = activeProduct("b5a Owned Parent");
-        ProductVariant variant = suspendedVariant(parent, "b5a-sku-owned");
-        when(variantRepository.findById(variant.getId())).thenReturn(Optional.of(variant));
-        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
-
-        Optional<ProductVariantView> snapshot = service.findVariantSnapshot(variant.getId());
-
-        assertThat(snapshot).isPresent();
-        assertThat(snapshot.get().status()).isEqualTo("SUSPENDED");
-        assertThat(snapshot.get().product().id()).isEqualTo(parent.getId());
-    }
-
-    @Test
-    void ownedSnapshotKeepsTheReferentialHonestyOfAMissingParent() {
-        Product parent = activeProduct("b5a Owned Vanishing Parent");
-        ProductVariant variant = activeVariant(parent, "b5a-sku-owned-2");
-        when(variantRepository.findById(variant.getId())).thenReturn(Optional.of(variant));
-        when(productRepository.findById(parent.getId())).thenReturn(Optional.empty());
-
-        assertThat(service.findVariantSnapshot(variant.getId())).isEmpty();
     }
 
     // ------------------------------------------------------------------
