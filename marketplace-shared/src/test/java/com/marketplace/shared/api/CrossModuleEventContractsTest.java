@@ -147,7 +147,10 @@ class CrossModuleEventContractsTest {
         assertThat(event.expiresAt()).isEqualTo(expiresAt);
         assertThat(event).isEqualTo(new AccountDeletionRequestedEvent(
                 userId, "maged@example.com", "one-time-erasure-token", expiresAt));
-        assertThat(event.toString()).contains("one-time-erasure-token");
+        // No toString() assertion here BY DESIGN (the CodeRabbit round on
+        // the follow-up PR): the generated diagnostic representation is not
+        // part of the event payload contract, and freezing the raw
+        // one-time token in it would fight a future diagnostic redaction.
     }
 
     /**
