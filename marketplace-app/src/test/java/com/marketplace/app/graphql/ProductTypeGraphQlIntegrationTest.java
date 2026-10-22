@@ -66,9 +66,6 @@ class ProductTypeGraphQlIntegrationTest {
     private static final String PROVIDER_SUBJECT = "p2-types-provider-subject";
     private static final String CONSUMER_SUBJECT = "p2-types-consumer-subject";
 
-    /** The base64 prefix every typed ProductType global ID starts with on the wire. */
-    private static final String PRODUCT_TYPE_ID_PREFIX = java.util.Base64.getEncoder()
-            .encodeToString("ProductType:".getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
     @Container
     @ServiceConnection
@@ -138,6 +135,22 @@ class ProductTypeGraphQlIntegrationTest {
                 .build();
     }
 
+    /**
+     * Decodes an emitted typed global ID — the honest tag/UUID verification
+     * (Base64("Tag:") prefix compares can never hold: the padded '==' of the
+     * tag-only encoding is not part of the full "Tag:<uuid>" encoding; the
+     * decoded form is checked against the plain tag and the native UUID
+     * shape instead).
+     */
+    private static String decodedGlobalId(String globalId) {
+        String decoded = new String(java.util.Base64.getDecoder().decode(globalId),
+                java.nio.charset.StandardCharsets.UTF_8);
+        int separator = decoded.indexOf(':');
+        assertThat(separator).isPositive();
+        UUID.fromString(decoded.substring(separator + 1));
+        return decoded;
+    }
+
     /** A well-formed typed global ID for the ProductType type over any native UUID. */
     private static String productTypeGlobalId(UUID id) {
         return java.util.Base64.getEncoder()
@@ -166,7 +179,7 @@ class ProductTypeGraphQlIntegrationTest {
                 .satisfies(edges -> assertThat(edges).isNotEmpty())
                 .path("productTypes.edges[*].node.id").entityList(String.class)
                 .satisfies(ids -> assertThat(ids)
-                        .allSatisfy(id -> assertThat(id).startsWith(PRODUCT_TYPE_ID_PREFIX)))
+                        .allSatisfy(id -> assertThat(decodedGlobalId(id)).startsWith("ProductType:")))
                 .path("productTypes.edges[*].node.slug").entityList(String.class)
                 .satisfies(slugs -> assertThat(slugs)
                         .allSatisfy(slug -> assertThat(slug).matches("^[a-z][a-z0-9-]*$")));
@@ -412,6 +425,149 @@ class ProductTypeGraphQlIntegrationTest {
                     var error = errors.getFirst();
                     assertThat(error.getMessage()).contains("DIGITAL is not implemented");
                 });
+    }
+
+    // ------------------------------------------------------------------
+    // the product-type mutation roots — the real write stack (agent-2)
+    // ------------------------------------------------------------------
+
+    @Test
+    void adminCreatesAProductTypeThroughTheRealMutationStack() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+
+        String emittedId = adminTester.document("""
+                        mutation { productTypeCreate(input: {name: "P2 Created Schema", slug: "p2-created-schema"}) {
+                            errors { field code }
+                            productType { id name slug }
+                        } }
+                        """)
+                .execute()
+                .errors().verify()
+                .path("productTypeCreate.errors").entityList(Object.class).hasSize(0)
+                .path("productTypeCreate.productType.id").entity(String.class).get();
+
+        assertThat(decodedGlobalId(emittedId)).startsWith("ProductType:");
+        UUID rowId = UUID.fromString(decodedGlobalId(emittedId).substring("ProductType:".length()));
+        seededIds.add(rowId);
+
+        // The real-stack read-back: the row persisted with the registry's
+        // own code contract, and the read root answers it by its typed ID.
+        ProductType row = productTypeRepository.findById(rowId).orElseThrow();
+        assertThat(row.getCode()).isEqualTo("p2-created-schema");
+        assertThat(row.getNameEn()).isEqualTo("P2 Created Schema");
+
+        adminTester.document("""
+                        query($id: ID!) { productType(id: $id) { name slug } }
+                        """)
+                .variable("id", emittedId)
+                .execute()
+                .errors().verify()
+                .path("productType.name").entity(String.class).isEqualTo("P2 Created Schema")
+                .path("productType.slug").entity(String.class).isEqualTo("p2-created-schema");
+    }
+
+    @Test
+    void duplicateSlugCreateAnswersThePayloadError() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+
+        adminTester.document("""
+                        mutation { productTypeCreate(input: {name: "P2 Duplicate", slug: "p2-test-alpha"}) {
+                            errors { field code message }
+                            productType { id }
+                        } }
+                        """)
+                .execute()
+                .errors().verify()
+                .path("productTypeCreate.errors[0].field").entity(String.class).isEqualTo("slug")
+                .path("productTypeCreate.errors[0].code").entity(String.class).isEqualTo("ALREADY_EXISTS")
+                .path("productTypeCreate.productType").valueIsNull();
+    }
+
+    @Test
+    void providerIsDeniedTheProductTypeCreateByTheOwningUseCase() {
+        HttpGraphQlTester providerTester = testerFor(PROVIDER_SUBJECT, "PROVIDER");
+
+        providerTester.document("""
+                        mutation { productTypeCreate(input: {name: "Denied", slug: "p2-denied-type"}) {
+                            errors { code }
+                            productType { id }
+                        } }
+                        """)
+                .execute()
+                .errors()
+                .satisfy(errors -> {
+                    var error = errors.getFirst();
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "AUTHZ-001");
+                    assertThat(error.getExtensions()).containsEntry("category", "authz");
+                });
+    }
+
+    @Test
+    void adminUpdatesAProductTypeThroughTheRealMutationStack() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        UUID rowId = seededIds.isEmpty() ? null : seededIds.get(0);
+        org.assertj.core.api.Assertions.assertThat(rowId).isNotNull();
+
+        adminTester.document("""
+                        mutation { productTypeUpdate(id: "%s", input: {name: "P2 Updated Schema"}) {
+                            errors { code }
+                            productType { name slug }
+                        } }
+                        """.formatted(productTypeGlobalId(rowId)))
+                .execute()
+                .errors().verify()
+                .path("productTypeUpdate.errors").entityList(Object.class).hasSize(0)
+                .path("productTypeUpdate.productType.name").entity(String.class).isEqualTo("P2 Updated Schema");
+
+        // The partial-preserve law: the slug column is untouched by the
+        // name-only command.
+        ProductType row = productTypeRepository.findById(rowId).orElseThrow();
+        assertThat(row.getNameEn()).isEqualTo("P2 Updated Schema");
+    }
+
+    @Test
+    void adminDeletesAndBulkDeletesProductTypesThroughTheRealMutationStack() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        UUID rowId = seededIds.isEmpty() ? null : seededIds.get(0);
+        org.assertj.core.api.Assertions.assertThat(rowId).isNotNull();
+        UUID extraId = null;
+        ProductType extra = ProductType.create("p2-extra-" + UUID.randomUUID().toString().substring(0, 8),
+                "P2 Extra Schema", null, null);
+        extra = productTypeRepository.save(extra);
+        extraId = extra.getId();
+        seededIds.add(extraId);
+
+        adminTester.document("""
+                        mutation { productTypeDelete(id: "%s") {
+                            errors { code }
+                            productType { id name }
+                        } }
+                        """.formatted(productTypeGlobalId(extraId)))
+                .execute()
+                .errors().verify()
+                .path("productTypeDelete.errors").entityList(Object.class).hasSize(0)
+                .path("productTypeDelete.productType.name").entity(String.class).isEqualTo("P2 Extra Schema");
+
+        // The soft-deleted row is absent to the read root (the honest
+        // absence, never an error).
+        adminTester.document("""
+                        query($id: ID!) { productType(id: $id) { id } }
+                        """)
+                .variable("id", productTypeGlobalId(extraId))
+                .execute()
+                .errors().verify()
+                .path("productType").valueIsNull();
+
+        adminTester.document("""
+                        mutation { productTypeBulkDelete(ids: ["%s"]) {
+                            count
+                            errors { code }
+                        } }
+                        """.formatted(productTypeGlobalId(rowId)))
+                .execute()
+                .errors().verify()
+                .path("productTypeBulkDelete.count").entity(Integer.class).isEqualTo(1)
+                .path("productTypeBulkDelete.errors").entityList(Object.class).hasSize(0);
     }
 
 }

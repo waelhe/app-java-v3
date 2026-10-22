@@ -2,8 +2,7 @@ package com.marketplace.app.graphql;
 
 import com.marketplace.catalog.Category;
 import com.marketplace.catalog.CategoryRepository;
-import com.marketplace.shared.test.IntegrationContainers;
-import com.netflix.graphql.dgs.client.GraphQLError;
+import test.config.IntegrationContainers;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,7 +18,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -81,9 +80,6 @@ class CategoryGraphQlIntegrationTest {
     private static final String CONSUMER_SUBJECT = "p2-cats-consumer-subject";
     private static final String ADMIN_SUBJECT = "p2-cats-admin-subject";
 
-    /** The base64 prefix every typed Category global ID starts with on the wire. */
-    private static final String CATEGORY_ID_PREFIX = java.util.Base64.getEncoder()
-            .encodeToString("Category:".getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
     @Container
     @ServiceConnection
@@ -155,6 +151,22 @@ class CategoryGraphQlIntegrationTest {
                         .baseUrl("http://localhost:" + port + "/graphql")
                         .defaultHeader("Authorization", "Bearer test-token"))
                 .build();
+    }
+
+    /**
+     * Decodes an emitted typed global ID — the honest tag/UUID verification
+     * (Base64("Tag:") prefix compares can never hold: the padded '==' of the
+     * tag-only encoding is not part of the full "Tag:<uuid>" encoding; the
+     * decoded form is checked against the plain tag and the native UUID
+     * shape instead).
+     */
+    private static String decodedGlobalId(String globalId) {
+        String decoded = new String(java.util.Base64.getDecoder().decode(globalId),
+                java.nio.charset.StandardCharsets.UTF_8);
+        int separator = decoded.indexOf(':');
+        assertThat(separator).isPositive();
+        UUID.fromString(decoded.substring(separator + 1));
+        return decoded;
     }
 
     /** A well-formed typed global ID for the Category type over any native UUID. */
@@ -287,7 +299,7 @@ class CategoryGraphQlIntegrationTest {
         // The list's own emitted typed global ID reads back through the
         // category root — the round-trip stability the codec contract
         // pins (same wire ID, same registry row).
-        assertThat(emittedId).startsWith(CATEGORY_ID_PREFIX);
+        assertThat(decodedGlobalId(emittedId)).startsWith("Category:");
         tester.document("""
                         query($id: ID!) { category(id: $id) { id slug name } }
                         """)
@@ -350,7 +362,7 @@ class CategoryGraphQlIntegrationTest {
                 .variable("id", "not-a-global-id")
                 .execute()
                 .errors()
-                .satisfies(errors -> {
+                .satisfy(errors -> {
                     assertThat(errors).hasSize(1);
                     assertThat(errors.get(0).getExtensions()).containsEntry("errorCode", "VAL-001");
                 });
@@ -366,7 +378,7 @@ class CategoryGraphQlIntegrationTest {
                 .variable("id", UUID.randomUUID().toString())
                 .execute()
                 .errors()
-                .satisfies(errors -> {
+                .satisfy(errors -> {
                     assertThat(errors).hasSize(1);
                     assertThat(errors.get(0).getExtensions()).containsEntry("errorCode", "VAL-001");
                 });
@@ -385,7 +397,7 @@ class CategoryGraphQlIntegrationTest {
                 .variable("id", attributeGlobalId(UUID.randomUUID()))
                 .execute()
                 .errors()
-                .satisfies(errors -> {
+                .satisfy(errors -> {
                     assertThat(errors).hasSize(1);
                     assertThat(errors.get(0).getExtensions()).containsEntry("errorCode", "VAL-001");
                 });
@@ -434,8 +446,8 @@ class CategoryGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("filter is not implemented")));
     }
 
@@ -448,8 +460,8 @@ class CategoryGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("where filter is not implemented")));
     }
 
@@ -462,8 +474,8 @@ class CategoryGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("level filtering is not implemented")));
     }
 
@@ -476,8 +488,8 @@ class CategoryGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("forward-only")));
     }
 
@@ -490,8 +502,8 @@ class CategoryGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("SUBCATEGORY_COUNT is not implemented")));
     }
 
@@ -509,8 +521,8 @@ class CategoryGraphQlIntegrationTest {
                 .variable("after", slugCursor)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> {
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> {
                             assertThat(error.getMessage()).contains("after must be a forward keyset cursor");
                             assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
                         }));
@@ -525,8 +537,8 @@ class CategoryGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("slugLanguageCode lookup is not implemented")));
     }
 
@@ -540,8 +552,8 @@ class CategoryGraphQlIntegrationTest {
                 .variable("externalReference", "erp-cat-1")
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("externalReference lookup is not implemented")));
     }
 
@@ -554,10 +566,197 @@ class CategoryGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> {
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> {
                             assertThat(error.getMessage()).contains("category requires one of id or slug");
                             assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
                         }));
+    }
+
+    // ------------------------------------------------------------------
+    // the mutation roots — the real write stack (the agent-2 packet)
+    // ------------------------------------------------------------------
+
+    @Test
+    void adminCreatesACategoryThroughTheRealMutationStack() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+
+        String emittedId = adminTester.document("""
+                        mutation { categoryCreate(input: {name: "P2 Created Registry Row", slug: "p2-cat-created"}) {
+                            errors { field code }
+                            category { id name slug nameAr position }
+                        } }
+                        """)
+                .execute()
+                .errors().verify()
+                .path("categoryCreate.category.id").entity(String.class).get();
+
+        // The payload's typed global ID decodes to the registry's own tag
+        // and native UUID — the row the real write stack persisted.
+        String decoded = decodedGlobalId(emittedId);
+        assertThat(decoded).startsWith("Category:");
+        UUID rowId = UUID.fromString(decoded.substring("Category:".length()));
+        seededIds.add(rowId);
+        Category row = categoryRepository.findById(rowId).orElseThrow();
+        assertThat(row.getCode()).isEqualTo("p2-cat-created");
+        assertThat(row.getNameEn()).isEqualTo("P2 Created Registry Row");
+        assertThat(row.getNameAr()).isNull();
+
+        adminTester.document("""
+                        query { category(slug: "p2-cat-created") { slug name position } }
+                        """)
+                .execute()
+                .errors().verify()
+                .path("category.slug").entity(String.class).isEqualTo("p2-cat-created")
+                .path("category.name").entity(String.class).isEqualTo("P2 Created Registry Row");
+    }
+
+    @Test
+    void duplicateSlugCreateAnswersThePayloadError() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+
+        adminTester.document("""
+                        mutation { categoryCreate(input: {name: "Duplicate", slug: "p2-cat-alpha"}) {
+                            errors { field code message }
+                            category { id }
+                        } }
+                        """)
+                .execute()
+                .errors().verify()
+                .path("categoryCreate.errors[0].field").entity(String.class).isEqualTo("slug")
+                .path("categoryCreate.errors[0].code").entity(String.class).isEqualTo("ALREADY_EXISTS")
+                .path("categoryCreate.category").valueIsNull();
+    }
+
+    @Test
+    void requiredFieldViolationsAnswerThePayloadErrors() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+
+        adminTester.document("""
+                        mutation { categoryCreate(input: {name: " "}) {
+                            errors { field code }
+                            category { id }
+                        } }
+                        """)
+                .execute()
+                .errors().verify()
+                .path("categoryCreate.errors[0].field").entity(String.class).isEqualTo("name")
+                .path("categoryCreate.errors[0].code").entity(String.class).isEqualTo("REQUIRED")
+                .path("categoryCreate.errors[1].field").entity(String.class).isEqualTo("slug")
+                .path("categoryCreate.errors[1].code").entity(String.class).isEqualTo("REQUIRED");
+    }
+
+    @Test
+    void consumerIsDeniedTheCreateByTheOwningUseCase() {
+        HttpGraphQlTester consumerTester = testerFor(CONSUMER_SUBJECT, "CONSUMER");
+
+        consumerTester.document("""
+                        mutation { categoryCreate(input: {name: "Denied", slug: "p2-cat-denied"}) {
+                            errors { code }
+                            category { id }
+                        } }
+                        """)
+                .execute()
+                .errors()
+                .satisfy(errors -> {
+                    var error = errors.getFirst();
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "AUTHZ-001");
+                    assertThat(error.getExtensions()).containsEntry("category", "authz");
+                });
+    }
+
+    @Test
+    void adminUpdatesACategoryThroughTheRealMutationStack() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        Category seeded = categoryRepository.findByCode("p2-cat-gamma").orElseThrow();
+
+        String emittedId = java.util.Base64.getEncoder()
+                .encodeToString(("Category:" + seeded.getId())
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        adminTester.document("""
+                        mutation { categoryUpdate(id: "%s", input: {name: "P2 Category Gamma Refreshed"}) {
+                            errors { code }
+                            category { name slug }
+                        } }
+                        """.formatted(emittedId))
+                .execute()
+                .errors().verify()
+                .path("categoryUpdate.category.name").entity(String.class)
+                .isEqualTo("P2 Category Gamma Refreshed")
+                .path("categoryUpdate.category.slug").entity(String.class).isEqualTo("p2-cat-gamma");
+
+        Category row = categoryRepository.findById(seeded.getId()).orElseThrow();
+        assertThat(row.getNameEn()).isEqualTo("P2 Category Gamma Refreshed");
+    }
+
+    @Test
+    void adminSoftDeletesACategoryAndTheSecondDeleteAnswersNotFound() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        persist("p2-cat-mutation-delete", "P2 Mutation Delete Row", null, 99);
+        Category seeded = categoryRepository.findByCode("p2-cat-mutation-delete").orElseThrow();
+        String emittedId = java.util.Base64.getEncoder()
+                .encodeToString(("Category:" + seeded.getId())
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        adminTester.document("""
+                        mutation { categoryDelete(id: "%s") {
+                            errors { code }
+                            category { slug name }
+                        } }
+                        """.formatted(emittedId))
+                .execute()
+                .errors().verify()
+                .path("categoryDelete.category.slug").entity(String.class).isEqualTo("p2-cat-mutation-delete");
+
+        // Soft delete is the registry's own discipline: the derived
+        // lookup no longer resolves the row, and the code is released.
+        assertThat(categoryRepository.findById(seeded.getId())).isEmpty();
+        assertThat(categoryRepository.findByCode("p2-cat-mutation-delete")).isEmpty();
+
+        // The second delete of the same id answers the NOT_FOUND payload
+        // error — the honest absence, never a second success.
+        adminTester.document("""
+                        mutation { categoryDelete(id: "%s") {
+                            errors { field code }
+                            category { id }
+                        } }
+                        """.formatted(emittedId))
+                .execute()
+                .errors().verify()
+                .path("categoryDelete.errors[0].field").entity(String.class).isEqualTo("id")
+                .path("categoryDelete.errors[0].code").entity(String.class).isEqualTo("NOT_FOUND")
+                .path("categoryDelete.category").valueIsNull();
+    }
+
+    @Test
+    void adminBulkDeletesCategoriesWithTheHonestCount() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        persist("p2-cat-bulk-one", "P2 Bulk One", null, 97);
+        persist("p2-cat-bulk-two", "P2 Bulk Two", null, 98);
+        Category first = categoryRepository.findByCode("p2-cat-bulk-one").orElseThrow();
+        Category second = categoryRepository.findByCode("p2-cat-bulk-two").orElseThrow();
+        String firstId = java.util.Base64.getEncoder()
+                .encodeToString(("Category:" + first.getId())
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String secondId = java.util.Base64.getEncoder()
+                .encodeToString(("Category:" + second.getId())
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        // One well-formed but unknown id rides the list — the count must
+        // answer only what the registry itself deleted.
+        String unknownId = java.util.Base64.getEncoder()
+                .encodeToString(("Category:" + UUID.randomUUID())
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        adminTester.document("""
+                        mutation { categoryBulkDelete(ids: ["%s", "%s", "%s"]) { count errors { code } } }
+                        """.formatted(firstId, secondId, unknownId))
+                .execute()
+                .errors().verify()
+                .path("categoryBulkDelete.count").entity(Integer.class).isEqualTo(2);
+
+        assertThat(categoryRepository.findById(first.getId())).isEmpty();
+        assertThat(categoryRepository.findById(second.getId())).isEmpty();
     }
 }

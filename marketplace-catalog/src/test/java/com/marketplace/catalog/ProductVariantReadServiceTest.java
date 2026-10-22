@@ -28,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -70,10 +71,15 @@ class ProductVariantReadServiceTest {
         productRepository = mock(ProductRepository.class);
         service = new ProductVariantReadService(variantRepository, productRepository);
         publicCaller = mock(Authentication.class);
-        when(publicCaller.getAuthorities()).thenReturn(List.<GrantedAuthority>of());
+        // Authentication.getAuthorities() returns Collection<? extends
+        // GrantedAuthority> (the Spring Security 7.1.1 interface contract) —
+        // a wildcard-capture return Mockito's when(...).thenReturn(...) cannot
+        // type-check; doReturn().when(...) is Mockito's own documented form
+        // for stubbing wildcard-generic returns.
+        doReturn(List.<GrantedAuthority>of()).when(publicCaller).getAuthorities();
         adminCaller = mock(Authentication.class);
-        when(adminCaller.getAuthorities())
-                .thenReturn(List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+        doReturn(List.of(new SimpleGrantedAuthority("ROLE_ADMIN")))
+                .when(adminCaller).getAuthorities();
     }
 
     private static Product activeProduct(String title) {
@@ -199,6 +205,33 @@ class ProductVariantReadServiceTest {
                 ProductVariantSort.of(ProductVariantSort.Field.ID, true),
                 ScrollPosition.keyset(), Limit.of(0)))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void nullLimitIsRejected() {
+        // The owner's guidance point 2: the null/unlimited/non-positive
+        // guards are ALL pinned by proof — null is the caller's own
+        // absence and must never become an unbounded load.
+        assertThatThrownBy(() -> service.scrollVariants(publicCaller,
+                ProductVariantSort.of(ProductVariantSort.Field.ID, true),
+                ScrollPosition.keyset(), null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("positive page size");
+        verify(variantRepository, org.mockito.Mockito.never()).scrollPublicByIdAsc(any(), anyInt());
+    }
+
+    @Test
+    void unlimitedLimitIsRejected() {
+        // The installed Spring Data 4.1.1 Limit contract: Unlimited.isLimited()
+        // answers false — the keyset scroll REQUIRES a bounded page, so an
+        // unlimited instance is refused at the boundary, never silently
+        // degraded into an unbounded load.
+        assertThatThrownBy(() -> service.scrollVariants(publicCaller,
+                ProductVariantSort.of(ProductVariantSort.Field.ID, true),
+                ScrollPosition.keyset(), Limit.unlimited()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("positive page size");
+        verify(variantRepository, org.mockito.Mockito.never()).scrollPublicByIdAsc(any(), anyInt());
     }
 
     // ------------------------------------------------------------------
@@ -363,5 +396,63 @@ class ProductVariantReadServiceTest {
         assertThat(page.window().getContent())
                 .allSatisfy(view -> assertThat(view.product().name()).isEqualTo("b5a Shared Parent"));
         assertThat(page.window().getContent()).hasSize(2);
+    }
+
+    @Test
+    void forwardPagesOverTheSamePopulationNeverOverlapOrSkip() {
+        // The owner's guidance point 2: consecutive forward pages over the
+        // SAME population — the second call rides the FIRST page's own
+        // emitted keyset (the last row's keys), so page two starts exactly
+        // AFTER the last row page one returned: no row twice (overlap) and
+        // no row jumped over (skip). The native scroll's bind is the proof
+        // seam: the second repository call must receive the first page's
+        // LAST id, and only the rows strictly beyond it are rendered.
+        Product parent = activeProduct("b5a Keyset Parent");
+        ProductVariant first = activeVariant(parent, "b5a-sku-15");
+        ProductVariant second = activeVariant(parent, "b5a-sku-16");
+        ProductVariant third = activeVariant(parent, "b5a-sku-17");
+
+        // page one: pageSize=2, the +1 fetch returns three rows -> hasNext
+        when(variantRepository.scrollPublicByIdAsc(null, 3))
+                .thenReturn(List.of(first, second, third));
+        when(variantRepository.countPublicPopulation()).thenReturn(3L);
+        when(productRepository.findAllById(any())).thenReturn(List.of(parent));
+
+        ProductVariantPage pageOne = service.scrollVariants(publicCaller,
+                ProductVariantSort.of(ProductVariantSort.Field.ID, true),
+                ScrollPosition.keyset(), Limit.of(2));
+
+        assertThat(pageOne.window().hasNext()).isTrue();
+        assertThat(pageOne.window().getContent())
+                .extracting(ProductVariantView::sku)
+                .containsExactly("b5a-sku-15", "b5a-sku-16");
+        // the page's own emitted keyset — the last RETURNED row's key
+        KeysetScrollPosition continuation = (KeysetScrollPosition) pageOne.window().positionAt(1);
+        assertThat(continuation.getKeys())
+                .isEqualTo(Map.of("id", second.getId()));
+
+        // page two: the continuation cursor reaches the repository as the
+        // same population's NEXT keyset bound — strictly after sku-16
+        when(variantRepository.scrollPublicByIdAsc(second.getId(), 3))
+                .thenReturn(List.of(third));
+
+        ProductVariantPage pageTwo = service.scrollVariants(publicCaller,
+                ProductVariantSort.of(ProductVariantSort.Field.ID, true),
+                continuation, Limit.of(2));
+
+        // the no-overlap/no-skip bind itself: page two's fetch keyed the
+        // FIRST page's last id — never null (skip-free restart) and never
+        // first's id (overlap)
+        verify(variantRepository).scrollPublicByIdAsc(null, 3);
+        verify(variantRepository).scrollPublicByIdAsc(second.getId(), 3);
+        // and the rendered walk covers the population exactly once, in order
+        assertThat(pageOne.window().getContent())
+                .extracting(ProductVariantView::sku)
+                .containsExactly("b5a-sku-15", "b5a-sku-16");
+        assertThat(pageTwo.window().getContent())
+                .extracting(ProductVariantView::sku)
+                .containsExactly("b5a-sku-17");
+        assertThat(pageTwo.window().hasNext()).isFalse();
+        assertThat(pageTwo.total()).isEqualTo(3L);
     }
 }

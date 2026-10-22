@@ -4,8 +4,7 @@ import com.marketplace.identity.User;
 import com.marketplace.identity.UserRepository;
 import com.marketplace.orders.Order;
 import com.marketplace.orders.OrderRepository;
-import com.marketplace.shared.test.IntegrationContainers;
-import com.netflix.graphql.dgs.client.GraphQLError;
+import test.config.IntegrationContainers;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,7 +21,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -217,7 +216,7 @@ class OrderGraphQlIntegrationTest {
         providerTester.document("query { orders(first: 1) { totalCount } }")
                 .execute()
                 .errors()
-                .satisfies(errors -> {
+                .satisfy(errors -> {
                     var error = errors.getFirst();
                     assertThat(error.getExtensions()).containsEntry("errorCode", "AUTHZ-001");
                     assertThat(error.getExtensions()).containsEntry("category", "authz");
@@ -231,7 +230,7 @@ class OrderGraphQlIntegrationTest {
         consumerTester.document("query { orders(first: 1) { totalCount } }")
                 .execute()
                 .errors()
-                .satisfies(errors -> {
+                .satisfy(errors -> {
                     var error = errors.getFirst();
                     assertThat(error.getExtensions()).containsEntry("errorCode", "AUTHZ-001");
                 })
@@ -247,7 +246,7 @@ class OrderGraphQlIntegrationTest {
                 .variable("id", orderGlobalId(placedOrderId))
                 .execute()
                 .errors()
-                .satisfies(errors -> {
+                .satisfy(errors -> {
                     var error = errors.getFirst();
                     assertThat(error.getExtensions()).containsEntry("errorCode", "AUTHZ-001");
                 })
@@ -322,7 +321,7 @@ class OrderGraphQlIntegrationTest {
                 .execute()
                 .errors().verify()
                 .path("orders.edges[*].node.status").entityList(String.class)
-                .isNotEmpty();
+                .satisfies(values -> assertThat(values).isNotEmpty());
     }
 
     @Test
@@ -337,7 +336,7 @@ class OrderGraphQlIntegrationTest {
                 .execute()
                 .errors().verify()
                 .path("orders.edges[*].node.id").entityList(String.class)
-                .hasSizeGreaterThanOrEqualTo(4);
+                .satisfies(values -> assertThat(values).hasSizeGreaterThanOrEqualTo(4));
     }
 
     @Test
@@ -429,7 +428,7 @@ class OrderGraphQlIntegrationTest {
                 .variable("id", "not-a-global-id")
                 .execute()
                 .errors()
-                .satisfies(errors -> {
+                .satisfy(errors -> {
                     assertThat(errors).hasSize(1);
                     assertThat(errors.get(0).getExtensions()).containsEntry("errorCode", "VAL-001");
                 });
@@ -445,7 +444,7 @@ class OrderGraphQlIntegrationTest {
                 .variable("id", UUID.randomUUID().toString())
                 .execute()
                 .errors()
-                .satisfies(errors -> {
+                .satisfy(errors -> {
                     assertThat(errors).hasSize(1);
                     assertThat(errors.get(0).getExtensions()).containsEntry("errorCode", "VAL-001");
                 });
@@ -461,7 +460,7 @@ class OrderGraphQlIntegrationTest {
                 .variable("id", productGlobalId(UUID.randomUUID()))
                 .execute()
                 .errors()
-                .satisfies(errors -> {
+                .satisfy(errors -> {
                     assertThat(errors).hasSize(1);
                     assertThat(errors.get(0).getExtensions()).containsEntry("errorCode", "VAL-001");
                 });
@@ -504,8 +503,8 @@ class OrderGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("filter is not implemented")));
     }
 
@@ -518,8 +517,8 @@ class OrderGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("where filter is not implemented")));
     }
 
@@ -532,8 +531,8 @@ class OrderGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("search is not implemented")));
     }
 
@@ -546,8 +545,8 @@ class OrderGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("channel filtering is not implemented")));
     }
 
@@ -560,8 +559,8 @@ class OrderGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("forward-only pagination")));
     }
 
@@ -574,8 +573,8 @@ class OrderGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("sort field NUMBER is not implemented")));
     }
 
@@ -589,8 +588,8 @@ class OrderGraphQlIntegrationTest {
                 .variable("externalReference", "erp-order-1")
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("externalReference lookup is not implemented")));
     }
 
@@ -603,8 +602,8 @@ class OrderGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("order requires its id")));
     }
 }

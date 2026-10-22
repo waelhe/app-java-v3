@@ -93,7 +93,7 @@ class GraphQlPropertiesTest {
                     assertThat(failureChain(context)).anyMatch(BindValidationException.class::isInstance);
                     assertThat(failureChain(context).stream().map(Throwable::getMessage)
                             .filter(m -> m != null).toList())
-                            .anySatisfy(m -> assertThat(m).contains("defaultPageSize"));
+                            .satisfies(__lst -> assertThat(__lst).anySatisfy(m -> assertThat(m).contains("defaultPageSize")));
                 });
     }
 
@@ -110,7 +110,7 @@ class GraphQlPropertiesTest {
                     assertThat(failureChain(context)).anyMatch(BindValidationException.class::isInstance);
                     assertThat(failureChain(context).stream().map(Throwable::getMessage)
                             .filter(m -> m != null).toList())
-                            .anySatisfy(m -> assertThat(m).contains("maxQueryComplexity"));
+                            .satisfies(__lst -> assertThat(__lst).anySatisfy(m -> assertThat(m).contains("maxQueryComplexity")));
                 });
     }
 

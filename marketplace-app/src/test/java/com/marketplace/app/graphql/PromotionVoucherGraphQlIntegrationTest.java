@@ -74,11 +74,6 @@ class PromotionVoucherGraphQlIntegrationTest {
     private static final String PROVIDER_SUBJECT = "p3-discounts-provider-subject";
     private static final String CONSUMER_SUBJECT = "p3-discounts-consumer-subject";
 
-    /** The base64 prefixes every typed global ID starts with on the wire. */
-    private static final String PROMOTION_ID_PREFIX = java.util.Base64.getEncoder()
-            .encodeToString("Promotion:".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-    private static final String VOUCHER_ID_PREFIX = java.util.Base64.getEncoder()
-            .encodeToString("Voucher:".getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
     private static final Instant WINDOW_START = Instant.parse("2026-01-01T00:00:00Z");
     private static final Instant WINDOW_END = Instant.parse("2027-01-01T00:00:00Z");
@@ -210,6 +205,22 @@ class PromotionVoucherGraphQlIntegrationTest {
                 .build();
     }
 
+    /**
+     * Decodes an emitted typed global ID — the honest tag/UUID verification
+     * (Base64("Tag:") prefix compares can never hold: the padded '==' of the
+     * tag-only encoding is not part of the full "Tag:<uuid>" encoding; the
+     * decoded form is checked against the plain tag and the native UUID
+     * shape instead).
+     */
+    private static String decodedGlobalId(String globalId) {
+        String decoded = new String(java.util.Base64.getDecoder().decode(globalId),
+                java.nio.charset.StandardCharsets.UTF_8);
+        int separator = decoded.indexOf(':');
+        assertThat(separator).isPositive();
+        UUID.fromString(decoded.substring(separator + 1));
+        return decoded;
+    }
+
     /** A well-formed typed global ID for either discount type over any native UUID. */
     private static String globalId(String typeName, UUID id) {
         return java.util.Base64.getEncoder()
@@ -238,7 +249,7 @@ class PromotionVoucherGraphQlIntegrationTest {
                 .satisfies(edges -> assertThat(edges).isNotEmpty())
                 .path("promotions.edges[*].node.id").entityList(String.class)
                 .satisfies(ids -> assertThat(ids)
-                        .allSatisfy(id -> assertThat(id).startsWith(PROMOTION_ID_PREFIX)))
+                        .allSatisfy(id -> assertThat(decodedGlobalId(id)).startsWith("Promotion:")))
                 .path("promotions.edges[*].node.type").entityList(String.class)
                 .satisfies(types -> assertThat(types)
                         .allSatisfy(type -> assertThat(type).isEqualTo("ORDER")))
@@ -265,7 +276,7 @@ class PromotionVoucherGraphQlIntegrationTest {
                 .satisfies(edges -> assertThat(edges).isNotEmpty())
                 .path("vouchers.edges[*].node.id").entityList(String.class)
                 .satisfies(ids -> assertThat(ids)
-                        .allSatisfy(id -> assertThat(id).startsWith(VOUCHER_ID_PREFIX)))
+                        .allSatisfy(id -> assertThat(decodedGlobalId(id)).startsWith("Voucher:")))
                 .path("vouchers.edges[*].node.code").entityList(String.class)
                 .satisfies(codes -> assertThat(codes)
                         .contains("P3TEST-ALPHA", "P3TEST-BETA", "P3TEST-GAMMA"))
@@ -868,4 +879,210 @@ class PromotionVoucherGraphQlIntegrationTest {
                 .path("vouchers.pageInfo.hasPreviousPage").entity(Boolean.class).isEqualTo(false);
     }
 
+
+    // ------------------------------------------------------------------
+    // the voucher mutation roots — the real write stack (the agent-2 packet)
+    // ------------------------------------------------------------------
+
+    @Test
+    void adminCreatesAVoucherThroughTheRealMutationStack() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+
+        String emittedId = adminTester.document("""
+                        mutation { voucherCreate(input: {
+                            name: "P3 Created Policy", code: "p3-created-code",
+                            discountValueType: PERCENTAGE, discountValue: 750,
+                            currency: "SAR", minSpend: 5000,
+                            startDate: "2026-11-01T00:00:00Z", endDate: "2026-12-01T00:00:00Z",
+                            usageLimit: 9, applyOncePerCustomer: true
+                        }) {
+                            errors { field code }
+                            voucher { id code name currency usageLimit used discountValueType
+                                      applyOncePerCustomer startDate endDate }
+                        } }
+                        """)
+                .execute()
+                .errors().verify()
+                .path("voucherCreate.voucher.id").entity(String.class).get();
+
+        String decoded = new String(java.util.Base64.getDecoder().decode(emittedId),
+                java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(decoded).startsWith("Voucher:");
+        UUID rowId = UUID.fromString(decoded.substring("Voucher:".length()));
+        seededVoucherIds.add(rowId);
+
+        // The real-stack read-back: the row persisted with the enum as the
+        // schema's own STRING vocabulary (the V223 vouchers_type_chk
+        // membership — the @Enumerated(STRING) mapping this packet fixed)
+        // and the code normalized to the entity's own uppercase contract.
+        Voucher row = voucherRepository.findById(rowId).orElseThrow();
+        assertThat(row.getCode()).isEqualTo("P3-CREATED-CODE");
+        assertThat(row.getName()).isEqualTo("P3 Created Policy");
+        assertThat(row.getCurrency()).isEqualTo("SAR");
+        assertThat(row.getDiscountType()).isEqualTo(Voucher.DiscountType.PERCENTAGE);
+        assertThat(row.getDiscountValue()).isEqualTo(750L);
+        assertThat(row.getMinSpendMinor()).isEqualTo(5000L);
+        assertThat(row.getMaxRedemptions()).isEqualTo(9L);
+        assertThat(row.getMaxRedemptionsPerUser()).isEqualTo(1L);
+
+        // The real-stack read-back rides the read root's OWN declared wire
+        // shape — the typed global ID emitted by the mutation itself (the
+        // Saleor voucher query carries id/externalReference/channel only;
+        // no code argument exists on this surface).
+        adminTester.document("""
+                        query($id: ID!) { voucher(id: $id) { code usageLimit applyOncePerCustomer } }
+                        """)
+                .variable("id", emittedId)
+                .execute()
+                .errors().verify()
+                .path("voucher.code").entity(String.class).isEqualTo("P3-CREATED-CODE")
+                .path("voucher.usageLimit").entity(Integer.class).isEqualTo(9)
+                .path("voucher.applyOncePerCustomer").entity(Boolean.class).isEqualTo(true);
+    }
+
+    @Test
+    void duplicateCodeCreateAnswersThePayloadError() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+
+        adminTester.document("""
+                        mutation { voucherCreate(input: {code: "P3TEST-ALPHA", discountValueType: FIXED,
+                                discountValue: 100, currency: "SAR"}) {
+                            errors { field code message }
+                            voucher { id }
+                        } }
+                        """)
+                .execute()
+                .errors().verify()
+                .path("voucherCreate.errors[0].field").entity(String.class).isEqualTo("code")
+                .path("voucherCreate.errors[0].code").entity(String.class).isEqualTo("ALREADY_EXISTS")
+                .path("voucherCreate.voucher").valueIsNull();
+    }
+
+    @Test
+    void consumerIsDeniedTheVoucherCreateByTheOwningUseCase() {
+        HttpGraphQlTester consumerTester = testerFor(CONSUMER_SUBJECT, "CONSUMER");
+
+        consumerTester.document("""
+                        mutation { voucherCreate(input: {code: "P3-DENIED-1", discountValueType: FIXED,
+                                discountValue: 100, currency: "SAR"}) {
+                            errors { code }
+                            voucher { id }
+                        } }
+                        """)
+                .execute()
+                .errors()
+                .satisfy(errors -> {
+                    var error = errors.getFirst();
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "AUTHZ-001");
+                    assertThat(error.getExtensions()).containsEntry("category", "authz");
+                });
+    }
+
+    @Test
+    void adminUpdatesAVoucherThroughTheRealMutationStack() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        String emittedId = java.util.Base64.getEncoder()
+                .encodeToString(("Voucher:" + betaVoucherId)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        adminTester.document("""
+                        mutation { voucherUpdate(id: "%s", input: {name: "P3 Voucher Beta Named", usageLimit: 4}) {
+                            errors { code }
+                            voucher { name usageLimit used }
+                        } }
+                        """.formatted(emittedId))
+                .execute()
+                .errors().verify()
+                .path("voucherUpdate.voucher.name").entity(String.class).isEqualTo("P3 Voucher Beta Named")
+                .path("voucherUpdate.voucher.usageLimit").entity(Integer.class).isEqualTo(4);
+
+        Voucher row = voucherRepository.findById(betaVoucherId).orElseThrow();
+        assertThat(row.getName()).isEqualTo("P3 Voucher Beta Named");
+        assertThat(row.getMaxRedemptions()).isEqualTo(4L);
+    }
+
+    @Test
+    void codeChangeOnARedeemedVoucherIsRefusedThroughTheRealStack() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        // gamma carries the two seeded redemptions — the code-stability
+        // discipline refuses the code amendment with the Saleor vocabulary's
+        // own member.
+        String emittedId = java.util.Base64.getEncoder()
+                .encodeToString(("Voucher:" + gammaVoucherId)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        adminTester.document("""
+                        mutation { voucherUpdate(id: "%s", input: {code: "P3-FRESH-CODE"}) {
+                            errors { field code }
+                            voucher { id }
+                        } }
+                        """.formatted(emittedId))
+                .execute()
+                .errors().verify()
+                .path("voucherUpdate.errors[0].field").entity(String.class).isEqualTo("code")
+                .path("voucherUpdate.errors[0].code").entity(String.class).isEqualTo("VOUCHER_ALREADY_USED")
+                .path("voucherUpdate.voucher").valueIsNull();
+    }
+
+    @Test
+    void adminSoftDeletesAVoucherAndTheSecondDeleteAnswersNotFound() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        UUID seeded = persistVoucher("P3-MUT-DEL1", "P3 Mutation Delete", Voucher.DiscountType.FIXED, 300,
+                null, null, null, null);
+        String emittedId = java.util.Base64.getEncoder()
+                .encodeToString(("Voucher:" + seeded)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        adminTester.document("""
+                        mutation { voucherDelete(id: "%s") {
+                            errors { code }
+                            voucher { code name }
+                        } }
+                        """.formatted(emittedId))
+                .execute()
+                .errors().verify()
+                .path("voucherDelete.voucher.code").entity(String.class).isEqualTo("P3-MUT-DEL1");
+
+        // Soft delete: the derived lookup no longer resolves the row.
+        assertThat(voucherRepository.findById(seeded)).isEmpty();
+        assertThat(voucherRepository.findByCode("P3-MUT-DEL1")).isEmpty();
+
+        adminTester.document("""
+                        mutation { voucherDelete(id: "%s") {
+                            errors { field code }
+                            voucher { id }
+                        } }
+                        """.formatted(emittedId))
+                .execute()
+                .errors().verify()
+                .path("voucherDelete.errors[0].field").entity(String.class).isEqualTo("id")
+                .path("voucherDelete.errors[0].code").entity(String.class).isEqualTo("NOT_FOUND")
+                .path("voucherDelete.voucher").valueIsNull();
+    }
+
+    @Test
+    void adminBulkDeletesVouchersWithTheHonestCount() {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        UUID first = persistVoucher("P3-BULK-ONE", "P3 Bulk One", Voucher.DiscountType.FIXED, 100,
+                null, null, null, null);
+        UUID second = persistVoucher("P3-BULK-TWO", "P3 Bulk Two", Voucher.DiscountType.FIXED, 100,
+                null, null, null, null);
+        String firstId = java.util.Base64.getEncoder()
+                .encodeToString(("Voucher:" + first).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String secondId = java.util.Base64.getEncoder()
+                .encodeToString(("Voucher:" + second).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String unknownId = java.util.Base64.getEncoder()
+                .encodeToString(("Voucher:" + UUID.randomUUID())
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        adminTester.document("""
+                        mutation { voucherBulkDelete(ids: ["%s", "%s", "%s"]) { count errors { code } } }
+                        """.formatted(firstId, secondId, unknownId))
+                .execute()
+                .errors().verify()
+                .path("voucherBulkDelete.count").entity(Integer.class).isEqualTo(2);
+
+        assertThat(voucherRepository.findById(first)).isEmpty();
+        assertThat(voucherRepository.findById(second)).isEmpty();
+    }
 }

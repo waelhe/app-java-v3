@@ -119,7 +119,11 @@ public class ProductVariantReadService implements ProductVariantReadSpi {
         if (sort == null || sort.field() == null) {
             throw new IllegalArgumentException("A product-variant sort is required");
         }
-        if (limit == null || limit.value() <= 0) {
+        if (limit == null || !limit.isLimited() || limit.max() <= 0) {
+            // The installed Spring Data 4.1.1 Limit contract: max() is only
+            // readable on a limited instance (Unlimited.max() throws) — and
+            // the keyset scroll REQUIRES a bounded page (an unlimited fetch
+            // would replace the SQL keyset with an unbounded load).
             throw new IllegalArgumentException("A positive page size is required");
         }
         if (isAdmin(authentication)) {
@@ -172,7 +176,7 @@ public class ProductVariantReadService implements ProductVariantReadSpi {
                                                       Limit limit) {
         OffsetDateTime lastUpdatedAt = lastUpdatedAt(sort, position);
         UUID lastId = lastId(sort, position);
-        int fetchCount = limit.value() + 1;
+        int fetchCount = limit.max() + 1;
         List<ProductVariant> rows = switch (sort.field()) {
             case LAST_MODIFIED_AT -> sort.ascending()
                     ? variantRepository.scrollPublicByUpdatedAtAsc(lastUpdatedAt, lastId, fetchCount)
@@ -181,9 +185,9 @@ public class ProductVariantReadService implements ProductVariantReadSpi {
                     ? variantRepository.scrollPublicByIdAsc(lastId, fetchCount)
                     : variantRepository.scrollPublicByIdDesc(lastId, fetchCount);
         };
-        boolean hasNext = rows.size() > limit.value();
+        boolean hasNext = rows.size() > limit.max();
         List<ProductVariant> content =
-                hasNext ? new ArrayList<>(rows.subList(0, limit.value())) : rows;
+                hasNext ? new ArrayList<>(rows.subList(0, limit.max())) : rows;
         Map<UUID, ProductView> parents = parentProjections(content);
         List<ProductVariantView> views = new ArrayList<>(content.size());
         List<ScrollPosition> positions = new ArrayList<>(content.size());

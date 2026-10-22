@@ -392,7 +392,7 @@ class HomeGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> {
-                    assertThat(errors).isNotEmpty();
+                    assertThat(errors).hasSizeGreaterThan(0);
                     var error = errors.getFirst();
                     assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
                 });
@@ -420,7 +420,7 @@ class HomeGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> {
-                    assertThat(errors).isNotEmpty();
+                    assertThat(errors).hasSizeGreaterThan(0);
                     var error = errors.getFirst();
                     assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
                     assertThat(error.getMessage()).contains("not aligned");
