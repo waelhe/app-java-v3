@@ -1,21 +1,15 @@
 # Agent 3 additive SDL. The central schema.graphqls is intentionally untouched.
 # Order cancellation wire contract follows Saleor 3.23.43; execution delegates
-# to the existing marketplace-orders lifecycle owner.
+# to the existing marketplace-orders lifecycle owner. orderConfirm remains
+# unavailable until the Payments owner exposes a real capture capability.
 
 extend type Mutation {
     orderBulkCancel(ids: [ID!]!): OrderBulkCancel
-    orderConfirm(id: ID!): OrderConfirm
     orderCancel(id: ID!): OrderCancel
 }
 
 type OrderBulkCancel {
     count: Int!
-    orderErrors: [OrderError!]! @deprecated(reason: "Use `errors` field instead.")
-    errors: [OrderError!]!
-}
-
-type OrderConfirm {
-    order: Order
     orderErrors: [OrderError!]! @deprecated(reason: "Use `errors` field instead.")
     errors: [OrderError!]!
 }

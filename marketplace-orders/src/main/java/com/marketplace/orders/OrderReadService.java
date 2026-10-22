@@ -87,7 +87,7 @@ public class OrderReadService implements OrderReadSpi {
         if (sort == null || sort.field() == null) {
             throw new IllegalArgumentException("An order sort is required");
         }
-        if (limit == null || limit.max() <= 0) {
+        if (limit == null || limit.isUnlimited() || limit.max() <= 0) {
             throw new IllegalArgumentException("A positive page size is required");
         }
         KeysetScrollPosition scrolled = sort.field() == OrderSort.Field.STATUS

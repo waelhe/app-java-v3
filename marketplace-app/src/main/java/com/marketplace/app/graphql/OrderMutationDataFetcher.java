@@ -20,6 +20,10 @@ import java.util.UUID;
  * This adapter owns wire IDs and mutation payloads only. The domain service
  * owns ADMIN authorization and the transactional state transition; payment
  * settlement remains with the existing payments event listener.
+ *
+ * <p>The Saleor orderConfirm mutation is intentionally not exposed until the
+ * payments owner provides a capture-capable, idempotent contract. A state-only
+ * confirmation must not be reported as Saleor-compatible success.</p>
  */
 @DgsComponent
 public class OrderMutationDataFetcher {
@@ -34,31 +38,6 @@ public class OrderMutationDataFetcher {
         this.orderCommandSpi = orderCommandSpi;
         this.mapper = mapper;
         this.globalIdCodec = globalIdCodec;
-    }
-
-    /**
-     * Confirm a Saleor order through the existing order lifecycle. The native
-     * payments owner, not this transport adapter, remains authoritative for
-     * PSP settlement.
-     */
-    @DgsMutation(field = "orderConfirm")
-    public Map<String, Object> orderConfirm(@InputArgument String id) {
-        orderCommandSpi.requireAdmin();
-        final UUID orderId;
-        try {
-            orderId = globalIdCodec.decode(id, OrderGraphQlMapper.ORDER_TYPE);
-        } catch (IllegalArgumentException exception) {
-            return payload(null, List.of(orderError("id", "Invalid global ID", "INVALID")));
-        }
-
-        try {
-            OrderView confirmed = orderCommandSpi.confirmAsAdmin(orderId);
-            return payload(mapper.toGraphQlOrder(confirmed), List.of());
-        } catch (ResourceNotFoundException exception) {
-            return payload(null, List.of(orderError("id", exception.getMessage(), "NOT_FOUND")));
-        } catch (ConflictException exception) {
-            return payload(null, List.of(orderError("id", exception.getMessage(), "INVALID")));
-        }
     }
 
     /**

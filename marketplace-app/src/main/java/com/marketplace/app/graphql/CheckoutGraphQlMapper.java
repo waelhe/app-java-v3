@@ -3,6 +3,8 @@ package com.marketplace.app.graphql;
 import com.marketplace.catalog.spi.ProductVariantReadSpi;
 import com.marketplace.orders.spi.CheckoutView;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -33,8 +35,9 @@ public class CheckoutGraphQlMapper {
     }
 
     public Map<String, Object> toGraphQlCheckout(CheckoutView view) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         List<Map<String, Object>> lines = view.lines().stream()
-                .map(this::toGraphQlLine)
+                .map(line -> toGraphQlLine(line, authentication))
                 .toList();
         Map<String, Object> checkout = new LinkedHashMap<>();
         checkout.put("id", globalIdCodec.encode(CHECKOUT_TYPE, view.id()));
@@ -43,8 +46,8 @@ public class CheckoutGraphQlMapper {
         return checkout;
     }
 
-    private Map<String, Object> toGraphQlLine(CheckoutView.Line line) {
-        var variant = variantReadSpi.findVariantSnapshot(line.variantId())
+    private Map<String, Object> toGraphQlLine(CheckoutView.Line line, Authentication authentication) {
+        var variant = variantReadSpi.findVariantById(line.variantId(), authentication)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "ProductVariant", line.variantId()));
         Map<String, Object> mapped = new LinkedHashMap<>();

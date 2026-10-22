@@ -1,24 +1,11 @@
 package com.marketplace.app.graphql;
 
-import com.marketplace.catalog.spi.CatalogSpi;
-import com.marketplace.catalog.spi.CategoryReadSpi;
-import com.marketplace.catalog.spi.AttributeReadSpi;
-import com.marketplace.catalog.spi.ProductAdminSpi;
-import com.marketplace.catalog.spi.ProductReadSpi;
-import com.marketplace.catalog.spi.ProductTypeReadSpi;
-import com.marketplace.catalog.spi.ProductVariantReadSpi;
-import com.marketplace.catalog.spi.ProductVariantView;
-import com.marketplace.catalog.spi.ProductView;
+import com.marketplace.catalog.spi.*;
 import com.marketplace.community.spi.NeighborhoodFeedPort;
 import com.marketplace.community.spi.NeighborhoodPostDetailPort;
 import com.marketplace.discovery.spi.DiscoverySpi;
 import com.marketplace.identity.spi.IdentitySpi;
-import com.marketplace.orders.spi.OrderPage;
-import com.marketplace.orders.spi.CheckoutSpi;
-import com.marketplace.orders.spi.CheckoutView;
-import com.marketplace.orders.spi.OrderReadSpi;
-import com.marketplace.orders.spi.OrderSort;
-import com.marketplace.orders.spi.OrderView;
+import com.marketplace.orders.spi.*;
 import com.marketplace.pricing.spi.DiscountReadSpi;
 import com.marketplace.shared.security.CurrentUserProvider;
 import com.netflix.graphql.dgs.DgsQueryExecutor;
@@ -37,9 +24,10 @@ import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.ScrollPosition;
 import org.springframework.data.domain.Window;
 import org.springframework.graphql.data.pagination.EncodingCursorStrategy;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.Instant;
@@ -55,621 +43,221 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * P4 (the canonical Saleor plan §5-P4): the DGS data-fetcher layer proof
- * of the Saleor order read roots — packet campaign-b5-b — the house
- * containerless pattern ({@code @SpringBootTest} over the GraphQL
- * adapter package slice + {@code @EnableDgsTest} +
- * {@link DgsQueryExecutor}): REAL GraphQL documents against the REAL
- * SDL and the REAL DGS wiring with no web layer and no containers.
- *
- * <p><b>What this proves that the plain unit test cannot:</b> the context
- * itself booting is the first proof — the hand-declared
- * {@code OrderCountableConnection}/{@code OrderCountableEdge}, the
- * bounded {@code Order} type and the VERBATIM Saleor
- * {@code OrderStatus}/{@code OrderSortField} enums load through the
- * DGS bridge. Then: the {@code orders}/{@code order} documents execute
- * through the real argument binding (including the
- * {@code OrderSortingInput} sort input over all three executed fields
- * and the deprecated CREATION_DATE alias), the typed global-ID codec,
- * the mapper (the lifecycle vocabulary's ADAPT mapping: PLACED renders
- * UNCONFIRMED, CONFIRMED renders UNFULFILLED, FULFILLED/CANCELLED
- * render their upstream spellings; the placement instant renders as
- * the ISO-8601 string the no-new-scalar house decision carries) and
- * the exception taxonomy resolver; the connection envelope serializes
- * with per-element keyset cursors from the SAME cursor strategy the
- * framework adapters use. The owning orders use case is mocked at the
- * declared seam — the full-stack proof (the REAL SQL keyset scroll AND
- * the ADMIN-only method-security enforcement with the AUTHZ-001
- * denial for every non-ADMIN caller over the Flyway-migrated schema)
- * lives in {@code OrderGraphQlIntegrationTest}.</p>
- */
-@SpringBootTest(classes = OrderDataFetcherDgsTest.GraphQLAdapterSlice.class)
+@SpringBootTest(classes = OrderDataFetcherDgsTest.Slice.class)
 @EnableDgsTest
 @ImportAutoConfiguration({JacksonAutoConfiguration.class, ValidationAutoConfiguration.class})
 class OrderDataFetcherDgsTest {
-
-    /** The GraphQL adapter as one unit: everything in the package under test. */
     @Configuration(proxyBeanMethods = false)
     @ComponentScan("com.marketplace.app.graphql")
-    static class GraphQLAdapterSlice {
+    static class Slice {}
+    @Autowired DgsQueryExecutor dgs;
+    @Autowired EncodingCursorStrategy<ScrollPosition> cursors;
+    @MockitoBean CatalogSpi catalog;
+    @MockitoBean ProductAdminSpi productAdmin;
+    @MockitoBean ProductTypeReadSpi productTypes;
+    @MockitoBean AttributeReadSpi attributes;
+    @MockitoBean CategoryReadSpi categories;
+    @MockitoBean ProductReadSpi products;
+    @MockitoBean ProductVariantReadSpi variants;
+    @MockitoBean OrderReadSpi orders;
+    @MockitoBean DiscoverySpi discovery;
+    @MockitoBean NeighborhoodFeedPort neighborhoodFeed;
+    @MockitoBean NeighborhoodPostDetailPort postDetail;
+    @MockitoBean CurrentUserProvider currentUser;
+    @MockitoBean IdentitySpi identity;
+    @MockitoBean OrderCommandSpi orderCommands;
+    @MockitoBean CheckoutSpi checkouts;
+    @MockitoBean DiscountReadSpi discounts;
+
+    @AfterEach void clearContext() { SecurityContextHolder.clearContext(); }
+
+    private static void auth(String subject, String... roles) {
+        var authorities = java.util.Arrays.stream(roles)
+                .map(role -> new SimpleGrantedAuthority("ROLE_" + role)).toList();
+        SecurityContextHolder.getContext().setAuthentication(
+                UsernamePasswordAuthenticationToken.authenticated(subject, "n/a", authorities));
+    }
+    private static OrderView view(UUID id, Instant date, String status) {
+        return new OrderView(id, date, status);
+    }
+    private static String gid(String type, UUID id) {
+        return java.util.Base64.getEncoder().encodeToString(
+                (type + ":" + id).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+    private static CheckoutView checkout(UUID cart, UUID line, UUID variant) {
+        return new CheckoutView(cart, List.of(new CheckoutView.Line(line, variant, 2)), 2);
+    }
+    private static ProductVariantView variant(UUID id, UUID product) {
+        return new ProductVariantView(id, "Default", "SKU-1", "ACTIVE",
+                new ProductView(product, "Checkout Product", null, "ACTIVE"));
     }
 
-    @Autowired
-    private DgsQueryExecutor dgsQueryExecutor;
-
-    @Autowired
-    private EncodingCursorStrategy<ScrollPosition> cursorStrategy;
-
-    // The package slice wires every fetcher; each owning seam gets its mock —
-    // the AttributeDataFetcherDgsTest precedent.
-    @MockitoBean
-    private CatalogSpi catalogSpi;
-
-    @MockitoBean
-    private ProductAdminSpi productAdminSpi;
-
-    @MockitoBean
-    private ProductTypeReadSpi productTypeReadSpi;
-
-    @MockitoBean
-    private AttributeReadSpi attributeReadSpi;
-
-    @MockitoBean
-    private CategoryReadSpi categoryReadSpi;
-
-    @MockitoBean
-    private ProductReadSpi productReadSpi;
-
-    @MockitoBean
-    private ProductVariantReadSpi variantReadSpi;
-
-    @MockitoBean
-    private OrderReadSpi orderReadSpi;
-
-    @MockitoBean
-    private DiscoverySpi discoverySpi;
-
-    @MockitoBean
-    private NeighborhoodFeedPort neighborhoodFeedPort;
-
-    @MockitoBean
-    private NeighborhoodPostDetailPort postDetailPort;
-
-    @MockitoBean
-    private CurrentUserProvider currentUserProvider;
-
-    @MockitoBean
-    private IdentitySpi identitySpi;
-
-    @MockitoBean
-    private com.marketplace.orders.spi.OrderCommandSpi orderCommandSpi;
-
-    @MockitoBean
-    private CheckoutSpi checkoutSpi;
-
-    @MockitoBean
-    private DiscountReadSpi discountReadSpi;
-
-    @AfterEach
-    void clearSecurityContext() {
-        SecurityContextHolder.clearContext();
-    }
-
-    private static void authenticateAs(String subject, String... roles) {
-        Jwt jwt = Jwt.withTokenValue("test-token")
-                .header("alg", "RS256")
-                .claim("sub", subject)
-                .claim("roles", List.of(roles))
-                .build();
-        JwtAuthenticationToken token = new JwtAuthenticationToken(
-                jwt, List.of(java.util.Arrays.stream(roles).map(r -> "ROLE_" + r)
-                        .map(org.springframework.security.core.authority.SimpleGrantedAuthority::new)
-                        .<org.springframework.security.core.GrantedAuthority>toList()
-                        .toArray(new org.springframework.security.core.GrantedAuthority[0])),
-                subject);
-        SecurityContextHolder.getContext().setAuthentication(token);
-    }
-
-    private static OrderView orderView(UUID id, Instant placedAt, String status) {
-        return new OrderView(id, placedAt, status);
-    }
-
-    /**
-     * The {@code orders} document through the real wiring: the Saleor
-     * connection envelope serializes with edges, per-element keyset
-     * cursors, pageInfo and totalCount — and the bounded projection's
-     * typed facts (the global ID, the ISO-8601 placement instant, and
-     * the lifecycle ADAPT mapping rendering the platform's PLACED as
-     * upstream's UNCONFIRMED) ride the same envelope.
-     */
-    @Test
-    void ordersSerializesTheSaleorConnectionEnvelopeWithKeysetCursors() {
-        authenticateAs("dgs-admin-subject", "ADMIN");
-        UUID orderId = UUID.randomUUID();
-        Instant placedAt = Instant.parse("2026-10-20T09:30:00Z");
-        when(orderReadSpi.scrollOrders(any(org.springframework.security.core.Authentication.class),
-                        any(OrderSort.class), any(), any(Limit.class)))
-                .thenAnswer(invocation -> new OrderPage(
-                        Window.from(List.of(orderView(orderId, placedAt, "PLACED")),
-                                index -> ScrollPosition.forward(Map.of(
-                                        "placedAt", placedAt, "id", orderId)),
-                                true), 9));
-
-        Map<String, Object> connection = dgsQueryExecutor.executeAndExtractJsonPath(
-                """
-                query { orders(first: 1) {
-                    edges { node { id created status } cursor }
-                    pageInfo { hasNextPage hasPreviousPage startCursor endCursor }
-                    totalCount
-                } }
-                """,
-                "data.orders");
-
-        assertThat(connection.get("totalCount")).isEqualTo(9);
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> edges = (List<Map<String, Object>>) connection.get("edges");
+    @Test void ordersSerializeTheRealConnectionAndKeysetCursor() {
+        auth("admin", "ADMIN");
+        UUID id = UUID.randomUUID(); Instant date = Instant.parse("2026-10-20T09:30:00Z");
+        when(orders.scrollOrders(any(Authentication.class), any(OrderSort.class), any(), any(Limit.class)))
+                .thenReturn(new OrderPage(Window.from(List.of(view(id, date, "PLACED")),
+                        i -> ScrollPosition.forward(Map.of("placedAt", date, "id", id)), true), 9));
+        Map<String,Object> conn = dgs.executeAndExtractJsonPath(
+                "query { orders(first: 1) { edges { node { id created status } cursor } totalCount } }","data.orders");
+        assertThat(conn.get("totalCount")).isEqualTo(9);
+        @SuppressWarnings("unchecked") List<Map<String,Object>> edges=(List<Map<String,Object>>)conn.get("edges");
         assertThat(edges).hasSize(1);
-        assertThat(edges.get(0).get("cursor"))
-                .isEqualTo(cursorStrategy.toCursor(ScrollPosition.forward(Map.of(
-                        "placedAt", placedAt, "id", orderId))));
-        @SuppressWarnings("unchecked")
-        Map<String, Object> node = (Map<String, Object>) edges.get(0).get("node");
-        assertThat(node.get("id")).isEqualTo(java.util.Base64.getEncoder()
-                .encodeToString(("Order:" + orderId).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        assertThat(edges.get(0).get("cursor")).isEqualTo(cursors.toCursor(
+                ScrollPosition.forward(Map.of("placedAt",date,"id",id))));
+        @SuppressWarnings("unchecked") Map<String,Object> node=(Map<String,Object>)edges.get(0).get("node");
+        assertThat(node.get("id")).isEqualTo(gid("Order",id));
         assertThat(node.get("created")).isEqualTo("2026-10-20T09:30:00Z");
-        // The lifecycle ADAPT mapping: the platform's PLACED renders
-        // upstream's UNCONFIRMED.
         assertThat(node.get("status")).isEqualTo("UNCONFIRMED");
     }
 
-    /** Every platform state renders its own upstream vocabulary value. */
-    @Test
-    void theLifecycleAdaptMappingRendersEveryPlatformState() {
-        authenticateAs("dgs-admin-subject", "ADMIN");
-        UUID id = UUID.randomUUID();
-        Instant placedAt = Instant.parse("2026-10-20T10:00:00Z");
+    @Test void orderLookupMapsItsLifecycleVocabularyThroughTypedId() {
+        auth("admin","ADMIN"); UUID id=UUID.randomUUID(); Instant date=Instant.parse("2026-10-19T08:15:00Z");
+        when(orders.findOrderById(eq(id),any(Authentication.class))).thenReturn(Optional.of(view(id,date,"CONFIRMED")));
+        Map<String,Object> result=dgs.executeAndExtractJsonPath(
+                "query($id: ID!) { order(id:$id) { id created status } }","data.order",Map.of("id",gid("Order",id)));
+        assertThat(result).containsEntry("id",gid("Order",id)).containsEntry("status","UNFULFILLED")
+                .containsEntry("created","2026-10-19T08:15:00Z");
+    }
 
-        for (String[] pair : new String[][]{
-                {"PLACED", "UNCONFIRMED"}, {"CONFIRMED", "UNFULFILLED"},
-                {"FULFILLED", "FULFILLED"}, {"CANCELLED", "CANCELED"}}) {
-            when(orderReadSpi.findOrderById(eq(id),
-                    any(org.springframework.security.core.Authentication.class)))
-                    .thenReturn(java.util.Optional.of(orderView(id, placedAt, pair[0])));
-
-            String globalId = java.util.Base64.getEncoder()
-                    .encodeToString(("Order:" + id).getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            Map<String, Object> order = dgsQueryExecutor.executeAndExtractJsonPath(
-                    "query($id: ID!) { order(id: $id) { status } }",
-                    "data.order", Map.of("id", globalId));
-            assertThat(order.get("status")).as("platform %s", pair[0]).isEqualTo(pair[1]);
+    @Test void allPlatformOrderStatesUseTheSaleorWireNames() {
+        auth("admin","ADMIN"); UUID id=UUID.randomUUID(); Instant date=Instant.parse("2026-10-20T10:00:00Z");
+        for(String[] pair:new String[][]{{"PLACED","UNCONFIRMED"},{"CONFIRMED","UNFULFILLED"},
+                {"FULFILLED","FULFILLED"},{"CANCELLED","CANCELED"}}) {
+            when(orders.findOrderById(eq(id),any(Authentication.class))).thenReturn(Optional.of(view(id,date,pair[0])));
+            Map<String,Object> result=dgs.executeAndExtractJsonPath(
+                    "query($id:ID!){order(id:$id){status}}","data.order",Map.of("id",gid("Order",id)));
+            assertThat(result.get("status")).isEqualTo(pair[1]);
         }
     }
 
-    /**
-     * The {@code order(id)} document: the REAL argument binding carries
-     * the opaque global ID, the codec decodes it (a raw UUID answers
-     * the classified VAL-001 error through the real exception
-     * resolver), and the owner read serializes through the mapper.
-     */
-    @Test
-    void orderReadsBackByTypedGlobalIdThroughTheRealArgumentBinding() {
-        authenticateAs("dgs-admin-subject", "ADMIN");
-        UUID orderId = UUID.randomUUID();
-        Instant placedAt = Instant.parse("2026-10-19T08:15:00Z");
-        when(orderReadSpi.findOrderById(eq(orderId),
-                any(org.springframework.security.core.Authentication.class)))
-                .thenReturn(java.util.Optional.of(orderView(orderId, placedAt, "CONFIRMED")));
-
-        String globalId = java.util.Base64.getEncoder()
-                .encodeToString(("Order:" + orderId).getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        Map<String, Object> order = dgsQueryExecutor.executeAndExtractJsonPath(
-                "query($id: ID!) { order(id: $id) { id created status } }",
-                "data.order", Map.of("id", globalId));
-
-        assertThat(order.get("id")).isEqualTo(globalId);
-        assertThat(order.get("created")).isEqualTo("2026-10-19T08:15:00Z");
-        assertThat(order.get("status")).isEqualTo("UNFULFILLED");
+    @Test void orderCancelUsesOwnerAndSaleorErrorsPayload() {
+        auth("admin","ADMIN"); UUID id=UUID.randomUUID(); Instant date=Instant.parse("2026-10-20T12:00:00Z");
+        when(orderCommands.cancelAsAdmin(id)).thenReturn(view(id,date,"CANCELLED"));
+        Map<String,Object> result=dgs.executeAndExtractJsonPath(
+                "mutation($id:ID!){orderCancel(id:$id){order{id created status} errors{field message code}}}",
+                "data.orderCancel",Map.of("id",gid("Order",id)));
+        assertThat(result.get("errors")).isEqualTo(List.of());
+        @SuppressWarnings("unchecked") Map<String,Object> order=(Map<String,Object>)result.get("order");
+        assertThat(order).containsEntry("id",gid("Order",id)).containsEntry("status","CANCELED");
+        verify(orderCommands).cancelAsAdmin(id);
     }
 
-    /**
-     * The sort mapping reaches the owning use case: CREATED_AT with ASC
-     * maps onto the owner's executed keyset sort; the deprecated
-     * CREATION_DATE alias rides the SAME executed sort (exactly
-     * upstream's own deprecation mapping); the omitted sortBy maps onto
-     * the CREATED_AT-descending default (the newest order first) —
-     * never a silent fallback.
-     */
-    @Test
-    void orderCancelUsesTheSaleorPayloadOverTheRealDgsBinding() {
-        authenticateAs("dgs-admin-subject", "ADMIN");
-        UUID orderId = UUID.randomUUID();
-        Instant placedAt = Instant.parse("2026-10-20T12:00:00Z");
-        OrderView cancelled = new OrderView(orderId, placedAt, "CANCELLED");
-        when(orderCommandSpi.cancelAsAdmin(orderId)).thenReturn(cancelled);
-
-        String globalId = new SaleorGlobalIdCodec().encode("Order", orderId);
-        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath(
-                "mutation($id: ID!) { orderCancel(id: $id) { order { id created status } orderErrors { field message code } } }",
-                "data.orderCancel", Map.of("id", globalId));
-
-        assertThat(payload.get("orderErrors")).isEqualTo(List.of());
-        assertThat(payload.get("order")).isInstanceOf(Map.class);
-        Map<?, ?> order = (Map<?, ?>) payload.get("order");
-        assertThat(order.get("id")).isEqualTo(globalId);
-        assertThat(order.get("created")).isEqualTo("2026-10-20T12:00:00Z");
-        assertThat(order.get("status")).isEqualTo("CANCELED");
-        verify(orderCommandSpi).cancelAsAdmin(orderId);
+    @Test void orderBulkCancelUsesOwnerAndCountPayload() {
+        auth("admin","ADMIN"); UUID id=UUID.randomUUID();
+        when(orderCommands.bulkCancelAsAdmin(List.of(id))).thenReturn(new OrderBulkCancelResult(1,List.of()));
+        Map<String,Object> result=dgs.executeAndExtractJsonPath(
+                "mutation($ids:[ID!]!){orderBulkCancel(ids:$ids){count errors{field code}}}",
+                "data.orderBulkCancel",Map.of("ids",List.of(gid("Order",id))));
+        assertThat(result.get("count")).isEqualTo(1); assertThat(result.get("errors")).isEqualTo(List.of());
+        verify(orderCommands).bulkCancelAsAdmin(List.of(id));
     }
 
-    @Test
-    void orderConfirmUsesTheSaleorPayloadOverTheRealDgsBinding() {
-        authenticateAs("dgs-admin-subject", "ADMIN");
-        UUID orderId = UUID.randomUUID();
-        Instant placedAt = Instant.parse("2026-10-20T12:00:00Z");
-        when(orderCommandSpi.confirmAsAdmin(orderId))
-                .thenReturn(new OrderView(orderId, placedAt, "CONFIRMED"));
-
-        String globalId = new SaleorGlobalIdCodec().encode("Order", orderId);
-        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath(
-                "mutation($id: ID!) { orderConfirm(id: $id) { order { id created status } orderErrors { field message code } } }",
-                "data.orderConfirm", Map.of("id", globalId));
-
-        assertThat(payload.get("orderErrors")).isEqualTo(List.of());
-        assertThat(payload.get("order")).isInstanceOf(Map.class);
-        Map<?, ?> order = (Map<?, ?>) payload.get("order");
-        assertThat(order.get("id")).isEqualTo(globalId);
-        assertThat(order.get("created")).isEqualTo("2026-10-20T12:00:00Z");
-        assertThat(order.get("status")).isEqualTo("UNFULFILLED");
-        verify(orderCommandSpi).confirmAsAdmin(orderId);
+    @Test void sortAliasesAndDefaultsReachTheOwningReadService() {
+        auth("admin","ADMIN"); ArgumentCaptor<OrderSort> sort=ArgumentCaptor.forClass(OrderSort.class);
+        when(orders.scrollOrders(any(Authentication.class),sort.capture(),any(),any(Limit.class)))
+                .thenReturn(new OrderPage(Window.from(List.<OrderView>of(),i->ScrollPosition.keyset(),false),0));
+        dgs.executeAndExtractJsonPath("query{orders(first:2,sortBy:{direction:ASC,field:CREATED_AT}){totalCount}}","data.orders");
+        assertThat(sort.getValue()).isEqualTo(OrderSort.of(OrderSort.Field.CREATED_AT,true));
+        dgs.executeAndExtractJsonPath("query{orders(first:2,sortBy:{direction:DESC,field:CREATION_DATE}){totalCount}}","data.orders");
+        assertThat(sort.getValue()).isEqualTo(OrderSort.of(OrderSort.Field.CREATED_AT,false));
+        dgs.executeAndExtractJsonPath("query{orders(first:2){totalCount}}","data.orders");
+        assertThat(sort.getValue()).isEqualTo(OrderSort.of(OrderSort.Field.CREATED_AT,false));
     }
 
-    @Test
-    void orderBulkCancelUsesTheSaleorBulkPayloadOverTheRealDgsBinding() {
-        authenticateAs("dgs-admin-subject", "ADMIN");
-        UUID orderId = UUID.randomUUID();
-        when(orderCommandSpi.bulkCancelAsAdmin(List.of(orderId)))
-                .thenReturn(new com.marketplace.orders.spi.OrderBulkCancelResult(1, List.of()));
-
-        String globalId = new SaleorGlobalIdCodec().encode("Order", orderId);
-        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath(
-                "mutation($ids: [ID!]!) { orderBulkCancel(ids: $ids) { count orderErrors { field message code } } }",
-                "data.orderBulkCancel", Map.of("ids", List.of(globalId)));
-
-        assertThat(payload.get("count")).isEqualTo(1);
-        assertThat(payload.get("orderErrors")).isEqualTo(List.of());
-        verify(orderCommandSpi).bulkCancelAsAdmin(List.of(orderId));
+    @Test void statusAndLastModifiedSortsReachTheOwningReadService() {
+        auth("admin","ADMIN"); ArgumentCaptor<OrderSort> sort=ArgumentCaptor.forClass(OrderSort.class);
+        when(orders.scrollOrders(any(Authentication.class),sort.capture(),any(),any(Limit.class)))
+                .thenReturn(new OrderPage(Window.from(List.<OrderView>of(),i->ScrollPosition.keyset(),false),0));
+        dgs.executeAndExtractJsonPath("query{orders(first:2,sortBy:{direction:ASC,field:STATUS}){totalCount}}","data.orders");
+        assertThat(sort.getValue()).isEqualTo(OrderSort.of(OrderSort.Field.STATUS,true));
+        dgs.executeAndExtractJsonPath("query{orders(first:2,sortBy:{direction:ASC,field:LAST_MODIFIED_AT}){totalCount}}","data.orders");
+        assertThat(sort.getValue()).isEqualTo(OrderSort.of(OrderSort.Field.LAST_MODIFIED_AT,true));
     }
 
-    @Test
-    void sortMappingAndTheDeprecatedAliasReachTheOwningUseCase() {
-        authenticateAs("dgs-admin-subject", "ADMIN");
-        ArgumentCaptor<OrderSort> sortCaptor = ArgumentCaptor.forClass(OrderSort.class);
-        when(orderReadSpi.scrollOrders(any(org.springframework.security.core.Authentication.class),
-                        sortCaptor.capture(), any(), any(Limit.class)))
-                .thenAnswer(invocation -> new OrderPage(
-                        Window.from(List.<OrderView>of(), index -> ScrollPosition.keyset(), false), 0));
-
-        dgsQueryExecutor.executeAndExtractJsonPath(
-                "query { orders(first: 2, sortBy: { direction: ASC, field: CREATED_AT }) { totalCount } }",
-                "data.orders");
-        assertThat(sortCaptor.getValue()).isEqualTo(OrderSort.of(OrderSort.Field.CREATED_AT, true));
-
-        dgsQueryExecutor.executeAndExtractJsonPath(
-                "query { orders(first: 2, sortBy: { direction: DESC, field: CREATION_DATE }) { totalCount } }",
-                "data.orders");
-        assertThat(sortCaptor.getValue()).isEqualTo(OrderSort.of(OrderSort.Field.CREATED_AT, false));
-
-        dgsQueryExecutor.executeAndExtractJsonPath(
-                "query { orders(first: 2) { totalCount } }", "data.orders");
-        assertThat(sortCaptor.getValue()).isEqualTo(OrderSort.of(OrderSort.Field.CREATED_AT, false));
+    @Test void unsupportedOrderArgumentsAreRejectedInsteadOfIgnored() {
+        auth("admin","ADMIN");
+        String[][] cases={
+            {"query{orders(first:2,filter:{search:\"x\"}){totalCount}}","filter is not implemented"},
+            {"query{orders(first:2,where:{ids:[\"x\"]}){totalCount}}","where filter is not implemented"},
+            {"query{orders(first:2,search:\"x\"){totalCount}}","search is not implemented"},
+            {"query{orders(first:2,channel:\"c\"){totalCount}}","channel filtering is not implemented"},
+            {"query{orders(last:2){totalCount}}","forward-only pagination"},
+            {"query{order(externalReference:\"erp-1\"){id}}","externalReference lookup is not implemented"}
+        };
+        for(String[] item:cases) assertThatThrownBy(()->dgs.executeAndExtractJsonPath(item[0],"$"))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class).hasMessageContaining(item[1]);
     }
 
-    @Test
-    void statusAndLastModifiedSortsReachTheOwningUseCase() {
-        authenticateAs("dgs-admin-subject", "ADMIN");
-        ArgumentCaptor<OrderSort> sortCaptor = ArgumentCaptor.forClass(OrderSort.class);
-        when(orderReadSpi.scrollOrders(any(org.springframework.security.core.Authentication.class),
-                        sortCaptor.capture(), any(), any(Limit.class)))
-                .thenAnswer(invocation -> new OrderPage(
-                        Window.from(List.<OrderView>of(), index -> ScrollPosition.keyset(), false), 0));
-
-        dgsQueryExecutor.executeAndExtractJsonPath(
-                "query { orders(first: 2, sortBy: { direction: ASC, field: STATUS }) { totalCount } }",
-                "data.orders");
-        assertThat(sortCaptor.getValue()).isEqualTo(OrderSort.of(OrderSort.Field.STATUS, true));
-
-        dgsQueryExecutor.executeAndExtractJsonPath(
-                "query { orders(first: 2, sortBy: { direction: ASC, field: LAST_MODIFIED_AT }) { totalCount } }",
-                "data.orders");
-        assertThat(sortCaptor.getValue()).isEqualTo(OrderSort.of(OrderSort.Field.LAST_MODIFIED_AT, true));
+    @Test void rawUuidAndKeylessOrderIdsAreRejected() {
+        auth("admin","ADMIN");
+        assertThatThrownBy(()->dgs.executeAndExtractJsonPath("query($id:ID!){order(id:$id){id}}","$",
+                Map.of("id",UUID.randomUUID().toString())))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class).hasMessageContaining("Invalid global ID");
+        assertThatThrownBy(()->dgs.executeAndExtractJsonPath("query{order{id}}","$"))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class).hasMessageContaining("order requires its id");
     }
 
-    /**
-     * The codec's classified validation error surfaces through the REAL
-     * error taxonomy resolver when a raw UUID is sent where a typed
-     * global ID is expected.
-     */
-    @Test
-    void rawUuidWhereAGlobalIdIsExpectedAnswersTheClassifiedErrorThroughTheRealResolver() {
-        authenticateAs("dgs-admin-subject", "ADMIN");
-
-        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
-                "query($id: ID!) { order(id: $id) { id } }",
-                "$", Map.of("id", UUID.randomUUID().toString())))
-                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
-                .hasMessageContaining("Invalid global ID");
-    }
-
-    /**
-     * The declared-but-unexecuted Saleor arguments answer the explicit
-     * classified error through the real resolver — never a silent
-     * no-op: the deprecated filter, the where filter, the free-text
-     * search, the channel scoping and the backward pagination each
-     * name their own boundary.
-     */
-    @Test
-    void ordersFilterAnswersTheExplicitNotImplementedErrorThroughTheRealResolver() {
-        authenticateAs("dgs-admin-subject", "ADMIN");
-
-        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
-                "query { orders(first: 2, filter: { search: \"x\" }) { totalCount } }",
-                "$"))
-                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
-                .hasMessageContaining("filter is not implemented");
-    }
-
-    @Test
-    void ordersWhereAnswersTheExplicitNotImplementedErrorThroughTheRealResolver() {
-        authenticateAs("dgs-admin-subject", "ADMIN");
-
-        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
-                "query { orders(first: 2, where: { ids: [\"x\"] }) { totalCount } }",
-                "$"))
-                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
-                .hasMessageContaining("where filter is not implemented");
-    }
-
-    @Test
-    void ordersSearchAnswersTheExplicitNotImplementedErrorThroughTheRealResolver() {
-        authenticateAs("dgs-admin-subject", "ADMIN");
-
-        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
-                "query { orders(first: 2, search: \"widget\") { totalCount } }",
-                "$"))
-                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
-                .hasMessageContaining("search is not implemented");
-    }
-
-    @Test
-    void ordersChannelAnswersTheExplicitNotImplementedErrorThroughTheRealResolver() {
-        authenticateAs("dgs-admin-subject", "ADMIN");
-
-        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
-                "query { orders(first: 2, channel: \"channel-1\") { totalCount } }",
-                "$"))
-                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
-                .hasMessageContaining("channel filtering is not implemented");
-    }
-
-    @Test
-    void ordersBackwardPaginationAnswersTheExplicitForwardOnlyError() {
-        authenticateAs("dgs-admin-subject", "ADMIN");
-
-        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
-                "query { orders(last: 2) { totalCount } }",
-                "$"))
-                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
-                .hasMessageContaining("forward-only pagination");
-    }
-
-    /** The five unowned sort fields each answer their own explicit error. */
-    @Test
-    void unownedSortFieldsAnswerTheExplicitNotImplementedError() {
-        authenticateAs("dgs-admin-subject", "ADMIN");
-
-        for (String field : new String[]{"NUMBER", "RANK", "CUSTOMER", "PAYMENT", "FULFILLMENT_STATUS"}) {
-            assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
-                    "query { orders(first: 2, sortBy: { direction: ASC, field: " + field + " }) { totalCount } }",
-                    "$"))
-                    .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
-                    .hasMessageContaining("sort field " + field + " is not implemented");
-        }
-    }
-
-    /**
-     * The ONE shared cursor gate: a cursor emitted by the OTHER sort
-     * (the STATUS keyset) is rejected by the CREATED_AT scroll — the
-     * same VAL-001 taxonomy every malformed cursor answers.
-     */
-    @Test
-    void cursorFromAnotherSortIsRejectedThroughTheRealCursorGate() {
-        authenticateAs("dgs-admin-subject", "ADMIN");
-        String foreignCursor = cursorStrategy.toCursor(ScrollPosition.forward(Map.of(
-                "status", "PLACED", "id", UUID.randomUUID())));
-
-        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
-                "query($after: String) { orders(first: 1, after: $after) { totalCount } }",
-                "$", Map.of("after", foreignCursor)))
+    @Test void cursorEmittedForAnotherSortIsRejected() {
+        auth("admin","ADMIN");
+        String cursor=cursors.toCursor(ScrollPosition.forward(Map.of("status","PLACED","id",UUID.randomUUID())));
+        assertThatThrownBy(()->dgs.executeAndExtractJsonPath(
+                "query($after:String){orders(first:1,after:$after){totalCount}}","$",Map.of("after",cursor)))
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
                 .hasMessageContaining("after must be a forward keyset cursor")
-                .satisfies(ex -> assertThat(
-                                ((com.netflix.graphql.dgs.exceptions.QueryException) ex).getErrors().get(0)
-                                        .getExtensions())
-                        .containsEntry("errorCode", "VAL-001"));
+                .satisfies(ex->assertThat(((com.netflix.graphql.dgs.exceptions.QueryException)ex)
+                        .getErrors().get(0).getExtensions()).containsEntry("errorCode","VAL-001"));
     }
 
-    /** The externalReference argument answers the explicit classified error — never silently ignored. */
-    @Test
-    void orderExternalReferenceLookupAnswersTheExplicitNotImplementedError() {
-        authenticateAs("dgs-admin-subject", "ADMIN");
-
-        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
-                "query($externalReference: String) { order(externalReference: $externalReference) { id } }",
-                "$", Map.of("externalReference", "erp-order-1")))
-                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
-                .hasMessageContaining("externalReference lookup is not implemented");
-    }
-
-    /**
-     * The keyless call shape: no id answers the explicit classified
-     * validation error — a keyless lookup is a client error, never a
-     * fabricated absence (the recorded divergence from upstream's null
-     * answer).
-     */
-    @Test
-    void keylessOrderLookupAnswersTheClassifiedValidationError() {
-        authenticateAs("dgs-admin-subject", "ADMIN");
-
-        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
-                "query { order { id } }",
-                "$"))
-                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
-                .hasMessageContaining("order requires its id")
-                .satisfies(ex -> assertThat(
-                                ((com.netflix.graphql.dgs.exceptions.QueryException) ex).getErrors().get(0)
-                                        .getExtensions())
-                        .containsEntry("errorCode", "VAL-001"));
-    }
-
-    /** The unauthenticated guard: no security context answers the credentials error, never a silent read. */
-    @Test
-    void unauthenticatedCallerAnswersTheCredentialsError() {
+    @Test void unauthenticatedOrderManagementReadIsNotSuccessful() {
         SecurityContextHolder.clearContext();
-        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
-                "query { orders(first: 1) { totalCount } }", "$"))
+        assertThatThrownBy(()->dgs.executeAndExtractJsonPath("query{orders(first:1){totalCount}}","$"))
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
                 .hasMessageContaining("An unexpected error occurred");
     }
 
-    /**
-     * The page-size contract rides the real properties binding: the
-     * caller's {@code first} reaches the owning use case as the bounded
-     * limit (clamped by the boundary's own cap — the same house contract
-     * the category/product/variant slices test).
-     */
-    @Test
-    void requestedPageSizeReachesTheOwningUseCaseAsTheBoundedLimit() {
-        authenticateAs("dgs-admin-subject", "ADMIN");
-        ArgumentCaptor<Limit> limitCaptor = ArgumentCaptor.forClass(Limit.class);
-        when(orderReadSpi.scrollOrders(any(org.springframework.security.core.Authentication.class),
-                        any(OrderSort.class), any(), limitCaptor.capture()))
-                .thenAnswer(invocation -> new OrderPage(
-                        Window.from(List.<OrderView>of(), index -> ScrollPosition.keyset(), false), 0));
-
-        dgsQueryExecutor.executeAndExtractJsonPath(
-                "query { orders(first: 7) { totalCount } }", "data.orders");
-
-        assertThat(limitCaptor.getValue().max()).isEqualTo(7);
-        verify(orderReadSpi).scrollOrders(
-                any(org.springframework.security.core.Authentication.class),
-                any(OrderSort.class), any(), any(Limit.class));
+    @Test void requestedPageSizeReachesTheOwningUseCase() {
+        auth("admin","ADMIN"); ArgumentCaptor<Limit> limit=ArgumentCaptor.forClass(Limit.class);
+        when(orders.scrollOrders(any(Authentication.class),any(OrderSort.class),any(),limit.capture()))
+                .thenReturn(new OrderPage(Window.from(List.<OrderView>of(),i->ScrollPosition.keyset(),false),0));
+        dgs.executeAndExtractJsonPath("query{orders(first:7){totalCount}}","data.orders");
+        assertThat(limit.getValue().max()).isEqualTo(7);
     }
 
-    @Test
-    void checkoutReadsBackTheOwnedActiveCartThroughTheRealSdlAndTypedIds() {
-        authenticateAs("checkout-owner-subject");
-        UUID cartId = UUID.randomUUID();
-        UUID lineId = UUID.randomUUID();
-        UUID variantId = UUID.randomUUID();
-        UUID productId = UUID.randomUUID();
-        when(checkoutSpi.findCheckout(eq(cartId),
-                any(org.springframework.security.core.Authentication.class)))
-                .thenReturn(checkoutView(cartId, lineId, variantId));
-        when(variantReadSpi.findVariantSnapshot(variantId))
-                .thenReturn(Optional.of(variantView(variantId, productId)));
-
-        Map<String, Object> checkout = dgsQueryExecutor.executeAndExtractJsonPath(
-                """
-                query($id: ID!) {
-                    checkout(id: $id) {
-                        id quantity
-                        lines { id quantity variant { id sku } }
-                    }
-                }
-                """,
-                "data.checkout", Map.of("id", globalId("Checkout", cartId)));
-
-        assertThat(checkout.get("id")).isEqualTo(globalId("Checkout", cartId));
-        assertThat(checkout.get("quantity")).isEqualTo(2);
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> lines = (List<Map<String, Object>>) checkout.get("lines");
-        assertThat(lines).hasSize(1);
-        assertThat(lines.get(0).get("id")).isEqualTo(globalId("CheckoutLine", lineId));
-        @SuppressWarnings("unchecked")
-        Map<String, Object> variant = (Map<String, Object>) lines.get(0).get("variant");
-        assertThat(variant.get("id")).isEqualTo(globalId("ProductVariant", variantId));
-        assertThat(variant.get("sku")).isEqualTo("SKU-1");
+    @Test void checkoutReadsTheOwnedCartAndMapsVariantThroughExistingCatalogSpi() {
+        auth("buyer","USER"); UUID cart=UUID.randomUUID(),line=UUID.randomUUID(),variantId=UUID.randomUUID(),product=UUID.randomUUID();
+        when(checkouts.findCheckout(eq(cart),any(Authentication.class))).thenReturn(checkout(cart,line,variantId));
+        when(variants.findVariantById(eq(variantId),any(Authentication.class))).thenReturn(Optional.of(variant(variantId,product)));
+        Map<String,Object> result=dgs.executeAndExtractJsonPath(
+                "query($id:ID!){checkout(id:$id){id quantity lines{id quantity variant{id sku}}}}",
+                "data.checkout",Map.of("id",gid("Checkout",cart)));
+        assertThat(result).containsEntry("id",gid("Checkout",cart)).containsEntry("quantity",2);
+        @SuppressWarnings("unchecked") List<Map<String,Object>> lines=(List<Map<String,Object>>)result.get("lines");
+        assertThat(lines).hasSize(1).first().containsEntry("id",gid("CheckoutLine",line)).containsEntry("quantity",2);
+        @SuppressWarnings("unchecked") Map<String,Object> v=(Map<String,Object>)lines.get(0).get("variant");
+        assertThat(v).containsEntry("id",gid("ProductVariant",variantId)).containsEntry("sku","SKU-1");
     }
 
-    @Test
-    void checkoutLinesAddBindsTheSaleorInputAndReturnsTheOwnerProjection() {
-        authenticateAs("checkout-owner-subject");
-        UUID cartId = UUID.randomUUID();
-        UUID lineId = UUID.randomUUID();
-        UUID variantId = UUID.randomUUID();
-        when(checkoutSpi.addLines(eq(cartId), any(),
-                any(org.springframework.security.core.Authentication.class)))
-                .thenReturn(checkoutView(cartId, lineId, variantId));
-        when(variantReadSpi.findVariantSnapshot(variantId))
-                .thenReturn(Optional.of(variantView(variantId, UUID.randomUUID())));
-
-        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath(
-                """
-                mutation($id: ID!, $lines: [CheckoutLineInput!]!) {
-                    checkoutLinesAdd(id: $id, lines: $lines) {
-                        checkout { id quantity lines { id quantity } }
-                        checkoutErrors { code }
-                        errors { code }
-                    }
-                }
-                """,
-                "data.checkoutLinesAdd", Map.of(
-                        "id", globalId("Checkout", cartId),
-                        "lines", List.of(Map.of(
-                                "variantId", globalId("ProductVariant", variantId),
-                                "quantity", 2))));
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> checkout = (Map<String, Object>) payload.get("checkout");
-        assertThat(checkout.get("id")).isEqualTo(globalId("Checkout", cartId));
-        assertThat(payload.get("errors")).isEqualTo(List.of());
-        assertThat(payload.get("checkoutErrors")).isEqualTo(List.of());
-
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<CheckoutSpi.LineAdd>> requested =
-                ArgumentCaptor.forClass(List.class);
-        verify(checkoutSpi).addLines(eq(cartId), requested.capture(),
-                any(org.springframework.security.core.Authentication.class));
-        assertThat(requested.getValue()).containsExactly(new CheckoutSpi.LineAdd(variantId, 2));
+    @Test void checkoutLinesAddBindsTheSaleorInputAndReturnsTheOwnerProjection() {
+        auth("buyer","USER"); UUID cart=UUID.randomUUID(),line=UUID.randomUUID(),variantId=UUID.randomUUID();
+        when(checkouts.addLines(eq(cart),any(),any(Authentication.class))).thenReturn(checkout(cart,line,variantId));
+        when(variants.findVariantById(eq(variantId),any(Authentication.class))).thenReturn(Optional.of(variant(variantId,UUID.randomUUID())));
+        Map<String,Object> result=dgs.executeAndExtractJsonPath(
+                "mutation($id:ID!,$lines:[CheckoutLineInput!]!){checkoutLinesAdd(id:$id,lines:$lines){checkout{id quantity lines{id quantity}} checkoutErrors{code} errors{code}}}",
+                "data.checkoutLinesAdd",Map.of("id",gid("Checkout",cart),"lines",List.of(Map.of("variantId",gid("ProductVariant",variantId),"quantity",2))));
+        @SuppressWarnings("unchecked") Map<String,Object> resultCheckout=(Map<String,Object>)result.get("checkout");
+        assertThat(resultCheckout.get("id")).isEqualTo(gid("Checkout",cart));
+        assertThat(result.get("checkoutErrors")).isEqualTo(List.of()); assertThat(result.get("errors")).isEqualTo(List.of());
+        @SuppressWarnings("unchecked") ArgumentCaptor<List<CheckoutSpi.LineAdd>> captured=ArgumentCaptor.forClass(List.class);
+        verify(checkouts).addLines(eq(cart),captured.capture(),any(Authentication.class));
+        assertThat(captured.getValue()).containsExactly(new CheckoutSpi.LineAdd(variantId,2));
     }
 
-    @Test
-    void checkoutDeleteRequiresAdminBeforeReachingTheOwner() {
-        authenticateAs("checkout-admin-subject", "ADMIN");
-        UUID cartId = UUID.randomUUID();
-
-        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath(
-                "mutation($id: ID!) { checkoutDelete(id: $id) { errors { code } } }",
-                "data.checkoutDelete", Map.of("id", globalId("Checkout", cartId)));
-
-        assertThat(payload.get("errors")).isEqualTo(List.of());
-        verify(orderCommandSpi).requireAdmin();
-        verify(checkoutSpi).deleteAsAdmin(eq(cartId));
-    }
-
-    private static CheckoutView checkoutView(UUID cartId, UUID lineId, UUID variantId) {
-        return new CheckoutView(cartId,
-                List.of(new CheckoutView.Line(lineId, variantId, 2)), 2);
-    }
-
-    private static ProductVariantView variantView(UUID variantId, UUID productId) {
-        return new ProductVariantView(variantId, "Default", "SKU-1", "ACTIVE",
-                new ProductView(productId, "Checkout Product", null, "ACTIVE"));
-    }
-
-    private static String globalId(String type, UUID id) {
-        return java.util.Base64.getEncoder().encodeToString(
-                (type + ":" + id).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    @Test void checkoutDeleteRequiresAdmin() {
+        auth("admin","ADMIN"); UUID cart=UUID.randomUUID();
+        Map<String,Object> result=dgs.executeAndExtractJsonPath(
+                "mutation($id:ID!){checkoutDelete(id:$id){errors{code}}}","data.checkoutDelete",Map.of("id",gid("Checkout",cart)));
+        assertThat(result.get("errors")).isEqualTo(List.of());
+        verify(orderCommands).requireAdmin(); verify(checkouts).deleteAsAdmin(cart);
     }
 }
