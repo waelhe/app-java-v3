@@ -369,6 +369,11 @@ code itself; every one is closed:
 
 ## The integrator's security round (the 2026-10-22 directive — the five tasks, all closed)
 
+**This round's head: `850753fc`** (the security-round commit `db4c47df` + the update-branch
+merge of A0's integration-side landings `a466d403` — the reactor unblock — and `4360829b` —
+the D-ADDR-001 governance split). The branch-as-pushed state and the locally-verified state
+are one and the same claim this round: every number below ran on this exact tree.
+
 The integrator posted the follow-up directive directly on the PR (2026-10-22T09:36Z): five
 tasks required before the PR can be re-evaluated for independent review. Every one is closed
 on this branch:
