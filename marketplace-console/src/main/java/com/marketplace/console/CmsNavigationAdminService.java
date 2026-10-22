@@ -428,9 +428,7 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
             siblings.add(to, item);
         }
         for (List<CmsMenuItem> group : byParent.values()) {
-            for (int i = 0; i < group.size(); i++) {
-                group.get(i).moveTo(i);
-            }
+            parkAndWriteDense(group);
         }
     }
 
@@ -471,10 +469,46 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
             byParent.computeIfAbsent(item.getParentId(), key -> new ArrayList<>()).add(item);
         }
         for (List<CmsMenuItem> group : byParent.values()) {
-            for (int i = 0; i < group.size(); i++) {
-                group.get(i).moveTo(i);
+            parkAndWriteDense(group);
+        }
+    }
+
+    /**
+     * The two-phase dense rewrite the live-rows unique index
+     * (menu_id, parent_id, position) demands: a direct rewrite collides
+     * transiently (an item moving to position 0 shares it with the current
+     * holder until that item's own UPDATE executes — the partial unique
+     * index sees the intermediate state). Phase 1 parks the whole sibling
+     * group beyond its current maximum, flushes (the group's live range is
+     * empty), then phase 2 writes the final dense order — one transaction,
+     * all-or-nothing. The same repair the catalog reorders carry.
+     */
+    private void parkAndWriteDense(List<CmsMenuItem> group) {
+        if (group.isEmpty()) {
+            return;
+        }
+        boolean changed = false;
+        for (int i = 0; i < group.size(); i++) {
+            if (group.get(i).getPosition() != i) {
+                changed = true;
+                break;
             }
         }
+        if (!changed) {
+            // The idempotent no-op: the resolved order is the stored order —
+            // nothing changes, nothing writes.
+            return;
+        }
+        int park = group.stream().mapToInt(CmsMenuItem::getPosition).max().orElse(0) + 1;
+        for (CmsMenuItem item : group) {
+            item.moveTo(park++);
+        }
+        itemRepository.saveAll(group);
+        itemRepository.flush();
+        for (int i = 0; i < group.size(); i++) {
+            group.get(i).moveTo(i);
+        }
+        itemRepository.saveAll(group);
     }
 
     private MenuView toView(CmsMenu row) {

@@ -408,13 +408,19 @@ class CategoryGraphQlIntegrationTest {
     // ------------------------------------------------------------------
 
     @Test
-    void anonymousCategoryQueryIsRejectedAs401ProblemDetail() {
-        // No Authorization header: the security chain answers the shared
-        // problem+json 401 AUTHN-001 contract before any GraphQL handling —
-        // the tripartite anonymous contract GraphQlSecurityIntegrationTest
-        // pins, asserted here for the categories root's own journey. This
-        // IS the public-root surface's authentication boundary (the
-        // registered public-root mapping divergence).
+    void anonymousCategoryQueryIsAnsweredByThePreLoginGateEnvelope() {
+        // No Authorization header: the security chain now permits the
+        // anonymous POST and PreLoginGraphQlGate is the wall — the gate
+        // parses the document, finds the protected `categories` root, and
+        // answers the classified AUTHN-001 GraphQL error INSIDE the
+        // envelope (HTTP 200 + application/json, the error before any
+        // dispatch). The same reopened contract GraphQlSecurityIntegration
+        // Test pins at the surface level, asserted here for the
+        // categories root's own journey: the classified error pair, and
+        // NO data — this IS the public-root surface's authentication
+        // boundary (the registered public-root mapping divergence), and
+        // the protected collection never resolves for the anonymous
+        // caller.
         WebTestClient anonymousClient = WebTestClient.bindToServer()
                 .baseUrl("http://localhost:" + port + "/graphql")
                 .build();
@@ -422,15 +428,14 @@ class CategoryGraphQlIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("{\"query\":\"{ categories(first: 1) { totalCount } }\"}")
                 .exchange()
-                .expectStatus().isUnauthorized()
-                .expectHeader().contentType("application/problem+json")
-                .expectHeader().valueEquals(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"marketplace\"")
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
                 .expectBody()
-                .jsonPath("$.type").isEqualTo("https://marketplace.com/errors/unauthorized")
-                .jsonPath("$.title").isEqualTo("Unauthorized")
-                .jsonPath("$.status").isEqualTo(401)
-                .jsonPath("$.instance").isEqualTo("/graphql")
-                .jsonPath("$.errorCode").isEqualTo("AUTHN-001");
+                .jsonPath("$.errors[0].extensions.errorCode").isEqualTo("AUTHN-001")
+                .jsonPath("$.errors[0].extensions.category").isEqualTo("authz")
+                .jsonPath("$.errors[0].message")
+                .isEqualTo("Authentication is required for this GraphQL operation")
+                .jsonPath("$.data").doesNotExist();
     }
 
     // ------------------------------------------------------------------

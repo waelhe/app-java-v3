@@ -155,6 +155,13 @@ class ProductGraphQlIntegrationTest {
             productTypeRepository.deleteById(seededTypeId);
             seededTypeId = null;
         }
+        // The repository deletes above are SOFT deletes (BaseEntity's
+        // @SoftDelete keeps the rows); the raw category delete below is a
+        // HARD delete the surviving product rows would violate
+        // (fk_products_store_category sees soft-deleted rows just the
+        // same). Hard-delete THIS test's own product rows first — the
+        // unique category code scopes them exactly.
+        jdbcTemplate.update("DELETE FROM products WHERE store_category_code = ?", storeCategoryCode);
         jdbcTemplate.update("DELETE FROM store_categories WHERE code = ?", storeCategoryCode);
         userRepository.deleteById(providerId);
     }

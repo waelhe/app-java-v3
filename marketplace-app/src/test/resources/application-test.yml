@@ -145,3 +145,24 @@ management:
     export:
       otlp:
         enabled: false
+
+# The post-merge integration round of PR #696 (the follow-up PR's measured
+# CI blocker): every named rate-limiter instance in the base profile rides
+# base-config: default with the production budgets (mostly 10/minute). The
+# containerless DGS slices and the full-stack integration suites execute a
+# whole class's worth of GraphQL mutations within one window — the budget
+# is a PRODUCTION calibration, not a contract under test, so the test
+# profile raises ONLY the shared default's budget (test contexts never
+# trip a limiter incidentally). The deliberate RL-001/429 contract tests
+# are unaffected BY DESIGN: they either re-register their own tiny
+# instances (NeighborhoodPostRateLimit/EventRateLimitIntegrationTest's
+# registry.remove + TINY pattern) or pin instance-level properties on
+# their own contexts (RateLimitProblemDetailIntegrationTest's
+# bookingCreate=1, LeadsRateLimit/ConversationRateLimit's =2) — instance
+# overrides always win over the base config, so those contracts keep
+# measuring the real refusal behavior.
+resilience4j:
+  ratelimiter:
+    configs:
+      default:
+        limit-for-period: 10000

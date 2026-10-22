@@ -21,6 +21,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -303,7 +304,11 @@ class ProductTypeAttributeWriteServiceTest {
                 List.of(new AttributeReorderMove(third.getId(), -2)));
 
         assertThat(result.success()).isTrue();
-        verify(assignmentRepository).saveAll(argThat((List<ProductTypeAttributeAssignment> saved) ->
+        // The two-phase rewrite the live-position unique index demands:
+        // the park write lands first, the flush separates the phases, and
+        // the final dense order lands second (both writes carry the same
+        // list reference — its verified state is the phase-2 finals).
+        verify(assignmentRepository, times(2)).saveAll(argThat((List<ProductTypeAttributeAssignment> saved) ->
                 saved.size() == 3
                         && saved.get(0).getAttributeDefinitionId().equals(third.getId())
                         && saved.get(0).getPosition() == 1
@@ -311,6 +316,7 @@ class ProductTypeAttributeWriteServiceTest {
                         && saved.get(1).getPosition() == 2
                         && saved.get(2).getAttributeDefinitionId().equals(second.getId())
                         && saved.get(2).getPosition() == 3));
+        verify(assignmentRepository).flush();
     }
 
     @Test

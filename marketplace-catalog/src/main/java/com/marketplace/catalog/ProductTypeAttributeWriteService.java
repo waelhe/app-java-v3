@@ -286,17 +286,38 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
         if (!errors.isEmpty()) {
             return ProductTypeMutationResult.failure(errors);
         }
-        List<ProductTypeAttributeAssignment> toSave = new ArrayList<>();
+        // The live-rows unique index (product_type_id, scope, position)
+        // makes a direct 1..n rewrite collide TRANSIENTLY (a row moving to
+        // position 1 shares it with the current holder until that row's own
+        // UPDATE executes — the partial unique index sees the intermediate
+        // state). The two-phase rewrite keeps EVERY intermediate state
+        // unique: phase 1 parks the WHOLE bucket beyond its current maximum,
+        // flushes (the 1..max range is now empty), then phase 2 writes the
+        // final dense order into the empty range — one transaction,
+        // all-or-nothing with the reorder itself. Same repair as the
+        // attribute-value reorder's own live-position index.
+        boolean changed = false;
         for (int i = 0; i < ordered.size(); i++) {
-            ProductTypeAttributeAssignment assignment = ordered.get(i);
-            if (assignment.getPosition() != i + 1) {
-                assignment.reposition(i + 1);
-                toSave.add(assignment);
+            if (ordered.get(i).getPosition() != i + 1) {
+                changed = true;
+                break;
             }
         }
-        if (!toSave.isEmpty()) {
-            assignmentRepository.saveAll(toSave);
+        if (!changed) {
+            // The zero-shift idempotent no-op: the resolved order is the
+            // stored order — nothing changes, nothing writes.
+            return ProductTypeMutationResult.success(toView(type.get()));
         }
+        int park = ordered.stream().mapToInt(ProductTypeAttributeAssignment::getPosition).max().orElse(0) + 1;
+        for (ProductTypeAttributeAssignment assignment : ordered) {
+            assignment.reposition(park++);
+        }
+        assignmentRepository.saveAll(ordered);
+        assignmentRepository.flush();
+        for (int i = 0; i < ordered.size(); i++) {
+            ordered.get(i).reposition(i + 1);
+        }
+        assignmentRepository.saveAll(ordered);
         return ProductTypeMutationResult.success(toView(type.get()));
     }
 

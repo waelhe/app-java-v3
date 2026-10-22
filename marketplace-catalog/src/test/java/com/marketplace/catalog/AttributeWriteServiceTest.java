@@ -20,6 +20,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -397,11 +398,16 @@ class AttributeWriteServiceTest {
 
         assertThat(result.success()).isTrue();
         assertThat(result.attribute().slug()).isEqualTo("choice-attr");
-        verify(optionRepository).saveAll(argThat((List<CatalogAttributeOption> saved) ->
+        // The two-phase rewrite the live-position unique index demands:
+        // the park write lands first, the flush separates the phases, and
+        // the final dense order lands second (both writes carry the same
+        // list reference — its verified state is the phase-2 finals).
+        verify(optionRepository, times(2)).saveAll(argThat((List<CatalogAttributeOption> saved) ->
                 saved.size() == 3
                         && saved.get(0).getId().equals(three.getId()) && saved.get(0).getPosition() == 1
                         && saved.get(1).getId().equals(one.getId()) && saved.get(1).getPosition() == 2
                         && saved.get(2).getId().equals(two.getId()) && saved.get(2).getPosition() == 3));
+        verify(optionRepository).flush();
     }
 
     @Test

@@ -335,9 +335,7 @@ public class CmsPageAdminService implements CmsPageSpi {
             int to = Math.max(0, Math.min(from + delta, pairs.size()));
             pairs.add(to, pair);
         }
-        for (int i = 0; i < pairs.size(); i++) {
-            pairs.get(i).moveTo(i);
-        }
+        parkAndWriteDense(pairs);
         log.info("CMS page type attributes reordered: typeId={}, moves={}, actor={}",
                 pageTypeId, attributeIds.size(), caller.getName());
         return toTypeView(row);
@@ -411,9 +409,45 @@ public class CmsPageAdminService implements CmsPageSpi {
     private void resequence(UUID pageTypeId) {
         List<CmsPageTypeAttribute> pairs =
                 attributeRepository.findAllByPageTypeIdOrderByPositionAscIdAsc(pageTypeId);
+        parkAndWriteDense(pairs);
+    }
+
+    /**
+     * The two-phase dense rewrite the live-rows unique index
+     * (page_type_id, position) demands: a direct rewrite collides
+     * transiently (a pair moving to position 0 shares it with the current
+     * holder until that pair's own UPDATE executes — the partial unique
+     * index sees the intermediate state). Phase 1 parks the whole list
+     * beyond its current maximum, flushes (the live range is now empty),
+     * then phase 2 writes the final dense order — one transaction,
+     * all-or-nothing. The same repair the catalog reorders carry.
+     */
+    private void parkAndWriteDense(List<CmsPageTypeAttribute> pairs) {
+        if (pairs.isEmpty()) {
+            return;
+        }
+        boolean changed = false;
+        for (int i = 0; i < pairs.size(); i++) {
+            if (pairs.get(i).getPosition() != i) {
+                changed = true;
+                break;
+            }
+        }
+        if (!changed) {
+            // The idempotent no-op: the resolved order is the stored order —
+            // nothing changes, nothing writes.
+            return;
+        }
+        int park = pairs.stream().mapToInt(CmsPageTypeAttribute::getPosition).max().orElse(0) + 1;
+        for (CmsPageTypeAttribute pair : pairs) {
+            pair.moveTo(park++);
+        }
+        attributeRepository.saveAll(pairs);
+        attributeRepository.flush();
         for (int i = 0; i < pairs.size(); i++) {
             pairs.get(i).moveTo(i);
         }
+        attributeRepository.saveAll(pairs);
     }
 
     private PageView toView(CmsPage row) {

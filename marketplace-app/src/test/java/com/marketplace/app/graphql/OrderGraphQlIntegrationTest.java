@@ -119,8 +119,18 @@ class OrderGraphQlIntegrationTest {
 
     @BeforeEach
     void seedOrders() {
+        // The A1 convention the orders FK graph demands (fk_orders_users):
+        // an order's consumer and seller are USERS rows — the seed places
+        // real ones before the orders reference them (the pre-integration
+        // round's seed generated random ids that were never inserted, so
+        // every order INSERT violated the foreign key and the whole class
+        // errored at seed time).
         UUID consumerId = UUID.randomUUID();
         UUID sellerId = UUID.randomUUID();
+        userRepository.save(new User(consumerId, consumerId.toString(), null,
+                "it-order consumer", com.marketplace.identity.UserRole.CONSUMER));
+        userRepository.save(new User(sellerId, sellerId.toString(), null,
+                "it-order seller", com.marketplace.identity.UserRole.PROVIDER));
 
         Order placed = orderRepository.save(Order.placed(consumerId, 2500L, "SAR", sellerId));
         Order confirmed = Order.placed(consumerId, 3100L, "SAR", sellerId);
@@ -467,11 +477,21 @@ class OrderGraphQlIntegrationTest {
     }
 
     // ------------------------------------------------------------------
-    // the anonymous boundary — the /graphql chain's 401 problem+json
+    // the anonymous boundary — the reopened pre-login gate contract
     // ------------------------------------------------------------------
 
     @Test
-    void anonymousOrderQueryIsRejectedAs401ProblemDetail() {
+    void anonymousOrderQueryIsAnsweredByThePreLoginGateEnvelope() {
+        // No Authorization header: the security chain now permits the
+        // anonymous POST and PreLoginGraphQlGate is the wall — the gate
+        // parses the document, finds the protected `orders` root, and
+        // answers the classified AUTHN-001 GraphQL error INSIDE the
+        // envelope (HTTP 200 + application/json, the error before any
+        // dispatch). The same reopened contract GraphQlSecurityIntegration
+        // Test pins at the surface level, asserted here for the orders
+        // root's own journey: the classified error pair, and NO data —
+        // the protected collection never resolves for the anonymous
+        // caller.
         WebTestClient anonymousClient = WebTestClient.bindToServer()
                 .baseUrl("http://localhost:" + port + "/graphql")
                 .build();
@@ -479,15 +499,14 @@ class OrderGraphQlIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("{\"query\":\"{ orders(first: 1) { totalCount } }\"}")
                 .exchange()
-                .expectStatus().isUnauthorized()
-                .expectHeader().contentType("application/problem+json")
-                .expectHeader().valueEquals(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"marketplace\"")
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
                 .expectBody()
-                .jsonPath("$.type").isEqualTo("https://marketplace.com/errors/unauthorized")
-                .jsonPath("$.title").isEqualTo("Unauthorized")
-                .jsonPath("$.status").isEqualTo(401)
-                .jsonPath("$.instance").isEqualTo("/graphql")
-                .jsonPath("$.errorCode").isEqualTo("AUTHN-001");
+                .jsonPath("$.errors[0].extensions.errorCode").isEqualTo("AUTHN-001")
+                .jsonPath("$.errors[0].extensions.category").isEqualTo("authz")
+                .jsonPath("$.errors[0].message")
+                .isEqualTo("Authentication is required for this GraphQL operation")
+                .jsonPath("$.data").doesNotExist();
     }
 
     // ------------------------------------------------------------------
