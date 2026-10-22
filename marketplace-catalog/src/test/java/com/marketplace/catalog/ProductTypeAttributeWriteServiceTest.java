@@ -21,6 +21,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -303,14 +304,26 @@ class ProductTypeAttributeWriteServiceTest {
                 List.of(new AttributeReorderMove(third.getId(), -2)));
 
         assertThat(result.success()).isTrue();
-        verify(assignmentRepository).saveAll(argThat((List<ProductTypeAttributeAssignment> saved) ->
-                saved.size() == 3
-                        && saved.get(0).getAttributeDefinitionId().equals(third.getId())
-                        && saved.get(0).getPosition() == 1
-                        && saved.get(1).getAttributeDefinitionId().equals(first.getId())
-                        && saved.get(1).getPosition() == 2
-                        && saved.get(2).getAttributeDefinitionId().equals(second.getId())
-                        && saved.get(2).getPosition() == 3));
+        // The park-then-settle rewrite: the first saveAll parks every moved
+        // row on a DISTINCT negative position (outside the live 1..n range,
+        // so no live unique slot is contested mid-flight), the second
+        // settles the final compacted 1..n order.
+        org.mockito.ArgumentCaptor<List<ProductTypeAttributeAssignment>> reorderCaptor =
+                org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(assignmentRepository, times(2)).saveAll(reorderCaptor.capture());
+        List<ProductTypeAttributeAssignment> parked = reorderCaptor.getAllValues().get(0);
+        assertThat(parked).extracting(ProductTypeAttributeAssignment::getPosition)
+                .allSatisfy(position -> assertThat(position).isNegative());
+        assertThat(parked.stream().map(ProductTypeAttributeAssignment::getPosition).distinct().count())
+                .isEqualTo(parked.size());
+        List<ProductTypeAttributeAssignment> settled = reorderCaptor.getAllValues().get(1);
+        assertThat(settled).hasSize(3);
+        assertThat(settled.get(0).getAttributeDefinitionId()).isEqualTo(third.getId());
+        assertThat(settled.get(0).getPosition()).isEqualTo(1);
+        assertThat(settled.get(1).getAttributeDefinitionId()).isEqualTo(first.getId());
+        assertThat(settled.get(1).getPosition()).isEqualTo(2);
+        assertThat(settled.get(2).getAttributeDefinitionId()).isEqualTo(second.getId());
+        assertThat(settled.get(2).getPosition()).isEqualTo(3);
     }
 
     @Test
