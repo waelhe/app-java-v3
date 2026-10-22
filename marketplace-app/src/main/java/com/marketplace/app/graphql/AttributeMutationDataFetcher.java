@@ -6,12 +6,15 @@ import com.marketplace.app.graphql.generated.types.AttributeCreate;
 import com.marketplace.app.graphql.generated.types.AttributeCreateInput;
 import com.marketplace.app.graphql.generated.types.AttributeError;
 import com.marketplace.app.graphql.generated.types.AttributeErrorCode;
+import com.marketplace.app.graphql.generated.types.AttributeReorderValues;
 import com.marketplace.app.graphql.generated.types.AttributeUpdate;
 import com.marketplace.app.graphql.generated.types.AttributeUpdateInput;
+import com.marketplace.app.graphql.generated.types.ReorderInput;
 import com.marketplace.catalog.CatalogAttributeType;
 import com.marketplace.catalog.spi.AttributeMutationError;
 import com.marketplace.catalog.spi.AttributeMutationErrorCode;
 import com.marketplace.catalog.spi.AttributeMutationResult;
+import com.marketplace.catalog.spi.AttributeReorderMove;
 import com.marketplace.catalog.spi.AttributeUpdateCommand;
 import com.marketplace.catalog.spi.AttributeWriteSpi;
 import com.netflix.graphql.dgs.DgsComponent;
@@ -171,6 +174,43 @@ public class AttributeMutationDataFetcher {
         return AttributeBulkDelete.newBuilder()
                 .count(attributeWriteSpi.deleteAttributes(nativeIds))
                 .errors(List.of())
+                .build();
+    }
+
+    /**
+     * Saleor {@code attributeReorderValues(attributeId: ID!, moves:
+     * [ReorderInput!]!): AttributeReorderValues} — the attribute's
+     * registered option values' reorder. The attribute reference and
+     * every move's value reference execute through the typed
+     * global-ID codec; the pinned relative moves ride the command
+     * verbatim (the owning use case resolves them against the
+     * registry's current order).
+     */
+    @DgsMutation(field = DgsConstants.MUTATION.AttributeReorderValues)
+    @RateLimiter(name = "graphqlAttributeMutation")
+    public AttributeReorderValues attributeReorderValues(@InputArgument String attributeId,
+                                                          @InputArgument List<ReorderInput> moves) {
+        if (attributeId == null) {
+            throw new IllegalArgumentException(
+                    "attributeReorderValues requires the attributeId of the values to reorder");
+        }
+        if (moves == null || moves.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "attributeReorderValues requires a non-empty list of moves");
+        }
+        UUID nativeAttributeId = globalIdCodec.decode(attributeId, AttributeGraphQlMapper.ATTRIBUTE_TYPE);
+        List<AttributeReorderMove> commands = new ArrayList<>(moves.size());
+        for (ReorderInput move : moves) {
+            commands.add(new AttributeReorderMove(
+                    move.getId() == null ? null
+                            : globalIdCodec.decode(move.getId(), AttributeGraphQlMapper.ATTRIBUTE_VALUE_TYPE),
+                    move.getSortOrder()));
+        }
+        AttributeMutationResult result = attributeWriteSpi.reorderValues(nativeAttributeId, commands);
+        return AttributeReorderValues.newBuilder()
+                .errors(toAttributeErrors(result.errors()))
+                .attribute(result.attribute() == null
+                        ? null : attributeMapper.toGraphQlAttribute(result.attribute()))
                 .build();
     }
 

@@ -1108,3 +1108,134 @@ type AttributeValueTranslate {
     errors: [TranslationError!]!
     attributeValue: AttributeValue
 }
+
+# =====================================================================
+# The product-type attribute schema mutation roots — the assignment
+# registry's ADMIN write use case over the EXISTING
+# product_type_attribute_assignments table (no new migration). The
+# pinned input's type (PRODUCT/VARIANT) + variantSelection pair maps
+# onto the platform's own three-scope model (PRODUCT / VARIANT /
+# VARIANT_SELECTION — a VARIANT_SELECTION assignment is required for
+# every variant and rides the CHOICE value shape with the two-option
+# floor, the module's own invariants). The append position is the
+# owner's own max+1 derivation; the reorder resolves the pinned
+# relative moves with the compacted 1..n re-derivation.
+# =====================================================================
+extend type Mutation {
+    """Assigns attributes to a product type's schema."""
+    productAttributeAssign(
+        """The operations to perform (the attribute reference, the type member and the variant-selection flag)."""
+        operations: [ProductAttributeAssignInput!]!
+
+        """ID of the product type to assign the attributes into (typed global ID of the ProductType root's type)."""
+        productTypeId: ID!
+    ): ProductAttributeAssign
+
+    """Updates the assignments' variant-selection membership (the VARIANT↔VARIANT_SELECTION scope move)."""
+    productAttributeAssignmentUpdate(
+        """The operations to perform (the attribute reference and the new variant-selection flag)."""
+        operations: [ProductAttributeAssignmentUpdateInput!]!
+
+        """ID of the product type whose schema is amended (typed global ID of the ProductType root's type)."""
+        productTypeId: ID!
+    ): ProductAttributeAssignmentUpdate
+
+    """Unassigns attributes from a product type's schema."""
+    productAttributeUnassign(
+        """The IDs of the attributes to unassign (typed global IDs of the Attribute root's type)."""
+        attributeIds: [ID!]!
+
+        """ID of the product type from which the attributes should be unassigned."""
+        productTypeId: ID!
+    ): ProductAttributeUnassign
+
+    """Reorders the assigned attributes of one attribute-type bucket of a product type."""
+    productTypeReorderAttributes(
+        """The list of attribute reordering operations (the relative moves)."""
+        moves: [ReorderInput!]!
+
+        """ID of a product type."""
+        productTypeId: ID!
+
+        """The attribute type bucket to reorder (PRODUCT or VARIANT — the VARIANT bucket holds both VARIANT-family scopes)."""
+        type: ProductAttributeType!
+    ): ProductTypeReorderAttributes
+
+    """Reorders an attribute's registered option values."""
+    attributeReorderValues(
+        """ID of an attribute (typed global ID of the Attribute root's type)."""
+        attributeId: ID!
+
+        """The list of reordering operations for the attribute's values (the relative moves)."""
+        moves: [ReorderInput!]!
+    ): AttributeReorderValues
+}
+
+input ProductAttributeAssignInput {
+    """The ID of the attribute to assign (typed global ID of the Attribute root's type)."""
+    id: ID!
+
+    """The attribute type to be assigned as (the platform's own scope mapping)."""
+    type: ProductAttributeType!
+
+    """
+    Whether the attribute is allowed in variant selection (the
+    platform's VARIANT_SELECTION scope — required for every variant,
+    CHOICE value shape with at least two options).
+    """
+    variantSelection: Boolean
+}
+
+input ProductAttributeAssignmentUpdateInput {
+    """The ID of the assigned attribute (typed global ID of the Attribute root's type)."""
+    id: ID!
+
+    """
+    The new variant-selection membership (the VARIANT↔VARIANT_
+    SELECTION scope move; a PRODUCT-typed assignment's membership is
+    immutable).
+    """
+    variantSelection: Boolean!
+}
+
+enum ProductAttributeType {
+    PRODUCT
+    VARIANT
+}
+
+input ReorderInput {
+    """The ID of the item to move (the context's own typed global ID)."""
+    id: ID!
+
+    """
+    The new relative sorting position of the item (from -inf to
+    +inf). 1 moves the item one position forward, -1 moves the item
+    one position backward, 0 leaves the item unchanged.
+    """
+    sortOrder: Int
+}
+
+type ProductAttributeAssign {
+    errors: [ProductError!]!
+    productType: ProductType
+}
+
+type ProductAttributeAssignmentUpdate {
+    errors: [ProductError!]!
+    productType: ProductType
+}
+
+type ProductAttributeUnassign {
+    errors: [ProductError!]!
+    productType: ProductType
+}
+
+type ProductTypeReorderAttributes {
+    errors: [ProductError!]!
+    productType: ProductType
+}
+
+type AttributeReorderValues {
+    errors: [AttributeError!]!
+    attribute: Attribute
+}

@@ -4,6 +4,7 @@ import com.marketplace.catalog.spi.AttributeCreateCommand;
 import com.marketplace.catalog.spi.AttributeMutationError;
 import com.marketplace.catalog.spi.AttributeMutationErrorCode;
 import com.marketplace.catalog.spi.AttributeMutationResult;
+import com.marketplace.catalog.spi.AttributeReorderMove;
 import com.marketplace.catalog.spi.AttributeUpdateCommand;
 import com.marketplace.catalog.spi.AttributeView;
 import com.marketplace.catalog.spi.AttributeWriteSpi;
@@ -79,9 +80,12 @@ public class AttributeWriteService implements AttributeWriteSpi {
     private static final int NAME_MAX_LENGTH = 100;
 
     private final CatalogAttributeDefinitionRepository attributeDefinitionRepository;
+    private final CatalogAttributeOptionRepository attributeOptionRepository;
 
-    public AttributeWriteService(CatalogAttributeDefinitionRepository attributeDefinitionRepository) {
+    public AttributeWriteService(CatalogAttributeDefinitionRepository attributeDefinitionRepository,
+                                 CatalogAttributeOptionRepository attributeOptionRepository) {
         this.attributeDefinitionRepository = attributeDefinitionRepository;
+        this.attributeOptionRepository = attributeOptionRepository;
     }
 
     @Override
@@ -220,6 +224,62 @@ public class AttributeWriteService implements AttributeWriteSpi {
             }
         }
         return deleted;
+    }
+
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    public AttributeMutationResult reorderValues(UUID attributeId, List<AttributeReorderMove> moves) {
+        Optional<CatalogAttributeDefinition> addressed =
+                attributeId == null ? Optional.empty() : attributeDefinitionRepository.findById(attributeId);
+        if (addressed.isEmpty()) {
+            return AttributeMutationResult.failure(List.of(new AttributeMutationError(
+                    "attributeId", AttributeMutationErrorCode.NOT_FOUND, "No attribute found for the id")));
+        }
+        List<CatalogAttributeOption> ordered = new ArrayList<>(
+                attributeOptionRepository.findAllByAttributeDefinitionIdOrderByPositionAsc(attributeId));
+        List<AttributeMutationError> errors = new ArrayList<>();
+        for (AttributeReorderMove move : moves) {
+            int currentIndex = indexOfValue(ordered, move.itemId());
+            if (currentIndex < 0) {
+                errors.add(new AttributeMutationError("id", AttributeMutationErrorCode.NOT_FOUND,
+                        "No attribute value found for the id under the attribute"));
+                continue;
+            }
+            int shift = move.sortOrder() == null ? 0 : move.sortOrder();
+            int targetIndex = currentIndex + shift;
+            if (targetIndex < 0 || targetIndex >= ordered.size()) {
+                errors.add(new AttributeMutationError("sortOrder", AttributeMutationErrorCode.INVALID,
+                        "The relative move leaves the value order"));
+                continue;
+            }
+            CatalogAttributeOption moved = ordered.remove(currentIndex);
+            ordered.add(targetIndex, moved);
+        }
+        if (!errors.isEmpty()) {
+            return AttributeMutationResult.failure(errors);
+        }
+        List<CatalogAttributeOption> toSave = new ArrayList<>();
+        for (int i = 0; i < ordered.size(); i++) {
+            CatalogAttributeOption option = ordered.get(i);
+            if (option.getPosition() != i + 1) {
+                option.reposition(i + 1);
+                toSave.add(option);
+            }
+        }
+        if (!toSave.isEmpty()) {
+            attributeOptionRepository.saveAll(toSave);
+        }
+        return AttributeMutationResult.success(toView(addressed.get()));
+    }
+
+    private static int indexOfValue(List<CatalogAttributeOption> ordered, UUID valueId) {
+        for (int i = 0; i < ordered.size(); i++) {
+            if (ordered.get(i).getId().equals(valueId)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /** The bounded projection — the read service's own rendering rule. */

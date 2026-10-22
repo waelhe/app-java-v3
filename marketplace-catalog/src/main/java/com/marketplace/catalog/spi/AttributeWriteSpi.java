@@ -67,4 +67,19 @@ public interface AttributeWriteSpi {
      * @return the number of rows the registry itself deleted
      */
     int deleteAttributes(List<UUID> ids);
+
+    /**
+     * Reorders the attribute's registered option values — the Saleor
+     * {@code attributeReorderValues} root's owning use case (the
+     * pinned relative moves resolved against the option registry's
+     * current order with the compacted 1..n re-derivation; the
+     * attribute's own projection answers in the payload).
+     *
+     * @param attributeId the owning attribute definition's native UUID
+     * @param moves       the relative moves (option value, sortOrder)
+     * @return the owning attribute's projection with its reordered
+     *         values, or the domain error entries (NOT_FOUND
+     *         attribute/value, INVALID out-of-range move)
+     */
+    AttributeMutationResult reorderValues(UUID attributeId, List<AttributeReorderMove> moves);
 }

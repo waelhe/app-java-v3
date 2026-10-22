@@ -4,6 +4,7 @@ import com.marketplace.catalog.spi.AttributeCreateCommand;
 import com.marketplace.catalog.spi.AttributeMutationError;
 import com.marketplace.catalog.spi.AttributeMutationErrorCode;
 import com.marketplace.catalog.spi.AttributeMutationResult;
+import com.marketplace.catalog.spi.AttributeReorderMove;
 import com.marketplace.catalog.spi.AttributeUpdateCommand;
 import com.marketplace.catalog.spi.AttributeWriteSpi;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +16,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -46,12 +48,14 @@ import static org.mockito.Mockito.when;
 class AttributeWriteServiceTest {
 
     private CatalogAttributeDefinitionRepository repository;
+    private CatalogAttributeOptionRepository optionRepository;
     private AttributeWriteSpi service;
 
     @BeforeEach
     void setUp() {
         repository = mock(CatalogAttributeDefinitionRepository.class);
-        service = new AttributeWriteService(repository);
+        optionRepository = mock(CatalogAttributeOptionRepository.class);
+        service = new AttributeWriteService(repository, optionRepository);
     }
 
     private static CatalogAttributeDefinition row(String code, String nameEn) {
@@ -358,5 +362,91 @@ class AttributeWriteServiceTest {
         assertThat(result.success()).isTrue();
         assertThat(result.attribute().name()).isEqualTo("الاسم العربي فقط");
         assertThat(result.attribute().slug()).isEqualTo("ar-attr");
+    }
+
+    // ------------------------------------------------------------------
+    // reorderValues — the Saleor attributeReorderValues root (the
+    // agent-2 follow-on packet)
+    // ------------------------------------------------------------------
+
+    @Test
+    void reorderValuesAnswersTheNotFoundForAnUnknownAttribute() {
+        AttributeMutationResult result = service.reorderValues(UUID.randomUUID(),
+                List.of(new AttributeReorderMove(UUID.randomUUID(), 1)));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(AttributeMutationError::code, AttributeMutationError::field)
+                .containsExactly(AttributeMutationErrorCode.NOT_FOUND, "attributeId");
+    }
+
+    @Test
+    void reorderValuesResolvesTheRelativeMovesWithCompactedPositions() {
+        CatalogAttributeDefinition parent = row("choice-attr", "Choice Attr");
+        CatalogAttributeOption one = CatalogAttributeOption.create(parent.getId(), "one", "One", null, 1);
+        CatalogAttributeOption two = CatalogAttributeOption.create(parent.getId(), "two", "Two", null, 2);
+        CatalogAttributeOption three = CatalogAttributeOption.create(parent.getId(), "three", "Three", null, 3);
+        when(repository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(optionRepository.findAllByAttributeDefinitionIdOrderByPositionAsc(parent.getId()))
+                .thenReturn(List.of(one, two, three));
+        when(optionRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        AttributeMutationResult result = service.reorderValues(parent.getId(),
+                List.of(new AttributeReorderMove(three.getId(), -2)));
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.attribute().slug()).isEqualTo("choice-attr");
+        verify(optionRepository).saveAll(argThat((List<CatalogAttributeOption> saved) ->
+                saved.size() == 3
+                        && saved.get(0).getId().equals(three.getId()) && saved.get(0).getPosition() == 1
+                        && saved.get(1).getId().equals(one.getId()) && saved.get(1).getPosition() == 2
+                        && saved.get(2).getId().equals(two.getId()) && saved.get(2).getPosition() == 3));
+    }
+
+    @Test
+    void reorderValuesAnswersTheNotFoundForAnUnknownValue() {
+        CatalogAttributeDefinition parent = row("choice-attr", "Choice Attr");
+        when(repository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(optionRepository.findAllByAttributeDefinitionIdOrderByPositionAsc(parent.getId()))
+                .thenReturn(List.of());
+
+        AttributeMutationResult result = service.reorderValues(parent.getId(),
+                List.of(new AttributeReorderMove(UUID.randomUUID(), 1)));
+
+        assertThat(result.errors()).singleElement()
+                .extracting(AttributeMutationError::code, AttributeMutationError::field)
+                .containsExactly(AttributeMutationErrorCode.NOT_FOUND, "id");
+    }
+
+    @Test
+    void reorderValuesAnswersTheInvalidForAnOutOfRangeMove() {
+        CatalogAttributeDefinition parent = row("choice-attr", "Choice Attr");
+        CatalogAttributeOption one = CatalogAttributeOption.create(parent.getId(), "one", "One", null, 1);
+        when(repository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(optionRepository.findAllByAttributeDefinitionIdOrderByPositionAsc(parent.getId()))
+                .thenReturn(List.of(one));
+
+        AttributeMutationResult result = service.reorderValues(parent.getId(),
+                List.of(new AttributeReorderMove(one.getId(), 1)));
+
+        assertThat(result.errors()).singleElement()
+                .extracting(AttributeMutationError::code, AttributeMutationError::field)
+                .containsExactly(AttributeMutationErrorCode.INVALID, "sortOrder");
+        verify(optionRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void reorderValuesWithAZeroShiftIsTheIdempotentNoOp() {
+        CatalogAttributeDefinition parent = row("choice-attr", "Choice Attr");
+        CatalogAttributeOption one = CatalogAttributeOption.create(parent.getId(), "one", "One", null, 1);
+        when(repository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(optionRepository.findAllByAttributeDefinitionIdOrderByPositionAsc(parent.getId()))
+                .thenReturn(List.of(one));
+
+        AttributeMutationResult result = service.reorderValues(parent.getId(),
+                List.of(new AttributeReorderMove(one.getId(), 0)));
+
+        assertThat(result.success()).isTrue();
+        verify(optionRepository, never()).saveAll(any());
     }
 }

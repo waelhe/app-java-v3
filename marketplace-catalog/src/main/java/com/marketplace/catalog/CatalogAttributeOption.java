@@ -67,6 +67,19 @@ public class CatalogAttributeOption extends BaseEntity {
         this.nameAr = blankToNull(newNameAr);
     }
 
+    /**
+     * The option row's position-move seam — the ADMIN reorder use case's
+     * own seam (the Saleor {@code attributeReorderValues} root — the
+     * position column the entity's own javadoc reserves for exactly this
+     * root). The new position is the SERVICE's own compacted derivation
+     * (the relative-move algorithm's outcome); the position-uniqueness
+     * column remains the concurrent-write backstop.
+     */
+    void reposition(int newPosition) {
+        if (newPosition < 0) throw new IllegalArgumentException("position must be non-negative");
+        this.position = newPosition;
+    }
+
     @Override public UUID getId() { return id; }
     public UUID getAttributeDefinitionId() { return attributeDefinitionId; }
     public String getCode() { return code; }

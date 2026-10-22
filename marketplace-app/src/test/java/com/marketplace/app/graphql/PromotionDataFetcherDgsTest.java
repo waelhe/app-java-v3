@@ -131,6 +131,12 @@ class PromotionDataFetcherDgsTest {
     @MockitoBean
     private com.marketplace.catalog.spi.TranslationWriteSpi translationWriteSpi;
 
+    // The product-type attribute schema mutation roots' owning write
+    // seam (agent-2 follow-on packet) — the package slice wires every
+    // fetcher, so this seam gets its mock (the sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.catalog.spi.ProductTypeAttributeWriteSpi productTypeAttributeWriteSpi;
+
     @MockitoBean
     private OrderReadSpi orderReadSpi;
 
