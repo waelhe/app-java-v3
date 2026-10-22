@@ -47,7 +47,14 @@
         // every journey seam follows (the declared interface plus its
         // propagated signature types, never the internals; the ADMIN
         // enforcement lives in the owning use case's method security).
-        "orders :: orders-spi"
+        "orders :: orders-spi",
+        // Agent-2 packet campaign-b5-a (the canonical Saleor plan §5-P2 — the
+        // product-media mutation roots): the GraphQL surface's media
+        // mutation fields delegate to the media module's OWN declared write
+        // SPI — the same catalog-spi/identity-spi pattern every journey
+        // seam follows (the declared interface, never the internals; the
+        // PROVIDER ownership enforcement lives in the owning use case).
+        "media :: media-spi"
     }
 )
 package com.marketplace.app;

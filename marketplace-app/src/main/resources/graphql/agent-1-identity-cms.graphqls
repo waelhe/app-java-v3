@@ -456,11 +456,6 @@ input CustomerTypeUpdateInput {
     isDefault: Boolean
 }
 
-input ReorderInput {
-    id: ID!
-    sortOrder: Int
-}
-
 input PageCreateInput {
     slug: String
     title: String
@@ -535,10 +530,6 @@ input MenuItemMoveInput {
     itemId: ID!
     parentId: ID
     sortOrder: Int
-}
-
-input NameTranslationInput {
-    name: String
 }
 
 # Bounded where/filter inputs (the CategoryWhereInput precedent: the executed
@@ -641,11 +632,6 @@ enum MenuItemsSortField {
 enum AddressTypeEnum {
     BILLING
     SHIPPING
-}
-
-enum ErrorPolicyEnum {
-    IGNORE_FAILED
-    REJECT_EVERYTHING
 }
 
 enum NavigationType {
