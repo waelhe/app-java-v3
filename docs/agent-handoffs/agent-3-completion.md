@@ -1,5 +1,13 @@
 # الوكيل الثالث — التسليم التصحيحي لـ PR #698
 
+## الجولة الرابعة (النتائج النهائية على e543014 + معالجة ملاحظات المراجعة — c4a833a)
+
+1. **اكتملت بوبات الجولة الثالثة على رأس المرشّح `e543014` نفسه**: Integration Test نجح كاملاً ([run 39831574495](https://github.com/waelhe/app-java-v3/actions/runs/39831574495): إقلاع حقيقي + Flyway + PostgreSQL/Redis + الدخان المركب)، وInventory نجح تلقائيًا ([run 39831546831](https://github.com/waelhe/app-java-v3/actions/runs/39831546831))، وفي CI ([run 39831569808](https://github.com/waelhe/app-java-v3/actions/runs/39831569808)) نجحت Build وGraphQL Schema Gate وOpenAPI Gate وAndroid Contract Gate.
+2. **المقارنة الحرفية للشظايا الثماني بين `e543014` والقاعدة النقية `d10a901`** ([run 39804335540](https://github.com/waelhe/app-java-v3/actions/runs/39804335540)): اختبارات `OrderGraphQlIntegrationTest` الـ23 التي كانت تعطب على القاعدة أصبحت **كلها خضراء** على `e543014` — فجوة نطاق الوكيل 3 داخل الشظايا مغلقة ومثبتة على رأس المرشّح نفسه؛ **صفر اختبار جديد فشل** (لا انحدار)؛ والـ116 فاشلة الباقية موجودة حرفيًا على القاعدة النقية قبل أي كوميت من الوكيل 3 (ملكية الوكيلين 1 و2: Product 27، ProductVariant 30، Category 27، Collection 18، Media 6، ProductTypeAttribute 2، وإفراديات في Attribute/Customer/Home/PostDetail/PromotionVoucher/catalog-variant). `Tests — modules` فشل ببوابة JaCoCo الموروثة وحدها (marketplace-shared 0.68<0.70 — Tests run: 290, Failures: 0, Errors: 0)، ووظيفة «Build & Test» بوابة تجميعية (خطوتها الوحيدة Assert every gate passed) لا فشل بناء — البناء نفسه أخضر.
+3. **ملاحظتا CodeRabbit القابلتان للتنفيذ على `e543014` عولجتا في `c4a833a`** (كوميت توثيقي على `agent-3-gate-trigger-proposal.md` حصرًا): (أ) استبدال glob `integration/saleor-*` باسم الفرع الدقيق `integration/saleor-full-commerce-20261021` — وهو فرع الـintegration الوحيد الموجود فعلًا (تحقق branches API)، وشرط التقاعد («إزالة الإدخال عند هبوط الموجة إلى main») يطابقه حرفيًا — مع تصحيح وصف الموجة (#696/#697 دُمجتا في القاعدة 2026-10-22؛ المفتوحتان #698/#700)؛ (ب) تصحيح دلالات التشغيل وفق الوثائق الرسمية لـ GitHub: بوابات `pull_request` تعمل على **مرجع الدمج** `refs/pull/N/merge` لا على رأس الـPR، مع فصل عدد الوظائف المُعدّة في الإعداد (15 في CI) عن أي ادعاء اكتمال في جولة بعينها.
+4. **بوبات هذه الجولة شُغّلت فورًا على `c4a833a`** عبر `workflow_dispatch` (يعمل على رأس الفرع المحدد نفسه): CI [run 39870366732](https://github.com/waelhe/app-java-v3/actions/runs/39870366732) وIntegration Test [run 39870369820](https://github.com/waelhe/app-java-v3/actions/runs/39870369820)، وInventory [run 39870354489](https://github.com/waelhe/app-java-v3/actions/runs/39870354489) نجح تلقائيًا (pull_request). تُقرأ نتائج كل جولة من الجولة نفسها؛ لا انتظار.
+5. **الالتزام الدائم** (توجيه 17:58): الجذور الثمانية تبقى `IMPLEMENTED_UNVERIFIED` حتى تسجيل النتائج النهائية على SHA المرشّح بعد إصلاح بوابات A/B؛ `orderConfirm` تبقى `BLOCKED_BY_DECISION` ما دام capture غير متاح؛ `checkout` تبقى adaptation/partial بانتظار قرار A0 (UUID scalar + variant reference)؛ والـPR يبقى **Draft مفتوحًا غير مدموج**.
+
 ## الجولة الثالثة (تنفيذ توجيه المتابعة 2026-10-22 17:58 على الرأس df73938)
 
 نفّذتُ بنود توجيه المتابعة الثالثة للمالك على رأس `df73938`، وفق ترتيبها:
@@ -23,7 +31,7 @@
 ## حالة المستودع
 - PR: https://github.com/waelhe/app-java-v3/pull/698 — يبقى مفتوحًا وغير مدموج.
 - الفرع: `agent/saleor-p4-p5-p6-orders-events-20261021`، والقاعدة: `integration/saleor-full-commerce-20261021`.
-- المزامنة الأولى: رأس التكامل `74ffd91` في الدمج `6b7a077`. المصالحة الثانية: رأس التكامل `d10a9012` في الدمج `b34889c` (الرأس الحالي). الفرع غير متأخر عن `integration` (behind_by=0) وPR `mergeable=true`، ويبقى Draft وغير مدموج.
+- المزامنة الأولى: رأس التكامل `74ffd91` في الدمج `6b7a077`. المصالحة الثانية: رأس التكامل `d10a9012` في الدمج `b34889c` (الجولة الثانية). سلسلة الرؤوس بعدها: `14c1af5` ← `880f1c4` ← `df73938` ← `e543014` (إصلاح الجولة الثالثة) ← `c4a833a` (تصحيح المقترح — الجولة الرابعة) ← كوميت هذا القسم التوثيقي (رأس الفرع الحالي). الفرع غير متأخر عن `integration` (behind_by=0) وPR `mergeable=true`، ويبقى Draft وغير مدموج.
 - المرجع المثبت: Saleor 3.23.43. إصدارات المشروع المسجلة: Java 25، Spring Boot 4.1.1، Spring Modulith 2.1.1.
 - لم أنتظر CI أو CodeRabbit. المراجعة والدمج منفصلان عن التنفيذ.
 
