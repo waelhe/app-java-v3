@@ -2,8 +2,8 @@ package com.marketplace.app.graphql;
 
 import com.marketplace.catalog.Category;
 import com.marketplace.catalog.CategoryRepository;
-import com.marketplace.shared.test.IntegrationContainers;
-import com.netflix.graphql.dgs.client.GraphQLError;
+import test.config.IntegrationContainers;
+import org.springframework.graphql.ResponseError;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,7 +19,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -350,7 +350,7 @@ class CategoryGraphQlIntegrationTest {
                 .variable("id", "not-a-global-id")
                 .execute()
                 .errors()
-                .satisfies(errors -> {
+                .satisfy(errors -> {
                     assertThat(errors).hasSize(1);
                     assertThat(errors.get(0).getExtensions()).containsEntry("errorCode", "VAL-001");
                 });
@@ -366,7 +366,7 @@ class CategoryGraphQlIntegrationTest {
                 .variable("id", UUID.randomUUID().toString())
                 .execute()
                 .errors()
-                .satisfies(errors -> {
+                .satisfy(errors -> {
                     assertThat(errors).hasSize(1);
                     assertThat(errors.get(0).getExtensions()).containsEntry("errorCode", "VAL-001");
                 });
@@ -385,7 +385,7 @@ class CategoryGraphQlIntegrationTest {
                 .variable("id", attributeGlobalId(UUID.randomUUID()))
                 .execute()
                 .errors()
-                .satisfies(errors -> {
+                .satisfy(errors -> {
                     assertThat(errors).hasSize(1);
                     assertThat(errors.get(0).getExtensions()).containsEntry("errorCode", "VAL-001");
                 });
@@ -434,8 +434,8 @@ class CategoryGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
                                 .contains("filter is not implemented")));
     }
 
@@ -448,8 +448,8 @@ class CategoryGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
                                 .contains("where filter is not implemented")));
     }
 
@@ -462,8 +462,8 @@ class CategoryGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
                                 .contains("level filtering is not implemented")));
     }
 
@@ -476,8 +476,8 @@ class CategoryGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
                                 .contains("forward-only")));
     }
 
@@ -490,8 +490,8 @@ class CategoryGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
                                 .contains("SUBCATEGORY_COUNT is not implemented")));
     }
 
@@ -509,8 +509,8 @@ class CategoryGraphQlIntegrationTest {
                 .variable("after", slugCursor)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> {
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy((ResponseError error) -> {
                             assertThat(error.getMessage()).contains("after must be a forward keyset cursor");
                             assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
                         }));
@@ -525,8 +525,8 @@ class CategoryGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
                                 .contains("slugLanguageCode lookup is not implemented")));
     }
 
@@ -540,8 +540,8 @@ class CategoryGraphQlIntegrationTest {
                 .variable("externalReference", "erp-cat-1")
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> assertThat(error.getMessage())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy((ResponseError error) -> assertThat(error.getMessage())
                                 .contains("externalReference lookup is not implemented")));
     }
 
@@ -554,8 +554,8 @@ class CategoryGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfies(errors -> assertThat(errors)
-                        .anySatisfy((GraphQLError error) -> {
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy((ResponseError error) -> {
                             assertThat(error.getMessage()).contains("category requires one of id or slug");
                             assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
                         }));

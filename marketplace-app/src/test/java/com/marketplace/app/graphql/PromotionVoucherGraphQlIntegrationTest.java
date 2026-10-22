@@ -374,7 +374,7 @@ class PromotionVoucherGraphQlIntegrationTest {
                 .errors().verify()
                 .path("promotions.edges[*].node.createdAt").entityList(String.class)
                 .satisfies(timestamps -> {
-                    assertThat(timestamps).isNotEmpty();
+                    assertThat(timestamps).hasSizeGreaterThan(0);
                     List<Instant> instants = timestamps.stream().map(Instant::parse).toList();
                     assertThat(instants).isSortedAccordingTo(java.util.Comparator.reverseOrder());
                 });
