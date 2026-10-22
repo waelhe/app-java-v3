@@ -218,7 +218,7 @@ class ProductTypeGraphQlIntegrationTest {
                 .errors().verify()
                 .path("productTypes.edges[*].node.name").entityList(String.class)
                 .satisfies(names -> {
-                    assertThat(names).isNotEmpty();
+                    assertThat(names).hasSizeGreaterThan(0);
                     assertThat(names).isSortedAccordingTo(java.util.Comparator.reverseOrder());
                 });
     }

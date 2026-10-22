@@ -268,8 +268,11 @@ class ProductVariantDataFetcherDgsTest {
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> edges = (List<Map<String, Object>>) connection.get("edges");
-        assertThat(edges.get(0).get("name")).isNull();
-        assertThat(edges.get(0).get("sku")).isEqualTo("b5a-sku-2");
+        // The Saleor connection envelope: the node rides INSIDE the edge.
+        @SuppressWarnings("unchecked")
+        Map<String, Object> node = (Map<String, Object>) edges.get(0).get("node");
+        assertThat(node.get("name")).isNull();
+        assertThat(node.get("sku")).isEqualTo("b5a-sku-2");
     }
 
     /**

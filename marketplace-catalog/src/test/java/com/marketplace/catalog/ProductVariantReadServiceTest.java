@@ -28,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -70,10 +71,10 @@ class ProductVariantReadServiceTest {
         productRepository = mock(ProductRepository.class);
         service = new ProductVariantReadService(variantRepository, productRepository);
         publicCaller = mock(Authentication.class);
-        when(publicCaller.getAuthorities()).thenReturn(List.<GrantedAuthority>of());
+        doReturn(List.<GrantedAuthority>of()).when(publicCaller).getAuthorities();
         adminCaller = mock(Authentication.class);
-        when(adminCaller.getAuthorities())
-                .thenReturn(List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+        doReturn(List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))).when(adminCaller)
+                .getAuthorities();
     }
 
     private static Product activeProduct(String title) {

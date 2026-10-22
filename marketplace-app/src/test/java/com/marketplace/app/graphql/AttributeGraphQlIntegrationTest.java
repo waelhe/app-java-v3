@@ -267,7 +267,7 @@ class AttributeGraphQlIntegrationTest {
                 .errors().verify()
                 .path("attributes.edges[*].node.name").entityList(String.class)
                 .satisfies(names -> {
-                    assertThat(names).isNotEmpty();
+                    assertThat(names).hasSizeGreaterThan(0);
                     assertThat(names).isSortedAccordingTo(java.util.Comparator.reverseOrder());
                 });
     }
@@ -284,7 +284,7 @@ class AttributeGraphQlIntegrationTest {
                 .errors().verify()
                 .path("attributes.edges[*].node.slug").entityList(String.class)
                 .satisfies(slugs -> {
-                    assertThat(slugs).isNotEmpty();
+                    assertThat(slugs).hasSizeGreaterThan(0);
                     assertThat(slugs).isSortedAccordingTo(java.util.Comparator.reverseOrder());
                 });
     }
