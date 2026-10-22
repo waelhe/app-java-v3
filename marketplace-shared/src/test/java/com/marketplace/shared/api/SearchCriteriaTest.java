@@ -74,7 +74,7 @@ class SearchCriteriaTest {
                 null, null, null, null, null, null, 0, null, null, null, null, null, null))
                 .isInstanceOf(BadRequestException.class).hasMessage("minRooms must be positive");
         assertThatThrownBy(() -> new SearchCriteria(null, null, null, null,
-                null, null, null, null, null, null, null, null, -1, null, null, null, null))
+                null, null, null, null, null, null, null, -1, null, null, null, null, null))
                 .isInstanceOf(BadRequestException.class).hasMessage("minBathrooms must be positive");
         assertThatThrownBy(() -> new SearchCriteria(null, null, null, null,
                 null, null, null, null, null, null, null, null, 0, null, null, null, null))
