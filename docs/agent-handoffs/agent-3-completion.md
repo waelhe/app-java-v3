@@ -3,12 +3,12 @@
 ## حالة المستودع
 - PR: https://github.com/waelhe/app-java-v3/pull/698 — يبقى مفتوحًا وغير مدموج.
 - الفرع: `agent/saleor-p4-p5-p6-orders-events-20261021`، والقاعدة: `integration/saleor-full-commerce-20261021`.
-- رأس التصحيح البرمجي الأخير: `6bd73cef14dec57325cf6fb62fe281a823ca0728`. اختبارات هذا الرأس لم تُشغّل بنجاح في بيئة Maven/CI متاحة لنا بعد، لذلك لا أدّعي نجاحها.
+- تمت مزامنة الفرع مع رأس التكامل المقبول `74ffd9144c88ad436bf6e3eb47674ab7174e11fd` كوالد ثانٍ في commit الدمج `6b7a07757c25f4f5bfc04308d96801411a0cd33d`. أصبح الفرع غير متأخر عن `integration`، وPR قابلًا للدمج تقنيًا لكنه يبقى Draft وغير مدموج.
 - المرجع المثبت: Saleor 3.23.43. إصدارات المشروع المسجلة: Java 25، Spring Boot 4.1.1، Spring Modulith 2.1.1.
 - لم أنتظر CI أو CodeRabbit. المراجعة والدمج منفصلان عن التنفيذ.
 
 ## التصحيحات التي دُفعت إلى GitHub
-1. استعدت ملفات الكتالوج المملوكة للوكيل B واختبارات تكامل GraphQL المتداخلة إلى نسخ فرع التكامل. لا يغير نطاق الوكيل الثالث الآن `ProductVariantReadService` أو `ProductVariantReadSpi` أو اختبارات الكتالوج. أبقيت mocks لـ`OrderCommandSpi` في شرائح DGS الممسوحة بالحزمة حيث يحتاج المحوّل المحقون إلى bean.
+1. استعدت ملفات الكتالوج المملوكة للوكيل B واختبارات تكامل GraphQL المتداخلة إلى نسخ فرع التكامل. لا يغير نطاق الوكيل الثالث الآن `ProductVariantReadService` أو `ProductVariantReadSpi` أو اختبارات الكتالوج. أُبقيت اختبارات التكامل كما هي في رأس التكامل المقبول، ثم أضيف فقط `OrderCommandSpi` و`CheckoutSpi` mocks الضرورية في شرائح DGS الخمس التي تمسح حزمة GraphQL. حُفظت mocks وassertions الوكيلين 1 و2 الموجودة أصلًا في النسخ المدمجة.
 2. صححت فحص حد التمرير في `OrderReadService.scrollOrders` إلى `limit == null || limit.isUnlimited() || limit.max() <= 0`. أضفت `OrderReadServiceLimitTest` ليغطي null وunlimited وzero وnegative ويتأكد من عدم استدعاء المستودع للحالات غير الصحيحة. لا يقرأ التطبيق `max()` على unlimited. المرجع الرسمي: https://docs.spring.io/spring-data/relational/reference/data-commons/api/java/org/springframework/data/domain/Limit.html.
 3. أزلت `orderConfirm` و`OrderConfirm` من SDL الإضافي ومحوّل DGS واختبارات نجاحه. عقد `OrderPaymentPort` الحالي ينشئ/يعيد PaymentIntent ولا يقدم capture أو transaction/idempotency/replay/reconciliation. لا يصح عرض تأكيد حالة الطلب وحده كنجاح مكافئ لـSaleor. انتقال `OrdersService.confirm` الأصلي باقٍ لمسار المنصة الداخلي؛ أما جذر Saleor فمحجوب إلى أن يقدّم مالك Payments عقد capture واختباراته المالية.
 4. `checkout(id: ID)` يعيد null عندما يكون المعرف غائبًا أو فارغًا؛ أما المعرّف غير الفارغ غير الصحيح فيبقى خطأ تحقق. نطاق `catch ResourceNotFoundException` محصور في قراءة الـcheckout من المالك، ولا يخفي أخطاء إثراء السطر باعتبارها checkout غير موجود. أضفت اختبارًا لوحدة الـfetcher لغياب/فراغ المعرف والمعرف المشوّه.
@@ -29,10 +29,12 @@
 **الاقتراح إلى A0 (ليس تنفيذًا ذاتيًا داخل الفرع):** اعتماد عقد UUID scalar مركزي متوافق مع مخطط Saleor المثبت، وتسجيله في Spring GraphQL عبر `RuntimeWiringConfigurer` وفق الوثائق الرسمية (https://docs.spring.io/spring-graphql/reference/request-execution.html)، ثم إضافة alias `token: UUID` مع deprecation لـ`checkout` واختبارات SDL/serialization/input coercion. على A0 أيضًا تقرير كيفية تقديم مراجع variant التاريخية ضمن العقد النهائي بدل الإبقاء على النوع الخاص بالمنصة، أو اعتماد هذا الانحراف واختباره. لا يعدّل الوكيل الثالث `schema.graphqls` المركزي أو إعدادات GraphQL المشتركة؛ تبقى هذه الفجوة معلنة إلى حين قرار المالك.
 
 ## نتائج التحقق، دون مبالغة
-- لم يتم إثبات نجاح `mvn clean verify` أو اختبارات PostgreSQL/Flyway/Testcontainers على رأس الكود `a18a987eeffdf2e8fd2a784cb1fd053e235e331f`. أرقام 111/111 و118 اختبارًا في تقارير أقدم لا تثبت هذا الرأس.
-- تحقق Action الخاص بـ`Saleor Canonical Plan and Schema Inventory` على هذا الرأس انتهى بالفشل بسبب divergence غير معتمد لقراءات العنوان `address/addressValidationRules`، ويتطلب قرار المالك/ADR لـ`D-ADDR-001`. هذا من حوكمة الخطة المركزية وخارج ملكية الوكيل الثالث؛ لم أتجاوز الحماية بتعديل السجل المركزي من فرع نطاق.
-- إعادة الكتالوج إلى خط أساس التكامل تُظهر عائق البناء المعروف في `ProductVariantReadService` حول `Limit.value()`. إصلاح هذا الملف ملك الوكيل B ولا ينبغي نسخه أو تكراره هنا.
-- حالة CodeRabbit/Snyk الظاهرة في سجل commit لا تثبت نجاح بناء Maven؛ يلزم ربط كل نتيجة بالـSHA الحالي.
+- أُعيدت المصالحة مع فرع التكامل الحالي بدل الاكتفاء بفرع متأخر 38 commit. رأس الكود المدمج هو `6b7a07757c25f4f5bfc04308d96801411a0cd33d`، ووالد التكامل الذي يحمله هو `74ffd9144c88ad436bf6e3eb47674ab7174e11fd`. فحص المقارنة يبيّن `behind_by=0` وPR `mergeable=true`؛ لم يتم دمج PR إلى الأساس.
+- نجح فحص `Saleor Canonical Plan and Schema Inventory` على رأس الدمج الدقيق `6b7a077`: [run 39790978763](https://github.com/waelhe/app-java-v3/actions/runs/39790978763). هذا يشمل التغيير المعتمد من مالك التكامل `4360829` الذي فصل `D-ADDR-001`؛ لم أعدّل سجل الانحراف المركزي بنفسي.
+- حتى نقطة الفحص، لم يظهر بعد تشغيل `CI` أو `Integration Test` مكتمل على SHA `6b7a077` نفسه. توجد نتائج نجاح على رؤوس مختلفة، لكنها ليست دليلًا على نجاح هذا الرأس. لذلك لا أزعم نجاح `mvn clean verify` أو PostgreSQL/Flyway/Testcontainers end-to-end على SHA المدمج.
+- التحديث المركزي `a466d403` في تاريخ التكامل يتضمن إصلاح Spring Data Commons 4.0 الرسمي إلى `Limit.max()` وإصلاحات واجهة اختبارات Spring GraphQL. دمجت إصدار `OrderReadService` مع فحص `limit.isUnlimited()` قبل `limit.max()`; لم أكتب إصلاحًا بديلًا على ملفات الكتالوج. لا توجد ملفات `marketplace-catalog/**` ضمن فرق PR.
+- تبقى الجذور الثمانية في حالة `IMPLEMENTED_UNVERIFIED` حتى ترد نتائج اختبارات على الرأس المرشح الحالي. أما `orderConfirm` فتبقى `BLOCKED_BY_DECISION` لأن الدفع الحالي لا يملك capture حقيقيًا.
+- نجاح CodeRabbit/Snyk في قائمة الحالات لا يعادل نجاح Maven؛ لا تُنسب نتائج إلا إلى SHA المشمولة صراحة في التشغيل.
 
 ## القرار
 لا تدمج PR #698. أطلق طلب مراجعة CodeRabbit مرة واحدة على الرأس النهائي، ولا تنتظر اكتماله. لا تعِد إظهار `orderConfirm` قبل تنفيذ واختبار عقد capture المملوك لـPayments، ولا تدّع اكتمال Saleor end-to-end ما دامت الجذور المحجوبة بلا عقودها الحقيقية.
