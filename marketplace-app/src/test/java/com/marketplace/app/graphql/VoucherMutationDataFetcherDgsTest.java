@@ -68,6 +68,12 @@ class VoucherMutationDataFetcherDgsTest {
     static class GraphQLAdapterSlice {
     }
 
+    // The token-rotation JDBC store rides the package component scan; its
+    // owning seam is not under test in this slice — the interface mock
+    // keeps the slice's containerless wiring intact (the seam-gets-its-mock law).
+    @MockitoBean
+    private RefreshTokenRotationStore refreshTokenRotationStore;
+
     @Autowired
     private DgsQueryExecutor dgsQueryExecutor;
 
