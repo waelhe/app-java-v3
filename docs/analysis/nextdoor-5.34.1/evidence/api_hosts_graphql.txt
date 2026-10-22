@@ -1,0 +1,32 @@
+# Evidence: API hosts & GraphQL transport, Nextdoor Android 5.34.1
+
+Source artifact: `com.nextdoor_5.34.1-1254037_1arch_2dpi_8lang_56c1285e8915c2a1c0b48051bbba7e7e_apkmirror.com.apkm`
+(base.apk extracted, SHA-256 `7cb7ae84815cf399c0070354aaafb97f02429eb2785f93273b40e1c888adeb12`,
+371 file Java API, decompiled with apktool 3.0.3 in a session temp dir)
+
+Class `com.nextdoor.apiconfiguration.ApiConfiguration` (smali root `smali/com/nextdoor/apiconfiguration/ApiConfiguration.smali`)
+carries environment name lists; constants observed (mock/dev/prod sidecars):
+
+- `https://flask.us.nextdoor.com` (Production API host; "flask" prefix indicates Flask/PaaS REST+GraphQL gateway)
+- `auth.nextdoor.com` (OAuth token host)
+- `nextdoor.com`, `tools.nextdoor-test.com`, `auth.nextdoor-test.com`, `flask.us.nextdoor-test.com` (test env)
+Mapbox, Firebase RTDB (`nextdoor-com-api-project-521755409165.firebaseio.com`), asset statements.
+
+Apollo client runtime references (R8-obfuscated class names):
+- `smali/erb.smali` line 3149: `"...did you call ApolloClient.Builder.serverUrl(url)?"` →
+Apollo Kotlin runtime present; generated operation classes were R8-renamed
+(no `*Query`/`*Mutation` classes retain Nextdoor-shaped names anywhere in the 79,609 classes).
+- `smali/zf1.smali` line 4208: string `"persistedQuery"` → APQ transport probes exist.
+- NO literal `/graphql` endpoint string was found in smali:
+unknown endpoint path — documented observation, not inferred.
+- `com.apollographql.apollo.cache.normalized.sql.ApolloInitializer` is the only
+un-renamed Apollo class. Confirms normalized-cache persistence is wired.
+
+Server API domain vocabulary (real evidence, not guesses):
+- `com.nextdoor.apollo.type` catalog = 346 hand-named GraphQL enum/type classes
+  (see `graphql_apollo_type_enums.txt`, complete list).
+- `com.nextdoor.network` = 51 classes (auth + Moshi adapters; see `network_class_names.txt`).
+- Tracking pipes use Protobuf-Wire (`com.nextdoor.events.tracking.actions|elements|common.*`).
+
+Observation boundary: static scan only; no device, no traffic. Statement types
+requested above are "observed in DEX", not "verified against live service".

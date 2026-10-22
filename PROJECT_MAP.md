@@ -12,6 +12,15 @@
 
 ---
 
+## الموجة B — استخراج ثنائي Nextdoor 5.34.1 وخريطة تعيين مفاهيم API/النطاق (2026-10-22 — إعلان البوابات محكم. [الملف الحاكم]: أدلة PR #590 في docs/analysis/nextdoor-5.34.1 + AGENTS §0 [النواة المعمارية]: طبقة توثيق فقط — صفر كود/ترحيلات/اعتماديات [أثر على الحدود]: لا شيء — الوثائق حصراً [دين]: لا)
+
+- **حُكم الأداة والأصل (مقيس):** فُكّ base.apk بـ apktool 3.0.3 من الأصل السليم com.nextdoor_5.34.1-1254037 .apkm (SHA-256 للـ base.apk: 7cb7ae84815cf399c0070354aaafb97f02429eb2785f93273b40e1c888adeb12) — ملف سطح المكتب Nextdoor_5.33.4.apks تالف (بداية صفرية) ولا يُستعمل. REA/JADX 0.7.1 على الحزمة: com.nextdoor 5.34.1 (1254037) — 79,609 صنفاً و3,971 مورداً، مطابقة تماماً لعدّادات PR #590 المدموج (أدلة: ev_26211ef0…، ملخص ev_b5e49d74…).
+- **النتاج في المستودع:** evidence/{graphql_apollo_type_enums.txt (346 نوعاً من com.nextdoor.apollo.type), network_class_names.txt (51 صنفاً: enums + Moshi adapters + AuthRepository), api_hosts_graphql.txt} + reports/API_domain_contract_mapping.md — تعيين مفاهيم DEX إلى وحداتنا بوابة إثبات لكل بند: OBSERVED (سلسلة حرفية في DEX/manifest) ثم INFERRED ثم UNKNOWN؛ لا يُصنّف أي استنتاج كإثبات.
+- **القياسات المرسّاة (OBSERVED):** Apollo Kotlin runtime حاضر مع APQ (persistedQuery) وكاش normalized (ApolloInitializer)؛ مضيفا الإنتاج flask.us.nextdoor.com + auth.nextdoor.com مع نظائر nextdoor-test؛ عمليات GraphQL مُعاد تسميتها بـ R8 = غير قابلة للاستخراج من APK وحده (موثّق UNKNOWN)؛ خط التتبع Protobuf-Wire (com.nextdoor.events.tracking).
+- **تصحيح قياسي:** معلنات (<module>) في pom.xml الجذر = 30 وحدة، أُثبت في reports/API_domain_contract_mapping.md §2 — عدّادات الذاكرة القديمة (26) تاريخية؛ القاعدة: الوحدات تُقاس من pom الجذر لا من الذاكرة.
+
+---
+
 ## موجة تنفيذ P1 — جذور قراءة مستخدمي Saleor عبر مالك الهوية (2026-10-21 — بروتوكول المالك الدائم: لا انتظار لـCI/CodeRabbit، مراقبة بسيطة؛ الوثائق الرسمية حاكمة)
 
 - **الدُمجُ (squash بالمراجعة الذاتية + تفعيل CodeRabbit يدويًا دون انتظار):** #692 (تدقيق قدرات Spring Boot المساعد — وثائقي صرف، جميع الفحوص خضراء) ⇒ main `b122c90b`؛ **#693 (محوّل المعرّف العام النوعي الصارم — بدائية P1)** دُمج بالإدارة بعد اكتمال البوابات المفتاحية (Build/Integration/توافق المخطط/OpenAPI/CodeQL/Trivy/Snyk خضراء؛ الأجناح المتبقية من نفس الشجرة)؛ **arketplace-admin#2](https://github.com/waelhe/marketplace-admin/pull/2) (حارس الانجراف الأسبوعي للعقد)** دُمج — فصار جدولة البناء الأسبوعي للوحة فعالة بموجب §6 من الخطة الحاكمة (كان «غير فعال حتى الدمج»).
