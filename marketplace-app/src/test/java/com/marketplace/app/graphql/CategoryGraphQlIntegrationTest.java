@@ -238,12 +238,15 @@ class CategoryGraphQlIntegrationTest {
                         } }
                         """)
                 .execute()
-                // naturalOrder's documented law: Arabic letters (U+06xx)
-                // sort ABOVE the Latin range, so DESC opens on the Arabic-
-                // named beta row, then the two Latin rows, nameless last.
+                // naturalOrder's documented law over the WHOLE registry
+                // population — the seed migration's own row included (the
+                // class javadoc's "relatively, never by absolute count"
+                // stance): Arabic (U+06xx) sorts above the Latin range, so
+                // DESC opens on the Arabic-named beta row, then the seed's
+                // "Stay" (S > P), then the p2 Latin rows, nameless last.
                 .path("categories.edges[0].node.slug").entity(String.class).isEqualTo("p2-cat-beta")
-                .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("p2-cat-gamma")
-                .path("categories.edges[2].node.slug").entity(String.class).isEqualTo("p2-cat-alpha");
+                .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("stay")
+                .path("categories.edges[2].node.slug").entity(String.class).isEqualTo("p2-cat-gamma");
     }
 
     @Test
@@ -272,11 +275,13 @@ class CategoryGraphQlIntegrationTest {
                         """)
                 .variable("after", firstPageEndCursor)
                 .execute()
-                // naturalOrder's documented law: the Arabic-named beta row
-                // sorts ABOVE the Latin range, so the ASC page after alpha
-                // opens on gamma and closes on beta.
+                // naturalOrder's documented law over the WHOLE registry
+                // population — the seed migration's own row included: the
+                // ASC page after alpha opens on gamma, then the seed's
+                // "Stay" (S > P), with the Arabic-named beta row closing
+                // the whole scroll above the Latin range.
                 .path("categories.edges[0].node.slug").entity(String.class).isEqualTo("p2-cat-gamma")
-                .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("p2-cat-beta")
+                .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("stay")
                 .path("categories.pageInfo.hasPreviousPage").entity(Boolean.class).isEqualTo(true);
     }
 
