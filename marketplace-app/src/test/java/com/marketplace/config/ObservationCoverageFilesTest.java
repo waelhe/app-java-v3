@@ -129,6 +129,14 @@ class ObservationCoverageFilesTest {
     /** module (from path segment) -> sorted observation names. */
     private static final Map<String, List<String>> EXPECTED = Map.ofEntries(
             Map.entry("marketplace-availability", List.of("availability.timeoff.create")),
+            // The token-grant adapter (the merged identity campaign's
+            // PlatformTokenGrantService): the Saleor authentication roots'
+            // three commands — the same commands-not-reads policy (the
+            // token family's reads stay unobserved). Updated deliberately
+            // in the same PR that carried the service, exactly as this
+            // pin's own contract demands.
+            Map.entry("marketplace-app", List.of(
+                    "graphql.token.create", "graphql.token.refresh", "graphql.token.verify")),
             Map.entry("marketplace-booking", List.of(
                     "booking.auto.cancel", "booking.cancel", "booking.complete",
                     "booking.confirm", "booking.create")),

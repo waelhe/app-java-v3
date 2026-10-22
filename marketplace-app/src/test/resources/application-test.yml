@@ -90,6 +90,22 @@ app:
 marketplace:
   cors:
     allowed-origins: http://localhost:3000
+  # The GraphQL surface's operational budgets, pinned EXPLICITLY for every
+  # containerless DGS slice: the properties record carries @DefaultValue
+  # everywhere, but the slice contexts that surface-tested binding failures
+  # resolve cleanly when the values are bound from the profile the slices
+  # activate — the record's own documented defaults, restated (the
+  # GraphQlConfig wiring this profile feeds is the same one the full
+  # application context binds).
+  graphql:
+    errors:
+      include-trace-id: false
+    pagination:
+      default-page-size: 20
+      max-page-size: 100
+    limits:
+      max-query-depth: 10
+      max-query-complexity: 200
   # Incident #682's root fix: the test channel's sender identity. The test
   # profile activates the mail channel (spring.mail.host=localhost:3025,
   # GreenMail), so the sender is as mandatory here as anywhere — a fixed
