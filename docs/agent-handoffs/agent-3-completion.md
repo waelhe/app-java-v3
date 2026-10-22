@@ -1,9 +1,17 @@
 # الوكيل الثالث — التسليم التصحيحي لـ PR #698
 
+## جولة المصالحة الثانية (التوجيه الأخير على b0c95ef/2d6baa)
+
+نفّذت متطلبات التوجيه المتابعة في تعليق 2026-10-22 على PR #698:
+
+1. **المصالحة مع رأس التكامل الحالي**: دمجت `d10a9012` (رأس `integration/saleor-full-commerce-20261021` الحالي، ويشمل حزمة الوكيل 1 كاملة وإصلاحات A0 المركزية وبوابة الأمان pre-login وADR الخاص بـ D-ADDR-001 وإصلاحات `GraphQlTester`/Testcontainers) في فرع الوكيل عبر commit الدمج `b34889c2e5c71fb020173c4e0c55adccbaccb41f` بلا أي تعارض. ملفات نطاق الوكيل الثالث (`marketplace-orders/**`، SDL الخاص، وfetchers/اختبارات الطلبات والـcheckout) بقيت كما هي دون تغيير، وشرائح DGS المشتركة حملت mocks الوكيلين معًا دون تكرار أو تعارض. تحقق مسبق: لا تداخل أنواع SDL بين `agent-1-identity-cms.graphqls` و`agent-3-orders-events.graphqls` (كلاهما يستخدم `extend type Query/Mutation` فقط).
+2. **إعادة التشغيل على الرأس المجمع**: فُعّلت `CI` و`Integration Test` و`Saleor Canonical Plan and Schema Inventory` على الرأس `b34889c` عبر `workflow_dispatch` — لأن مرشّح فروع `pull_request` في سير العمل (`main`/`feat/saleor-*`) لا يشمل PRs المستهدفة لفرع `integration/*`، فلا تُطلق هذه البوابات تلقائيًا على هذا PR. الروابط في قسم النتائج أدناه.
+3. **فصل الفشل المسبق عن الانحدار**: بوابة تغطية JaCoCo في `marketplace-shared` (instructions ratio 0.68 < 0.70) تفشل على رأس التكامل نفسه `d10a9012` في run 39804335540 (job `Tests — modules`)، وفشل sharding تطبيق `ProductGraphQl*` IntegrationTest (27 اختبارًا فاشلًا/خطأ) موجود كذلك على الرأس نفسه. كلاهما أثر لحزمة الوكيل 1/تجميع A0 وليس من نطاق الوكيل الثالث، وأُثبت أنهما مسبقان بنتيجة الرأس الأب d10a901 نفسه. أُغلق الفحص الكنسي بنجاح على رأسي، والبناء (JDK 25) نجح على الدمج الكامل.
+
 ## حالة المستودع
 - PR: https://github.com/waelhe/app-java-v3/pull/698 — يبقى مفتوحًا وغير مدموج.
 - الفرع: `agent/saleor-p4-p5-p6-orders-events-20261021`، والقاعدة: `integration/saleor-full-commerce-20261021`.
-- تمت مزامنة الفرع مع رأس التكامل المقبول `74ffd9144c88ad436bf6e3eb47674ab7174e11fd` كوالد ثانٍ في commit الدمج `6b7a07757c25f4f5bfc04308d96801411a0cd33d`. أصبح الفرع غير متأخر عن `integration`، وPR قابلًا للدمج تقنيًا لكنه يبقى Draft وغير مدموج.
+- المزامنة الأولى: رأس التكامل `74ffd91` في الدمج `6b7a077`. المصالحة الثانية: رأس التكامل `d10a9012` في الدمج `b34889c` (الرأس الحالي). الفرع غير متأخر عن `integration` (behind_by=0) وPR `mergeable=true`، ويبقى Draft وغير مدموج.
 - المرجع المثبت: Saleor 3.23.43. إصدارات المشروع المسجلة: Java 25، Spring Boot 4.1.1، Spring Modulith 2.1.1.
 - لم أنتظر CI أو CodeRabbit. المراجعة والدمج منفصلان عن التنفيذ.
 
