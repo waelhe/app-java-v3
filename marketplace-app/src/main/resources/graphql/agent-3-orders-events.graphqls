@@ -10,17 +10,20 @@ extend type Mutation {
 
 type OrderBulkCancel {
     count: Int!
-    orderErrors: [OrderError!]!
+    orderErrors: [OrderError!]! @deprecated(reason: "Use `errors` field instead.")
+    errors: [OrderError!]!
 }
 
 type OrderConfirm {
     order: Order
-    orderErrors: [OrderError!]!
+    orderErrors: [OrderError!]! @deprecated(reason: "Use `errors` field instead.")
+    errors: [OrderError!]!
 }
 
 type OrderCancel {
     order: Order
-    orderErrors: [OrderError!]!
+    orderErrors: [OrderError!]! @deprecated(reason: "Use `errors` field instead.")
+    errors: [OrderError!]!
 }
 
 type OrderError {

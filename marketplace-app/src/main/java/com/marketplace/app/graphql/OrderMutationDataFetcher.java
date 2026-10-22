@@ -77,7 +77,7 @@ public class OrderMutationDataFetcher {
                 orderIds.add(globalIdCodec.decode(id, OrderGraphQlMapper.ORDER_TYPE));
             } catch (IllegalArgumentException exception) {
                 return bulkPayload(0, List.of(orderError(
-                        "ids", "Invalid global ID", "INVALID")));
+                        "id", "Invalid global ID", "INVALID")));
             }
         }
 
@@ -85,7 +85,7 @@ public class OrderMutationDataFetcher {
                 orderCommandSpi.bulkCancelAsAdmin(orderIds);
         List<Map<String, Object>> errors = outcome.failures().stream()
                 .map(failure -> orderError(
-                        "ids",
+                        "id",
                         failure.message(),
                         switch (failure.kind()) {
                             case NOT_FOUND -> "NOT_FOUND";
@@ -133,6 +133,7 @@ public class OrderMutationDataFetcher {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("order", order);
         result.put("orderErrors", new ArrayList<>(errors));
+        result.put("errors", new ArrayList<>(errors));
         return result;
     }
 
@@ -140,6 +141,7 @@ public class OrderMutationDataFetcher {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("count", count);
         result.put("orderErrors", new ArrayList<>(errors));
+        result.put("errors", new ArrayList<>(errors));
         return result;
     }
 }

@@ -51,6 +51,7 @@ class OrderMutationDataFetcherTest {
 
         assertThat(result).containsEntry("order", graphQlOrder);
         assertThat((List<?>) result.get("orderErrors")).isEmpty();
+        assertThat(result.get("errors")).isEqualTo(result.get("orderErrors"));
         ArgumentCaptor<OrderView> view = ArgumentCaptor.forClass(OrderView.class);
         verify(mapper).toGraphQlOrder(view.capture());
         assertThat(view.getValue()).isEqualTo(confirmed);
@@ -75,7 +76,9 @@ class OrderMutationDataFetcherTest {
         assertThat(result).containsEntry("count", 1);
         List<?> errors = (List<?>) result.get("orderErrors");
         assertThat(errors).hasSize(1);
+        assertThat(((Map<?, ?>) errors.get(0)).get("field")).isEqualTo("id");
         assertThat(((Map<?, ?>) errors.get(0)).get("code")).isEqualTo("CANNOT_CANCEL_ORDER");
+        assertThat(result.get("errors")).isEqualTo(result.get("orderErrors"));
         verify(orderCommandSpi).bulkCancelAsAdmin(List.of(first, second));
     }
 
@@ -88,6 +91,7 @@ class OrderMutationDataFetcherTest {
 
         assertThat(result).containsEntry("count", 0);
         assertThat((List<?>) result.get("orderErrors")).isEmpty();
+        assertThat(result.get("errors")).isEqualTo(result.get("orderErrors"));
         verify(orderCommandSpi).bulkCancelAsAdmin(List.of());
     }
 
@@ -98,7 +102,9 @@ class OrderMutationDataFetcherTest {
         assertThat(result).containsEntry("count", 0);
         List<?> errors = (List<?>) result.get("orderErrors");
         assertThat(errors).hasSize(1);
+        assertThat(((Map<?, ?>) errors.get(0)).get("field")).isEqualTo("id");
         assertThat(((Map<?, ?>) errors.get(0)).get("code")).isEqualTo("INVALID");
+        assertThat(result.get("errors")).isEqualTo(result.get("orderErrors"));
         verifyNoInteractions(orderCommandSpi);
     }
 
@@ -115,6 +121,7 @@ class OrderMutationDataFetcherTest {
 
         assertThat(result).containsEntry("order", graphQlOrder);
         assertThat((List<?>) result.get("orderErrors")).isEmpty();
+        assertThat(result.get("errors")).isEqualTo(result.get("orderErrors"));
         ArgumentCaptor<OrderView> view = ArgumentCaptor.forClass(OrderView.class);
         verify(mapper).toGraphQlOrder(view.capture());
         assertThat(view.getValue()).isEqualTo(cancelled);
@@ -132,6 +139,7 @@ class OrderMutationDataFetcherTest {
         assertThat(errors).hasSize(1);
         assertThat(((Map<?, ?>) errors.get(0)).get("field")).isEqualTo("id");
         assertThat(((Map<?, ?>) errors.get(0)).get("code")).isEqualTo("INVALID");
+        assertThat(result.get("errors")).isEqualTo(result.get("orderErrors"));
         verifyNoInteractions(orderCommandSpi, mapper);
     }
 
@@ -147,6 +155,7 @@ class OrderMutationDataFetcherTest {
         List<?> errors = (List<?>) result.get("orderErrors");
         assertThat(errors).hasSize(1);
         assertThat(((Map<?, ?>) errors.get(0)).get("code")).isEqualTo("INVALID");
+        assertThat(result.get("errors")).isEqualTo(result.get("orderErrors"));
         verify(orderCommandSpi).confirmAsAdmin(id);
     }
 
@@ -162,6 +171,7 @@ class OrderMutationDataFetcherTest {
         List<?> errors = (List<?>) result.get("orderErrors");
         assertThat(errors).hasSize(1);
         assertThat(((Map<?, ?>) errors.get(0)).get("code")).isEqualTo("CANNOT_CANCEL_ORDER");
+        assertThat(result.get("errors")).isEqualTo(result.get("orderErrors"));
         verify(orderCommandSpi).cancelAsAdmin(id);
     }
 }

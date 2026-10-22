@@ -105,6 +105,15 @@ BUILD SUCCESS
 
 The app-level DGS/unit tests cannot compile on this branch while the frozen catalog baseline still fails on `Limit.value()`. They were compile-checked transiently in the local working tree with the catalog correction applied, but that correction is not part of this branch (assignment rule 262). No app-level pass is claimed. The separate attempt to run them was additionally interrupted by an intermittent `repo1.maven.org` DNS failure, which is a dependency-resolution failure, not a test failure.
 
+## P4 command payload parity (measured against the pinned schema)
+
+The pinned reference was re-downloaded from `saleor/saleor@3.23.43:saleor/graphql/schema.graphql` and its Git blob SHA was recomputed locally as `b8fa0dd809081f76dc2834bb5c286561e5783276`, matching the frozen-contract pin. Two wire gaps were then closed:
+
+1. All three Saleor payloads (`OrderCancel`, `OrderConfirm`, `OrderBulkCancel`) expose both `orderErrors` (deprecated upstream) and `errors: [OrderError!]!`. The additive SDL and the fetcher previously exposed only `orderErrors`; both now expose the deprecated field with the upstream deprecation reason and the canonical `errors` field, populated from the same immutable error list.
+2. `OrderErrorCode` was compared value-by-value with the pinned enum; all 36 values matched, including `DUPLICATED_INPUT_ITEM` and `MISSING_ADDRESS_DATA`. Bulk error `field` values now use `"id"`, matching Saleor's `get_nodes_or_error(..., "id", ...)` for malformed input instead of the local argument name `ids`.
+
+The fetcher unit tests now pin the dual-field payload and the `id` field value. They remain app-level tests and therefore still cannot execute while the frozen catalog baseline is uncompilable; no runtime pass is claimed for them. Duplicate IDs are rejected with `DUPLICATED_INPUT_ITEM` and transitioned at most once, a deliberate safety property of the bulk path.
+
 ## Root disposition after verification
 
 `docs/agent-handoffs/agent-3-roots.csv` now disposes every one of the 181 roots; none is left `NOT_STARTED`:
