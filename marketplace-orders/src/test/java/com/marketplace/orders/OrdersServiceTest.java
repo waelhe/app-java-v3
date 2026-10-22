@@ -8,6 +8,8 @@ import com.marketplace.shared.api.OrderCancelledEvent;
 import com.marketplace.shared.api.OrderConfirmedEvent;
 import com.marketplace.shared.api.OrderFulfilledEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.orders.spi.CheckoutSpi;
+import com.marketplace.orders.spi.CheckoutView;
 import com.marketplace.orders.spi.OrderBulkCancelResult;
 import com.marketplace.orders.spi.OrderView;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -872,6 +874,146 @@ class OrdersServiceTest {
 
         assertThatThrownBy(() -> service.confirmForSeller(order.getId(), authentication))
                 .isInstanceOf(ConflictException.class);
+    }
+
+    // ------------------------------------------------------------------
+    // The checkout slice: an owned, active cart is the checkout aggregate
+    // ------------------------------------------------------------------
+
+    @Test
+    void checkoutReadAnswersOnlyTheOwnerOfAnActiveCart() {
+        Cart cart = Cart.activeFor(consumer);
+        when(cartRepository.findById(cart.getId())).thenReturn(Optional.of(cart));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(UUID.randomUUID());
+
+        assertThatThrownBy(() -> service.findCheckout(cart.getId(), authentication))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(cartItemRepository, never()).findByCartIdOrderByCreatedAtAscIdAsc(any());
+
+        cart.checkOut(java.time.Instant.now());
+        assertThatThrownBy(() -> service.findCheckout(cart.getId(), authentication))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void checkoutProjectionCarriesTheVariantLinesInTheirStoredOrder() {
+        Cart cart = Cart.activeFor(consumer);
+        UUID firstVariant = UUID.randomUUID();
+        UUID secondVariant = UUID.randomUUID();
+        CartItem first = CartItem.of(cart.getId(), UUID.randomUUID(), firstVariant, 2, 500L, "SAR");
+        CartItem second = CartItem.of(cart.getId(), UUID.randomUUID(), secondVariant, 1, 700L, "SAR");
+        when(cartRepository.findById(cart.getId())).thenReturn(Optional.of(cart));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumer);
+        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
+                .thenReturn(List.of(first, second));
+
+        CheckoutView view = service.findCheckout(cart.getId(), authentication);
+
+        assertThat(view.id()).isEqualTo(cart.getId());
+        assertThat(view.quantity()).isEqualTo(3);
+        assertThat(view.lines())
+                .extracting(CheckoutView.Line::id, CheckoutView.Line::variantId,
+                        CheckoutView.Line::quantity)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(first.getId(), firstVariant, 2),
+                        org.assertj.core.groups.Tuple.tuple(second.getId(), secondVariant, 1));
+    }
+
+    @Test
+    void checkoutProjectionRefusesAProductLevelLineInsteadOfFabricatingAVariant() {
+        Cart cart = Cart.activeFor(consumer);
+        CartItem productLevel = CartItem.of(cart.getId(), UUID.randomUUID(), null, 1, 500L, "SAR");
+        when(cartRepository.findById(cart.getId())).thenReturn(Optional.of(cart));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumer);
+        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
+                .thenReturn(List.of(productLevel));
+
+        assertThatThrownBy(() -> service.findCheckout(cart.getId(), authentication))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("variant");
+    }
+
+    @Test
+    void checkoutLinesAddResolvesTheOwningProductFromTheAuthoritativeVariantPrice() {
+        Cart cart = Cart.activeFor(consumer);
+        UUID product = UUID.randomUUID();
+        UUID variant = UUID.randomUUID();
+        CartItem saved = CartItem.of(cart.getId(), product, variant, 2, 1750L, "SAR");
+        when(cartRepository.findById(cart.getId())).thenReturn(Optional.of(cart));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumer);
+        when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
+                .thenReturn(Optional.of(cart));
+        when(productPricingPort.priceOfVariant(variant)).thenReturn(
+                new ProductPricingPort.VariantPrice(variant, product, seller, 1750L, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE,
+                        ProductPricingPort.StorefrontState.ACTIVE));
+        when(cartItemRepository.findByCartIdAndProductIdAndVariantId(cart.getId(), product, variant))
+                .thenReturn(Optional.empty());
+        when(cartItemRepository.save(any(CartItem.class))).thenReturn(saved);
+        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
+                .thenReturn(List.of(saved));
+
+        CheckoutView view = service.addLines(cart.getId(),
+                List.of(new CheckoutSpi.LineAdd(variant, 2)), authentication);
+
+        assertThat(view.quantity()).isEqualTo(2);
+        assertThat(view.lines()).singleElement()
+                .satisfies(line -> {
+                    assertThat(line.variantId()).isEqualTo(variant);
+                    assertThat(line.quantity()).isEqualTo(2);
+                });
+    }
+
+    @Test
+    void checkoutLinesUpdateChangesTheOwnedLinesQuantity() {
+        Cart cart = Cart.activeFor(consumer);
+        UUID variant = UUID.randomUUID();
+        CartItem line = CartItem.of(cart.getId(), UUID.randomUUID(), variant, 1, 500L, "SAR");
+        when(cartRepository.findById(cart.getId())).thenReturn(Optional.of(cart));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumer);
+        when(cartItemRepository.findById(line.getId())).thenReturn(Optional.of(line));
+        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
+                .thenReturn(List.of(line));
+
+        CheckoutView view = service.updateLines(cart.getId(),
+                List.of(new CheckoutSpi.LineUpdate(line.getId(), null, 4)), authentication);
+
+        assertThat(line.getQuantity()).isEqualTo(4);
+        assertThat(view.quantity()).isEqualTo(4);
+    }
+
+    @Test
+    void checkoutLinesDeleteRemovesTheOwnedLine() {
+        Cart cart = Cart.activeFor(consumer);
+        CartItem line = CartItem.of(cart.getId(), UUID.randomUUID(), UUID.randomUUID(),
+                1, 500L, "SAR");
+        when(cartRepository.findById(cart.getId())).thenReturn(Optional.of(cart));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumer);
+        when(cartItemRepository.findById(line.getId())).thenReturn(Optional.of(line));
+        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
+                .thenReturn(List.of());
+
+        CheckoutView view = service.deleteLines(cart.getId(), List.of(line.getId()), authentication);
+
+        verify(cartItemRepository).delete(line);
+        assertThat(view.lines()).isEmpty();
+        assertThat(view.quantity()).isZero();
+    }
+
+    @Test
+    void checkoutDeleteAsAdminRemovesTheLinesBeforeTheAggregate() {
+        Cart cart = Cart.activeFor(consumer);
+        CartItem line = CartItem.of(cart.getId(), UUID.randomUUID(), UUID.randomUUID(),
+                1, 500L, "SAR");
+        when(cartRepository.findById(cart.getId())).thenReturn(Optional.of(cart));
+        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
+                .thenReturn(List.of(line));
+
+        service.deleteAsAdmin(cart.getId());
+
+        var order = inOrder(cartItemRepository, cartRepository);
+        order.verify(cartItemRepository).deleteAll(List.of(line));
+        order.verify(cartRepository).delete(cart);
     }
 
     // ------------------------------------------------------------------

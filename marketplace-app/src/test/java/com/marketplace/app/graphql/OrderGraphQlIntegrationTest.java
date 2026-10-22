@@ -4,7 +4,7 @@ import com.marketplace.identity.User;
 import com.marketplace.identity.UserRepository;
 import com.marketplace.orders.Order;
 import com.marketplace.orders.OrderRepository;
-import com.marketplace.shared.test.IntegrationContainers;
+import test.config.IntegrationContainers;
 import com.netflix.graphql.dgs.client.GraphQLError;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

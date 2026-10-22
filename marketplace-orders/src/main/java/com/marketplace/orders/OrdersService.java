@@ -1,5 +1,7 @@
 package com.marketplace.orders;
 
+import com.marketplace.orders.spi.CheckoutSpi;
+import com.marketplace.orders.spi.CheckoutView;
 import com.marketplace.orders.spi.OrderCommandSpi;
 import com.marketplace.orders.spi.OrderView;
 import com.marketplace.shared.api.BadRequestException;
@@ -76,7 +78,9 @@ import java.util.UUID;
  * the cart tombstones once, and PLACED still publishes nothing.
  */
 @Service
-public class OrdersService implements OrderDeliveryPort, OrderCommandSpi {
+public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, CheckoutSpi {
+
+    private static final int MAX_LINE_QUANTITY = 1000;
 
     private final CartRepository cartRepository;
     private final CartItemRepository cartItemRepository;
@@ -215,6 +219,152 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi {
         return cartRepository.findByConsumerIdAndStatus(consumerId, CartStatus.ACTIVE)
                 .map(cart -> cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
                 .orElse(List.of());
+    }
+
+    // ------------------------------------------------------------------
+    // The checkout slice (the active cart is the checkout aggregate)
+    // ------------------------------------------------------------------
+
+    @Override
+    @Transactional(readOnly = true)
+    public CheckoutView findCheckout(UUID cartId, Authentication authentication) {
+        return checkoutView(requireOwnedActiveCart(cartId, authentication));
+    }
+
+    @Override
+    @Transactional
+    public CheckoutView addLines(UUID cartId, List<LineAdd> lines, Authentication authentication) {
+        Cart cart = requireOwnedActiveCart(cartId, authentication);
+        List<LineAdd> requested = lines == null ? List.of() : lines;
+        for (LineAdd line : requested) {
+            requireLine(line);
+            ProductPricingPort.VariantPrice price =
+                    productPricingPort.priceOfVariant(line.variantId());
+            addCartItem(cart.getConsumerId(), price.productId(), line.variantId(), line.quantity());
+        }
+        return checkoutView(cart);
+    }
+
+    @Override
+    @Transactional
+    public CheckoutView updateLines(UUID cartId, List<LineUpdate> lines,
+                                    Authentication authentication) {
+        Cart cart = requireOwnedActiveCart(cartId, authentication);
+        List<LineUpdate> requested = lines == null ? List.of() : lines;
+        for (LineUpdate update : requested) {
+            requireLine(update);
+            CartItem item = requireCheckoutLine(cart, update);
+            if (update.variantId() != null && !update.variantId().equals(item.getVariantId())) {
+                throw new BadRequestException("Line " + item.getId()
+                        + " does not reference variant " + update.variantId());
+            }
+            item.updateQuantity(update.quantity());
+        }
+        return checkoutView(cart);
+    }
+
+    @Override
+    @Transactional
+    public CheckoutView deleteLines(UUID cartId, List<UUID> lineIds,
+                                    Authentication authentication) {
+        Cart cart = requireOwnedActiveCart(cartId, authentication);
+        List<UUID> requested = lineIds == null ? List.of() : lineIds;
+        for (UUID lineId : requested) {
+            if (lineId == null) {
+                throw new BadRequestException("A checkout line ID is required");
+            }
+            CartItem item = cartItemRepository.findById(lineId)
+                    .filter(candidate -> candidate.getCartId().equals(cart.getId()))
+                    .orElseThrow(() -> new ResourceNotFoundException("CheckoutLine", lineId));
+            cartItemRepository.delete(item);
+        }
+        return checkoutView(cart);
+    }
+
+    @Override
+    @Transactional
+    public void deleteAsAdmin(UUID cartId) {
+        Cart cart = cartRepository.findById(cartId)
+                .orElseThrow(() -> new ResourceNotFoundException("Checkout", cartId));
+        cartItemRepository.deleteAll(
+                cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()));
+        cartRepository.delete(cart);
+    }
+
+    private Cart requireOwnedActiveCart(UUID cartId, Authentication authentication) {
+        if (cartId == null) {
+            throw new BadRequestException("A checkout ID is required");
+        }
+        Cart cart = cartRepository.findById(cartId)
+                .filter(candidate -> candidate.getStatus() == CartStatus.ACTIVE)
+                .orElseThrow(() -> new ResourceNotFoundException("Checkout", cartId));
+        UUID caller = currentUserProvider.getCurrentUserId(authentication);
+        if (!cart.getConsumerId().equals(caller)
+                && !currentUserProvider.isAdmin(authentication)) {
+            throw new ResourceNotFoundException("Checkout", cartId);
+        }
+        return cart;
+    }
+
+    private CheckoutView checkoutView(Cart cart) {
+        List<CartItem> items =
+                cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId());
+        List<CheckoutView.Line> lines = items.stream()
+                .map(item -> {
+                    if (item.getVariantId() == null) {
+                        throw new ConflictException("Checkout " + cart.getId()
+                                + " contains a product-level line; a checkout line must reference "
+                                + "a product variant");
+                    }
+                    return new CheckoutView.Line(item.getId(), item.getVariantId(),
+                            item.getQuantity());
+                })
+                .toList();
+        int quantity = items.stream().mapToInt(CartItem::getQuantity).sum();
+        return new CheckoutView(cart.getId(), lines, quantity);
+    }
+
+    private void requireLine(LineAdd line) {
+        if (line == null || line.variantId() == null) {
+            throw new BadRequestException("A product variant is required for every checkout line");
+        }
+        requireQuantity(line.quantity());
+    }
+
+    private void requireLine(LineUpdate line) {
+        if (line == null) {
+            throw new BadRequestException("A checkout line update is required");
+        }
+        if (line.lineId() == null && line.variantId() == null) {
+            throw new BadRequestException("A checkout line ID or variant ID is required");
+        }
+        if (line.quantity() == null) {
+            throw new BadRequestException("A checkout line quantity is required");
+        }
+        requireQuantity(line.quantity());
+    }
+
+    private void requireQuantity(int quantity) {
+        if (quantity < 1 || quantity > MAX_LINE_QUANTITY) {
+            throw new BadRequestException("A checkout line quantity must be between 1 and "
+                    + MAX_LINE_QUANTITY);
+        }
+    }
+
+    private CartItem requireCheckoutLine(Cart cart, LineUpdate update) {
+        CartItem item = update.lineId() != null
+                ? cartItemRepository.findById(update.lineId())
+                        .filter(candidate -> candidate.getCartId().equals(cart.getId()))
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                "CheckoutLine", update.lineId()))
+                : cartItemRepository.findByCartIdAndVariantId(cart.getId(), update.variantId())
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                "CheckoutLine for variant", update.variantId()));
+        if (item.getVariantId() == null) {
+            throw new ConflictException("Checkout " + cart.getId()
+                    + " contains a product-level line; a checkout line must reference a variant");
+        }
+        return item;
     }
 
     // ------------------------------------------------------------------

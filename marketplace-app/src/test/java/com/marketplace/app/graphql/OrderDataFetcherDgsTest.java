@@ -7,14 +7,19 @@ import com.marketplace.catalog.spi.ProductAdminSpi;
 import com.marketplace.catalog.spi.ProductReadSpi;
 import com.marketplace.catalog.spi.ProductTypeReadSpi;
 import com.marketplace.catalog.spi.ProductVariantReadSpi;
+import com.marketplace.catalog.spi.ProductVariantView;
+import com.marketplace.catalog.spi.ProductView;
 import com.marketplace.community.spi.NeighborhoodFeedPort;
 import com.marketplace.community.spi.NeighborhoodPostDetailPort;
 import com.marketplace.discovery.spi.DiscoverySpi;
 import com.marketplace.identity.spi.IdentitySpi;
 import com.marketplace.orders.spi.OrderPage;
+import com.marketplace.orders.spi.CheckoutSpi;
+import com.marketplace.orders.spi.CheckoutView;
 import com.marketplace.orders.spi.OrderReadSpi;
 import com.marketplace.orders.spi.OrderSort;
 import com.marketplace.orders.spi.OrderView;
+import com.marketplace.pricing.spi.DiscountReadSpi;
 import com.marketplace.shared.security.CurrentUserProvider;
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
@@ -40,6 +45,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -138,6 +144,12 @@ class OrderDataFetcherDgsTest {
 
     @MockitoBean
     private com.marketplace.orders.spi.OrderCommandSpi orderCommandSpi;
+
+    @MockitoBean
+    private CheckoutSpi checkoutSpi;
+
+    @MockitoBean
+    private DiscountReadSpi discountReadSpi;
 
     @AfterEach
     void clearSecurityContext() {
@@ -552,5 +564,112 @@ class OrderDataFetcherDgsTest {
         verify(orderReadSpi).scrollOrders(
                 any(org.springframework.security.core.Authentication.class),
                 any(OrderSort.class), any(), any(Limit.class));
+    }
+
+    @Test
+    void checkoutReadsBackTheOwnedActiveCartThroughTheRealSdlAndTypedIds() {
+        authenticateAs("checkout-owner-subject");
+        UUID cartId = UUID.randomUUID();
+        UUID lineId = UUID.randomUUID();
+        UUID variantId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        when(checkoutSpi.findCheckout(eq(cartId),
+                any(org.springframework.security.core.Authentication.class)))
+                .thenReturn(checkoutView(cartId, lineId, variantId));
+        when(variantReadSpi.findVariantSnapshot(variantId))
+                .thenReturn(Optional.of(variantView(variantId, productId)));
+
+        Map<String, Object> checkout = dgsQueryExecutor.executeAndExtractJsonPath(
+                """
+                query($id: ID!) {
+                    checkout(id: $id) {
+                        id quantity
+                        lines { id quantity variant { id sku } }
+                    }
+                }
+                """,
+                "data.checkout", Map.of("id", globalId("Checkout", cartId)));
+
+        assertThat(checkout.get("id")).isEqualTo(globalId("Checkout", cartId));
+        assertThat(checkout.get("quantity")).isEqualTo(2);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> lines = (List<Map<String, Object>>) checkout.get("lines");
+        assertThat(lines).hasSize(1);
+        assertThat(lines.get(0).get("id")).isEqualTo(globalId("CheckoutLine", lineId));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> variant = (Map<String, Object>) lines.get(0).get("variant");
+        assertThat(variant.get("id")).isEqualTo(globalId("ProductVariant", variantId));
+        assertThat(variant.get("sku")).isEqualTo("SKU-1");
+    }
+
+    @Test
+    void checkoutLinesAddBindsTheSaleorInputAndReturnsTheOwnerProjection() {
+        authenticateAs("checkout-owner-subject");
+        UUID cartId = UUID.randomUUID();
+        UUID lineId = UUID.randomUUID();
+        UUID variantId = UUID.randomUUID();
+        when(checkoutSpi.addLines(eq(cartId), any(),
+                any(org.springframework.security.core.Authentication.class)))
+                .thenReturn(checkoutView(cartId, lineId, variantId));
+        when(variantReadSpi.findVariantSnapshot(variantId))
+                .thenReturn(Optional.of(variantView(variantId, UUID.randomUUID())));
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath(
+                """
+                mutation($id: ID!, $lines: [CheckoutLineInput!]!) {
+                    checkoutLinesAdd(id: $id, lines: $lines) {
+                        checkout { id quantity lines { id quantity } }
+                        checkoutErrors { code }
+                        errors { code }
+                    }
+                }
+                """,
+                "data.checkoutLinesAdd", Map.of(
+                        "id", globalId("Checkout", cartId),
+                        "lines", List.of(Map.of(
+                                "variantId", globalId("ProductVariant", variantId),
+                                "quantity", 2))));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> checkout = (Map<String, Object>) payload.get("checkout");
+        assertThat(checkout.get("id")).isEqualTo(globalId("Checkout", cartId));
+        assertThat(payload.get("errors")).isEqualTo(List.of());
+        assertThat(payload.get("checkoutErrors")).isEqualTo(List.of());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<CheckoutSpi.LineAdd>> requested =
+                ArgumentCaptor.forClass(List.class);
+        verify(checkoutSpi).addLines(eq(cartId), requested.capture(),
+                any(org.springframework.security.core.Authentication.class));
+        assertThat(requested.getValue()).containsExactly(new CheckoutSpi.LineAdd(variantId, 2));
+    }
+
+    @Test
+    void checkoutDeleteRequiresAdminBeforeReachingTheOwner() {
+        authenticateAs("checkout-admin-subject", "ADMIN");
+        UUID cartId = UUID.randomUUID();
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath(
+                "mutation($id: ID!) { checkoutDelete(id: $id) { errors { code } } }",
+                "data.checkoutDelete", Map.of("id", globalId("Checkout", cartId)));
+
+        assertThat(payload.get("errors")).isEqualTo(List.of());
+        verify(orderCommandSpi).requireAdmin();
+        verify(checkoutSpi).deleteAsAdmin(eq(cartId));
+    }
+
+    private static CheckoutView checkoutView(UUID cartId, UUID lineId, UUID variantId) {
+        return new CheckoutView(cartId,
+                List.of(new CheckoutView.Line(lineId, variantId, 2)), 2);
+    }
+
+    private static ProductVariantView variantView(UUID variantId, UUID productId) {
+        return new ProductVariantView(variantId, "Default", "SKU-1", "ACTIVE",
+                new ProductView(productId, "Checkout Product", null, "ACTIVE"));
+    }
+
+    private static String globalId(String type, UUID id) {
+        return java.util.Base64.getEncoder().encodeToString(
+                (type + ":" + id).getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 }

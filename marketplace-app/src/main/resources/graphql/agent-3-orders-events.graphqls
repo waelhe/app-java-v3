@@ -74,3 +74,115 @@ enum OrderErrorCode {
     NON_REMOVABLE_GIFT_LINE
     MISSING_ADDRESS_DATA
 }
+
+# ---------------------------------------------------------------------------
+# P4 checkout slice: Saleor 3.23.43 wire contract over the existing active
+# cart aggregate. Money, address, channel, delivery and payment fields stay
+# undeclared until their owning capabilities exist; `created` is intentionally
+# omitted because the temporal scalar contract is not owned yet.
+# ---------------------------------------------------------------------------
+
+extend type Query {
+    checkout(id: ID): Checkout
+}
+
+extend type Mutation {
+    checkoutLinesAdd(checkoutId: ID, id: ID, lines: [CheckoutLineInput!]!): CheckoutLinesAdd
+    checkoutLinesUpdate(checkoutId: ID, id: ID, lines: [CheckoutLineUpdateInput!]!): CheckoutLinesUpdate
+    checkoutLinesDelete(id: ID, linesIds: [ID!]!): CheckoutLinesDelete
+    checkoutLineDelete(checkoutId: ID, id: ID, lineId: ID): CheckoutLineDelete
+        @deprecated(reason: "Use `checkoutLinesDelete` instead.")
+    checkoutDelete(id: ID!): CheckoutDelete
+}
+
+type Checkout {
+    id: ID!
+    lines: [CheckoutLine!]!
+    quantity: Int!
+}
+
+type CheckoutLine {
+    id: ID!
+    variant: ProductVariant!
+    quantity: Int!
+}
+
+input CheckoutLineInput {
+    quantity: Int!
+    variantId: ID!
+}
+
+input CheckoutLineUpdateInput {
+    variantId: ID @deprecated(reason: "Use `lineId` instead.")
+    quantity: Int
+    lineId: ID
+}
+
+type CheckoutLinesAdd {
+    checkout: Checkout
+    checkoutErrors: [CheckoutError!]! @deprecated(reason: "Use `errors` field instead.")
+    errors: [CheckoutError!]!
+}
+
+type CheckoutLinesUpdate {
+    checkout: Checkout
+    checkoutErrors: [CheckoutError!]! @deprecated(reason: "Use `errors` field instead.")
+    errors: [CheckoutError!]!
+}
+
+type CheckoutLinesDelete {
+    checkout: Checkout
+    errors: [CheckoutError!]!
+}
+
+type CheckoutLineDelete {
+    checkout: Checkout
+    checkoutErrors: [CheckoutError!]! @deprecated(reason: "Use `errors` field instead.")
+    errors: [CheckoutError!]!
+}
+
+type CheckoutDelete {
+    errors: [CheckoutDeleteError!]!
+}
+
+type CheckoutError {
+    field: String
+    message: String
+    code: CheckoutErrorCode!
+    variants: [ID!]
+    lines: [ID!]
+}
+
+type CheckoutDeleteError {
+    field: String
+    message: String
+    code: CheckoutErrorCode!
+}
+
+enum CheckoutErrorCode {
+    BILLING_ADDRESS_NOT_SET
+    CHECKOUT_NOT_FULLY_PAID
+    CHANNEL_INACTIVE
+    EMAIL_NOT_SET
+    EMAIL_REQUIRED
+    GRAPHQL_ERROR
+    INSUFFICIENT_STOCK
+    INVALID
+    INVALID_SHIPPING_METHOD
+    MISSING_ADDRESS_DATA
+    NOT_FOUND
+    NOT_AVAILABLE_IN_CHANNEL
+    PRODUCT_NOT_PUBLISHED
+    PRODUCT_UNAVAILABLE_FOR_PURCHASE
+    REQUIRED
+    SHIPPING_METHOD_NOT_APPLICABLE
+    SHIPPING_METHOD_REQUIRED
+    TAX_ERROR
+    UNIQUE
+    VOUCHER_NOT_APPLICABLE
+    ZERO_QUANTITY
+    NO_LINES
+    DELIVERY_METHOD_NOT_APPLICABLE
+    INVALID_DELIVERY_METHOD
+    DELIVERY_METHOD_REQUIRED
+}
