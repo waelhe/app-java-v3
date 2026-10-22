@@ -45,6 +45,7 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.Instant;
@@ -102,6 +103,8 @@ class UserDataFetcherDgsTest {
 
     // The package slice wires every fetcher; each owning seam gets its mock —
     // the ServiceDgsDataFetcherTest precedent.
+    @MockitoBean
+    private JdbcTemplate jdbcTemplate;
     @MockitoBean
     private CatalogSpi catalogSpi;
 

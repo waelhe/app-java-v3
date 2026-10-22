@@ -39,6 +39,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.Instant;
@@ -89,6 +90,8 @@ class HomeDgsDataFetcherTest {
     @Autowired
     private DgsQueryExecutor dgsQueryExecutor;
 
+    @MockitoBean
+    private JdbcTemplate jdbcTemplate;
     @MockitoBean
     private com.marketplace.catalog.spi.CatalogSpi catalogSpi;
 
@@ -153,8 +156,6 @@ class HomeDgsDataFetcherTest {
     private com.marketplace.media.spi.ProductMediaWriteSpi productMediaWriteSpi;
     @MockitoBean
     private com.marketplace.catalog.spi.ProductTypeReadSpi productTypeReadSpi;
-    @MockitoBean
-    private com.marketplace.catalog.spi.ProductVariantReadSpi productVariantReadSpi;
     // The product-variant mutation roots' owning write seam (agent-2
     // follow-on packet) — the package slice wires every fetcher, so
     // this seam gets its mock (the b5-a sibling-test precedent).
