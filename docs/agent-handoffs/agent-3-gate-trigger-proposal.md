@@ -1,0 +1,88 @@
+# مقترح الوكيل 3 إلى A0 — إعادة التشغيل التلقائي لبوبات CI/Integration Test على PRs الموجة
+
+**المرجع**: توجيه المتابعة على PR #698 (2026-10-22 17:58) والقاعدة الحاكمة: أي تشغيل يدوي
+(`workflow_dispatch`) يقوم مقام الإدارة التلقائية يجب إزالته وتفعيل الإدارة التلقائية.
+ملفات workflows من الملفات التي لا يملكها وكيل منفرد (بند 5 من بروتوكول التنفيذ المستقل)،
+لذا يُقدَّم هذا المقترح ولا يُنفَّذ ذاتيًا في فرع الوكيل.
+
+## الفجوة المقاسة
+
+مرشّح `pull_request.branches` في `.github/workflows/ci.yml`
+و`.github/workflows/integration-test.yml` هو حاليًا:
+
+```yaml
+branches: [ main, feat/saleor-commerce-product-keyset-pagination, 'feat/saleor-*' ]
+```
+
+الوثائق الرسمية لـ GitHub (Events that trigger workflows) صريحة في أن مرشّح
+`branches` لحدث `pull_request` يطابق **فرع القاعدة** للـ PR. كل PRs الموجة الحالية
+(#696، #697، #698، #700) تستهدف `integration/saleor-full-commerce-20261021` — وهو
+لا يطابق أي نمط في القائمة، لذلك **لا تُطلق CI ولا Integration Test تلقائيًا على أي
+دفع إلى هذه الـ PRs**.
+
+النتيجة المقاسة خلال الموجة: كانت البوبات تُشغَّل يدويًا عبر `workflow_dispatch` على
+رؤوس متفرقة (مثل run 39818344671 الملغى وrun 39822419751 الفاشل على `880f1c4`)،
+بينما الرؤوس المدفوعة فعليًا — `2d6baac` و`df73938` — لم يعلُها أي فحص CI/Integration
+Test إطلاقًا (المتوفر عليهما حوكمة الجرد فقط). هذا بالضبط النوع الذي يمنعه توجيه
+المالك: «شغّل CI والاختبارات المناسبة على الرأس النهائي الحالي»، مع بقاء الاعتماد على
+اليدوي بديلًا عن التلقائي.
+
+## التعديل المقترح (في كلا الملفين، سطر واحد لكل ملف)
+
+استبدال سطر المرشّح بـ:
+
+```yaml
+branches: [ main, feat/saleor-commerce-product-keyset-pagination, 'feat/saleor-*', 'integration/saleor-*' ]
+```
+
+مع تعليق يوثّق الموجة وشرط التقاعد، بمنهجية الملف نفسه (إدخالات الموجات السابقة
+تقاعدت مع موجاتها):
+
+```yaml
+    # Saleor full-commerce campaign wave (2026-10-21): the wave's agent
+    # PRs (#696/#697/#698/#700) all target the integration base
+    # integration/saleor-full-commerce-20261021, and the gates must gate
+    # every push to those PRs through the pull_request event itself —
+    # automatic management, never a manual workflow_dispatch standing in
+    # for the trigger the base list forgot. Retire the pattern when the
+    # wave merges to main, exactly as the stacked-wave entries above
+    # retired with theirs.
+```
+
+## لماذا هذا التعديل هو التصميم الصحيح
+
+1. **إضافي فقط**: لا يمس سلوك أي PR يستهدف `main` أو `feat/saleor-*`، ولا أحداث
+   `push`. النمط الجديد يغطي فقط قواعص integration الخاصة بموجة Saleor.
+2. **يستعيد القصد الموثق للملف نفسه**: تعليق الملف يقول «the four gates run on
+   pull_request for the wave's integrative PRs» — القصد أن تبوب الموجة عبر
+   `pull_request`، والقائمة ببساطة لم تُحدَّث عندما تغيّرت قاعدة الموجة إلى فرع
+   integration.
+3. **ينهي الاعتماد على `workflow_dispatch`** كآلية تشغيل للبوبات على هذه الموجة —
+   التشغيل اليدوي كان سبب الفجوة المقاسة أعلاه.
+4. **انضباط التزامن موجود أصلًا**: مجموعة `concurrency` في الملفين تلغي الجولات
+   المتجاوزة لنفس الحدث على نفس المرجع، فلا خطر طوفان تشغيلات.
+5. **سطرا تعليق «Temporary stacked Saleor PR target pattern»** في الملفين يشترطان
+   التقاعد بعد تسوية #677–#681 — وقد سُوّيت فعلًا (مغلقة منذ 2026-10-20)، فيبقى
+   تقاعد نمط `feat/saleor-*` قرار A0 في truth-sync لاحق، ولم يمسه هذا المقترح.
+
+## الأثر المتوقع بعد التطبيق
+
+كل دفع إلى أي PR يستهدف `integration/saleor-full-commerce-20261021` يشغّل CI
+(15 وظيفة: البوابات + البناء + اختبارات الوحدات + شظايا التطبيق) وIntegration Test
+(الإقلاع الحقيقي + الدخان المركب) تلقائيًا على رأس الـ PR نفسه — وقرارات الدمج تُقرأ
+من نتائج الرأس الفعلي لا من تشغيلات يدوية متفرقة.
+
+## ما نفّذه الوكيل 3 داخل نطاقه في هذه الجولة
+
+- إصلاح علة كامنة في `OrderGraphQlIntegrationTest` (نطاق الوكيل 3 بشهادة كوميت
+  الإصلاح a5094d7): الـ seed كان يُدخل صفوف orders بـ `consumer_id` غير موجود في
+  `users` فيخالف قيد `fk_orders_users` (V113) — اختبار لم يمرّ أخضر في CI قط لأنه
+  وُلد على مفاعل أحمر. الآن الـ seed ينشئ مستهلكًا حقيقيًا (نمط UserGraphQl/ProductMedia
+  القائم) والحذف يتبع الترتيب الآمن للقيد.
+- مواءمة ساق anonymous مع قرار A0 الأمني المهبوط (b082816dd): العقد المعاد فتحه هو
+  HTTP 200 + مغلف خطأ GraphQL مصنف AUTHN-001 (كما يثبته `GraphQlSecurityIntegrationTest`)،
+  لا 401 problem+json القديم.
+
+الرأس الحامل لهذا المقترح يُسلَّم مع بوبات مُشغَّلة عليه عبر `workflow_dispatch`
+(الآلية المتاحة حاليًا وبأمر المالك الصريح في توجيه المتابعة)، إلى أن يهبط هذا
+التعديل من A0 على فرع التكامل فتصبح البوبات تلقائية للدفعات التالية.

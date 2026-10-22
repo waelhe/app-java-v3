@@ -1,6 +1,7 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.identity.User;
+import com.marketplace.identity.UserRole;
 import com.marketplace.identity.UserRepository;
 import com.marketplace.orders.Order;
 import com.marketplace.orders.OrderRepository;
@@ -12,7 +13,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.graphql.test.tester.HttpGraphQlTester;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -50,8 +50,9 @@ import static org.mockito.Mockito.when;
  * management surface (the ADMIN caller's list and lookup; the
  * PROVIDER and CONSUMER callers are DENIED by the owning use case's
  * method security — the AUTHZ-001 taxonomy, never a silent read and
- * never a population fallback; the anonymous caller answers the
- * /graphql chain's 401 problem+json contract), the forward-only
+ * never a population fallback; the anonymous caller is answered by
+ * the pre-login gate's classified AUTHN-001 GraphQL error envelope —
+ * the reopened POST contract A0 landed with the matcher), the forward-only
  * keyset scroll with cursor follow-through in the placement-instant
  * sort (the D-N5 complete ordering key's own column), the lifecycle
  * ADAPT mapping on the wire (the platform's PLACED renders upstream's
@@ -112,6 +113,7 @@ class OrderGraphQlIntegrationTest {
     private int port;
 
     private final List<UUID> seededOrderIds = new ArrayList<>();
+    private UUID seededConsumerId;
     private UUID placedOrderId;
     private UUID confirmedOrderId;
     private UUID fulfilledOrderId;
@@ -122,30 +124,52 @@ class OrderGraphQlIntegrationTest {
         UUID consumerId = UUID.randomUUID();
         UUID sellerId = UUID.randomUUID();
 
+        // fk_orders_users (V113): identity is authoritative — the consumer
+        // row must exist in users before any order can reference it. The
+        // seller needs no row: V184 keeps cross-module ids as plain UUID
+        // columns by documented discipline (no FK across module boundaries).
+        // The UserGraphQl/ProductMedia test family's own seeding precedent.
+        userRepository.save(new User(consumerId, consumerId.toString(), null,
+                "p4-orders it-consumer", UserRole.CONSUMER));
+        seededConsumerId = consumerId;
+
+        // Each id registers the moment its row is saved, so cleanup stays
+        // FK-consistent even if a later save fails mid-seed.
         Order placed = orderRepository.save(Order.placed(consumerId, 2500L, "SAR", sellerId));
+        placedOrderId = placed.getId();
+        seededOrderIds.add(placedOrderId);
+
         Order confirmed = Order.placed(consumerId, 3100L, "SAR", sellerId);
         confirmed.confirm(Instant.now());
         confirmed = orderRepository.save(confirmed);
+        confirmedOrderId = confirmed.getId();
+        seededOrderIds.add(confirmedOrderId);
+
         Order fulfilled = Order.placed(consumerId, 1900L, "SAR", sellerId);
         fulfilled.confirm(Instant.now());
         fulfilled.fulfill(Instant.now());
         fulfilled = orderRepository.save(fulfilled);
+        fulfilledOrderId = fulfilled.getId();
+        seededOrderIds.add(fulfilledOrderId);
+
         Order cancelled = Order.placed(consumerId, 700L, "SAR", sellerId);
         cancelled.cancel("it-order-fixture", Instant.now());
         cancelled = orderRepository.save(cancelled);
-
-        placedOrderId = placed.getId();
-        confirmedOrderId = confirmed.getId();
-        fulfilledOrderId = fulfilled.getId();
         cancelledOrderId = cancelled.getId();
-        seededOrderIds.addAll(List.of(placedOrderId, confirmedOrderId, fulfilledOrderId, cancelledOrderId));
+        seededOrderIds.add(cancelledOrderId);
     }
 
     @AfterEach
     void removeSeededRows() {
+        // The FK-safe order: the referencing orders go first, then the
+        // consumer row they referenced — never the reverse.
         if (!seededOrderIds.isEmpty()) {
             orderRepository.deleteAllById(new ArrayList<>(seededOrderIds));
             seededOrderIds.clear();
+        }
+        if (seededConsumerId != null) {
+            userRepository.deleteById(seededConsumerId);
+            seededConsumerId = null;
         }
     }
 
@@ -467,11 +491,16 @@ class OrderGraphQlIntegrationTest {
     }
 
     // ------------------------------------------------------------------
-    // the anonymous boundary — the /graphql chain's 401 problem+json
+    // the anonymous boundary — the pre-login gate's classified refusal.
+    // The reopened POST contract A0 landed (the matcher opens WITH its
+    // wall): an anonymous POST carrying a valid query outside the
+    // pre-login family is answered by the gate — HTTP 200 with the
+    // classified AUTHN-001 GraphQL error envelope, never the chain's
+    // old 401 problem+json (GraphQlSecurityIntegrationTest's own leg).
     // ------------------------------------------------------------------
 
     @Test
-    void anonymousOrderQueryIsRejectedAs401ProblemDetail() {
+    void anonymousOrderQueryIsAnsweredByThePreLoginGate() {
         WebTestClient anonymousClient = WebTestClient.bindToServer()
                 .baseUrl("http://localhost:" + port + "/graphql")
                 .build();
@@ -479,15 +508,13 @@ class OrderGraphQlIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("{\"query\":\"{ orders(first: 1) { totalCount } }\"}")
                 .exchange()
-                .expectStatus().isUnauthorized()
-                .expectHeader().contentType("application/problem+json")
-                .expectHeader().valueEquals(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"marketplace\"")
+                .expectStatus().isOk()
+                .expectHeader().contentType(MediaType.APPLICATION_JSON)
                 .expectBody()
-                .jsonPath("$.type").isEqualTo("https://marketplace.com/errors/unauthorized")
-                .jsonPath("$.title").isEqualTo("Unauthorized")
-                .jsonPath("$.status").isEqualTo(401)
-                .jsonPath("$.instance").isEqualTo("/graphql")
-                .jsonPath("$.errorCode").isEqualTo("AUTHN-001");
+                .jsonPath("$.errors[0].extensions.errorCode").isEqualTo("AUTHN-001")
+                .jsonPath("$.errors[0].extensions.category").isEqualTo("authz")
+                .jsonPath("$.errors[0].message")
+                .isEqualTo("Authentication is required for this GraphQL operation");
     }
 
     // ------------------------------------------------------------------
