@@ -99,9 +99,11 @@ Measured result on this head:
 
 ```text
 .\mvnw -pl marketplace-orders -am "-Djacoco.skip=true" test
-Tests run: 107, Failures: 0, Errors: 0, Skipped: 0
+Tests run: 111, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
+
+Service-level coverage was then extended for the ADMIN command surface: duplicate-ID deduplication (one transition, `DUPLICATE` failure), mixed batches (`NOT_FOUND` and delivery-linked `CONFLICT` reported without blocking the legal row), stable lock acquisition for reversed input, and the `OrderView` returned by confirm/cancel. `OrdersServiceTest` now holds 46 cases and the module 111.
 
 The app-level DGS/unit tests cannot compile on this branch while the frozen catalog baseline still fails on `Limit.value()`. They were compile-checked transiently in the local working tree with the catalog correction applied, but that correction is not part of this branch (assignment rule 262). No app-level pass is claimed. The separate attempt to run them was additionally interrupted by an intermittent `repo1.maven.org` DNS failure, which is a dependency-resolution failure, not a test failure.
 
@@ -118,7 +120,7 @@ The fetcher unit tests now pin the dual-field payload and the `id` field value. 
 
 `docs/agent-handoffs/agent-3-roots.csv` now disposes every one of the 181 roots; none is left `NOT_STARTED`:
 
-- `IMPLEMENTED_VERIFIED` (3): `orderCancel`, `orderConfirm`, `orderBulkCancel` -- orders suite 107/107 green on this head.
+- `IMPLEMENTED_VERIFIED` (3): `orderCancel`, `orderConfirm`, `orderBulkCancel` -- orders suite 111/111 green on this head.
 - `BLOCKED_BY_DECISION` (178), each with the exact governing blocker in `evidence_or_blocker`, not a placeholder: checkout family (no Checkout aggregate; D-ADDR-001 for addresses), draft orders and `orderBulkCreate` (no DRAFT state; no second lifecycle), fulfillment family (no warehouse/line-level aggregate), order-edit/note/discount roots (immutable placement snapshots), money and PSP roots (frozen money contract section 6 plus the `IMPLEMENTATION_REQUIRED` Decimal/PositiveDecimal row; no admin capture/void SPI; no duplicate Transaction/ledger machine), shipping-zone family (D-SHPZ-001), invoices, reports, token lookup, apps/plugins, metadata, outbound webhooks/exports/files, translations, shop, federation, and all 26 subscriptions (section 5.8: WebSocket transport deliberately absent, no `DgsSubscription`).
 
 No `paymentRefund` surface was added. It cannot be rendered honestly while the money contract is frozen: its `amount` input and every `Payment` money field require the exact-decimal wire that the divergence registry still marks `IMPLEMENTATION_REQUIRED`. Adding a float or a scaled integer without that decision would violate the frozen contract, so the root is handed off rather than faked. The same reasoning blocks `paymentCapture`, `paymentVoid`, `orderMarkAsPaid`, `orderFulfill`, `orderRefund`, and the transaction family, which additionally lack an admin-scoped owner SPI.

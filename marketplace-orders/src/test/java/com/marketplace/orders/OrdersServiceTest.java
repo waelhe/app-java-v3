@@ -8,6 +8,8 @@ import com.marketplace.shared.api.OrderCancelledEvent;
 import com.marketplace.shared.api.OrderConfirmedEvent;
 import com.marketplace.shared.api.OrderFulfilledEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.orders.spi.OrderBulkCancelResult;
+import com.marketplace.orders.spi.OrderView;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,6 +28,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -1004,6 +1007,94 @@ class OrdersServiceTest {
         // line exists in this cart) — the all-or-nothing law crossed over
         verify(productStockPort).reserveVariants(java.util.Map.of(variant, 2));
         verify(productStockPort, never()).reserve(any());
+    }
+
+    // ------------------------------------------------------------------
+    // The ADMIN command surface (Saleor P4): bulk deduplication, per-row
+    // error reporting, stable lock ordering, and the returned OrderView.
+    // ------------------------------------------------------------------
+
+    @Test
+    void bulkCancelDeduplicatesRepeatedIdsAndCancelsOnce() {
+        Order order = placedOrder();
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        OrderBulkCancelResult result = service.bulkCancelAsAdmin(
+                List.of(order.getId(), order.getId()));
+
+        assertThat(result.count()).isEqualTo(1);
+        assertThat(result.failures()).hasSize(1);
+        assertThat(result.failures().get(0).kind())
+                .isEqualTo(OrderBulkCancelResult.FailureKind.DUPLICATE);
+        assertThat(result.failures().get(0).orderId()).isEqualTo(order.getId());
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        verify(orderRepository).save(order);
+        verify(eventPublisher).publishEvent(new OrderCancelledEvent(
+                order.getId(), consumer, "Cancelled through the order-management bulk API"));
+    }
+
+    @Test
+    void bulkCancelReportsMissingAndDeliveryConflictsWithoutBlockingTheLegalRow() {
+        Order legal = placedOrder();
+        Order linked = placedOrder();
+        linked.attachDeliveryRequest(UUID.randomUUID());
+        UUID missing = UUID.randomUUID();
+        when(orderRepository.findByIdForUpdate(legal.getId())).thenReturn(Optional.of(legal));
+        when(orderRepository.findByIdForUpdate(linked.getId())).thenReturn(Optional.of(linked));
+        when(orderRepository.findByIdForUpdate(missing)).thenReturn(Optional.empty());
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        OrderBulkCancelResult result = service.bulkCancelAsAdmin(
+                List.of(missing, linked.getId(), legal.getId()));
+
+        assertThat(result.count()).isEqualTo(1);
+        assertThat(result.failures())
+                .extracting(OrderBulkCancelResult.Failure::kind)
+                .containsExactlyInAnyOrder(
+                        OrderBulkCancelResult.FailureKind.NOT_FOUND,
+                        OrderBulkCancelResult.FailureKind.CONFLICT);
+        assertThat(legal.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(linked.getStatus()).isEqualTo(OrderStatus.PLACED);
+        verify(orderRepository).save(legal);
+        verify(eventPublisher).publishEvent(new OrderCancelledEvent(
+                legal.getId(), consumer, "Cancelled through the order-management bulk API"));
+    }
+
+    @Test
+    void bulkCancelAcquiresRowLocksInStableIdOrderEvenForReversedInput() {
+        Order first = placedOrder();
+        Order second = placedOrder();
+        Order low = first.getId().compareTo(second.getId()) < 0 ? first : second;
+        Order high = low == first ? second : first;
+        when(orderRepository.findByIdForUpdate(low.getId())).thenReturn(Optional.of(low));
+        when(orderRepository.findByIdForUpdate(high.getId())).thenReturn(Optional.of(high));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        OrderBulkCancelResult result = service.bulkCancelAsAdmin(
+                List.of(high.getId(), low.getId()));
+
+        assertThat(result.count()).isEqualTo(2);
+        assertThat(result.failures()).isEmpty();
+        var locks = inOrder(orderRepository);
+        locks.verify(orderRepository).findByIdForUpdate(low.getId());
+        locks.verify(orderRepository).findByIdForUpdate(high.getId());
+    }
+
+    @Test
+    void adminConfirmAndCancelReturnTheTransitionedOrderView() {
+        Order order = placedOrder();
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        OrderView confirmed = service.confirmAsAdmin(order.getId());
+        OrderView cancelled = service.cancelAsAdmin(order.getId());
+
+        assertThat(confirmed.id()).isEqualTo(order.getId());
+        assertThat(confirmed.placedAt()).isEqualTo(order.getPlacedAt());
+        assertThat(confirmed.status()).isEqualTo(OrderStatus.CONFIRMED.name());
+        assertThat(cancelled.id()).isEqualTo(order.getId());
+        assertThat(cancelled.status()).isEqualTo(OrderStatus.CANCELLED.name());
     }
 
     private Order placedOrder() {
