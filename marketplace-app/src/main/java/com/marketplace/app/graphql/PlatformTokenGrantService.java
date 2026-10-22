@@ -40,7 +40,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 /**
@@ -68,12 +67,13 @@ import java.util.stream.Collectors;
  *       attribute) as {@code oauth2_authorization} rows through the
  *       authorization server's own {@link OAuth2AuthorizationService} —
  *       so {@code tokenRefresh} rotates through the official
- *       {@code findByToken} API with ONE-TIME-USE semantics (the
- *       {@code OAuth2RefreshTokenAuthenticationProvider} rotation:
- *       the SAME authorization row rides the NEW pair, so the old
- *       refresh token value is gone from the store the moment the
- *       rotation saves — a replayed token is simply never found again)
- *       and {@code tokensDeactivateAll} (the identity owner's JDBC kill
+ *       {@code findByToken} API with ONE-TIME-USE semantics whose atomic
+ *       boundary is the STORE ITSELF: the {@link RefreshTokenRotationStore}
+ *       seam consumes the presented value with one conditional UPDATE on
+ *       the shared row, arbitrated by the database's own row lock —
+ *       valid across every application instance sharing the store (the
+ *       multi-instance round's demand that no JVM lock ever stand in
+ *       for a distributed one). {@code tokensDeactivateAll} (the identity owner's JDBC kill
  *       by principal) revokes them exactly like any OIDC-issued
  *       session — the rotated successor included, because the row the
  *       rotation kept is the row the kill deletes.</li>
@@ -101,21 +101,6 @@ public class PlatformTokenGrantService {
     /** The roles attribute's key on the authorization rows. */
     private static final String ROLES_ATTRIBUTE = "platform.roles";
 
-    /**
-     * The refresh rotation's one-time-use serialization: a FIXED stripe
-     * of locks keyed by the token's hash. The find-validate-rotate-save
-     * critical section is exclusive per token, so two concurrent
-     * rotations of the SAME token cannot both succeed — the loser
-     * re-reads the store after the winner replaced the row and finds
-     * the old token gone (the official row-replacement invalidation).
-     * Striping keeps the structure bounded (no per-token map growth)
-     * and only ever SERIALIZES colliding tokens, never blocks the
-     * grant or verify legs.
-     */
-    private static final int REFRESH_LOCK_STRIPES = 64;
-
-    private final ReentrantLock[] refreshLocks;
-
     // The #392 module-slice shape (the UserService/PasswordResetService
     // precedent verbatim): the security-infrastructure beans live outside
     // the GraphQL adapter slice — resolved lazily so every package-slice
@@ -123,6 +108,7 @@ public class PlatformTokenGrantService {
     // and the full application (and every integration test) resolves them.
     private final ObjectProvider<AuthenticationConfiguration> authenticationConfiguration;
     private final ObjectProvider<OAuth2AuthorizationService> authorizationService;
+    private final ObjectProvider<RefreshTokenRotationStore> refreshTokenRotationStore;
     private final ObjectProvider<RegisteredClientRepository> registeredClientRepository;
     private final ObjectProvider<JWKSource<SecurityContext>> jwkSource;
     private final ObjectProvider<AuthorizationServerSettings> authorizationServerSettings;
@@ -134,6 +120,7 @@ public class PlatformTokenGrantService {
     public PlatformTokenGrantService(
             ObjectProvider<AuthenticationConfiguration> authenticationConfiguration,
             ObjectProvider<OAuth2AuthorizationService> authorizationService,
+            ObjectProvider<RefreshTokenRotationStore> refreshTokenRotationStore,
             ObjectProvider<RegisteredClientRepository> registeredClientRepository,
             ObjectProvider<JWKSource<SecurityContext>> jwkSource,
             ObjectProvider<AuthorizationServerSettings> authorizationServerSettings,
@@ -144,6 +131,7 @@ public class PlatformTokenGrantService {
                     + "10b588c6-4e85-43ec-9ecf-c588676774d7}") String publicClientId) {
         this.authenticationConfiguration = authenticationConfiguration;
         this.authorizationService = authorizationService;
+        this.refreshTokenRotationStore = refreshTokenRotationStore;
         this.registeredClientRepository = registeredClientRepository;
         this.jwkSource = jwkSource;
         this.authorizationServerSettings = authorizationServerSettings;
@@ -151,10 +139,6 @@ public class PlatformTokenGrantService {
         this.identitySpi = identitySpi;
         this.audience = audience;
         this.publicClientId = publicClientId;
-        this.refreshLocks = new ReentrantLock[REFRESH_LOCK_STRIPES];
-        for (int i = 0; i < REFRESH_LOCK_STRIPES; i++) {
-            this.refreshLocks[i] = new ReentrantLock();
-        }
     }
 
     /** The issued pair + the caller's own account projection. */
@@ -214,9 +198,11 @@ public class PlatformTokenGrantService {
      * {@code tokensDeactivateAll} kills the successor because the row
      * it deletes is the row the rotation kept.
      *
-     * <p>The critical section is exclusive per token (the stripe lock
-     * above), so two concurrent rotations of the same token cannot
-     * both return a live pair — exactly one wins.</p>
+     * <p>No JVM lock participates in the guarantee — the store itself
+     * arbitrates (the {@link RefreshTokenRotationStore} seam), so the
+     * one-time-use contract holds across any number of application
+     * instances sharing the authorization store; the instance-local
+     * stripe locks this method used to carry were removed with it.</p>
      */
     @Observed(name = "graphql.token.refresh")
     public IssuedTokens refresh(String refreshToken) {
@@ -224,47 +210,49 @@ public class PlatformTokenGrantService {
             throw new org.springframework.security.authentication.BadCredentialsException(
                     "A refresh token is required");
         }
-        ReentrantLock lock = refreshLockFor(refreshToken);
-        lock.lock();
-        try {
-            OAuth2Authorization authorization = authorizationService().findByToken(
-                    refreshToken, new OAuth2TokenType(OAuth2TokenType.REFRESH_TOKEN.getValue()));
-            if (authorization == null
-                    || authorization.getRefreshToken() == null
-                    || !authorization.getRefreshToken().isActive()) {
-                throw new org.springframework.security.authentication.BadCredentialsException(
-                        "The refresh token is invalid, expired or revoked");
-            }
-            String principal = authorization.getPrincipalName();
-            @SuppressWarnings("unchecked")
-            Set<String> roles = (Set<String>) authorization.getAttributes()
-                    .getOrDefault(ROLES_ATTRIBUTE, Set.of());
-            Instant now = Instant.now();
-            String accessToken = mintAccessToken(principal, roles, now);
-            OAuth2AccessToken accessTokenToken = new OAuth2AccessToken(
-                    OAuth2AccessToken.TokenType.BEARER, accessToken, now, now.plus(ACCESS_TOKEN_TTL));
-            // The rotation itself: the successor replaces the presented
-            // token's value in the SAME row — the official SAS refresh
-            // rotation (OAuth2Authorization.from(...).refreshToken(next)
-            // over the row the findByToken leg resolved).
-            String successor = opaqueToken();
-            OAuth2RefreshToken refreshTokenToken = new OAuth2RefreshToken(successor, now,
-                    now.plus(REFRESH_TOKEN_TTL));
-            OAuth2Authorization refreshed = OAuth2Authorization.from(authorization)
-                    .token(accessTokenToken, metadata ->
-                            metadata.put(OAuth2Authorization.Token.INVALIDATED_METADATA_NAME, false))
-                    .token(refreshTokenToken, metadata ->
-                            metadata.put(OAuth2Authorization.Token.INVALIDATED_METADATA_NAME, false))
-                    .build();
-            authorizationService().save(refreshed);
-            UserAccountView user = identitySpi.findCurrentUserAccount(
-                            new UsernamePasswordAuthenticationToken(principal, null, java.util.List.of()))
-                    .orElse(null);
-            log.info("Platform token refresh rotated: principal={}", principal);
-            return new IssuedTokens(accessToken, successor, opaqueToken(), user);
-        } finally {
-            lock.unlock();
+        OAuth2Authorization authorization = authorizationService().findByToken(
+                refreshToken, new OAuth2TokenType(OAuth2TokenType.REFRESH_TOKEN.getValue()));
+        if (authorization == null
+                || authorization.getRefreshToken() == null
+                || !authorization.getRefreshToken().isActive()) {
+            throw new org.springframework.security.authentication.BadCredentialsException(
+                    "The refresh token is invalid, expired or revoked");
         }
+        String principal = authorization.getPrincipalName();
+        @SuppressWarnings("unchecked")
+        Set<String> roles = (Set<String>) authorization.getAttributes()
+                .getOrDefault(ROLES_ATTRIBUTE, Set.of());
+        Instant now = Instant.now();
+        String accessToken = mintAccessToken(principal, roles, now);
+        OAuth2AccessToken accessTokenToken = new OAuth2AccessToken(
+                OAuth2AccessToken.TokenType.BEARER, accessToken, now, now.plus(ACCESS_TOKEN_TTL));
+        // The rotation itself: the successor replaces the presented
+        // token's value in the SAME row — the official SAS refresh
+        // rotation (OAuth2Authorization.from(...).refreshToken(next)
+        // over the row the findByToken leg resolved).
+        String successor = opaqueToken();
+        OAuth2RefreshToken refreshTokenToken = new OAuth2RefreshToken(successor, now,
+                now.plus(REFRESH_TOKEN_TTL));
+        OAuth2Authorization refreshed = OAuth2Authorization.from(authorization)
+                .token(accessTokenToken, metadata ->
+                        metadata.put(OAuth2Authorization.Token.INVALIDATED_METADATA_NAME, false))
+                .token(refreshTokenToken, metadata ->
+                        metadata.put(OAuth2Authorization.Token.INVALIDATED_METADATA_NAME, false))
+                .build();
+        // THE atomic boundary: the store arbitrates the consumption —
+        // one conditional UPDATE on the shared row, in the database's
+        // row lock, serialized across every instance sharing the store.
+        // The loser (a replay, or a concurrent rotation that won on
+        // ANOTHER instance) is rejected exactly like an unknown token.
+        if (!refreshTokenRotationStore().rotate(refreshed, refreshToken)) {
+            throw new org.springframework.security.authentication.BadCredentialsException(
+                    "The refresh token is invalid, expired or revoked");
+        }
+        UserAccountView user = identitySpi.findCurrentUserAccount(
+                        new UsernamePasswordAuthenticationToken(principal, null, java.util.List.of()))
+                .orElse(null);
+        log.info("Platform token refresh rotated: principal={}", principal);
+        return new IssuedTokens(accessToken, successor, opaqueToken(), user);
     }
 
     /**
@@ -354,6 +342,15 @@ public class PlatformTokenGrantService {
         return service;
     }
 
+    private RefreshTokenRotationStore refreshTokenRotationStore() {
+        RefreshTokenRotationStore store = refreshTokenRotationStore.getIfAvailable();
+        if (store == null) {
+            throw new IllegalStateException(
+                    "The refresh rotation store is not available — the token grant requires it");
+        }
+        return store;
+    }
+
     private RegisteredClientRepository registeredClientRepository() {
         RegisteredClientRepository repository = registeredClientRepository.getIfAvailable();
         if (repository == null) {
@@ -397,7 +394,4 @@ public class PlatformTokenGrantService {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(secret);
     }
 
-    private ReentrantLock refreshLockFor(String refreshToken) {
-        return refreshLocks[Math.floorMod(refreshToken.hashCode(), REFRESH_LOCK_STRIPES)];
-    }
 }

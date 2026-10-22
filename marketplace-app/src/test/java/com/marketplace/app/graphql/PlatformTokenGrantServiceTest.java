@@ -69,8 +69,10 @@ import static org.mockito.Mockito.when;
  *   <li><b>Life:</b> an expired OR invalidated refresh token is
  *       rejected (the official {@code Token#isActive()} rule).</li>
  *   <li><b>Concurrency:</b> two SIMULTANEOUS rotations of the same
- *       token allow EXACTLY ONE — the loser re-reads the store after
- *       the winner replaced the row and finds the token gone.</li>
+ *       token allow EXACTLY ONE — the STORE arbitrates the consumption
+ *       (the atomic seam the multi-instance round demanded; modeled
+ *       here by the synchronized in-memory guard, whose conditional
+ *       verdict is the database's own affected-rows rule).</li>
  *   <li><b>Deactivation:</b> {@code tokensDeactivateAll}'s kill (the
  *       identity owner's DELETE by principal) reaches the ROTATED
  *       successor — the row the rotation kept is the row the kill
@@ -79,11 +81,13 @@ import static org.mockito.Mockito.when;
  *
  * <p>No Spring context: the service's own collaborators are assembled
  * directly (the real NimbusJwtEncoder/Decoder over one generated RSA
- * key, the real InMemoryRegisteredClientRepository, and an
+ * key, the real InMemoryRegisteredClientRepository, an
  * OAuth2AuthorizationService that reproduces the OFFICIAL
  * JdbcOAuth2AuthorizationService semantics the rotation relies on —
  * save-by-id REPLACES the row, findByToken matches the stored token
- * values). The full-stack proof over the real Jdbc service and the real
+ * values — and a RefreshTokenRotationStore double that reproduces the
+ * PRODUCTION guard's verdict faithfully: the row must STILL carry the
+ * presented refresh token value for the rotation to consume it). The full-stack proof over the real Jdbc service and the real
  * {@code TokenRevocationService} kill rides the integration suites on
  * CI.</p>
  */
@@ -146,6 +150,7 @@ class PlatformTokenGrantServiceTest {
         service = new PlatformTokenGrantService(
                 provider(authenticationConfiguration),
                 provider(authorizationStore),
+                provider(new InMemoryRotationStore(authorizationStore)),
                 provider(clientRepository),
                 provider(jwkSource),
                 provider(AuthorizationServerSettings.builder()
@@ -389,6 +394,37 @@ class PlatformTokenGrantServiceTest {
         private static boolean matchesRefreshToken(OAuth2Authorization row, String token) {
             return row.getRefreshToken() != null
                     && row.getRefreshToken().getToken().getTokenValue().equals(token);
+        }
+    }
+
+    /**
+     * The OFFICIAL database-guard semantics, in memory: the consumption
+     * is arbitrated by the STORE's row state ({@code synchronized} stands
+     * in for the database's row lock) — the row must STILL carry the
+     * presented refresh token value for THIS rotation to consume it;
+     * the winner's save replaces the value, so the loser matches
+     * nothing and answers {@code false}. Faithful to the production
+     * {@link JdbcRefreshTokenRotationStore}'s verdict: the SQL
+     * {@code UPDATE ... WHERE id = ? AND refresh_token_value = ?}
+     * affected-rows rule.
+     */
+    static final class InMemoryRotationStore implements RefreshTokenRotationStore {
+
+        private final InMemoryRowStore store;
+
+        InMemoryRotationStore(InMemoryRowStore store) {
+            this.store = store;
+        }
+
+        @Override
+        public synchronized boolean rotate(OAuth2Authorization rotated, String presentedRefreshToken) {
+            OAuth2Authorization row = store.findById(rotated.getId());
+            if (row == null || row.getRefreshToken() == null
+                    || !row.getRefreshToken().getToken().getTokenValue().equals(presentedRefreshToken)) {
+                return false;
+            }
+            store.save(rotated);
+            return true;
         }
     }
 
