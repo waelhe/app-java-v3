@@ -293,7 +293,13 @@ class PostDetailGraphQlIntegrationTest {
     // the owner's own denial on both legs.
     // ------------------------------------------------------------------
 
-    /** The endpoint's own gate: an anonymous caller is rejected before any adapter runs. */
+    /**
+     * The endpoint's own gate: an anonymous caller is rejected before any
+     * adapter runs — PreLoginGraphQlGate answers the classified AUTHN-001
+     * GraphQL error BEFORE dispatch (HTTP 200, ONE error with the canonical
+     * taxonomy pair, NO data key — nothing leaked), and the Mockito proofs
+     * keep the "no adapter ran" fact measured, not inferred.
+     */
     @Test
     void anAnonymousCallerIsRejectedBeforeAnyAdapterRuns() {
         WebTestClient anonymous = WebTestClient.bindToServer()
@@ -303,9 +309,14 @@ class PostDetailGraphQlIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("{\"query\":\"{ post(id: \\\"00000000-0000-0000-0000-000000000000\\\") { id } }\"}")
                 .exchange()
-                .expectStatus().isUnauthorized()
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
                 .expectBody()
-                .jsonPath("$.errorCode").isEqualTo("AUTHN-001");
+                .jsonPath("$.errors.length()").isEqualTo(1)
+                .jsonPath("$.errors[0].extensions.errorCode").isEqualTo("AUTHN-001")
+                .jsonPath("$.errors[0].extensions.category").isEqualTo("authz")
+                .jsonPath("$.errors[0].extensions.classification").isEqualTo("UNAUTHORIZED")
+                .jsonPath("$.data").doesNotExist();
 
         verify(postService, never()).getPost(any(), any());
         verify(postService, never()).getComments(any(), any(), any());

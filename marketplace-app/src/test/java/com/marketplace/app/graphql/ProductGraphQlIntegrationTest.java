@@ -15,7 +15,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.graphql.test.tester.HttpGraphQlTester;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -59,7 +58,8 @@ import static org.mockito.Mockito.when;
  * forward-only keyset scroll with cursor follow-through, the
  * round-trip global-ID stability, the guessed-ID null, the
  * malformed/raw/mistyped-ID VAL-001 legs, the anonymous rejection
- * (the /graphql chain's 401 problem+json contract), the schema-less
+ * (the gate's classified AUTHN-001 GraphQL error over HTTP 200 — no
+ * data key, nothing dispatched), the schema-less
  * product's honest null productType, the empty page, and the
  * classified errors for the declared-but-unexecuted arguments
  * (filter/where/search/channel/attribute-sort/unowned sort fields/
@@ -147,12 +147,20 @@ class ProductGraphQlIntegrationTest {
 
     @AfterEach
     void removeSeededRows() {
-        if (!seededProductIds.isEmpty()) {
-            productRepository.deleteAllById(new ArrayList<>(seededProductIds));
-            seededProductIds.clear();
+        // The fixture rows leave PHYSICALLY, in FK-respecting order. The
+        // entities are Hibernate @SoftDelete rows (BaseEntity's own law):
+        // a repository delete only flips is_deleted, the physical row
+        // keeps referencing store_categories, and the hard DELETE below
+        // then trips fk_products_store_category (the CI-measured failure).
+        // Physical JDBC deletes of THIS test's own fixture rows — the
+        // documented test-cleanup pattern for soft-delete models — never
+        // a weakened FK and never a changed production soft-delete law.
+        for (UUID productId : seededProductIds) {
+            jdbcTemplate.update("DELETE FROM products WHERE id = ?", productId);
         }
+        seededProductIds.clear();
         if (seededTypeId != null) {
-            productTypeRepository.deleteById(seededTypeId);
+            jdbcTemplate.update("DELETE FROM product_types WHERE id = ?", seededTypeId);
             seededTypeId = null;
         }
         jdbcTemplate.update("DELETE FROM store_categories WHERE code = ?", storeCategoryCode);
@@ -464,11 +472,21 @@ class ProductGraphQlIntegrationTest {
     }
 
     // ------------------------------------------------------------------
-    // the anonymous boundary — the /graphql chain's 401 problem+json
+    // the anonymous boundary — the gate's classified AUTHN-001 GraphQL
+    // error, answered before dispatch (HTTP 200, no data key)
     // ------------------------------------------------------------------
 
     @Test
-    void anonymousProductQueryIsRejectedAs401ProblemDetail() {
+    void anonymousProductQueryIsRejectedByTheGraphQlGateBeforeDispatch() {
+        // No Authorization header: the /graphql POST surface is open to the
+        // anonymous caller (the resource-server chain's permitAll for the
+        // pre-login family), and PreLoginGraphQlGate — the transport's own
+        // WebGraphQlInterceptor — answers the classified AUTHN-001 GraphQL
+        // error BEFORE dispatch: HTTP 200 with ONE error carrying the
+        // canonical taxonomy pair, and NO data key at all (nothing leaked,
+        // no resolver executed). The old problem+json 401 contract died with
+        // the gate; this is the unified post-gate contract every root now
+        // shares (the GraphQlSecurityIntegrationTest tripartite shape).
         WebTestClient anonymousClient = WebTestClient.bindToServer()
                 .baseUrl("http://localhost:" + port + "/graphql")
                 .build();
@@ -476,15 +494,14 @@ class ProductGraphQlIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("{\"query\":\"{ products(first: 1) { totalCount } }\"}")
                 .exchange()
-                .expectStatus().isUnauthorized()
-                .expectHeader().contentType("application/problem+json")
-                .expectHeader().valueEquals(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"marketplace\"")
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
                 .expectBody()
-                .jsonPath("$.type").isEqualTo("https://marketplace.com/errors/unauthorized")
-                .jsonPath("$.title").isEqualTo("Unauthorized")
-                .jsonPath("$.status").isEqualTo(401)
-                .jsonPath("$.instance").isEqualTo("/graphql")
-                .jsonPath("$.errorCode").isEqualTo("AUTHN-001");
+                .jsonPath("$.errors.length()").isEqualTo(1)
+                .jsonPath("$.errors[0].extensions.errorCode").isEqualTo("AUTHN-001")
+                .jsonPath("$.errors[0].extensions.category").isEqualTo("authz")
+                .jsonPath("$.errors[0].extensions.classification").isEqualTo("UNAUTHORIZED")
+                .jsonPath("$.data").doesNotExist();
     }
 
     // ------------------------------------------------------------------

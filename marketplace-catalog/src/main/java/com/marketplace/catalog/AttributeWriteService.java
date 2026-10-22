@@ -261,16 +261,35 @@ public class AttributeWriteService implements AttributeWriteSpi {
         if (!errors.isEmpty()) {
             return AttributeMutationResult.failure(errors);
         }
+        // The park-then-settle rewrite: the live position index
+        // (uq_catalog_attribute_options_position_live over
+        // (attribute_definition_id, position)) makes a direct
+        // saveAll(toSave) collide mid-flight — an UPDATE that lands on a
+        // position another row still holds trips the unique index BEFORE
+        // that row moves (the CI-measured duplicate-key internal error).
+        // The standard two-phase rewrite inside the SAME transaction: every
+        // moved row first parks on a distinct negative position (outside
+        // the live 1..n range, so no live slot is contested), the flush
+        // materializes the park, and the settle then writes the final
+        // compacted 1..n positions onto freed slots only.
         List<CatalogAttributeOption> toSave = new ArrayList<>();
         for (int i = 0; i < ordered.size(); i++) {
             CatalogAttributeOption option = ordered.get(i);
             if (option.getPosition() != i + 1) {
-                option.reposition(i + 1);
                 toSave.add(option);
             }
         }
         if (!toSave.isEmpty()) {
+            for (int i = 0; i < toSave.size(); i++) {
+                toSave.get(i).reposition(-(i + 1));
+            }
             attributeOptionRepository.saveAll(toSave);
+            attributeOptionRepository.flush();
+            for (int i = 0; i < ordered.size(); i++) {
+                CatalogAttributeOption option = ordered.get(i);
+                option.reposition(i + 1);
+            }
+            attributeOptionRepository.saveAll(ordered);
         }
         return AttributeMutationResult.success(toView(addressed.get()));
     }

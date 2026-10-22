@@ -15,7 +15,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.graphql.test.tester.HttpGraphQlTester;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -150,18 +149,19 @@ class CollectionGraphQlIntegrationTest {
 
     @AfterEach
     void removeSeededRows() {
-        for (UUID collectionId : new ArrayList<>(seededCollectionIds)) {
-            for (CollectionProduct member : collectionProductRepository
-                    .findByCollectionIdOrderByPositionAscIdAsc(collectionId)) {
-                collectionProductRepository.delete(member);
-            }
-            collectionRepository.deleteById(collectionId);
+        // The fixture rows leave PHYSICALLY, in FK-respecting order (the
+        // Product cleanup's own law — Hibernate @SoftDelete rows would
+        // otherwise keep referencing store_categories and trip
+        // fk_products_store_category on the hard DELETE below).
+        for (UUID collectionId : seededCollectionIds) {
+            jdbcTemplate.update("DELETE FROM collection_products WHERE collection_id = ?", collectionId);
+            jdbcTemplate.update("DELETE FROM collections WHERE id = ?", collectionId);
         }
         seededCollectionIds.clear();
-        if (!seededProductIds.isEmpty()) {
-            productRepository.deleteAllById(new ArrayList<>(seededProductIds));
-            seededProductIds.clear();
+        for (UUID productId : seededProductIds) {
+            jdbcTemplate.update("DELETE FROM products WHERE id = ?", productId);
         }
+        seededProductIds.clear();
         jdbcTemplate.update("DELETE FROM store_categories WHERE code = ?", storeCategoryCode);
         if (seededTypeId != null) {
             jdbcTemplate.update("DELETE FROM product_types WHERE id = ?", seededTypeId);
@@ -654,13 +654,14 @@ class CollectionGraphQlIntegrationTest {
     }
 
     @Test
-    void anonymousCollectionQueryIsRejectedAs401ProblemDetail() {
-        // No Authorization header: the security chain answers the shared
-        // problem+json 401 AUTHN-001 contract before any GraphQL handling —
-        // the tripartite anonymous contract GraphQlSecurityIntegrationTest
-        // pins, asserted here for the collections root's own journey. This
-        // IS the public-root surface's authentication boundary (the
-        // registered public-root mapping divergence).
+    void anonymousCollectionQueryIsRejectedByTheGraphQlGateBeforeDispatch() {
+        // No Authorization header: PreLoginGraphQlGate — the transport's
+        // own WebGraphQlInterceptor — answers the classified AUTHN-001
+        // GraphQL error BEFORE dispatch (HTTP 200, ONE error with the
+        // canonical taxonomy pair, NO data key at all — nothing leaked,
+        // no resolver executed). The unified post-gate contract every
+        // root now shares (the GraphQlSecurityIntegrationTest
+        // tripartite shape).
         WebTestClient anonymousClient = WebTestClient.bindToServer()
                 .baseUrl("http://localhost:" + port + "/graphql")
                 .build();
@@ -668,14 +669,13 @@ class CollectionGraphQlIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("{\"query\":\"{ collections(first: 1) { totalCount } }\"}")
                 .exchange()
-                .expectStatus().isUnauthorized()
-                .expectHeader().contentType("application/problem+json")
-                .expectHeader().valueEquals(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"marketplace\"")
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
                 .expectBody()
-                .jsonPath("$.type").isEqualTo("https://marketplace.com/errors/unauthorized")
-                .jsonPath("$.title").isEqualTo("Unauthorized")
-                .jsonPath("$.status").isEqualTo(401)
-                .jsonPath("$.instance").isEqualTo("/graphql")
-                .jsonPath("$.errorCode").isEqualTo("AUTHN-001");
+                .jsonPath("$.errors.length()").isEqualTo(1)
+                .jsonPath("$.errors[0].extensions.errorCode").isEqualTo("AUTHN-001")
+                .jsonPath("$.errors[0].extensions.category").isEqualTo("authz")
+                .jsonPath("$.errors[0].extensions.classification").isEqualTo("UNAUTHORIZED")
+                .jsonPath("$.data").doesNotExist();
     }
 }

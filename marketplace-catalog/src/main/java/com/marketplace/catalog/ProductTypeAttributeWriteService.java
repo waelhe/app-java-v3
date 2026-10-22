@@ -286,16 +286,33 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
         if (!errors.isEmpty()) {
             return ProductTypeMutationResult.failure(errors);
         }
+        // The park-then-settle rewrite (the AttributeWriteService.reorderValues
+        // law — the CI-measured duplicate-key collision on
+        // uq_product_type_attribute_position_live over
+        // (product_type_id, scope, position)): a direct saveAll(toSave)
+        // lands UPDATEs on positions sibling rows still hold mid-flight.
+        // Every moved row first parks on a distinct negative position
+        // (outside the live 1..n range), the flush materializes the park,
+        // and the settle rewrites the final compacted 1..n positions onto
+        // freed slots only — all inside the SAME transaction.
         List<ProductTypeAttributeAssignment> toSave = new ArrayList<>();
         for (int i = 0; i < ordered.size(); i++) {
             ProductTypeAttributeAssignment assignment = ordered.get(i);
             if (assignment.getPosition() != i + 1) {
-                assignment.reposition(i + 1);
                 toSave.add(assignment);
             }
         }
         if (!toSave.isEmpty()) {
+            for (int i = 0; i < toSave.size(); i++) {
+                toSave.get(i).reposition(-(i + 1));
+            }
             assignmentRepository.saveAll(toSave);
+            assignmentRepository.flush();
+            for (int i = 0; i < ordered.size(); i++) {
+                ProductTypeAttributeAssignment assignment = ordered.get(i);
+                assignment.reposition(i + 1);
+            }
+            assignmentRepository.saveAll(ordered);
         }
         return ProductTypeMutationResult.success(toView(type.get()));
     }

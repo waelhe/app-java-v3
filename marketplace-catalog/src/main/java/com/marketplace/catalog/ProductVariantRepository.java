@@ -110,7 +110,11 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
     // soft-delete filters explicit (native SQL gets no @SoftDelete).
     // The keyset predicate is the expanded row-value comparison over
     // the executed sort keys; :lastUpdatedAt/:lastId bind NULL on the
-    // initial page so the predicate passes every row. Each method
+    // initial page so the predicate passes every row. Every NULL-bound
+    // parameter carries an explicit PostgreSQL CAST — the documented
+    // cure for the server's "could not determine data type of parameter"
+    // preparation failure when a NULL arrives without an inferable type
+    // (the CI-measured internal error on the initial page). Each method
     // fetches :fetchCount rows (the service passes pageSize+1) — a full
     // fetch is the database's own hasNext answer.
     // ------------------------------------------------------------------
@@ -125,9 +129,9 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
                             WHERE p.id = v.product_id
                               AND p.product_status = 'ACTIVE'
                               AND p.is_deleted = FALSE)
-               AND (:lastUpdatedAt IS NULL
-                    OR v.updated_at > :lastUpdatedAt
-                    OR (v.updated_at = :lastUpdatedAt AND v.id > :lastId))
+               AND (CAST(:lastUpdatedAt AS timestamptz) IS NULL
+                    OR v.updated_at > CAST(:lastUpdatedAt AS timestamptz)
+                    OR (v.updated_at = CAST(:lastUpdatedAt AS timestamptz) AND v.id > CAST(:lastId AS uuid)))
              ORDER BY v.updated_at ASC, v.id ASC
              LIMIT :fetchCount
             """, nativeQuery = true)
@@ -146,9 +150,9 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
                             WHERE p.id = v.product_id
                               AND p.product_status = 'ACTIVE'
                               AND p.is_deleted = FALSE)
-               AND (:lastUpdatedAt IS NULL
-                    OR v.updated_at < :lastUpdatedAt
-                    OR (v.updated_at = :lastUpdatedAt AND v.id < :lastId))
+               AND (CAST(:lastUpdatedAt AS timestamptz) IS NULL
+                    OR v.updated_at < CAST(:lastUpdatedAt AS timestamptz)
+                    OR (v.updated_at = CAST(:lastUpdatedAt AS timestamptz) AND v.id < CAST(:lastId AS uuid)))
              ORDER BY v.updated_at DESC, v.id DESC
              LIMIT :fetchCount
             """, nativeQuery = true)

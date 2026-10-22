@@ -427,9 +427,18 @@ class ProductVariantJourneyIntegrationTest {
 
         HttpResponse<String> anonymous = postJsonWithoutBearer("/graphql", objectMapper.writeValueAsString(Map.of(
                 "query", "query { storeProducts(first: 1) { edges { node { id } } } }")));
+        // The pre-login gate's unified contract: the anonymous POST is
+        // answered INSIDE GraphQL (HTTP 200) with the classified AUTHN-001
+        // error before dispatch — no data key, nothing leaked (the old
+        // blanket 401 died with the gate; the read stays just as closed).
         assertThat(anonymous.statusCode())
-                .as("GraphQL catalog reads remain behind the resource-server authentication boundary")
-                .isEqualTo(401);
+                .as("GraphQL catalog reads stay closed to the anonymous caller through the pre-login gate")
+                .isEqualTo(200);
+        com.fasterxml.jackson.databind.JsonNode anonymousBody = objectMapper.readTree(anonymous.body());
+        assertThat(anonymousBody.has("data")).as("no data key may leak").isFalse();
+        assertThat(anonymousBody.path("errors").size()).isEqualTo(1);
+        assertThat(anonymousBody.path("errors").get(0).path("extensions").path("errorCode").asText())
+                .isEqualTo("AUTHN-001");
 
         String createQuery = """
                 mutation CreateStoreProduct($input: StoreProductCreateInput!) {

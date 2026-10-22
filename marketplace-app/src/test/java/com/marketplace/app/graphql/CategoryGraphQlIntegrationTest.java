@@ -10,7 +10,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.graphql.test.tester.HttpGraphQlTester;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -97,6 +96,9 @@ class CategoryGraphQlIntegrationTest {
     @Autowired
     private CategoryRepository categoryRepository;
 
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
     @LocalServerPort
     private int port;
 
@@ -119,10 +121,18 @@ class CategoryGraphQlIntegrationTest {
 
     @AfterEach
     void removeSeededRows() {
-        if (!seededIds.isEmpty()) {
-            categoryRepository.deleteAllById(new ArrayList<>(seededIds));
-            seededIds.clear();
+        // The fixture rows leave PHYSICALLY: the category entity is a
+        // Hibernate @SoftDelete row (BaseEntity's own law), so a
+        // repository delete only flips is_deleted and the PHYSICAL row
+        // keeps holding uq_categories_code — the next seed of the same
+        // fixed fixture codes then trips the unique index (the CI-measured
+        // duplicate-key failure). A physical JDBC delete of THIS test's
+        // own fixture rows never weakens the index and never changes the
+        // production soft-delete law.
+        for (UUID categoryId : seededIds) {
+            jdbcTemplate.update("DELETE FROM categories WHERE id = ?", categoryId);
         }
+        seededIds.clear();
     }
 
     private void persist(String code, String nameEn, String nameAr, Integer position) {
@@ -408,13 +418,14 @@ class CategoryGraphQlIntegrationTest {
     // ------------------------------------------------------------------
 
     @Test
-    void anonymousCategoryQueryIsRejectedAs401ProblemDetail() {
-        // No Authorization header: the security chain answers the shared
-        // problem+json 401 AUTHN-001 contract before any GraphQL handling —
-        // the tripartite anonymous contract GraphQlSecurityIntegrationTest
-        // pins, asserted here for the categories root's own journey. This
-        // IS the public-root surface's authentication boundary (the
-        // registered public-root mapping divergence).
+void anonymousCategoryQueryIsRejectedByTheGraphQlGateBeforeDispatch() {
+        // No Authorization header: PreLoginGraphQlGate answers the
+        // classified AUTHN-001 GraphQL error BEFORE dispatch (HTTP 200,
+        // ONE error with the canonical taxonomy pair, NO data key —
+        // nothing leaked, no resolver executed). The unified post-gate
+        // contract every root now shares (the GraphQlSecurityIntegrationTest
+        // tripartite shape); the old problem+json 401 contract died with
+        // the gate.
         WebTestClient anonymousClient = WebTestClient.bindToServer()
                 .baseUrl("http://localhost:" + port + "/graphql")
                 .build();
@@ -422,15 +433,14 @@ class CategoryGraphQlIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("{\"query\":\"{ categories(first: 1) { totalCount } }\"}")
                 .exchange()
-                .expectStatus().isUnauthorized()
-                .expectHeader().contentType("application/problem+json")
-                .expectHeader().valueEquals(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"marketplace\"")
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
                 .expectBody()
-                .jsonPath("$.type").isEqualTo("https://marketplace.com/errors/unauthorized")
-                .jsonPath("$.title").isEqualTo("Unauthorized")
-                .jsonPath("$.status").isEqualTo(401)
-                .jsonPath("$.instance").isEqualTo("/graphql")
-                .jsonPath("$.errorCode").isEqualTo("AUTHN-001");
+                .jsonPath("$.errors.length()").isEqualTo(1)
+                .jsonPath("$.errors[0].extensions.errorCode").isEqualTo("AUTHN-001")
+                .jsonPath("$.errors[0].extensions.category").isEqualTo("authz")
+                .jsonPath("$.errors[0].extensions.classification").isEqualTo("UNAUTHORIZED")
+                .jsonPath("$.data").doesNotExist();
     }
 
     // ------------------------------------------------------------------

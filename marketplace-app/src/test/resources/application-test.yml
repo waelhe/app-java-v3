@@ -145,3 +145,21 @@ management:
     export:
       otlp:
         enabled: false
+
+# The integration-test rate-limiter budget: the real production limits
+# (the write families' 10/min fail-fast, the read families' 50/min) are
+# per-instance in-memory windows sized for live traffic — an integration
+# test class fires a whole root family's legs within seconds, far past
+# the per-minute window, so the production numbers would answer RL-001
+# mid-class (the CI-measured failure on attributeValueCreate's sixth leg)
+# before the root's own behavior is proven. This profile-only override
+# raises the shared default window (the documented relaxed-binding
+# property override) so the tests exercise the roots' real behavior;
+# production limits stay exactly as application.yml pins them.
+resilience4j:
+  ratelimiter:
+    configs:
+      default:
+        limit-for-period: 10000
+        limit-refresh-period: 1m
+        timeout-duration: 0

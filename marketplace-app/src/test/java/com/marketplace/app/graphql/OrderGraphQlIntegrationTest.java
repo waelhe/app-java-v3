@@ -112,6 +112,7 @@ class OrderGraphQlIntegrationTest {
     private int port;
 
     private final List<UUID> seededOrderIds = new ArrayList<>();
+    private final List<UUID> seededUserIds = new ArrayList<>();
     private UUID placedOrderId;
     private UUID confirmedOrderId;
     private UUID fulfilledOrderId;
@@ -121,6 +122,16 @@ class OrderGraphQlIntegrationTest {
     void seedOrders() {
         UUID consumerId = UUID.randomUUID();
         UUID sellerId = UUID.randomUUID();
+        // The V113 fk_orders_users law: an orders row cannot exist without
+        // its consumer — the fixture seeds the two real users FIRST (the
+        // users table's own INSERT path), so the order INSERTs satisfy the
+        // measured FK instead of failing it.
+        userRepository.save(new com.marketplace.identity.User(consumerId, consumerId.toString(), null,
+                "p4 orders consumer", com.marketplace.identity.UserRole.CONSUMER));
+        userRepository.save(new com.marketplace.identity.User(sellerId, sellerId.toString(), null,
+                "p4 orders seller", com.marketplace.identity.UserRole.PROVIDER));
+        seededUserIds.add(consumerId);
+        seededUserIds.add(sellerId);
 
         Order placed = orderRepository.save(Order.placed(consumerId, 2500L, "SAR", sellerId));
         Order confirmed = Order.placed(consumerId, 3100L, "SAR", sellerId);
@@ -143,10 +154,21 @@ class OrderGraphQlIntegrationTest {
 
     @AfterEach
     void removeSeededRows() {
-        if (!seededOrderIds.isEmpty()) {
-            orderRepository.deleteAllById(new ArrayList<>(seededOrderIds));
-            seededOrderIds.clear();
+        // The fixture rows leave PHYSICALLY, in FK-respecting order: the
+        // order entity is a Hibernate @SoftDelete row, so a repository
+        // delete only flips is_deleted and the physical row keeps holding
+        // fk_orders_users — the users seed could then never re-insert
+        // cleanly. A physical JDBC delete of THIS test's own fixture rows
+        // never weakens the FK and never changes the production
+        // soft-delete law.
+        for (UUID orderId : seededOrderIds) {
+            jdbcTemplate.update("DELETE FROM orders WHERE id = ?", orderId);
         }
+        seededOrderIds.clear();
+        for (UUID userId : seededUserIds) {
+            jdbcTemplate.update("DELETE FROM users WHERE id = ?", userId);
+        }
+        seededUserIds.clear();
     }
 
     /**

@@ -155,14 +155,18 @@ class ProductMediaGraphQlIntegrationTest {
 
     @AfterEach
     void removeSeededRows() {
-        if (!seededMediaIds.isEmpty()) {
-            mediaAssetRepository.deleteAllById(new ArrayList<>(seededMediaIds));
-            seededMediaIds.clear();
+        // The fixture rows leave PHYSICALLY, in FK-respecting order (the
+        // Product cleanup's own law — Hibernate @SoftDelete rows would
+        // otherwise keep referencing store_categories and trip
+        // fk_products_store_category on the hard DELETE below).
+        for (UUID mediaId : seededMediaIds) {
+            jdbcTemplate.update("DELETE FROM media_assets WHERE id = ?", mediaId);
         }
-        if (!seededProductIds.isEmpty()) {
-            productRepository.deleteAllById(new ArrayList<>(seededProductIds));
-            seededProductIds.clear();
+        seededMediaIds.clear();
+        for (UUID productId : seededProductIds) {
+            jdbcTemplate.update("DELETE FROM products WHERE id = ?", productId);
         }
+        seededProductIds.clear();
         jdbcTemplate.update("DELETE FROM store_categories WHERE code = ?", storeCategoryCode);
         userRepository.deleteById(ownerId);
     }

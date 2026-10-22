@@ -687,6 +687,10 @@ class PromotionVoucherGraphQlIntegrationTest {
     /** The endpoint's own gate: an anonymous caller is rejected before any adapter runs. */
     @Test
     void anAnonymousCallerIsRejectedBeforeAnyAdapterRuns() {
+        // PreLoginGraphQlGate answers the classified AUTHN-001 GraphQL
+        // error BEFORE dispatch (HTTP 200, ONE error with the canonical
+        // taxonomy pair, NO data key — nothing leaked, no resolver
+        // executed). The unified post-gate contract every root shares.
         WebTestClient anonymous = WebTestClient.bindToServer()
                 .baseUrl("http://localhost:" + port)
                 .build();
@@ -694,9 +698,14 @@ class PromotionVoucherGraphQlIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("{\"query\":\"{ promotions(first: 1) { totalCount } }\"}")
                 .exchange()
-                .expectStatus().isUnauthorized()
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
                 .expectBody()
-                .jsonPath("$.errorCode").isEqualTo("AUTHN-001");
+                .jsonPath("$.errors.length()").isEqualTo(1)
+                .jsonPath("$.errors[0].extensions.errorCode").isEqualTo("AUTHN-001")
+                .jsonPath("$.errors[0].extensions.category").isEqualTo("authz")
+                .jsonPath("$.errors[0].extensions.classification").isEqualTo("UNAUTHORIZED")
+                .jsonPath("$.data").doesNotExist();
     }
 
     @Test
