@@ -189,8 +189,8 @@ class CollectionGraphQlIntegrationTest {
         seededTypeId = UUID.randomUUID();
         jdbcTemplate.update("""
                 INSERT INTO product_types
-                    (id, code, name_en, name_ar, position, is_deleted, version, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 0, FALSE, 0, now(), now())
+                    (id, code, name_en, name_ar, is_deleted, version, created_at, updated_at)
+                VALUES (?, ?, ?, ?, FALSE, 0, now(), now())
                 """, seededTypeId,
                 "lcol-type-" + seededTypeId.toString().replace("-", "").substring(0, 8),
                 "l-collections schema", null);
