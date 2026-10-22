@@ -252,6 +252,43 @@ public class UserService implements IdentitySpi {
         return user;
     }
 
+    /**
+     * Agent 1 (the Saleor 458-root campaign, assignment packet PR #696):
+     * the staff-account birth — the ADMIN-role projection row plus the
+     * login row in one transaction (the register() two-store discipline
+     * verbatim). The caller (the owning admin surface) supplies a
+     * generated unknowable secret; the set-password journey is the emailed
+     * reset right (Saleor's STAFF_SET_PASSWORD_REQUESTED shape), so no
+     * verification hold applies — staff accounts are born enabled (the
+     * admin who created them vouched for the address) unless the caller
+     * disables them.
+     *
+     * @param email       the staff account's address (becomes the subject)
+     * @param rawPassword the generated unknowable secret — encoded here
+     * @param displayName the optional display name
+     * @param enabled     whether the login row is born enabled
+     * @return the created domain row
+     * @throws ConflictException the address already owns an account
+     */
+    public User registerStaff(String email, String rawPassword, String displayName,
+                              boolean enabled) {
+        String subject = email;
+        if (userRepository.existsBySubject(subject)
+                || userDetailsManager.userExists(subject)) {
+            throw new ConflictException("An account already exists for this email");
+        }
+        User user = userRepository.save(
+                User.create(subject, email, displayName, UserRole.ADMIN));
+        userDetailsManager.createUser(org.springframework.security.core.userdetails.User
+                .withUsername(subject)
+                .password(passwordEncoder.getObject().encode(rawPassword))
+                .roles("ADMIN")
+                .disabled(!enabled)
+                .build());
+        log.info("Staff account registered: subject={}, role=ADMIN, enabled={}", subject, enabled);
+        return user;
+    }
+
     @Transactional(readOnly = true)
     public Page<UserSummary> findAllSummaries(Pageable pageable) {
         return findAll(pageable).map(this::toUserSummary);
@@ -506,6 +543,45 @@ public class UserService implements IdentitySpi {
 
         log.info("Account role audit: userId={}, username={}, role: {} -> {}, actor={}",
                 userId, username, previous, target, actor);
+    }
+
+    /**
+     * Agent 1 (the CodeRabbit integrity round — the login-identity move's
+     * shared aftermath): the legs EVERY path that moves a login identity
+     * owes once the login row lands under the new address — the OLD
+     * principal's issued authorizations die with their refresh grants (the
+     * same L23 documented SAS basis as {@link #updateUserRole}: the
+     * old-name rows survive the rename as orphans otherwise, and a leaked
+     * refresh token minted for the dead name keeps rotating), and the two
+     * user caches drop their stale subject-keyed copies through the
+     * standing AFTER_COMMIT channel (the I5-guarded mechanism, not a new
+     * one). Package-private on purpose: both owning paths (the
+     * self-service email change and the administrative moveEmail) live in
+     * this module and call this after their own writes.
+     */
+    void loginIdentityMoved(String oldSubject) {
+        jdbcTemplate.update(DELETE_AUTHORIZATIONS_BY_PRINCIPAL, oldSubject);
+        eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));
+    }
+
+    /**
+     * Agent 1 (the CodeRabbit correctness round — the {@code accountUpdate}
+     * leg): the TRANSACTIONAL own-profile write. {@link #getBySubject} is
+     * {@code @Cacheable} and read-only: the returned {@link User} is a
+     * JDK-deserialized cache copy or an entity detached at the read-only
+     * boundary, so {@code updateProfile} on it is invisible to dirty
+     * checking — the adapter's one-liner returned success while the
+     * display name never changed. This method loads the LIVE row through
+     * the repository, applies the update inside the transaction, and
+     * publishes the standing cache invalidation (the
+     * {@code updateUserRole} hazard comment documents the same trap).
+     */
+    public void updateOwnProfileBySubject(String subject, String displayName) {
+        User user = userRepository.findBySubject(subject)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No account for the authenticated subject: " + subject));
+        user.updateProfile(null, displayName);
+        eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));
     }
 
     /**
