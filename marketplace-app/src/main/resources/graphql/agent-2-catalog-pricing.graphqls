@@ -2150,3 +2150,100 @@ type LanguageDisplay {
     """Full name of the language."""
     language: String!
 }
+
+# =====================================================================
+# N-slice (the canonical Saleor plan §5-P2 — packet agent-2): the
+# Saleor product-media family's three storage-owned mutation roots —
+# productMediaDelete / productMediaBulkDelete / productMediaReorder —
+# over the media module's own A-17/C.7 staged-upload model (the
+# MediaService.delete seam for the deletions, the media_assets.position
+# column for the reorder). The payloads' error family is the pinned
+# schema's OWN choice: the product family's shared ProductError (the
+# pinned ProductMediaDelete/ProductMediaBulkDelete/ProductMediaReorder
+# shapes carry errors: [ProductError!]!). The family's remaining roots
+# stay behind the recorded owner decisions (the create's Upload-scalar
+# input needs the media module's own input design over its staged
+# request→confirm model; the alt-based productMediaUpdate/Translate
+# need alt storage the one-language row law does not carry) — never a
+# partial shell.
+# =====================================================================
+
+# The bounded product-media projection — the durable facts the media
+# module owns: the row's typed identity, the display sort order and the
+# owning product. The pinned type's unowned members (alt — no alt
+# column exists; url — a presigned session concern, not a durable
+# GraphQL fact; oembedData — no oEmbed model; the per-locale
+# translation — the one-language row law; the metadata members — no
+# metadata model) stay undeclared at this boundary, the same honest
+# bounded-closure discipline every packet slice carries.
+type ProductMedia {
+    """The unique ID of the product media (the typed global ID)."""
+    id: ID!
+
+    """The sort order of the media (the row's own 1-based display position)."""
+    sortOrder: Int
+
+    """Product id the media refers to (the owning product's typed global ID)."""
+    productId: ID
+}
+
+type ProductMediaDelete {
+    """The product the deleted media belonged to."""
+    product: Product
+
+    """The deleted product media (the row's last-known projection)."""
+    media: ProductMedia
+
+    """The product family's shared error entries (the pinned payload's own family)."""
+    errors: [ProductError!]!
+}
+
+type ProductMediaBulkDelete {
+    """Returns how many objects were affected (the honestly-deleted count)."""
+    count: Int!
+
+    """The product family's shared error entries (the pinned payload's own family)."""
+    errors: [ProductError!]!
+}
+
+type ProductMediaReorder {
+    """The product whose media order was altered."""
+    product: Product
+
+    """The product media in the new order (the compacted 1..n positions)."""
+    media: [ProductMedia!]
+
+    """The product family's shared error entries (the pinned payload's own family)."""
+    errors: [ProductError!]!
+}
+
+extend type Mutation {
+    """Deletes a product media."""
+    productMediaDelete(
+        """ID of a product media to delete."""
+        id: ID!
+    ): ProductMediaDelete!
+
+    """
+    Deletes product media.
+
+    Requires one of the following permissions: MANAGE_PRODUCTS.
+    """
+    productMediaBulkDelete(
+        """List of product media IDs to delete."""
+        ids: [ID!]!
+    ): ProductMediaBulkDelete!
+
+    """
+    Changes ordering of the product media.
+
+    Requires one of the following permissions: MANAGE_PRODUCTS.
+    """
+    productMediaReorder(
+        """IDs of a product media in the desired order."""
+        mediaIds: [ID!]!
+
+        """ID of product that media order will be altered."""
+        productId: ID!
+    ): ProductMediaReorder!
+}

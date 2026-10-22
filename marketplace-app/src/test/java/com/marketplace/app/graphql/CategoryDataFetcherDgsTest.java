@@ -153,6 +153,11 @@ class CategoryDataFetcherDgsTest {
     @MockitoBean
     private ProductReadSpi productReadSpi;
 
+    // The product-media mutation roots' owning seam (agent-2 N-slice) —
+    // the package slice wires every fetcher, so this seam gets its mock
+    // (the sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.media.spi.ProductMediaWriteSpi productMediaWriteSpi;
     // The collection read/mutation roots' owning seams (agent-2 L-slice) —
     // the package slice wires every fetcher, so these seams get their
     // mocks (the sibling-test precedent).

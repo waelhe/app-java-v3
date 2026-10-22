@@ -118,6 +118,12 @@ class AttributeValueMutationDataFetcherDgsTest {
     @MockitoBean
     private ProductReadSpi productReadSpi;
 
+    // The product-media mutation roots' owning seam (agent-2 N-slice) —
+    // the package slice wires every fetcher, so this seam gets its mock
+    // (the sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.media.spi.ProductMediaWriteSpi productMediaWriteSpi;
+
     @MockitoBean
     private ProductVariantReadSpi variantReadSpi;
 

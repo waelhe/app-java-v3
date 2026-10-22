@@ -772,6 +772,15 @@ resilience4j:
         base-config: default
         limit-for-period: 10
         timeout-duration: 0
+      # Agent-2 N-slice (the canonical Saleor plan §5-P2 — the Saleor
+      # product-media family's three storage-owned roots): the media
+      # write instance at the same platform write budget (10/min,
+      # fail-fast). Additive key only (the isolation rule's shared-file
+      # addition, recorded in docs/agent-handoffs/agent-2-completion.md).
+      graphqlProductMediaMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
       # P1 (the canonical Saleor plan §5-P1 — the Saleor Users read roots):
       # me/user/staffUsers share one named read instance at the catalog
       # read budget (50/min) — bounded identity reads behind the same
