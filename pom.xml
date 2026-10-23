@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.1.1</version>
+        <version>4.1.2</version>
         <relativePath/>
     </parent>
 
@@ -57,7 +57,7 @@
     <properties>
         <java.version>25</java.version>
         <resilience4j.version>2.4.0</resilience4j.version>
-        <!-- S9: aligned with the ArchUnit version spring-modulith-core 2.1.1
+        <!-- S9: aligned with the ArchUnit version spring-modulith-core 2.1.2
              actually resolves (measured: dependency:tree -Dverbose). The
              previous 1.5.0 pin ran the archunit-junit5 ENGINE 1.5.0 against
              the BOM-transitive archunit CORE 1.4.2 — an unsupported mix
@@ -88,14 +88,19 @@
              Central's maven-metadata.xml (2026-10-16); "DGS 11+ is only
              compatible with Spring Boot 4 and above" (the framework's own
              version check, DgsSpringGraphQLEnvironmentPostProcessor) —
-             this project is Boot 4.1.1. The platform BOM (imported below)
+             this project is Boot 4.1.2 (the 4-and-above check still
+             satisfied). The platform BOM (imported below)
              manages ZERO org.springframework artifacts (measured from
              graphql-dgs-platform-12.1.0.pom: DGS modules + graphql-java
              25.0 + java-dataloader 6.0.0 + five non-Spring shared
-             libraries), and that graphql-java pair is IDENTICAL to the
-             Boot 4.1.1 chain (spring-boot-dependencies
-             graphql-java.version=25.0; spring-graphql 2.0.5's
-             java-dataloader 6.0.0) — no conflict there. The five shared
+             libraries). Measured drift on Boot 4.1.2
+             (spring-boot-dependencies-4.1.2.pom, 2026-10-23): the parent
+             now manages graphql-java.version=25.1 directly (spring-graphql
+             2.0.6) — parent-direct beats the DGS child-import per the
+             measured precedence map, so resolved graphql-java is 25.1
+             while java-dataloader stays 6.0.0 on both sides; 25.1 > 25.0
+             keeps RequireUpperBoundDeps satisfied — a benign one-patch
+             drift, no pin needed. The five shared
              libraries are NOT identical to the Boot parent's management,
              and because a child-level BOM import overrides the parent's
              imported BOMs, CI round 1 (run 38827181251) measured the
@@ -133,12 +138,13 @@
              dependency graph (3.10.1 POM, measured) wraps the official
              com.netflix.graphql.dgs.codegen:graphql-dgs-codegen-core
              8.6.0 + graphql-java 25.0 — the SAME graphql-java line the
-             runtime chain resolves (Boot 4.1.1 BOM -> spring-graphql
-             2.0.5 -> graphql-java 25.0) — and all of it stays inside
+             runtime chain resolves (Boot 4.1.2 BOM -> spring-graphql
+             2.0.6 -> graphql-java 25.1; the plugin's 25.0 stays inside
+             its own class realm either way) — and all of it stays inside
              the plugin class realm: a build plugin only, zero runtime
              dependencies, invisible to the enforcer's project graph. -->
         <graphql-codegen-plugin.version>3.10.1</graphql-codegen-plugin.version>
-        <instancio.version>6.0.1</instancio.version>
+        <instancio.version>6.1.0</instancio.version>
         <!-- Track-B community tools (parallel execution plan §5.4 — CR-2, the
              foundation BOM drop): versions for the developer line ONLY, pinned
              HERE so no module pom ever carries a number (house BOM rule).
@@ -147,14 +153,14 @@
              metadata is the measure). No Boot 4.1.1 management for either. -->
         <bucket4j.version>8.21.0</bucket4j.version>
         <firebase-admin.version>9.11.0</firebase-admin.version>
-        <spring-ai.version>2.0.1</spring-ai.version>
+        <spring-ai.version>2.0.2</spring-ai.version>
         <!-- Community extension: event-sourced, tool-call-safe session history and JDBC repository. -->
         <spring-ai-session.version>0.10.0</spring-ai-session.version>
         <!-- Official community extension for TypeSafe AI System One; opt-in via its profile and separate credential. -->
         <spring-ai-typesafe.version>0.4.0</spring-ai-typesafe.version>
         <!-- Cloud train for the edge BFF (exception #14): single property,
              per-artifact versions stay managed by the BOM below. -->
-        <spring-cloud.version>2025.1.3</spring-cloud.version>
+        <spring-cloud.version>2025.1.4</spring-cloud.version>
         <!-- Test-only: WireMock (exception #15) — managed by NEITHER Boot 4.1.1 BOM
              (verified: no wiremock entry in spring-boot-dependencies-4.1.1.pom)
              NOR Cloud 2025.1.3 BOM (verified absent). Stable 3.x line only
@@ -175,10 +181,10 @@
              fixture generation with generated-input invariant checking for
              money arithmetic (ledger credit/debit/balance). Not managed by
              the Boot 4.1.1 BOM (verified absent). Stable line only. -->
-        <jqwik.version>1.10.1</jqwik.version>
+        <jqwik.version>1.10.2</jqwik.version>
         <git-commit-id.version>10.0.1</git-commit-id.version>
-        <!-- Boot 4.1.1 managed versions lag behind transitive dep requirements; 3.2.2 → 3.2.3: CVE-2026-91776 + CVE-2026-91777 on tools.jackson.core:jackson-databind (HIGH, fixed in 3.2.3 — the same trivy gate measurement as the Jackson-2 bump) -->
-        <jackson.version>3.2.3</jackson.version>
+        <!-- Boot managed versions lag behind transitive dep requirements; 3.2.2 → 3.2.3: CVE-2026-91776 + CVE-2026-91777 on tools.jackson.core:jackson-databind (HIGH, fixed in 3.2.3 — the same trivy gate measurement as the Jackson-2 bump); 3.2.3 → 3.2.4: same-line patch, latest stable of the 3.2.x line (Maven Central maven-metadata.xml, 2026-10-23). Boot 4.1.2 manages jackson-bom 3.1.7 (measured from spring-boot-dependencies-4.1.2.pom) — still below this security pin, override stays. -->
+        <jackson.version>3.2.4</jackson.version>
         <!-- kafka-clients' managed lz4-java lags behind the trivy gate's
              measured CVE: 1.10.1 → 1.11.4 — CVE-2026-106451 on
              at.yawk.lz4:lz4-java (HIGH, fixed in 1.11.4; the container
@@ -206,61 +212,34 @@
              config — zero API surface reached by application code. -->
         <snappy-java.version>1.1.10.11</snappy-java.version>
         <zstd-jni.version>1.5.7-22</zstd-jni.version>
-        <prometheus-client.version>1.8.0</prometheus-client.version>
+        <prometheus-client.version>1.10.0</prometheus-client.version>
         <!-- Override: commons-logging — spring-session-core 4.1.1 (Boot 4.1.1) requires 1.4.0, Boot 4.1.1 BOM manages 1.3.6 (RequireUpperBoundDeps) -->
         <commons-logging.version>1.4.0</commons-logging.version>
-        <!-- Override: Jackson-2 BOM — swagger-core-jakarta 2.2.52 (springdoc 3.1.0) requires 2.22.0, Boot 4.1.1 manages 2.21.5 (RequireUpperBoundDeps); 2.22.2 → 2.22.3: CVE-2026-91776 (TypeDeserializerBase._findDeserializer()) + CVE-2026-91777 (forward-reference completion for @JsonIdentityInfo object IDs) — both HIGH with fixed versions (trivy scan on main 98e619cd, 2026-09-30T20:26Z; the DB entry landed between the PR-head scan [green, 19:50Z] and main's) -->
-        <jackson-2-bom.version>2.22.3</jackson-2-bom.version>
-        <!-- Override: Tomcat — Boot 4.1.1 manages 11.0.24, which ships three CRITICAL
-             authentication/authorization bypasses (trivy scan, 2026-09-06):
-             CVE-2026-65182 (security-constraint bypass, longer-path-before-shorter),
-             CVE-2026-65905 (DIGEST authenticator replay window), CVE-2026-68525 (FORM
-             auth POST/GET constraint bypass). All three are fixed in Apache Tomcat
-             11.0.25 ("2026-08-18 Fixed in Apache Tomcat 11.0.25", official
-             security-11.html — saved copy: scripts/cve-gate-docs/
-             tomcat-security-changelog.html), and 11.0.25 exists on Maven Central.
-             11.0.25 → 11.0.26 (same-line patch, measured on Maven Central 2026-10-07):
-             three IMPORTANT CVEs fixed in 11.0.26 affect the 11.0.25 pin —
-             CVE-2026-86350 (HTTP/2 request header mix-up via regression in the
-             CVE-2026-41293 fix, affects 11.0.22-11.0.25), CVE-2026-78383 (AJP DoS
-             via missing request body, pins an AJP thread), CVE-2026-77791 (DoS via
-             busy wait during WebSocket close — this platform runs WebSocket), plus
-             moderate/low fixes (87022, 86248, 79677, 78437) from the same official
-             page. No Boot 4.1.x stable manages 11.0.26 yet (latest stable = 4.1.1),
-             so the official version-property override is the only path;
-             tomcat.version governs the whole Tomcat family
-             (embed-core/el/websocket, annotations-api — spring-boot-dependencies
-             4.1.1 BOM), keeping dependencyConvergence green. Remove this override
-             when the Boot parent manages >= 11.0.26 (the weekly Dependabot BOM PR
-             will surface it). -->
-        <tomcat.version>11.0.26</tomcat.version>
-        <!-- Override: Netty — Boot 4.1.1 manages 4.2.17.Final, which the public
-             Snyk DB carries as HIGH findings fixed only in 4.2.18.Final
-             (batch scan of the resolved runtime tree, 2026-10-09): HTTP Request
-             Smuggling CVE-2026-100663 and Allocation of Resources Without
-             Limits or Throttling CVE-2026-100661/CVE-2026-100662 across
-             netty-codec-http3/netty-codec-http/netty-codec-classes-quic
-             (ranges [4.2.0.Final,4.2.18.Final) and [4.2.2.Final,4.2.18.Final);
-             codec-http3 alone measures 5H+1M on the security.snyk.io version
-             table). 4.2.18.Final exists on Maven Central (published 9 Sep 2026).
-             The official version-property override path — spring-boot-
-             dependencies 4.1.1's <netty.version> governs the whole Netty
-             family pulled by reactor-netty 1.3.7 — keeping
-             dependencyConvergence green. Remove this override when the Boot
-             parent manages >= 4.2.18.Final (the weekly Dependabot BOM PR will
-             surface it). -->
-        <netty.version>4.2.18.Final</netty.version>
-        <!-- Override: PostgreSQL JDBC driver — Boot 4.1.1 manages 42.7.13,
-             which the same 2026-10-09 Snyk scan carries as: Not Failing
-             Securely ('Failing Open') CVE-2026-107314 (HIGH,
-             [42.7.11,42.7.14)) plus Sensitive Information in Resource Not
-             Removed Before Reuse CVE-2026-107315 (MEDIUM, [42.7.4,42.7.14)).
-             Both fixed in 42.7.14 (verified on Maven Central). This is the
-             production database driver — the HIGH closes with this same-line
-             patch. Remove this override when the Boot parent manages
-             >= 42.7.14. -->
-        <postgresql.version>42.7.14</postgresql.version>
-        <awssdk.version>2.54.20</awssdk.version>
+        <!-- Override: Jackson-2 BOM — swagger-core-jakarta 2.2.52 (springdoc 3.1.0) requires 2.22.0, Boot 4.1.1 managed 2.21.5 (RequireUpperBoundDeps); 2.22.2 → 2.22.3: CVE-2026-91776 (TypeDeserializerBase._findDeserializer()) + CVE-2026-91777 (forward-reference completion for @JsonIdentityInfo object IDs) — both HIGH with fixed versions (trivy scan on main 98e619cd, 2026-09-30T20:26Z; the DB entry landed between the PR-head scan [green, 19:50Z] and main's); 2.22.3 → 2.22.4: same-line patch, latest stable of the 2.22.x line (Maven Central maven-metadata.xml, 2026-10-23). Boot 4.1.2 manages jackson-2-bom 2.21.7 (measured) — still below the pin, override stays. -->
+        <jackson-2-bom.version>2.22.4</jackson-2-bom.version>
+        <!-- Override REMOVED 2026-10-23 (Boot 4.1.2 platform wave): the removal
+             condition this block used to document has FIRED — measured from
+             spring-boot-dependencies-4.1.2.pom: tomcat.version=11.0.27,
+             which is ≥ the 11.0.26 security pin the override held (the three
+             CRITICAL CVEs of 11.0.24 and the three IMPORTANT CVEs of the
+             11.0.25→11.0.26 line all stay fixed; 11.0.27 adds its own
+             upstream fixes). Tomcat returns to Boot parent management —
+             no house pin, automatic management only (version-policy §6). -->
+        <!-- Override REMOVED 2026-10-23 (Boot 4.1.2 platform wave): removal
+             condition FIRED — measured from spring-boot-dependencies-4.1.2.pom:
+             netty.version=4.2.19.Final ≥ the 4.2.18.Final security pin (the
+             HTTP Request Smuggling CVE-2026-100663 and resource-allocation
+             CVE-2026-100661/100662 ranges all stay closed). Netty returns to
+             Boot parent management — automatic management only
+             (version-policy §6). -->
+        <!-- Override REMOVED 2026-10-23 (Boot 4.1.2 platform wave): removal
+             condition FIRED — measured from spring-boot-dependencies-4.1.2.pom:
+             postgresql.version=42.7.14, exactly the pin's version (the
+             failing-open CVE-2026-107314 and info-reuse CVE-2026-107315
+             both stay closed). The production database driver returns to
+             Boot parent management — automatic management only
+             (version-policy §6). -->
+        <awssdk.version>2.57.3</awssdk.version>
         <stripe.version>33.4.2</stripe.version>
         <project.build.outputTimestamp>2026-06-14T08:00:00Z</project.build.outputTimestamp>
     </properties>
@@ -271,7 +250,7 @@
             <dependency>
                 <groupId>org.springframework.modulith</groupId>
                 <artifactId>spring-modulith-bom</artifactId>
-                <version>2.1.1</version>
+                <version>2.1.2</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -281,7 +260,7 @@
                  Reason: provider-neutral chat-client foundation for the new
                  marketplace-ai capability module (ChatModel/ChatClient plus the
                  spring.ai.model.chat provider selector).
-                 Compatibility evidence (docs.spring.io/spring-ai, v2.0.1):
+                 Compatibility evidence (docs.spring.io/spring-ai, v2.0.2):
                  "Spring AI 2.0.x supports Spring Boot 4.0.x and 4.1.x."
                  (reference/getting-started.html); releases publish to Maven
                  Central with no extra repository
@@ -398,10 +377,14 @@
                  repaired by restoring the Boot line:
                  - io.projectreactor:reactor-core/reactor-test: the BOM's
                    3.8.0 lost to the tree's 3.8.7 (Boot reactor-bom
-                   2025.0.7); pinned back to the Boot line.
+                   2025.0.7); pinned back to the Boot line. Boot 4.1.2's
+                   reactor-bom 2025.0.8 line is 3.8.8 (measured
+                   2026-10-23) — the pins follow the Boot line.
                  - io.micrometer:context-propagation: the BOM's 1.2.0 lost
                    to spring-ai-commons' 1.2.1 (Boot micrometer-bom
-                   1.17.1); pinned back to the Boot line.
+                   1.17.1); pinned back to the Boot line. Boot 4.1.2's
+                   micrometer-bom 1.17.2 still manages 1.2.1 (measured
+                   2026-10-23) — pin unchanged.
                  Round 2 (run 38828342440) measured two more, one in each
                  direction:
                  - org.jetbrains:annotations: the DGS tree itself carries
@@ -439,12 +422,12 @@
             <dependency>
                 <groupId>io.projectreactor</groupId>
                 <artifactId>reactor-core</artifactId>
-                <version>3.8.7</version>
+                <version>3.8.8</version>
             </dependency>
             <dependency>
                 <groupId>io.projectreactor</groupId>
                 <artifactId>reactor-test</artifactId>
-                <version>3.8.7</version>
+                <version>3.8.8</version>
             </dependency>
             <dependency>
                 <groupId>io.micrometer</groupId>
@@ -496,13 +479,15 @@
                 <artifactId>jqwik</artifactId>
                 <version>${jqwik.version}</version>
             </dependency>
-            <!-- Exception: commons-lang3 — springdoc pulls 3.20.0, Boot BOM pins 3.19.0 -->
-            <dependency>
-                <groupId>org.apache.commons</groupId>
-                <artifactId>commons-lang3</artifactId>
-                <version>3.20.0</version>
-            </dependency>
-            <!-- Override: Jackson BOM — spring-security-oauth2-authorization-server 7.1.1 requires jackson-databind 3.2.0, Boot 4.1.1 manages 3.1.5 -->
+            <!-- Override REMOVED 2026-10-23 (Boot 4.1.2 platform wave):
+                 measured from spring-boot-dependencies-4.1.1.pom AND
+                 -4.1.2.pom: commons-lang3.version=3.20.0 on BOTH lines —
+                 identical to the pin the block below used to hold and to
+                 springdoc 3.1.0's own 3.20.0 requirement. The premise that
+                 Boot pins 3.19.0 no longer holds; parent management and the
+                 requirement agree — the redundant child pin is removed,
+                 automatic management only (version-policy §6). -->
+            <!-- Override: Jackson BOM — spring-security-oauth2-authorization-server 7.1.1 requires jackson-databind 3.2.0, Boot 4.1.1 managed 3.1.5; Boot 4.1.2 manages jackson-bom 3.1.7 with Security 7.1.2 (measured 2026-10-23) — still below the 3.2.x requirement line, override stays at 3.2.4 -->
             <dependency>
                 <groupId>tools.jackson</groupId>
                 <artifactId>jackson-bom</artifactId>
@@ -524,11 +509,16 @@
                  own upper bounds (api-common 2.68.0 / cloud-storage 2.73.0 /
                  auth-library 1.52.0 request 33.6.0-jre — the 2026-10-11 CI
                  measured RequireUpperBoundDeps fail with the older pin;
-                 same-line patch, Maven Central). -->
+                 same-line patch, Maven Central). 33.6.0-jre → 33.7.2-jre:
+                 same-major minor bump to the 33.x line's latest stable
+                 (Maven Central maven-metadata.xml, 2026-10-23); guava-parent
+                 33.7.2-jre's own requirements (error_prone_annotations
+                 2.50.0, failureaccess 1.0.3 — measured from its POM) match
+                 or stay below the house pins above, so convergence holds. -->
             <dependency>
                 <groupId>com.google.guava</groupId>
                 <artifactId>guava</artifactId>
-                <version>33.6.0-jre</version>
+                <version>33.7.2-jre</version>
             </dependency>
             <!-- Override: lz4-java — kafka-clients (spring-kafka, the A-14
                  dependency set) manages 1.10.1; the container gate measured
@@ -581,15 +571,14 @@
                 <artifactId>gson</artifactId>
                 <version>2.14.0</version>
             </dependency>
-            <!-- Override: slf4j-api — the Boot BOM manages 2.0.18 while the
-                 firebase-admin 9.11.0 tree requests 2.0.19 (the 2026-10-11
-                 CI measured RequireUpperBoundDeps fail). Direct management
-                 wins over the imported BOM; the same patch line. -->
-            <dependency>
-                <groupId>org.slf4j</groupId>
-                <artifactId>slf4j-api</artifactId>
-                <version>2.0.19</version>
-            </dependency>
+            <!-- Override REMOVED 2026-10-23 (Boot 4.1.2 platform wave):
+                 measured from spring-boot-dependencies-4.1.2.pom:
+                 slf4j.version=2.0.20 ≥ the firebase-admin 9.11.0 tree's
+                 2.0.19 requirement (the 2026-10-11 convergence fail the
+                 block below used to document) — parent management now
+                 satisfies RequireUpperBoundDeps on its own; the redundant
+                 child pin is removed, automatic management only
+                 (version-policy §6). -->
             <!-- Override: checker-qual — annotations-only artifact; postgresql
                  42.7.13 requires 3.55.1 while guava 33.4.x-jre (override
                  above, exception #13) requires 3.43.0 (DependencyConvergence,
@@ -618,7 +607,7 @@
                 <artifactId>antlr4-runtime</artifactId>
                 <version>4.13.2</version>
             </dependency>
-            <!-- Override: Prometheus — micrometer-registry-prometheus 1.17.1 requires 1.7.0, Boot 4.1.1 manages 1.7.0; keep 1.8.0 (latest stable) for CVE coverage -->
+            <!-- Override: Prometheus — micrometer-registry-prometheus 1.17.2 (Boot 4.1.2's micrometer line) requires 1.7.0, Boot 4.1.2 manages 1.7.0; keep 1.10.0 (latest stable of the 1.x line, Maven Central 2026-10-23) for CVE coverage -->
             <dependency>
                 <groupId>io.prometheus</groupId>
                 <artifactId>prometheus-metrics-core</artifactId>
@@ -789,7 +778,11 @@
                  SDK. Consumed only by marketplace-payments (the real payment
                  channel, roadmap B3 / gap G-PROD-3). Official evidence cached
                  under scripts/psp-doc-verify/: Maven Central metadata (latest
-                 STABLE release 33.4.2), the official webhook-signature doc
+                 STABLE release 33.4.2; 34.0.0 exists on Central since
+                 2026-10 — a MAJOR line, so per version-policy §3 it is a
+                 planned initiative with a dedicated migration window, NOT
+                 an automatic bump; 33.4.2 stays until that initiative),
+                 the official webhook-signature doc
                  (constructEvent recipe + DEFAULT_TOLERANCE=300s verified from
                  the sources jar), and bytecode-verified API surface
                  (PaymentIntent.create + RequestOptions.setIdempotencyKey,
