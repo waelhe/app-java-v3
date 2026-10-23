@@ -9,6 +9,9 @@ name: Production Diagnostic
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/prod-diagnostic.yml'
 
 permissions:
   contents: read
