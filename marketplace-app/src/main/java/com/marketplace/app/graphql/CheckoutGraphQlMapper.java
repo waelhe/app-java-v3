@@ -45,6 +45,10 @@ public class CheckoutGraphQlMapper {
                 .toList();
         Map<String, Object> checkout = new LinkedHashMap<>();
         checkout.put("id", globalIdCodec.encode(CHECKOUT_TYPE, view.id()));
+        // Saleor Checkout.token is the same native UUID primary key, not a
+        // second secret/token store. The authenticated owner/ADMIN gate ran
+        // before this mapper is reached.
+        checkout.put("token", view.id().toString());
         checkout.put("lines", lines);
         checkout.put("quantity", view.quantity());
         return checkout;
