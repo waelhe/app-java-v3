@@ -43,6 +43,7 @@ import org.springframework.graphql.data.pagination.EncodingCursorStrategy;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.Instant;
@@ -172,6 +173,12 @@ class OrderDataFetcherDgsTest {
 
     @MockitoBean
     private IdentitySpi identitySpi;
+
+    @MockitoBean
+    private com.marketplace.orders.spi.OrderCommandSpi orderCommandSpi;
+
+    @MockitoBean
+    private com.marketplace.orders.spi.CheckoutSpi checkoutSpi;
 
     // The collection read/mutation roots' owning seams (agent-2 L-slice) —
     // the package slice wires every fetcher, so these seams get their
@@ -594,4 +601,164 @@ class OrderDataFetcherDgsTest {
                 any(org.springframework.security.core.Authentication.class),
                 any(OrderSort.class), any(), any(Limit.class));
     }
+
+    private static com.marketplace.orders.spi.CheckoutView agent3CheckoutView(
+            UUID checkoutId, UUID lineId, UUID variantId) {
+        return new com.marketplace.orders.spi.CheckoutView(
+                checkoutId,
+                List.of(new com.marketplace.orders.spi.CheckoutView.Line(lineId, variantId, 2)),
+                2);
+    }
+
+    private static com.marketplace.catalog.spi.ProductVariantView agent3VariantView(
+            UUID variantId, UUID productId) {
+        return new com.marketplace.catalog.spi.ProductVariantView(
+                variantId, "Default", "SKU-1", "ACTIVE",
+                new com.marketplace.catalog.spi.ProductView(
+                        productId, "Checkout Product", null, "ACTIVE"));
+    }
+
+    private static String agent3GlobalId(String type, UUID id) {
+        return new SaleorGlobalIdCodec().encode(type, id);
+    }
+
+
+    @Test
+    void orderCancelUsesTheSaleorPayloadOverTheRealDgsBinding() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        UUID orderId = UUID.randomUUID();
+        Instant placedAt = Instant.parse("2026-10-20T12:00:00Z");
+        when(orderCommandSpi.cancelAsAdmin(orderId))
+                .thenReturn(orderView(orderId, placedAt, "CANCELLED"));
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath(
+                "mutation($id: ID!) { orderCancel(id: $id) { order { id created status } orderErrors { field message code } errors { field message code } } }",
+                "data.orderCancel", Map.of("id", agent3GlobalId("Order", orderId)));
+
+        assertThat(payload.get("orderErrors")).isEqualTo(List.of());
+        assertThat(payload.get("errors")).isEqualTo(List.of());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> order = (Map<String, Object>) payload.get("order");
+        assertThat(order.get("id")).isEqualTo(agent3GlobalId("Order", orderId));
+        assertThat(order.get("status")).isEqualTo("CANCELED");
+        verify(orderCommandSpi).cancelAsAdmin(orderId);
+    }
+
+    @Test
+    void orderBulkCancelUsesTheSaleorCountAndErrorsPayload() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        UUID orderId = UUID.randomUUID();
+        when(orderCommandSpi.bulkCancelAsAdmin(List.of(orderId)))
+                .thenReturn(new com.marketplace.orders.spi.OrderBulkCancelResult(1, List.of()));
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath(
+                "mutation($ids: [ID!]!) { orderBulkCancel(ids: $ids) { count orderErrors { code } errors { code } } }",
+                "data.orderBulkCancel", Map.of("ids", List.of(agent3GlobalId("Order", orderId))));
+
+        assertThat(payload.get("count")).isEqualTo(1);
+        assertThat(payload.get("orderErrors")).isEqualTo(List.of());
+        assertThat(payload.get("errors")).isEqualTo(List.of());
+        verify(orderCommandSpi).bulkCancelAsAdmin(List.of(orderId));
+    }
+
+    @Test
+    void checkoutMapsAReadableVariantThroughTheExistingCatalogSpi() {
+        authenticateAs("checkout-owner-subject");
+        UUID checkoutId = UUID.randomUUID(), lineId = UUID.randomUUID();
+        UUID variantId = UUID.randomUUID(), productId = UUID.randomUUID();
+        when(checkoutSpi.findCheckout(eq(checkoutId), any(org.springframework.security.core.Authentication.class)))
+                .thenReturn(agent3CheckoutView(checkoutId, lineId, variantId));
+        when(variantReadSpi.findVariantById(eq(variantId),
+                any(org.springframework.security.core.Authentication.class)))
+                .thenReturn(java.util.Optional.of(agent3VariantView(variantId, productId)));
+
+        Map<String, Object> checkout = dgsQueryExecutor.executeAndExtractJsonPath(
+                "query($id: ID!) { checkout(id: $id) { id quantity lines { id quantity variant { id availableInCatalog productVariant { id sku } } } } }",
+                "data.checkout", Map.of("id", agent3GlobalId("Checkout", checkoutId)));
+
+        assertThat(checkout.get("id")).isEqualTo(agent3GlobalId("Checkout", checkoutId));
+        assertThat(checkout.get("quantity")).isEqualTo(2);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> lines = (List<Map<String, Object>>) checkout.get("lines");
+        assertThat(lines).hasSize(1);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> variant = (Map<String, Object>) lines.getFirst().get("variant");
+        assertThat(variant).containsEntry("id", agent3GlobalId("ProductVariant", variantId))
+                .containsEntry("availableInCatalog", true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> productVariant = (Map<String, Object>) variant.get("productVariant");
+        assertThat(productVariant.get("sku")).isEqualTo("SKU-1");
+    }
+
+    @Test
+    void checkoutPreservesAnExplicitReferenceWhenTheVariantIsNotReadable() {
+        authenticateAs("checkout-owner-subject");
+        UUID checkoutId = UUID.randomUUID(), lineId = UUID.randomUUID(), variantId = UUID.randomUUID();
+        when(checkoutSpi.findCheckout(eq(checkoutId), any(org.springframework.security.core.Authentication.class)))
+                .thenReturn(agent3CheckoutView(checkoutId, lineId, variantId));
+        when(variantReadSpi.findVariantById(eq(variantId),
+                any(org.springframework.security.core.Authentication.class)))
+                .thenReturn(java.util.Optional.empty());
+
+        Map<String, Object> checkout = dgsQueryExecutor.executeAndExtractJsonPath(
+                "query($id: ID!) { checkout(id: $id) { id lines { variant { id availableInCatalog productVariant { id } } } } }",
+                "data.checkout", Map.of("id", agent3GlobalId("Checkout", checkoutId)));
+
+        assertThat(checkout.get("id")).isEqualTo(agent3GlobalId("Checkout", checkoutId));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> lines = (List<Map<String, Object>>) checkout.get("lines");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> variant = (Map<String, Object>) lines.getFirst().get("variant");
+        assertThat(variant).containsEntry("id", agent3GlobalId("ProductVariant", variantId))
+                .containsEntry("availableInCatalog", false)
+                .containsEntry("productVariant", null);
+    }
+
+    @Test
+    void checkoutLinesAddKeepsCommittedLineAndReportsNoFalseNotFoundWhenVariantIsUnavailable() {
+        authenticateAs("checkout-owner-subject");
+        UUID checkoutId = UUID.randomUUID(), lineId = UUID.randomUUID(), variantId = UUID.randomUUID();
+        when(checkoutSpi.addLines(eq(checkoutId), any(),
+                any(org.springframework.security.core.Authentication.class)))
+                .thenReturn(agent3CheckoutView(checkoutId, lineId, variantId));
+        when(variantReadSpi.findVariantById(eq(variantId),
+                any(org.springframework.security.core.Authentication.class)))
+                .thenReturn(java.util.Optional.empty());
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath(
+                "mutation($id: ID!, $lines: [CheckoutLineInput!]!) { checkoutLinesAdd(id: $id, lines: $lines) { checkout { id lines { variant { id availableInCatalog } } } checkoutErrors { code } errors { code } } }",
+                "data.checkoutLinesAdd",
+                Map.of("id", agent3GlobalId("Checkout", checkoutId),
+                        "lines", List.of(Map.of("variantId", agent3GlobalId("ProductVariant", variantId), "quantity", 2))));
+
+        assertThat(payload.get("checkoutErrors")).isEqualTo(List.of());
+        assertThat(payload.get("errors")).isEqualTo(List.of());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> checkout = (Map<String, Object>) payload.get("checkout");
+        assertThat(checkout.get("id")).isEqualTo(agent3GlobalId("Checkout", checkoutId));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> lines = (List<Map<String, Object>>) checkout.get("lines");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> variant = (Map<String, Object>) lines.getFirst().get("variant");
+        assertThat(variant).containsEntry("id", agent3GlobalId("ProductVariant", variantId))
+                .containsEntry("availableInCatalog", false);
+        verify(checkoutSpi).addLines(eq(checkoutId), any(),
+                any(org.springframework.security.core.Authentication.class));
+    }
+
+    @Test
+    void checkoutDeleteReachesTheOwnerOnlyThroughTheAdminMutation() {
+        authenticateAs("checkout-admin-subject", "ADMIN");
+        UUID checkoutId = UUID.randomUUID();
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath(
+                "mutation($id: ID!) { checkoutDelete(id: $id) { errors { code } } }",
+                "data.checkoutDelete", Map.of("id", agent3GlobalId("Checkout", checkoutId)));
+
+        assertThat(payload.get("errors")).isEqualTo(List.of());
+        verify(orderCommandSpi).requireAdmin();
+        verify(checkoutSpi).deleteAsAdmin(checkoutId);
+    }
+
+
 }

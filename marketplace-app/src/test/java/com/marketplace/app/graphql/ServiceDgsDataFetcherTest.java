@@ -35,6 +35,7 @@ import org.springframework.data.domain.Window;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.Instant;
@@ -126,6 +127,12 @@ class ServiceDgsDataFetcherTest {
     // outside-slice mocking set, exactly the way the seams above do.
     @MockitoBean
     private com.marketplace.identity.spi.IdentitySpi identitySpi;
+
+    @MockitoBean
+    private com.marketplace.orders.spi.OrderCommandSpi orderCommandSpi;
+
+    @MockitoBean
+    private com.marketplace.orders.spi.CheckoutSpi checkoutSpi;
     // The category mutation roots' owning write seam (agent-2 packet) —
     // the package slice wires every fetcher, so this seam gets its mock
     // (the b5-a sibling-test precedent).

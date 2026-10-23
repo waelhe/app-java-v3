@@ -45,6 +45,7 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.Instant;
@@ -122,6 +123,12 @@ class UserDataFetcherDgsTest {
 
     @MockitoBean
     private IdentitySpi identitySpi;
+
+    @MockitoBean
+    private com.marketplace.orders.spi.OrderCommandSpi orderCommandSpi;
+
+    @MockitoBean
+    private com.marketplace.orders.spi.CheckoutSpi checkoutSpi;
 
     @MockitoBean
     private ProductVariantReadSpi variantReadSpi;

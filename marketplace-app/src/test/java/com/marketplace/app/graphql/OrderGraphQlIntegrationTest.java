@@ -1,6 +1,7 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.identity.User;
+import com.marketplace.identity.UserRole;
 import com.marketplace.identity.UserRepository;
 import com.marketplace.orders.Order;
 import com.marketplace.orders.OrderRepository;
@@ -12,7 +13,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.graphql.test.tester.HttpGraphQlTester;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -50,8 +50,9 @@ import static org.mockito.Mockito.when;
  * management surface (the ADMIN caller's list and lookup; the
  * PROVIDER and CONSUMER callers are DENIED by the owning use case's
  * method security — the AUTHZ-001 taxonomy, never a silent read and
- * never a population fallback; the anonymous caller answers the
- * /graphql chain's 401 problem+json contract), the forward-only
+ * never a population fallback; the anonymous caller is answered by
+ * the pre-login gate's classified AUTHN-001 GraphQL error envelope —
+ * the reopened POST contract A0 landed with the matcher), the forward-only
  * keyset scroll with cursor follow-through in the placement-instant
  * sort (the D-N5 complete ordering key's own column), the lifecycle
  * ADAPT mapping on the wire (the platform's PLACED renders upstream's
@@ -112,6 +113,7 @@ class OrderGraphQlIntegrationTest {
     private int port;
 
     private final List<UUID> seededOrderIds = new ArrayList<>();
+    private UUID seededConsumerId;
     private UUID placedOrderId;
     private UUID confirmedOrderId;
     private UUID fulfilledOrderId;
@@ -120,42 +122,61 @@ class OrderGraphQlIntegrationTest {
     @BeforeEach
     void seedOrders() {
         // The A1 convention the orders FK graph demands (fk_orders_users):
-        // an order's consumer and seller are USERS rows — the seed places
-        // real ones before the orders reference them (the pre-integration
-        // round's seed generated random ids that were never inserted, so
-        // every order INSERT violated the foreign key and the whole class
-        // errored at seed time).
+        // the order's consumer is a USERS row — the seed places the real one
+        // before the orders reference it (a seed of never-inserted random ids
+        // violates the foreign key and errors the whole class at seed time).
+        // The seller needs no row: V184 keeps cross-module ids as plain UUID
+        // columns by documented discipline (no FK across module boundaries)
+        // — the UserGraphQl/ProductMedia test family's own seeding precedent.
         UUID consumerId = UUID.randomUUID();
         UUID sellerId = UUID.randomUUID();
         userRepository.save(new User(consumerId, consumerId.toString(), null,
-                "it-order consumer", com.marketplace.identity.UserRole.CONSUMER));
-        userRepository.save(new User(sellerId, sellerId.toString(), null,
-                "it-order seller", com.marketplace.identity.UserRole.PROVIDER));
+                "it-order consumer", UserRole.CONSUMER));
+        seededConsumerId = consumerId;
 
+        // Each id registers the moment its row is saved, so cleanup stays
+        // FK-consistent even if a later save fails mid-seed.
         Order placed = orderRepository.save(Order.placed(consumerId, 2500L, "SAR", sellerId));
+        placedOrderId = placed.getId();
+        seededOrderIds.add(placedOrderId);
+
         Order confirmed = Order.placed(consumerId, 3100L, "SAR", sellerId);
         confirmed.confirm(Instant.now());
         confirmed = orderRepository.save(confirmed);
+        confirmedOrderId = confirmed.getId();
+        seededOrderIds.add(confirmedOrderId);
+
         Order fulfilled = Order.placed(consumerId, 1900L, "SAR", sellerId);
         fulfilled.confirm(Instant.now());
         fulfilled.fulfill(Instant.now());
         fulfilled = orderRepository.save(fulfilled);
+        fulfilledOrderId = fulfilled.getId();
+        seededOrderIds.add(fulfilledOrderId);
+
         Order cancelled = Order.placed(consumerId, 700L, "SAR", sellerId);
         cancelled.cancel("it-order-fixture", Instant.now());
         cancelled = orderRepository.save(cancelled);
-
-        placedOrderId = placed.getId();
-        confirmedOrderId = confirmed.getId();
-        fulfilledOrderId = fulfilled.getId();
         cancelledOrderId = cancelled.getId();
-        seededOrderIds.addAll(List.of(placedOrderId, confirmedOrderId, fulfilledOrderId, cancelledOrderId));
+        seededOrderIds.add(cancelledOrderId);
     }
 
     @AfterEach
     void removeSeededRows() {
+        // The FK-safe order: the referencing orders go first, then the
+        // consumer row they referenced — never the reverse. Hard deletes
+        // through JdbcTemplate, not the repositories: BaseEntity carries
+        // Hibernate's @SoftDelete, so a repository delete only flags
+        // is_deleted and the seeded rows would survive every test method
+        // in this class.
         if (!seededOrderIds.isEmpty()) {
-            orderRepository.deleteAllById(new ArrayList<>(seededOrderIds));
+            for (UUID orderId : new ArrayList<>(seededOrderIds)) {
+                jdbcTemplate.update("DELETE FROM orders WHERE id = ?", orderId);
+            }
             seededOrderIds.clear();
+        }
+        if (seededConsumerId != null) {
+            jdbcTemplate.update("DELETE FROM users WHERE id = ?", seededConsumerId);
+            seededConsumerId = null;
         }
     }
 
