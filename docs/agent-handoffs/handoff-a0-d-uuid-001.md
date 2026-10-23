@@ -127,6 +127,8 @@ The authoritative per-root statuses and their carrying-head evidence are
 maintained in `docs/agent-handoffs/agent-3-roots.csv` on the branch head —
 read them from the CSV at aggregation time (round 10, per the A0 07:14Z
 review, temporarily returned the four line-mutation roots to
-`IMPLEMENTED_UNVERIFIED` while the blank-identifier fix head `c5048c19f`'s
-own gate runs are read; `checkout` stays `IMPLEMENTED_UNVERIFIED` with the
-two output-contract gaps of that review recorded on its row).
+`IMPLEMENTED_UNVERIFIED` and restored them to `IMPLEMENTED_VERIFIED` once the
+blank-identifier fix head `c5048c19f`'s own gates were read green — CI
+39917430799, Integration Test 39917433599, Inventory 39917406804;
+`checkout` stays `IMPLEMENTED_UNVERIFIED` with the two output-contract gaps of
+that review recorded on its row).
