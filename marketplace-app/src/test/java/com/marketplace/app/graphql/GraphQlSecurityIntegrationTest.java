@@ -354,4 +354,58 @@ class GraphQlSecurityIntegrationTest {
 
         verify(executionGraphQlService, times(1)).execute(any());
     }
+
+
+    // ------------------------------------------------------------------
+    // D-UUID-001 (A0 security follow-up 2026-10-23, upstream Saleor issue
+    // #18878): the deprecated checkout-family token alias is contract
+    // compatibility, NEVER an authorization grant — possession of a
+    // checkout UUID is not authentication, and the anonymous caller
+    // carrying a well-formed token is answered by the gate exactly like
+    // every other protected root.
+    // ------------------------------------------------------------------
+
+    /**
+     * The anonymous checkout query carrying a well-formed native UUID
+     * token is refused by the pre-login gate with the classified
+     * AUTHN-001 envelope — no execution, no data: the deprecated token
+     * alias cannot reopen the closed anonymous surface.
+     */
+    @Test
+    void anonymousCheckoutQueryWithTokenIsRefusedByThePreLoginGate() throws Exception {
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"{ checkout(token: \\\""
+                                + java.util.UUID.randomUUID()
+                                + "\\\") { id quantity } }\"}"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.errors[0].extensions.errorCode").value("AUTHN-001"))
+                .andExpect(jsonPath("$.errors[0].extensions.category").value("authz"))
+                .andExpect(jsonPath("$.data").doesNotExist());
+
+        verify(executionGraphQlService, never()).execute(any());
+    }
+
+    /**
+     * The mutation twin: the anonymous checkoutLinesAdd carrying a token
+     * (with a well-formed line payload) is refused the same way — the
+     * deprecated alias grants no write path either.
+     */
+    @Test
+    void anonymousCheckoutLinesAddWithTokenIsRefusedByThePreLoginGate() throws Exception {
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"mutation { checkoutLinesAdd(token: \\\""
+                                + java.util.UUID.randomUUID()
+                                + "\\\", lines: [{ quantity: 1, variantId: \\\"variant\\\" }]) "
+                                + "{ errors { code } } }\"}"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.errors[0].extensions.errorCode").value("AUTHN-001"))
+                .andExpect(jsonPath("$.errors[0].extensions.category").value("authz"))
+                .andExpect(jsonPath("$.data").doesNotExist());
+
+        verify(executionGraphQlService, never()).execute(any());
+    }
 }

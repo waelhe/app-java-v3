@@ -20,10 +20,46 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * The checkout-family transport adapter over the single bounded
+ * {@link CheckoutSpi} use case. Every identifier a request may carry — the
+ * modern typed-global-ID {@code id}, the deprecated {@code checkoutId}
+ * alias, and the deprecated {@code token} UUID alias — resolves to the same
+ * native cart UUID and then flows through the SAME use-case call with the
+ * caller's {@link Authentication} unchanged: ownership, ADMIN scope and the
+ * authentication wall itself stay exactly where the owning use case and the
+ * pre-login security contract keep them.
+ *
+ * <p>D-UUID-001 (decided by A0 2026-10-23, Option A): in the pinned Saleor
+ * 3.23.43 contract {@code Checkout.token} is the checkout's UUID primary
+ * key, so {@code token} maps to the native cart UUID without any second
+ * store, {@code id}/{@code checkoutId} decode through
+ * {@link SaleorGlobalIdCodec}, and the identifiers are MUTUALLY EXCLUSIVE —
+ * supplying more than one in a single request is rejected even when the
+ * values denote the same cart; no supplied identifier is ever silently
+ * ignored. The token arrives already coerced by A0's central {@code UUID}
+ * scalar once the one ordered shared-SDL change declares the wire alias;
+ * until then the argument simply never binds and this plumbing is exercised
+ * directly by the resolver tests.</p>
+ *
+ * <p>Security gate (A0 follow-up on upstream issue #18878): a UUID is a
+ * transport identifier, NEVER an authentication or authorization grant.
+ * The token path grants no anonymous, no wrong-owner and no non-ADMIN
+ * access the modern {@code id} path does not already grant — the resolver
+ * keeps requiring an authenticated principal before any identifier is
+ * resolved, and the owning use case's ownership/ADMIN wall decides
+ * access.</p>
+ */
 @DgsComponent
 public class CheckoutDataFetcher {
 
     private static final int MAX_LINE_QUANTITY = 1000;
+
+    /** D-UUID-001: the identifiers are mutually exclusive per request. */
+    private static final String ONLY_ONE_CHECKOUT_IDENTIFIER =
+            "Only one checkout identifier may be supplied (id, checkoutId, or token)";
+
+    private static final String CHECKOUT_ID_REQUIRED = "A checkout ID is required";
 
     private final CheckoutSpi checkoutSpi;
     private final OrderCommandSpi orderCommandSpi;
@@ -41,12 +77,13 @@ public class CheckoutDataFetcher {
     }
 
     @DgsQuery(field = "checkout")
-    public Map<String, Object> checkout(@InputArgument String id) {
+    public Map<String, Object> checkout(@InputArgument String id,
+                                        @InputArgument UUID token) {
         Authentication authentication = currentAuthentication();
-        if (id == null || id.isBlank()) {
+        if ((id == null || id.isBlank()) && token == null) {
             return null;
         }
-        UUID cartId = globalIdCodec.decode(id, CheckoutGraphQlMapper.CHECKOUT_TYPE);
+        UUID cartId = resolveCheckoutIdentifier(id, null, token);
         final CheckoutView view;
         try {
             view = checkoutSpi.findCheckout(cartId, authentication);
@@ -59,11 +96,12 @@ public class CheckoutDataFetcher {
     @DgsMutation(field = "checkoutLinesAdd")
     public Map<String, Object> checkoutLinesAdd(@InputArgument String id,
                                                 @InputArgument String checkoutId,
+                                                @InputArgument UUID token,
                                                 @InputArgument List<Map<String, Object>> lines) {
         Authentication authentication = currentAuthentication();
         final UUID cartId;
         try {
-            cartId = resolveCheckoutId(id, checkoutId);
+            cartId = requireCheckoutIdentifier(id, checkoutId, token);
         } catch (IllegalArgumentException exception) {
             return payload(null, List.of(error("id", exception.getMessage(), "INVALID")), true);
         }
@@ -106,11 +144,12 @@ public class CheckoutDataFetcher {
     @DgsMutation(field = "checkoutLinesUpdate")
     public Map<String, Object> checkoutLinesUpdate(@InputArgument String id,
                                                    @InputArgument String checkoutId,
+                                                   @InputArgument UUID token,
                                                    @InputArgument List<Map<String, Object>> lines) {
         Authentication authentication = currentAuthentication();
         final UUID cartId;
         try {
-            cartId = resolveCheckoutId(id, checkoutId);
+            cartId = requireCheckoutIdentifier(id, checkoutId, token);
         } catch (IllegalArgumentException exception) {
             return payload(null, List.of(error("id", exception.getMessage(), "INVALID")), true);
         }
@@ -155,13 +194,14 @@ public class CheckoutDataFetcher {
 
     @DgsMutation(field = "checkoutLinesDelete")
     public Map<String, Object> checkoutLinesDelete(@InputArgument String id,
+                                                   @InputArgument UUID token,
                                                    @InputArgument List<String> linesIds) {
         Authentication authentication = currentAuthentication();
         final UUID cartId;
         try {
-            cartId = globalIdCodec.decode(id, CheckoutGraphQlMapper.CHECKOUT_TYPE);
+            cartId = requireCheckoutIdentifier(id, null, token);
         } catch (IllegalArgumentException exception) {
-            return payload(null, List.of(error("id", "Invalid checkout global ID", "INVALID")), false);
+            return payload(null, List.of(error("id", exception.getMessage(), "INVALID")), false);
         }
 
         List<UUID> requested = new ArrayList<>();
@@ -189,15 +229,16 @@ public class CheckoutDataFetcher {
     @DgsMutation(field = "checkoutLineDelete")
     public Map<String, Object> checkoutLineDelete(@InputArgument String id,
                                                   @InputArgument String checkoutId,
+                                                  @InputArgument UUID token,
                                                   @InputArgument String lineId) {
         Authentication authentication = currentAuthentication();
         final UUID cartId;
         final UUID decodedLineId;
         try {
-            cartId = resolveCheckoutId(id, checkoutId);
+            cartId = requireCheckoutIdentifier(id, checkoutId, token);
             decodedLineId = globalIdCodec.decode(lineId, CheckoutGraphQlMapper.CHECKOUT_LINE_TYPE);
         } catch (IllegalArgumentException exception) {
-            return payload(null, List.of(error("lineId", "Invalid checkout or line global ID", "INVALID")), true);
+            return payload(null, List.of(error("lineId", exception.getMessage(), "INVALID")), true);
         }
 
         final CheckoutView updated;
@@ -228,18 +269,44 @@ public class CheckoutDataFetcher {
         }
     }
 
-    private UUID resolveCheckoutId(String id, String checkoutId) {
-        UUID primary = id == null || id.isBlank() ? null
-                : globalIdCodec.decode(id, CheckoutGraphQlMapper.CHECKOUT_TYPE);
-        UUID deprecated = checkoutId == null || checkoutId.isBlank() ? null
-                : globalIdCodec.decode(checkoutId, CheckoutGraphQlMapper.CHECKOUT_TYPE);
-        if (primary == null && deprecated == null) {
-            throw new IllegalArgumentException("A checkout ID is required");
+    /**
+     * Resolves the ONE checkout identifier a request may carry to the native
+     * cart UUID (D-UUID-001 Option A): {@code id} and the deprecated
+     * {@code checkoutId} decode through the typed global-ID codec, the
+     * deprecated {@code token} IS the native checkout UUID (the pinned
+     * Saleor 3.23.43 primary key — centrally coerced by the shared UUID
+     * scalar, never decoded here). More than one supplied identifier is
+     * rejected even when the values denote the same cart; a supplied
+     * identifier is never silently ignored.
+     *
+     * @return the native cart UUID, or {@code null} when nothing was supplied
+     * @throws IllegalArgumentException when identifiers conflict or a typed
+     *                                  global ID is malformed/mistyped
+     */
+    private UUID resolveCheckoutIdentifier(String id, String checkoutId, UUID token) {
+        boolean hasId = id != null && !id.isBlank();
+        boolean hasLegacyCheckoutId = checkoutId != null && !checkoutId.isBlank();
+        boolean hasToken = token != null;
+        int supplied = (hasId ? 1 : 0) + (hasLegacyCheckoutId ? 1 : 0) + (hasToken ? 1 : 0);
+        if (supplied > 1) {
+            throw new IllegalArgumentException(ONLY_ONE_CHECKOUT_IDENTIFIER);
         }
-        if (primary != null && deprecated != null && !primary.equals(deprecated)) {
-            throw new IllegalArgumentException("Conflicting checkout IDs");
+        if (hasId) {
+            return globalIdCodec.decode(id, CheckoutGraphQlMapper.CHECKOUT_TYPE);
         }
-        return primary != null ? primary : deprecated;
+        if (hasLegacyCheckoutId) {
+            return globalIdCodec.decode(checkoutId, CheckoutGraphQlMapper.CHECKOUT_TYPE);
+        }
+        return token;
+    }
+
+    /** The mutation form of {@link #resolveCheckoutIdentifier}: an identifier is required. */
+    private UUID requireCheckoutIdentifier(String id, String checkoutId, UUID token) {
+        UUID cartId = resolveCheckoutIdentifier(id, checkoutId, token);
+        if (cartId == null) {
+            throw new IllegalArgumentException(CHECKOUT_ID_REQUIRED);
+        }
+        return cartId;
     }
 
     private Map<String, Object> payload(CheckoutView view,
