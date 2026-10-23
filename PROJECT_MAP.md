@@ -1,14 +1,12 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
-## تدقيق تحميل JAR داخل JVM — 2026-10-23 (بحث موثق، غير معتمد نهائيًا)
+## تدقيق تحميل JAR داخل JVM — 2026-10-23 (بحث موسّع، غير معتمد نهائيًا)
 
-- **التقرير:** `docs/research/dynamic-jar-loading-jvm-deep-dive.md`.
-- **الواقع الحالي:** `FeatureGatePort` و`marketplace-console` يديران أعلام تشغيل لبعض قدرات موجودة؛ هذا ليس تثبيتًا لحزم JAR.
-- **PF4J الأساسي:** مرشح قابل للتقييم لتحميل امتدادات Java موثوقة؛ النسخة 3.16.0 منشورة في 2026-09-20. **PF4J-Spring غير معتمد** مع Spring Boot 4.1.1 قبل PoC: المشروع يصف نفسه Proof of Concept، ومشكلة دعم Spring Framework 7 (#94) لا تزال مفتوحة وقت الفحص. راجع أيضًا القضايا المفتوحة/المجتمعية #84 و#86 و#62 و#65.
-- **البدائل:** OSGi/Felix يقدم معيار lifecycle ديناميكيًا أشمل لكن بكلفة تكامل أعلى؛ ClassLoader وJPMS وحدهما ليسا مدير إضافات؛ لا عزل أمني داخل JVM لإضافة غير موثوقة.
-- **حدود التنفيذ:** بحث وملفات توثيق فقط؛ لا تغييرات POM أو Java أو Flyway أو التشغيل، ولا ادعاء بتجربة PF4J أو اجتياز توافق Spring.
-- **الحالة:** فرع `docs/dynamic-jar-loading-deep-dive` ومسودة PR تالية للمراجعة؛ لا يُدمج أو يعتمد القرار النهائي دون مراجعة المالك والبوابات.
-
+- **التقرير:** `docs/research/dynamic-jar-loading-jvm-deep-dive.md`؛ أقسام 1–19 تشمل PF4J، OSGi/Felix، JPMS، ودورة الحياة والأمن.
+- **OSGi/Felix:** OSGi Core 8 يحدد Bundle lifecycle الدائم/الذرّي وحل التبعيات والـwiring، ويقدم DS لإدارة التبعيات والخدمات الديناميكية. Apache Felix 7.0.5 تنفيذ OSGi R8، مع مكونات منفصلة مثل SCR/DS وConfiguration Admin وFile Install وGogo وWeb Console. التحديث/الإزالة لا ينهيان بالضرورة الـwiring القديم قبل refresh.
+- **JPMS:** ModuleFinder/Configuration/ModuleLayer تسمح بإنشاء طبقات محمّلة بعد الإقلاع وServiceLoader باكتشاف موفري خدمة؛ لكنها لا تقدم بذاتها سجل تثبيت دائمًا أو عمليات update/uninstall أو دورة حياة الخدمات. بحث الكود لم يعثر على `module-info.java`؛ حدود المشروع الحالية Maven + Spring Modulith.
+- **الملاءمة:** OSGi أغنى كمدير حزم ديناميكي لكنه ينشئ نموذج Runtime/Service ثانيًا بجوار Spring ويحتاج جسرًا واختبارات. JPMS أنسب لحدود وحدات/SPI محسومة لكنه يتطلب من التطبيق بناء إدارة lifecycle. لا خيار يوفر عزلًا أمنيًا لإضافات غير موثوقة داخل JVM.
+- **الحالة:** توثيق فقط في `docs/dynamic-jar-loading-deep-dive`؛ لا اعتماديات أو Java أو Flyway أو تغييرات تشغيل، ولا ادعاء باكتمال PoC أو اختبارات توافق. القرار النهائي ينتظر المراجعة والبوابات.
 
 ## قرار الحوكمة الحاكم لتكامل Saleor — D-SALEOR-FULL-001 (2026-10-20)
 
