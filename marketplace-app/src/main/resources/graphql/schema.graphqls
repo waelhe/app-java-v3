@@ -2,10 +2,6 @@
 # Runtime coercion is provided by the single platform-owned UuidScalar (@DgsScalar).
 scalar UUID
 
-# Central compatibility scalar for the pinned Saleor 3.23.43 checkout UUID.
-# Runtime coercion is provided by the single platform-owned UuidScalar (@DgsScalar).
-scalar UUID
-
 type Query {
     # Dashboard's provider-owned catalog surface. This is a journey contract, not
     # a mirror of the catalog tables; the fetchers delegate to ProductAdminSpi.
