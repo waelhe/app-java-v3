@@ -5,7 +5,7 @@ This document defines official version governance for the Marketplace backend.
 ## 1) Supported baseline
 
 - Java: `25` (LTS) — upgraded from Java 21 in PR #144 (Spring Boot 4.1.0 GA). Java 27 (2026-09-15) is non-LTS and does not move the baseline.
-- Spring Boot: `4.1.2` GA stable line — 4.0.6 → 4.1.0 in PR #144; → 4.1.1 platform wave; → 4.1.2 in the 2026-10-23 platform wave (carries Spring Security 7.1.2 — closes CVE-2026-41707 / CVE-2026-47841, August 2026 — plus Spring Framework 7.0.10, Micrometer 1.17.2, Hibernate 7.4.13, Tomcat 11.0.27, Netty 4.2.19.Final). With 4.1.2, five manual version overrides returned to automatic Boot parent management per §6 (tomcat, netty, postgresql, commons-lang3, slf4j-api — removal conditions measured from spring-boot-dependencies-4.1.2.pom).
+- Spring Boot: `4.1.2` GA stable line — 4.0.6 → 4.1.0 in PR #144; → 4.1.1 platform wave; → 4.1.2 in the 2026-10-23 platform wave (carries Spring Security 7.1.2; the CVE-2026-41707 / CVE-2026-47841 fixes first shipped in Spring Security 7.1.1, August 2026 — plus Spring Framework 7.0.10, Micrometer 1.17.2, Hibernate 7.4.13, Tomcat 11.0.27, Netty 4.2.19.Final). With 4.1.2, five manual version overrides returned to automatic Boot parent management per §6 (tomcat, netty, postgresql, commons-lang3, slf4j-api — removal conditions measured from spring-boot-dependencies-4.1.2.pom).
 - Spring Modulith: `2.1.2` GA — 2.0.6 → 2.1.0 in PR #144; → 2.1.1 platform wave; → 2.1.2 in the 2026-10-23 platform wave (archunit pairing unchanged: spring-modulith-core 2.1.2 resolves archunit 1.4.2, measured).
 - Spring Cloud: `2025.1.4` (exception #14 — Oakwood train, edge BFF).
 - Spring AI: `2.0.2` (exception #13 — "Spring AI 2.0.x supports Spring Boot 4.0.x and 4.1.x", docs.spring.io/spring-ai).
