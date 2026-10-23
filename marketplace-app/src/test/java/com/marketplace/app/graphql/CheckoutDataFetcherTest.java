@@ -38,7 +38,9 @@ import static org.mockito.Mockito.when;
  * deprecated {@code checkoutId} decode through {@link SaleorGlobalIdCodec},
  * the three identifiers are mutually exclusive per request (rejected even
  * when they denote the same cart — no supplied identifier is silently
- * ignored), and EVERY path delegates to the SAME {@link CheckoutSpi} use
+ * ignored, and a SUPPLIED-but-blank identifier is a rejected validation
+ * failure, never an absent argument), and EVERY path delegates to the
+ * SAME {@link CheckoutSpi} use
  * case with the caller's authentication unchanged: a token never bypasses
  * the authentication wall, the owning use case's ownership/ADMIN wall, or
  * the classified NOT_FOUND answers for guessed and wrong-owner UUIDs.
@@ -97,9 +99,69 @@ class CheckoutDataFetcherTest {
     }
 
     @Test
-    void absentOrBlankOptionalIdAnswersNullWithoutCallingTheOwner() {
+    void absentOptionalIdAnswersNullWithoutCallingTheOwner() {
+        // Absent means the argument carries no value (null) — exactly how
+        // the pinned Saleor resolver helpers treat a None argument as not
+        // provided; the nullable query field answers null.
         assertThat(fetcher.checkout(null, environment())).isNull();
-        assertThat(fetcher.checkout("   ", environment())).isNull();
+        verifyNoInteractions(checkoutSpi, mapper);
+    }
+
+    /**
+     * The A0 review defect (2026-10-23): {@code isBlank()} used to decide
+     * PRESENCE, so a SUPPLIED-but-blank {@code id} was treated as absent.
+     * Presence and validity are now separate: a blank supplied identifier
+     * is a validation failure — never a silent null.
+     */
+    @Test
+    void blankSuppliedIdentifierIsRejectedNeverSilentlyIgnored() {
+        assertThatThrownBy(() -> fetcher.checkout("", environment()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("must not be blank");
+        assertThatThrownBy(() -> fetcher.checkout("   ", environment()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("must not be blank");
+        verifyNoInteractions(checkoutSpi, mapper);
+    }
+
+    /**
+     * The A0 review's exact regression matrix: a blank supplied identifier
+     * together with a valid {@code token} is REJECTED (two supplied
+     * identifiers) on every checkout root, and the {@link CheckoutSpi} use
+     * case is never reached.
+     */
+    @Test
+    void blankSuppliedIdentifierNeverFallsThroughToTheTokenAlias() {
+        UUID token = UUID.randomUUID();
+        String variantId = variantGlobalId(UUID.randomUUID());
+        List<Map<String, Object>> lines = List.of(Map.of("quantity", 1, "variantId", variantId));
+
+        // the query form throws (it has no error-envelope field)
+        assertThatThrownBy(() -> fetcher.checkout("", environmentWithToken(token)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Only one checkout identifier");
+
+        // the mutation forms answer the classified INVALID payload
+        assertInvalidIdentifierPayload(
+                fetcher.checkoutLinesAdd(null, "   ", environmentWithToken(token), lines));
+        assertInvalidIdentifierPayload(
+                fetcher.checkoutLinesUpdate("", null, environmentWithToken(token),
+                        List.of(Map.of("quantity", 1))));
+        assertInvalidIdentifierPayload(
+                fetcher.checkoutLinesDelete("", environmentWithToken(token), List.of()));
+        assertInvalidIdentifierPayload(
+                fetcher.checkoutLineDelete(null, "   ", environmentWithToken(token),
+                        lineGlobalId(UUID.randomUUID())));
+
+        // a blank identifier ALONE on a mutation is equally rejected
+        Map<String, Object> blankAlone = fetcher.checkoutLinesAdd("", null, environment(), lines);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> blankAloneErrors =
+                (List<Map<String, Object>>) blankAlone.get("errors");
+        assertThat(blankAloneErrors).hasSize(1);
+        assertThat(blankAloneErrors.get(0)).containsEntry("code", "INVALID");
+        assertThat((String) blankAloneErrors.get(0).get("message")).contains("must not be blank");
+
         verifyNoInteractions(checkoutSpi, mapper);
     }
 

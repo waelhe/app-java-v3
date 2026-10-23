@@ -38,7 +38,9 @@ import java.util.UUID;
  * {@link SaleorGlobalIdCodec}, and the identifiers are MUTUALLY EXCLUSIVE —
  * supplying more than one in a single request is rejected even when the
  * values denote the same cart; no supplied identifier is ever silently
- * ignored. The token arrives already coerced by A0's central {@code UUID}
+ * ignored — a supplied-but-blank identifier is rejected as a validation
+ * failure, never treated as absent (presence and validity are separate
+ * concerns). The token arrives already coerced by A0's central {@code UUID}
  * scalar once the one ordered shared-SDL change declares the wire alias;
  * until then it is read from the execution environment as {@code null}
  * (DGS startup-validates annotated arguments against the schema, so the
@@ -65,6 +67,13 @@ public class CheckoutDataFetcher {
 
     private static final String CHECKOUT_ID_REQUIRED = "A checkout ID is required";
 
+    /**
+     * D-UUID-001: a SUPPLIED identifier is never silently ignored — a blank
+     * value is a validation failure, never an absent argument.
+     */
+    private static final String BLANK_CHECKOUT_IDENTIFIER =
+            "A supplied checkout identifier must not be blank";
+
     private final CheckoutSpi checkoutSpi;
     private final OrderCommandSpi orderCommandSpi;
     private final CheckoutGraphQlMapper mapper;
@@ -85,7 +94,7 @@ public class CheckoutDataFetcher {
                                         DataFetchingEnvironment environment) {
         Authentication authentication = currentAuthentication();
         UUID token = checkoutToken(environment);
-        if ((id == null || id.isBlank()) && token == null) {
+        if (id == null && token == null) {
             return null;
         }
         UUID cartId = resolveCheckoutIdentifier(id, null, token);
@@ -299,26 +308,41 @@ public class CheckoutDataFetcher {
      * {@code checkoutId} decode through the typed global-ID codec, the
      * deprecated {@code token} IS the native checkout UUID (the pinned
      * Saleor 3.23.43 primary key — centrally coerced by the shared UUID
-     * scalar, never decoded here). More than one supplied identifier is
-     * rejected even when the values denote the same cart; a supplied
-     * identifier is never silently ignored.
+     * scalar, never decoded here).
+     *
+     * <p>PRESENCE and VALIDITY are separate concerns (the A0 review of
+     * 2026-10-23): an argument either carries a value or it does not — a
+     * {@code null} argument (absent, or explicit null — exactly how the
+     * pinned Saleor resolver helpers treat {@code None}) is NOT supplied,
+     * while a SUPPLIED-but-blank value is a validation failure rejected
+     * outright: never treated as absent, never allowed to fall through to
+     * another alias. More than one supplied identifier is rejected FIRST,
+     * even when the values denote the same cart, and a supplied identifier
+     * is never silently ignored.</p>
      *
      * @return the native cart UUID, or {@code null} when nothing was supplied
-     * @throws IllegalArgumentException when identifiers conflict or a typed
-     *                                  global ID is malformed/mistyped
+     * @throws IllegalArgumentException when identifiers conflict, a supplied
+     *                                  identifier is blank, or a typed global
+     *                                  ID is malformed/mistyped
      */
     private UUID resolveCheckoutIdentifier(String id, String checkoutId, UUID token) {
-        boolean hasId = id != null && !id.isBlank();
-        boolean hasLegacyCheckoutId = checkoutId != null && !checkoutId.isBlank();
+        boolean hasId = id != null;
+        boolean hasLegacyCheckoutId = checkoutId != null;
         boolean hasToken = token != null;
         int supplied = (hasId ? 1 : 0) + (hasLegacyCheckoutId ? 1 : 0) + (hasToken ? 1 : 0);
         if (supplied > 1) {
             throw new IllegalArgumentException(ONLY_ONE_CHECKOUT_IDENTIFIER);
         }
         if (hasId) {
+            if (id.isBlank()) {
+                throw new IllegalArgumentException(BLANK_CHECKOUT_IDENTIFIER);
+            }
             return globalIdCodec.decode(id, CheckoutGraphQlMapper.CHECKOUT_TYPE);
         }
         if (hasLegacyCheckoutId) {
+            if (checkoutId.isBlank()) {
+                throw new IllegalArgumentException(BLANK_CHECKOUT_IDENTIFIER);
+            }
             return globalIdCodec.decode(checkoutId, CheckoutGraphQlMapper.CHECKOUT_TYPE);
         }
         return token;
