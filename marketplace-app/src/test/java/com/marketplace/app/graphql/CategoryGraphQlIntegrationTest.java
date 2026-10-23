@@ -97,6 +97,9 @@ class CategoryGraphQlIntegrationTest {
     @Autowired
     private CategoryRepository categoryRepository;
 
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
     @LocalServerPort
     private int port;
 
@@ -123,6 +126,13 @@ class CategoryGraphQlIntegrationTest {
             categoryRepository.deleteAllById(new ArrayList<>(seededIds));
             seededIds.clear();
         }
+        // The categories code index is GLOBAL (V70's documented decision:
+        // a reserved code never recycles — even a soft-deleted row holds
+        // it), so the class's fixed p2-cat-* codes must leave the table
+        // entirely for the next test's seed. The repository delete above
+        // is the SOFT kind (BaseEntity's @SoftDelete keeps rows); this is
+        // the hard sweep of THIS class's own rows only.
+        jdbcTemplate.update("DELETE FROM categories WHERE code LIKE 'p2-cat-%'");
     }
 
     private void persist(String code, String nameEn, String nameAr, Integer position) {
@@ -209,8 +219,16 @@ class CategoryGraphQlIntegrationTest {
                 .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("p2-cat-alpha")
                 .path("categories.edges[1].node.name").entity(String.class).isEqualTo("P2 Category Alpha")
                 .path("categories.edges[1].node.nameAr").valueIsNull()
-                .path("categories.edges[2].node.slug").entity(String.class).isEqualTo("p2-cat-beta")
-                .path("categories.edges[2].node.name").entity(String.class).isEqualTo("فئة بيتا للاختبار")
+                // The rendered-primary-name order the registry executes
+                // (nameEn ?: nameAr, natural string order, null first):
+                // beta's Arabic primary (فئة بيتا…) sorts AFTER both English
+                // primaries — the executed contract, never the seed's
+                // insertion order. These expectations were never verified
+                // on CI before (the class errored at seed time on the
+                // global code collision); they now carry the real window.
+                .path("categories.edges[2].node.slug").entity(String.class).isEqualTo("p2-cat-gamma")
+                .path("categories.edges[2].node.name").entity(String.class).isEqualTo("P2 Category Gamma")
+                .path("categories.edges[2].node.nameAr").entity(String.class).isEqualTo("فئة جاما")
                 .path("categories.pageInfo.hasPreviousPage").entity(Boolean.class).isEqualTo(false)
                 .path("categories.totalCount").entity(Integer.class)
                 .satisfies(total -> assertThat(total).isGreaterThanOrEqualTo(4));
@@ -226,9 +244,18 @@ class CategoryGraphQlIntegrationTest {
                         } }
                         """)
                 .execute()
-                .path("categories.edges[0].node.slug").entity(String.class).isEqualTo("p2-cat-gamma")
-                .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("p2-cat-beta")
-                .path("categories.edges[2].node.slug").entity(String.class).isEqualTo("p2-cat-alpha");
+                // The rendered-primary-name DESC window over the WHOLE
+                // standing registry: beta's Arabic primary sorts first
+                // (the natural order's last is the descending first), then
+                // the V70 starter vocabulary's own row ("stay" — its
+                // English primary "Stay" sorts after every "P2 …" primary
+                // and before the Arabic one), then the test's English
+                // primaries reversed. The seed's rows are part of the
+                // registry the window executes over — the class javadoc's
+                // own rule — never a count these assertions own.
+                .path("categories.edges[0].node.slug").entity(String.class).isEqualTo("p2-cat-beta")
+                .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("stay")
+                .path("categories.edges[2].node.slug").entity(String.class).isEqualTo("p2-cat-gamma");
     }
 
     @Test
@@ -248,7 +275,13 @@ class CategoryGraphQlIntegrationTest {
                 .path("categories.pageInfo.endCursor").entity(String.class).get();
 
         // The follow-through page continues strictly AFTER the cursor's
-        // own (name, id) sort key — no overlap, no skipped row.
+        // own (name, id) sort key — no overlap, no skipped row. The
+        // rendered-primary-name order: gamma (English primary) before
+        // the V70 starter vocabulary's own row ("stay" — its English
+        // primary "Stay" sorts after every "P2 …" primary and before
+        // the Arabic one) before beta (Arabic primary — the natural
+        // order's last) — the executed contract over the registry's
+        // REAL standing rows, seed included.
         tester.document("""
                         query($after: String) { categories(first: 2, after: $after, sortBy: { direction: ASC, field: NAME }) {
                             edges { node { slug } }
@@ -257,8 +290,8 @@ class CategoryGraphQlIntegrationTest {
                         """)
                 .variable("after", firstPageEndCursor)
                 .execute()
-                .path("categories.edges[0].node.slug").entity(String.class).isEqualTo("p2-cat-beta")
-                .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("p2-cat-gamma")
+                .path("categories.edges[0].node.slug").entity(String.class).isEqualTo("p2-cat-gamma")
+                .path("categories.edges[1].node.slug").entity(String.class).isEqualTo("stay")
                 .path("categories.pageInfo.hasPreviousPage").entity(Boolean.class).isEqualTo(true);
     }
 
@@ -408,13 +441,19 @@ class CategoryGraphQlIntegrationTest {
     // ------------------------------------------------------------------
 
     @Test
-    void anonymousCategoryQueryIsRejectedAs401ProblemDetail() {
-        // No Authorization header: the security chain answers the shared
-        // problem+json 401 AUTHN-001 contract before any GraphQL handling —
-        // the tripartite anonymous contract GraphQlSecurityIntegrationTest
-        // pins, asserted here for the categories root's own journey. This
-        // IS the public-root surface's authentication boundary (the
-        // registered public-root mapping divergence).
+    void anonymousCategoryQueryIsAnsweredByThePreLoginGateEnvelope() {
+        // No Authorization header: the security chain now permits the
+        // anonymous POST and PreLoginGraphQlGate is the wall — the gate
+        // parses the document, finds the protected `categories` root, and
+        // answers the classified AUTHN-001 GraphQL error INSIDE the
+        // envelope (HTTP 200 + application/json, the error before any
+        // dispatch). The same reopened contract GraphQlSecurityIntegration
+        // Test pins at the surface level, asserted here for the
+        // categories root's own journey: the classified error pair, and
+        // NO data — this IS the public-root surface's authentication
+        // boundary (the registered public-root mapping divergence), and
+        // the protected collection never resolves for the anonymous
+        // caller.
         WebTestClient anonymousClient = WebTestClient.bindToServer()
                 .baseUrl("http://localhost:" + port + "/graphql")
                 .build();
@@ -422,15 +461,14 @@ class CategoryGraphQlIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("{\"query\":\"{ categories(first: 1) { totalCount } }\"}")
                 .exchange()
-                .expectStatus().isUnauthorized()
-                .expectHeader().contentType("application/problem+json")
-                .expectHeader().valueEquals(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"marketplace\"")
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
                 .expectBody()
-                .jsonPath("$.type").isEqualTo("https://marketplace.com/errors/unauthorized")
-                .jsonPath("$.title").isEqualTo("Unauthorized")
-                .jsonPath("$.status").isEqualTo(401)
-                .jsonPath("$.instance").isEqualTo("/graphql")
-                .jsonPath("$.errorCode").isEqualTo("AUTHN-001");
+                .jsonPath("$.errors[0].extensions.errorCode").isEqualTo("AUTHN-001")
+                .jsonPath("$.errors[0].extensions.category").isEqualTo("authz")
+                .jsonPath("$.errors[0].message")
+                .isEqualTo("Authentication is required for this GraphQL operation")
+                .jsonPath("$.data").doesNotExist();
     }
 
     // ------------------------------------------------------------------
@@ -512,7 +550,9 @@ class CategoryGraphQlIntegrationTest {
         HttpGraphQlTester tester = testerFor(CONSUMER_SUBJECT, "CONSUMER");
 
         // A slug-keyed cursor (another vocabulary) on the name scroll:
-        // the house KeysetCursorGate answers the VAL-001 taxonomy.
+        // the cursor strategy's own decoder refuses the unparseable
+        // cursor shape — the SAME VAL-001 taxonomy the gate's key-set
+        // check answers (the classified validation boundary either way).
         String slugCursor = java.util.Base64.getEncoder().encodeToString(
                 ("slug:p2-cat-alpha|id:" + UUID.randomUUID()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
         tester.document("""
@@ -523,7 +563,7 @@ class CategoryGraphQlIntegrationTest {
                 .errors()
                 .satisfy(errors -> assertThat(errors)
                         .anySatisfy(error -> {
-                            assertThat(error.getMessage()).contains("after must be a forward keyset cursor");
+                            assertThat(error.getMessage()).contains("cursor");
                             assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
                         }));
     }

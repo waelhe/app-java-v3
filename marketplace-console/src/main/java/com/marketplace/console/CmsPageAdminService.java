@@ -1,6 +1,6 @@
 package com.marketplace.console;
 
-import com.marketplace.shared.api.CmsPagePort;
+import com.marketplace.console.spi.CmsPageSpi;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import io.micrometer.observation.annotation.Observed;
@@ -28,13 +28,13 @@ import java.util.regex.Pattern;
  * D-CMS-001 ownership decision): the console module's CMS page+page-type
  * owning use case — the {@code page*}/{@code pageType*}/{@code pageAttribute*}
  * mutations and the {@code page(s)}/{@code pageType(s)} reads behind the
- * {@link CmsPagePort} seam. ADMIN-enforced at this boundary (Saleor
+ * {@link CmsPageSpi} seam. ADMIN-enforced at this boundary (Saleor
  * requires MANAGE_PAGES/MANAGE_PAGE_TYPES_AND_ATTRIBUTES — the platform's
  * mapped ADMIN capability, the RBAC mapping divergence row).
  */
 @Service
 @Transactional
-public class CmsPageAdminService implements CmsPagePort {
+public class CmsPageAdminService implements CmsPageSpi {
 
     private static final Logger log = LoggerFactory.getLogger(CmsPageAdminService.class);
     private static final Pattern SLUG_SHAPE = Pattern.compile("^[a-z0-9]+(?:-[a-z0-9]+)*$");
@@ -335,9 +335,7 @@ public class CmsPageAdminService implements CmsPagePort {
             int to = Math.max(0, Math.min(from + delta, pairs.size()));
             pairs.add(to, pair);
         }
-        for (int i = 0; i < pairs.size(); i++) {
-            pairs.get(i).moveTo(i);
-        }
+        parkAndWriteDense(pairs);
         log.info("CMS page type attributes reordered: typeId={}, moves={}, actor={}",
                 pageTypeId, attributeIds.size(), caller.getName());
         return toTypeView(row);
@@ -411,9 +409,45 @@ public class CmsPageAdminService implements CmsPagePort {
     private void resequence(UUID pageTypeId) {
         List<CmsPageTypeAttribute> pairs =
                 attributeRepository.findAllByPageTypeIdOrderByPositionAscIdAsc(pageTypeId);
+        parkAndWriteDense(pairs);
+    }
+
+    /**
+     * The two-phase dense rewrite the live-rows unique index
+     * (page_type_id, position) demands: a direct rewrite collides
+     * transiently (a pair moving to position 0 shares it with the current
+     * holder until that pair's own UPDATE executes — the partial unique
+     * index sees the intermediate state). Phase 1 parks the whole list
+     * beyond its current maximum, flushes (the live range is now empty),
+     * then phase 2 writes the final dense order — one transaction,
+     * all-or-nothing. The same repair the catalog reorders carry.
+     */
+    private void parkAndWriteDense(List<CmsPageTypeAttribute> pairs) {
+        if (pairs.isEmpty()) {
+            return;
+        }
+        boolean changed = false;
+        for (int i = 0; i < pairs.size(); i++) {
+            if (pairs.get(i).getPosition() != i) {
+                changed = true;
+                break;
+            }
+        }
+        if (!changed) {
+            // The idempotent no-op: the resolved order is the stored order —
+            // nothing changes, nothing writes.
+            return;
+        }
+        int park = pairs.stream().mapToInt(CmsPageTypeAttribute::getPosition).max().orElse(0) + 1;
+        for (CmsPageTypeAttribute pair : pairs) {
+            pair.moveTo(park++);
+        }
+        attributeRepository.saveAll(pairs);
+        attributeRepository.flush();
         for (int i = 0; i < pairs.size(); i++) {
             pairs.get(i).moveTo(i);
         }
+        attributeRepository.saveAll(pairs);
     }
 
     private PageView toView(CmsPage row) {

@@ -684,7 +684,11 @@ class PromotionVoucherGraphQlIntegrationTest {
                 .path("voucher").valueIsNull();
     }
 
-    /** The endpoint's own gate: an anonymous caller is rejected before any adapter runs. */
+    /**
+     * The endpoint's own gate: an anonymous caller is rejected by the
+     * reopened pre-login wall BEFORE any adapter runs — the classified
+     * AUTHN-001 GraphQL error inside the envelope (HTTP 200, no data).
+     */
     @Test
     void anAnonymousCallerIsRejectedBeforeAnyAdapterRuns() {
         WebTestClient anonymous = WebTestClient.bindToServer()
@@ -694,9 +698,12 @@ class PromotionVoucherGraphQlIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("{\"query\":\"{ promotions(first: 1) { totalCount } }\"}")
                 .exchange()
-                .expectStatus().isUnauthorized()
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
                 .expectBody()
-                .jsonPath("$.errorCode").isEqualTo("AUTHN-001");
+                .jsonPath("$.errors[0].extensions.errorCode").isEqualTo("AUTHN-001")
+                .jsonPath("$.errors[0].extensions.category").isEqualTo("authz")
+                .jsonPath("$.data").doesNotExist();
     }
 
     @Test

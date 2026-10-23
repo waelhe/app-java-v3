@@ -195,6 +195,19 @@ class ProductVariantGraphQlIntegrationTest {
             productTypeRepository.deleteById(seededTypeId);
             seededTypeId = null;
         }
+        // The repository deletes above are SOFT deletes (BaseEntity's
+        // @SoftDelete keeps the rows); the raw category delete below is a
+        // HARD delete the surviving rows would violate
+        // (fk_products_store_category sees soft-deleted product rows just
+        // the same, and fk_variants_product sees soft-deleted variants).
+        // Hard-delete THIS test's own artifacts first — dependents before
+        // principals, the unique category code scoping the products.
+        jdbcTemplate.update(
+                """
+                DELETE FROM product_variants WHERE product_id IN
+                    (SELECT id FROM products WHERE store_category_code = ?)
+                """, storeCategoryCode);
+        jdbcTemplate.update("DELETE FROM products WHERE store_category_code = ?", storeCategoryCode);
         jdbcTemplate.update("DELETE FROM store_categories WHERE code = ?", storeCategoryCode);
         userRepository.deleteById(providerId);
     }
@@ -411,7 +424,7 @@ class ProductVariantGraphQlIntegrationTest {
         // the bounded projection answers the honest null, never a
         // fabricated placeholder (the registered nullable-name divergence).
         tester.document("""
-                        "query($id: ID!) { productVariant(id: $id) { sku name } }"
+                        query($id: ID!) { productVariant(id: $id) { sku name } }
                         """)
                 .variable("id", variantGlobalId(namelessVariantId))
                 .execute()
@@ -577,11 +590,21 @@ class ProductVariantGraphQlIntegrationTest {
     }
 
     // ------------------------------------------------------------------
-    // the anonymous boundary — the /graphql chain's 401 problem+json
+    // the anonymous boundary — the reopened pre-login gate contract
     // ------------------------------------------------------------------
 
     @Test
-    void anonymousProductVariantQueryIsRejectedAs401ProblemDetail() {
+    void anonymousProductVariantQueryIsAnsweredByThePreLoginGateEnvelope() {
+        // No Authorization header: the security chain now permits the
+        // anonymous POST and PreLoginGraphQlGate is the wall — the gate
+        // parses the document, finds the protected `productVariants`
+        // root, and answers the classified AUTHN-001 GraphQL error
+        // INSIDE the envelope (HTTP 200 + application/json, the error
+        // before any dispatch). The same reopened contract
+        // GraphQlSecurityIntegrationTest pins at the surface level,
+        // asserted here for the variants root's own journey: the
+        // classified error pair, and NO data — the protected collection
+        // never resolves for the anonymous caller.
         WebTestClient anonymousClient = WebTestClient.bindToServer()
                 .baseUrl("http://localhost:" + port + "/graphql")
                 .build();
@@ -589,15 +612,14 @@ class ProductVariantGraphQlIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("{\"query\":\"{ productVariants(first: 1) { totalCount } }\"}")
                 .exchange()
-                .expectStatus().isUnauthorized()
-                .expectHeader().contentType("application/problem+json")
-                .expectHeader().valueEquals(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"marketplace\"")
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
                 .expectBody()
-                .jsonPath("$.type").isEqualTo("https://marketplace.com/errors/unauthorized")
-                .jsonPath("$.title").isEqualTo("Unauthorized")
-                .jsonPath("$.status").isEqualTo(401)
-                .jsonPath("$.instance").isEqualTo("/graphql")
-                .jsonPath("$.errorCode").isEqualTo("AUTHN-001");
+                .jsonPath("$.errors[0].extensions.errorCode").isEqualTo("AUTHN-001")
+                .jsonPath("$.errors[0].extensions.category").isEqualTo("authz")
+                .jsonPath("$.errors[0].message")
+                .isEqualTo("Authentication is required for this GraphQL operation")
+                .jsonPath("$.data").doesNotExist();
     }
 
     // ------------------------------------------------------------------

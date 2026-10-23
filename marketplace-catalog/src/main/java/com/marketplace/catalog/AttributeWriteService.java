@@ -261,17 +261,38 @@ public class AttributeWriteService implements AttributeWriteSpi {
         if (!errors.isEmpty()) {
             return AttributeMutationResult.failure(errors);
         }
-        List<CatalogAttributeOption> toSave = new ArrayList<>();
+        // The live-rows unique index (attribute_definition_id, position)
+        // makes a direct 1..n rewrite collide TRANSIENTLY: a row moving to
+        // position 1 still shares it with the row currently holding 1
+        // until that row's own UPDATE executes — the partial unique index
+        // sees the intermediate state. The two-phase rewrite keeps EVERY
+        // intermediate state unique: phase 1 parks the WHOLE bucket beyond
+        // its current maximum (mutually unique, above every live position),
+        // flushes (the 1..max range is now empty), then phase 2 writes the
+        // final dense order into the empty range — all inside the same
+        // transaction, all-or-nothing with the reorder itself.
+        boolean changed = false;
         for (int i = 0; i < ordered.size(); i++) {
-            CatalogAttributeOption option = ordered.get(i);
-            if (option.getPosition() != i + 1) {
-                option.reposition(i + 1);
-                toSave.add(option);
+            if (ordered.get(i).getPosition() != i + 1) {
+                changed = true;
+                break;
             }
         }
-        if (!toSave.isEmpty()) {
-            attributeOptionRepository.saveAll(toSave);
+        if (!changed) {
+            // The zero-shift idempotent no-op: the resolved order is the
+            // stored order — nothing changes, nothing writes.
+            return AttributeMutationResult.success(toView(addressed.get()));
         }
+        int park = ordered.stream().mapToInt(CatalogAttributeOption::getPosition).max().orElse(0) + 1;
+        for (CatalogAttributeOption option : ordered) {
+            option.reposition(park++);
+        }
+        attributeOptionRepository.saveAll(ordered);
+        attributeOptionRepository.flush();
+        for (int i = 0; i < ordered.size(); i++) {
+            ordered.get(i).reposition(i + 1);
+        }
+        attributeOptionRepository.saveAll(ordered);
         return AttributeMutationResult.success(toView(addressed.get()));
     }
 

@@ -6,10 +6,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.graphql.ExecutionGraphQlService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
@@ -20,6 +22,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -95,6 +101,17 @@ class GraphQlSecurityIntegrationTest {
 
     @Autowired
     private WebApplicationContext wac;
+
+    /**
+     * The execution-service spy (the post-merge integration review's
+     * required proof leg): the service at the END of the web interceptor
+     * chain — a call reaching {@code execute()} is the observable form of
+     * "the gate called chain.next"; the gate's short-circuit answer means
+     * the request never gets here. A spy (not a mock): every other leg
+     * keeps the REAL execution untouched.
+     */
+    @MockitoSpyBean
+    private ExecutionGraphQlService executionGraphQlService;
 
     private MockMvc mockMvc;
 
@@ -284,5 +301,57 @@ class GraphQlSecurityIntegrationTest {
                 .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE,
                         containsString("error=\"invalid_token\"")))
                 .andExpect(header().exists("X-Correlation-ID"));
+    }
+
+    // ------------------------------------------------------------------
+    // The execution proof pair (the post-merge integration review's
+    // required leg): the gate does not merely answer an error envelope —
+    // it stops the interceptor chain itself (chain.next never runs), so
+    // GraphQL EXECUTION never starts for the protected query while the
+    // pre-login family reaches it. The spy wraps the execution service
+    // sitting at the END of the interceptor chain: one intercepted call
+    // to execute() is the observable form of "chain.next happened" over
+    // the real HTTP surface.
+    // ------------------------------------------------------------------
+
+    /**
+     * The blocked leg: the anonymous protected query is answered by the
+     * gate's classified AUTHN-001 envelope and the request NEVER reaches
+     * {@link ExecutionGraphQlService#execute} — no execution, no data
+     * fetcher, no resolver: the wall is before dispatch, proven on the
+     * real HTTP surface (not by the response shape alone).
+     */
+    @Test
+    void theGateBlocksTheProtectedQueryBeforeGraphQlExecution() throws Exception {
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"{ services(first: 1) { edges { node { id } } } }\"}"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.errors[0].extensions.errorCode").value("AUTHN-001"))
+                .andExpect(jsonPath("$.errors[0].extensions.category").value("authz"))
+                .andExpect(jsonPath("$.data").doesNotExist());
+
+        verify(executionGraphQlService, never()).execute(any());
+    }
+
+    /**
+     * The allowed leg: the anonymous PRE-LOGIN operation is not merely
+     * error-free — it REACHES GraphQL execution exactly once ({@code
+     * tokenVerify} really resolves its own payload over the real HTTP
+     * surface), the positive half of the pair the blocked leg needs to
+     * mean anything: the gate is a discriminating wall, not a blanket
+     * rejection.
+     */
+    @Test
+    void thePreLoginOperationReachesGraphQlExecution() throws Exception {
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"mutation { tokenVerify(token: \\\"not-a-real-jwt\\\") { isValid } }\"}"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.data.tokenVerify.isValid").value(false));
+
+        verify(executionGraphQlService, times(1)).execute(any());
     }
 }
