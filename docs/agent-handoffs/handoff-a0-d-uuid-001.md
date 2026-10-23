@@ -1,5 +1,7 @@
 # HANDOFF → A0 — D-UUID-001: the central UUID scalar / deprecated-aliases decision (PR #698, Agent 3)
 
+**Current A0 assembly update (2026-10-23):** the stacked A0 branch now includes the central `scalar UUID`, the UUID coercer and SDL-registration tests, the exact `token: UUID @deprecated(reason: "Use `id` instead.")` argument on `checkout`, `checkoutLinesAdd`, `checkoutLinesUpdate`, `checkoutLinesDelete`, and `checkoutLineDelete`, and the pinned `Checkout.token: UUID!` output mapped from the native cart UUID. Real HTTP tests now exercise authenticated owner token lookup/output, ADMIN token lookup, wrong-owner and guessed-token denial, and anonymous pre-login denial. The root inventory links all 17 pinned checkout-family rows to `D-UUID-001` without promoting their verification status; the divergence ledger retains `IMPLEMENTATION_REQUIRED` until the assembled candidate's codegen/Maven/integration gates are green. The historical table and request text below describe the state at the original Agent 3 handoff, before this A0 assembly branch; do not read them as current-state claims. The separate `CheckoutLine.variant` output projection remains a known compatibility blocker.
+
 **Status: RESOLVED — A0 decided D-UUID-001 on 2026-10-23 as Option A
 (IMPLEMENTATION_REQUIRED). Decision record:
 docs/governance/campaign/decisions/D-UUID-001.md on the integration branch
@@ -21,7 +23,7 @@ and the deprecated argument aliases (`token: UUID @deprecated(...)`,
 EVERY root whose pinned reference signature carries them, in one ordered
 SDL-steward change, instead of per-agent invention.
 
-## 2) The measured evidence — the five roots this PR currently exposes
+## 2) Historical baseline before A0's assembled SDL follow-up — the five roots
 
 Agent 3's additive SDL
 (`marketplace-app/src/main/resources/graphql/agent-3-orders-events.graphqls`)
@@ -29,7 +31,7 @@ measured against the pinned reference signatures
 (`docs/governance/campaign/saleor-458-root-inventory.csv`, `root_signature`
 column, Saleor 3.23.43):
 
-| Root | Pinned reference signature (verbatim) | This PR's SDL today | Gap |
+| Root | Pinned reference signature (verbatim) | Agent 3 fragment before A0 assembly | Gap at handoff time |
 |---|---|---|---|
 | `checkout` (Query) | `checkout(id: ID token: UUID @deprecated(reason: "Use `id` instead.")): Checkout` | `checkout(id: ID): Checkout` | `token` alias absent |
 | `checkoutLinesAdd` | `checkoutLinesAdd(checkoutId: ID @deprecated(reason: "Use `id` instead.") id: ID lines: [CheckoutLineInput!]! token: UUID @deprecated(reason: "Use `id` instead.")): CheckoutLinesAdd` | ``checkoutLinesAdd(checkoutId: ID @deprecated(reason: "Use `id` instead."), id: ID, lines: [CheckoutLineInput!]!): CheckoutLinesAdd`` | `token: UUID` alias absent; the `checkoutId` deprecation tag IS declared in this PR's fragment (landed round 9) — only the central `token: UUID` declaration pends in A0's ordered shared-SDL change |
