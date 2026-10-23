@@ -200,15 +200,34 @@ class CheckoutGraphQlIntegrationTest {
 
     @Test
     void ownerReadsTheirOwnActiveCheckoutByTypedGlobalId() {
-        testerFor(OWNER_SUBJECT, "CONSUMER")
+        var response = testerFor(OWNER_SUBJECT, "CONSUMER")
                 .document("""
-                                query($id: ID!) { checkout(id: $id) { id quantity } }
+                                query($id: ID!) { checkout(id: $id) { id token quantity } }
                                 """)
                 .variable("id", checkoutGlobalId(ownerCartId))
-                .execute()
-                .errors().verify()
-                .path("checkout.id").entity(String.class)
+                .execute();
+
+        response.errors().verify();
+        response.path("checkout.id").entity(String.class)
                 .satisfies(id -> assertThat(id).startsWith(CHECKOUT_ID_PREFIX));
+        response.path("checkout.token").entity(String.class)
+                .satisfies(token -> assertThat(token).isEqualTo(ownerCartId.toString()));
+    }
+
+    @Test
+    void ownerReadsTheirOwnActiveCheckoutByDeprecatedUuidToken() {
+        var response = testerFor(OWNER_SUBJECT, "CONSUMER")
+                .document("""
+                                query($token: UUID!) { checkout(token: $token) { id token } }
+                                """)
+                .variable("token", ownerCartId.toString())
+                .execute();
+
+        response.errors().verify();
+        response.path("checkout.id").entity(String.class)
+                .satisfies(id -> assertThat(id).startsWith(CHECKOUT_ID_PREFIX));
+        response.path("checkout.token").entity(String.class)
+                .satisfies(token -> assertThat(token).isEqualTo(ownerCartId.toString()));
     }
 
     @Test
@@ -304,6 +323,26 @@ class CheckoutGraphQlIntegrationTest {
     // ------------------------------------------------------------------
     // the anonymous surface: the token alias never reopens it
     // ------------------------------------------------------------------
+
+    @Test
+    void anonymousCheckoutLookupByUuidTokenIsAnsweredByThePreLoginGate() {
+        // A UUID is an identifier, not a credential. The gate must reject
+        // the operation before the token resolver or owner SPI is reached.
+        WebTestClient.bindToServer()
+                .baseUrl("http://localhost:" + port + "/graphql")
+                .build()
+                .post()
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\\"query\\":\\"{ checkout(token: \\\\"" 
+                        + ownerCartId.toString()
+                        + "\\\\") { id token } }\\"}")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.errors[0].extensions.errorCode").isEqualTo("AUTHN-001")
+                .jsonPath("$.errors[0].extensions.category").isEqualTo("authz")
+                .jsonPath("$.data").doesNotExist();
+    }
 
     @Test
     void anonymousCheckoutLookupIsAnsweredByThePreLoginGate() {
