@@ -150,6 +150,8 @@ class PostDetailDgsDataFetcherTest {
     private com.marketplace.media.spi.ProductMediaWriteSpi productMediaWriteSpi;
     @MockitoBean
     private com.marketplace.catalog.spi.ProductTypeReadSpi productTypeReadSpi;
+    @MockitoBean
+    private com.marketplace.catalog.spi.ProductVariantReadSpi productVariantReadSpi;
     // The product-variant mutation roots' owning write seam (agent-2
     // follow-on packet) — the package slice wires every fetcher, so
     // this seam gets its mock (the b5-a sibling-test precedent).
