@@ -4,7 +4,7 @@ import com.netflix.graphql.dgs.DgsScalar;
 import graphql.GraphQLContext;
 import graphql.language.IntValue;
 import graphql.language.StringValue;
-import graphql.schema.CoercedVariables;
+import graphql.execution.CoercedVariables;
 import graphql.schema.CoercingParseLiteralException;
 import graphql.schema.CoercingParseValueException;
 import graphql.schema.CoercingSerializeException;
