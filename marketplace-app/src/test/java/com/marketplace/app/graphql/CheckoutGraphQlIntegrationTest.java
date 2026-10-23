@@ -333,9 +333,9 @@ class CheckoutGraphQlIntegrationTest {
                 .build()
                 .post()
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue("{\\"query\\":\\"{ checkout(token: \\\\"" 
+                .bodyValue("{\"query\":\"{ checkout(token: \\\""
                         + ownerCartId.toString()
-                        + "\\\\") { id token } }\\"}")
+                        + "\\\") { id token } }\"}")
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
