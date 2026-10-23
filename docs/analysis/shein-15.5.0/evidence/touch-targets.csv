@@ -1,0 +1,16 @@
+screen,element,role,x1_px,y1_px,x2_px,y2_px,width_px,height_px,width_dp,height_dp,min_dp,pass,source
+auth,back,ImageButton,42,144,105,207,63,63,24.0,24.0,48,fail,signin.xml
+auth,email_input,EditText,63,433,1017,549,954,116,363.4,44.2,48,fail,signin.xml
+auth,continue,Button,63,612,1017,730,954,118,363.4,45.0,48,fail,signin.xml
+auth,facebook,LinearLayout,63,854,1017,975,954,121,363.4,46.1,48,fail,signin.xml
+me,sign_in_register,TextView,15,163,861,219,846,56,322.3,21.3,48,fail,me.xml
+me,scan_qr,ImageView,892,160,955,223,63,63,24.0,24.0,48,fail,me.xml
+me,settings,ImageView,986,160,1049,223,63,63,24.0,24.0,48,fail,me.xml
+me,view_all,TextView,707,468,1022,511,315,43,120.0,16.4,48,fail,me.xml
+me,stats_wishlist,ViewGroup,15,684,363,792,348,108,132.6,41.1,48,fail,me.xml
+settings,back,ImageButton,0,128,126,254,126,126,48.0,48.0,48,pass,settings.xml
+settings,row_1,FrameLayout,0,255,1080,381,1080,126,411.4,48.0,48,pass,settings.xml
+nav,me_item,FrameLayout,864,2185,1080,2337,216,152,82.3,57.9,48,pass,me.xml
+dialog,no,Button,150,1272,524,1367,374,95,142.5,36.2,48,fail,dialog.xml
+dialog,yes,Button,556,1272,930,1367,374,95,142.5,36.2,48,fail,dialog.xml
+error,try_again,Button,330,967,749,1061,420,95,160.0,36.2,48,fail,s12

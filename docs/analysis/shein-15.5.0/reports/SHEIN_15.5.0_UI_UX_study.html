@@ -1,0 +1,1436 @@
+<!doctype html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SHEIN 15.5.0 — دراسة UI/UX</title>
+<style>
+:root {
+  --ink: #111111;
+  --muted: #666666;
+  --soft: #959595;
+  --line: #e5e5e5;
+  --paper: #ffffff;
+  --wash: #f6f6f6;
+  --accent: #f93a00;
+  --cover: #101010;
+}
+* { box-sizing: border-box; }
+html { background: #e9eaec; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: #e9eaec;
+  font-family: "Segoe UI", Tahoma, Arial, "Noto Naskh Arabic", sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.9;
+  -webkit-font-smoothing: antialiased;
+}
+.page { max-width: 1080px; margin: 0 auto; background: var(--paper); box-shadow: 0 10px 40px rgba(0,0,0,.12); }
+.cover {
+  background: var(--cover);
+  color: #fff;
+  padding: 46px 48px 34px;
+  position: relative;
+  border-bottom: 6px solid var(--accent);
+}
+.cover::before {
+  content: "SHEIN";
+  position: absolute;
+  left: 46px;
+  top: 34px;
+  font-size: 11pt;
+  letter-spacing: .28em;
+  color: #f93a00;
+  font-weight: 800;
+}
+.cover h1 {
+  margin: 36px 0 10px;
+  font-size: 30pt;
+  line-height: 1.25;
+  letter-spacing: -.02em;
+  color: #fff;
+}
+.cover blockquote {
+  margin: 16px 0 24px;
+  border-right: 3px solid var(--accent);
+  background: #191919;
+  color: #d7d7d7;
+  padding: 12px 16px;
+  font-size: 10.5pt;
+  line-height: 1.8;
+}
+.cover table { width: 100%; border-collapse: collapse; font-size: 8.5pt; color: #fff; }
+.cover th, .cover td { border: 1px solid #3a3a3a; padding: 5px 7px; text-align: right; vertical-align: top; }
+.cover th { background: #1d1d1d !important; color: #ff6a3d !important; font-weight: 700; }
+.cover code { background: #242424; color: #ffd6c7; border-color: #3a3a3a; }
+.badge {
+  display: inline-block;
+  background: #f93a00;
+  color: #fff;
+  font-size: 8pt;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 2px;
+  letter-spacing: .04em;
+}
+.layout { display: grid; grid-template-columns: 245px minmax(0, 1fr); gap: 0; }
+.toc {
+  background: var(--wash);
+  border-left: 1px solid var(--line);
+  padding: 28px 20px;
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: 100vh;
+  overflow: auto;
+}
+.toc h2 { font-size: 12pt; margin: 0 0 12px; border: 0; padding: 0; color: var(--ink); }
+.toc ul { margin: 0; padding-right: 0; list-style: none; font-size: 9pt; line-height: 1.65; }
+.toc li { margin: 7px 0; }
+.toc a { color: #333; text-decoration: none; }
+.toc a:hover { color: var(--accent); }
+main { padding: 34px 46px 52px; min-width: 0; }
+h2 {
+  font-size: 18pt;
+  line-height: 1.35;
+  margin: 38px 0 14px;
+  padding-top: 12px;
+  border-top: 2px solid var(--accent);
+  break-after: avoid;
+}
+h3 { font-size: 12.5pt; margin: 24px 0 8px; color: #222; break-after: avoid; }
+h4 { font-size: 11pt; margin: 18px 0 6px; }
+p { margin: 0 0 10px; text-align: right; }
+ul, ol { margin: 0 0 12px; padding-right: 20px; }
+li { margin: 4px 0; }
+blockquote {
+  margin: 12px 0;
+  padding: 10px 14px;
+  border-right: 3px solid var(--accent);
+  background: #fff7f4;
+  color: #333;
+}
+blockquote p { margin: 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0 18px;
+  font-size: 8.4pt;
+  line-height: 1.65;
+  break-inside: avoid;
+}
+th, td { border: 1px solid var(--line); padding: 5px 7px; vertical-align: top; text-align: right; }
+th { background: #f1f2f4; font-weight: 700; color: #222; }
+tr:nth-child(even) td { background: #fbfbfb; }
+.cover tr:nth-child(even) td { background: transparent; color: #fff; }
+code {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 8.6pt;
+  direction: ltr;
+  unicode-bidi: embed;
+  background: #f1f2f4;
+  border: 1px solid #e3e5e8;
+  border-radius: 2px;
+  padding: 0 3px;
+  white-space: nowrap;
+}
+pre { background: #171717; color: #f5f5f5; padding: 12px; overflow: auto; direction: ltr; text-align: left; }
+pre code { background: transparent; border: 0; color: inherit; padding: 0; }
+a { color: #1f5f99; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 22px 0; }
+.gallery { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0 22px; }
+.gallery figure {
+  width: calc(33.333% - 8px);
+  margin: 0;
+  background: #fafafa;
+  border: 1px solid var(--line);
+  padding: 7px;
+  break-inside: avoid;
+}
+.gallery img { display: block; width: 100%; height: auto; }
+.gallery figcaption { font-size: 8pt; color: #555; line-height: 1.5; margin-top: 5px; }
+footer { padding: 18px 46px 28px; color: #777; font-size: 8pt; border-top: 1px solid var(--line); }
+@media (max-width: 860px) {
+  .layout { display: block; }
+  .toc { position: static; max-height: none; border-left: 0; border-bottom: 1px solid var(--line); }
+  main { padding: 24px 18px 36px; }
+  .cover { padding: 30px 20px 24px; }
+  .cover::before { left: 20px; top: 20px; }
+  .cover h1 { font-size: 22pt; margin-top: 28px; }
+  .gallery figure { width: calc(50% - 6px); }
+}
+@page { size: A4; margin: 12mm 12mm; }
+@media print {
+  html, body { background: #fff; }
+  .page { max-width: none; box-shadow: none; }
+  .toc { display: none; }
+  .layout { display: block; }
+  main { padding: 0; }
+  .cover { margin: 0 0 8mm; padding: 16mm 12mm; break-after: page; }
+  .cover h1 { font-size: 24pt; }
+  h2 { break-before: auto; }
+  h2, h3 { break-after: avoid; }
+  table { break-inside: auto; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
+  figure, blockquote { break-inside: avoid; }
+  a { color: inherit; text-decoration: none; }
+  .gallery { gap: 6px; }
+  .gallery { gap: 4px; }
+  .gallery figure { width: 23%; padding: 3px; }
+  .gallery figcaption { font-size: 6.8pt; }
+  footer { padding: 10px 0 0; font-size: 7.4pt; border-top: 1px solid var(--line); }
+  .cover::before { left: 12mm; top: 10mm; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+<header class="cover">
+<div class="badge">أرشيف تحليلي مغلق — غير مدمج</div>
+<h1>SHEIN 15.5.0 — دراسة UI/UX وتحليل نظام التصميم</h1>
+<blockquote><p>أرشيف تحليلي مغلق. هذه الدراسة تسجل ما لوحظ فعلياً في بناء التطبيق ولقطات الشاشة، وليست خطة تنفيذ معتمدة ولا عقداً لنظام تصميم.</p></blockquote>
+<table><thead><tr>
+<th>البند</th>
+<th>القيمة</th>
+</tr></thead><tbody>
+<tr>
+<td>التطبيق</td>
+<td>SHEIN — <code dir="ltr">com.zzkko</code></td>
+</tr>
+<tr>
+<td>الإصدار</td>
+<td><code dir="ltr">15.5.0</code> — versionCode <code dir="ltr">2941</code></td>
+</tr>
+<tr>
+<td>المنصة</td>
+<td>Android — <code dir="ltr">minSdk 23</code> / <code dir="ltr">targetSdk 36</code> / <code dir="ltr">compileSdk 36</code></td>
+</tr>
+<tr>
+<td>نمط الواجهة</td>
+<td>Native Android Views وXML — 3,721 ملف layout، لا Compose/React Native/Flutter</td>
+</tr>
+<tr>
+<td>الجهاز</td>
+<td>محاكي Pixel-class — 1,080×2,400 px — كثافة 420dpi — 2.625 px/dp</td>
+</tr>
+<tr>
+<td>اللغة</td>
+<td>الإنجليزية (LTR) والعربية (RTL)</td>
+</tr>
+<tr>
+<td>تاريخ التحليل</td>
+<td>2026-10-23</td>
+</tr>
+<tr>
+<td>حالة الأرشيف</td>
+<td>مسودة PR مغلقة، غير مدمجة</td>
+</tr>
+<tr>
+<td>حجم الحزمة</td>
+<td>APKM 45.98 MiB — base APK مستخرج (78.97 MiB)</td>
+</tr>
+<tr>
+<td>SHA-256 للـAPKM</td>
+<td><code dir="ltr">D130C3A3436561E57F75C3160C011753FA5683FB375BA955D7542383265A2E0A</code></td>
+</tr>
+<tr>
+<td>SHA-256 للـbase APK</td>
+<td><code dir="ltr">C4AC56B8292D372661F016B91BD19B6136BF61E8D0C465C87EEC0B6A5F512D26</code></td>
+</tr>
+</tbody></table>
+
+</header>
+<div class="layout">
+<aside class="toc"><h2>المحتويات</h2><ul><li><a href="#sec-1">0. المنهجية ونطاق الأدلة</a></li><li><a href="#sec-2">1. الخلاصة التنفيذية</a></li><li><a href="#sec-3">2. نظام التصميم</a></li><li><a href="#sec-4">3. المعلومات والتنقل</a></li><li><a href="#sec-5">4. جرد الشاشات</a></li><li><a href="#sec-6">5. تحليل المكوّنات</a></li><li><a href="#sec-7">6. RTL والتعريب</a></li><li><a href="#sec-8">7. الوصولية وأهداف اللمس</a></li><li><a href="#sec-9">8. عيوب UX والأولويات</a></li><li><a href="#sec-10">9. التوصيات</a></li><li><a href="#sec-11">10. الأدلة</a></li><li><a href="#sec-12">11. الحدود</a></li></ul></aside>
+<main>
+<h2 id="sec-1">0. المنهجية ونطاق الأدلة</h2>
+<p>اعتمدت الدراسة على طبقتين:</p>
+<ol>
+<li><strong>تحليل ساكن للحزمة:</strong> فكّ الحزمة بـapktool 3.0.3، ثم قراءة <code dir="ltr">AndroidManifest.xml</code> و<code dir="ltr">apktool.yml</code> وموارد <code dir="ltr">res/values</code> و<code dir="ltr">res/font</code>، وإحصاء الـlayouts والـdrawables والـdimens والـstyles. شمل ذلك فحص <code dir="ltr">cmap</code> لملفات الخطوط للتأكد من تغطية الحروف العربية.</li>
+<li><strong>التقاط حي على محاكي:</strong> 30 لقطة شاشة بـ<code dir="ltr">adb exec-out screencap</code>، وأربعة تفريغات UI hierarchy (<code dir="ltr">uiautomator dump</code>) لشاشات تسجيل الدخول، وحسابي، والإعدادات، وحوار مسح التخزين المؤقت. القياسات بالـdp مشتقة من كثافة الجهاز 2.625.</li>
+</ol>
+<p><strong>حدود النطاق:</strong> لم يتضمن الاختبار تغذية المنتجات الحقيقية، ولا شاشات PDP/PLP الكاملة، ولا السلة الممتلئة، ولا الدفع، ولا حساب مسجل. حالات <code dir="ltr">OOPS!</code> سائدة لأن الاتصال بالخادم وخدمات Google Play كانا محجوبين في بيئة الاختبار. اللقطات تتضمن أيضاً حوارات ANR من النظام (<code dir="ltr">Pixel Launcher</code> و<code dir="ltr">System UI</code>)؛ هذه ضوضاء بيئة وليست عيوباً في SHEIN، واستُبعدت من الاستنتاجات.</p>
+<p><strong>قاعدة الفصل:</strong> كل ما هو مأخوذ من الموارد يوصف بأنه «قيمة مورد»؛ وكل ما هو مأخوذ من اللقطة يوصف بأنه «قيمة مرصودة». لا تُخلط القيمتان.</p>
+<h2 id="sec-2">1. الخلاصة التنفيذية</h2>
+<p>SHEIN 15.5.0 يقدّم هيكلاً تجارياً واضحاً: خمسة تبويبات سفلية، ومركز حساب، وإعدادات متداخلة، وشاشة دخول بسيطة. الانعكاس إلى العربية في التنقل والرؤوس والأسهم جيد عموماً. لكن البناء الذي جرى اختباره يكشف ثلاث فجوات كبيرة:</p>
+<ul>
+<li><strong>فجوة المرونة:</strong> خطأ الخادم يختزل التطبيق كله في شاشة <code dir="ltr">OOPS!</code> واحدة، بلا كشف اتصال، ولا محتوى مخبأ، ولا رمز خطأ، ولا مسار دعم. التبويبات الخمسة تظل قابلة للتبديل، لكن كل تبويب يعيد الشاشة نفسها.</li>
+<li><strong>فجوة الإكمال:</strong> شاشة تسجيل الدخول تقبل البريد ثم لا تُظهر تحققاً ولا تحميلاً ولا خطأ عند الضغط على <code dir="ltr">Continue</code>؛ وشاشة <code dir="ltr">Change Currency</code> تظهر بيضاء تماماً؛ وشاشة البحث العربية تظهر بيضاء بلا سجل أو اقتراحات.</li>
+<li><strong>فجوة الاتساق:</strong> الرأس وشريط البحث وخلفيات التبويبات وأشكال الأزرار تختلف بين الشاشات. الخط المحلي <code dir="ltr">Adieu</code> لاتيني فقط ولا يغطي العربية، فتعتمد العربية على خط النظام؛ وأحجام النص تهبط إلى 8–12sp، وأهداف اللمس تهبط إلى 21–36dp في عناصر متكررة.</li>
+</ul>
+<p><strong>الأولوية:</strong> إصلاح حالات الفشل والفراغ أولاً، ثم توحيد الهيكل البصري، ثم رفع الوصولية والمسافات، ثم معالجة التفاصيل اللغوية. لا تحتاج المشكلة إلى إعادة تصميم كاملة؛ تحتاج إلى طبقة حالات ونظام مكوّنات واضح.</p>
+<h3>أهم عشر نتائج</h3>
+<table><thead><tr>
+<th>#</th>
+<th>النتيجة</th>
+<th>الشدة</th>
+<th>الدليل</th>
+</tr></thead><tbody>
+<tr>
+<td>1</td>
+<td>خطأ الخادم يحجب كل التبويبات ولا يقدم بديلاً عن <code dir="ltr">Try it Again</code></td>
+<td>P0</td>
+<td>s02/s04/s05/s12/s13/s14/s15/s27/s28/s33</td>
+</tr>
+<tr>
+<td>2</td>
+<td>تسجيل الدخول لا يعطي أي استجابة مرئية بعد <code dir="ltr">Continue</code></td>
+<td>P0</td>
+<td>s17–s20</td>
+</tr>
+<tr>
+<td>3</td>
+<td>شاشات بيضاء/سوداء بلا حالة فراغ أو تحميل (<code dir="ltr">Change Currency</code>, <code dir="ltr">Search</code>, GMS)</td>
+<td>P0</td>
+<td>s24/s25/s26/s30/s34</td>
+</tr>
+<tr>
+<td>4</td>
+<td>الرأس وشريط البحث يختلفان بين Shop وCategory وTrends</td>
+<td>P1</td>
+<td>s12/s13/s14</td>
+</tr>
+<tr>
+<td>5</td>
+<td>هدف لمس شعار الرجوع في الدخول 24dp، وأزرار الحوار 36dp</td>
+<td>P1</td>
+<td>signin.xml / dialog.xml / s22</td>
+</tr>
+<tr>
+<td>6</td>
+<td>خط <code dir="ltr">Adieu</code> لا يحتوي الحرف العربي <code dir="ltr">ا</code> (U+0627)، والعربية بخط النظام</td>
+<td>P1</td>
+<td>font cmap / s28/s29/s32/s34</td>
+</tr>
+<tr>
+<td>7</td>
+<td>نسخ عربية غير متسقة: «الاراء الكاملة»، «تعليق»، «0 متابع»، «حاولي مرة اخرى»</td>
+<td>P1</td>
+<td>s29/s31/s32</td>
+</tr>
+<tr>
+<td>8</td>
+<td>مربع وردي <code dir="ltr">#FFEBEE</code> بديلاً عن أيقونة الحساب في الإعدادات</td>
+<td>P1</td>
+<td>s21/s32</td>
+</tr>
+<tr>
+<td>9</td>
+<td>سطحان/خلفيتان مختلفتان لكل مجموعة شاشات، بلا طبقة Tokens دلالية</td>
+<td>P2</td>
+<td>s12–s16/s21</td>
+</tr>
+<tr>
+<td>10</td>
+<td>حوار المسح يستخدم <code dir="ltr">NO</code>/<code dir="ltr">YES</code> بدل فعل صريح، وزر الحذف غير متمايز بصرياً</td>
+<td>P2</td>
+<td>s22/dialog.xml</td>
+</tr>
+</tbody></table>
+<h2 id="sec-3">2. نظام التصميم</h2>
+<h3>2.1 الألوان</h3>
+<p>الموارد تحتوي <strong>1,648</strong> لوناً. أكثر القيم تكراراً في <code dir="ltr">colors.xml</code> هي:</p>
+<table><thead><tr>
+<th>القيمة</th>
+<th>التكرار</th>
+<th>ملاحظة</th>
+</tr></thead><tbody>
+<tr>
+<td><code dir="ltr">#000000</code></td>
+<td>20</td>
+<td>نص أساسي وأزرار خطأ</td>
+</tr>
+<tr>
+<td><code dir="ltr">#FFFFFF</code></td>
+<td>18</td>
+<td>أسطح وبطاقات</td>
+</tr>
+<tr>
+<td><code dir="ltr">#666666</code></td>
+<td>13</td>
+<td>نص ثانوي</td>
+</tr>
+<tr>
+<td><code dir="ltr">#222222</code></td>
+<td>10</td>
+<td>CTA في الدخول</td>
+</tr>
+<tr>
+<td><code dir="ltr">#E5E5E5</code></td>
+<td>10</td>
+<td>فواصل وحدود</td>
+</tr>
+<tr>
+<td><code dir="ltr">#F93A00</code></td>
+<td>10</td>
+<td>برتقالي العلامة</td>
+</tr>
+<tr>
+<td><code dir="ltr">#FA6338</code></td>
+<td>10</td>
+<td>برتقالي فاتح</td>
+</tr>
+<tr>
+<td><code dir="ltr">#F6F6F6</code></td>
+<td>9</td>
+<td>خلفية Shop/Category/Trends</td>
+</tr>
+<tr>
+<td><code dir="ltr">#959595</code></td>
+<td>8</td>
+<td>نص ثالثي/معطل</td>
+</tr>
+<tr>
+<td><code dir="ltr">#1F000000</code></td>
+<td>8</td>
+<td>أسود بشفافية</td>
+</tr>
+<tr>
+<td><code dir="ltr">#D62000</code></td>
+<td>8</td>
+<td>أحمر العلامة</td>
+</tr>
+<tr>
+<td><code dir="ltr">#A63E00</code></td>
+<td>7</td>
+<td>بني/برتقالي داكن</td>
+</tr>
+<tr>
+<td><code dir="ltr">#F82854</code></td>
+<td>7</td>
+<td>وردي/أحمر</td>
+</tr>
+<tr>
+<td><code dir="ltr">#99000000</code></td>
+<td>6</td>
+<td>Scrim</td>
+</tr>
+<tr>
+<td><code dir="ltr">#E6E6E6</code></td>
+<td>6</td>
+<td>حدود فاتحة</td>
+</tr>
+</tbody></table>
+<p><strong>الأسطح المرصودة فعلياً:</strong></p>
+<table><thead><tr>
+<th>الشاشة</th>
+<th>السطح</th>
+<th>العينة</th>
+</tr></thead><tbody>
+<tr>
+<td>Shop / Category / Trends</td>
+<td><code dir="ltr">#F6F6F6</code></td>
+<td>s12: 25,180 بكسل؛ s13: 26,071؛ s14: 23,295</td>
+</tr>
+<tr>
+<td>Cart</td>
+<td><code dir="ltr">#FFFFFF</code></td>
+<td>s15: 28,425</td>
+</tr>
+<tr>
+<td>Me</td>
+<td><code dir="ltr">#EFF0F3</code></td>
+<td>s16: 20,923</td>
+</tr>
+<tr>
+<td>Settings / Auth</td>
+<td><code dir="ltr">#FFFFFF</code></td>
+<td>s19: 27,451؛ s21: 21,146</td>
+</tr>
+<tr>
+<td>Search</td>
+<td><code dir="ltr">#FFFFFF</code></td>
+<td>s34</td>
+</tr>
+</tbody></table>
+<p><strong>الألوان الدلالية المرصودة:</strong></p>
+<table><thead><tr>
+<th>الدور</th>
+<th>القيمة</th>
+<th>الدليل</th>
+</tr></thead><tbody>
+<tr>
+<td>نص أساسي</td>
+<td><code dir="ltr">#000000</code></td>
+<td>s12–s16</td>
+</tr>
+<tr>
+<td>نص ثانوي</td>
+<td><code dir="ltr">#666666</code></td>
+<td>s12/s16/s21</td>
+</tr>
+<tr>
+<td>نص ثالثي/معطل</td>
+<td><code dir="ltr">#959595</code></td>
+<td>s12/s21</td>
+</tr>
+<tr>
+<td>CTA الدخول</td>
+<td><code dir="ltr">#222222</code></td>
+<td>s17/s19/s20</td>
+</tr>
+<tr>
+<td>CTA خطأ</td>
+<td><code dir="ltr">#000000</code></td>
+<td>s12/s28/s33</td>
+</tr>
+<tr>
+<td>رابط</td>
+<td><code dir="ltr">#2D68A8</code></td>
+<td>s17–s20</td>
+</tr>
+<tr>
+<td>Facebook</td>
+<td><code dir="ltr">#3949AB</code></td>
+<td>s17/s19</td>
+</tr>
+<tr>
+<td>فاصل</td>
+<td><code dir="ltr">#E5E5E5</code></td>
+<td>s17/s19</td>
+</tr>
+<tr>
+<td>Placeholder وردي</td>
+<td><code dir="ltr">#FFEBEE</code></td>
+<td>s21/s32</td>
+</tr>
+<tr>
+<td>أخضر الثقة</td>
+<td><code dir="ltr">#198055</code></td>
+<td>s17/s19/s20</td>
+</tr>
+<tr>
+<td>نجاح</td>
+<td><code dir="ltr">#007D49</code></td>
+<td>مورد</td>
+</tr>
+<tr>
+<td>تحذير</td>
+<td><code dir="ltr">#A86104</code></td>
+<td>مورد</td>
+</tr>
+<tr>
+<td>Night surface</td>
+<td><code dir="ltr">#111111</code> / <code dir="ltr">#1E1E1E</code></td>
+<td><code dir="ltr">values-night/colors.xml</code></td>
+</tr>
+</tbody></table>
+<p><strong>ملاحظات:</strong></p>
+<ul>
+<li>لا توجد أسماء موارد دلالية قابلة للقراءة؛ أسماء الألوان في البناء المفكوك مستعارة (<code dir="ltr">APKTOOL_RENAMED_*</code>). هذا يجعل توحيد اللون عبر المكوّنات صعباً، لكنه لا يمنع وجود طبقة Tokens فعلية في المصدر.</li>
+<li>ألوان العلامة البرتقالية موجودة في الموارد لكنها لا تظهر في الشاشات الملتقطة؛ الشاشات التجارية الأساسية استخدامها أسود/رمادي. لا يمكن الجزم بأن هذا انحراف مقصود أم أن الواجهات الملتقطة كلها حالات فشل.</li>
+<li><code dir="ltr">#959595</code> على <code dir="ltr">#F6F6F6</code> يعطي تبايناً <strong>2.77:1</strong>، أي أقل من الحد المطلوب 4.5:1 للنص العادي. <code dir="ltr">#666666</code> يعطي <strong>5.31:1</strong> ويمر.</li>
+<li>الوضع الليلي موجود على مستوى الموارد فقط؛ لم تُلتقط شاشات ليلية، ولا يمكن الحكم على اكتماله.</li>
+</ul>
+<h3>2.2 الخطوط والتسلسل الطباعي</h3>
+<p><strong>الخطوط المحلية:</strong></p>
+<ul>
+<li><code dir="ltr">Adieu</code> بأربعة أوجه: Light / Regular / Bold / Black.</li>
+<li>تعريفات <code dir="ltr">font-family</code> تغطي أوزاناً أوسع (300، 370، 450، 500، 510، 550، 590، 600، 858، 950).</li>
+<li><code dir="ltr">Roboto</code> يُستدعى عبر Google Fonts (GMS) كخط بديل، مع تعريفات <code dir="ltr">wght700</code> و<code dir="ltr">ital1</code>.</li>
+</ul>
+<p><strong>دليل العربية:</strong> فحص <code dir="ltr">cmap</code> للأوجه الأربعة أظهر أن <code dir="ltr">U+0627</code> (الألف العربية) <strong>غير موجود</strong> في أي منها. لذلك تعرض العربية بخط النظام (Noto Arabic على الأرجح)، لا بخط العلامة. هذا يفسر اختلاف شكل الحروف وارتفاع السطر بين الإنجليزية والعربية، ويجعل الهوية الطباعية غير موحدة بين اللغتين.</p>
+<p><strong>أحجام النص في الموارد:</strong> 46 tokenاً من نوع <code dir="ltr">sp</code>. التوزيع:</p>
+<table><thead><tr>
+<th>الحجم</th>
+<th>عدد التوكنات</th>
+</tr></thead><tbody>
+<tr>
+<td>14sp</td>
+<td>7</td>
+</tr>
+<tr>
+<td>12sp</td>
+<td>6</td>
+</tr>
+<tr>
+<td>20sp</td>
+<td>5</td>
+</tr>
+<tr>
+<td>16sp</td>
+<td>4</td>
+</tr>
+<tr>
+<td>10sp</td>
+<td>4</td>
+</tr>
+<tr>
+<td>13sp</td>
+<td>3</td>
+</tr>
+<tr>
+<td>11sp</td>
+<td>3</td>
+</tr>
+<tr>
+<td>22sp</td>
+<td>2</td>
+</tr>
+<tr>
+<td>24sp</td>
+<td>2</td>
+</tr>
+<tr>
+<td>18sp</td>
+<td>2</td>
+</tr>
+<tr>
+<td>15sp</td>
+<td>2</td>
+</tr>
+<tr>
+<td>36sp</td>
+<td>1</td>
+</tr>
+<tr>
+<td>8sp</td>
+<td>1</td>
+</tr>
+<tr>
+<td>9sp</td>
+<td>1</td>
+</tr>
+</tbody></table>
+<p><strong>القراءة:</strong> جسم النص الشائع 10–14sp، والعناوين 18–24sp، والعنوان الأكبر 36sp. وجود 8sp و9sp و10sp يعني أن بعض التسميات الصغيرة تحت الحد المريح للقراءة على الهاتف. التسلسل يبدو «كثيفاً» في المحتوى التجاري (Labels، تفاصيل الطلب، القيم) أكثر من كونه تسلسلاً هرمياً واضحاً.</p>
+<h3>2.3 المسافات والحواف</h3>
+<p><strong>المسافات:</strong> 1,129 tokenاً من نوع <code dir="ltr">dimen</code>، منها 870 قيمة <code dir="ltr">dp</code> حرفية. أكثر القيم:</p>
+<table><thead><tr>
+<th>القيمة</th>
+<th>التكرار</th>
+</tr></thead><tbody>
+<tr>
+<td>4dp</td>
+<td>67</td>
+</tr>
+<tr>
+<td>8dp</td>
+<td>65</td>
+</tr>
+<tr>
+<td>16dp</td>
+<td>56</td>
+</tr>
+<tr>
+<td>12dp</td>
+<td>52</td>
+</tr>
+<tr>
+<td>0dp</td>
+<td>50</td>
+</tr>
+<tr>
+<td>2dp</td>
+<td>42</td>
+</tr>
+<tr>
+<td>24dp</td>
+<td>39</td>
+</tr>
+<tr>
+<td>1dp</td>
+<td>34</td>
+</tr>
+<tr>
+<td>6dp</td>
+<td>29</td>
+</tr>
+<tr>
+<td>10dp</td>
+<td>26</td>
+</tr>
+<tr>
+<td>32dp</td>
+<td>23</td>
+</tr>
+<tr>
+<td>48dp</td>
+<td>22</td>
+</tr>
+<tr>
+<td>20dp</td>
+<td>19</td>
+</tr>
+<tr>
+<td>40dp</td>
+<td>17</td>
+</tr>
+</tbody></table>
+<p>الشبكة الأساسية 4dp، لكن توجد قيم 2dp و6dp و10dp بكثرة؛ أي أنها ليست شبكة 4dp صارمة. صفوف الإعدادات 48dp، وشريط التنقل السفلي 58dp، وهامش الدخول 24dp، وهامش الإعدادات 12dp، وهامش بطاقات «حسابي» 5.7dp.</p>
+<p><strong>الحواف:</strong> لا توجد Tokens مسمّاة للحواف/الأنصاف. الأشكال تُبنى يدوياً:</p>
+<table><thead><tr>
+<th>العنصر</th>
+<th>الشكل المرصود</th>
+</tr></thead><tbody>
+<tr>
+<td>حقول الدخول وCTA</td>
+<td>مستطيل بزاوية 0dp</td>
+</tr>
+<tr>
+<td>حوار المسح</td>
+<td>بطاقة بزاوية ~16dp</td>
+</tr>
+<tr>
+<td>شريط بحث Shop</td>
+<td>Pill بزاوية 100dp</td>
+</tr>
+<tr>
+<td>شريط بحث Category</td>
+<td>مستطيل رمادي بزاوية 0dp</td>
+</tr>
+<tr>
+<td>شريط بحث Trends</td>
+<td>مستطيل أبيض داخل رأس أسود</td>
+</tr>
+<tr>
+<td>بطاقات الإعدادات</td>
+<td>مستطيلات مسطحة بلا ظل تقريباً</td>
+</tr>
+</tbody></table>
+<p>هذا الاختلاف ليس تفصيلاً جمالياً فقط؛ هو ما يجعل الشاشات تبدو كأنها من منتجات مختلفة.</p>
+<h3>2.4 المكوّنات الأساسية</h3>
+<table><thead><tr>
+<th>المكوّن</th>
+<th>القياس/الوصف</th>
+<th>الملاحظة</th>
+</tr></thead><tbody>
+<tr>
+<td>Bottom navigation</td>
+<td>5 عناصر، 58dp ارتفاعاً، ~82dp عرضاً</td>
+<td>التحديد يغيّر التعبئة والنص معاً؛ أيقونة Shop تصبح شارة <code dir="ltr">S</code> عند التحديد وبيتاً عند عدمه</td>
+</tr>
+<tr>
+<td>Shop header</td>
+<td>بريد + Search pill + كاميرا + قلب</td>
+<td>أكثر رأس غني</td>
+</tr>
+<tr>
+<td>Category header</td>
+<td>بريد + مستطيل بحث رمادي + قلب</td>
+<td>شكل بحث مختلف</td>
+</tr>
+<tr>
+<td>Trends header</td>
+<td>رأس أسود + <code dir="ltr">Trends Store</code> + بحث أبيض</td>
+<td>لا بريد ولا قلب</td>
+</tr>
+<tr>
+<td>Cart</td>
+<td>بلا رأس</td>
+<td>الخطأ يشغل الشاشة مع بقاء التنقل</td>
+</tr>
+<tr>
+<td>Me header</td>
+<td><code dir="ltr">Sign in / Register &gt;</code> + QR + إعدادات</td>
+<td>النص نفسه قابل للنقر بارتفاع 21dp</td>
+</tr>
+<tr>
+<td>Settings rows</td>
+<td>411×48dp</td>
+<td>تمر من حيث الارتفاع</td>
+</tr>
+<tr>
+<td>Auth</td>
+<td>شعار + <code dir="ltr">Your data is protected.</code> + حقل 363×44dp + CTA 363×45dp + Facebook 363×46dp</td>
+<td>الحقل والزر أقل من 48dp بقليل</td>
+</tr>
+<tr>
+<td>Error state</td>
+<td>رسم <code dir="ltr">S</code> + عنوان + سطران + زر 160×36dp</td>
+<td>زر أقل من 48dp، بلا رمز خطأ</td>
+</tr>
+<tr>
+<td>Dialog</td>
+<td>بطاقة 329×143dp، زرّا NO/YES 142.5×36dp</td>
+<td>تباين الفعلين غير كافٍ دلالياً</td>
+</tr>
+<tr>
+<td>Search screen</td>
+<td>Pill + كاميرا + إجراء</td>
+<td>محتوى فارغ تماماً</td>
+</tr>
+</tbody></table>
+<h2 id="sec-4">3. المعلومات والتنقل</h2>
+<h3>3.1 الهيكل</h3>
+<p>التطبيق يستخدم خمسة تبويبات سفلية ثابتة:</p>
+<ol>
+<li><strong>Shop</strong> — الرأس الأغنى (بريد، بحث، كاميرا، قلب).</li>
+<li><strong>Category</strong> — رأس بحث مستطيل مختلف.</li>
+<li><strong>Trends</strong> — رأس أسود بهوية <code dir="ltr">Trends Store</code>.</li>
+<li><strong>Cart</strong> — بلا رأس، خطأ ملء الشاشة.</li>
+<li><strong>Me</strong> — مركز الحساب: تسجيل الدخول، QR، الإعدادات، الطلبات، المفضلة، المتابعة، السجل.</li>
+</ol>
+<p><strong>المسارات المرصودة:</strong> <code dir="ltr">Shop → OOPS!</code>، <code dir="ltr">Category → OOPS!</code>، <code dir="ltr">Trends → OOPS!</code>، <code dir="ltr">Cart → OOPS!</code>، <code dir="ltr">Me → Sign in → Auth</code>، <code dir="ltr">Me → Settings → Clear Cache / Currency / About</code>، <code dir="ltr">Shop → Search (AR)</code>.</p>
+<h3>3.2 ما يعمل</h3>
+<ul>
+<li>التنقل السفلي يظل ظاهراً في معظم الحالات، ما يسمح بالخروج من الخطأ بالتبديل.</li>
+<li>RTL يعكس ترتيب التبويبات والأسهم والـchevrons بشكل صحيح في اللقطات.</li>
+<li><code dir="ltr">Me</code> يعمل حتى مع فشل الشبكة، ويعرض بيانات فارغة مفهومة (0 item / 0 following).</li>
+<li><code dir="ltr">Settings</code> يحافظ على صفوف 48dp وترتيب قراءة منطقي.</li>
+</ul>
+<h3>3.3 ما ينكسر</h3>
+<ul>
+<li><strong>لا يوجد مسار نجاة من الخطأ:</strong> لا زر «العمل دون اتصال»، ولا عرض لآخر محتوى مخبأ، ولا رمز خطأ، ولا رابط دعم. زر <code dir="ltr">Try it Again</code> يعيد المحاولة فقط.</li>
+<li><strong>الرأس ليس مكوّناً واحداً:</strong> Shop وCategory وTrends وCart وMe لكل منها رأس مختلف، ما يربك المستخدم عند التبديل.</li>
+<li><strong>البحث بلا حالة:</strong> شاشة البحث العربية تفتح بيضاء مع الكيبورد، بلا سجل أو «الأكثر بحثاً» أو اقتراحات.</li>
+<li><strong><code dir="ltr">Change Currency</code> بلا محتوى:</strong> عنوان فقط وصفحة بيضاء؛ لا قائمة عملات ولا تفسير.</li>
+<li><strong><code dir="ltr">About SHEIN</code> يعيد إلى Shop:</strong> النقر يخرج من الإعدادات إلى خطأ Shop بدل صفحة «حول»؛ هذا مسار مفقود/معطوب.</li>
+<li><strong><code dir="ltr">Sign in / Register</code> في Me</strong> ليس زراً واضحاً؛ هو نص كبير بchevron، وهدفه الفعلي 21dp.</li>
+</ul>
+<h2 id="sec-5">4. جرد الشاشات</h2>
+<p>اللقطات محفوظة في <code dir="ltr">../evidence/screenshots/</code>. الأسماء <code dir="ltr">s03</code>, <code dir="ltr">s06</code>, <code dir="ltr">s07</code>, <code dir="ltr">s08</code> غير موجودة في المجموعة؛ لا تُستخدم كأدلة.</p>
+<table><thead><tr>
+<th>المعرّف</th>
+<th>اللغة</th>
+<th>الشاشة/الحالة</th>
+<th>ملاحظة</th>
+</tr></thead><tbody>
+<tr>
+<td>s00</td>
+<td>EN</td>
+<td>Pixel Launcher ANR فوق شاشة الخطأ</td>
+<td>ضوضاء نظام — مستبعدة</td>
+</tr>
+<tr>
+<td>s02</td>
+<td>EN</td>
+<td>Shop — خطأ + System UI ANR</td>
+<td>ضوضاء نظام — مستبعدة جزئياً</td>
+</tr>
+<tr>
+<td>s04</td>
+<td>EN</td>
+<td>Shop — خطأ نظيف</td>
+<td>رأس كامل + تنقل</td>
+</tr>
+<tr>
+<td>s05</td>
+<td>EN</td>
+<td>Shop — خطأ (مكرر)</td>
+<td>تأكيد الحالة</td>
+</tr>
+<tr>
+<td>s09</td>
+<td>EN</td>
+<td>حوار إذن الإشعارات فوق خطأ Shop</td>
+<td>حوار نظام</td>
+</tr>
+<tr>
+<td>s10</td>
+<td>EN</td>
+<td><code dir="ltr">OOPS!</code> بلا رأس/تنقل</td>
+<td>شاشة خطأ مجردة</td>
+</tr>
+<tr>
+<td>s11</td>
+<td>EN</td>
+<td><code dir="ltr">OOPS!</code> مجردة (مكرر)</td>
+<td>تأكيد</td>
+</tr>
+<tr>
+<td>s12</td>
+<td>EN</td>
+<td>Shop — خطأ</td>
+<td>رأس + Search pill + تنقل</td>
+</tr>
+<tr>
+<td>s13</td>
+<td>EN</td>
+<td>Category — خطأ</td>
+<td>Search مستطيل رمادي</td>
+</tr>
+<tr>
+<td>s14</td>
+<td>EN</td>
+<td>Trends — خطأ</td>
+<td>رأس أسود + Search أبيض</td>
+</tr>
+<tr>
+<td>s15</td>
+<td>EN</td>
+<td>Cart — خطأ</td>
+<td>بلا رأس + تنقل</td>
+</tr>
+<tr>
+<td>s16</td>
+<td>EN</td>
+<td>Me — غير مسجل</td>
+<td><code dir="ltr">Sign in / Register</code> + QR + إعدادات</td>
+</tr>
+<tr>
+<td>s17</td>
+<td>EN</td>
+<td>Auth — فارغة</td>
+<td>شعار + حقل + Continue + Facebook</td>
+</tr>
+<tr>
+<td>s18</td>
+<td>EN</td>
+<td>Auth — إدخال/كيبورد</td>
+<td>حالة إدخال</td>
+</tr>
+<tr>
+<td>s19</td>
+<td>EN</td>
+<td>Auth — بريد مُدخل</td>
+<td><code dir="ltr">test@example.com</code></td>
+</tr>
+<tr>
+<td>s20</td>
+<td>EN</td>
+<td>Auth — بعد Continue</td>
+<td>لا تحقق/تحميل/خطأ مرئي</td>
+</tr>
+<tr>
+<td>s21</td>
+<td>EN</td>
+<td>Settings</td>
+<td>صفوف 48dp + Placeholder وردي</td>
+</tr>
+<tr>
+<td>s22</td>
+<td>EN</td>
+<td>Clear Cache dialog</td>
+<td>NO/YES — 36dp</td>
+</tr>
+<tr>
+<td>s23</td>
+<td>EN</td>
+<td>Settings (بعد الحوار)</td>
+<td>تأكيد الحالة</td>
+</tr>
+<tr>
+<td>s24</td>
+<td>EN</td>
+<td>Change Currency</td>
+<td>بيضاء تماماً</td>
+</tr>
+<tr>
+<td>s25</td>
+<td>EN</td>
+<td>Change Currency (مكرر)</td>
+<td>بيضاء تماماً</td>
+</tr>
+<tr>
+<td>s26</td>
+<td>EN</td>
+<td>شاشة سوداء</td>
+<td>فشل GMS/شبكة</td>
+</tr>
+<tr>
+<td>s27</td>
+<td>EN</td>
+<td>Shop — خطأ + أيقونات تحذير</td>
+<td>ضوضاء حالة النظام</td>
+</tr>
+<tr>
+<td>s28</td>
+<td>AR</td>
+<td>Shop — خطأ</td>
+<td>RTL سليم + «حاولي مرة اخرى»</td>
+</tr>
+<tr>
+<td>s29</td>
+<td>AR</td>
+<td>Me — غير مسجل</td>
+<td>RTL + «الاراء الكاملة» + «تعليق»</td>
+</tr>
+<tr>
+<td>s30</td>
+<td>AR</td>
+<td>Auth + Toast GMS</td>
+<td>شاشة سوداء +Toast مقطوع</td>
+</tr>
+<tr>
+<td>s31</td>
+<td>AR</td>
+<td>Me — غير مسجل (مكرر/زاوية)</td>
+<td>تأكيد RTL</td>
+</tr>
+<tr>
+<td>s32</td>
+<td>AR</td>
+<td>Settings</td>
+<td>RTL + Placeholder وردي</td>
+</tr>
+<tr>
+<td>s33</td>
+<td>AR</td>
+<td>نتيجة About → Shop</td>
+<td>خطأ Shop بعد خروج من الإعدادات</td>
+</tr>
+<tr>
+<td>s34</td>
+<td>AR</td>
+<td>Search</td>
+<td>بيضاء + كيبورد + بلا اقتراحات</td>
+</tr>
+</tbody></table>
+<h3>4.1 لوحات مرئية</h3>
+<div class="gallery">
+<figure><img src="../evidence/screenshots/s12.png" alt="Shop error EN"><figcaption>s12 — Shop: رأس كامل + Search pill + خطأ</figcaption></figure>
+<figure><img src="../evidence/screenshots/s13.png" alt="Category error EN"><figcaption>s13 — Category: Search مستطيل رمادي</figcaption></figure>
+<figure><img src="../evidence/screenshots/s14.png" alt="Trends error EN"><figcaption>s14 — Trends: رأس أسود مختلف</figcaption></figure>
+<figure><img src="../evidence/screenshots/s16.png" alt="Me EN"><figcaption>s16 — Me: تسجيل الدخول، QR، الإعدادات</figcaption></figure>
+<figure><img src="../evidence/screenshots/s22.png" alt="Clear cache dialog EN"><figcaption>s22 — حوار المسح: NO/YES</figcaption></figure>
+<figure><img src="../evidence/screenshots/s32.png" alt="Settings AR"><figcaption>s32 — Settings AR: RTL + Placeholder وردي</figcaption></figure>
+</div>
+<h2 id="sec-6">5. تحليل المكوّنات</h2>
+<h3>5.1 التنقل السفلي</h3>
+<ul>
+<li>خمسة عناصر، كل عنصر ~82×58dp؛ يحقق حد اللمس 48dp.</li>
+<li>التحديد يستخدم تعبئة سوداء + نصاً أسود عريضاً، وعدم التحديد رمادي رفيع. هذا جيد لأنه لا يعتمد على اللون وحده.</li>
+<li>لكن أيقونة Shop تتغير من بيت (غير محدد) إلى شارة <code dir="ltr">S</code> (محدد). التغيير قد يكون مقصوداً كهوية، لكنه يخلق «أيقونة مختلفة» لنفس الوجهة.</li>
+<li>في RTL ينعكس الترتيب بالكامل، وهو سلوك صحيح.</li>
+</ul>
+<h3>5.2 الرأس والبحث</h3>
+<p>ثلاثة أنماط مختلفة داخل نفس التطبيق:</p>
+<ul>
+<li><strong>Shop:</strong> حقل Pill مع كاميرا داخل الحقل، بريد يساراً وقلب يميناً (LTR).</li>
+<li><strong>Category:</strong> حقل مستطيل رمادي مسطح، بلا Pill ولا كاميرا بنفس الموضع.</li>
+<li><strong>Trends:</strong> رأس أسود كامل بهوية <code dir="ltr">Trends Store</code>، حقل أبيض مستطيل، وبلا بريد/قلب.</li>
+<li><strong>Search:</strong> Pill أبيض مع كاميرا، زر إجراء نصي، ومحتوى فارغ.</li>
+</ul>
+<p>النتيجة: المستخدم يفقد «مكان البحث» الثابت، ويحتاج إلى إعادة تعلم الرأس عند كل تبويب. هذا عيب اتساق من الدرجة الأولى في تطبيق تجاري.</p>
+<h3>5.3 الأزرار وCTA</h3>
+<ul>
+<li>CTA الأساسي أسود ممتلئ، بزاوية 0dp، ونص أبيض عريض.</li>
+<li>CTA الدخول <code dir="ltr">#222222</code>، وCTA الخطأ <code dir="ltr">#000000</code>؛ الفرق البصري ضئيل لكنه موجود.</li>
+<li>زر الخطأ 160×36dp، وزر الدخول 363×45dp؛ كلاهما أقل من 48dp.</li>
+<li>حوار المسح يستخدم زراً محدوداً (NO) وآخر ممتلئاً (YES)؛ الفعل المدمر «YES» ليس أحمر ولا يحمل نصاً صريحاً مثل «مسح».</li>
+</ul>
+<h3>5.4 البطاقات والصفوف</h3>
+<ul>
+<li>بطاقات «حسابي» بيضاء فوق خلفية <code dir="ltr">#EFF0F3</code>، بفواصل رفيعة.</li>
+<li>صفوف الإعدادات 48dp، مع 12dp هامشاً أفقياً وchevron في الطرف.</li>
+<li><code dir="ltr">View all</code> نص صغير (16.4dp ارتفاعاً) وليس زراً واضحاً.</li>
+<li>إحصاءات <code dir="ltr">Wishlist / Following / History</code> صفّ واحد بثلاث خلايا، ارتفاع 41.1dp؛ أقل من 48dp.</li>
+<li>الصفوف لا تستخدم ظلاً أو حدوداً واضحة؛ الفصل يعتمد على اللون والمسافة.</li>
+</ul>
+<h3>5.5 النماذج</h3>
+<ul>
+<li>حقل الدخول 363×44.2dp، بحدود 1dp وزاوية 0dp.</li>
+<li>لا توجد رسالة مساعدة أو خطأ تحت الحقل في اللقطات.</li>
+<li>زر <code dir="ltr">Continue</code> لا يغيّر حالته بعد الضغط؛ لا Loading، ولا تعطيل، ولا رسالة.</li>
+<li><code dir="ltr">Or</code> يفصل بين البريد وFacebook، لكن الفاصل خطي بسيط.</li>
+<li>النص القانوني أسفل الشاشة صغير (10–11sp تقريباً) وأزرق للروابط.</li>
+</ul>
+<h3>5.6 حالات الفراغ والخطأ</h3>
+<ul>
+<li>رسم <code dir="ltr">S</code> رمادي، عنوان <code dir="ltr">OOPS!</code>، سطران، وزر <code dir="ltr">Try it Again</code>.</li>
+<li>لا يوجد رمز خطأ، ولا وقت، ولا «آخر تحديث»، ولا خيار «متابعة بدون اتصال».</li>
+<li>في العربية: <code dir="ltr">عفوًا!</code> + <code dir="ltr">هناك خطأ ما في الخادم الخاص بنا. نحن نحاول إصلاحه</code> + <code dir="ltr">حاولي مرة اخرى</code>.</li>
+<li>الشاشة نفسها تتكرر في Shop وCategory وTrends وCart؛ لا تخصيص للسياق.</li>
+<li>الشاشات البيضاء (<code dir="ltr">Change Currency</code>, <code dir="ltr">Search</code>) لا تحتوي حتى على حالة فراغ نصية.</li>
+</ul>
+<h3>5.7 الأيقونات والصور</h3>
+<ul>
+<li>أيقونات خطية رفيعة، بأوزان بصرية متفاوتة.</li>
+<li>Selected nav يتحول إلى Fill، وغير المحدد خطي.</li>
+<li>Placeholder الحساب في Settings مربع وردي <code dir="ltr">#FFEBEE</code> بقياس ~74×70px (~28×27dp)، بلا أيقونة أو صورة؛ يظهر في EN وAR.</li>
+<li>رسم <code dir="ltr">S</code> في الخطأ ثنائي اللون (رمادي/أسود) ويحافظ على الهوية.</li>
+</ul>
+<h2 id="sec-7">6. RTL والتعريب</h2>
+<h3>6.1 ما ينجح</h3>
+<ul>
+<li>انعكاس ترتيب التبويبات السفلية: Me, Cart, Trends, Category, Shop من اليسار إلى اليمين.</li>
+<li>انعكاس الرأس: البريد/القلب/الكاميرا في مواضع مرآة صحيحة.</li>
+<li>سهم الرجوع في Settings وSearch يشير يميناً (اتجاه الرجوع في RTL).</li>
+<li>chevrons في Settings تشير يساراً (اتجاه التقدم في RTL).</li>
+<li>القيم (USD, 595.00KB, 15.5.0) تبقى LTR داخل صف RTL، وهو سلوك مناسب.</li>
+</ul>
+<h3>6.2 ما يحتاج إصلاحاً</h3>
+<table><thead><tr>
+<th>الملاحظة</th>
+<th>الدليل</th>
+<th>الأثر</th>
+</tr></thead><tbody>
+<tr>
+<td>«الاراء الكاملة» بدل «الآراء الكاملة»</td>
+<td>s29/s31</td>
+<td>خطأ إملائي/همزة</td>
+</tr>
+<tr>
+<td>«تعليق» لمربع Review</td>
+<td>s16/s29</td>
+<td>ترجمة غير دقيقة؛ «تقييم» أوضح</td>
+</tr>
+<tr>
+<td>«المنتجات المسترجعة» تلتف إلى سطرين وتكسر شبكة الأيقونات</td>
+<td>s29/s31</td>
+<td>اختلال محاذاة وارتفاع الصف</td>
+</tr>
+<tr>
+<td>«0 متابع» و«0 منتج»</td>
+<td>s16/s29</td>
+<td>صياغة العدد صفر تحتاج مراجعة لغوية</td>
+</tr>
+<tr>
+<td>«تسجيل الدخول/ تسجيل» بلا مسافة متسقة حول الشرطة</td>
+<td>s32</td>
+<td>تفاوت تنسيقي مع «تسجيل الدخول / تسجيل الاشتراك»</td>
+</tr>
+<tr>
+<td>«حاولي مرة اخرى»</td>
+<td>s28/s33</td>
+<td>صيغة المؤنث مقصودة؟ و«أخرى» تحتاج همزة</td>
+</tr>
+<tr>
+<td>تكرار «البحث» في الحقل وزر الإجراء</td>
+<td>s34</td>
+<td>قد يربك بين Placeholder وAction</td>
+</tr>
+<tr>
+<td>غياب خط عربي مخصص</td>
+<td>cmap + s28/s32</td>
+<td>اختلاف الهوية الطباعية وارتفاع السطر</td>
+</tr>
+</tbody></table>
+<p><strong>ملاحظة لغوية:</strong> استخدام صيغة المؤنث («حاولي») قد يكون قراراً مقصوداً في نبرة العلامة، لكنه يجب أن يكون متسقاً في كل النصوص. الدراسة لا تحكم على النبرة، بل تسجل التفاوت.</p>
+<h2 id="sec-8">7. الوصولية وأهداف اللمس</h2>
+<h3>7.1 التباين</h3>
+<table><thead><tr>
+<th>الزوج</th>
+<th>النسبة</th>
+<th>الحكم</th>
+</tr></thead><tbody>
+<tr>
+<td><code dir="ltr">#666666</code> على <code dir="ltr">#F6F6F6</code></td>
+<td>5.31:1</td>
+<td>يمر AA للنص العادي</td>
+</tr>
+<tr>
+<td><code dir="ltr">#959595</code> على <code dir="ltr">#F6F6F6</code></td>
+<td>2.77:1</td>
+<td>يفشل AA</td>
+</tr>
+<tr>
+<td><code dir="ltr">#000000</code> على <code dir="ltr">#F6F6F6</code></td>
+<td>19.43:1</td>
+<td>ممتاز</td>
+</tr>
+<tr>
+<td><code dir="ltr">#2D68A8</code> على <code dir="ltr">#FFFFFF</code></td>
+<td>5.74:1</td>
+<td>يمر</td>
+</tr>
+<tr>
+<td><code dir="ltr">#FFFFFF</code> على <code dir="ltr">#222222</code></td>
+<td>15.91:1</td>
+<td>ممتاز</td>
+</tr>
+<tr>
+<td><code dir="ltr">#767676</code> على <code dir="ltr">#FFFFFF</code></td>
+<td>4.54:1</td>
+<td>يمر بالكاد</td>
+</tr>
+</tbody></table>
+<p>النص الثالثي/المعطل <code dir="ltr">#959595</code> يستخدم في تسميات صغيرة، لذا المشكلة مزدوجة: حجم صغير + تباين منخفض.</p>
+<h3>7.2 أهداف اللمس المقيسة</h3>
+<p>القياسات من <code dir="ltr">uiautomator</code> بدقة 2.625 px/dp:</p>
+<table><thead><tr>
+<th>العنصر</th>
+<th>المقاس</th>
+<th>الحكم</th>
+</tr></thead><tbody>
+<tr>
+<td>Auth back (<code dir="ltr">ImageButton</code>)</td>
+<td>24×24dp</td>
+<td>يفشل</td>
+</tr>
+<tr>
+<td>Auth input</td>
+<td>363.4×44.2dp</td>
+<td>أقل من 48 بقليل</td>
+</tr>
+<tr>
+<td>Auth Continue</td>
+<td>363.4×45dp</td>
+<td>أقل من 48 بقليل</td>
+</tr>
+<tr>
+<td>Auth Facebook row</td>
+<td>363.4×46.1dp</td>
+<td>أقل من 48 بقليل</td>
+</tr>
+<tr>
+<td>Me <code dir="ltr">Sign in / Register</code></td>
+<td>322.3×21.3dp</td>
+<td>يفشل</td>
+</tr>
+<tr>
+<td>Me QR</td>
+<td>24×24dp</td>
+<td>يفشل</td>
+</tr>
+<tr>
+<td>Me Settings</td>
+<td>24×24dp</td>
+<td>يفشل</td>
+</tr>
+<tr>
+<td>Me <code dir="ltr">View all</code></td>
+<td>120×16.4dp</td>
+<td>يفشل</td>
+</tr>
+<tr>
+<td>Me stats row</td>
+<td>132.6×41.1dp</td>
+<td>يفشل</td>
+</tr>
+<tr>
+<td>Settings back</td>
+<td>48×48dp</td>
+<td>يمر</td>
+</tr>
+<tr>
+<td>Settings row</td>
+<td>411.4×48dp</td>
+<td>يمر</td>
+</tr>
+<tr>
+<td>Bottom nav item</td>
+<td>82.3×57.9dp</td>
+<td>يمر</td>
+</tr>
+<tr>
+<td>Dialog NO / YES</td>
+<td>142.5×36.2dp</td>
+<td>يفشل</td>
+</tr>
+<tr>
+<td>Error CTA</td>
+<td>160×36.2dp</td>
+<td>يفشل</td>
+</tr>
+</tbody></table>
+<p><strong>ملاحظة:</strong> أهداف 24dp لأزرار الرجوع والإعدادات ليست مجرد مشكلة لمس؛ها أيضاً مشكلة RTL لأن مساحة الإبهام في الحافة اليمنى/اليسرى تختلف.</p>
+<h3>7.3 دلالات الوصول</h3>
+<ul>
+<li>زر الرجوع في Auth يحمل <code dir="ltr">content-desc="CLOSE"</code> رغم أنه سهم رجوع؛ يجب أن يكون <code dir="ltr">Navigate up</code>/<code dir="ltr">Back</code>.</li>
+<li>أزرار الحوار <code dir="ltr">NO</code> و<code dir="ltr">YES</code> غامضة؛ الأفضل <code dir="ltr">Cancel</code> و<code dir="ltr">Clear cache</code>.</li>
+<li><code dir="ltr">Scan QR Code</code> و<code dir="ltr">Setting</code> تسميات جيدة، لكن مساحتها 24dp.</li>
+<li><code dir="ltr">Sign in / Register</code> ليس زراً دلالياً؛ هو <code dir="ltr">TextView</code> قابل للنقر.</li>
+<li>لم يُختبر TalkBack ولا تكبير النص ولا ترتيب التركيز؛ هذه فجوة في التغطية وليست حكماً بالنجاح.</li>
+</ul>
+<h2 id="sec-9">8. عيوب UX والأولويات</h2>
+<h3>P0 — يمنع الاستخدام</h3>
+<table><thead><tr>
+<th>المعرّف</th>
+<th>العيب</th>
+<th>الدليل</th>
+<th>الأثر</th>
+<th>التوصية</th>
+</tr></thead><tbody>
+<tr>
+<td>P0-1</td>
+<td>خطأ الخادم يحوّل كل تبويب إلى <code dir="ltr">OOPS!</code> بلا بديل</td>
+<td>s12–s15/s28/s33</td>
+<td>لا تصفح ولا شراء؛ المستخدم عالق</td>
+<td>حالة خطأ واعية بالشبكة + محتوى مخبأ + رمز خطأ + دعم</td>
+</tr>
+<tr>
+<td>P0-2</td>
+<td><code dir="ltr">Continue</code> في Auth لا يقدم استجابة</td>
+<td>s19/s20</td>
+<td>لا يمكن تسجيل الدخول ولا معرفة السبب</td>
+<td>Validation + Loading + Error + تعطيل الزر</td>
+</tr>
+<tr>
+<td>P0-3</td>
+<td>شاشات بيضاء/سوداء بلا حالة</td>
+<td>s24/s25/s34/s26/s30</td>
+<td>يبدو التطبيق معطلاً</td>
+<td>Skeleton/Empty state + رسالة + Retry</td>
+</tr>
+<tr>
+<td>P0-4</td>
+<td>GMS غير متاح → شاشة سوداء + Toast مقطوع</td>
+<td>s30</td>
+<td>فشل صامت</td>
+<td>شاشة شرح + بديل + رابط تفعيل</td>
+</tr>
+</tbody></table>
+<h3>P1 — يضر بالثقة والكفاءة</h3>
+<table><thead><tr>
+<th>المعرّف</th>
+<th>العيب</th>
+<th>الدليل</th>
+<th>التوصية</th>
+</tr></thead><tbody>
+<tr>
+<td>P1-1</td>
+<td>رؤوس وبحث غير متسقة بين التبويبات</td>
+<td>s12/s13/s14</td>
+<td>رأس واحد + Search component واحد</td>
+</tr>
+<tr>
+<td>P1-2</td>
+<td>أهداف لمس 21–36dp</td>
+<td>signin/me/dialog/s12</td>
+<td>رفع كل هدف إلى ≥48dp</td>
+</tr>
+<tr>
+<td>P1-3</td>
+<td>خط عربي غير مخصص</td>
+<td>cmap/s28/s32</td>
+<td>تضمين خط عربي بهوية SHEIN أو ضبط Fallback</td>
+</tr>
+<tr>
+<td>P1-4</td>
+<td>نسخ RTL غير مصقولة</td>
+<td>s29/s31/s32</td>
+<td>مراجعة لغوية + اختبار اتساع</td>
+</tr>
+<tr>
+<td>P1-5</td>
+<td>Placeholder وردي للحساب</td>
+<td>s21/s32</td>
+<td>أيقونة/صورة افتراضية حقيقية</td>
+</tr>
+<tr>
+<td>P1-6</td>
+<td>حوار NO/YES غامض</td>
+<td>s22</td>
+<td>أفعال صريحة + تمييز الحذف</td>
+</tr>
+</tbody></table>
+<h3>P2 — تآكل الاتساق</h3>
+<table><thead><tr>
+<th>المعرّف</th>
+<th>العيب</th>
+<th>الدليل</th>
+<th>التوصية</th>
+</tr></thead><tbody>
+<tr>
+<td>P2-1</td>
+<td>5 خلفيات و3 رؤوس وأشكال CTA متعددة</td>
+<td>s12–s16/s21</td>
+<td>طبقة Tokens دلالية</td>
+</tr>
+<tr>
+<td>P2-2</td>
+<td>زوايا 0/16/100dp بلا نظام</td>
+<td>s12/s13/s22</td>
+<td>مقياس radii محدد</td>
+</tr>
+<tr>
+<td>P2-3</td>
+<td>أيقونات خطية/ممتلئة بأوزان مختلفة</td>
+<td>s12–s16</td>
+<td>مكتبة أيقونات موحدة</td>
+</tr>
+<tr>
+<td>P2-4</td>
+<td>لا Skeleton ولا Loading في القوائم</td>
+<td>s13/s14</td>
+<td>حالات تحميل هيكلية</td>
+</tr>
+<tr>
+<td>P2-5</td>
+<td>نص 8–12sp في تسميات مهمة</td>
+<td>s21/s22</td>
+<td>حد أدنى 12sp، و14sp للجسم</td>
+</tr>
+</tbody></table>
+<h3>P3 — صقل</h3>
+<table><thead><tr>
+<th>المعرّف</th>
+<th>العيب</th>
+<th>الدليل</th>
+<th>التوصية</th>
+</tr></thead><tbody>
+<tr>
+<td>P3-1</td>
+<td><code dir="ltr">Try it again</code> وصياغة <code dir="ltr">There is something wrong...</code></td>
+<td>s12/s28</td>
+<td>مراجعة Copy</td>
+</tr>
+<tr>
+<td>P3-2</td>
+<td><code dir="ltr">تسجيل الدخول/ تسجيل</code></td>
+<td>s32</td>
+<td>توحيد المسافات</td>
+</tr>
+<tr>
+<td>P3-3</td>
+<td><code dir="ltr">الإصدار 15.5.0</code> بتباين منخفض</td>
+<td>s32</td>
+<td>رفع التباين/الحجم</td>
+</tr>
+<tr>
+<td>P3-4</td>
+<td>تكرار «البحث» في Search AR</td>
+<td>s34</td>
+<td>Placeholder مختلف عن Action</td>
+</tr>
+</tbody></table>
+<h2 id="sec-10">9. التوصيات</h2>
+<h3>9.1 خلال أسبوعين</h3>
+<ol>
+<li><strong>حالة خطأ/Offline حقيقية:</strong> كشف نوع الفشل (شبكة/خادم/مصادقة)، عرض آخر محتوى مخبأ، زر Retry، رمز مرجعي، ورابط دعم. لا تكرر نفس الرسم في كل تبويب.</li>
+<li><strong>إصلاح Auth:</strong> تحقق فوري من البريد/الهاتف، حالة Loading، رسالة خطأ تحت الحقل، تعطيل CTA أثناء الإرسال، وعدم الانتقال إلى شاشة سوداء عند غياب GMS.</li>
+<li><strong>إصلاح الفراغات:</strong> قائمة عملات، سجل بحث/اقتراحات، Skeleton، وEmpty state نصية لكل شاشة.</li>
+<li><strong>رفع أهداف اللمس:</strong> 48dp لكل من Auth back، Me actions، View all، stats، dialog buttons، error CTA.</li>
+<li><strong>استبدال Placeholder الوردي</strong> بأيقونة حساب افتراضية.</li>
+<li><strong>تصحيح Copy RTL</strong> فوراً: «الآراء»، «تقييم»، «أخرى»، مسافات الشرطة، وصياغة الأعداد.</li>
+</ol>
+<h3>9.2 خلال 2–4 أسابيع</h3>
+<ol>
+<li><strong>مكوّن رأس واحد</strong> قابل للتهيئة (عنوان/بحث/إجراءات) بدل ثلاثة رؤوس.</li>
+<li><strong>مكوّن بحث واحد</strong> بشكل Pill موحد، مع كاميرا وإجراء واضح.</li>
+<li><strong>طبقة Tokens دلالية:</strong> <code dir="ltr">surface</code>, <code dir="ltr">surface-muted</code>, <code dir="ltr">text-primary</code>, <code dir="ltr">text-secondary</code>, <code dir="ltr">border</code>, <code dir="ltr">action</code>, <code dir="ltr">danger</code>, <code dir="ltr">link</code>, <code dir="ltr">focus</code>، مع قيم ليلية.</li>
+<li><strong>مقياس Radii:</strong> 0/4/8/16/100 مع قواعد استخدام.</li>
+<li><strong>خط عربي مخصص</strong> أو ضبط Fallback/line-height/weight، مع اختبار نصوص طويلة.</li>
+<li><strong>حوارات صريحة:</strong> <code dir="ltr">Cancel</code> / <code dir="ltr">Clear cache</code>، وتمييز الفعل المدمر بلون/وزن.</li>
+</ol>
+<h3>9.3 خلال 4–8 أسابيع</h3>
+<ol>
+<li><strong>مكتبة مكوّنات UI</strong> موثقة (Header, Search, Nav, Button, Dialog, Input, Empty, Error).</li>
+<li><strong>تدقيق وصول كامل:</strong> TalkBack، تكبير النص 200%، تباين، ترتيب تركيز، أهداف لمس.</li>
+<li><strong>الوضع الليلي:</strong> التحقق من كل سطح ونص، لا الاكتفاء بموارد الألوان.</li>
+<li><strong>الأجهزة الكبيرة:</strong> Tablet/Foldable، multi-pane، واختبار RTL على عرض 600dp+.</li>
+<li><strong>الحركة:</strong> انتقالات هادئة، وتقليل الحركة عند طلب النظام.</li>
+</ol>
+<h3>9.4 مؤشرات التحقق</h3>
+<ul>
+<li>نسبة الشاشات التي تملك حالة فراغ/خطأ/تحميل: من 0% إلى 100%.</li>
+<li>نسبة أهداف اللمس ≥48dp في المسارات الحرجة: 100%.</li>
+<li>نجاح Auth في بيئة GMS معطلة: رسالة مفهومة + بديل، لا شاشة سوداء.</li>
+<li>نسبة نصوص RTL التي تلتف أو تُقطع: 0%.</li>
+<li>تباين كل نص عادي ≥4.5:1، والنص الكبير ≥3:1.</li>
+<li>زمن الوصول إلى البحث من أي تبويب: نقرة واحدة.</li>
+</ul>
+<h2 id="sec-11">10. الأدلة</h2>
+<ul>
+<li><code dir="ltr">../README.md</code> — فهرس الأرشيف.</li>
+<li><code dir="ltr">../evidence/apk-metadata.md</code> — الهوية وإحصاءات البناء.</li>
+<li><code dir="ltr">../evidence/tokens-colors.md</code> — الألوان والتكرارات.</li>
+<li><code dir="ltr">../evidence/tokens-typography.md</code> — الخطوط والأحجام وغطاء العربية.</li>
+<li><code dir="ltr">../evidence/tokens-spacing.md</code> — المسافات والحواف.</li>
+<li><code dir="ltr">../evidence/touch-targets.csv</code> — قياسات اللمس الخام.</li>
+<li><code dir="ltr">../evidence/touch-targets.md</code> — قراءة النتائج.</li>
+<li><code dir="ltr">../evidence/screen-inventory.md</code> — جدول اللقطات.</li>
+<li><code dir="ltr">../evidence/screenshots.sha256</code> — بصمات اللقطات.</li>
+<li><code dir="ltr">../evidence/ui-dumps/</code> — تفريغات UI الخام.</li>
+<li><code dir="ltr">../evidence/screenshots/</code> — 30 لقطة.</li>
+</ul>
+<h2 id="sec-12">11. الحدود</h2>
+<ul>
+<li>لا يمكن تعميم نتائج الأداء أو الاستجابة على الإنتاج؛ بيئة الاختبار كانت محدودة الاتصال.</li>
+<li>لا تغطية لـPDP/PLP/Search results/Cart الممتلئ/Checkout/Payment/Orders.</li>
+<li>لا اختبار لحساب مسجل أو حفظ الجلسة أو استعادة الحالة بعد إعادة التشغيل.</li>
+<li>لا اختبار للوضع الليلي أو تكبير النص أو TalkBack أو الأجهزة اللوحية.</li>
+<li>لا حكم على الـmotion أو الـhaptics.</li>
+<li>بعض اللقطات تحتوي حوارات ANR من النظام؛ لا تُنسب إلى التطبيق.</li>
+<li>الأحجام المذكورة بالـdp مشتقة من كثافة 2.625؛ قد تختلف قليلاً على أجهزة أخرى.</li>
+<li>الدراسة تصف هذا البناء فقط (<code dir="ltr">15.5.0/2941</code>)؛ ليست حكماً على إصدارات لاحقة.</li>
+</ul>
+</main>
+</div>
+<footer>أُعدّ من أدلة APK واللقطات وتفريغات UI. القيم المرصودة منفصلة عن قيم الموارد. هذا الأرشيف لا يعد خطة تنفيذ معتمدة.</footer>
+</div>
+</body>
+</html>
