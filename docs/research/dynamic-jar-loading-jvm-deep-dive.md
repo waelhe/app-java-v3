@@ -227,3 +227,212 @@ OSGi ليس مجرد محمّل أصناف؛ إنه معيار وحدات وBund
 - [Apache Felix Framework usage](https://felix.apache.org/documentation/subprojects/apache-felix-framework/apache-felix-framework-usage-documentation.html)
 
 **حالة الدليل:** الروابط أعلاه مصادر مباشرة قابلة لإعادة الفحص في تاريخ البحث. هذا التقييم لا يدعي تشغيل PoC أو اجتياز اختبارات توافق/أمن لم تجرَ بعد.
+
+
+---
+
+# توسعة معمّقة: OSGi / Apache Felix مقابل JPMS في Java 25
+
+> هذا القسم مكمّل للأقسام السابقة، ويركّز على الفرق بين مدير حزم ديناميكي ونظام وحدات Java وحاوية Spring. الروابط أدناه مواصفات وواجهات API ومستودعات رسمية. أحكام الملاءمة الخاصة بـapp-java-v3 مستنتجة من تلك الأدلة ومن بنية المستودع الحالية، ولا تعني أن أي خيار اعتُمد أو جرى اختباره محليًا.
+
+## 14. OSGi ليس مجرد ClassLoader: ما الذي تحدده المواصفة؟
+
+### 14.1 طبقات OSGi الثلاث التي تهمنا
+
+تصف مواصفة OSGi Core 8 بنية من طبقات مترابطة:
+
+1. **Module Layer:** يحدد حزم كل Bundle، وما يستورده ويصدره، وحدود فضاء الأصناف الخاص به، وحل التبعيات والربط بين الحزم.
+2. **Lifecycle Layer:** يدير تثبيت الحزم وبدءها وإيقافها وتحديثها وإلغاء تثبيتها ومراقبة حالتها.
+3. **Service Registry / Compendium:** يوفر خدمة discover/register/unregister للتكامل بين الحزم، وتُكمل Declarative Services (DS) ذلك بإدارة دورة حياة المكونات والتبعيات الديناميكية.
+
+المصادر المعيارية: [OSGi Core 8 — Module Layer](https://docs.osgi.org/specification/osgi.core/8.0.0/framework.module.html)، [OSGi Core 8 — Life Cycle Layer](https://docs.osgi.org/specification/osgi.core/8.0.0/framework.lifecycle.html)، [OSGi Compendium 8.1 — Declarative Services](https://docs.osgi.org/specification/osgi.cmpn/8.1.0/service.component.html).
+
+### 14.2 حل التبعيات أقوى من مجرد وجود JAR آخر على المسار
+
+OSGi Bundle هو JAR يحمل بيانات Manifest، منها Bundle-SymbolicName وBundle-Version ومتطلبات الحزم Import-Package وقدرات الحزم Export-Package، ويمكن أن تتضمن المتطلبات نطاقات إصدارات. لا يبدأ تنفيذ الحزمة حتى يحل الإطار متطلباتها الإلزامية.
+
+والأهم هو قيود uses: يمكن أن يفرض API مُصدّر أن يرى مستهلكوه نفس مصدر/نسخة حزمة أخرى يستخدمها ذلك الـAPI. يحل OSGi هذه القيود حتى لا يبدو أن نوعين لهما الاسم المؤهل نفسه هما النوع نفسه عند تمريرهما بين حزم تعتمد على مصدري API متعارضين. هذا يعالج فئة من أخطاء تضارب الأنواع لا يحلها مجرد نسخ JARs إلى مجلد إضافات.
+
+المصدر: [OSGi Core 8 — Resolving Process and Package Constraints](https://docs.osgi.org/specification/osgi.core/8.0.0/framework.module.html).
+
+### 14.3 دورة حياة الحزمة ومعاني الحالات
+
+تحدد مواصفة OSGi الحالات INSTALLED وRESOLVED وSTARTING وACTIVE وSTOPPING وUNINSTALLED. وتوفر عمليات تثبيت/تشغيل/إيقاف/تحديث/إزالة رسمية على كائن Bundle.
+
+للتركيب ميزتان معياريتان واضحتان:
+- التثبيت **دائم** عبر إعادة تشغيل JVM حتى الإلغاء الصريح.
+- التثبيت **ذرّي**: إما أن يكتمل، أو يجب أن تبقى حالة الإطار كما كانت قبل الفشل.
+
+وتُلزم المواصفة BundleActivator.stop بتنظيف/إيقاف الخيوط التي بدأت داخل الحزمة. هذا التزام على كود الإضافة، وليس ضمانًا بأن إطار OSGi يستطيع قتل Thread لا يتعاون أو تنظيف مورد احتفظ به كود آخر.
+
+المصدر: [OSGi Core 8 — Bundle Lifecycle](https://docs.osgi.org/specification/osgi.core/8.0.0/framework.lifecycle.html).
+
+### 14.4 التحديث ليس استبدالًا فوريًا لكل الكلاسات
+
+من المهم جدًا عدم عرض Update/Uninstall على أنهما «اختفاء كل آثار الإصدار القديم فورًا». إذا كان هناك Bundle آخر ما زال يستخدم wiring قديمًا لحزم مصدّرة، فيسمح OSGi ببقاء ذلك الـwiring والقدرات المرتبطة به حتى تنفيذ refresh أو إعادة تشغيل الإطار. يوثق Apache Felix ذلك في سلوكه: قد تظل الحزم القديمة متاحة للمستهلكين الذين ما زالوا مرتبطين بها، ويتطلب إكمال إزالة الـexports القديمة refresh. وقد يسبب refresh إيقاف وإعادة بدء حزم تعتمد على تلك الوصلات.
+
+المصدر المعياري: [OSGi Core 8 — Updating and Uninstalling Bundles](https://docs.osgi.org/specification/osgi.core/8.0.0/framework.lifecycle.html)، والمصدر التنفيذي: [Apache Felix — Bundle Cache and Revisions](https://felix.apache.org/documentation/subprojects/apache-felix-framework/apache-felix-framework-bundle-cache.html)، [Felix usage notes for refresh](https://felix.apache.org/documentation/subprojects/apache-felix-framework/apache-felix-framework-usage-documentation.html).
+
+**الاستنتاج:** OSGi يقدم إدارة تحديث/إزالة أغنى مما تقدمه ModuleLayer وحدها، لكنه لا يعد بتبديل كل المستهلكين فورًا بلا أثر جانبي. يلزم فحص الاعتماديات وعمليات refresh ومراقبة الـwiring وتخطيط أثر التحديث.
+
+## 15. ما الذي يضيفه Apache Felix فوق مواصفة OSGi؟
+
+Apache Felix Framework هو تنفيذ لمواصفة OSGi R8 الأساسية. نسخة org.apache.felix.framework الظاهرة في Maven Central وقت البحث هي **7.0.5**، وتعرض بيانات الحزمة كذلك دعم module-info مضافًا أثناء البناء. وجود module descriptor داخل Felix لا يعني أن تطبيق Spring Boot المحيط به قد تحول تلقائيًا إلى تطبيق JPMS modular.
+
+المصادر: [Apache Felix Framework documentation](https://felix.apache.org/documentation/subprojects/apache-felix-framework.html)، [Maven Central — org.apache.felix.framework](https://central.sonatype.com/artifact/org.apache.felix/org.apache.felix.framework).
+
+المشروع الأوسع ليس إطارًا واحدًا فقط. يسرد Apache Felix مكونات اختيارية منفصلة، من أهمها:
+- **Service Component Runtime / Declarative Services:** لإنشاء مكونات الخدمات وإيقافها وإعادة ربط تبعياتها عند تغير توفر الخدمات.
+- **Configuration Admin:** لإدارة إعدادات مكونات OSGi.
+- **File Install:** مراقب قائم على مجلد لإدارة نشر الحزم.
+- **Gogo:** سطر أوامر لإدارة الإطار والحزم.
+- **Web Console:** واجهة ويب لفحص حالة إطار OSGi وإدارته.
+- **OSGi Bundle Repository:** لاكتشاف الحزم وتوزيعها وتبعياتها.
+- **Event Admin وHealth Checks وHTTP Whiteboard:** لبث الأحداث والفحوص والتكاملات الويب.
+
+هذه مكونات مشروع Felix، وليست جميعها موجودة تلقائيًا عند إدراج org.apache.felix.framework وحده. يجب تثبيت مكونات محددة وإدارة إصداراتها وفحص سلسلة تبعياتها.  
+المصدر: [Apache Felix Active Subprojects](https://felix.apache.org/documentation/subprojects.html).
+
+### 15.1 التشغيل المضمن داخل عملية Spring Boot
+
+يدعم Felix الإقلاع المستقل، كما يوثق API لتضمينه داخل تطبيق آخر. لكنه ينبه إلى أن التعايش بين أكثر من Framework instance وبعض مرافق JVM singleton ما زال موصوفًا كهدف وتقدم العمل، لا ضمانًا عامًا بلا قيود.  
+المصدر: [Apache Felix — Launching and Embedding](https://felix.apache.org/documentation/subprojects/apache-felix-framework/apache-felix-framework-launching-and-embedding.html).
+
+إذا عُمّد Felix داخل عملية Spring Boot، فسيوجد نموذجان لإدارة الكائنات:
+- Spring ApplicationContext وBeans/Transactions/Security/Controllers في المضيف.
+- OSGi BundleContext وسجل الخدمات وDS ومكونات الحزم داخل Felix.
+
+**لا توثق Felix آلية عامة تجعل كل Bean أو Controller أو Spring Data Repository يظهر أو يختفي تلقائيًا عند تثبيت Bundle أو إلغائه.** لذلك أي جسر بين العالمين مسؤولية تكامل منفصلة، ويجب ألا يُفترض أنه موجود لمجرد تشغيل Framework داخل JVM ذاتها.
+
+يتبع من ذلك حكم ملاءمة للمشروع، لا قرار من مواصفة OSGi: إذا قيّمنا Felix لاحقًا، فالاختبار الأول الأنسب هو خدمة Java بسيطة تُسجّل في OSGi Service Registry وتُستهلك عبر SPI ثابت من محول صريح في المضيف. أما جعل الإضافات تُسجّل ديناميكيًا Controllers في Spring MVC أو GraphQL resolvers في DGS أو كيانات JPA وترحيلات قاعدة بيانات، فهو نطاق منفصل أكبر لا يثبته هذا الاختبار.
+
+### 15.2 Declarative Services (DS) مقابل Spring DI
+
+توفر DS جزءًا مهمًا من دورة الحياة التي كانت سببًا رئيسيًا في مشكلات PF4J-Spring:
+- يحلل SCR وصف المكوّن ويقرر متى يُنشأ ومتى يُفعّل أو يُعطّل.
+- يصف كل مكوّن واجهات الخدمات التي يقدمها والتبعيات المطلوبة.
+- يمكن أن تكون مراجع الخدمة ثابتة أو ديناميكية. عند إلغاء تسجيل خدمة أو ظهور خدمة بديلة، يستطيع SCR فك الربط أو تعطيل/إعادة تفعيل المكوّن حسب السياسة.
+- عند إزالة التهيئة، يجب على SCR تحرير المراجع للمكوّن وسياق المكوّن بعد إلغاء تفعيله.
+
+هذه مزايا معيارية واضحة في DS، لكنها تعتمد على تبني نموذج OSGi services/DS داخل الإضافات. ليست استمرارًا تلقائيًا لحقن Spring؛ سيحتاج المطورون إلى اتباع عقود وأدوات ومهارات DS، أو بناء جسر بين النظامين بمسؤوليات صريحة.
+
+المصدر: [OSGi Compendium 8.1 — Declarative Services Lifecycle and Dynamic References](https://docs.osgi.org/specification/osgi.cmpn/8.1.0/service.component.html).
+
+### 15.3 الأدوات والتجربة المرجعية
+
+توصي مؤسسة OSGi نفسها بمسار OSGi enRoute كمدخل عملي، مع تركيز على Declarative Services وأدوات Maven/bnd، وتُظهر الدروس إنشاء خدمة REST، وتطبيقًا متعدد الطبقات، وحالة JPA/Hibernate. لكن enRoute يعرّف نفسه بأنه مبني على مواصفات OSGi R7؛ لذا يُستخدم لتعلم سير العمل والتجارب، بينما تبقى مواصفة Core 8 وCompendium 8.1 المرجع الأعلى عند الحسم في النسخ الأحدث.
+
+المصادر: [OSGi official getting-started page](https://www.osgi.org/resources/where-to-start/)، [enRoute Tutorials](https://enroute.osgi.org/Tutorial/)، [enRoute background](https://enroute.osgi.org/About/).
+
+## 16. JPMS: وحدات Java قوية، لا مدير إضافات كامل
+
+### 16.1 ما هي القطع التي توفرها JPMS؟
+
+نظام JPMS مدمج في Java منذ Java 9. ويعتمد على مفاهيم مثل:
+- **module-info.java:** يصرح requires للتبعيات، وexports لحزم API العامة، وopens للوصول الانعكاسي المحدود، وuses/provides للخدمات.
+- **ModuleFinder:** يعثر على الوحدات في مجلدات أو حزم JAR.
+- **Configuration.resolve/resolveAndBind:** يحل متطلبات الوحدات وينشئ رسم تبعيات/قابلية قراءة متسقًا.
+- **ModuleLayer:** يعرّف مجموعة وحدات محلولة داخل JVM ويعيّنها إلى ClassLoaders.
+- **ServiceLoader.load(layer, service):** يكتشف موفري خدمة داخل طبقة الوحدات والطبقات الأم.
+
+المصادر الرسمية:
+[Java SE 25 — ModuleLayer](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/ModuleLayer.html)، [ModuleFinder](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/module/ModuleFinder.html)، [Configuration](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/module/Configuration.html)، [ServiceLoader](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/ServiceLoader.html).
+
+### 16.2 نعم، يمكن إنشاء طبقة وحدات جديدة أثناء التشغيل
+
+توثيق ModuleLayer يثبت أن الطبقات ليست حصرية لطبقة الإقلاع: يمكن إنشاء Configuration من JARs مكتشفة عبر ModuleFinder ثم إنشاء طبقة جديدة. وتتيح API اختيار:
+- **defineModulesWithOneLoader:** مشاركة ClassLoader واحد لوحدات الطبقة مع تطبيق قيود على تداخل الحزم وتوجيه التحميل.
+- **defineModulesWithManyLoaders:** ClassLoader لكل Module ضمن الطبقة.
+- **defineModules:** تعيين محمّلات مخصصة.
+
+كما يمكن لـConfiguration.resolveAndBind تضمين ربط موفري الخدمات عند حل الوحدات، ويستطيع ServiceLoader.load(ModuleLayer, ServiceType) اكتشاف موفري الخدمة في الطبقة وأصولها.
+
+هذا يعني أن JPMS مناسب تقنيًا لبناء **محمّل إضافات قائم على طبقات**. لا يصح أن نقول إنه لا يستطيع تحميل وحدات بعد الإقلاع.
+
+لكن هناك فرقًا حاسمًا: واجهات Java هذه لا تقدم سجل تثبيت دائمًا، أو حالة Bundle، أو start/stop/update/uninstall، أو دورة خدمة ديناميكية للمستهلكين، أو مخزنًا للحزم والنسخ. هذه مسؤولية التطبيق الذي يبني مديرًا فوق ModuleLayer.
+
+### 16.3 ما نموذج دورة حياة الإضافة إذا استُخدمت JPMS؟
+
+مما تسمح به API، يمكن للتطبيق:
+1. التحقق من ملفات JAR ووصف وحداتها.
+2. استخدام ModuleFinder وConfiguration لحل التبعيات.
+3. إنشاء ModuleLayer جديدة.
+4. اكتشاف تنفيذ SPI بواسطة ServiceLoader.
+5. توجيه استدعاءات المضيف إلى خدمات الطبقة.
+6. عند تحديث الإضافة، بناء طبقة إصدار جديد وتغيير نقطة التوجيه إليها.
+7. إزالة مراجع المضيف إلى ServiceLoader ومقدمي الخدمات والطبقة والمحمل القديم؛ ولا يُعتمد على توقيت بعينه لتحرير أصناف الإصدار القديم.
+
+هذه الخطوات وصف لطريقة بناء ممكنة انطلاقًا من API الرسمية، **وليست دورة حياة يوفرها JPMS جاهزة ولا تعاقدًا رسميًا لتثبيت/تحديث الوحدات**. لا توجد API معادلة لـOSGi Bundle.update() أو Bundle.uninstall() في ModuleLayer.
+
+يستطيع ModuleLayer.Controller إضافة علاقات قراءة أو فتح/تصدير حزم بعد إنشاء الطبقة، لكن ذلك ليس بديلًا عن حل التبعيات، ويجب عدم مشاركة Controller مع شيفرة غير موثوقة وفق ملاحظة API نفسها.  
+المصدر: [Java SE 25 — ModuleLayer.Controller](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/ModuleLayer.Controller.html).
+
+### 16.4 إشكال الدمج مع مشروع على classpath
+
+في المستودع الحالي، لم يظهر module-info.java في بحث ملفات المشروع؛ ما هو موجود فعليًا هو Maven Reactor وحدات، مع حدود @ApplicationModule وSpring Modulith. **Maven module وSpring Modulith module ليسا JPMS named module.**
+
+هذا مهم لأن JPMS القوي يعتمد على وحدات مسماة وحدود requires/exports/opens. إذا كانت واجهة SPI الخاصة بالمضيف موجودة في الـunnamed module على classpath، فإن وحدة JPMS مسماة لا تستطيع أن تكتب requires إلى unnamed module كأنها اعتماد named عادي. لذلك إما أن تبقى بعض الإضافات في automatic modules (بتغليف أقل صرامة)، أو يتم نقل واجهة SPI المشتركة إلى named JPMS module متاح للطبقة، أو يختار الاختبار نمط تحميل غير JPMS صارمًا. كل خيار له أثر مختلف على الحد الفاصل والتغليف.
+
+هذه ليست مشكلة مستحيلة الحل، لكنها تعني أن **تبني JPMS لإضافات ديناميكية ليس مجرد إضافة module-info.java إلى JAR الإضافة**. يجب إثبات كيفية مشاركة SPI من التطبيق الموجود وكيف يمر التوافق بين الإصدارات.
+
+### 16.5 JPMS لا يضيف دورة حياة Spring
+
+إنشاء ModuleLayer لا يضيف الوحدات تلقائيًا إلى Spring ApplicationContext، ولا يكتشف تلقائيًا Controllers/GraphQL DGS components، أو يعيد إنشاء JPA Metamodel، أو يسجل Flyway migrations جديدة. يحتاج أي دمج لهذه العناصر إلى ربط صريح، وهي نفس الفجوة الأساسية بين «الوحدة مرئية للـJVM» و«الإضافة مدمجة وظيفيًا في Spring Boot».
+
+## 17. مقارنة مباشرة للقدرات
+
+| البند | OSGi / Apache Felix | JPMS / ModuleLayer |
+|---|---|---|
+| حل تبعيات وحدات | نعم؛ Import/Export ونسخ الحزم وقيود uses | نعم؛ رسم requires وحل Configuration |
+| تحميل إضافات بعد الإقلاع | نعم عبر Bundle install/resolve/start | نعم عبر Configuration وModuleLayer جديدة |
+| سجل ثابت للحزم ودورة حياة | مكوّن أساسي في مواصفة OSGi | يجب أن يبنيه التطبيق |
+| Start/Stop/Update/Uninstall موحد | API معيارية للحزمة | لا توجد دورة حياة إضافات موازية في ModuleLayer |
+| مستهلكو الخدمة عند ظهور/اختفاء موفر | Service Registry وDS تدير تغير الخدمات والتبعيات | ServiceLoader يكتشف الموفّرين؛ إدارة التغير والإيقاف على التطبيق |
+| تبديل الإصدار القديم فورًا | غير مضمون؛ قد يتطلب refresh بسبب wiring مستخدم | لا توجد آلية update؛ يبني المضيف طبقة جديدة ويبدل المراجع |
+| حدود التغليف | Package exports/imports وحل OSGi | exports/opens/requires مع encapsulation قوي |
+| تكامل Spring Beans/Controllers/JPA | غير تلقائي؛ جسر منفصل مطلوب | غير تلقائي؛ جسر منفصل مطلوب |
+| ساندبوكس لشيفرة غير موثوقة داخل JVM | لا تعتمد عليه دون نموذج عزل منفصل ومختبر | ليس ساندبوكس |
+| العبء المفاهيمي والتشغيلي | أعلى؛ Framework/Bundle cache/Resolver/Registry/DS/tools | أقل في أساس Java، لكنه لا يحل دورة حياة الإضافات وحده |
+
+المصادر الأعلى وزنًا لهذه المقارنة هي OSGi Core/Compendium الرسمية وJava SE 25 APIs وApache Felix documentation، وليس عدد النجوم أو وصفًا تسويقيًا.
+
+## 18. أثر المقارنة على app-java-v3
+
+### 18.1 ما نعرفه عن نقطة البداية
+
+المشروع يستخدم Java 25 وSpring Boot 4.1.1 وSpring Modulith 2.1.1، ويعمل كسياق Spring واحد مع وحدات Maven وحدود Modulith. ويوجد بالفعل FeatureGatePort لقراءة علم ميزة وقت الطلب، وmarketplace-console لتسجيل أعلام تشغيل القدرات الموجودة.
+
+مصدر البنية والحوكمة: [SYSTEM.md](https://github.com/waelhe/app-java-v3/blob/main/SYSTEM.md)، [FeatureGatePort](https://github.com/waelhe/app-java-v3/blob/main/marketplace-shared/src/main/java/com/marketplace/shared/api/FeatureGatePort.java)، [Spring Modulith — Verification](https://docs.spring.io/spring-modulith/reference/verification.html).
+
+### 18.2 إذا كان الهدف إضافات ديناميكية Java حقيقية داخل JVM
+
+- **OSGi/Felix هو المرشح الأكثر اكتمالًا بوصفه مدير حزم ديناميكيًا**، لأن التثبيت والحل والتحديث والإزالة والخدمات وحالات دورة الحياة عناصر معيارية فيه. ثمن ذلك هو إدخال إطار تشغيل/خدمات ثانٍ داخل تطبيق Spring، وتبني أدوات بناء OSGi وManifest وحزم/إصدارات خدمات.
+- **JPMS هو مرشح مناسب إذا كان جوهر المطلوب إنشاء طبقات وحدات قوية لعزل واجهات compile/runtime مع SPI محدد**، وكان الفريق مستعدًا لبناء سجل دورة حياة وإدارة الاستبدال والإزالة بنفسه. وهو لا يحل مشكلات Spring lifecycle تلقائيًا.
+- **لا يُعتمد أي من الخيارين لتشغيل إضافات خارجية غير موثوقة داخل JVM**؛ تحتاج هذه إلى حد عملية/حاوية وصلاحيات وموارد وشبكة محددة.
+
+### 18.3 نتيجة لا ينبغي القفز فوقها
+
+إذا كان المقصود من «التثبيت من لوحة التحكم» تركيب ميزات من اختيار مسؤول المنصة دون إعادة نشر التطبيق، فهذه ليست حجة كافية وحدها لإدخال OSGi أو JPMS. يجب أن يحدد المنتج هل الإضافة:
+- مجرد إعداد أو Feature Flag لقدرة مدمجة؛
+- تطبيق خارجي بعقد شبكة؛
+- إضافة Java موثوقة تُنفذ داخل نفس JVM.
+
+هذه الفئات لها حلول مختلفة. التوثيق الحالي لا يُثبت أن تحميل JAR داخل JVM مطلوب فعلًا لكل ميزة منصة، لذلك يبقى تحميل JAR قرارًا مشروطًا لا افتراضيًا.
+
+## 19. أدلة إضافية
+
+- [OSGi Core 8 — Lifecycle Layer](https://docs.osgi.org/specification/osgi.core/8.0.0/framework.lifecycle.html)
+- [OSGi Core 8 — Module Layer, package resolution and class loading](https://docs.osgi.org/specification/osgi.core/8.0.0/framework.module.html)
+- [OSGi Compendium 8.1 — Declarative Services](https://docs.osgi.org/specification/osgi.cmpn/8.1.0/service.component.html)
+- [Apache Felix — Framework implementation](https://felix.apache.org/documentation/subprojects/apache-felix-framework.html)
+- [Apache Felix — Subprojects](https://felix.apache.org/documentation/subprojects.html)
+- [Apache Felix — Embedding](https://felix.apache.org/documentation/subprojects/apache-felix-framework/apache-felix-framework-launching-and-embedding.html)
+- [Apache Felix — Bundle Cache / revisions](https://felix.apache.org/documentation/subprojects/apache-felix-framework/apache-felix-framework-bundle-cache.html)
+- [OSGi enRoute — official getting started](https://www.osgi.org/resources/where-to-start/)
+- [Java SE 25 — ModuleLayer](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/ModuleLayer.html)
+- [Java SE 25 — ModuleFinder](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/module/ModuleFinder.html)
+- [Java SE 25 — Configuration](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/module/Configuration.html)
+- [Java SE 25 — ModuleLayer.Controller](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/ModuleLayer.Controller.html)
+- [Java SE 25 — ServiceLoader](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/ServiceLoader.html)
+
+**حالة هذا التوسع:** محتوى مرجعي وتوصيات مقيدة بالأدلة فقط. لم يُنفّذ PoC لـFelix أو JPMS، ولم تُضف اعتماديات أو تتغير حدود Spring Modulith، ولم تُفتح أي صلاحية لتشغيل JAR من لوحة التحكم. يلزم PoC منفصل بنتائج قابلة لإعادة الفحص قبل قرار التنفيذ.
