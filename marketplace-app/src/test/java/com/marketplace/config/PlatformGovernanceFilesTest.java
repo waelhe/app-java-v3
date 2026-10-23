@@ -379,7 +379,7 @@ class PlatformGovernanceFilesTest {
         // the policy forbids unless a NEW documented exception with
         // measured evidence exists.
         assertThat(pom).as("no manual tomcat override — automatic Boot parent management only")
-                .doesNotContain("<tomcat.version>");
+                .doesNotContainPattern("<\\s*tomcat\\.version\\s*>");
         // The removal evidence travels in the pom comment — a future reader
         // must find the measured Boot-managed line without git archaeology.
         assertThat(pom).as("the pom cites the measured Boot-managed tomcat line")
