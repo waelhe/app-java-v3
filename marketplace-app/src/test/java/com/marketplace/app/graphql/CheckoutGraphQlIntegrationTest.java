@@ -2,7 +2,13 @@ package com.marketplace.app.graphql;
 
 import com.marketplace.identity.User;
 import com.marketplace.identity.UserRepository;
+import com.marketplace.catalog.Product;
+import com.marketplace.catalog.ProductRepository;
+import com.marketplace.catalog.ProductVariant;
+import com.marketplace.catalog.ProductVariantRepository;
 import com.marketplace.identity.UserRole;
+import com.marketplace.orders.CartItem;
+import com.marketplace.orders.CartItemRepository;
 import com.marketplace.orders.Cart;
 import com.marketplace.orders.CartRepository;
 import test.config.IntegrationContainers;
@@ -61,13 +67,11 @@ import static org.mockito.Mockito.when;
  * policy is explicit: checkout operations have NO anonymous form; the
  * pre-login contract stays exactly as A0 landed it.</p>
  *
- * <p>The wire-level {@code token: UUID} argument itself becomes
- * client-visible only with A0's one ordered shared-SDL change (the central
- * {@code scalar UUID} declaration plus the exact pinned argument
- * signatures); until that assembly the token path's resolver behavior is
- * proven by {@code CheckoutDataFetcherTest} and the wall it converges on
- * is proven HERE through the modern {@code id} path on the same use
- * case.</p>
+ * <p>The assembly on A0's stacked branch now exposes the central
+ * {@code scalar UUID}, deprecated {@code token: UUID} aliases, and the
+ * direct {@code CheckoutLine.variant: ProductVariant!} contract. This class
+ * verifies those declarations against the real HTTP GraphQL runtime and the
+ * real catalog/orders modules, not merely a mocked mapper.</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "spring.flyway.enabled=true",
@@ -101,6 +105,15 @@ class CheckoutGraphQlIntegrationTest {
     private CartRepository cartRepository;
 
     @Autowired
+    private ProductRepository productRepository;
+
+    @Autowired
+    private ProductVariantRepository productVariantRepository;
+
+    @Autowired
+    private CartItemRepository cartItemRepository;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @LocalServerPort
@@ -108,6 +121,9 @@ class CheckoutGraphQlIntegrationTest {
 
     private final List<UUID> seededUserIds = new ArrayList<>();
     private final List<UUID> seededCartIds = new ArrayList<>();
+    private final List<UUID> seededProductIds = new ArrayList<>();
+    private final List<UUID> seededVariantIds = new ArrayList<>();
+    private UUID ownerUserId;
     private UUID ownerCartId;
 
     @BeforeEach
@@ -116,6 +132,7 @@ class CheckoutGraphQlIntegrationTest {
         // carry must resolve to a real users row — the ownership wall reads
         // the caller through IdentityUserProvider's subject lookup.
         UUID ownerId = UUID.randomUUID();
+        ownerUserId = ownerId;
         userRepository.save(new User(ownerId, OWNER_SUBJECT, null,
                 "it-checkout owner", UserRole.CONSUMER));
         seededUserIds.add(ownerId);
@@ -151,6 +168,18 @@ class CheckoutGraphQlIntegrationTest {
             }
             seededCartIds.clear();
         }
+        if (!seededVariantIds.isEmpty()) {
+            for (UUID variantId : new ArrayList<>(seededVariantIds)) {
+                jdbcTemplate.update("DELETE FROM product_variants WHERE id = ?", variantId);
+            }
+            seededVariantIds.clear();
+        }
+        if (!seededProductIds.isEmpty()) {
+            for (UUID productId : new ArrayList<>(seededProductIds)) {
+                jdbcTemplate.update("DELETE FROM products WHERE id = ?", productId);
+            }
+            seededProductIds.clear();
+        }
         if (!seededUserIds.isEmpty()) {
             for (UUID userId : new ArrayList<>(seededUserIds)) {
                 jdbcTemplate.update("DELETE FROM users WHERE id = ?", userId);
@@ -178,6 +207,33 @@ class CheckoutGraphQlIntegrationTest {
                 .build();
     }
 
+    /**
+     * Seeds one real product, variant, and cart line so a GraphQL request
+     * exercises the direct CheckoutLine.variant: ProductVariant! schema,
+     * DGS output mapping, and checkout-context catalog projection together.
+     */
+    private String seedVariantBackedCartLine() {
+        String categoryCode = "it-checkout-graphql";
+        jdbcTemplate.update("""
+                INSERT INTO store_categories (id, code, name_en, name_ar, position)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT (code) DO NOTHING
+                """, UUID.randomUUID(), categoryCode, "Checkout GraphQL", "واجهة سلة الشراء", 0);
+
+        Product product = productRepository.save(Product.register(
+                categoryCode, "Checkout GraphQL test product", null, 2500L, "USD", ownerUserId));
+        seededProductIds.add(product.getId());
+
+        String sku = "it-checkout-" + UUID.randomUUID();
+        ProductVariant variant = productVariantRepository.save(
+                ProductVariant.register(product, sku, "Blue / Small", 2500L));
+        seededVariantIds.add(variant.getId());
+
+        cartItemRepository.save(CartItem.of(ownerCartId, product.getId(), variant.getId(),
+                2, 2500L, "USD"));
+        return sku;
+    }
+
     /** A well-formed typed global ID for the Checkout type over any native UUID. */
     private static String checkoutGlobalId(UUID id) {
         return java.util.Base64.getEncoder()
@@ -197,6 +253,46 @@ class CheckoutGraphQlIntegrationTest {
     // ------------------------------------------------------------------
     // the ownership wall on the converged use case
     // ------------------------------------------------------------------
+
+    @Test
+    void ownerReadsCheckoutLineWithDirectProductVariantSelectionOverRealGraphQl() {
+        String sku = seedVariantBackedCartLine();
+        var response = testerFor(OWNER_SUBJECT, "CONSUMER")
+                .document("""
+                                query($id: ID!) {
+                                  checkout(id: $id) {
+                                    lines {
+                                      id
+                                      quantity
+                                      variant {
+                                        id
+                                        name
+                                        sku
+                                        status
+                                        product { id name status }
+                                      }
+                                    }
+                                  }
+                                }
+                                """)
+                .variable("id", checkoutGlobalId(ownerCartId))
+                .execute();
+
+        response.errors().verify();
+        response.path("checkout.lines[0].quantity").entity(Integer.class)
+                .satisfies(quantity -> assertThat(quantity).isEqualTo(2));
+        response.path("checkout.lines[0].variant.id").entity(String.class)
+                .satisfies(id -> assertThat(id).startsWith(java.util.Base64.getEncoder()
+                        .encodeToString("ProductVariant:".getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+        response.path("checkout.lines[0].variant.name").entity(String.class)
+                .satisfies(name -> assertThat(name).isEqualTo("Blue / Small"));
+        response.path("checkout.lines[0].variant.sku").entity(String.class)
+                .satisfies(actualSku -> assertThat(actualSku).isEqualTo(sku));
+        response.path("checkout.lines[0].variant.status").entity(String.class)
+                .satisfies(status -> assertThat(status).isEqualTo("ACTIVE"));
+        response.path("checkout.lines[0].variant.product.name").entity(String.class)
+                .satisfies(name -> assertThat(name).isEqualTo("Checkout GraphQL test product"));
+    }
 
     @Test
     void ownerReadsTheirOwnActiveCheckoutByTypedGlobalId() {
