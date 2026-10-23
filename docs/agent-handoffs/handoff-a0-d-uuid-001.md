@@ -72,13 +72,26 @@ OPTIONS:
   C) Type `token` as `ID` locally per agent — REJECTED up front: it deviates
      from the pinned Saleor wire contract (UUID is not ID) and multiplies
      per-agent scalars; listed for completeness only.
-CONTRACT / SECURITY / DATA CONSEQUENCE: Option A restores wire-contract parity
+CONTRACT / SECURITY / DATA CONSEQUENCE (updated 2026-10-23 post-decision —
+  supersedes the filed wording): Option A restores wire-contract parity
   with the pinned Saleor 3.23.43 signatures and keeps deprecation metadata
-  honest (deprecated aliases stay selectable for old clients). Security is
-  unchanged in every option: resolution is by `id` behind the existing
-  ownership/ADMIN walls; a `token` path, if ever exposed, would need its own
-  authorization review — it is deprecated in Saleor and is NOT exposed here.
-  No data consequence: these are request-argument aliases only.
+  honest (deprecated aliases stay selectable for old clients). The filed
+  claim that "security is unchanged in every option" and that a token path
+  "is NOT exposed here" described the PRE-decision state and no longer
+  holds: Option A is ADOPTED and the resolver plumbing DOES accept the
+  deprecated token alias. As implemented (369dd78 + a33d248 + c5048c19f),
+  token resolves to the checkout's native UUID and converges on the SAME
+  CheckoutSpi use case behind the SAME authentication wall and the SAME
+  ownership/ADMIN checks as the modern id path — proven by the three-layer
+  evidence (the CheckoutDataFetcherTest acceptance matrix including the
+  blank-identifier regression matrix, the two anonymous token legs in
+  GraphQlSecurityIntegrationTest, and the CheckoutGraphQlIntegrationTest
+  ownership-wall legs over real HTTP and schema); supplying more than one
+  identifier is rejected even when the values denote the same cart, and a
+  supplied-but-blank identifier is rejected outright. No data consequence:
+  these are request-argument aliases only; only the central SDL declaration
+  (the shared scalar UUID plus the exact pinned signatures) still pends in
+  A0's one ordered shared-SDL change.
 RECOMMENDATION: Option A, landed by A0 in one ordered SDL change per the
   playbook's one-SDL-steward rule; agents never invent the scalar locally.
 WHAT CAN CONTINUE WITHOUT THE DECISION: all seven IMPLEMENTED_VERIFIED roots
@@ -109,3 +122,11 @@ seven roots `IMPLEMENTED_VERIFIED` (`orderCancel`, `orderBulkCancel`,
 `IMPLEMENTED_UNVERIFIED`, `orderConfirm` stays `BLOCKED_BY_DECISION` — with
 the candidate commit recorded, and this five-root token/deprecation divergence
 carried in the divergence registry until D-UUID-001 lands.
+
+The authoritative per-root statuses and their carrying-head evidence are
+maintained in `docs/agent-handoffs/agent-3-roots.csv` on the branch head —
+read them from the CSV at aggregation time (round 10, per the A0 07:14Z
+review, temporarily returned the four line-mutation roots to
+`IMPLEMENTED_UNVERIFIED` while the blank-identifier fix head `c5048c19f`'s
+own gate runs are read; `checkout` stays `IMPLEMENTED_UNVERIFIED` with the
+two output-contract gaps of that review recorded on its row).
