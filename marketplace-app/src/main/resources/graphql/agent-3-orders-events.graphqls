@@ -91,20 +91,21 @@ enum OrderErrorCode {
 # ---------------------------------------------------------------------------
 
 extend type Query {
-    checkout(id: ID): Checkout
+    checkout(id: ID, token: UUID @deprecated(reason: "Use `id` instead.")): Checkout
 }
 
 extend type Mutation {
-    checkoutLinesAdd(checkoutId: ID @deprecated(reason: "Use `id` instead."), id: ID, lines: [CheckoutLineInput!]!): CheckoutLinesAdd
-    checkoutLinesUpdate(checkoutId: ID @deprecated(reason: "Use `id` instead."), id: ID, lines: [CheckoutLineUpdateInput!]!): CheckoutLinesUpdate
-    checkoutLinesDelete(id: ID, linesIds: [ID!]!): CheckoutLinesDelete
-    checkoutLineDelete(checkoutId: ID @deprecated(reason: "Use `id` instead."), id: ID, lineId: ID): CheckoutLineDelete
+    checkoutLinesAdd(checkoutId: ID @deprecated(reason: "Use `id` instead."), id: ID, lines: [CheckoutLineInput!]!, token: UUID @deprecated(reason: "Use `id` instead.")): CheckoutLinesAdd
+    checkoutLinesUpdate(checkoutId: ID @deprecated(reason: "Use `id` instead."), id: ID, lines: [CheckoutLineUpdateInput!]!, token: UUID @deprecated(reason: "Use `id` instead.")): CheckoutLinesUpdate
+    checkoutLinesDelete(id: ID, linesIds: [ID!]!, token: UUID @deprecated(reason: "Use `id` instead.")): CheckoutLinesDelete
+    checkoutLineDelete(checkoutId: ID @deprecated(reason: "Use `id` instead."), id: ID, lineId: ID, token: UUID @deprecated(reason: "Use `id` instead.")): CheckoutLineDelete
         @deprecated(reason: "Use `checkoutLinesDelete` instead.")
     checkoutDelete(id: ID!): CheckoutDelete
 }
 
 type Checkout {
     id: ID!
+    token: UUID!
     lines: [CheckoutLine!]!
     quantity: Int!
 }
