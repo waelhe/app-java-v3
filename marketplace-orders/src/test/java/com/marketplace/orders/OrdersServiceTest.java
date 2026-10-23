@@ -8,10 +8,6 @@ import com.marketplace.shared.api.OrderCancelledEvent;
 import com.marketplace.shared.api.OrderConfirmedEvent;
 import com.marketplace.shared.api.OrderFulfilledEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
-import com.marketplace.orders.spi.CheckoutSpi;
-import com.marketplace.orders.spi.CheckoutView;
-import com.marketplace.orders.spi.OrderBulkCancelResult;
-import com.marketplace.orders.spi.OrderView;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,7 +26,6 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -569,7 +564,7 @@ class OrdersServiceTest {
     @Test
     void confirmMovesPlacedToConfirmedAndPublishes() {
         Order order = placedOrder();
-        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Order confirmed = service.confirm(order.getId());
@@ -628,7 +623,7 @@ class OrdersServiceTest {
     void confirmFromConfirmedAnswers409() {
         Order order = placedOrder();
         order.confirm(java.time.Instant.now());
-        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
 
         assertThatThrownBy(() -> service.confirm(order.getId()))
                 .isInstanceOf(ConflictException.class)
@@ -663,7 +658,7 @@ class OrdersServiceTest {
     void cancelledIsTerminalConfirmAnswers409() {
         Order order = placedOrder();
         order.cancel("done", java.time.Instant.now());
-        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
 
         assertThatThrownBy(() -> service.confirm(order.getId()))
                 .isInstanceOf(ConflictException.class);
@@ -790,7 +785,6 @@ class OrdersServiceTest {
     void confirmForSellerMovesTheMachineAndAnswersTheReadBack() {
         Order order = soldOrder();
         when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
-        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         // No isAdmin stub: the seller match short-circuits the gate — the
@@ -867,153 +861,12 @@ class OrdersServiceTest {
         Order order = soldOrder();
         order.confirm(java.time.Instant.now()); // CONFIRMED: confirm is illegal now
         when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
-        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         // No isAdmin stub: the seller match short-circuits the gate — the
         // 409 comes from the machine's own edge, past the scope check.
 
         assertThatThrownBy(() -> service.confirmForSeller(order.getId(), authentication))
                 .isInstanceOf(ConflictException.class);
-    }
-
-    // ------------------------------------------------------------------
-    // The checkout slice: an owned, active cart is the checkout aggregate
-    // ------------------------------------------------------------------
-
-    @Test
-    void checkoutReadAnswersOnlyTheOwnerOfAnActiveCart() {
-        Cart cart = Cart.activeFor(consumer);
-        when(cartRepository.findById(cart.getId())).thenReturn(Optional.of(cart));
-        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(UUID.randomUUID());
-
-        assertThatThrownBy(() -> service.findCheckout(cart.getId(), authentication))
-                .isInstanceOf(ResourceNotFoundException.class);
-        verify(cartItemRepository, never()).findByCartIdOrderByCreatedAtAscIdAsc(any());
-
-        cart.checkOut(java.time.Instant.now());
-        assertThatThrownBy(() -> service.findCheckout(cart.getId(), authentication))
-                .isInstanceOf(ResourceNotFoundException.class);
-    }
-
-    @Test
-    void checkoutProjectionCarriesTheVariantLinesInTheirStoredOrder() {
-        Cart cart = Cart.activeFor(consumer);
-        UUID firstVariant = UUID.randomUUID();
-        UUID secondVariant = UUID.randomUUID();
-        CartItem first = CartItem.of(cart.getId(), UUID.randomUUID(), firstVariant, 2, 500L, "SAR");
-        CartItem second = CartItem.of(cart.getId(), UUID.randomUUID(), secondVariant, 1, 700L, "SAR");
-        when(cartRepository.findById(cart.getId())).thenReturn(Optional.of(cart));
-        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumer);
-        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
-                .thenReturn(List.of(first, second));
-
-        CheckoutView view = service.findCheckout(cart.getId(), authentication);
-
-        assertThat(view.id()).isEqualTo(cart.getId());
-        assertThat(view.quantity()).isEqualTo(3);
-        assertThat(view.lines())
-                .extracting(CheckoutView.Line::id, CheckoutView.Line::variantId,
-                        CheckoutView.Line::quantity)
-                .containsExactly(
-                        org.assertj.core.groups.Tuple.tuple(first.getId(), firstVariant, 2),
-                        org.assertj.core.groups.Tuple.tuple(second.getId(), secondVariant, 1));
-    }
-
-    @Test
-    void checkoutProjectionRefusesAProductLevelLineInsteadOfFabricatingAVariant() {
-        Cart cart = Cart.activeFor(consumer);
-        CartItem productLevel = CartItem.of(cart.getId(), UUID.randomUUID(), null, 1, 500L, "SAR");
-        when(cartRepository.findById(cart.getId())).thenReturn(Optional.of(cart));
-        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumer);
-        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
-                .thenReturn(List.of(productLevel));
-
-        assertThatThrownBy(() -> service.findCheckout(cart.getId(), authentication))
-                .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("variant");
-    }
-
-    @Test
-    void checkoutLinesAddResolvesTheOwningProductFromTheAuthoritativeVariantPrice() {
-        Cart cart = Cart.activeFor(consumer);
-        UUID product = UUID.randomUUID();
-        UUID variant = UUID.randomUUID();
-        CartItem saved = CartItem.of(cart.getId(), product, variant, 2, 1750L, "SAR");
-        when(cartRepository.findById(cart.getId())).thenReturn(Optional.of(cart));
-        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumer);
-        when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
-                .thenReturn(Optional.of(cart));
-        when(productPricingPort.priceOfVariant(variant)).thenReturn(
-                new ProductPricingPort.VariantPrice(variant, product, seller, 1750L, "SAR",
-                        ProductPricingPort.StorefrontState.ACTIVE,
-                        ProductPricingPort.StorefrontState.ACTIVE));
-        when(cartItemRepository.findByCartIdAndProductIdAndVariantId(cart.getId(), product, variant))
-                .thenReturn(Optional.empty());
-        when(cartItemRepository.save(any(CartItem.class))).thenReturn(saved);
-        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
-                .thenReturn(List.of(saved));
-
-        CheckoutView view = service.addLines(cart.getId(),
-                List.of(new CheckoutSpi.LineAdd(variant, 2)), authentication);
-
-        assertThat(view.quantity()).isEqualTo(2);
-        assertThat(view.lines()).singleElement()
-                .satisfies(line -> {
-                    assertThat(line.variantId()).isEqualTo(variant);
-                    assertThat(line.quantity()).isEqualTo(2);
-                });
-    }
-
-    @Test
-    void checkoutLinesUpdateChangesTheOwnedLinesQuantity() {
-        Cart cart = Cart.activeFor(consumer);
-        UUID variant = UUID.randomUUID();
-        CartItem line = CartItem.of(cart.getId(), UUID.randomUUID(), variant, 1, 500L, "SAR");
-        when(cartRepository.findById(cart.getId())).thenReturn(Optional.of(cart));
-        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumer);
-        when(cartItemRepository.findById(line.getId())).thenReturn(Optional.of(line));
-        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
-                .thenReturn(List.of(line));
-
-        CheckoutView view = service.updateLines(cart.getId(),
-                List.of(new CheckoutSpi.LineUpdate(line.getId(), null, 4)), authentication);
-
-        assertThat(line.getQuantity()).isEqualTo(4);
-        assertThat(view.quantity()).isEqualTo(4);
-    }
-
-    @Test
-    void checkoutLinesDeleteRemovesTheOwnedLine() {
-        Cart cart = Cart.activeFor(consumer);
-        CartItem line = CartItem.of(cart.getId(), UUID.randomUUID(), UUID.randomUUID(),
-                1, 500L, "SAR");
-        when(cartRepository.findById(cart.getId())).thenReturn(Optional.of(cart));
-        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumer);
-        when(cartItemRepository.findById(line.getId())).thenReturn(Optional.of(line));
-        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
-                .thenReturn(List.of());
-
-        CheckoutView view = service.deleteLines(cart.getId(), List.of(line.getId()), authentication);
-
-        verify(cartItemRepository).delete(line);
-        assertThat(view.lines()).isEmpty();
-        assertThat(view.quantity()).isZero();
-    }
-
-    @Test
-    void checkoutDeleteAsAdminRemovesTheLinesBeforeTheAggregate() {
-        Cart cart = Cart.activeFor(consumer);
-        CartItem line = CartItem.of(cart.getId(), UUID.randomUUID(), UUID.randomUUID(),
-                1, 500L, "SAR");
-        when(cartRepository.findById(cart.getId())).thenReturn(Optional.of(cart));
-        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
-                .thenReturn(List.of(line));
-
-        service.deleteAsAdmin(cart.getId());
-
-        var order = inOrder(cartItemRepository, cartRepository);
-        order.verify(cartItemRepository).deleteAll(List.of(line));
-        order.verify(cartRepository).delete(cart);
     }
 
     // ------------------------------------------------------------------
@@ -1149,93 +1002,6 @@ class OrdersServiceTest {
         // line exists in this cart) — the all-or-nothing law crossed over
         verify(productStockPort).reserveVariants(java.util.Map.of(variant, 2));
         verify(productStockPort, never()).reserve(any());
-    }
-
-    // ------------------------------------------------------------------
-    // The ADMIN command surface (Saleor P4): bulk deduplication, per-row
-    // error reporting, stable lock ordering, and the returned OrderView.
-    // ------------------------------------------------------------------
-
-    @Test
-    void bulkCancelDeduplicatesRepeatedIdsAndCancelsOnce() {
-        Order order = placedOrder();
-        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
-        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
-
-        OrderBulkCancelResult result = service.bulkCancelAsAdmin(
-                List.of(order.getId(), order.getId()));
-
-        assertThat(result.count()).isEqualTo(1);
-        assertThat(result.failures())
-                .as("Saleor dedupes repeated IDs silently instead of reporting an error")
-                .isEmpty();
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
-        verify(orderRepository).save(order);
-        verify(eventPublisher).publishEvent(new OrderCancelledEvent(
-                order.getId(), consumer, "Cancelled through the order-management bulk API"));
-    }
-
-    @Test
-    void bulkCancelReportsMissingAndDeliveryConflictsWithoutBlockingTheLegalRow() {
-        Order legal = placedOrder();
-        Order linked = placedOrder();
-        linked.attachDeliveryRequest(UUID.randomUUID());
-        UUID missing = UUID.randomUUID();
-        when(orderRepository.findByIdForUpdate(legal.getId())).thenReturn(Optional.of(legal));
-        when(orderRepository.findByIdForUpdate(linked.getId())).thenReturn(Optional.of(linked));
-        when(orderRepository.findByIdForUpdate(missing)).thenReturn(Optional.empty());
-        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
-
-        OrderBulkCancelResult result = service.bulkCancelAsAdmin(
-                List.of(missing, linked.getId(), legal.getId()));
-
-        assertThat(result.count()).isEqualTo(1);
-        assertThat(result.failures())
-                .extracting(OrderBulkCancelResult.Failure::kind)
-                .containsExactlyInAnyOrder(
-                        OrderBulkCancelResult.FailureKind.NOT_FOUND,
-                        OrderBulkCancelResult.FailureKind.CONFLICT);
-        assertThat(legal.getStatus()).isEqualTo(OrderStatus.CANCELLED);
-        assertThat(linked.getStatus()).isEqualTo(OrderStatus.PLACED);
-        verify(orderRepository).save(legal);
-        verify(eventPublisher).publishEvent(new OrderCancelledEvent(
-                legal.getId(), consumer, "Cancelled through the order-management bulk API"));
-    }
-
-    @Test
-    void bulkCancelAcquiresRowLocksInStableIdOrderEvenForReversedInput() {
-        Order first = placedOrder();
-        Order second = placedOrder();
-        Order low = first.getId().compareTo(second.getId()) < 0 ? first : second;
-        Order high = low == first ? second : first;
-        when(orderRepository.findByIdForUpdate(low.getId())).thenReturn(Optional.of(low));
-        when(orderRepository.findByIdForUpdate(high.getId())).thenReturn(Optional.of(high));
-        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
-
-        OrderBulkCancelResult result = service.bulkCancelAsAdmin(
-                List.of(high.getId(), low.getId()));
-
-        assertThat(result.count()).isEqualTo(2);
-        assertThat(result.failures()).isEmpty();
-        var locks = inOrder(orderRepository);
-        locks.verify(orderRepository).findByIdForUpdate(low.getId());
-        locks.verify(orderRepository).findByIdForUpdate(high.getId());
-    }
-
-    @Test
-    void adminConfirmAndCancelReturnTheTransitionedOrderView() {
-        Order order = placedOrder();
-        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
-        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
-
-        OrderView confirmed = service.confirmAsAdmin(order.getId());
-        OrderView cancelled = service.cancelAsAdmin(order.getId());
-
-        assertThat(confirmed.id()).isEqualTo(order.getId());
-        assertThat(confirmed.placedAt()).isEqualTo(order.getPlacedAt());
-        assertThat(confirmed.status()).isEqualTo(OrderStatus.CONFIRMED.name());
-        assertThat(cancelled.id()).isEqualTo(order.getId());
-        assertThat(cancelled.status()).isEqualTo(OrderStatus.CANCELLED.name());
     }
 
     private Order placedOrder() {

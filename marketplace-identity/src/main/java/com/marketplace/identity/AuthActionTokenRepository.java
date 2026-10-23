@@ -1,7 +1,6 @@
 package com.marketplace.identity;
 
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -45,27 +44,4 @@ public interface AuthActionTokenRepository extends JpaRepository<AuthActionToken
      */
     @Query("select t from AuthActionToken t where t.username = :username and t.consumedAt is null")
     List<AuthActionToken> findOutstanding(@Param("username") String username);
-
-    /**
-     * Agent 1 (the CodeRabbit integrity round — the login-identity move's
-     * FK leg): EVERY row for the account, outstanding AND consumed — the
-     * read shape the purge decision and the audit story ride.
-     */
-    List<AuthActionToken> findAllByUsername(String username);
-
-    /**
-     * Agent 1 (the CodeRabbit integrity round, take 2): the PHYSICAL
-     * delete the login-identity move's FK leg requires. BaseEntity's
-     * Hibernate {@code @SoftDelete} translates both {@code delete(entity)}
-     * and bulk JPQL deletes into {@code is_deleted} updates — the row
-     * survives and V112's plain FK to {@code auth_users} keeps rejecting
-     * the login row's death. The native statement bypasses the
-     * soft-delete translation (and the entity listeners): the token
-     * rows' lifecycle revisions stay in {@code auth_action_tokens_aud}
-     * (the issue + consumption audit), the base rows physically leave so
-     * the FK releases the login row.
-     */
-    @Modifying
-    @Query(value = "DELETE FROM auth_action_tokens WHERE username = :username", nativeQuery = true)
-    int physicallyDeleteByUsername(@Param("username") String username);
 }
