@@ -1,11 +1,17 @@
 # HANDOFF → A0 — D-UUID-001: the central UUID scalar / deprecated-aliases decision (PR #698, Agent 3)
 
-**Status: PROPOSED — awaiting A0's decision. Filed as ONE request per the
-owner's 2026-10-23 03:53Z review: the central `UUID` scalar decision and the
-deprecated `token` / `checkoutId` aliases are decided together, centrally, for
-every affected root — never per-agent. This agent did not invent a local
-scalar, did not claim parity, and did not touch the central
-`saleor-458-root-inventory.csv` (A0-owned; A0 updates it on aggregation).**
+**Status: RESOLVED — A0 decided D-UUID-001 on 2026-10-23 as Option A
+(IMPLEMENTATION_REQUIRED). Decision record:
+docs/governance/campaign/decisions/D-UUID-001.md on the integration branch
+(commit 0e2e8a4 + the divergence-row follow-up edeb08c and the security-gate
+follow-ups). The pinned Saleor 3.23.43 source proves Checkout.token is the
+checkout's UUID primary key, so A0's earlier Option B wording was corrected:
+the approved decision is Option A — one central UUID scalar plus the exact
+deprecated checkout-family aliases, landed by A0's single SDL stewardship.
+Agent 3's resolver/fragment plumbing for the five implemented roots landed in
+round 9 (commit 369dd78); the token: UUID argument declarations and the
+central scalar UUID land in A0's one ordered shared-SDL change at assembly.
+This request is retained below as the filed input to the decision.**
 
 ## 1) The decision A0 is asked to make
 
