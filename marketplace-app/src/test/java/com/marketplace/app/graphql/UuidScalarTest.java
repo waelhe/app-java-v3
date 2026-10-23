@@ -1,5 +1,6 @@
 package com.marketplace.app.graphql;
 
+import com.netflix.graphql.dgs.DgsScalar;
 import graphql.GraphQLContext;
 import graphql.language.IntValue;
 import graphql.language.StringValue;
@@ -9,6 +10,8 @@ import graphql.schema.CoercingParseValueException;
 import graphql.schema.CoercingSerializeException;
 import org.junit.jupiter.api.Test;
 
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.math.BigInteger;
 import java.util.Locale;
 import java.util.UUID;
@@ -23,6 +26,26 @@ class UuidScalarTest {
     private static final UUID EXPECTED = UUID.fromString("123e4567-e89b-12d3-a456-426614174000");
 
     private final UuidScalar scalar = new UuidScalar();
+
+    @Test
+    void registersUnderTheCentralUuidScalarName() {
+        DgsScalar registration = UuidScalar.class.getAnnotation(DgsScalar.class);
+
+        assertThat(registration).isNotNull();
+        assertThat(registration.name()).isEqualTo("UUID");
+    }
+
+    @Test
+    void centralRuntimeSchemaDeclaresUuidExactlyOnce() throws Exception {
+        try (InputStream schemaStream = getClass().getClassLoader()
+                .getResourceAsStream("graphql/schema.graphqls")) {
+            assertThat(schemaStream).isNotNull();
+            String schema = new String(schemaStream.readAllBytes(), StandardCharsets.UTF_8);
+            assertThat(schema.lines()
+                    .filter(line -> line.trim().equals("scalar UUID"))
+                    .count()).isEqualTo(1);
+        }
+    }
 
     @Test
     void parsesCanonicalUuidVariable() {
