@@ -1,0 +1,78 @@
+name: Production Diagnostic
+
+# Temporary one-shot diagnostic (branch diagnostics/prod-20261023 — never
+# merges to main). Purpose: identify WHICH contributor makes production
+# /actuator/health answer 503 since 2026-10-20 07:46 UTC (issue #682):
+# the db (Neon channel ep-wandering-union, third channel of the documented
+# quota-migration cycle) vs redis (Upstash) vs diskSpace. Runs from GitHub's
+# network (the operating sandbox cannot resolve api.neon.tech).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: Probe app health + Neon state + channel reachability
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe production endpoints with timing
+        run: |
+          for ep in /actuator/health /actuator/info /actuator/health/liveness /actuator/health/readiness; do
+            meta=$(curl -sS -o /tmp/body -w "%{http_code} %{time_total}" --max-time 45 "https://app-java-v3-production.up.railway.app$ep" 2>/dev/null || echo "CURL_ERR")
+            echo "== $ep -> $meta"
+            head -c 300 /tmp/body 2>/dev/null; echo; echo
+          done
+
+      - name: Neon API — account, projects, endpoints, consumption
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+        run: |
+          set -euo pipefail
+          hdr="X-Neon-API-Key: $NEON_API_KEY"
+          echo "== /users/me"
+          curl -s -m 30 -H "$hdr" https://api.neon.tech/api/v2/users/me | head -c 600; echo; echo
+          echo "== /projects"
+          curl -s -m 30 -H "$hdr" https://api.neon.tech/api/v2/projects > /tmp/projects.json
+          head -c 4000 /tmp/projects.json; echo; echo
+          for pid in $(python3 -c "import json;print(' '.join(p['id'] for p in json.load(open('/tmp/projects.json')).get('projects',[])))"); do
+            echo "== endpoints of $pid"
+            curl -s -m 30 -H "$hdr" "https://api.neon.tech/api/v2/projects/$pid/endpoints" | head -c 3500; echo; echo
+          done
+          echo "== /consumption/overview"
+          curl -s -m 30 -H "$hdr" "https://api.neon.tech/api/v2/consumption/overview" | head -c 3000; echo; echo
+          echo "== /consumption/current_period"
+          curl -s -m 30 -H "$hdr" "https://api.neon.tech/api/v2/consumption/current_period" | head -c 3000; echo; echo
+
+      - name: Pre-auth probe of the current Neon channel
+        run: |
+          host="ep-wandering-union-b4rfa3cq.c-6.us-east-2.aws.neon.tech"
+          echo "== DNS"
+          getent hosts "$host" || echo "DNS_FAIL"
+          echo "== TCP 5432"
+          timeout 20 bash -c "cat < /dev/null > /dev/tcp/$host/5432" && echo TCP_OK || echo TCP_FAIL
+          python3 - << 'PY'
+          import socket, struct
+          host = "ep-wandering-union-b4rfa3cq.c-6.us-east-2.aws.neon.tech"
+          try:
+              s = socket.create_connection((host, 5432), timeout=25)
+              ssl = struct.pack("!II", 8, 80877103)
+              s.sendall(ssl)
+              resp = s.recv(1)
+              print("SSL response byte:", resp.hex())
+              if resp == b"S":
+                  import ssl as _ssl
+                  ctx = _ssl.create_default_context()
+                  ctx.check_hostname = False
+                  ctx.verify_mode = _ssl.CERT_NONE
+                  s = ctx.wrap_socket(s, server_hostname=host)
+              params = b"user\x00diag\x00database\x00neondb\x00\x00"
+              msg = struct.pack("!I", 8 + len(params)) + b"\x00\x03\x00\x00" + params
+              s.sendall(msg)
+              data = s.recv(4096)
+              print("startup response (first 400 bytes):", data[:400])
+          except Exception as e:
+              print("probe error:", repr(e))
+          PY
