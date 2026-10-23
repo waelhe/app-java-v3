@@ -122,25 +122,16 @@ class OrderGraphQlIntegrationTest {
     @BeforeEach
     void seedOrders() {
         // The A1 convention the orders FK graph demands (fk_orders_users):
-        // an order's consumer and seller are USERS rows — the seed places
-        // real ones before the orders reference them (the pre-integration
-        // round's seed generated random ids that were never inserted, so
-        // every order INSERT violated the foreign key and the whole class
-        // errored at seed time).
+        // the order's consumer is a USERS row — the seed places the real one
+        // before the orders reference it (a seed of never-inserted random ids
+        // violates the foreign key and errors the whole class at seed time).
+        // The seller needs no row: V184 keeps cross-module ids as plain UUID
+        // columns by documented discipline (no FK across module boundaries)
+        // — the UserGraphQl/ProductMedia test family's own seeding precedent.
         UUID consumerId = UUID.randomUUID();
         UUID sellerId = UUID.randomUUID();
         userRepository.save(new User(consumerId, consumerId.toString(), null,
-                "it-order consumer", com.marketplace.identity.UserRole.CONSUMER));
-        userRepository.save(new User(sellerId, sellerId.toString(), null,
-                "it-order seller", com.marketplace.identity.UserRole.PROVIDER));
-
-        // fk_orders_users (V113): identity is authoritative — the consumer
-        // row must exist in users before any order can reference it. The
-        // seller needs no row: V184 keeps cross-module ids as plain UUID
-        // columns by documented discipline (no FK across module boundaries).
-        // The UserGraphQl/ProductMedia test family's own seeding precedent.
-        userRepository.save(new User(consumerId, consumerId.toString(), null,
-                "p4-orders it-consumer", UserRole.CONSUMER));
+                "it-order consumer", UserRole.CONSUMER));
         seededConsumerId = consumerId;
 
         // Each id registers the moment its row is saved, so cleanup stays
@@ -172,13 +163,19 @@ class OrderGraphQlIntegrationTest {
     @AfterEach
     void removeSeededRows() {
         // The FK-safe order: the referencing orders go first, then the
-        // consumer row they referenced — never the reverse.
+        // consumer row they referenced — never the reverse. Hard deletes
+        // through JdbcTemplate, not the repositories: BaseEntity carries
+        // Hibernate's @SoftDelete, so a repository delete only flags
+        // is_deleted and the seeded rows would survive every test method
+        // in this class.
         if (!seededOrderIds.isEmpty()) {
-            orderRepository.deleteAllById(new ArrayList<>(seededOrderIds));
+            for (UUID orderId : new ArrayList<>(seededOrderIds)) {
+                jdbcTemplate.update("DELETE FROM orders WHERE id = ?", orderId);
+            }
             seededOrderIds.clear();
         }
         if (seededConsumerId != null) {
-            userRepository.deleteById(seededConsumerId);
+            jdbcTemplate.update("DELETE FROM users WHERE id = ?", seededConsumerId);
             seededConsumerId = null;
         }
     }

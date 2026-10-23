@@ -222,6 +222,14 @@ class ProductVariantMutationDataFetcherDgsTest {
     @MockitoBean
     private com.marketplace.identity.spi.UserManagementSpi userManagementSpi;
 
+    // Agent 3's checkout/order-command seams (PR #698): the slice package-scans
+    // com.marketplace.app.graphql and wires CheckoutDataFetcher, so the shared
+    // context cannot boot without these two mocked.
+    @MockitoBean
+    private com.marketplace.orders.spi.CheckoutSpi checkoutSpi;
+    @MockitoBean
+    private com.marketplace.orders.spi.OrderCommandSpi orderCommandSpi;
+
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();

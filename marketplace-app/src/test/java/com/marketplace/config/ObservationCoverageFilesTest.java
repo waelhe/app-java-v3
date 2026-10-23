@@ -364,6 +364,9 @@ class ObservationCoverageFilesTest {
                     "notification.preferences.topics.update",
                     "notification.preferences.update")),
             Map.entry("marketplace-orders", List.of(
+                    "order.admin.bulk-cancel",
+                    "order.admin.cancel",
+                    "order.admin.confirm",
                     "order.cancel",
                     "order.confirm",
                     "order.delivery.attach",
