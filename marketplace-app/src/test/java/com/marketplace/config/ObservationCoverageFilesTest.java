@@ -228,8 +228,8 @@ class ObservationCoverageFilesTest {
                     "realestate.property.upsert")),
             Map.entry("marketplace-reviews", List.of(
                     "review.create", "review.create.organic", "review.create.reverse", "review.moderate.approve", "review.moderate.hide",
-                                        "review.moderate.reject", "review.reply", "review.update", "review.vote", "review.vote.remove")),
-            );;
+                                        "review.moderate.reject", "review.reply", "review.update", "review.vote", "review.vote.remove"))
+            );
 
     private Path repoRoot() {
         Path fromModule = Paths.get("../");
