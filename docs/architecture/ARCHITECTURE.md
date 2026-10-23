@@ -22,7 +22,7 @@
 
 ## 1. Executive Summary
 
-The Marketplace Backend is a **modular monolith** built on **Spring Boot 4.1.1 + Java 25 LTS** with **Spring Modulith 2.1.1** enforcing bounded contexts. It comprises **30 Maven modules** organized in 5 layers (composition root → infra → shared contracts → domain core → domain support → edge BFF).
+The Marketplace Backend is a **modular monolith** built on **Spring Boot 4.1.2 + Java 25 LTS** with **Spring Modulith 2.1.2** enforcing bounded contexts. It comprises **30 Maven modules** organized in 5 layers (composition root → infra → shared contracts → domain core → domain support → edge BFF).
 
 **Key characteristics:**
 - ✅ **Modular monolith** (not microservices) — operational simplicity, single deployment unit
@@ -321,8 +321,8 @@ security chains:
 | Component | Version | Reference |
 |-----------|---------|-----------|
 | Java | 25 LTS | https://openjdk.org/projects/jdk/25/ |
-| Spring Boot | 4.1.0 GA | https://docs.spring.io/spring-boot/ |
-| Spring Modulith | 2.1.0 GA | https://docs.spring.io/spring-modulith/ |
+| Spring Boot | 4.1.2 | https://docs.spring.io/spring-boot/ |
+| Spring Modulith | 2.1.2 | https://docs.spring.io/spring-modulith/ |
 | Spring Security | 7.x | https://docs.spring.io/spring-security/ |
 | Maven | 3.9.16 | https://maven.apache.org/ |
 

@@ -19,9 +19,9 @@ Canonical product/UX authority: [Platform Administration Operating System Produc
 |---|---|---|
 | النظام | Marketplace Backend — REST + GraphQL، سياق Spring **واحد** (حزمة الجذر `com.marketplace`) | `MarketplaceApplication.java` |
 | Java | 25 (`--release 25`) | `pom.xml:41` |
-| Spring Boot | **4.1.1** عبر الوراثة من `spring-boot-starter-parent` | `pom.xml:7-10` |
-| Spring Modulith | 2.1.1 (BOM مستورد) | `pom.xml:65-67` |
-| Spring Authorization Server | 7.1.1 (قادم عبر BOM الإطار؛ مصادره مخبأة محلياً — §10) | `scripts/verify-aud-claim/sas-all/` |
+| Spring Boot | **4.1.2** عبر الوراثة من `spring-boot-starter-parent` | `pom.xml:7-10` |
+| Spring Modulith | 2.1.2 (BOM مستورد) | `pom.xml:65-67` |
+| Spring Authorization Server | 7.1.2 (قادم عبر BOM الإطار 4.1.2؛ مصادره مخبأة محلياً — §10) | `scripts/verify-aud-claim/sas-all/` |
 | Maven | wrapper 3.9.16 (`./mvnw`)، enforcer يشترط `[3.9,)` | `mvnw` + `pom.xml:230` |
 | قاعدة البيانات | PostgreSQL 18 في المستودع (CI/compose/Testcontainers)؛ **قناة قاعدة الإنتاج = Neon الخارجية** (`ep-weathered-pond…neon.tech/neondb`) منذ 2026-09-18T01:58Z (سجل Flyway حي عليها **67 مدخلًا (65 نسخية V1..V66 يقفز V35 + بذرتان تكراريتان) بعد وصول V64/V65/V66 (L45)** — قياس §15 2026-09-19: النشرة `2266b7af` الحاملة لـ`16117d8`) وخدمة `postgres-18` (= **postgis/postgis:18-3.6** بتبديل P-1 في المكان 2026-09-12 [خطة PostGIS §4-P3] + فوليوم، 18.6) صارت **قناة تراثية** (سجلها بلغ v62 عند 2026-09-17T19:47:18Z ولم تعد قناة التطبيق)؛ **فصل الهويات مقيس 2026-09-13 (§15):** الترحيل عبر `flyway_migrator` (خارق — `SPRING_FLYWAY_*`) والتشغيل عبر `marketplace_app` (NOSUPERUSER — `DB_*`) والمستخدم التأسيسي `marketplace` طوارئ حصرًا (حارس المنصة يمنع نزع خوارقه) | `.github/workflows/ci.yml:23-24` + `docker-compose.yml:3` + سجل الإقلاع الحي (§15) |
 | الذاكرة/الجلسات | Redis 8 في المستودع (CI/compose) **وفي الإنتاج** (8.2: ترقية في المكان + فوليوم + requirepass + RDB 2026-09-04 — §15)؛ Lettuce 7.5.2 (BOM) يدعم رسمياً «Redis 2.6+ up to Redis 8.x» | `.github/workflows/ci.yml:36-37` + `application.yml:109-111` |
@@ -38,7 +38,7 @@ Canonical product/UX authority: [Platform Administration Operating System Produc
 | الجانب | المالك | الآلية | الدليل |
 |---|---|---|---|
 | ترتيب بناء الوحدات | Maven | Reactor يستنتجه من جراف الاعتماديات في `<modules>` | `pom.xml` — كتلة `<modules>` في الجذر (27 وحدة) |
-| إصدارات الاعتماديات | Maven | الوراثة (parent 4.1.1) + `dependencyManagement` (BOMs + استثناءات موثقة) | `pom.xml:7-10` + كتلة `<dependencyManagement>` في الجذر (مرجع قسم مستقر — النطاقات الرقمية تنجرف مع كل تعديل pom) |
+| إصدارات الاعتماديات | Maven | الوراثة (parent 4.1.2) + `dependencyManagement` (BOMs + استثناءات موثقة) | `pom.xml:7-10` + كتلة `<dependencyManagement>` في الجذر (مرجع قسم مستقر — النطاقات الرقمية تنجرف مع كل تعديل pom) |
 | بوابات الجودة | Maven | أهداف plugins مربوطة بمراحل دورة الحياة | `pom.xml` — كتلة `<build>/<plugins>` في الجذر |
 | مخطط قاعدة البيانات | Flyway | ترحيلات V/R — **وحدد صفر `ddl-auto:none`** | `application.yml:28, 41` + `db/migration/` |
 | إنشاء الفول والتوصيل | Boot | component scan + auto-configuration شرطية | `MarketplaceApplication.java:9-11` |
@@ -49,7 +49,7 @@ Canonical product/UX authority: [Platform Administration Operating System Produc
 
 ## 3. طبقة البناء — كيف يبني Maven النظام
 
-**البنية:** الجذر `pom.xml` بـ `packaging: pom` (`:17`) — **مجمِّع (Reactor)** يبني 27 وحدة بترتيب يُستنتج آلياً من جراف الاعتماديات، وكل وحدة ترث من `spring-boot-starter-parent:4.1.1` فتحصل على إدارة الإضافات والافتراضات. `dependencyManagement` في الجذر يثبّت BOM مودولِث والاستثناءات (springdoc, mapstruct, resilience4j, instancio, archunit, jackson, prometheus, spring-ai — كتلة `<dependencyManagement>` في `pom.xml` الجذر، مرجع قسم مستقر لا نطاق أسطر ينجرف).
+**البنية:** الجذر `pom.xml` بـ `packaging: pom` (`:17`) — **مجمِّع (Reactor)** يبني 27 وحدة بترتيب يُستنتج آلياً من جراف الاعتماديات، وكل وحدة ترث من `spring-boot-starter-parent:4.1.2` فتحصل على إدارة الإضافات والافتراضات. `dependencyManagement` في الجذر يثبّت BOM مودولِث والاستثناءات (springdoc, mapstruct, resilience4j, instancio, archunit, jackson, prometheus, spring-ai — كتلة `<dependencyManagement>` في `pom.xml` الجذر، مرجع قسم مستقر لا نطاق أسطر ينجرف).
 
 **الدورة الحياتية (من الوثيقة الرسمية المحفوظة):** ثلاث دورات (default / clean / site). المراحل نقاط تسلسل صارمة؛ كل هدف plugin يرتبط بمرحلة؛ استدعاء `./mvnw verify` يشغّل كل ما قبله ضمن default. **ربطاتنا:**
 

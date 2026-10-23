@@ -239,6 +239,14 @@
              both stay closed). The production database driver returns to
              Boot parent management — automatic management only
              (version-policy §6). -->
+        <!-- Override: AWS SDK v2 (Exception #10 — Boot does not manage the AWS
+             SDK; consumed only by marketplace-media's S3 presigned channel).
+             2.54.20 -> 2.57.3: the 2026-10-23 platform wave's currency bump
+             to the latest stable line, measured from Maven Central
+             maven-metadata.xml (latest = 2.57.3). Same 2.x major line, the
+             BOM keeps all AWS artifacts on one version, and the consuming
+             surface is unchanged (s3 + url-connection-client, Exception #10).
+             Follow-up review: monthly patch review per version-policy §3. -->
         <awssdk.version>2.57.3</awssdk.version>
         <stripe.version>33.4.2</stripe.version>
         <project.build.outputTimestamp>2026-06-14T08:00:00Z</project.build.outputTimestamp>
