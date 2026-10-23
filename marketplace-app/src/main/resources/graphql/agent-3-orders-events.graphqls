@@ -76,18 +76,15 @@ enum OrderErrorCode {
 # omitted because the temporal scalar contract is not owned yet.
 #
 # D-UUID-001 (decided by A0 2026-10-23, Option A): the deprecated
-# checkout-family identifier aliases are implemented end-to-end at the
-# resolver — `token` is the checkout's native UUID (the pinned Saleor 3.23.43
+# checkout-family identifier aliases are wired to the same CheckoutSpi use
+# cases — `token` is the checkout's native UUID (the pinned Saleor 3.23.43
 # Checkout.token primary key), `checkoutId` is the typed global-ID alias, and
 # supplying more than one identifier in one request is rejected (even when
-# the values denote the same cart). The `token: UUID` ARGUMENT DECLARATIONS
-# and the central `scalar UUID` land together in A0's one ordered
-# shared-SDL change when this resolver/fragment update is assembled onto the
-# candidate; they are deliberately NOT declared here because a local scalar
-# would violate the single-SDL-steward rule the decision pins. Until that
-# ordered change, the resolver plumbing is exercised directly by
-# CheckoutDataFetcherTest; the `checkoutId: ID` tags below carry the exact
-# pinned deprecation reason.
+# the values denote the same cart). The central `scalar UUID` is declared
+# once in schema.graphqls; the exact pinned `token: UUID` and
+# `checkoutId: ID` deprecation directives are declared here for the five
+# implemented roots. The runtime token path remains behind the platform's
+# authentication and owning-use-case ownership/ADMIN controls.
 # ---------------------------------------------------------------------------
 
 extend type Query {
