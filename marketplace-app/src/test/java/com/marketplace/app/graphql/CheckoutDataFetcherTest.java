@@ -4,6 +4,7 @@ import com.marketplace.orders.spi.CheckoutSpi;
 import com.marketplace.orders.spi.CheckoutView;
 import com.marketplace.orders.spi.OrderCommandSpi;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import graphql.schema.DataFetchingEnvironment;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -78,10 +79,27 @@ class CheckoutDataFetcherTest {
         return new SaleorGlobalIdCodec().encode("CheckoutLine", lineId);
     }
 
+    /**
+     * The execution environment carrying the deprecated token alias. The
+     * argument is deliberately undeclared in this branch's SDL (A0's ordered
+     * shared-SDL change declares it at assembly), so the resolver reads it
+     * from the environment — the tests inject it exactly the way the
+     * declared-alias execution will deliver the coerced UUID.
+     */
+    private static DataFetchingEnvironment environmentWithToken(UUID token) {
+        DataFetchingEnvironment environment = mock(DataFetchingEnvironment.class);
+        when(environment.getArgument("token")).thenReturn(token);
+        return environment;
+    }
+
+    private static DataFetchingEnvironment environment() {
+        return environmentWithToken(null);
+    }
+
     @Test
     void absentOrBlankOptionalIdAnswersNullWithoutCallingTheOwner() {
-        assertThat(fetcher.checkout(null, null)).isNull();
-        assertThat(fetcher.checkout("   ", null)).isNull();
+        assertThat(fetcher.checkout(null, environment())).isNull();
+        assertThat(fetcher.checkout("   ", environment())).isNull();
         verifyNoInteractions(checkoutSpi, mapper);
     }
 
@@ -98,7 +116,7 @@ class CheckoutDataFetcherTest {
 
     @Test
     void malformedNonEmptyIdRemainsAClassifiedValidationFailure() {
-        assertThatThrownBy(() -> fetcher.checkout("not-a-checkout-global-id", null))
+        assertThatThrownBy(() -> fetcher.checkout("not-a-checkout-global-id", environment()))
                 .isInstanceOf(IllegalArgumentException.class);
         verifyNoInteractions(checkoutSpi, mapper);
     }
@@ -114,7 +132,7 @@ class CheckoutDataFetcherTest {
         when(checkoutSpi.findCheckout(eq(token), any())).thenReturn(view);
         when(mapper.toGraphQlCheckout(view)).thenReturn(Map.of("id", checkoutGlobalId(token)));
 
-        assertThat(fetcher.checkout(null, token)).isNotNull();
+        assertThat(fetcher.checkout(null, environmentWithToken(token))).isNotNull();
 
         ArgumentCaptor<Authentication> authenticationCaptor =
                 ArgumentCaptor.forClass(Authentication.class);
@@ -128,7 +146,7 @@ class CheckoutDataFetcherTest {
         UUID cartId = UUID.randomUUID();
         String id = checkoutGlobalId(cartId);
 
-        assertThatThrownBy(() -> fetcher.checkout(id, cartId))
+        assertThatThrownBy(() -> fetcher.checkout(id, environmentWithToken(cartId)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Only one checkout identifier");
 
@@ -141,7 +159,7 @@ class CheckoutDataFetcherTest {
         when(checkoutSpi.findCheckout(eq(guessed), any()))
                 .thenThrow(new ResourceNotFoundException("Checkout", guessed));
 
-        assertThat(fetcher.checkout(null, guessed)).isNull();
+        assertThat(fetcher.checkout(null, environmentWithToken(guessed))).isNull();
     }
 
     // ------------------------------------------------------------------
@@ -155,7 +173,7 @@ class CheckoutDataFetcherTest {
         CheckoutView view = new CheckoutView(token, List.of(), 0);
         when(checkoutSpi.addLines(eq(token), anyList(), any())).thenReturn(view);
 
-        Map<String, Object> result = fetcher.checkoutLinesAdd(null, null, token,
+        Map<String, Object> result = fetcher.checkoutLinesAdd(null, null, environmentWithToken(token),
                 List.of(Map.of("quantity", 2, "variantId", variantId)));
 
         assertThat(result.get("errors")).isEqualTo(List.of());
@@ -170,7 +188,7 @@ class CheckoutDataFetcherTest {
         when(checkoutSpi.addLines(eq(cartId), anyList(), any()))
                 .thenReturn(new CheckoutView(cartId, List.of(), 0));
 
-        fetcher.checkoutLinesAdd(null, checkoutGlobalId(cartId), null,
+        fetcher.checkoutLinesAdd(null, checkoutGlobalId(cartId), environment(),
                 List.of(Map.of("quantity", 1, "variantId", variantId)));
 
         verify(checkoutSpi).addLines(eq(cartId), anyList(), any());
@@ -184,16 +202,16 @@ class CheckoutDataFetcherTest {
         String variantId = variantGlobalId(UUID.randomUUID());
         List<Map<String, Object>> lines = List.of(Map.of("quantity", 1, "variantId", variantId));
 
-        assertInvalidIdentifierPayload(fetcher.checkoutLinesAdd(id, legacyId, null, lines));
-        assertInvalidIdentifierPayload(fetcher.checkoutLinesAdd(id, null, cartId, lines));
-        assertInvalidIdentifierPayload(fetcher.checkoutLinesAdd(null, legacyId, cartId, lines));
+        assertInvalidIdentifierPayload(fetcher.checkoutLinesAdd(id, legacyId, environment(), lines));
+        assertInvalidIdentifierPayload(fetcher.checkoutLinesAdd(id, null, environmentWithToken(cartId), lines));
+        assertInvalidIdentifierPayload(fetcher.checkoutLinesAdd(null, legacyId, environmentWithToken(cartId), lines));
 
         verifyNoInteractions(checkoutSpi);
     }
 
     @Test
     void linesAddWithoutAnyIdentifierIsRejected() {
-        Map<String, Object> result = fetcher.checkoutLinesAdd(null, null, null, List.of());
+        Map<String, Object> result = fetcher.checkoutLinesAdd(null, null, environment(), List.of());
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> errors = (List<Map<String, Object>>) result.get("errors");
@@ -211,7 +229,7 @@ class CheckoutDataFetcherTest {
         when(checkoutSpi.updateLines(eq(token), anyList(), any()))
                 .thenReturn(new CheckoutView(token, List.of(), 0));
 
-        Map<String, Object> result = fetcher.checkoutLinesUpdate(null, null, token,
+        Map<String, Object> result = fetcher.checkoutLinesUpdate(null, null, environmentWithToken(token),
                 List.of(Map.of("lineId", lineId, "quantity", 3)));
 
         assertThat(result.get("errors")).isEqualTo(List.of());
@@ -224,9 +242,9 @@ class CheckoutDataFetcherTest {
         Map<String, Object> line = Map.of("quantity", 1);
 
         assertInvalidIdentifierPayload(
-                fetcher.checkoutLinesUpdate(checkoutGlobalId(cartId), null, cartId, List.of(line)));
+                fetcher.checkoutLinesUpdate(checkoutGlobalId(cartId), null, environmentWithToken(cartId), List.of(line)));
         assertInvalidIdentifierPayload(
-                fetcher.checkoutLinesUpdate(checkoutGlobalId(cartId), checkoutGlobalId(cartId), null, List.of(line)));
+                fetcher.checkoutLinesUpdate(checkoutGlobalId(cartId), checkoutGlobalId(cartId), environment(), List.of(line)));
 
         verifyNoInteractions(checkoutSpi);
     }
@@ -238,7 +256,7 @@ class CheckoutDataFetcherTest {
         when(checkoutSpi.deleteLines(eq(token), anyList(), any()))
                 .thenReturn(new CheckoutView(token, List.of(), 0));
 
-        Map<String, Object> result = fetcher.checkoutLinesDelete(null, token, List.of(lineId));
+        Map<String, Object> result = fetcher.checkoutLinesDelete(null, environmentWithToken(token), List.of(lineId));
 
         assertThat(result.get("errors")).isEqualTo(List.of());
         verify(checkoutSpi).deleteLines(eq(token), anyList(), any());
@@ -249,9 +267,9 @@ class CheckoutDataFetcherTest {
         UUID cartId = UUID.randomUUID();
 
         assertInvalidIdentifierPayload(
-                fetcher.checkoutLinesDelete(checkoutGlobalId(cartId), cartId, List.of()));
+                fetcher.checkoutLinesDelete(checkoutGlobalId(cartId), environmentWithToken(cartId), List.of()));
 
-        Map<String, Object> noIdentifier = fetcher.checkoutLinesDelete(null, null, List.of());
+        Map<String, Object> noIdentifier = fetcher.checkoutLinesDelete(null, environment(), List.of());
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> errors =
                 (List<Map<String, Object>>) noIdentifier.get("errors");
@@ -269,7 +287,7 @@ class CheckoutDataFetcherTest {
         when(checkoutSpi.deleteLines(eq(token), anyList(), any()))
                 .thenReturn(new CheckoutView(token, List.of(), 0));
 
-        Map<String, Object> result = fetcher.checkoutLineDelete(null, null, token, lineId);
+        Map<String, Object> result = fetcher.checkoutLineDelete(null, null, environmentWithToken(token), lineId);
 
         assertThat(result.get("errors")).isEqualTo(List.of());
         verify(checkoutSpi).deleteLines(eq(token), anyList(), any());
@@ -281,9 +299,9 @@ class CheckoutDataFetcherTest {
         String lineId = lineGlobalId(UUID.randomUUID());
 
         assertInvalidIdentifierPayload(
-                fetcher.checkoutLineDelete(checkoutGlobalId(cartId), checkoutGlobalId(cartId), null, lineId));
+                fetcher.checkoutLineDelete(checkoutGlobalId(cartId), checkoutGlobalId(cartId), environment(), lineId));
         assertInvalidIdentifierPayload(
-                fetcher.checkoutLineDelete(null, checkoutGlobalId(cartId), cartId, lineId));
+                fetcher.checkoutLineDelete(null, checkoutGlobalId(cartId), environmentWithToken(cartId), lineId));
 
         verifyNoInteractions(checkoutSpi);
     }
@@ -295,7 +313,7 @@ class CheckoutDataFetcherTest {
         when(checkoutSpi.addLines(eq(guessed), anyList(), any()))
                 .thenThrow(new ResourceNotFoundException("Checkout", guessed));
 
-        Map<String, Object> result = fetcher.checkoutLinesAdd(null, null, guessed,
+        Map<String, Object> result = fetcher.checkoutLinesAdd(null, null, environmentWithToken(guessed),
                 List.of(Map.of("quantity", 1, "variantId", variantId)));
 
         assertThat(result.get("checkout")).isNull();
@@ -316,11 +334,11 @@ class CheckoutDataFetcherTest {
         SecurityContextHolder.clearContext();
         UUID token = UUID.randomUUID();
 
-        assertThatThrownBy(() -> fetcher.checkout(null, token))
+        assertThatThrownBy(() -> fetcher.checkout(null, environmentWithToken(token)))
                 .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
-        assertThatThrownBy(() -> fetcher.checkoutLinesAdd(null, null, token, List.of()))
+        assertThatThrownBy(() -> fetcher.checkoutLinesAdd(null, null, environmentWithToken(token), List.of()))
                 .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
-        assertThatThrownBy(() -> fetcher.checkoutLinesDelete(null, token, List.of()))
+        assertThatThrownBy(() -> fetcher.checkoutLinesDelete(null, environmentWithToken(token), List.of()))
                 .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
 
         verifyNoInteractions(checkoutSpi, mapper);
@@ -335,8 +353,8 @@ class CheckoutDataFetcherTest {
         UUID cartId = UUID.randomUUID();
         when(checkoutSpi.findCheckout(any(), any())).thenReturn(new CheckoutView(cartId, List.of(), 0));
 
-        fetcher.checkout(checkoutGlobalId(cartId), null);
-        fetcher.checkout(null, cartId);
+        fetcher.checkout(checkoutGlobalId(cartId), environment());
+        fetcher.checkout(null, environmentWithToken(cartId));
 
         ArgumentCaptor<Authentication> captor = ArgumentCaptor.forClass(Authentication.class);
         verify(checkoutSpi, org.mockito.Mockito.times(2)).findCheckout(any(), captor.capture());

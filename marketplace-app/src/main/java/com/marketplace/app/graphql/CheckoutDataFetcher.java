@@ -10,6 +10,7 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
+import graphql.schema.DataFetchingEnvironment;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -39,8 +40,11 @@ import java.util.UUID;
  * values denote the same cart; no supplied identifier is ever silently
  * ignored. The token arrives already coerced by A0's central {@code UUID}
  * scalar once the one ordered shared-SDL change declares the wire alias;
- * until then the argument simply never binds and this plumbing is exercised
- * directly by the resolver tests.</p>
+ * until then it is read from the execution environment as {@code null}
+ * (DGS startup-validates annotated arguments against the schema, so the
+ * not-yet-declared alias cannot be an {@code @InputArgument} on this
+ * branch) and this plumbing is exercised directly by the resolver
+ * tests.</p>
  *
  * <p>Security gate (A0 follow-up on upstream issue #18878): a UUID is a
  * transport identifier, NEVER an authentication or authorization grant.
@@ -78,8 +82,9 @@ public class CheckoutDataFetcher {
 
     @DgsQuery(field = "checkout")
     public Map<String, Object> checkout(@InputArgument String id,
-                                        @InputArgument UUID token) {
+                                        DataFetchingEnvironment environment) {
         Authentication authentication = currentAuthentication();
+        UUID token = checkoutToken(environment);
         if ((id == null || id.isBlank()) && token == null) {
             return null;
         }
@@ -96,9 +101,10 @@ public class CheckoutDataFetcher {
     @DgsMutation(field = "checkoutLinesAdd")
     public Map<String, Object> checkoutLinesAdd(@InputArgument String id,
                                                 @InputArgument String checkoutId,
-                                                @InputArgument UUID token,
+                                                DataFetchingEnvironment environment,
                                                 @InputArgument List<Map<String, Object>> lines) {
         Authentication authentication = currentAuthentication();
+        UUID token = checkoutToken(environment);
         final UUID cartId;
         try {
             cartId = requireCheckoutIdentifier(id, checkoutId, token);
@@ -144,9 +150,10 @@ public class CheckoutDataFetcher {
     @DgsMutation(field = "checkoutLinesUpdate")
     public Map<String, Object> checkoutLinesUpdate(@InputArgument String id,
                                                    @InputArgument String checkoutId,
-                                                   @InputArgument UUID token,
+                                                   DataFetchingEnvironment environment,
                                                    @InputArgument List<Map<String, Object>> lines) {
         Authentication authentication = currentAuthentication();
+        UUID token = checkoutToken(environment);
         final UUID cartId;
         try {
             cartId = requireCheckoutIdentifier(id, checkoutId, token);
@@ -194,9 +201,10 @@ public class CheckoutDataFetcher {
 
     @DgsMutation(field = "checkoutLinesDelete")
     public Map<String, Object> checkoutLinesDelete(@InputArgument String id,
-                                                   @InputArgument UUID token,
+                                                   DataFetchingEnvironment environment,
                                                    @InputArgument List<String> linesIds) {
         Authentication authentication = currentAuthentication();
+        UUID token = checkoutToken(environment);
         final UUID cartId;
         try {
             cartId = requireCheckoutIdentifier(id, null, token);
@@ -229,9 +237,10 @@ public class CheckoutDataFetcher {
     @DgsMutation(field = "checkoutLineDelete")
     public Map<String, Object> checkoutLineDelete(@InputArgument String id,
                                                   @InputArgument String checkoutId,
-                                                  @InputArgument UUID token,
+                                                  DataFetchingEnvironment environment,
                                                   @InputArgument String lineId) {
         Authentication authentication = currentAuthentication();
+        UUID token = checkoutToken(environment);
         final UUID cartId;
         final UUID decodedLineId;
         try {
@@ -267,6 +276,21 @@ public class CheckoutDataFetcher {
         } catch (ResourceNotFoundException exception) {
             return deletePayload(List.of(error("id", exception.getMessage(), "NOT_FOUND")));
         }
+    }
+
+    /**
+     * Reads the deprecated {@code token} alias from the execution
+     * environment. DGS validates every {@code @InputArgument} against the
+     * schema at startup, so an argument that is deliberately NOT declared
+     * in this branch's SDL yet (A0's one ordered shared-SDL change declares
+     * {@code token: UUID} together with the central {@code scalar UUID} at
+     * assembly) must be read from the environment instead: the call answers
+     * {@code null} while the alias is undeclared and the centrally coerced
+     * native checkout UUID the moment it lands — zero resolver changes at
+     * assembly.
+     */
+    private static UUID checkoutToken(DataFetchingEnvironment environment) {
+        return environment.getArgument("token");
     }
 
     /**
