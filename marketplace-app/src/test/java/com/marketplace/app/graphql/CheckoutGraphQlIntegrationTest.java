@@ -231,6 +231,46 @@ class CheckoutGraphQlIntegrationTest {
     }
 
     @Test
+    void authenticatedWrongOwnerCannotReadCheckoutByDeprecatedUuidToken() {
+        testerFor(INTRUDER_SUBJECT, "CONSUMER")
+                .document("""
+                                query($token: UUID!) { checkout(token: $token) { id token } }
+                                """)
+                .variable("token", ownerCartId.toString())
+                .execute()
+                .errors().verify()
+                .path("checkout").valueIsNull();
+    }
+
+    @Test
+    void adminMayInspectAnyConsumersCheckoutByDeprecatedUuidToken() {
+        var response = testerFor(ADMIN_SUBJECT, "ADMIN")
+                .document("""
+                                query($token: UUID!) { checkout(token: $token) { id token } }
+                                """)
+                .variable("token", ownerCartId.toString())
+                .execute();
+
+        response.errors().verify();
+        response.path("checkout.id").entity(String.class)
+                .satisfies(id -> assertThat(id).startsWith(CHECKOUT_ID_PREFIX));
+        response.path("checkout.token").entity(String.class)
+                .satisfies(token -> assertThat(token).isEqualTo(ownerCartId.toString()));
+    }
+
+    @Test
+    void guessedButWellFormedUuidTokenAnswersNullForAuthenticatedCaller() {
+        testerFor(OWNER_SUBJECT, "CONSUMER")
+                .document("""
+                                query($token: UUID!) { checkout(token: $token) { id token } }
+                                """)
+                .variable("token", UUID.randomUUID().toString())
+                .execute()
+                .errors().verify()
+                .path("checkout").valueIsNull();
+    }
+
+    @Test
     void authenticatedWrongOwnerIsAnsweredTheSameNullAsAGuessedId() {
         // The IDOR leg: the intruder IS authenticated and the checkout DOES
         // exist — the ownership wall answers the SAME classified null the
