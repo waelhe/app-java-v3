@@ -1,6 +1,7 @@
 package com.marketplace.app.graphql;
 
 import graphql.GraphQLContext;
+import graphql.language.IntValue;
 import graphql.language.StringValue;
 import graphql.schema.CoercedVariables;
 import graphql.schema.CoercingParseLiteralException;
@@ -8,6 +9,7 @@ import graphql.schema.CoercingParseValueException;
 import graphql.schema.CoercingSerializeException;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigInteger;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -57,8 +59,8 @@ class UuidScalarTest {
     void rejectsNonStringVariablesAndLiterals() {
         assertThatThrownBy(() -> scalar.parseValue(123, CONTEXT, LOCALE))
                 .isInstanceOf(CoercingParseValueException.class);
-        assertThatThrownBy(() -> scalar.parseLiteral(CoercedVariables.emptyVariables() == null
-                        ? null : graphql.language.IntValue.newIntValue().value(java.math.BigInteger.ONE).build(),
+        assertThatThrownBy(() -> scalar.parseLiteral(
+                IntValue.newIntValue().value(BigInteger.ONE).build(),
                 CoercedVariables.emptyVariables(), CONTEXT, LOCALE))
                 .isInstanceOf(CoercingParseLiteralException.class);
     }
