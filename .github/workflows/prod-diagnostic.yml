@@ -32,33 +32,33 @@ jobs:
       - name: Neon API — account, projects, endpoints, consumption
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+        continue-on-error: true
         run: |
-          set -euo pipefail
-          hdr="X-Neon-API-Key: $NEON_API_KEY"
+          hdr="Authorization: Bearer $NEON_API_KEY"
           echo "== /users/me"
-          curl -s -m 30 -H "$hdr" https://api.neon.tech/api/v2/users/me | head -c 600; echo; echo
+          curl -s -m 30 -H "$hdr" https://console.neon.tech/api/v2/users/me | head -c 900; echo; echo
           echo "== /projects"
-          curl -s -m 30 -H "$hdr" https://api.neon.tech/api/v2/projects > /tmp/projects.json
-          head -c 4000 /tmp/projects.json; echo; echo
-          for pid in $(python3 -c "import json;print(' '.join(p['id'] for p in json.load(open('/tmp/projects.json')).get('projects',[])))"); do
+          curl -s -m 30 -H "$hdr" https://console.neon.tech/api/v2/projects > /tmp/projects.json || true
+          head -c 4000 /tmp/projects.json 2>/dev/null; echo; echo
+          for pid in $(python3 -c "import json;print(' '.join(p['id'] for p in json.load(open('/tmp/projects.json')).get('projects',[])))" 2>/dev/null); do
             echo "== endpoints of $pid"
-            curl -s -m 30 -H "$hdr" "https://api.neon.tech/api/v2/projects/$pid/endpoints" | head -c 3500; echo; echo
+            curl -s -m 30 -H "$hdr" "https://console.neon.tech/api/v2/projects/$pid/endpoints" | head -c 3500; echo; echo
           done
           echo "== /consumption/overview"
-          curl -s -m 30 -H "$hdr" "https://api.neon.tech/api/v2/consumption/overview" | head -c 3000; echo; echo
+          curl -s -m 30 -H "$hdr" "https://console.neon.tech/api/v2/consumption/overview" | head -c 3000; echo; echo
           echo "== /consumption/current_period"
-          curl -s -m 30 -H "$hdr" "https://api.neon.tech/api/v2/consumption/current_period" | head -c 3000; echo; echo
+          curl -s -m 30 -H "$hdr" "https://console.neon.tech/api/v2/consumption/current_period" | head -c 3000; echo; echo
 
       - name: Pre-auth probe of the current Neon channel
+        continue-on-error: true
         run: |
-          host="ep-wandering-union-b4rfa3cq.c-6.us-east-2.aws.neon.tech"
-          echo "== DNS"
-          getent hosts "$host" || echo "DNS_FAIL"
-          echo "== TCP 5432"
-          timeout 20 bash -c "cat < /dev/null > /dev/tcp/$host/5432" && echo TCP_OK || echo TCP_FAIL
-          python3 - << 'PY'
-          import socket, struct
-          host = "ep-wandering-union-b4rfa3cq.c-6.us-east-2.aws.neon.tech"
+          for host in ep-wandering-union-b4rfa3cq.c-6.us-east-2.aws.neon.tech ep-restless-fire-b27p4law.c-6.eu-central-1.aws.neon.tech; do
+            echo "########## $host"
+            getent hosts "$host" | head -2 || echo "DNS_FAIL"
+            timeout 20 bash -c "cat < /dev/null > /dev/tcp/$host/5432" && echo TCP_OK || echo TCP_FAIL
+            python3 - "$host" << 'PY'
+          import socket, struct, sys
+          host = sys.argv[1]
           try:
               s = socket.create_connection((host, 5432), timeout=25)
               ssl = struct.pack("!II", 8, 80877103)
@@ -75,7 +75,8 @@ jobs:
               msg = struct.pack("!I", 8 + len(params)) + b"\x00\x03\x00\x00" + params
               s.sendall(msg)
               data = s.recv(4096)
-              print("startup response (first 400 bytes):", data[:400])
+              print("startup response (first 500 bytes):", data[:500])
           except Exception as e:
               print("probe error:", repr(e))
           PY
+          done
