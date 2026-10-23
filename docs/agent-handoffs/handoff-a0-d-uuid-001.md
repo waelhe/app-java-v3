@@ -32,10 +32,10 @@ column, Saleor 3.23.43):
 | Root | Pinned reference signature (verbatim) | This PR's SDL today | Gap |
 |---|---|---|---|
 | `checkout` (Query) | `checkout(id: ID token: UUID @deprecated(reason: "Use `id` instead.")): Checkout` | `checkout(id: ID): Checkout` | `token` alias absent |
-| `checkoutLinesAdd` | `checkoutLinesAdd(checkoutId: ID @deprecated(reason: "Use `id` instead.") id: ID lines: [CheckoutLineInput!]! token: UUID @deprecated(reason: "Use `id` instead.")): CheckoutLinesAdd` | `checkoutLinesAdd(checkoutId: ID, id: ID, lines: [CheckoutLineInput!]!): CheckoutLinesAdd` | `token` alias absent; `checkoutId` deprecation tag absent |
-| `checkoutLinesUpdate` | `checkoutLinesUpdate(checkoutId: ID @deprecated(reason: "Use `id` instead.") id: ID lines: [CheckoutLineUpdateInput!]! token: UUID @deprecated(reason: "Use `id` instead.")): CheckoutLinesUpdate` | `checkoutLinesUpdate(checkoutId: ID, id: ID, lines: [CheckoutLineUpdateInput!]!): CheckoutLinesUpdate` | `token` alias absent; `checkoutId` deprecation tag absent |
+| `checkoutLinesAdd` | `checkoutLinesAdd(checkoutId: ID @deprecated(reason: "Use `id` instead.") id: ID lines: [CheckoutLineInput!]! token: UUID @deprecated(reason: "Use `id` instead.")): CheckoutLinesAdd` | ``checkoutLinesAdd(checkoutId: ID @deprecated(reason: "Use `id` instead."), id: ID, lines: [CheckoutLineInput!]!): CheckoutLinesAdd`` | `token: UUID` alias absent; the `checkoutId` deprecation tag IS declared in this PR's fragment (landed round 9) — only the central `token: UUID` declaration pends in A0's ordered shared-SDL change |
+| `checkoutLinesUpdate` | `checkoutLinesUpdate(checkoutId: ID @deprecated(reason: "Use `id` instead.") id: ID lines: [CheckoutLineUpdateInput!]! token: UUID @deprecated(reason: "Use `id` instead.")): CheckoutLinesUpdate` | ``checkoutLinesUpdate(checkoutId: ID @deprecated(reason: "Use `id` instead."), id: ID, lines: [CheckoutLineUpdateInput!]!): CheckoutLinesUpdate`` | `token: UUID` alias absent; the `checkoutId` deprecation tag IS declared in this PR's fragment (landed round 9) — only the central `token: UUID` declaration pends in A0's ordered shared-SDL change |
 | `checkoutLinesDelete` | `checkoutLinesDelete(id: ID linesIds: [ID!]! token: UUID @deprecated(reason: "Use `id` instead.")): CheckoutLinesDelete` | `checkoutLinesDelete(id: ID, linesIds: [ID!]!): CheckoutLinesDelete` | `token` alias absent |
-| `checkoutLineDelete` | `checkoutLineDelete(checkoutId: ID @deprecated(reason: "Use `id` instead.") id: ID lineId: ID token: UUID @deprecated(reason: "Use `id` instead.")): CheckoutLineDelete` | `checkoutLineDelete(checkoutId: ID, id: ID, lineId: ID): CheckoutLineDelete` (root-level `@deprecated("Use checkoutLinesDelete instead.")` already matches) | `token` alias absent; `checkoutId` deprecation tag absent |
+| `checkoutLineDelete` | `checkoutLineDelete(checkoutId: ID @deprecated(reason: "Use `id` instead.") id: ID lineId: ID token: UUID @deprecated(reason: "Use `id` instead.")): CheckoutLineDelete` | ``checkoutLineDelete(checkoutId: ID @deprecated(reason: "Use `id` instead."), id: ID, lineId: ID): CheckoutLineDelete`` (root-level `@deprecated("Use checkoutLinesDelete instead.")` already matches) | `token: UUID` alias absent; the `checkoutId` deprecation tag IS declared in this PR's fragment (landed round 9) — only the central `token: UUID` declaration pends in A0's ordered shared-SDL change |
 
 `checkoutDelete` is NOT part of this gap: its pinned signature
 `checkoutDelete(id: ID!): CheckoutDelete` is an exact match with this PR's SDL.
@@ -98,8 +98,13 @@ WHAT CAN CONTINUE WITHOUT THE DECISION: all seven IMPLEMENTED_VERIFIED roots
   and the four line-mutation roots' verified id-based behavior; the PR stays
   open, draft, unmerged; no fake fallback and no silent no-op.
 RELEASE GATE AFFECTED: any full-parity claim for the checkout family; P4 wave
-  completion; RELEASE_READY for this slice stays blocked until this decision
-  lands AND the central inventory is updated (owner decision 2026-10-23).
+  completion; RELEASE_READY for this slice stays blocked until A0's one ordered
+  shared-SDL change lands the central scalar UUID and the token: UUID
+  declarations, the central inventory is updated at aggregation, and CI +
+  Integration + Inventory re-run green on one SHA carrying SDL + resolver +
+  tests. The D-UUID-001 decision itself is settled (Option A, 2026-10-23) —
+  what remains is the central SDL assembly and the inventory update, not
+  the decision.
 ```
 
 ## 4) What this agent did NOT do (the owner's explicit directives)
@@ -121,7 +126,7 @@ seven roots `IMPLEMENTED_VERIFIED` (`orderCancel`, `orderBulkCancel`,
 `checkoutLinesAdd`, `checkoutLinesUpdate`), `checkout` stays
 `IMPLEMENTED_UNVERIFIED`, `orderConfirm` stays `BLOCKED_BY_DECISION` — with
 the candidate commit recorded, and this five-root token/deprecation divergence
-carried in the divergence registry until D-UUID-001 lands.
+carried in the divergence registry until A0's ordered shared-SDL change lands the central SDL — the D-UUID-001 decision itself is settled (Option A, 2026-10-23); what remains is the central SDL assembly and the inventory update, not the decision.
 
 The authoritative per-root statuses and their carrying-head evidence are
 maintained in `docs/agent-handoffs/agent-3-roots.csv` on the branch head —
