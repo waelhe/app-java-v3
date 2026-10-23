@@ -1,5 +1,6 @@
 package test.config;
 
+import com.marketplace.app.graphql.UuidScalar;
 import com.marketplace.shared.config.MarketplaceProperties;
 import com.marketplace.shared.jpa.JpaConfig;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -42,6 +43,19 @@ import java.util.Optional;
 @Configuration
 @Import(JpaConfig.class)
 public class ModuleTestConfig {
+
+    /**
+     * ApplicationModuleTest narrows component scanning to the owning module,
+     * while Spring GraphQL still assembles the repository's shared SDL.
+     * Provide the central UUID scalar in those test slices when the normal
+     * application component scan did not discover it. Full application
+     * contexts already own UuidScalar and retain that single registration.
+     */
+    @Bean
+    @ConditionalOnMissingBean(UuidScalar.class)
+    UuidScalar uuidScalar() {
+        return new UuidScalar();
+    }
 
     @Bean
     WebMvcConfigurer apiVersioningConfigurer() {
