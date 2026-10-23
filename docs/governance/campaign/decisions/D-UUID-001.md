@@ -39,6 +39,30 @@ Accordingly, distinguish the two parts of Option A:
 
 The checkout security tests must cover at least: anonymous guest checkout allowed by policy, anonymous access to account-owned checkout denied, authenticated wrong-owner access denied, ADMIN behavior, malformed/guessed UUID, token/id conflicting identifiers, and no leakage in error payloads. If the current application use case cannot enforce these distinctions, the alias may be declared for contract compatibility but must not be wired to a resolver that weakens the established security boundary. Record the chosen policy and test evidence before closing `D-UUID-001` or claiming release readiness.
 
+## Implementation progress — 2026-10-23
+
+A0's central-SDL implementation branch now declares `scalar UUID` exactly once in
+`marketplace-app/src/main/resources/graphql/schema.graphqls`. The matching
+runtime coercer and its canonical parsing/serialization tests already exist as
+`UuidScalar.java` and `UuidScalarTest.java`; this change connects the
+approved scalar contract to the shared SDL. The implementation is tracked in
+[A0's central-SDL PR](https://github.com/waelhe/app-java-v3/pull/707).
+
+**This is a partial implementation, not closure of D-UUID-001.** The affected
+checkout argument signatures are defined in Agent 3's additive SDL on PR #698,
+which has not yet been integrated into the candidate branch. The five shipped
+checkout roots and the remaining pinned checkout-family rows must not be marked
+signature-complete until the central scalar and that SDL are present together
+on the same integration SHA and runtime schema / resolver tests pass.
+
+The token authorization gate is also still distinct from schema compatibility:
+the approved scalar signature does not authorize anonymous or non-owning
+access. Before claiming release readiness, preserve the explicit pre-login
+policy and guest-vs-account, wrong-owner, ADMIN, guessed/malformed UUID and
+conflicting-identifier evidence required below. The divergence row therefore
+remains `IMPLEMENTATION_REQUIRED`, and the checkout root inventory is not
+promoted to complete by this SDL-only change.
+
 ## Required acceptance evidence
 
 - Canonical UUID scalar coercion tests: valid UUID input/output, malformed and non-canonical values rejected.
@@ -49,10 +73,14 @@ The checkout security tests must cover at least: anonymous guest checkout allowe
 
 ## Assembly state and release gate
 
-The decision is now approved, but implementation is **not yet assembled**: PR #698 remains a draft on its agent branch, separate from candidate assembly and formal release review. The central [UuidScalar.java](https://github.com/waelhe/app-java-v3/blob/integration/saleor-full-commerce-20261021/marketplace-app/src/main/java/com/marketplace/app/graphql/UuidScalar.java) coercer and [UuidScalarTest.java](https://github.com/waelhe/app-java-v3/blob/integration/saleor-full-commerce-20261021/marketplace-app/src/test/java/com/marketplace/app/graphql/UuidScalarTest.java) have been added to the candidate branch; the SDL declaration and exact checkout argument signatures will be integrated together in one ordered A0-owned SDL change after the corresponding resolver/fragment update is ready to assemble. No CI run or local Maven test has been observed for the new A0 scalar commit. Until the exact signatures, resolver behavior, tests, and inventory evidence land, the affected rows remain linked to `D-UUID-001` and this gap blocks any full-signature parity or `RELEASE_READY` claim for the affected roots.
+The A0 assembly branch is stacked above Agent 3's implementation and includes the central `scalar UUID`, strict `UuidScalar` coercion/codegen mapping, the five deprecated checkout token inputs, `Checkout.token: UUID!`, and owner/pre-login tests. This follow-up additionally declares direct `CheckoutLine.variant: ProductVariant!` and uses a dedicated checkout-context catalog projection after the checkout owner/ADMIN check; public storefront variant reads retain their existing visibility gate.
+
+**Execution status:** the previous assembled head `dbf28cb8` passed Maven build, Integration Test, OpenAPI/GraphQL schema gates, Android, container scan, CodeQL, Snyk, and Saleor inventory. Five app integration shards later failed at context startup/teardown across unrelated modules; their logs show Testcontainers/ApplicationContext connection-refused errors rather than an assertion failure from checkout tests. This follow-up commit has not yet been validated by CI. Keep the five checkout roots `IMPLEMENTED_UNVERIFIED` until the latest head completes the gates. The output divergence remains open for missing/soft-deleted catalog rows and legacy null-variant cart lines; the mapper does not fake data.
+
+**CheckoutLine output contract — decision and implementation:** A0 records the output-shape decision in [D-CHECKOUT-VARIANT-001](D-CHECKOUT-VARIANT-001.md). The fragment now declares the direct Saleor `variant: ProductVariant!` field, with a dedicated checkout-context projection used only after the `CheckoutSpi` owner/ADMIN gate. Public catalog visibility policy remains unchanged. The mapper fails closed for a missing/soft-deleted variant or parent, and for a legacy product-level cart line with no variant UUID; it does not invent ProductVariant data. These edge cases keep the checkout slice's universal historical parity/release claim blocked until validated and covered by an approved retention/snapshot policy.
 
 ## Ledger actions
 
 - The central divergence registry records `D-UUID-001` as `IMPLEMENTATION_REQUIRED`, with this decision as the approved design.
-- All 17 currently identified checkout-family inventory rows retain the `D-UUID-001` reference pending signature-complete assembly.
-- Implementation statuses are unchanged in this decision commit; no integration or CI result is inferred from the decision.
+- All 17 currently identified checkout-family inventory rows retain the `D-UUID-001` reference. The five currently exposed roots on the stacked assembly branch are `IMPLEMENTED_UNVERIFIED`; no root is promoted to verified or release-ready without same-SHA CI/integration evidence.
+- The divergence remains `IMPLEMENTATION_REQUIRED`; this branch records the assembled implementation and pending verification rather than inferring integration or CI success.

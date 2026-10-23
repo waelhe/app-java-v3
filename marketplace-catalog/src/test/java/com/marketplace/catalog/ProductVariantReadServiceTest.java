@@ -188,6 +188,35 @@ class ProductVariantReadServiceTest {
         assertThat(service.findVariantById(variant.getId(), adminCaller)).isEmpty();
     }
 
+    @Test
+    void checkoutLineProjectionPreservesSuspendedVariantAndParentWithoutWideningStorefrontReads() {
+        Product parent = suspendedProduct("b5a Checkout Parent");
+        ProductVariant variant = suspendedVariant(parent, "b5a-checkout-suspended");
+        when(variantRepository.findById(variant.getId())).thenReturn(Optional.of(variant));
+        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+
+        assertThat(service.findVariantForCheckoutLine(variant.getId()))
+                .contains(new ProductVariantView(variant.getId(), variant.getName(), variant.getSku(),
+                        variant.getStatus().name(),
+                        new ProductView(parent.getId(), parent.getTitle(),
+                                parent.getProductTypeId(), parent.getStatus().name())));
+        assertThat(service.findVariantById(variant.getId(), publicCaller)).isEmpty();
+    }
+
+    @Test
+    void checkoutLineProjectionAnswersEmptyWhenVariantOrParentIsUnavailable() {
+        UUID unknown = UUID.randomUUID();
+        when(variantRepository.findById(unknown)).thenReturn(Optional.empty());
+        assertThat(service.findVariantForCheckoutLine(unknown)).isEmpty();
+
+        Product parent = activeProduct("b5a Checkout Missing Parent");
+        ProductVariant variant = activeVariant(parent, "b5a-checkout-missing-parent");
+        when(variantRepository.findById(variant.getId())).thenReturn(Optional.of(variant));
+        when(productRepository.findById(parent.getId())).thenReturn(Optional.empty());
+
+        assertThat(service.findVariantForCheckoutLine(variant.getId())).isEmpty();
+    }
+
     // ------------------------------------------------------------------
     // scrollVariants — the guards
     // ------------------------------------------------------------------
