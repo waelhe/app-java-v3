@@ -28,6 +28,17 @@ The earlier Option B assessment was based on an incorrect assumption that the pi
 - **B — Keep the aliases undeclared. Superseded/rejected.** This would preserve an unnecessary signature divergence despite a direct, testable mapping supported by the pinned contract.
 - **C — Substitute `ID` for `UUID` independently per agent. Rejected.** It would deviate from the pinned contract and violate the one-SDL-steward rule.
 
+## Security evidence gate — required before enabling token access
+
+A0 reviewed the upstream Saleor issue [#18878: Additional verification process for anonymous retrieval of orders and checkouts](https://github.com/saleor/saleor/issues/18878), opened 2026-02-27 and still marked open/triage at the time of review. It raises a material concern: a UUID alone is not an authentication control, and an account-owned checkout may be retrievable anonymously when its UUID is known. The issue is a maintainer discussion, **not an adopted upstream policy**, so it does not change the pinned wire signature; however, it is a credible security signal that must be addressed in this platform.
+
+Accordingly, distinguish the two parts of Option A:
+
+- **Schema compatibility:** approve one central `UUID` scalar and the exact pinned deprecated argument signatures.
+- **Token execution / security approval:** do not enable `token` resolution for anonymous or non-owning principals until the platform's pre-login GraphQL security contract explicitly defines whether guest checkout tokens are allowed, how account-owned checkouts are protected, and how guessed/leaked UUIDs are prevented from disclosing or mutating another user's cart.
+
+The checkout security tests must cover at least: anonymous guest checkout allowed by policy, anonymous access to account-owned checkout denied, authenticated wrong-owner access denied, ADMIN behavior, malformed/guessed UUID, token/id conflicting identifiers, and no leakage in error payloads. If the current application use case cannot enforce these distinctions, the alias may be declared for contract compatibility but must not be wired to a resolver that weakens the established security boundary. Record the chosen policy and test evidence before closing `D-UUID-001` or claiming release readiness.
+
 ## Required acceptance evidence
 
 - Canonical UUID scalar coercion tests: valid UUID input/output, malformed and non-canonical values rejected.
