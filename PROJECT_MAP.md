@@ -1,5 +1,15 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
+## تدقيق تحميل JAR داخل JVM — 2026-10-23 (بحث موثق، غير معتمد نهائيًا)
+
+- **التقرير:** `docs/research/dynamic-jar-loading-jvm-deep-dive.md`.
+- **الواقع الحالي:** `FeatureGatePort` و`marketplace-console` يديران أعلام تشغيل لبعض قدرات موجودة؛ هذا ليس تثبيتًا لحزم JAR.
+- **PF4J الأساسي:** مرشح قابل للتقييم لتحميل امتدادات Java موثوقة؛ النسخة 3.16.0 منشورة في 2026-09-20. **PF4J-Spring غير معتمد** مع Spring Boot 4.1.1 قبل PoC: المشروع يصف نفسه Proof of Concept، ومشكلة دعم Spring Framework 7 (#94) لا تزال مفتوحة وقت الفحص. راجع أيضًا القضايا المفتوحة/المجتمعية #84 و#86 و#62 و#65.
+- **البدائل:** OSGi/Felix يقدم معيار lifecycle ديناميكيًا أشمل لكن بكلفة تكامل أعلى؛ ClassLoader وJPMS وحدهما ليسا مدير إضافات؛ لا عزل أمني داخل JVM لإضافة غير موثوقة.
+- **حدود التنفيذ:** بحث وملفات توثيق فقط؛ لا تغييرات POM أو Java أو Flyway أو التشغيل، ولا ادعاء بتجربة PF4J أو اجتياز توافق Spring.
+- **الحالة:** فرع `docs/dynamic-jar-loading-deep-dive` ومسودة PR تالية للمراجعة؛ لا يُدمج أو يعتمد القرار النهائي دون مراجعة المالك والبوابات.
+
+
 ## قرار الحوكمة الحاكم لتكامل Saleor — D-SALEOR-FULL-001 (2026-10-20)
 
 - **المرجع التنفيذي الوحيد:** [الخطة النهائية للوحة الكاملة ومخطط التجارة الكامل](docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md). مصفوفة المجالات: `docs/governance/plans/saleor-commerce-domain-matrix.csv`; سجل الاختلافات: `docs/governance/plans/saleor-contract-divergences.csv`; الـpins: `docs/governance/plans/saleor-source-pins.json`.
