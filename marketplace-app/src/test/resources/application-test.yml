@@ -145,3 +145,90 @@ management:
     export:
       otlp:
         enabled: false
+
+# The post-merge integration round of PR #696 (the follow-up PR's measured
+# CI blocker): the GraphQL rate-limiter instances carry the production
+# budgets (mostly 10 permits per 60-second window), and the full-stack
+# GraphQL integration suites execute a whole test class's worth of
+# mutations inside one window — the budget is a PRODUCTION calibration,
+# not a contract under test. The test profile shortens ONLY the GraphQL
+# instances' refresh windows here (the production permit counts stay on
+# the wire, but a window closes every second — no honest test class can
+# exhaust 10+ permits per second). Scoped to the GraphQL instances BY
+# DESIGN: the deliberate RL-001/429 contract tests ride the REST-side
+# instances (bookingCreate, reviewCreate, leadCreate, conversationCreate,
+# postCreate/postComment) or re-register their own tiny instances
+# (NeighborhoodPostRateLimit/EventRateLimitIntegrationTest's
+# registry.remove + TINY pattern) — their 60-second windows and pinned
+# tiny limits stay untouched, so those contracts keep measuring the real
+# refusal behavior. The three GraphQL instances the campaign fetchers
+# declare WITHOUT a base-profile entry (graphqlAccountMutation,
+# graphqlCmsMutation, graphqlCmsQuery) get their test window here too —
+# they otherwise ride the shared default's full 60 seconds.
+resilience4j:
+  ratelimiter:
+    instances:
+      graphqlAccountMutation:
+        limit-refresh-period: 1s
+      graphqlAttributeMutation:
+        limit-refresh-period: 1s
+      graphqlAttributeValueMutation:
+        limit-refresh-period: 1s
+      graphqlCatalogAttributeQuery:
+        limit-refresh-period: 1s
+      graphqlCatalogRead:
+        limit-refresh-period: 1s
+      graphqlCategoryMutation:
+        limit-refresh-period: 1s
+      graphqlCategoryQuery:
+        limit-refresh-period: 1s
+      graphqlCmsMutation:
+        limit-refresh-period: 1s
+      graphqlCmsQuery:
+        limit-refresh-period: 1s
+      graphqlCollectionMutation:
+        limit-refresh-period: 1s
+      graphqlCollectionQuery:
+        limit-refresh-period: 1s
+      graphqlCreateService:
+        limit-refresh-period: 1s
+      graphqlCustomerQuery:
+        limit-refresh-period: 1s
+      graphqlDiscoveryQuery:
+        limit-refresh-period: 1s
+      graphqlNeighborhoodFeedQuery:
+        limit-refresh-period: 1s
+      graphqlOrderQuery:
+        limit-refresh-period: 1s
+      graphqlPermissionGroupQuery:
+        limit-refresh-period: 1s
+      graphqlPostCommentsQuery:
+        limit-refresh-period: 1s
+      graphqlPostQuery:
+        limit-refresh-period: 1s
+      graphqlProductMediaMutation:
+        limit-refresh-period: 1s
+      graphqlProductQuery:
+        limit-refresh-period: 1s
+      graphqlProductTypeMutation:
+        limit-refresh-period: 1s
+      graphqlProductVariantMutation:
+        limit-refresh-period: 1s
+      graphqlProductVariantQuery:
+        limit-refresh-period: 1s
+      graphqlPromotionQuery:
+        limit-refresh-period: 1s
+      graphqlServiceQuery:
+        limit-refresh-period: 1s
+      graphqlStoreProductMutation:
+        limit-refresh-period: 1s
+      graphqlStoreProductQuery:
+        limit-refresh-period: 1s
+      graphqlTokenMutation:
+        limit-refresh-period: 1s
+      graphqlUserQuery:
+        limit-refresh-period: 1s
+      graphqlVoucherMutation:
+        limit-refresh-period: 1s
+      graphqlVoucherQuery:
+        limit-refresh-period: 1s

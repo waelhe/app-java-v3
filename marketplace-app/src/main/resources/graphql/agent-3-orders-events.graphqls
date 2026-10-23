@@ -1,0 +1,199 @@
+# Agent 3 additive SDL, assembled here with A0-owned central UUID scalar/signature stewardship.
+# Order cancellation wire contract follows Saleor 3.23.43; execution delegates
+# to the existing marketplace-orders lifecycle owner. orderConfirm remains
+# unavailable until the Payments owner exposes a real capture capability.
+
+extend type Mutation {
+    orderBulkCancel(ids: [ID!]!): OrderBulkCancel
+    orderCancel(id: ID!): OrderCancel
+}
+
+type OrderBulkCancel {
+    count: Int!
+    orderErrors: [OrderError!]! @deprecated(reason: "Use `errors` field instead.")
+    errors: [OrderError!]!
+}
+
+type OrderCancel {
+    order: Order
+    orderErrors: [OrderError!]! @deprecated(reason: "Use `errors` field instead.")
+    errors: [OrderError!]!
+}
+
+type OrderError {
+    field: String
+    message: String
+    code: OrderErrorCode!
+    warehouse: ID
+    orderLines: [ID!]
+    variants: [ID!]
+}
+
+enum OrderErrorCode {
+    BILLING_ADDRESS_NOT_SET
+    CANNOT_CANCEL_FULFILLMENT
+    CANNOT_CANCEL_ORDER
+    CANNOT_DELETE
+    CANNOT_DISCOUNT
+    CANNOT_REFUND
+    CANNOT_FULFILL_UNPAID_ORDER
+    CAPTURE_INACTIVE_PAYMENT
+    GIFT_CARD_LINE
+    NOT_EDITABLE
+    FULFILL_ORDER_LINE
+    GRAPHQL_ERROR
+    INVALID
+    PRODUCT_NOT_PUBLISHED
+    PRODUCT_UNAVAILABLE_FOR_PURCHASE
+    NOT_FOUND
+    ORDER_NO_SHIPPING_ADDRESS
+    PAYMENT_ERROR
+    PAYMENT_MISSING
+    TRANSACTION_ERROR
+    REQUIRED
+    SHIPPING_METHOD_NOT_APPLICABLE
+    SHIPPING_METHOD_REQUIRED
+    TAX_ERROR
+    UNIQUE
+    VOID_INACTIVE_PAYMENT
+    ZERO_QUANTITY
+    INVALID_QUANTITY
+    INSUFFICIENT_STOCK
+    DUPLICATED_INPUT_ITEM
+    NOT_AVAILABLE_IN_CHANNEL
+    CHANNEL_INACTIVE
+    INVALID_VOUCHER
+    INVALID_VOUCHER_CODE
+    NON_EDITABLE_GIFT_LINE
+    NON_REMOVABLE_GIFT_LINE
+    MISSING_ADDRESS_DATA
+}
+
+# ---------------------------------------------------------------------------
+# P4 checkout slice: Saleor 3.23.43 wire contract over the existing active
+# cart aggregate. Money, address, channel, delivery and payment fields stay
+# undeclared until their owning capabilities exist; `created` is intentionally
+# omitted because the temporal scalar contract is not owned yet.
+#
+# D-UUID-001 (decided by A0 2026-10-23, Option A): the deprecated
+# checkout-family identifier aliases are wired to the same CheckoutSpi use
+# cases — `token` is the checkout's native UUID (the pinned Saleor 3.23.43
+# Checkout.token primary key), `checkoutId` is the typed global-ID alias, and
+# supplying more than one identifier in one request is rejected (even when
+# the values denote the same cart). The central `scalar UUID` is declared
+# once in schema.graphqls; the exact pinned `token: UUID` and
+# `checkoutId: ID` deprecation directives are declared here for the five
+# implemented roots. The runtime token path remains behind the platform's
+# authentication and owning-use-case ownership/ADMIN controls.
+# ---------------------------------------------------------------------------
+
+extend type Query {
+    checkout(id: ID, token: UUID @deprecated(reason: "Use `id` instead.")): Checkout
+}
+
+extend type Mutation {
+    checkoutLinesAdd(checkoutId: ID @deprecated(reason: "Use `id` instead."), id: ID, lines: [CheckoutLineInput!]!, token: UUID @deprecated(reason: "Use `id` instead.")): CheckoutLinesAdd
+    checkoutLinesUpdate(checkoutId: ID @deprecated(reason: "Use `id` instead."), id: ID, lines: [CheckoutLineUpdateInput!]!, token: UUID @deprecated(reason: "Use `id` instead.")): CheckoutLinesUpdate
+    checkoutLinesDelete(id: ID, linesIds: [ID!]!, token: UUID @deprecated(reason: "Use `id` instead.")): CheckoutLinesDelete
+    checkoutLineDelete(checkoutId: ID @deprecated(reason: "Use `id` instead."), id: ID, lineId: ID, token: UUID @deprecated(reason: "Use `id` instead.")): CheckoutLineDelete
+        @deprecated(reason: "Use `checkoutLinesDelete` instead.")
+    checkoutDelete(id: ID!): CheckoutDelete
+}
+
+type Checkout {
+    id: ID!
+    token: UUID!
+    lines: [CheckoutLine!]!
+    quantity: Int!
+}
+
+# Saleor CheckoutLine exposes its variant directly as ProductVariant!.
+# The resolver uses the checkout-scoped catalog read only after CheckoutSpi
+# has enforced cart ownership; public storefront variant visibility is
+# unchanged. Missing/soft-deleted variants and legacy product-level lines
+# without a variant UUID fail closed rather than fabricating a non-null value.
+type CheckoutLine {
+    id: ID!
+    variant: ProductVariant!
+    quantity: Int!
+}
+
+input CheckoutLineInput {
+    quantity: Int!
+    variantId: ID!
+}
+
+input CheckoutLineUpdateInput {
+    variantId: ID @deprecated(reason: "Use `lineId` instead.")
+    quantity: Int
+    lineId: ID
+}
+
+type CheckoutLinesAdd {
+    checkout: Checkout
+    checkoutErrors: [CheckoutError!]! @deprecated(reason: "Use `errors` field instead.")
+    errors: [CheckoutError!]!
+}
+
+type CheckoutLinesUpdate {
+    checkout: Checkout
+    checkoutErrors: [CheckoutError!]! @deprecated(reason: "Use `errors` field instead.")
+    errors: [CheckoutError!]!
+}
+
+type CheckoutLinesDelete {
+    checkout: Checkout
+    errors: [CheckoutError!]!
+}
+
+type CheckoutLineDelete {
+    checkout: Checkout
+    checkoutErrors: [CheckoutError!]! @deprecated(reason: "Use `errors` field instead.")
+    errors: [CheckoutError!]!
+}
+
+type CheckoutDelete {
+    errors: [CheckoutDeleteError!]!
+}
+
+type CheckoutError {
+    field: String
+    message: String
+    code: CheckoutErrorCode!
+    variants: [ID!]
+    lines: [ID!]
+}
+
+type CheckoutDeleteError {
+    field: String
+    message: String
+    code: CheckoutErrorCode!
+}
+
+enum CheckoutErrorCode {
+    BILLING_ADDRESS_NOT_SET
+    CHECKOUT_NOT_FULLY_PAID
+    CHANNEL_INACTIVE
+    EMAIL_NOT_SET
+    EMAIL_REQUIRED
+    GRAPHQL_ERROR
+    INSUFFICIENT_STOCK
+    INVALID
+    INVALID_SHIPPING_METHOD
+    MISSING_ADDRESS_DATA
+    NOT_FOUND
+    NOT_AVAILABLE_IN_CHANNEL
+    PRODUCT_NOT_PUBLISHED
+    PRODUCT_UNAVAILABLE_FOR_PURCHASE
+    REQUIRED
+    SHIPPING_METHOD_NOT_APPLICABLE
+    SHIPPING_METHOD_REQUIRED
+    TAX_ERROR
+    UNIQUE
+    VOUCHER_NOT_APPLICABLE
+    ZERO_QUANTITY
+    NO_LINES
+    DELIVERY_METHOD_NOT_APPLICABLE
+    INVALID_DELIVERY_METHOD
+    DELIVERY_METHOD_REQUIRED
+}

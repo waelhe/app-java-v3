@@ -7,6 +7,13 @@ package com.marketplace.identity;
  * (the D-N7 discipline — the enum here is the application's single source
  * of truth, that CHECK is the store's); the names are the wire contract
  * with the migration and must never drift from it.
+ *
+ * <p>Agent 1 (the Saleor 458-root campaign, assignment packet PR #696):
+ * the vocabulary was widened by V251 for the account lifecycle's two new
+ * redemption rights — {@link #EMAIL_CHANGE} (the requestEmailChange/
+ * confirmEmailChange journey) and {@link #ACCOUNT_DELETION} (the
+ * accountRequestDeletion/accountDelete journey). Same mechanism, same
+ * single-use TTL redemption semantics; the CHECK now pins all four.</p>
  */
 enum AuthActionTokenPurpose {
 
@@ -14,5 +21,11 @@ enum AuthActionTokenPurpose {
     PASSWORD_RESET,
 
     /** A.2 — the email-verification hold's redemption right. */
-    EMAIL_VERIFICATION
+    EMAIL_VERIFICATION,
+
+    /** Agent 1 — the email-change journey's redemption right (V251). */
+    EMAIL_CHANGE,
+
+    /** Agent 1 — the account self-deletion journey's redemption right (V251). */
+    ACCOUNT_DELETION
 }

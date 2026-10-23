@@ -193,6 +193,30 @@ public class AuthActionTokenService {
         }
     }
 
+    /**
+     * Agent 1 (the CodeRabbit integrity round — the login-identity move's
+     * FK leg): PHYSICALLY removes every token row for the account,
+     * outstanding AND consumed. Two layers force the physical form:
+     * (1) BaseEntity's Hibernate {@code @SoftDelete} turns
+     * {@code repository.delete(...)} into an {@code is_deleted} UPDATE —
+     * the row survives and V112's plain FK to {@code auth_users} keeps
+     * rejecting the login row's death; (2) the bulk JPQL delete would be
+     * rewritten the same way. The native statement bypasses the
+     * soft-delete translation — the base rows physically leave, so the
+     * FK releases the login row. The audit trail stays where it already
+     * lives: the token rows' lifecycle revisions (issue + consumption)
+     * remain in {@code auth_action_tokens_aud}; what the native delete
+     * omits is only the purge's own DEL marker, a housekeeping fact, not
+     * a redemption event.
+     */
+    public void purgeHistory(String username) {
+        repository.physicallyDeleteByUsername(username);
+        if (log.isDebugEnabled()) {
+            log.debug("Auth action token history physically purged for the login-identity move: username={}",
+                    username);
+        }
+    }
+
     /** The latest token row for the account+purpose — the verification state read. */
     public Optional<AuthActionToken> latest(String username, AuthActionTokenPurpose purpose) {
         return repository.findFirstByUsernameAndPurposeOrderByCreatedAtDesc(username, purpose);
