@@ -1,0 +1,133 @@
+name: CodeRabbit Gate
+
+# The hard merge gate for CodeRabbit on this repository (<10 stars: CodeRabbit
+# never auto-reviews; its commit status reports "success | Review skipped:
+# manual review required" — a silent pass that let PR #712 (+77,739/-317,
+# 409 files) merge with ZERO CodeRabbit reviews on 2026-10-23).
+#
+# Trusted-definition policy (CodeRabbit review on PR #713, adopted findings):
+# - pull_request_target: the gate definition ALWAYS comes from main's copy,
+#   never from the pull request's own version (a PR author must not be able
+#   to weaken this gate from inside their PR).
+# - pull_request_review is deliberately ABSENT: empirically proven (run
+#   40033600763) that it executes the pull request's copy of this file.
+# - Re-evaluation after a review completes: workflow_dispatch (safe manual
+#   run — comment '@coderabbitai review' on the PR, then dispatch this
+#   workflow with the PR number).
+#
+# Verdict model: the LATEST completed coderabbitai[bot] review whose
+# commit_id equals the PR's current head decides; error/rate-limited review
+# statuses fail first; CHANGES_REQUESTED and DISMISSED fail; APPROVED and
+# COMMENTED pass. Review fetches are fully paginated.
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number to gate-check"
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: read
+
+concurrency:
+  group: coderabbit-gate-${{ github.event.pull_request.number || github.event.inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: CodeRabbit Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Verify a completed CodeRabbit review on the PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number || github.event.inputs.pr }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, sys, time, urllib.request
+
+          repo = os.environ["REPO"]
+          pr = int(os.environ["PR"])
+          api = f"https://api.github.com/repos/{repo}"
+          token = os.environ["GH_TOKEN"]
+
+          def call(path):
+              req = urllib.request.Request(api + path, headers={
+                  "Authorization": f"Bearer {token}",
+                  "Accept": "application/vnd.github+json",
+                  "User-Agent": "coderabbit-gate",
+              })
+              with urllib.request.urlopen(req) as r:
+                  return json.load(r)
+
+          def all_reviews(pr):
+              # Full pagination — the REST default is 30 reviews per page
+              # and the CodeRabbit review can sit on a later page.
+              out, page = [], 1
+              while True:
+                  batch = call(f"/pulls/{pr}/reviews?per_page=100&page={page}")
+                  out.extend(batch)
+                  if len(batch) < 100:
+                      return out
+                  page += 1
+
+          pull = call(f"/pulls/{pr}")
+          head = pull["head"]["sha"]
+          base = pull["base"]["ref"]
+          if base != "main":
+              print(f"Gate scoped to PRs targeting main; this PR targets '{base}' — passing without enforcement.")
+              sys.exit(0)
+
+          print(f"CodeRabbit Gate: PR #{pr} head={head[:10]} base={base}")
+
+          BAD_STATUS = re.compile(r"rate limit|error|fail", re.I)
+          deadline = time.time() + 720  # poll up to 12 minutes; re-run via workflow_dispatch afterwards
+          last_note = ""
+          while True:
+              reviews = [r for r in all_reviews(pr)
+                         if r["user"]["login"] == "coderabbitai[bot]"
+                         and r.get("commit_id") == head
+                         and r.get("state") != "PENDING"]
+              latest = max(reviews, key=lambda r: r["submitted_at"]) if reviews else None
+              status_desc = ""
+              try:
+                  st = call(f"/commits/{head}/status")
+                  for s in st.get("statuses", []):
+                      if s["context"] == "CodeRabbit":
+                          status_desc = f'{s["state"]}: {s.get("description", "")}'
+              except Exception as e:
+                  status_desc = f"(status lookup failed: {e})"
+
+              # 1) Review errors (including rate limits) fail first — no silent pass.
+              if status_desc and BAD_STATUS.search(status_desc):
+                  print(f"FAIL — the CodeRabbit review status reports an error: '{status_desc}'. Re-trigger the review (comment '@coderabbitai review') and re-run this gate.")
+                  sys.exit(1)
+              # 2) The LATEST completed CodeRabbit review on this head decides.
+              if latest is not None:
+                  state = latest["state"]
+                  if state == "CHANGES_REQUESTED":
+                      print(f"FAIL — the latest CodeRabbit review on head {head[:10]} requests changes. Resolve the findings; with request_changes_workflow the bot re-approves once comments are resolved, the latest commit is reviewed, and checks pass.")
+                      sys.exit(1)
+                  if state in ("APPROVED", "COMMENTED"):
+                      print(f"PASS — latest CodeRabbit review on head {head[:10]} is {state} (submitted {latest['submitted_at']}); status: {status_desc}")
+                      sys.exit(0)
+                  if state == "DISMISSED":
+                      print(f"FAIL — the CodeRabbit review on head {head[:10]} was dismissed; a fresh review is required (comment '@coderabbitai review') and re-run this gate.")
+                      sys.exit(1)
+              note = f"Waiting for a completed CodeRabbit review on head {head[:10]}… (latest review state: {latest['state'] if latest else 'none'}; CodeRabbit status: {status_desc or 'not posted yet'})"
+              if note != last_note:
+                  print(note)
+                  last_note = note
+              if time.time() > deadline:
+                  print("FAIL — no completed CodeRabbit review on the current head within the poll window. This repository gets no automatic reviews (fewer than 10 stars): comment '@coderabbitai review' on the PR, then re-run this gate via workflow_dispatch (CodeRabbit Gate workflow, input: PR number).")
+                  sys.exit(1)
+              time.sleep(30)
+          PY

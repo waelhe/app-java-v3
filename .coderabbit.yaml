@@ -1,5 +1,46 @@
+# CodeRabbit configuration — the restored review gate.
+# Authority: official configuration reference
+# (docs.coderabbit.ai/reference/configuration).
+# Context: PR #712 (+77,739/-317 across 409 files) merged 2026-10-23T15:03:12Z
+# with ZERO CodeRabbit reviews — the bot was rate-limited (14:14:37Z) and its
+# legacy commit status reported "success | Review rate limited" because
+# fail_commit_status defaults to false. This configuration makes review
+# failures loud; the branch ruleset update (required check "CodeRabbit" +
+# "CodeRabbit Gate" + required review-thread resolution) makes them
+# merge-blocking.
+# Config is read from the pull request's head branch (official docs).
+language: ar
+tone_instructions: >-
+  Java 25 + Spring Boot 4.1.x Modulith monorepo. Judge changes against
+  official Spring/DGS/Flyway documentation; flag undocumented assumptions,
+  module boundary violations, and missing test coverage.
 reviews:
+  profile: chill
+  # Findings become REQUEST_CHANGES; once comments are resolved, the latest
+  # commit has been reviewed, and no pre-merge checks fail, CodeRabbit
+  # approves automatically (official reference).
+  request_changes_workflow: true
+  # The pull request author may not self-approve through bot commands
+  # (@coderabbitai approve / @coderabbitai resolve) — agents operate as PR
+  # authors on this repository (CodeRabbit review on PR #713, adopted).
+  allow_author_approval: false
+  review_status: true
+  # The legacy commit status "CodeRabbit" mirrors review progress and is
+  # compatible with required checks (official reference).
+  commit_status: true
+  # Any review error (including rate limits) fails the outward review status
+  # instead of silently reporting success.
+  fail_commit_status: true
+  high_level_summary: true
+  path_filters:
+    - "!**/package-lock.json"
   auto_review:
     enabled: true
+    drafts: false
+    # Never pause automatic reviews after N reviewed commits — the merge gate
+    # requires a review of every head (CodeRabbit review on PR #713, adopted).
+    auto_pause_after_reviewed_commits: 0
     base_branches:
       - ".*"
+chat:
+  auto_reply: true
