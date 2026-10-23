@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Check out the immutable Dashboard 3.23.39 release commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: saleor/saleor-dashboard
           ref: bc75e988da0fa4fbc3d47378a888d859d070746f
@@ -30,12 +30,12 @@ jobs:
           persist-credentials: false
 
       - name: Set up Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
       - name: Set up the pinned pnpm version
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 11.13.1
           run_install: false
@@ -47,7 +47,7 @@ jobs:
         run: pnpm config set store-dir "$PNPM_STORE_PATH"
 
       - name: Cache the locked pnpm store
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/pnpm-store
           key: ${{ runner.os }}-pnpm-3.23.39-${{ hashFiles('saleor-dashboard/pnpm-lock.yaml') }}
@@ -91,7 +91,7 @@ jobs:
 
       - name: Upload Playwright reports and stack logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: saleor-dashboard-3.23.39-upstream-e2e
           if-no-files-found: warn
