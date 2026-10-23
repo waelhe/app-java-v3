@@ -62,12 +62,12 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v6.1.0
+        uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
 
@@ -113,7 +113,7 @@ jobs:
             "${ARGS[@]}"
 
       - name: Upload generated root inventory
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@v7
         with:
           name: saleor-root-coverage-${{ github.sha }}
           path: ${{ runner.temp }}/saleor-root-coverage.csv
@@ -129,7 +129,7 @@ jobs:
       issues: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
 
       - name: Detect newer official pins and create one tracking issue
         env:
@@ -168,7 +168,7 @@ jobs:
       issues: write
     steps:
       - name: Checkout canonical registry
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
       - name: Regenerate single unresolved-divergence tracking issue
         env:
           GH_TOKEN: ${{ github.token }}

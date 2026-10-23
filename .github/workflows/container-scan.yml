@@ -126,7 +126,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
 
       # BuildKit is required by the Dockerfile (RUN --mount=type=cache for the
       # .m2 cache — Railway's officially supported format). build-push-action
