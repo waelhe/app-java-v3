@@ -28,7 +28,7 @@
 ### 2.2 إفراغ الأصناف من الذاكرة غير فوري ولا مضمون بموعد
 
 تنص مواصفة لغة Java، الفصل 12.7، على أن الصنف يمكن إزالته فقط عندما يمكن استعادة مُحمّل الصنف الذي عرّفه بواسطة جامع القمامة؛ كما أن توقيت إلغاء التحميل ليس ضمانًا تعتمد عليه دلالات البرنامج.  
-المصدر: [Java Language Specification — Unloading of Classes and Interfaces](https://docs.oracle.com/javase/specs/jls/se26/html/jls-12.html#jls-12.7).
+المصدر: [Java Language Specification — Unloading of Classes and Interfaces](https://docs.oracle.com/javase/specs/jls/se25/html/jls-12.html#jls-12.7).
 
 لذلك ينبغي الفصل بين هذه النتائج المختلفة:
 
