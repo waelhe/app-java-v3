@@ -1,5 +1,13 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
+## تقييم آليات الإضافات — 2026-10-23 (الحالة: مقترح موثق بانتظار المراجعة)
+
+- **سجل الأدلة:** `docs/research/extension-management-framework-assessment.md`.
+- **المقاس في main:** `FeatureGatePort` + `marketplace-console.FeatureFlag/ConsoleService` يديران أعلام قدرات موجودة وقت الطلب؛ V214 يزرع خمسة مفاتيح مفعلة للحفاظ على السلوك الحالي. العلم لا ينشئ قدرة غير موجودة، وتغطية الإطفاء الشامل لكل مسار غير مثبتة بمجرد وجود العلم.
+- **المرجع الموصى به:** الإبقاء على آلية FeatureGate الحالية للقدرات المبنية؛ استخدام نمط التطبيقات المستقلة في Saleor Apps مرجعًا وظيفيًا لإضافات يمكن تسجيلها من اللوحة؛ عدم إدخال PF4J/PF4J-Spring قبل اختبار توافق موثق مع Boot 4.1.1/Java 25، لأن مستودع تكامل Spring يصفه Proof of Concept ولا يثبت هذا التوافق.
+- **الحالة التنفيذية:** تغييرات وثائق فقط في فرع `docs/extension-mechanisms-evidence`; لا اعتماديات أو ترحيلات أو تغييرات لسلوك الإنتاج. لم يُعتمد التصميم نهائيًا أو يُدمج.
+
+
 ## قرار الحوكمة الحاكم لتكامل Saleor — D-SALEOR-FULL-001 (2026-10-20)
 
 - **المرجع التنفيذي الوحيد:** [الخطة النهائية للوحة الكاملة ومخطط التجارة الكامل](docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md). مصفوفة المجالات: `docs/governance/plans/saleor-commerce-domain-matrix.csv`; سجل الاختلافات: `docs/governance/plans/saleor-contract-divergences.csv`; الـpins: `docs/governance/plans/saleor-source-pins.json`.
