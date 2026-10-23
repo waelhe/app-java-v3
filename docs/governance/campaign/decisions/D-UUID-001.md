@@ -82,5 +82,5 @@ The A0 assembly branch is stacked above Agent 3's implementation and now contain
 ## Ledger actions
 
 - The central divergence registry records `D-UUID-001` as `IMPLEMENTATION_REQUIRED`, with this decision as the approved design.
-- All 17 currently identified checkout-family inventory rows retain the `D-UUID-001` reference pending signature-complete assembly.
-- Implementation statuses are unchanged in this decision commit; no integration or CI result is inferred from the decision.
+- All 17 currently identified checkout-family inventory rows retain the `D-UUID-001` reference. The five currently exposed roots on the stacked assembly branch are `IMPLEMENTED_UNVERIFIED`; no root is promoted to verified or release-ready without same-SHA CI/integration evidence.
+- The divergence remains `IMPLEMENTATION_REQUIRED`; this branch records the assembled implementation and pending verification rather than inferring integration or CI success.
