@@ -22,8 +22,18 @@ on:
     # post-merge truth-sync exactly as its own comment prescribed —
     # inert weight otherwise. PRs targeting main gate through the
     # pull_request event as before.
-        # Temporary stacked Saleor PR target pattern; retire after #677-#681 are reconciled.
-    branches: [ main, feat/saleor-commerce-product-keyset-pagination, 'feat/saleor-*' ]
+        # Saleor full-commerce campaign wave (2026-10-21): every PR of this
+        # wave (#696/#697 already merged into the base; #698 open on it, with
+        # the stacked #708 auto-retargeting here once #698 merges) targets
+        # exactly one integration base,
+        # integration/saleor-full-commerce-20261021 — listed by its exact
+        # name on purpose, no glob, so the gates gate every push to those
+        # PRs through the pull_request event itself: automatic management,
+        # never a manual workflow_dispatch standing in for the trigger the
+        # base list forgot (the agent-3-gate-trigger-proposal.md measured
+        # gap). Retire this exact entry when the wave merges to main,
+        # exactly as the stacked-wave entries above retired with theirs.
+    branches: [ main, feat/saleor-commerce-product-keyset-pagination, 'feat/saleor-*', integration/saleor-full-commerce-20261021 ]
 
 
 # One test round per ref: a newer push supersedes the older round and
