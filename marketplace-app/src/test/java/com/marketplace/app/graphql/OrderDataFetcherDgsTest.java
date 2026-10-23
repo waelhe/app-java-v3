@@ -662,21 +662,21 @@ class OrderDataFetcherDgsTest {
     }
 
     @Test
-    void checkoutMapsAReadableVariantThroughTheExistingCatalogSpi() {
+    void checkoutMapsAReadableVariantThroughTheCheckoutScopedCatalogRead() {
         authenticateAs("checkout-owner-subject");
         UUID checkoutId = UUID.randomUUID(), lineId = UUID.randomUUID();
         UUID variantId = UUID.randomUUID(), productId = UUID.randomUUID();
         when(checkoutSpi.findCheckout(eq(checkoutId), any(org.springframework.security.core.Authentication.class)))
                 .thenReturn(agent3CheckoutView(checkoutId, lineId, variantId));
-        when(variantReadSpi.findVariantById(eq(variantId),
-                any(org.springframework.security.core.Authentication.class)))
+        when(variantReadSpi.findVariantForCheckoutLine(variantId))
                 .thenReturn(java.util.Optional.of(agent3VariantView(variantId, productId)));
 
         Map<String, Object> checkout = dgsQueryExecutor.executeAndExtractJsonPath(
-                "query($id: ID!) { checkout(id: $id) { id quantity lines { id quantity variant { id availableInCatalog productVariant { id sku } } } } }",
+                "query($id: ID!) { checkout(id: $id) { id token quantity lines { id quantity variant { id name sku status product { id name } } } } }",
                 "data.checkout", Map.of("id", agent3GlobalId("Checkout", checkoutId)));
 
         assertThat(checkout.get("id")).isEqualTo(agent3GlobalId("Checkout", checkoutId));
+        assertThat(checkout.get("token")).isEqualTo(checkoutId.toString());
         assertThat(checkout.get("quantity")).isEqualTo(2);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> lines = (List<Map<String, Object>>) checkout.get("lines");
@@ -684,64 +684,47 @@ class OrderDataFetcherDgsTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> variant = (Map<String, Object>) lines.getFirst().get("variant");
         assertThat(variant).containsEntry("id", agent3GlobalId("ProductVariant", variantId))
-                .containsEntry("availableInCatalog", true);
+                .containsEntry("name", "Default")
+                .containsEntry("sku", "SKU-1")
+                .containsEntry("status", "ACTIVE");
         @SuppressWarnings("unchecked")
-        Map<String, Object> productVariant = (Map<String, Object>) variant.get("productVariant");
-        assertThat(productVariant.get("sku")).isEqualTo("SKU-1");
+        Map<String, Object> product = (Map<String, Object>) variant.get("product");
+        assertThat(product).containsEntry("name", "Checkout Product");
     }
 
     @Test
-    void checkoutPreservesAnExplicitReferenceWhenTheVariantIsNotReadable() {
+    void checkoutFailsClosedWhenALineVariantIsNoLongerReadable() {
         authenticateAs("checkout-owner-subject");
         UUID checkoutId = UUID.randomUUID(), lineId = UUID.randomUUID(), variantId = UUID.randomUUID();
         when(checkoutSpi.findCheckout(eq(checkoutId), any(org.springframework.security.core.Authentication.class)))
                 .thenReturn(agent3CheckoutView(checkoutId, lineId, variantId));
-        when(variantReadSpi.findVariantById(eq(variantId),
-                any(org.springframework.security.core.Authentication.class)))
+        when(variantReadSpi.findVariantForCheckoutLine(variantId))
                 .thenReturn(java.util.Optional.empty());
 
-        Map<String, Object> checkout = dgsQueryExecutor.executeAndExtractJsonPath(
-                "query($id: ID!) { checkout(id: $id) { id lines { variant { id availableInCatalog productVariant { id } } } } }",
-                "data.checkout", Map.of("id", agent3GlobalId("Checkout", checkoutId)));
-
-        assertThat(checkout.get("id")).isEqualTo(agent3GlobalId("Checkout", checkoutId));
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> lines = (List<Map<String, Object>>) checkout.get("lines");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> variant = (Map<String, Object>) lines.getFirst().get("variant");
-        assertThat(variant).containsEntry("id", agent3GlobalId("ProductVariant", variantId))
-                .containsEntry("availableInCatalog", false)
-                .containsEntry("productVariant", null);
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
+                "query($id: ID!) { checkout(id: $id) { id lines { variant { id } } } }",
+                "data.checkout", Map.of("id", agent3GlobalId("Checkout", checkoutId))))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("product variant or parent record is unavailable");
     }
 
     @Test
-    void checkoutLinesAddKeepsCommittedLineAndReportsNoFalseNotFoundWhenVariantIsUnavailable() {
+    void checkoutLinesAddKeepsTheCommittedCommandAndFailsClosedOnTheUnavailableVariantProjection() {
         authenticateAs("checkout-owner-subject");
         UUID checkoutId = UUID.randomUUID(), lineId = UUID.randomUUID(), variantId = UUID.randomUUID();
         when(checkoutSpi.addLines(eq(checkoutId), any(),
                 any(org.springframework.security.core.Authentication.class)))
                 .thenReturn(agent3CheckoutView(checkoutId, lineId, variantId));
-        when(variantReadSpi.findVariantById(eq(variantId),
-                any(org.springframework.security.core.Authentication.class)))
+        when(variantReadSpi.findVariantForCheckoutLine(variantId))
                 .thenReturn(java.util.Optional.empty());
 
-        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath(
-                "mutation($id: ID!, $lines: [CheckoutLineInput!]!) { checkoutLinesAdd(id: $id, lines: $lines) { checkout { id lines { variant { id availableInCatalog } } } checkoutErrors { code } errors { code } } }",
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
+                "mutation($id: ID!, $lines: [CheckoutLineInput!]!) { checkoutLinesAdd(id: $id, lines: $lines) { checkout { id lines { variant { id } } } checkoutErrors { code } errors { code } } }",
                 "data.checkoutLinesAdd",
                 Map.of("id", agent3GlobalId("Checkout", checkoutId),
-                        "lines", List.of(Map.of("variantId", agent3GlobalId("ProductVariant", variantId), "quantity", 2))));
-
-        assertThat(payload.get("checkoutErrors")).isEqualTo(List.of());
-        assertThat(payload.get("errors")).isEqualTo(List.of());
-        @SuppressWarnings("unchecked")
-        Map<String, Object> checkout = (Map<String, Object>) payload.get("checkout");
-        assertThat(checkout.get("id")).isEqualTo(agent3GlobalId("Checkout", checkoutId));
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> lines = (List<Map<String, Object>>) checkout.get("lines");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> variant = (Map<String, Object>) lines.getFirst().get("variant");
-        assertThat(variant).containsEntry("id", agent3GlobalId("ProductVariant", variantId))
-                .containsEntry("availableInCatalog", false);
+                        "lines", List.of(Map.of("variantId", agent3GlobalId("ProductVariant", variantId), "quantity", 2)))))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("product variant or parent record is unavailable");
         verify(checkoutSpi).addLines(eq(checkoutId), any(),
                 any(org.springframework.security.core.Authentication.class));
     }
