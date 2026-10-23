@@ -1,4 +1,4 @@
-package com.marketplace.shared.api;
+package com.marketplace.console.spi;
 
 import org.springframework.data.domain.KeysetScrollPosition;
 import org.springframework.data.domain.Limit;
@@ -11,13 +11,23 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Agent 1 (the Saleor 458-root campaign, assignment packet PR #696 — the
- * D-CMS-001 ownership decision): the CMS navigation port — the menus,
- * menu items (tree with cycle-guarded moves) and the navigation slot
- * assignment behind the Saleor Menu-domain roots. The same shared-api
- * port idiom and seam discipline as {@link CmsPagePort}.
+ * Agent 1 / A0 (the Saleor 458-root campaign — the post-merge integration
+ * review of PR #696): the CMS navigation SPI — the menus, menu items
+ * (tree with cycle-guarded moves) and the navigation slot assignment
+ * behind the Saleor Menu-domain roots.
+ *
+ * <p><b>Why this interface moved out of {@code shared/api}:</b> it was
+ * born there as {@code CmsNavigationPort} riding the shared-api port
+ * idiom, but its contract speaks Spring — exactly what the house rule
+ * {@code sharedPortsAreFrameworkNeutral} forbids in the shared-contract
+ * module. The recorded migration path in the agent-1 handoff ("a
+ * console-owned named SPI when the allowlist entry lands") is executed
+ * here: the seam now lives where the owning domain owns it — the same
+ * {@code IdentitySpi}/{@code catalog-spi} precedent every journey seam
+ * follows (see {@link CmsPageSpi} for the full record).</p>
  */
-public interface CmsNavigationPort {
+@org.springframework.modulith.NamedInterface("console-spi")
+public interface CmsNavigationSpi {
 
     /** The menu projection. */
     record MenuView(UUID id, String name, String slug) {

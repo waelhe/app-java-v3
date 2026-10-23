@@ -54,7 +54,16 @@
         // SPI — the same catalog-spi/identity-spi pattern every journey
         // seam follows (the declared interface, never the internals; the
         // PROVIDER ownership enforcement lives in the owning use case).
-        "media :: media-spi"
+        "media :: media-spi",
+        // Post-merge integration round of PR #696 (the A0-landed migration
+        // the agent-1 handoff recorded): the GraphQL surface's CMS page and
+        // navigation fields delegate to the console module's OWN named SPI —
+        // the seam was born as the shared-api CmsPagePort/CmsNavigationPort
+        // pair, which the house rule sharedPortsAreFrameworkNeutral forbids
+        // (a shared port speaking Spring drags every consumer into that type
+        // system); the identity-spi/catalog-spi pattern every journey seam
+        // follows is the recorded migration path, executed here.
+        "console :: console-spi"
     }
 )
 package com.marketplace.app;

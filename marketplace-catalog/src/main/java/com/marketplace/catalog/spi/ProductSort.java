@@ -28,8 +28,17 @@ public record ProductSort(Field field, boolean ascending) {
      */
     public enum Field {
 
-        /** The product's display title. */
-        NAME("name");
+        /**
+         * The product's display title — the keyset property name the
+         * EXECUTED repository scroll orders by (the title column the
+         * derived keyset methods emit), the same vocabulary the
+         * StoreProduct connection's TITLE sort carries. The pre-merge
+         * rounds declared "name" here while the scroll emitted "title"
+         * keys, so the cursor gate rejected page 2 of the NAME sort with
+         * the same-sortBy error — the property is the executed sort's
+         * own, never a wire label.
+         */
+        NAME("title");
 
         private final String property;
 
@@ -62,7 +71,7 @@ public record ProductSort(Field field, boolean ascending) {
      * scroll's keyset positions (and the boundary's cursor gate) key by,
      * next to the {@code id} tiebreaker.
      *
-     * @return the sort property name ({@code name})
+     * @return the sort property name ({@code title})
      */
     public String property() {
         return field.property();

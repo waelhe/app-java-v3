@@ -121,8 +121,18 @@ class OrderGraphQlIntegrationTest {
 
     @BeforeEach
     void seedOrders() {
+        // The A1 convention the orders FK graph demands (fk_orders_users):
+        // an order's consumer and seller are USERS rows — the seed places
+        // real ones before the orders reference them (the pre-integration
+        // round's seed generated random ids that were never inserted, so
+        // every order INSERT violated the foreign key and the whole class
+        // errored at seed time).
         UUID consumerId = UUID.randomUUID();
         UUID sellerId = UUID.randomUUID();
+        userRepository.save(new User(consumerId, consumerId.toString(), null,
+                "it-order consumer", com.marketplace.identity.UserRole.CONSUMER));
+        userRepository.save(new User(sellerId, sellerId.toString(), null,
+                "it-order seller", com.marketplace.identity.UserRole.PROVIDER));
 
         // fk_orders_users (V113): identity is authoritative — the consumer
         // row must exist in users before any order can reference it. The
@@ -491,16 +501,21 @@ class OrderGraphQlIntegrationTest {
     }
 
     // ------------------------------------------------------------------
-    // the anonymous boundary — the pre-login gate's classified refusal.
-    // The reopened POST contract A0 landed (the matcher opens WITH its
-    // wall): an anonymous POST carrying a valid query outside the
-    // pre-login family is answered by the gate — HTTP 200 with the
-    // classified AUTHN-001 GraphQL error envelope, never the chain's
-    // old 401 problem+json (GraphQlSecurityIntegrationTest's own leg).
+    // the anonymous boundary — the reopened pre-login gate contract
     // ------------------------------------------------------------------
 
     @Test
-    void anonymousOrderQueryIsAnsweredByThePreLoginGate() {
+    void anonymousOrderQueryIsAnsweredByThePreLoginGateEnvelope() {
+        // No Authorization header: the security chain now permits the
+        // anonymous POST and PreLoginGraphQlGate is the wall — the gate
+        // parses the document, finds the protected `orders` root, and
+        // answers the classified AUTHN-001 GraphQL error INSIDE the
+        // envelope (HTTP 200 + application/json, the error before any
+        // dispatch). The same reopened contract GraphQlSecurityIntegration
+        // Test pins at the surface level, asserted here for the orders
+        // root's own journey: the classified error pair, and NO data —
+        // the protected collection never resolves for the anonymous
+        // caller.
         WebTestClient anonymousClient = WebTestClient.bindToServer()
                 .baseUrl("http://localhost:" + port + "/graphql")
                 .build();
@@ -509,12 +524,13 @@ class OrderGraphQlIntegrationTest {
                 .bodyValue("{\"query\":\"{ orders(first: 1) { totalCount } }\"}")
                 .exchange()
                 .expectStatus().isOk()
-                .expectHeader().contentType(MediaType.APPLICATION_JSON)
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
                 .expectBody()
                 .jsonPath("$.errors[0].extensions.errorCode").isEqualTo("AUTHN-001")
                 .jsonPath("$.errors[0].extensions.category").isEqualTo("authz")
                 .jsonPath("$.errors[0].message")
-                .isEqualTo("Authentication is required for this GraphQL operation");
+                .isEqualTo("Authentication is required for this GraphQL operation")
+                .jsonPath("$.data").doesNotExist();
     }
 
     // ------------------------------------------------------------------

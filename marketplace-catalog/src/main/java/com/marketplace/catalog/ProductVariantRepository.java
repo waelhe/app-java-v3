@@ -125,7 +125,7 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
                             WHERE p.id = v.product_id
                               AND p.product_status = 'ACTIVE'
                               AND p.is_deleted = FALSE)
-               AND (:lastUpdatedAt IS NULL
+               AND (CAST(:lastUpdatedAt AS timestamptz) IS NULL
                     OR v.updated_at > :lastUpdatedAt
                     OR (v.updated_at = :lastUpdatedAt AND v.id > :lastId))
              ORDER BY v.updated_at ASC, v.id ASC
@@ -146,7 +146,7 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
                             WHERE p.id = v.product_id
                               AND p.product_status = 'ACTIVE'
                               AND p.is_deleted = FALSE)
-               AND (:lastUpdatedAt IS NULL
+               AND (CAST(:lastUpdatedAt AS timestamptz) IS NULL
                     OR v.updated_at < :lastUpdatedAt
                     OR (v.updated_at = :lastUpdatedAt AND v.id < :lastId))
              ORDER BY v.updated_at DESC, v.id DESC

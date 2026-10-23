@@ -1,6 +1,6 @@
 package com.marketplace.console;
 
-import com.marketplace.shared.api.CmsNavigationPort;
+import com.marketplace.console.spi.CmsNavigationSpi;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import io.micrometer.observation.annotation.Observed;
@@ -27,7 +27,7 @@ import java.util.regex.Pattern;
  * Agent 1 (the Saleor 458-root campaign, assignment packet PR #696 — the
  * D-CMS-001 ownership decision): the console module's navigation owning
  * use case — the {@code assignNavigation}/{@code menu*}/{@code menuItem*}
- * mutations and reads behind the {@link CmsNavigationPort} seam.
+ * mutations and reads behind the {@link CmsNavigationSpi} seam.
  * ADMIN-enforced at this boundary (Saleor requires MANAGE_MENUS).
  *
  * <p><b>The tree invariants, both enforced here:</b> a parent edge never
@@ -38,7 +38,7 @@ import java.util.regex.Pattern;
  */
 @Service
 @Transactional
-public class CmsNavigationAdminService implements CmsNavigationPort {
+public class CmsNavigationAdminService implements CmsNavigationSpi {
 
     private static final Logger log = LoggerFactory.getLogger(CmsNavigationAdminService.class);
     private static final Pattern SLUG_SHAPE = Pattern.compile("^[a-z0-9]+(?:-[a-z0-9]+)*$");
@@ -428,9 +428,7 @@ public class CmsNavigationAdminService implements CmsNavigationPort {
             siblings.add(to, item);
         }
         for (List<CmsMenuItem> group : byParent.values()) {
-            for (int i = 0; i < group.size(); i++) {
-                group.get(i).moveTo(i);
-            }
+            parkAndWriteDense(group);
         }
     }
 
@@ -471,10 +469,46 @@ public class CmsNavigationAdminService implements CmsNavigationPort {
             byParent.computeIfAbsent(item.getParentId(), key -> new ArrayList<>()).add(item);
         }
         for (List<CmsMenuItem> group : byParent.values()) {
-            for (int i = 0; i < group.size(); i++) {
-                group.get(i).moveTo(i);
+            parkAndWriteDense(group);
+        }
+    }
+
+    /**
+     * The two-phase dense rewrite the live-rows unique index
+     * (menu_id, parent_id, position) demands: a direct rewrite collides
+     * transiently (an item moving to position 0 shares it with the current
+     * holder until that item's own UPDATE executes — the partial unique
+     * index sees the intermediate state). Phase 1 parks the whole sibling
+     * group beyond its current maximum, flushes (the group's live range is
+     * empty), then phase 2 writes the final dense order — one transaction,
+     * all-or-nothing. The same repair the catalog reorders carry.
+     */
+    private void parkAndWriteDense(List<CmsMenuItem> group) {
+        if (group.isEmpty()) {
+            return;
+        }
+        boolean changed = false;
+        for (int i = 0; i < group.size(); i++) {
+            if (group.get(i).getPosition() != i) {
+                changed = true;
+                break;
             }
         }
+        if (!changed) {
+            // The idempotent no-op: the resolved order is the stored order —
+            // nothing changes, nothing writes.
+            return;
+        }
+        int park = group.stream().mapToInt(CmsMenuItem::getPosition).max().orElse(0) + 1;
+        for (CmsMenuItem item : group) {
+            item.moveTo(park++);
+        }
+        itemRepository.saveAll(group);
+        itemRepository.flush();
+        for (int i = 0; i < group.size(); i++) {
+            group.get(i).moveTo(i);
+        }
+        itemRepository.saveAll(group);
     }
 
     private MenuView toView(CmsMenu row) {

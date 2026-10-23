@@ -15,7 +15,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.graphql.test.tester.HttpGraphQlTester;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -162,6 +161,19 @@ class CollectionGraphQlIntegrationTest {
             productRepository.deleteAllById(new ArrayList<>(seededProductIds));
             seededProductIds.clear();
         }
+        // The repository deletes above are SOFT deletes (BaseEntity's
+        // @SoftDelete keeps the rows); the raw category/type deletes below
+        // are HARD deletes the surviving rows would violate
+        // (fk_products_store_category sees soft-deleted product rows just
+        // the same, and the memberships reference the products). Hard-delete
+        // THIS test's own artifacts first — the unique category code scopes
+        // the products exactly; dependents before principals.
+        jdbcTemplate.update(
+                """
+                DELETE FROM collection_products WHERE product_id IN
+                    (SELECT id FROM products WHERE store_category_code = ?)
+                """, storeCategoryCode);
+        jdbcTemplate.update("DELETE FROM products WHERE store_category_code = ?", storeCategoryCode);
         jdbcTemplate.update("DELETE FROM store_categories WHERE code = ?", storeCategoryCode);
         if (seededTypeId != null) {
             jdbcTemplate.update("DELETE FROM product_types WHERE id = ?", seededTypeId);
@@ -654,13 +666,19 @@ class CollectionGraphQlIntegrationTest {
     }
 
     @Test
-    void anonymousCollectionQueryIsRejectedAs401ProblemDetail() {
-        // No Authorization header: the security chain answers the shared
-        // problem+json 401 AUTHN-001 contract before any GraphQL handling —
-        // the tripartite anonymous contract GraphQlSecurityIntegrationTest
-        // pins, asserted here for the collections root's own journey. This
-        // IS the public-root surface's authentication boundary (the
-        // registered public-root mapping divergence).
+    void anonymousCollectionQueryIsAnsweredByThePreLoginGateEnvelope() {
+        // No Authorization header: the security chain now permits the
+        // anonymous POST and PreLoginGraphQlGate is the wall — the gate
+        // parses the document, finds the protected `collections` root,
+        // and answers the classified AUTHN-001 GraphQL error INSIDE the
+        // envelope (HTTP 200 + application/json, the error before any
+        // dispatch). The same reopened contract GraphQlSecurityIntegration
+        // Test pins at the surface level, asserted here for the
+        // collections root's own journey: the classified error pair, and
+        // NO data — this IS the public-root surface's authentication
+        // boundary (the registered public-root mapping divergence), and
+        // the protected collection never resolves for the anonymous
+        // caller.
         WebTestClient anonymousClient = WebTestClient.bindToServer()
                 .baseUrl("http://localhost:" + port + "/graphql")
                 .build();
@@ -668,14 +686,13 @@ class CollectionGraphQlIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("{\"query\":\"{ collections(first: 1) { totalCount } }\"}")
                 .exchange()
-                .expectStatus().isUnauthorized()
-                .expectHeader().contentType("application/problem+json")
-                .expectHeader().valueEquals(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"marketplace\"")
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
                 .expectBody()
-                .jsonPath("$.type").isEqualTo("https://marketplace.com/errors/unauthorized")
-                .jsonPath("$.title").isEqualTo("Unauthorized")
-                .jsonPath("$.status").isEqualTo(401)
-                .jsonPath("$.instance").isEqualTo("/graphql")
-                .jsonPath("$.errorCode").isEqualTo("AUTHN-001");
+                .jsonPath("$.errors[0].extensions.errorCode").isEqualTo("AUTHN-001")
+                .jsonPath("$.errors[0].extensions.category").isEqualTo("authz")
+                .jsonPath("$.errors[0].message")
+                .isEqualTo("Authentication is required for this GraphQL operation")
+                .jsonPath("$.data").doesNotExist();
     }
 }

@@ -10,7 +10,9 @@ import com.marketplace.catalog.spi.AttributeUpdateCommand;
 import com.marketplace.catalog.spi.AttributeWriteSpi;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -18,8 +20,10 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -390,18 +394,42 @@ class AttributeWriteServiceTest {
         when(repository.findById(parent.getId())).thenReturn(Optional.of(parent));
         when(optionRepository.findAllByAttributeDefinitionIdOrderByPositionAsc(parent.getId()))
                 .thenReturn(List.of(one, two, three));
-        when(optionRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        // The stub snapshots each write's positions AT INVOCATION TIME: both
+        // saveAll calls carry the SAME mutable list, so an argThat-only proof
+        // would see the phase-2 finals on both (the parked write's absence
+        // would pass unnoticed). The captured sequence is the real two-phase
+        // evidence — park (4, 5, 6), then the dense finals (1, 2, 3).
+        List<List<Integer>> savedPositions = new ArrayList<>();
+        when(optionRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<CatalogAttributeOption> saved = invocation.getArgument(0);
+            savedPositions.add(saved.stream()
+                    .map(CatalogAttributeOption::getPosition)
+                    .toList());
+            return saved;
+        });
 
         AttributeMutationResult result = service.reorderValues(parent.getId(),
                 List.of(new AttributeReorderMove(three.getId(), -2)));
 
         assertThat(result.success()).isTrue();
         assertThat(result.attribute().slug()).isEqualTo("choice-attr");
-        verify(optionRepository).saveAll(argThat((List<CatalogAttributeOption> saved) ->
+        // The two-phase rewrite the live-position unique index demands:
+        // the park write lands first (the whole bucket parked beyond the
+        // current max — 4, 5, 6), the flush separates the phases, and the
+        // final dense order lands second (1, 2, 3) — both writes carry the
+        // same list reference, so the phase-2 finals are what the argThat
+        // matcher sees on BOTH invocations; the snapshot sequence and the
+        // in-order verification are the proof the parked write happened.
+        verify(optionRepository, times(2)).saveAll(argThat((List<CatalogAttributeOption> saved) ->
                 saved.size() == 3
                         && saved.get(0).getId().equals(three.getId()) && saved.get(0).getPosition() == 1
                         && saved.get(1).getId().equals(one.getId()) && saved.get(1).getPosition() == 2
                         && saved.get(2).getId().equals(two.getId()) && saved.get(2).getPosition() == 3));
+        assertThat(savedPositions).containsExactly(List.of(4, 5, 6), List.of(1, 2, 3));
+        InOrder writes = inOrder(optionRepository);
+        writes.verify(optionRepository).saveAll(any());
+        writes.verify(optionRepository).flush();
+        writes.verify(optionRepository).saveAll(any());
     }
 
     @Test
