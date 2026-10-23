@@ -2,10 +2,7 @@ package com.marketplace.app.graphql;
 
 import com.marketplace.app.graphql.generated.types.ProductVariant;
 import com.marketplace.catalog.spi.ProductVariantReadSpi;
-import com.marketplace.catalog.spi.ProductVariantView;
 import com.marketplace.orders.spi.CheckoutView;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -14,10 +11,15 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Maps a persisted checkout-line variant reference separately from the
- * catalog's current readable projection. A cart line may outlive public
- * catalog visibility, so the committed line remains representable without
- * pretending an unreadable variant is a not-found checkout.
+ * Maps checkout lines to Saleor's direct non-null ProductVariant contract.
+ * Checkout ownership has already been checked by CheckoutSpi before this
+ * mapper is reached. The dedicated catalog read preserves live variant
+ * projections across lifecycle visibility changes without widening public
+ * storefront ProductVariant reads.
+ *
+ * <p>A legacy product-level cart line (no variant UUID), or a line whose
+ * variant/parent was soft-deleted or is missing, cannot truthfully satisfy
+ * ProductVariant!; it fails closed rather than inventing a variant.</p>
  */
 @Component
 public class CheckoutGraphQlMapper {
@@ -39,9 +41,8 @@ public class CheckoutGraphQlMapper {
     }
 
     public Map<String, Object> toGraphQlCheckout(CheckoutView view) {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         List<Map<String, Object>> lines = view.lines().stream()
-                .map(line -> toGraphQlLine(line, authentication))
+                .map(this::toGraphQlLine)
                 .toList();
         Map<String, Object> checkout = new LinkedHashMap<>();
         checkout.put("id", globalIdCodec.encode(CHECKOUT_TYPE, view.id()));
@@ -54,19 +55,24 @@ public class CheckoutGraphQlMapper {
         return checkout;
     }
 
-    private Map<String, Object> toGraphQlLine(CheckoutView.Line line, Authentication authentication) {
-        Optional<ProductVariantView> variant =
-                variantReadSpi.findVariantById(line.variantId(), authentication);
-        Map<String, Object> variantReference = new LinkedHashMap<>();
-        variantReference.put("id", globalIdCodec.encode(PRODUCT_VARIANT_TYPE, line.variantId()));
-        variantReference.put("availableInCatalog", variant.isPresent());
-        ProductVariant catalogProjection = variant.map(variantMapper::toGraphQlProductVariant).orElse(null);
-        variantReference.put("productVariant", catalogProjection);
+    private Map<String, Object> toGraphQlLine(CheckoutView.Line line) {
+        if (line.variantId() == null) {
+            throw unresolvableCheckoutVariant();
+        }
+        com.marketplace.app.graphql.generated.types.ProductVariant variant =
+                variantReadSpi.findVariantForCheckoutLine(line.variantId())
+                        .map(variantMapper::toGraphQlProductVariant)
+                        .orElseThrow(CheckoutGraphQlMapper::unresolvableCheckoutVariant);
 
         Map<String, Object> mapped = new LinkedHashMap<>();
         mapped.put("id", globalIdCodec.encode(CHECKOUT_LINE_TYPE, line.id()));
-        mapped.put("variant", variantReference);
+        mapped.put("variant", variant);
         mapped.put("quantity", line.quantity());
         return mapped;
+    }
+
+    private static IllegalStateException unresolvableCheckoutVariant() {
+        return new IllegalStateException(
+                "Checkout line cannot be represented because its product variant or parent record is unavailable");
     }
 }
