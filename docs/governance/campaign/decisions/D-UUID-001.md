@@ -39,6 +39,30 @@ Accordingly, distinguish the two parts of Option A:
 
 The checkout security tests must cover at least: anonymous guest checkout allowed by policy, anonymous access to account-owned checkout denied, authenticated wrong-owner access denied, ADMIN behavior, malformed/guessed UUID, token/id conflicting identifiers, and no leakage in error payloads. If the current application use case cannot enforce these distinctions, the alias may be declared for contract compatibility but must not be wired to a resolver that weakens the established security boundary. Record the chosen policy and test evidence before closing `D-UUID-001` or claiming release readiness.
 
+## Implementation progress — 2026-10-23
+
+A0's central-SDL implementation branch now declares `scalar UUID` exactly once in
+`marketplace-app/src/main/resources/graphql/schema.graphqls`. The matching
+runtime coercer and its canonical parsing/serialization tests already exist as
+`UuidScalar.java` and `UuidScalarTest.java`; this change connects the
+approved scalar contract to the shared SDL. The implementation is tracked in
+[A0's central-SDL PR](https://github.com/waelhe/app-java-v3/pull/707).
+
+**This is a partial implementation, not closure of D-UUID-001.** The affected
+checkout argument signatures are defined in Agent 3's additive SDL on PR #698,
+which has not yet been integrated into the candidate branch. The five shipped
+checkout roots and the remaining pinned checkout-family rows must not be marked
+signature-complete until the central scalar and that SDL are present together
+on the same integration SHA and runtime schema / resolver tests pass.
+
+The token authorization gate is also still distinct from schema compatibility:
+the approved scalar signature does not authorize anonymous or non-owning
+access. Before claiming release readiness, preserve the explicit pre-login
+policy and guest-vs-account, wrong-owner, ADMIN, guessed/malformed UUID and
+conflicting-identifier evidence required below. The divergence row therefore
+remains `IMPLEMENTATION_REQUIRED`, and the checkout root inventory is not
+promoted to complete by this SDL-only change.
+
 ## Required acceptance evidence
 
 - Canonical UUID scalar coercion tests: valid UUID input/output, malformed and non-canonical values rejected.
