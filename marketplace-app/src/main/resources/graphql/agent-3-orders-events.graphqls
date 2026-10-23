@@ -1,4 +1,4 @@
-# Agent 3 additive SDL. The central schema.graphqls is intentionally untouched.
+# Agent 3 additive SDL, assembled here with A0-owned central UUID scalar/signature stewardship.
 # Order cancellation wire contract follows Saleor 3.23.43; execution delegates
 # to the existing marketplace-orders lifecycle owner. orderConfirm remains
 # unavailable until the Payments owner exposes a real capture capability.
