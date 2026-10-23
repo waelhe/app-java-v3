@@ -12,6 +12,7 @@ This document defines official version governance for the Marketplace backend.
 - Maven: `3.9.16+` (wrapper: 3.3.4). Maven 3.10.0 GA measured 2026-10-23 — the wrapper stays on 3.9.16 (documented baseline satisfied; Boot 4.1.x requirements satisfied); 3.10.0 adoption is deferred to the next quarterly minor review with its own release-notes pass.
 - Flyway: Boot-managed (`12.4.0` via spring-boot-dependencies 4.1.2 — unchanged from 4.1.1). The 13.x major line exists on Maven Central; a major-line move is a planned initiative per §3.
 - Stripe SDK: `33.4.2` — 34.0.0 is a MAJOR line on Central; a planned initiative per §3 with a dedicated migration window, not an automatic bump.
+- springdoc-openapi: `3.1.0` — 3.1.1 was measured (2026-10-07, chore/safe-version-bumps) and reverted per its documented in-pom decision: generated-spec rendering deltas (Pageable query parameters newly documented on 7 endpoints plus response-documentation deltas) that the fail-closed OpenAPI compatibility gate cannot express as allowlist entries. The move needs a dedicated PR with the gate report-format decision.
 - JaCoCo coverage threshold: `0.70` (70%) — enforced on all domain modules.
 
 These baselines must remain aligned with project build enforcement rules

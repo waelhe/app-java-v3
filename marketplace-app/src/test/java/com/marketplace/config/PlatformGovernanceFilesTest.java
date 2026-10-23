@@ -61,8 +61,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       GitHub Packages repository declared under {@code distributionManagement}
  *       (server id {@code github}); the poms on main stay
  *       {@code 0.1.0-SNAPSHOT}.</li>
- *   <li><b>container-scan.yml + .trivyignore.yaml + root pom tomcat pin
- *       (removed, parent-managed again) + Dockerfile runtime stage</b> —
+ *   <li><b>container-scan.yml + .trivyignore.yaml + root pom tomcat.version +
+ *       Dockerfile runtime stage</b> —
  *       the container-image CVE gate (roadmap G-ENG-1): the workflow must keep
  *       scanning the REAL production artifact (docker build of the repo
  *       Dockerfile, image mode), must fail on HIGH/CRITICAL fixed findings
@@ -72,17 +72,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       EMPTY by design: the runtime stage's {@code apk upgrade --no-cache}
  *       closes every fixable alpine finding at build time (the version-bump
  *       response the gate policy prescribes), so an entry exists only while
- *       a fix is not yet published for the v3.24 branch. The root pom's
- *       {@code <tomcat.version>} pin closed the three CRITICAL Tomcat 11.0.24
- *       auth bypasses this layer caught, then followed the same-line patches
- *       to 11.0.25 and 11.0.26 (three IMPORTANT CVEs in 11.0.25: HTTP/2
- *       header mix-up, AJP DoS, WebSocket close busy-wait); the pin made its
- *       removal a deliberate, visible act — the Boot 4.1.2 platform wave
- *       (2026-10-23) executed that removal once the parent managed 11.0.27
- *       (measured from spring-boot-dependencies-4.1.2.pom, past the 11.0.26
- *       floor; version-policy §6: no house pin for a BOM-managed version),
- *       and the guard now makes REINTRODUCING a pin the deliberate act. The
- *       Dockerfile pin is the same contract for
+ *       a fix is not yet published for the v3.24 branch. The root pom carries
+ *       the {@code <tomcat.version>11.0.26</tomcat.version>} override that
+ *       closed the three CRITICAL Tomcat 11.0.24 auth bypasses this layer
+ *       caught, then followed the same-line patches to 11.0.25 and 11.0.26
+ *       (three IMPORTANT CVEs in 11.0.25: HTTP/2 header mix-up, AJP DoS,
+ *       WebSocket close busy-wait); the pin forces the override's removal to
+ *       be a deliberate, visible act (it becomes stale the moment the Boot
+ *       parent manages {@literal >=} 11.0.26). The Dockerfile pin is the same contract for
  *       the OS layer: silently dropping the upgrade line returns the shipped
  *       image to stale alpine packages until the weekly scan catches it.</li>
  * </ul>
@@ -359,37 +356,31 @@ class PlatformGovernanceFilesTest {
     }
 
     @Test
-    void rootPomReturnsTomcatToBootParentManagement() throws IOException {
+    void rootPomKeepsTomcatOnAutomaticBootManagement() throws IOException {
         String pom = read("pom.xml");
-        // The pin era closed with the Boot 4.1.2 platform wave (2026-10-23):
-        // measured from spring-boot-dependencies-4.1.2.pom, the parent now
-        // manages tomcat.version=11.0.27, past the 11.0.26 security floor the
-        // house pin held — the three CRITICAL Tomcat 11.0.24 auth bypasses
-        // (CVE-2026-65182 / CVE-2026-65905 / CVE-2026-68525, fixed upstream
-        // in 11.0.25) plus the three IMPORTANT CVEs of the 11.0.25 line
-        // (CVE-2026-86350 HTTP/2 request header mix-up / CVE-2026-78383 AJP
+        // The version-property override this test used to pin
+        // (tomcat.version=11.0.26 — closing the three CRITICAL Tomcat
+        // 11.0.24 auth bypasses CVE-2026-65182 / CVE-2026-65905 /
+        // CVE-2026-68525, then the three IMPORTANT CVEs of the 11.0.25 line
+        // CVE-2026-86350 HTTP/2 request header mix-up / CVE-2026-78383 AJP
         // DoS via missing request body / CVE-2026-77791 WebSocket close
-        // busy-wait DoS — this platform runs WebSocket) all stay closed under
-        // 11.0.27. Per version-policy §6 ("do not pin versions already
-        // managed by Spring Boot BOM"), the override is REMOVED and Tomcat
-        // returns to automatic parent management — the official default the
-        // Boot appendix "Version Properties" documents as the override
-        // mechanism for exceptions only. This guard flips the deliberate-act
-        // contract: reintroducing a house <tomcat.version> pin (a future CVE
-        // ahead of the parent) must arrive WITH its CVE evidence and update
-        // this test in the same PR; the Dependabot BOM PR will surface the
-        // parent bump that lets such a pin retire again.
-        assertThat(pom).as("no house tomcat pin while the Boot parent "
-                + "manages >= the 11.0.26 security floor (4.1.2 manages 11.0.27)")
+        // busy-wait DoS) was REMOVED in the 2026-10-23 Boot 4.1.2 platform
+        // wave exactly as its own removal condition prescribed: the Boot
+        // parent now manages tomcat 11.0.27 (measured from
+        // spring-boot-dependencies-4.1.2.pom), >= the 11.0.26 security pin —
+        // every CVE range above stays closed under automatic parent
+        // management (version-policy §6: no house pin where the Boot BOM
+        // already holds the fixed line). The guard now inverts: a
+        // reintroduced <tomcat.version> property is a manual intervention
+        // the policy forbids unless a NEW documented exception with
+        // measured evidence exists.
+        assertThat(pom).as("no manual tomcat override — automatic Boot parent management only")
                 .doesNotContain("<tomcat.version>");
-        // The removal record keeps the measured condition and the CVE trail
-        // findable in the pom itself — a future reader must not need git
-        // archaeology to know why the pin disappeared.
-        assertThat(pom).as("the removal record cites the measured parent "
-                + "management and the policy section")
-                .contains("Override REMOVED 2026-10-23 (Boot 4.1.2 platform wave)")
-                .contains("tomcat.version=11.0.27")
-                .contains("version-policy §6");
+        // The removal evidence travels in the pom comment — a future reader
+        // must find the measured Boot-managed line without git archaeology.
+        assertThat(pom).as("the pom cites the measured Boot-managed tomcat line")
+                .contains("Override REMOVED 2026-10-23")
+                .contains("tomcat.version=11.0.27");
     }
 
     @Test

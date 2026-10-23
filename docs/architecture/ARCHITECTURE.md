@@ -321,8 +321,8 @@ security chains:
 | Component | Version | Reference |
 |-----------|---------|-----------|
 | Java | 25 LTS | https://openjdk.org/projects/jdk/25/ |
-| Spring Boot | 4.1.2 | https://docs.spring.io/spring-boot/ |
-| Spring Modulith | 2.1.2 | https://docs.spring.io/spring-modulith/ |
+| Spring Boot | 4.1.0 GA | https://docs.spring.io/spring-boot/ |
+| Spring Modulith | 2.1.0 GA | https://docs.spring.io/spring-modulith/ |
 | Spring Security | 7.x | https://docs.spring.io/spring-security/ |
 | Maven | 3.9.16 | https://maven.apache.org/ |
 
