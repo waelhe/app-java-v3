@@ -51,7 +51,7 @@ jobs:
       # checkout-stored header, so a token never appears in a push URL or
       # the logs.
       - name: Checkout the exact commit CI validated
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
