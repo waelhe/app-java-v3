@@ -29,9 +29,31 @@ if [[ -n "${CODEGENOME_USERNAME:-}" && -n "${CODEGENOME_TOKEN:-}" ]]; then
   export CODEGENOME_USERNAME CODEGENOME_TOKEN
 fi
 
+# Determine the actual Maven coordinate produced by this source tag. The upstream
+# build can publish a development version (for example 6.42.0-SNAPSHOT) rather than
+# the release number embedded in the git tag, so do not print a guessed coordinate.
+built_version="$(
+  cd "${source_dir}"
+  ./gradlew --no-daemon -q properties | sed -n 's/^version: //p' | tail -n 1
+)"
+if [[ -z "${built_version}" ]]; then
+  echo "Unable to determine the Maven version produced by the pinned Spring source." >&2
+  exit 4
+fi
+
 (
   cd "${source_dir}"
   ./gradlew --no-daemon --stacktrace publishToMavenLocal
 )
 
-echo "Installed source-built org.openrewrite.recipe:rewrite-spring:${version} into the local Maven repository."
+artifact_pom="${HOME}/.m2/repository/org/openrewrite/recipe/rewrite-spring/${built_version}/rewrite-spring-${built_version}.pom"
+if [[ ! -s "${artifact_pom}" ]]; then
+  echo "Expected locally published POM was not found: ${artifact_pom}" >&2
+  exit 5
+fi
+
+if [[ "${built_version}" != "${version}" ]]; then
+  echo "::warning::Source tag ${tag} is publishing rewrite-spring:${built_version}, not the expected release coordinate ${version}. Keep the source-built profile disabled until version alignment and transitive artifact access are resolved."
+fi
+
+echo "Published source-built org.openrewrite.recipe:rewrite-spring:${built_version} from tag ${tag} (expected release coordinate: ${version})."
