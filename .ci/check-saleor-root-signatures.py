@@ -14,7 +14,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from graphql import parse, print_ast
+from graphql import Source, parse, print_ast
 from graphql.language.ast import ObjectTypeDefinitionNode, ObjectTypeExtensionNode
 
 ROOT_TYPES = {"Query", "Mutation", "Subscription"}
@@ -41,7 +41,7 @@ def read_root_fields(schema_files: list[Path], label: str) -> dict[tuple[str, st
     fields: dict[tuple[str, str], object] = {}
     for path in sorted(schema_files):
         try:
-            document = parse(path.read_text(encoding="utf-8"), source_name=str(path))
+            document = parse(Source(path.read_text(encoding="utf-8"), name=str(path)))
         except Exception as exc:
             fail(f"could not parse {label} SDL {path}: {exc}")
         for definition in document.definitions:
