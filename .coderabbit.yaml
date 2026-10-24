@@ -21,7 +21,7 @@ reviews:
     - "docs/governance/**"
   auto_review:
     enabled: true
-    drafts: false
+    drafts: true
     auto_pause_after_reviewed_commits: 0
     base_branches:
       - ".*"
