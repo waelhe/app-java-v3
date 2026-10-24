@@ -61,8 +61,9 @@ jobs:
           docker info >/dev/null
           java -version
           ./mvnw --version
-          pg_isready -h localhost -p 5432 -U test
-          redis-cli -h localhost -p 6379 ping
+          # GitHub Actions health checks are authoritative for the service containers;
+          # redis-cli/pg_isready are not guaranteed to be installed on the runner host.
+          docker ps --format '{{.Names}} {{.Status}}'
 
       # Run the DGS fetcher/mutation contract tests plus the REAL HTTP GraphQL
       # integration journeys for the Saleor commerce wave: identity/addresses,
@@ -107,7 +108,7 @@ jobs:
           {
             echo "## Saleor Backend Compatibility Gate"
             echo
-            echo "- Candidate commit: `$GITHUB_SHA`"
+            echo "- Candidate commit: $GITHUB_SHA"
             echo "- Java application GraphQL resolver and mutation tests: selected DGS/fetcher test classes"
             echo "- HTTP GraphQL integration journeys: identity/addresses, catalog/product types/attributes, collections, discounts/vouchers, orders/checkout, authentication/security and error taxonomy"
             echo "- Persistent behavior is exercised by the selected integration tests against Flyway-backed PostgreSQL; auth-sensitive paths use the real Spring Security/DGS request chain with test JWT decoding."
