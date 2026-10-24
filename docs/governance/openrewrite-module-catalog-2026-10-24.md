@@ -65,3 +65,17 @@ Versions and license labels below are based on the official current module/versi
 - Standard inventory workflow run 40061545908 succeeded with 6,444 dependency rows and zero recorded resolution failures.
 - Source-build run 40061545912 failed before any source compilation because a Bash local statement referred to sibling variables under set -u. That was an implementation bug; the script has since been corrected and rerun.
 - The per-run recipe CSV records the discovered IDs. Package-prefix license attribution remains labelled as heuristic until cross-checked to each official recipe source; no claim of full catalog coverage is made solely from a count.
+
+
+## Recipe BOM 3.41.0 alignment observed in effective-POM
+
+The effective POM generated in CI on 2026-10-24 reported these managed versions. These are the versions pinned by the plugin, even where the latest-module listing advertises a newer point release; the explicit validator must pass against the imported BOM before a run is counted as successful.
+
+| Coordinate | Latest-module listing checked 2026-10-24 | BOM-resolved plugin pin |
+|---|---:|---:|
+| `org.openrewrite.recipe:rewrite-java-dependencies` | 1.64.1 | 1.64.0 |
+| `org.openrewrite.recipe:rewrite-jackson` | 1.31.1 | 1.31.0 |
+| `org.openrewrite.recipe:rewrite-testing-frameworks` | 3.49.1 | 3.49.0 |
+| `org.openrewrite:rewrite-mainframe` | 3.3.1 | 3.2.1 |
+
+This is deliberate BOM alignment rather than accidental drift. An override to a newer module outside the imported BOM must be documented as a separate tested compatibility override, not silently described as BOM-aligned.
