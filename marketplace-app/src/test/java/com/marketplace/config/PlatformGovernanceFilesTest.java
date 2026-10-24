@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -39,7 +40,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <ul>
  *   <li><b>dependabot.yml</b> — the allow-list is exactly the two BOM
  *       governors ({@code org.springframework.boot*} /
- *       {@code org.springframework.modulith*}). Widening it to any other
+ *       {@code org.springframework.modulith*}) plus the pinned CycloneDX
+ *       SBOM build tool ({@code org.cyclonedx:cyclonedx-maven-plugin}) in its
+ *       own reviewed {@code cyclonedx-sbom-tooling} group — CI publishes the
+ *       aggregate CycloneDX SBOM, so that tool's version updates ride the
+ *       normal CI/review gates (supply-chain-support-tools.md) instead of
+ *       staying manual forever. Widening it to any other
  *       dependency would auto-bump hand-audited overrides in the root pom
  *       (jackson, prometheus, commons-*, resilience4j, springdoc…) whose
  *       versions satisfy the enforcer gates (dependencyConvergence +
@@ -97,8 +103,18 @@ class PlatformGovernanceFilesTest {
     private static final Set<String> BOM_GOVERNORS = Set.of(
             "org.springframework.boot*", "org.springframework.modulith*");
 
+    /**
+     * The pinned SBOM build tool — the one build-scoped dependency outside
+     * the BOM governors whose updates Dependabot may offer, batched in its
+     * own {@code cyclonedx-sbom-tooling} group (supply-chain-support-tools.md:
+     * CI publishes the aggregate CycloneDX SBOM; updates ride the normal
+     * CI/review gates instead of staying manual).
+     */
+    private static final Set<String> SBOM_BUILD_TOOL = Set.of(
+            "org.cyclonedx:cyclonedx-maven-plugin");
+
     @Test
-    void dependabotAllowsOnlyTheTwoBomGovernors() throws IOException {
+    void dependabotAllowsOnlyTheBomGovernorsAndTheSbomBuildTool() throws IOException {
         Map<String, Object> cfg = new Yaml().load(read(".github/dependabot.yml"));
         assertThat(cfg).as("dependabot.yml must parse as a mapping").isNotNull();
 
@@ -117,9 +133,12 @@ class PlatformGovernanceFilesTest {
         Set<String> allowed = allow.stream()
                 .map(a -> String.valueOf(a.get("dependency-name")))
                 .collect(Collectors.toSet());
-        // Exactly the two BOM governors: no wider (enforcer-breaking bumps),
-        // no narrower (the BOM cadence would go manual again).
-        assertThat(allowed).containsExactlyInAnyOrderElementsOf(BOM_GOVERNORS);
+        // Exactly the two BOM governors plus the pinned SBOM build tool: no
+        // wider (enforcer-breaking bumps), no narrower (the BOM cadence would
+        // go manual again, and the SBOM tool would miss reviewed updates).
+        Set<String> expectedAllowed = new HashSet<>(BOM_GOVERNORS);
+        expectedAllowed.addAll(SBOM_BUILD_TOOL);
+        assertThat(allowed).containsExactlyInAnyOrderElementsOf(expectedAllowed);
 
         // The allow-list is the ONLY filter — a missing github-actions
         // ecosystem would leave action versions stale, an extra ecosystem
@@ -129,7 +148,8 @@ class PlatformGovernanceFilesTest {
                 .collect(Collectors.toSet());
         assertThat(ecosystems).containsExactlyInAnyOrder("maven", "github-actions");
 
-        // Groups must batch only within the governed set.
+        // Groups must batch only within the governed sets — the Spring
+        // governors stay in their group, the SBOM tool in its own.
         @SuppressWarnings("unchecked")
         Map<String, Object> groups = (Map<String, Object>) maven.get("groups");
         assertThat(groups).as("spring-bom-governors group must exist").containsKey("spring-bom-governors");
@@ -138,6 +158,15 @@ class PlatformGovernanceFilesTest {
         @SuppressWarnings("unchecked")
         List<String> patterns = (List<String>) group.get("patterns");
         assertThat(patterns).allMatch(p -> BOM_GOVERNORS.contains(p));
+        assertThat(groups).as("cyclonedx-sbom-tooling group must exist")
+                .containsKey("cyclonedx-sbom-tooling");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> sbomGroup = (Map<String, Object>) groups.get("cyclonedx-sbom-tooling");
+        @SuppressWarnings("unchecked")
+        List<String> sbomPatterns = (List<String>) sbomGroup.get("patterns");
+        assertThat(sbomPatterns)
+                .as("the SBOM tooling group batches only the CycloneDX plugin")
+                .containsExactlyInAnyOrderElementsOf(SBOM_BUILD_TOOL);
     }
 
     @Test

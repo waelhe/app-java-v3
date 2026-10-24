@@ -1,18 +1,11 @@
-# Dependabot — version-update PRs for the two BOM governors only.
+# Dependabot — Spring BOM governors plus the pinned CycloneDX SBOM build tool.
 #
-# Policy (root pom dependencyManagement + docs/governance/version-policy.md):
-# runtime dependency versions are governed by the Spring Boot parent BOM
-# (spring-boot-starter-parent 4.1.1) plus the Spring Modulith BOM (exception
-# #1 in the root pom). Those two ARE the version surface this repository
-# deliberately manages. Everything else is either BOM-managed implicitly (no
-# version in any pom) or a hand-audited override in the root pom
-# (jackson 3.2.2, jackson-2-bom 2.22.2, prometheus 1.8.0,
-# commons-logging 1.4.0, commons-lang3 3.20.0, resilience4j 2.4.0,
-# springdoc 3.1.0, mapstruct 1.6.3, archunit 1.5.0, instancio 6.0.0) whose
-# versions were chosen to satisfy the enforcer gates (dependencyConvergence
-# + requireUpperBoundDeps). Auto-bumping those would break the build gates,
-# not improve security, so they are excluded by NOT appearing in the allow
-# list below. Guard-pinned by PlatformGovernanceFilesTest.
+# Runtime version governance stays with the Spring Boot parent BOM and the
+# Spring Modulith BOM (the two approved runtime BOM governors). CycloneDX is
+# separately allowlisted because CI now publishes its aggregate SBOM; its
+# updates receive a distinct PR group and still require the normal CI/review.
+# Other manually audited runtime overrides remain excluded: automatic bumps
+# can violate the project's dependencyConvergence/requireUpperBoundDeps gates.
 version: 2
 updates:
   # Maven: the two BOM governors, batched into one PR per cadence.
@@ -25,11 +18,15 @@ updates:
     allow:
       - dependency-name: "org.springframework.boot*"
       - dependency-name: "org.springframework.modulith*"
+      - dependency-name: "org.cyclonedx:cyclonedx-maven-plugin"
     groups:
       spring-bom-governors:
         patterns:
           - "org.springframework.boot*"
           - "org.springframework.modulith*"
+      cyclonedx-sbom-tooling:
+        patterns:
+          - "org.cyclonedx:cyclonedx-maven-plugin"
     commit-message:
       prefix: "chore(deps)"
 

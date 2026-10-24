@@ -118,6 +118,27 @@ jobs:
       - name: Install reactor (compile once, tests skipped)
         run: ./mvnw install -DskipTests --batch-mode
 
+      # Per-file existence gate: upload-artifact's if-no-files-found: error
+      # checks the UNION of path patterns — a partially generated SBOM (only
+      # one of the two formats) would upload green with a missing file. The
+      # documented acceptance criterion is per-file: absent bom.json OR
+      # absent bom.xml must fail the build (actions/upload-artifact docs:
+      # the error fires only when the whole matched set is empty).
+      - name: Assert both CycloneDX SBOM outputs exist
+        run: |
+          test -f target/bom.json || { echo "::error::target/bom.json (aggregate CycloneDX JSON SBOM) is missing"; exit 1; }
+          test -f target/bom.xml || { echo "::error::target/bom.xml (aggregate CycloneDX XML SBOM) is missing"; exit 1; }
+
+      - name: Upload aggregate CycloneDX SBOM
+        uses: actions/upload-artifact@v7
+        with:
+          name: cyclonedx-sbom-${{ github.sha }}
+          path: |
+            target/bom.json
+            target/bom.xml
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'push' && 90 || 14 }}
+
       - name: Upload installed module artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -125,6 +146,32 @@ jobs:
           path: /home/runner/.m2/repository/com/marketplace
           retention-days: 1
           if-no-files-found: error
+
+  # Review only newly introduced dependency vulnerabilities on PRs.
+  # The existing required Build & Test aggregate consumes this job's result,
+  # so no second separately required ruleset context is needed.
+  dependency-review:
+    name: Dependency Review (PR dependency changes)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Review introduced dependency vulnerabilities
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          fail-on-scopes: runtime,development,unknown
+          vulnerability-check: true
+          # License enforcement is deferred until the repository adopts an
+          # explicit approved-license policy; do not invent an allowlist here.
+          license-check: false
+          retry-on-snapshot-warnings: true
+          retry-on-snapshot-warnings-timeout: 120
+      - name: No dependency diff on non-PR events
+        if: ${{ github.event_name != 'pull_request' }}
+        run: echo "Dependency Review is PR-only; the aggregate check remains green for push and manual runs."
 
   test-app:
     name: Tests — app shard ${{ matrix.shard }}/8 (JDK 25)
@@ -640,13 +687,13 @@ jobs:
   # "Build & Test (JDK 25)" — the documented matrix-summary pattern (a
   # final job over needs.*.result) keeps that exact check name while the
   # work fans out. It is green ONLY when build, all 8 shards, the modules
-  # suite, the OpenAPI gate, the GraphQL schema gate, the Android GraphQL
-  # contract gate, AND the coverage gate are green — strictly more
+  # suite, dependency review, the OpenAPI gate, the GraphQL schema gate,
+  # the Android GraphQL contract gate, SBOM generation, AND coverage are green — strictly more
   # enforcement than the old single job (which could not even distinguish a
   # shard failure from a flake retry).
   build-test:
     name: Build & Test (JDK 25)
-    needs: [ build, test-app, test-modules, openapi-gate, graphql-schema-gate, coverage, android-graphql ]
+    needs: [ build, dependency-review, test-app, test-modules, openapi-gate, graphql-schema-gate, coverage, android-graphql ]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -658,4 +705,4 @@ jobs:
             echo "::error::One or more required gates did not pass — see the failed jobs in this run."
             exit 1
           fi
-          echo "All gates green: build, 8 app shards, modules suite, OpenAPI gate, GraphQL schema gate, Android GraphQL contract gate, coverage gate."
+          echo "All gates green: build + CycloneDX SBOM, dependency review, 8 app shards, modules suite, OpenAPI gate, GraphQL schema gate, Android GraphQL contract gate, coverage gate."
