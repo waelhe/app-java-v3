@@ -66,9 +66,27 @@ jobs:
           distribution: temurin
           cache: maven
           server-id: codegenome
-          server-username: CODEGENOME_USERNAME
-          server-password: CODEGENOME_TOKEN
+          server-username-env-var: CODEGENOME_USERNAME
+          server-password-env-var: CODEGENOME_TOKEN
           overwrite-settings: true
+
+      - name: Verify Code Genome artifact authentication
+        env:
+          CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
+          CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          artifact_url="https://artifacts.codegenomeproject.org/maven/org/openrewrite/maven/rewrite-maven-plugin/6.50.0/rewrite-maven-plugin-6.50.0.pom"
+          status="$(curl --silent --show-error --output "${RUNNER_TEMP}/openrewrite-plugin.pom" \
+            --write-out '%{http_code}' \
+            --user "${CODEGENOME_USERNAME}:${CODEGENOME_TOKEN}" \
+            "${artifact_url}")"
+          if [[ "${status}" != "200" ]]; then
+            echo "::error::Code Genome rejected the configured credential pair (HTTP ${status}). The secrets are present, but CODEGENOME_USERNAME must be the exact email/username used to sign in to Code Genome, and CODEGENOME_TOKEN must be a valid download token."
+            exit 1
+          fi
+          echo "Code Genome authenticated artifact download succeeded (HTTP 200); credentials were not printed."
 
       - name: Discover available recipes
         shell: bash
