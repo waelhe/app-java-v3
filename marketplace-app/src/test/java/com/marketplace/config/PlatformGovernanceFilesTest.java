@@ -450,6 +450,38 @@ class PlatformGovernanceFilesTest {
                 .check(imported);
     }
 
+    @Test
+    void openRewriteCatalogIsBomAlignedOptInAndAudited() throws IOException {
+        String pom = read("pom.xml");
+        assertThat(pom)
+                .as("OpenRewrite recipe and Maven plugin versions must follow the verified official catalog")
+                .contains("<openrewrite.recipe-bom.version>3.41.0</openrewrite.recipe-bom.version>")
+                .contains("<openrewrite.maven-plugin.version>6.50.0</openrewrite.maven-plugin.version>")
+                .contains("<artifactId>rewrite-recipe-bom</artifactId>")
+                .contains("<id>openrewrite</id>")
+                .contains("<artifactId>rewrite-third-party</artifactId>")
+                .contains("<artifactId>rewrite-all</artifactId>")
+                .contains("<artifactId>rewrite-spring</artifactId>")
+                .contains("<failOnInvalidActiveRecipes>true</failOnInvalidActiveRecipes>");
+
+        String catalog = read("docs", "governance", "openrewrite-catalog.md");
+        assertThat(catalog)
+                .as("catalog must record the version, licensing and execution boundary")
+                .contains("rewrite-all")
+                .contains("rewrite-third-party")
+                .contains("rewrite-spring")
+                .contains("Not yet proven")
+                .contains("failOnDryRunResults");
+
+        String workflow = read(".github", "workflows", "openrewrite-catalog.yml");
+        assertThat(workflow)
+                .as("OpenRewrite catalog audit must not silently skip credential or discovery checks")
+                .contains("CODEGENOME_USERNAME")
+                .contains("CODEGENOME_TOKEN")
+                .contains("rewrite-maven-plugin:6.50.0:discover")
+                .contains("rewrite-maven-plugin:6.50.0:dryRunNoFork");
+    }
+
     private static Path repoRoot() {
         Path cwd = Paths.get("").toAbsolutePath();
         Path repoRoot = cwd.resolve("..");
