@@ -102,6 +102,42 @@ require("Verify Spring/Maven guard policy alignment" in ci
         and "scripts/verify-framework-guard-policy.py" in ci,
         "policy check must run inside the existing CI workflow that feeds the required Build & Test gate.")
 
+# Keep the OpenRewrite installation complete, current, and restricted to Apache recipes.
+profile_start = pom_text.find("<id>openrewrite</id>")
+require(profile_start >= 0, "the current OpenRewrite Maven profile is missing.")
+profile_end = pom_text.find("</profile>", profile_start)
+require(profile_end > profile_start, "the OpenRewrite Maven profile is malformed.")
+rewrite_profile = pom_text[profile_start:profile_end]
+require("<version>6.50.0</version>" in rewrite_profile,
+        "OpenRewrite Maven plugin must be pinned to the approved current baseline 6.50.0 until version-policy review.")
+require("https://artifacts.codegenomeproject.org/maven" in rewrite_profile
+        and "<id>codegenome</id>" in rewrite_profile
+        and "https://repo.maven.apache.org/maven2" in rewrite_profile,
+        "OpenRewrite profile must configure authenticated Code Genome and Maven Central repositories.")
+require("com.marketplace.governance.OpenRewriteBaseline" in rewrite_profile
+        and "${maven.multiModuleProjectDirectory}/rewrite.yml" in rewrite_profile,
+        "OpenRewrite profile must execute the checked-in root recipe manifest.")
+for forbidden in ("org.openrewrite.recipe:rewrite-spring", "rewrite-static-analysis",
+                  "rewrite-migrate-java", "rewrite-hibernate", "rewrite-micrometer"):
+    require(forbidden not in rewrite_profile,
+            f"Source Available/proprietary recipe pack {forbidden} is not approved in the no-subscription profile.")
+
+rewrite_config = file_text("rewrite.yml")
+require("com.marketplace.governance.OpenRewriteBaseline" in rewrite_config,
+        "the project OpenRewrite recipe manifest is missing its root baseline recipe.")
+for recipe in ("org.openrewrite.java.format.AutoFormat",
+               "org.openrewrite.java.RemoveUnusedImports",
+               "org.openrewrite.maven.BestPractices"):
+    require(recipe in rewrite_config, f"required Apache-licensed baseline recipe is missing: {recipe}")
+
+rewrite_workflow = file_text(".github/workflows/openrewrite.yml")
+for evidence in ("CODEGENOME_USERNAME", "CODEGENOME_TOKEN", "rewrite:discover",
+                 "rewrite:dryRun", "actions/upload-artifact@v7"):
+    require(evidence in rewrite_workflow,
+            f"OpenRewrite CI workflow is missing required end-to-end behavior: {evidence}")
+require("git diff --quiet" in rewrite_workflow and "failOnInvalidActiveRecipes=true" in rewrite_workflow,
+        "OpenRewrite CI must remain non-mutating and fail on invalid recipe configuration.")
+
 # Fail closed if architecture verification is deleted or silently disabled.
 architecture = file_text("marketplace-app/src/test/java/com/marketplace/ArchitectureRulesTest.java")
 require("@ArchTest" in architecture and "modulesMustBeCycleFree" in architecture,

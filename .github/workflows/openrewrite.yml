@@ -1,0 +1,124 @@
+name: OpenRewrite baseline
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '**/*.java'
+      - '**/pom.xml'
+      - 'pom.xml'
+      - '**/*.yml'
+      - '**/*.yaml'
+      - '**/*.properties'
+      - 'rewrite.yml'
+      - '.github/workflows/openrewrite.yml'
+      - 'docs/governance/framework-maven-guard.md'
+      - 'scripts/verify-framework-guard-policy.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openrewrite-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dry-run:
+    name: OpenRewrite dry run (Java 25, Apache recipes)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check free Code Genome credentials
+        id: credentials
+        shell: bash
+        env:
+          CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
+          CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CODEGENOME_USERNAME}" || -z "${CODEGENOME_TOKEN}" ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### OpenRewrite was not run"
+              echo
+              echo "The current OpenRewrite release requires authenticated Code Genome downloads. No commercial subscription is required for Apache-licensed recipes, but the repository must have the free account credentials stored as CODEGENOME_USERNAME and CODEGENOME_TOKEN secrets."
+            } >> "$GITHUB_STEP_SUMMARY"
+            if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+              echo "::error::Set CODEGENOME_USERNAME and CODEGENOME_TOKEN to a free Code Genome account's download credentials, then rerun this workflow."
+              exit 1
+            fi
+            echo "::warning::OpenRewrite is skipped until the free Code Genome credentials are configured."
+            exit 0
+          fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 25
+        if: steps.credentials.outputs.enabled == 'true'
+        uses: actions/setup-java@v6.1.0
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Write temporary Maven credentials
+        if: steps.credentials.outputs.enabled == 'true'
+        shell: bash
+        env:
+          CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
+          CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.m2"
+          python3 - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          settings = ET.Element("settings")
+          servers = ET.SubElement(settings, "servers")
+          server = ET.SubElement(servers, "server")
+          ET.SubElement(server, "id").text = "codegenome"
+          ET.SubElement(server, "username").text = os.environ["CODEGENOME_USERNAME"]
+          ET.SubElement(server, "password").text = os.environ["CODEGENOME_TOKEN"]
+          path = Path.home() / ".m2" / "settings.xml"
+          ET.indent(settings, space="  ")
+          ET.ElementTree(settings).write(path, encoding="utf-8", xml_declaration=True)
+          path.chmod(0o600)
+          PY
+
+      - name: Discover recipes (validates configuration and recipe loading)
+        if: steps.credentials.outputs.enabled == 'true'
+        run: ./mvnw --batch-mode --no-transfer-progress -Popenrewrite -Drewrite.failOnInvalidActiveRecipes=true rewrite:discover
+
+      - name: Preview Java and Maven findings without changing source
+        if: steps.credentials.outputs.enabled == 'true'
+        run: ./mvnw --batch-mode --no-transfer-progress -Popenrewrite -Drewrite.failOnInvalidActiveRecipes=true rewrite:dryRun
+
+      - name: Assert OpenRewrite did not change tracked source files
+        if: steps.credentials.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "::error::OpenRewrite dryRun changed tracked files; the baseline job must remain non-mutating."
+            git diff --stat
+            exit 1
+          fi
+
+      - name: Upload OpenRewrite reports and patches
+        if: always() && steps.credentials.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: openrewrite-baseline-${{ github.sha }}
+          path: |
+            **/target/rewrite/**
+            **/target/site/rewrite/**
+            **/target/rewrite*.patch
+          if-no-files-found: warn
+          retention-days: 14

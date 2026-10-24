@@ -1236,5 +1236,52 @@
                 </plugins>
             </build>
         </profile>
+        <!-- Current OpenRewrite engine with Apache-licensed core Java/Maven recipes only.
+             Latest release is obtained from Code Genome using a free download token;
+             credentials are supplied by ~/.m2/settings.xml / GitHub Actions secrets,
+             never stored in this POM. Paid/source-available recipe packs are excluded. -->
+        <profile>
+            <id>openrewrite</id>
+            <repositories>
+                <repository>
+                    <id>codegenome</id>
+                    <url>https://artifacts.codegenomeproject.org/maven</url>
+                </repository>
+                <repository>
+                    <id>central</id>
+                    <url>https://repo.maven.apache.org/maven2</url>
+                </repository>
+            </repositories>
+            <pluginRepositories>
+                <pluginRepository>
+                    <id>codegenome</id>
+                    <url>https://artifacts.codegenomeproject.org/maven</url>
+                </pluginRepository>
+                <pluginRepository>
+                    <id>central</id>
+                    <url>https://repo.maven.apache.org/maven2</url>
+                </pluginRepository>
+            </pluginRepositories>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.openrewrite.maven</groupId>
+                        <artifactId>rewrite-maven-plugin</artifactId>
+                        <version>6.50.0</version>
+                        <configuration>
+                            <configLocation>${maven.multiModuleProjectDirectory}/rewrite.yml</configLocation>
+                            <activeRecipes>
+                                <recipe>com.marketplace.governance.OpenRewriteBaseline</recipe>
+                            </activeRecipes>
+                            <exportDatatables>true</exportDatatables>
+                            <failOnInvalidActiveRecipes>true</failOnInvalidActiveRecipes>
+                            <!-- Baseline reports are reviewed before this is made a blocking gate. -->
+                            <failOnDryRunResults>false</failOnDryRunResults>
+                            <reportOutputDirectory>${project.build.directory}/rewrite</reportOutputDirectory>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
     </profiles>
 </project>
