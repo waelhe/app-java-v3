@@ -89,3 +89,8 @@ This is deliberate BOM alignment rather than accidental drift. An override to a 
 
 
 The per-run catalog CSV resolves discovered recipe FQNs against both `.class` entries and `META-INF/rewrite/*.yml` descriptors in the downloaded/source-built JARs. The artifact coordinate and its official module license are recorded from the JAR that contains the implementation or descriptor. Unknown/conflicting attribution is a strict failure, not counted as audited. The source-built profile includes `rewrite-okhttp` because `android/app` uses an OkHttp client, plus `rewrite-feature-flags` for review against the platform's custom feature-flag model.
+
+
+## Separate mainframe module version source
+
+`org.openrewrite:rewrite-mainframe` is maintained in [moderneinc/rewrite-mainframe](https://github.com/moderneinc/rewrite-mainframe), not in the `openrewrite/rewrite` core repository. Therefore `rewrite-bom` cannot manage its version. The source-profile validator treats this as a separate-source coordinate only with the explicit version `3.2.1`; the source-build manifest records the resolved upstream commit. It is not silently omitted from the version check.
