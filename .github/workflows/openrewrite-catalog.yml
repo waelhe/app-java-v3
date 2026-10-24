@@ -135,7 +135,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p target/openrewrite
-          mvn --batch-mode --no-transfer-progress -Popenrewrite \
+          mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress -Popenrewrite \
             org.openrewrite.maven:rewrite-maven-plugin:6.50.0:discover \
             -Ddetail=true 2>&1 | tee target/openrewrite/recipe-discovery.txt
 
@@ -143,7 +143,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          mvn --batch-mode --no-transfer-progress -Popenrewrite \
+          mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress -Popenrewrite \
             org.openrewrite.maven:rewrite-maven-plugin:6.50.0:dryRunNoFork \
             -Drewrite.exportDatatables=true 2>&1 | tee target/openrewrite/dry-run.log
 
@@ -187,8 +187,8 @@ jobs:
           distribution: temurin
           cache: maven
           server-id: codegenome
-          server-username: CODEGENOME_USERNAME
-          server-password: CODEGENOME_TOKEN
+          server-username-env-var: CODEGENOME_USERNAME
+          server-password-env-var: CODEGENOME_TOKEN
           overwrite-settings: true
 
       - name: Write explicit Maven settings for Code Genome
@@ -224,5 +224,5 @@ jobs:
 
       - name: Verify Spring recipe discovery from the local build
         run: |
-          mvn --batch-mode --no-transfer-progress -Popenrewrite,openrewrite-spring-source \
+          mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress -Popenrewrite,openrewrite-spring-source \
             org.openrewrite.maven:rewrite-maven-plugin:6.50.0:discover -Ddetail=true
