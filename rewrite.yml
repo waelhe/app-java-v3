@@ -1,15 +1,24 @@
 ---
 type: specs.openrewrite.org/v1beta/recipe
 name: com.marketplace.governance.OpenRewriteBaseline
-displayName: Marketplace Java and Maven baseline
+displayName: Marketplace dependency inventory and resolution diagnostics
 description: >
-  Non-mutating baseline for Apache-licensed OpenRewrite recipes.
-  Suggestions are reviewed as patches; this recipe does not upgrade the Spring
-  Boot platform or rewrite application behavior.
+  Read-only dependency inventory and resolution diagnostics for the Maven reactor.
+  The default profile does not rewrite Java or POM source files.
+recipeList:
+  - org.openrewrite.java.dependencies.DependencyList:
+      scope: TestRuntime
+      includeTransitive: true
+      validateResolvable: true
+  - org.openrewrite.java.dependencies.DependencyResolutionDiagnostic
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.marketplace.governance.OpenRewriteRecommendations
+displayName: Marketplace Java and Maven review recommendations
+description: >
+  Explicitly requested, non-mutating preview of Java formatting/import and Maven
+  best-practice suggestions. Review the generated patch before applying anything.
 recipeList:
   - org.openrewrite.java.format.AutoFormat
   - org.openrewrite.java.RemoveUnusedImports
   - org.openrewrite.maven.BestPractices
-  - org.openrewrite.java.dependencies.DependencyList:
-      includeTransitive: true
-  - org.openrewrite.java.dependencies.DependencyResolutionDiagnostic

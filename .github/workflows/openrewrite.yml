@@ -1,7 +1,16 @@
-name: OpenRewrite baseline
+name: OpenRewrite inventory and recommendations
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "Inventory is read-only; recommendations generates source/POM suggestions for review."
+        required: true
+        default: inventory
+        type: choice
+        options:
+          - inventory
+          - recommendations
   pull_request:
     branches: [ main ]
     paths:
@@ -15,19 +24,20 @@ on:
       - '.github/workflows/openrewrite.yml'
       - 'docs/governance/framework-maven-guard.md'
       - 'scripts/verify-framework-guard-policy.py'
+      - 'scripts/summarize-openrewrite-report.py'
 
 permissions:
   contents: read
 
 concurrency:
-  group: openrewrite-${{ github.event.pull_request.number || github.ref }}
+  group: openrewrite-${{ github.event.pull_request.number || github.ref }}-${{ inputs.mode || 'inventory' }}
   cancel-in-progress: true
 
 jobs:
   dry-run:
-    name: OpenRewrite dry run (Java 25, Apache recipes)
+    name: OpenRewrite inventory/review (Java 25, Apache recipes)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -43,13 +53,12 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "${CODEGENOME_USERNAME}" || -z "${CODEGENOME_TOKEN}" ]]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
             {
-              echo "### OpenRewrite was not run"
+              echo "### OpenRewrite did not run"
               echo
-              echo "The current OpenRewrite release requires authenticated Code Genome downloads. No commercial subscription is required for Apache-licensed recipes, but the repository must have the free account credentials stored as CODEGENOME_USERNAME and CODEGENOME_TOKEN secrets."
+              echo "Code Genome credentials were not available. Add CODEGENOME_USERNAME and CODEGENOME_TOKEN repository Actions secrets. This workflow will not report green if OpenRewrite did not execute."
             } >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::CODEGENOME_USERNAME and CODEGENOME_TOKEN are required. Add a free Code Genome account's credentials as repository Actions secrets; this job will not report green when OpenRewrite did not run."
+            echo "::error::CODEGENOME_USERNAME and CODEGENOME_TOKEN are required; OpenRewrite must not be silently skipped."
             exit 1
           fi
           echo "enabled=true" >> "$GITHUB_OUTPUT"
@@ -75,7 +84,6 @@ jobs:
           import os
           import xml.etree.ElementTree as ET
           from pathlib import Path
-
           settings = ET.Element("settings")
           servers = ET.SubElement(settings, "servers")
           server = ET.SubElement(servers, "server")
@@ -88,31 +96,71 @@ jobs:
           path.chmod(0o600)
           PY
 
-      - name: Discover recipes (validates configuration and recipe loading)
+      - name: Discover current recipes
         if: steps.credentials.outputs.enabled == 'true'
-        run: ./mvnw --batch-mode --no-transfer-progress -Popenrewrite -Drewrite.failOnInvalidActiveRecipes=true rewrite:discover
+        env:
+          REWRITE_MODE: ${{ inputs.mode || 'inventory' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p target/rewrite
+          if [[ "$REWRITE_MODE" == "recommendations" ]]; then
+            ACTIVE_RECIPE="com.marketplace.governance.OpenRewriteRecommendations"
+          else
+            ACTIVE_RECIPE="com.marketplace.governance.OpenRewriteBaseline"
+          fi
+          ./mvnw --batch-mode --no-transfer-progress -Popenrewrite \
+            -Drewrite.activeRecipes="$ACTIVE_RECIPE" \
+            -Drewrite.failOnInvalidActiveRecipes=true \
+            -Ddetail=true rewrite:discover 2>&1 | tee target/rewrite/recipe-discovery.txt
 
-      - name: Preview Java and Maven findings without changing source
+      - name: Preview selected recipes without modifying source
         if: steps.credentials.outputs.enabled == 'true'
-        run: ./mvnw --batch-mode --no-transfer-progress -Popenrewrite -Drewrite.failOnInvalidActiveRecipes=true rewrite:dryRun
+        env:
+          REWRITE_MODE: ${{ inputs.mode || 'inventory' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$REWRITE_MODE" == "recommendations" ]]; then
+            ACTIVE_RECIPE="com.marketplace.governance.OpenRewriteRecommendations"
+          else
+            ACTIVE_RECIPE="com.marketplace.governance.OpenRewriteBaseline"
+          fi
+          ./mvnw --batch-mode --no-transfer-progress -Popenrewrite \
+            -Drewrite.activeRecipes="$ACTIVE_RECIPE" \
+            -Drewrite.failOnInvalidActiveRecipes=true \
+            -Drewrite.exportDatatables=true rewrite:dryRun
 
-      - name: Assert OpenRewrite did not change tracked source files
+      - name: Generate human-readable report
+        if: always() && steps.credentials.outputs.enabled == 'true'
+        env:
+          REWRITE_MODE: ${{ inputs.mode || 'inventory' }}
+          REWRITE_COMMIT: ${{ github.sha }}
+        run: |
+          mkdir -p target/rewrite
+          python3 scripts/summarize-openrewrite-report.py \
+            --mode "$REWRITE_MODE" --commit "$REWRITE_COMMIT" \
+            --report-root target/rewrite --output target/rewrite/openrewrite-summary.md
+          cat target/rewrite/openrewrite-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Assert dry run left tracked files untouched
         if: steps.credentials.outputs.enabled == 'true'
         shell: bash
         run: |
           set -euo pipefail
           if ! git diff --quiet || ! git diff --cached --quiet; then
-            echo "::error::OpenRewrite dryRun changed tracked files; the baseline job must remain non-mutating."
+            echo "::error::OpenRewrite dryRun changed tracked files; only preview output is permitted."
             git diff --stat
             exit 1
           fi
 
-      - name: Upload OpenRewrite reports and patches
+      - name: Upload OpenRewrite report, discovery catalog, and patches
         if: always() && steps.credentials.outputs.enabled == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: openrewrite-baseline-${{ github.sha }}
+          name: openrewrite-${{ inputs.mode || 'inventory' }}-${{ github.sha }}
           path: |
+            target/rewrite/**
             **/target/rewrite/**
             **/target/site/rewrite/**
             **/target/rewrite*.patch
