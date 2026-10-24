@@ -1,0 +1,23 @@
+---
+type: specs.openrewrite.org/v1beta/style
+name: com.marketplace.OpenRewriteBaselineStyle
+displayName: Marketplace OpenRewrite baseline style
+description: Preserves explicit Java imports and the platform's four-space Java and XML indentation.
+tags:
+  - java
+  - xml
+styleConfigs:
+  - org.openrewrite.java.style.ImportLayoutStyle:
+      classCountToUseStarImport: 999
+      nameCountToUseStarImport: 999
+  - org.openrewrite.java.style.TabsAndIndentsStyle:
+      useTabCharacter: false
+      tabSize: 4
+      indentSize: 4
+      continuationIndent: 8
+      indentsRelativeToExpressionStart: false
+  - org.openrewrite.xml.style.TabsAndIndentsStyle:
+      useTabCharacter: false
+      tabSize: 4
+      indentSize: 4
+      continuationIndentSize: 8

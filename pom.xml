@@ -1336,10 +1336,11 @@
                         <configuration>
                             <activeRecipes>
                                 <recipe>org.openrewrite.java.RemoveUnusedImports</recipe>
-                                <recipe>org.openrewrite.java.OrderImports</recipe>
                                 <recipe>org.openrewrite.maven.BestPractices</recipe>
-                                <recipe>org.openrewrite.maven.OrderPomElements</recipe>
                             </activeRecipes>
+                            <activeStyles>
+                                <style>com.marketplace.OpenRewriteBaselineStyle</style>
+                            </activeStyles>
                             <failOnInvalidActiveRecipes>true</failOnInvalidActiveRecipes>
                             <!-- First rollout captures the existing diff baseline as a CI artifact.
                                  Promote dry-run diffs to a blocking gate after baseline remediation. -->

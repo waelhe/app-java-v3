@@ -487,7 +487,21 @@ class PlatformGovernanceFilesTest {
         assertThat(baselineProfile)
                 .contains("<artifactId>rewrite-jackson</artifactId>")
                 .contains("<artifactId>rewrite-netty</artifactId>")
-                .contains("<artifactId>rewrite-openapi</artifactId>");
+                .contains("<artifactId>rewrite-openapi</artifactId>")
+                .contains("<style>com.marketplace.OpenRewriteBaselineStyle</style>")
+                .doesNotContain("<recipe>org.openrewrite.java.OrderImports</recipe>")
+                .doesNotContain("<recipe>org.openrewrite.maven.OrderPomElements</recipe>");
+
+        String rewriteStyle = read("rewrite.yml");
+        assertThat(rewriteStyle)
+                .as("OpenRewrite must use an explicit no-wildcard import threshold and preserve four-space indentation")
+                .contains("name: com.marketplace.OpenRewriteBaselineStyle")
+                .contains("classCountToUseStarImport: 999")
+                .contains("nameCountToUseStarImport: 999")
+                .contains("org.openrewrite.java.style.TabsAndIndentsStyle")
+                .contains("org.openrewrite.xml.style.TabsAndIndentsStyle")
+                .contains("indentSize: 4")
+                .contains("continuationIndentSize: 8");
 
         int springProfileStart = pom.indexOf("<id>openrewrite-spring-source</id>");
         int springProfileEnd = pom.indexOf("</profile>", springProfileStart);
