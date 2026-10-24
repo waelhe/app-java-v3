@@ -181,24 +181,6 @@ public class ProductVariant extends BaseEntity {
         this.stockQuantity = quantity;
     }
 
-    /**
-     * The display amendment — the row's own amendable facts (the
-     * {@code Product.updateDetails} twin, the Saleor
-     * {@code productVariantUpdate} root's movable set): the SKU, the
-     * display name and the authoritative unit price. The ownership
-     * facts (productId, providerId, currency — the denormalized
-     * copies), the reserved counter and the lifecycle are NOT movable
-     * here — each is its own owning capability. The shapes are the
-     * SERVICE's own re-checks (the entity's own column contracts);
-     * the SKU's namespace freedom is the service's own precheck (the
-     * V219 unique index remains the concurrent-write backstop).
-     */
-    public void reviseDetails(String sku, String name, long priceMinor) {
-        this.sku = sku;
-        this.name = name;
-        this.priceMinor = priceMinor;
-    }
-
     /** The availability writes — the guarded transitions (the service gates ownership). */
     public void suspend() {
         requireTransition(ProductStatus.SUSPENDED);

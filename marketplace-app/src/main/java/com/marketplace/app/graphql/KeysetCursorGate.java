@@ -70,13 +70,7 @@ final class KeysetCursorGate {
     /**
      * The sort-aware form: a forward keyset over exactly
      * {@code (sortProperty: its declared type, id: UUID)} — the caller owns
-     * the property-to-normalizer mapping of its own sort vocabulary. The
-     * unique-key sort (sortProperty "id" itself — the variant scroll's
-     * own ID sort) carries the SINGLE-key vocabulary {id}: the expected
-     * key set and the rebuilt position both collapse to the one key (the
-     * naive Set.of("id", "id") would throw its own duplicate-element
-     * error instead of the classified taxonomy — the gap the variant
-     * ID-sort leg measured).
+     * the property-to-normalizer mapping of its own sort vocabulary.
      */
     static KeysetScrollPosition forwardKeyset(EncodingCursorStrategy<ScrollPosition> cursorStrategy,
                                               String after, String sortProperty,
@@ -84,22 +78,16 @@ final class KeysetCursorGate {
         if (after == null) {
             return ScrollPosition.keyset();
         }
-        boolean uniqueKeySort = "id".equals(sortProperty);
-        Set<String> expectedKeys = uniqueKeySort ? Set.of("id") : Set.of(sortProperty, "id");
         ScrollPosition decoded = cursorStrategy.fromCursor(after);
         if (!(decoded instanceof KeysetScrollPosition keyset)
                 || !keyset.scrollsForward()
-                || !keyset.getKeys().keySet().equals(expectedKeys)) {
+                || !keyset.getKeys().keySet().equals(Set.of(sortProperty, "id"))) {
             throw new IllegalArgumentException(
                     "after must be a forward keyset cursor emitted by " + owner);
         }
         try {
-            Object idRaw = keyset.getKeys().get("id");
-            if (uniqueKeySort) {
-                return ScrollPosition.forward(Map.of(
-                        "id", uuidValue(idRaw)));
-            }
             Object sortRaw = keyset.getKeys().get(sortProperty);
+            Object idRaw = keyset.getKeys().get("id");
             return ScrollPosition.forward(Map.of(
                     sortProperty, sortValue.apply(sortRaw),
                     "id", uuidValue(idRaw)));

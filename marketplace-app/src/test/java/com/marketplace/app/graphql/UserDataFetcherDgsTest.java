@@ -1,25 +1,11 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.catalog.spi.CatalogSpi;
-import com.marketplace.catalog.spi.ProductTypeReadSpi;
-import com.marketplace.catalog.spi.AttributeReadSpi;
-import com.marketplace.console.spi.CmsNavigationSpi;
-import com.marketplace.console.spi.CmsPageSpi;
-import com.marketplace.identity.spi.UserManagementSpi;
-import com.marketplace.identity.spi.CustomerTypeSpi;
-import com.marketplace.identity.spi.AddressManagementSpi;
-import com.marketplace.identity.spi.AccountLifecycleSpi;
-import com.marketplace.pricing.spi.DiscountReadSpi;
-import com.marketplace.catalog.spi.ProductVariantReadSpi;
-import com.marketplace.catalog.spi.ProductReadSpi;
-import com.marketplace.catalog.spi.CategoryReadSpi;
-import com.marketplace.catalog.spi.CategoryWriteSpi;
 import com.marketplace.catalog.spi.ProductAdminSpi;
 import com.marketplace.community.spi.NeighborhoodFeedPort;
 import com.marketplace.community.spi.NeighborhoodPostDetailPort;
 import com.marketplace.discovery.spi.DiscoverySpi;
 import com.marketplace.identity.spi.IdentitySpi;
-import com.marketplace.orders.spi.OrderReadSpi;
 import com.marketplace.identity.spi.UserAccountPage;
 import com.marketplace.identity.spi.UserAccountSort;
 import com.marketplace.identity.spi.UserAccountView;
@@ -45,7 +31,6 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.Instant;
@@ -124,129 +109,6 @@ class UserDataFetcherDgsTest {
     @MockitoBean
     private IdentitySpi identitySpi;
 
-    @MockitoBean
-    private com.marketplace.orders.spi.OrderCommandSpi orderCommandSpi;
-
-    @MockitoBean
-    private com.marketplace.orders.spi.CheckoutSpi checkoutSpi;
-
-    @MockitoBean
-    private ProductVariantReadSpi variantReadSpi;
-
-    // The product-variant mutation roots' owning write seam (agent-2
-    // follow-on packet) — the package slice wires every fetcher, so
-    // this seam gets its mock (the b5-a sibling-test precedent).
-    @MockitoBean
-    private com.marketplace.catalog.spi.ProductVariantWriteSpi productVariantWriteSpi;
-
-    // The translation mutation roots' owning write seam (agent-2
-    // follow-on packet) — the package slice wires every fetcher, so
-    // this seam gets its mock (the b5-a sibling-test precedent).
-    @MockitoBean
-    private com.marketplace.catalog.spi.TranslationWriteSpi translationWriteSpi;
-
-    // The product-type attribute schema mutation roots' owning write
-    // seam (agent-2 follow-on packet) — the package slice wires every
-    // fetcher, so this seam gets its mock (the sibling-test precedent).
-    @MockitoBean
-    private com.marketplace.catalog.spi.ProductTypeAttributeWriteSpi productTypeAttributeWriteSpi;
-
-    @MockitoBean
-    private OrderReadSpi orderReadSpi;
-
-    @MockitoBean
-    private ProductReadSpi productReadSpi;
-
-    // The product-media mutation roots' owning seam (agent-2 N-slice) —
-    // the package slice wires every fetcher, so this seam gets its mock
-    // (the sibling-test precedent).
-    @MockitoBean
-    private com.marketplace.media.spi.ProductMediaWriteSpi productMediaWriteSpi;
-
-    @MockitoBean
-    private CategoryReadSpi categoryReadSpi;
-    // The category mutation roots' owning write seam (agent-2 packet) —
-    // the package slice wires every fetcher, so this seam gets its mock
-    // (the b5-a sibling-test precedent).
-    @MockitoBean
-    private CategoryWriteSpi categoryWriteSpi;
-
-    // The collection read/mutation roots' owning seams (agent-2 L-slice) —
-    // the package slice wires every fetcher, so these seams get their
-    // mocks (the sibling-test precedent).
-    @MockitoBean
-    private com.marketplace.catalog.spi.CollectionReadSpi collectionReadSpi;
-    @MockitoBean
-    private com.marketplace.catalog.spi.CollectionWriteSpi collectionWriteSpi;
-    // The promotion/voucher read roots' owning seam (b5-b packet) — the
-    // sibling-test mock the packet's own precedent prescribed but did not
-    // complete; the package slice context cannot boot without it.
-    @MockitoBean
-    private com.marketplace.pricing.spi.DiscountReadSpi discountReadSpi;
-    // The package slice wires every fetcher; every seam the slice's other
-    // fetchers need gets its mock — the incomplete sibling fixes the
-    // b4/b5 packets left behind (committed against a red CI) completed
-    // here so the shared slice context can boot at all.
-    @MockitoBean
-    private com.marketplace.catalog.spi.AttributeReadSpi attributeReadSpi;
-    @MockitoBean
-    private com.marketplace.catalog.spi.ProductTypeReadSpi productTypeReadSpi;
-    // The voucher mutation roots' owning write seam (agent-2 packet) —
-    // the package slice wires every fetcher, so this seam gets its mock
-    // (the b5-a sibling-test precedent).
-    @MockitoBean
-    private com.marketplace.pricing.spi.VoucherWriteSpi voucherWriteSpi;
-    // The product-type and product mutation roots' owning write seams
-    // (agent-2 packet) — the package slice wires every fetcher, so
-    // these seams get their mocks (the b5-a sibling-test precedent).
-    @MockitoBean
-    private com.marketplace.catalog.spi.ProductTypeWriteSpi productTypeWriteSpi;
-    @MockitoBean
-    private com.marketplace.catalog.spi.ProductWriteSpi productWriteSpi;
-    // The attribute mutation roots' owning write seam (agent-2 packet) —
-    // the package slice wires every fetcher, so this seam gets its mock
-    // (the b5-a sibling-test precedent).
-    @MockitoBean
-    private com.marketplace.catalog.spi.AttributeWriteSpi attributeWriteSpi;
-    // The attribute-value mutation roots' owning write seam (agent-2
-    // packet) — the package slice wires every fetcher, so this seam
-    // gets its mock (the b5-a sibling-test precedent).
-    @MockitoBean
-    private com.marketplace.catalog.spi.AttributeValueWriteSpi attributeValueWriteSpi;
-    @MockitoBean
-    private AccountLifecycleSpi accountLifecycleSpi;
-    @MockitoBean
-    private AddressManagementSpi addressManagementSpi;
-    @MockitoBean
-    private CustomerTypeSpi customerTypeSpi;
-    @MockitoBean
-    private UserManagementSpi userManagementSpi;
-    @MockitoBean
-    private CmsPageSpi cmsPageSpi;
-    @MockitoBean
-    private CmsNavigationSpi cmsNavigationSpi;
-
-    // The post-merge integration round (PR #696 review): the slice scans
-    // ALL of com.marketplace.app.graphql, so it discovers the multi-instance
-    // rotation round's JdbcRefreshTokenRotationStore — a real @Component
-    // whose constructor needs a JdbcTemplate the containerless slice has
-    // no DataSource for. The mock satisfies the wiring; the store's REAL
-    // behavior (including the two-instance atomicity) is proven over real
-    // PostgreSQL/Flyway in PlatformTokenGrantRotationMultiInstanceIntegrationTest.
-    @MockitoBean
-    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
-
-    // The post-merge integration round's wiring completion (PR #696
-    // review): the slice scans ALL of com.marketplace.app.graphql, and
-    // A0's central assembly landed EVERY campaign fetcher in that one
-    // package — so the slice must satisfy the constructor seam of every
-    // discovered fetcher, not just its own domain's. The missing owning
-    // SPIs join the mocked seam set here (the declared interfaces, never
-    // the internals; the REAL implementations are proven in the owning
-    // modules' suites and the full-stack integration tests over real
-    // PostgreSQL/Flyway).
-    @MockitoBean
-    private PlatformTokenGrantService platformTokenGrantService;
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();

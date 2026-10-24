@@ -49,41 +49,4 @@ public interface UserRepository extends JpaRepository<User, UUID>, RevisionRepos
     Window<User> findByOrderByUpdatedAtAscIdAsc(KeysetScrollPosition position, Limit limit);
 
     Window<User> findByOrderByUpdatedAtDescIdDesc(KeysetScrollPosition position, Limit limit);
-
-    /**
-     * P1 (the canonical Saleor plan §5-P1 — the {@code customers} keyset
-     * scroll): forward-only keyset scrolling over the CUSTOMER population
-     * (the accounts whose primary role is {@code CONSUMER} — the platform's
-     * customer/consumer role, the closed vocabulary the V187 CHECK pins) in
-     * the three sorts with an owning column, each with the deterministic
-     * {@code id} tiebreaker. The same official Spring Data JPA scrolling
-     * contract as the roster methods above — derived query methods taking a
-     * role predicate plus {@link KeysetScrollPosition} and {@link Limit} and
-     * returning {@link Window}; the static ordering is baked into the method
-     * name because keyset positions are only meaningful against one fixed
-     * sort. Six methods, one per (field, direction) pair the Saleor
-     * {@code UserSortingInput} subset executes. Soft-deleted rows are
-     * absent by the entity's own {@code @SoftDelete} filter (the same
-     * visibility every identity read applies).
-     */
-    Window<User> findByRoleOrderByEmailAscIdAsc(UserRole role, KeysetScrollPosition position, Limit limit);
-
-    Window<User> findByRoleOrderByEmailDescIdDesc(UserRole role, KeysetScrollPosition position, Limit limit);
-
-    Window<User> findByRoleOrderByCreatedAtAscIdAsc(UserRole role, KeysetScrollPosition position, Limit limit);
-
-    Window<User> findByRoleOrderByCreatedAtDescIdDesc(UserRole role, KeysetScrollPosition position, Limit limit);
-
-    Window<User> findByRoleOrderByUpdatedAtAscIdAsc(UserRole role, KeysetScrollPosition position, Limit limit);
-
-    Window<User> findByRoleOrderByUpdatedAtDescIdDesc(UserRole role, KeysetScrollPosition position, Limit limit);
-
-    /**
-     * P1 (the {@code customers} root's {@code totalCount}): the size of the
-     * customer population — the count of live accounts whose primary role
-     * is the given role (derived {@code CountBy<Property>} query per the
-     * official Spring Data JPA contract; the connection's honest collection
-     * total, never a fabricated number).
-     */
-    long countByRole(UserRole role);
 }

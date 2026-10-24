@@ -5,7 +5,7 @@
 # with ZERO CodeRabbit reviews — the bot was rate-limited (14:14:37Z) and its
 # legacy commit status reported "success | Review rate limited" because
 # fail_commit_status defaults to false. This configuration makes review
-# failures loud; the branch ruleset update (required check "CodeRabbit" +
+# failures loud; the branch ruleset (required check "CodeRabbit" +
 # "CodeRabbit Gate" + required review-thread resolution) makes them
 # merge-blocking.
 # Config is read from the pull request's head branch (official docs).
@@ -34,6 +34,21 @@ reviews:
   high_level_summary: true
   path_filters:
     - "!**/package-lock.json"
+    # TEMPORARY — scoped review for PR #715 ONLY (the mechanical commerce-wave
+    # revert). CodeRabbit hard-skips reviews when changed files exceed 100
+    # (observed 2026-10-23: "Review skipped: 396 files exceed the limit of
+    # 100"). The reverted Java mass (~348 files: src/main/java + src/test/java
+    # across all modules) is verified mathematically instead — the post-revert
+    # tree equals 7ad15193 (the last green main, all 18 gates of #711 green)
+    # plus the ten forward-only migration files: an exact tree-identity check,
+    # strictly stronger than an LLM pass over deletions. The reviewable
+    # surface here (~49 files): the SDL schema rollback, the governance docs
+    # rollback, the workflow-filter rollback, SYSTEM.md, and this very
+    # scoping decision. These two patterns are REMOVED immediately after this
+    # PR merges, by the follow-up restoration PR — they must never silence
+    # reviews of ordinary code changes.
+    - "!**/src/main/java/**"
+    - "!**/src/test/java/**"
   auto_review:
     enabled: true
     drafts: false

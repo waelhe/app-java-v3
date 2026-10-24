@@ -3,8 +3,6 @@ package com.marketplace.pricing;
 import com.marketplace.shared.jpa.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.EnumType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import org.hibernate.envers.Audited;
@@ -50,7 +48,6 @@ public class Voucher extends BaseEntity {
     @Column(name = "currency", nullable = false, length = 3)
     private String currency;
 
-    @Enumerated(EnumType.STRING)
     @Column(name = "discount_type", nullable = false, length = 12)
     private DiscountType discountType;
 
@@ -161,34 +158,6 @@ public class Voucher extends BaseEntity {
 
     public void deactivate() {
         this.active = false;
-    }
-
-    /**
-     * The policy row's amendment shape — the ADMIN write use case's own
-     * seam (the Saleor {@code voucherUpdate} root mapped onto the row's
-     * columns). The arguments are the MERGED effective values (the use
-     * case computed them: each command field over the row's current
-     * value, null-command = preserve); {@code null} temporal values
-     * preserve the column (the surface's omit-to-preserve closure — a
-     * window bound is never cleared through this seam).
-     */
-    void revise(String code, String name, DiscountType discountType, long discountValue,
-                String currency, long minSpendMinor, Instant startsAt, Instant endsAt,
-                Long maxRedemptions, Long maxRedemptionsPerUser) {
-        this.code = code;
-        this.name = name;
-        this.discountType = discountType;
-        this.discountValue = discountValue;
-        this.currency = currency;
-        this.minSpendMinor = minSpendMinor;
-        if (startsAt != null) {
-            this.startsAt = startsAt;
-        }
-        if (endsAt != null) {
-            this.endsAt = endsAt;
-        }
-        this.maxRedemptions = maxRedemptions;
-        this.maxRedemptionsPerUser = maxRedemptionsPerUser;
     }
 
     @Override

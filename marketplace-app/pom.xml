@@ -483,8 +483,6 @@
                         <StoreProductUpdateInput>com.marketplace.app.graphql.StoreProductUpdateInput</StoreProductUpdateInput>
                         <StoreProductAttributeValueInput>com.marketplace.app.graphql.StoreProductAttributeValueInput</StoreProductAttributeValueInput>
                         <StoreProductVariantCreateInput>com.marketplace.app.graphql.StoreProductVariantCreateInput</StoreProductVariantCreateInput>
-                         <!-- DGS generated DTOs use the concrete Java UUID type for this custom scalar. -->
-                         <UUID>java.util.UUID</UUID>
                     </typeMapping>
                     <generateDataTypes>true</generateDataTypes>
                     <!-- The adapter's Mojo default for the all-fields
