@@ -143,7 +143,10 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress -Popenrewrite \
+          # Build all reactor modules first so dryRunNoFork can resolve sibling SNAPSHOT artifacts.
+          # Unit/integration tests are skipped here; the ordinary CI workflows own their execution.
+          mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress \
+            -DskipTests package -Popenrewrite \
             org.openrewrite.maven:rewrite-maven-plugin:6.50.0:dryRunNoFork \
             -Drewrite.exportDatatables=true 2>&1 | tee target/openrewrite/dry-run.log
 
