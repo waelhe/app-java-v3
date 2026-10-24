@@ -102,29 +102,34 @@ require("Verify Spring/Maven guard policy alignment" in ci
         and "scripts/verify-framework-guard-policy.py" in ci,
         "policy check must run inside the existing CI workflow that feeds the required Build & Test gate.")
 
-# Keep the OpenRewrite installation complete, current, and restricted to Apache recipes.
+# Keep the OpenRewrite plugin, license-allowed recipe packs, and separate modes aligned to official metadata.
 profile_start = pom_text.find("<id>openrewrite</id>")
 require(profile_start >= 0, "the current OpenRewrite Maven profile is missing.")
 profile_end = pom_text.find("</profile>", profile_start)
 require(profile_end > profile_start, "the OpenRewrite Maven profile is malformed.")
 rewrite_profile = pom_text[profile_start:profile_end]
 require("<version>6.50.0</version>" in rewrite_profile,
-        "OpenRewrite Maven plugin must be pinned to the approved current baseline 6.50.0 until version-policy review.")
+        "OpenRewrite Maven plugin must match the reviewed official 6.50.0 release.")
+require("rewrite-recipe-bom:3.41.0" in rewrite_profile,
+        "the manually pinned plugin dependencies must document official rewrite-recipe-bom 3.41.0 as their alignment reference.")
 require("https://artifacts.codegenomeproject.org/maven" in rewrite_profile
         and "<id>codegenome</id>" in rewrite_profile
         and "https://repo.maven.apache.org/maven2" in rewrite_profile,
         "OpenRewrite profile must configure authenticated Code Genome and Maven Central repositories.")
 require("com.marketplace.governance.OpenRewriteBaseline" in rewrite_profile
         and "${maven.multiModuleProjectDirectory}/rewrite.yml" in rewrite_profile,
-        "OpenRewrite profile must execute the checked-in root recipe manifest.")
+        "OpenRewrite profile must run the checked-in root recipe manifest.")
 for forbidden in ("org.openrewrite.recipe:rewrite-spring", "rewrite-static-analysis",
                   "rewrite-migrate-java", "rewrite-hibernate", "rewrite-micrometer",
                   "rewrite-logging-frameworks", "rewrite-okhttp", "rewrite-github-actions"):
     require(forbidden not in rewrite_profile,
-            f"Source Available/proprietary recipe pack {forbidden} is not approved in the no-subscription profile.")
+            f"Source Available/proprietary recipe pack {forbidden} is not approved in the no-commercial-subscription profile.")
 
-# Keep only exact, currently documented Apache-licensed module versions available to this project.
+# These plugin dependency versions are pinned manually because OpenRewrite documents that Maven
+# does not apply BOM management to plugin dependencies. Versions were checked against recipe BOM 3.41.0.
 allowed_modules = {
+    "rewrite-all": "1.30.2",
+    "rewrite-third-party": "0.49.0",
     "rewrite-java-dependencies": "1.64.1",
     "rewrite-jackson": "1.31.1",
     "rewrite-netty": "0.13.2",
@@ -134,27 +139,47 @@ allowed_modules = {
 for artifact, version in allowed_modules.items():
     require(f"<artifactId>{artifact}</artifactId>" in rewrite_profile
             and f"<version>{version}</version>" in rewrite_profile,
-            f"OpenRewrite Apache module {artifact}:{version} is missing or drifted.")
+            f"OpenRewrite module {artifact}:{version} is missing or not pinned to the reviewed official version.")
 
 rewrite_config = file_text("rewrite.yml")
-require("com.marketplace.governance.OpenRewriteBaseline" in rewrite_config,
-        "the project OpenRewrite recipe manifest is missing its root baseline recipe.")
-for recipe in ("org.openrewrite.java.format.AutoFormat",
-               "org.openrewrite.java.RemoveUnusedImports",
-               "org.openrewrite.maven.BestPractices",
-               "org.openrewrite.java.dependencies.DependencyList",
-               "org.openrewrite.java.dependencies.DependencyResolutionDiagnostic"):
-    require(recipe in rewrite_config, f"required Apache-licensed baseline recipe is missing: {recipe}")
+require("name: com.marketplace.governance.OpenRewriteBaseline" in rewrite_config
+        and "name: com.marketplace.governance.OpenRewriteRecommendations" in rewrite_config,
+        "both the read-only inventory and manual recommendation recipes must be defined.")
+baseline_start = rewrite_config.index("name: com.marketplace.governance.OpenRewriteBaseline")
+recommendations_start = rewrite_config.index("name: com.marketplace.governance.OpenRewriteRecommendations")
+baseline_recipe = rewrite_config[baseline_start:recommendations_start]
+recommendation_recipe = rewrite_config[recommendations_start:]
+for recipe_text in ("org.openrewrite.java.dependencies.DependencyList",
+                    "scope: TestRuntime", "includeTransitive: true", "validateResolvable: true",
+                    "org.openrewrite.java.dependencies.DependencyResolutionDiagnostic"):
+    require(recipe_text in baseline_recipe,
+            f"read-only inventory recipe is missing required behavior: {recipe_text}")
+for recipe_text in ("org.openrewrite.java.format.AutoFormat",
+                    "org.openrewrite.java.RemoveUnusedImports",
+                    "org.openrewrite.maven.BestPractices"):
+    require(recipe_text in recommendation_recipe,
+            f"manual recommendation mode is missing recipe: {recipe_text}")
+require(all(recipe not in baseline_recipe for recipe in (
+        "org.openrewrite.java.format.AutoFormat",
+        "org.openrewrite.java.RemoveUnusedImports",
+        "org.openrewrite.maven.BestPractices")),
+        "source/POM recommendation recipes must not run in the default read-only inventory mode.")
 
 rewrite_workflow = file_text(".github/workflows/openrewrite.yml")
 for evidence in ("CODEGENOME_USERNAME", "CODEGENOME_TOKEN", "rewrite:discover",
-                 "rewrite:dryRun", "actions/upload-artifact@v7"):
+                 "rewrite:dryRun", "actions/upload-artifact@v7",
+                 "scripts/summarize-openrewrite-report.py", "recommendations",
+                 "GITHUB_STEP_SUMMARY"):
     require(evidence in rewrite_workflow,
-            f"OpenRewrite CI workflow is missing required end-to-end behavior: {evidence}")
+            f"OpenRewrite workflow is missing required end-to-end behavior: {evidence}")
 require("git diff --quiet" in rewrite_workflow and "failOnInvalidActiveRecipes=true" in rewrite_workflow,
-        "OpenRewrite CI must remain non-mutating and fail on invalid recipe configuration.")
-require("OpenRewrite is skipped" not in rewrite_workflow and "exit 1" in rewrite_workflow,
+        "OpenRewrite must stay non-mutating and fail on invalid recipes.")
+require("CODEGENOME_USERNAME and CODEGENOME_TOKEN are required" in rewrite_workflow
+        and "OpenRewrite is skipped" not in rewrite_workflow,
         "OpenRewrite CI must fail visibly when credentials are missing instead of reporting a silent success.")
+report_script = file_text("scripts/summarize-openrewrite-report.py")
+require("DependencyListReport.csv" in report_script and "openrewrite-summary.md" in report_script,
+        "the report summarizer must read dependency data tables and create the human-readable summary.")
 
 # Fail closed if architecture verification is deleted or silently disabled.
 architecture = file_text("marketplace-app/src/test/java/com/marketplace/ArchitectureRulesTest.java")
