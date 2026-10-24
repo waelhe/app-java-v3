@@ -1,0 +1,213 @@
+# === Campaign packet campaign-b4-a: the Saleor category read roots ===
+# "List of the shop's categories." — the listing-category registry (the
+# controlled vocabulary the listing category column references) with
+# its countable-connection envelope (edges/pageInfo/totalCount,
+# byte-shape from the pinned schema). FORWARD-ONLY keyset paging on
+# this first slice: first/after ride the platform's ScrollPosition
+# keyset contract (the staffUsers/permissionGroups/productTypes/
+# attributes precedent — cursors identify a row's sort key (name, id),
+# never an absolute offset); before/last stay declared (the exact
+# Saleor argument shape) but answer an explicit classified error until
+# a backward scroll exists — a recorded, tested boundary, not a silent
+# no-op. filter (deprecated upstream), where and level (the flat
+# registry owns NO nesting tree) are likewise the declared wire shapes
+# with explicit not-yet-supported errors. These are Saleor PUBLIC
+# storefront roots: the pinned contract requires no permission for
+# published categories and the platform registry carries no publication
+# flag (every ACTIVE row is published reference data), so there is no
+# role gate and no include-unpublished surface to map — the platform's
+# authentication boundary for this surface is the /graphql chain itself
+# (the registered public-root mapping divergence). The sort vocabulary
+# is Saleor's own CategorySortField enum: NAME executes as the real
+# keyset sort (the rendered bilingual name, deterministic with the id
+# tiebreaker); PRODUCT_COUNT and SUBCATEGORY_COUNT (a products
+# connection and a category tree the flat registry does not own)
+# answer the explicit not-implemented error.
+categories(
+"""Filtering options for categories."""
+filter: CategoryFilterInput @deprecated(reason: "Use `where` filter instead.")
+
+"""Where filtering options for categories."""
+where: CategoryWhereInput
+
+"""Sort categories."""
+sortBy: CategorySortingInput
+
+"""Filter categories by the nesting level in the category tree (no tree on this platform — an explicit classified error)."""
+level: Int
+
+"""Return the elements in the list that come before the specified cursor."""
+before: String
+
+"""Return the elements in the list that come after the specified cursor."""
+after: String
+
+"""Retrieve the first n elements from the list."""
+first: Int
+
+"""Retrieve the last n elements from the list."""
+last: Int
+): CategoryCountableConnection
+
+# "Look up a category by ID, slug, slug language code or external reference." —
+# the public storefront lookup (no permission for published content —
+# the public-root mapping divergence above). id executes through the
+# typed global-ID codec; slug executes through the owner's code lookup
+# (upstream's id-first precedence when both are sent). An unknown but
+# well-formed key answers null (the safe absence); a malformed or
+# mistyped global ID answers the codec's classified validation error —
+# never a raw UUID fallback. slugLanguageCode (no translation owner —
+# the bounded AR/EN enum below is the registry's own bilingual fact)
+# and externalReference (no external-ID column) answer the explicit
+# classified error whenever they are sent; a keyless call answers the
+# classified validation error (the recorded divergence from upstream's
+# null answer).
+category(
+"""ID of the category."""
+id: ID
+
+"""Slug of the category."""
+slug: String
+
+"""Slug language code (no translation owner — an explicit classified error)."""
+slugLanguageCode: LanguageCodeEnum
+
+"""External ID of the category (no external-ID column — an explicit classified error)."""
+externalReference: String
+): Category
+
+# === Campaign packet campaign-b4-a: bounded type declarations (integrated in-branch by A0 — the sequential single-writer flow) ===
+# ---------------------------------------------------------------------
+# The bounded Category projection — see the block comment above for
+# the closure policy. id is the typed global ID over the native
+# categories key; name is the rendered primary display name
+# (nameEn else nameAr — NULLABLE because the registry's own columns
+# carry no at-least-one constraint, the registered nullability
+# divergence from Saleor's String!); slug is the row's immutable
+# public code (the code-as-slug mapping the attribute slice
+# recorded). nameAr and position are PLATFORM EXTENSION facts the
+# registry owns and the Saleor wire shape does not carry — preserved
+# per the governing matrix's own "platform-only fields as extensions"
+# policy. Unowned Saleor fields stay undeclared with reasons: the
+# metadata family (no metadata store), seoTitle/seoDescription (no
+# owning columns), description/fullDescription/descriptionJson
+# (rich-text JSON — no owning column and no JSONString scalar),
+# externalReference (no external-ID column), updatedAt (no typed
+# DateTime scalar on this surface — the house no-new-scalar
+# decision), parent/children/ancestors/level (the registry is FLAT —
+# no nesting tree), products (the products connection is the P2
+# products slice's own later fact) and translation (no translation
+# owner).
+# ---------------------------------------------------------------------
+type Category {
+    """The ID of the category — typed global ID (opaque, never a raw UUID)."""
+    id: ID!
+
+    """Name of the category (the rendered primary display name; null only for a registry row carrying neither bilingual name — the registered nullability divergence)."""
+    name: String
+
+    """The registry's Arabic display name (a platform extension fact)."""
+    nameAr: String
+
+    """Slug of the category (the row's immutable public code)."""
+    slug: String!
+
+    """The registry's own display order, ascending (a platform extension fact)."""
+    position: Int!
+}
+
+# Saleor's connection envelope for countable category lists —
+# declared (not runtime-generated) so the exact Saleor shape stands,
+# including totalCount. Spring's ConnectionTypeDefinitionConfigurer
+# skips already-declared connection types (the measured
+# declared-types-skip behavior the UserCountableConnection/
+# AttributeCountableConnection declarations recorded), so this
+# declaration wins and the generated connections elsewhere are
+# untouched. pageInfo reuses the EXISTING shared PageInfo type — not
+# redeclared.
+type CategoryCountableConnection {
+    """Pagination data for this connection."""
+    pageInfo: PageInfo!
+
+    edges: [CategoryCountableEdge!]!
+
+    """A total count of items in the collection."""
+    totalCount: Int
+}
+
+type CategoryCountableEdge {
+    """The item at the end of the edge."""
+    node: Category!
+
+    """A cursor for use in pagination (the row's keyset sort key)."""
+    cursor: String!
+}
+
+# The bounded language vocabulary — the registry's own bilingual fact
+# (nameEn/nameAr, the platform's two declared languages). Saleor's
+# full 3.23 closure stays undeclared until a translation owner exists
+# (the P5 translation roots' own decision); the category root's
+# slugLanguageCode argument answers the explicit classified error
+# whenever it is sent — the enum exists so the argument's declared
+# wire shape is honest, never a silently ignored argument.
+enum LanguageCodeEnum {
+    """Arabic — the primary market's language."""
+    AR
+
+    """English — the storefront's default language."""
+    EN
+}
+
+# Saleor's category filter input — the declared wire shape of the
+# deprecated filter argument (see categories: an explicit classified
+# error until the owning query capability exists). BOUNDED closure:
+# search/ids/slugs carry the scalar filter surface; metadata (its
+# heavy MetadataFilter closure) and updatedAt (the
+# DateTimeRangeInput family — not yet declared by any integrated
+# slice) stay undeclared until an owning capability exists — any
+# filter use answers the classified not-implemented error before
+# field-level semantics matter, and a Dashboard query naming an
+# undeclared sub-field fails schema validation loudly (never a
+# silent no-op).
+input CategoryFilterInput {
+    search: String
+    ids: [ID!]
+    slugs: [String!]
+}
+
+# Saleor's category where input — the declared wire shape of the
+# where argument (see categories: an explicit classified error until
+# the owning query capability exists). BOUNDED closure: ids carry the
+# owned scalar facts; metadata (its heavy MetadataFilter closure) and
+# the AND/OR composition capability stay undeclared until an owning
+# capability exists — any where use answers the classified
+# not-implemented error.
+input CategoryWhereInput {
+    ids: [ID!]
+}
+
+# Saleor's category sorting input and field vocabulary — the full
+# pinned enum is declared verbatim; NAME executes as the real keyset
+# sort (the rendered bilingual name with the id tiebreaker);
+# PRODUCT_COUNT and SUBCATEGORY_COUNT (a products connection and a
+# category tree the flat registry does not own) answer the explicit
+# not-implemented error. direction reuses the EXISTING shared
+# OrderDirection enum — not redeclared.
+input CategorySortingInput {
+    """Specifies the direction in which to sort categories."""
+    direction: OrderDirection!
+
+    """Sort categories by the selected field."""
+    field: CategorySortField!
+}
+
+enum CategorySortField {
+    """Sort categories by name"""
+    NAME
+
+    """Sort categories by product count"""
+    PRODUCT_COUNT
+
+    """Sort categories by subcategory count"""
+    SUBCATEGORY_COUNT
+}
