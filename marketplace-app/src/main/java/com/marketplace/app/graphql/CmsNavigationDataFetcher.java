@@ -146,17 +146,16 @@ public class CmsNavigationDataFetcher {
 
     @DgsMutation(field = DgsConstants.MUTATION.MenuItemCreate)
     @RateLimiter(name = "graphqlCmsMutation")
-    public MenuItemCreate menuItemCreate(@InputArgument MenuItemCreateInput input,
-                                         @InputArgument String menu,
-                                         @InputArgument String parent) {
+    public MenuItemCreate menuItemCreate(@InputArgument MenuItemCreateInput input) {
         if (input == null || input.getName() == null || input.getName().isBlank()) {
             throw new IllegalArgumentException("A menu item name is required");
         }
+        rejectCollectionTarget(input.getCollection());
         return MenuItemCreate.newBuilder()
                 .menuItem(toGraphQlMenuItem(navigationPort.createMenuItem(currentAuthentication(),
-                        decodeId(menu, MENU_TAG, "A menu ID is required"),
-                        parent == null || parent.isBlank() ? null
-                                : decodeId(parent, MENU_ITEM_TAG, "A parent item ID"),
+                        decodeId(input.getMenu(), MENU_TAG, "A menu ID is required"),
+                        input.getParent() == null || input.getParent().isBlank() ? null
+                                : decodeId(input.getParent(), MENU_ITEM_TAG, "A parent item ID"),
                         input.getName(), input.getUrl(),
                         decodeNullableId(input.getCategory(), "Category"),
                         decodeNullableId(input.getPage(), "Page"))))
@@ -171,6 +170,7 @@ public class CmsNavigationDataFetcher {
         if (input == null) {
             throw new IllegalArgumentException("A menu item input is required");
         }
+        rejectCollectionTarget(input.getCollection());
         return MenuItemUpdate.newBuilder()
                 .menuItem(toGraphQlMenuItem(navigationPort.updateMenuItem(currentAuthentication(),
                         decodeId(id, MENU_ITEM_TAG, "A menu item ID is required"),
@@ -486,6 +486,13 @@ public class CmsNavigationDataFetcher {
 
     private static List<com.marketplace.app.graphql.generated.types.MenuError> mappersEmpty() {
         return List.of();
+    }
+
+    private static void rejectCollectionTarget(String collection) {
+        if (collection != null && !collection.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Collection-backed menu items are not implemented on this platform yet");
+        }
     }
 
     private static void rejectChannel(String channel) {
