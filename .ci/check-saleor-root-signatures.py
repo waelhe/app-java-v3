@@ -67,6 +67,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reference", required=True, type=Path, help="verified official Saleor SDL")
     parser.add_argument("--schema-dir", required=True, type=Path, help="backend GraphQL SDL directory")
+    parser.add_argument("--base-schema-dir", type=Path, help="PR base branch SDL directory; root removals/signature changes fail")
     parser.add_argument("--pins", type=Path, default=DEFAULT_PINS, help="immutable Saleor pin manifest")
     parser.add_argument("--summary", type=Path, help="optional GitHub Actions step summary")
     args = parser.parse_args()
@@ -107,26 +108,52 @@ def main() -> None:
 
     upstream_only = sorted(set(upstream) - set(local))
     local_only = sorted(set(local) - set(upstream))
+
+    base_regressions = []
+    if args.base_schema_dir:
+        base_paths = sorted(args.base_schema_dir.rglob("*.graphqls"))
+        if not base_paths:
+            fail(f"no .graphqls files found in PR base schema directory {args.base_schema_dir}")
+        base_fields = read_root_fields(base_paths, "PR base")
+        for key in sorted(base_fields):
+            base_signature = field_signature(base_fields[key])
+            current_field = local.get(key)
+            if current_field is None:
+                base_regressions.append((key[0], key[1], "REMOVED", base_signature, ""))
+            else:
+                current_signature = field_signature(current_field)
+                if current_signature != base_signature:
+                    base_regressions.append((key[0], key[1], "SIGNATURE_CHANGED", base_signature, current_signature))
+
     report = [
         "## Saleor root contract guard",
         "",
         f"- Official reference: {reference_pin['repository']}@{reference_pin['ref']}",
         f"- Verified Saleor root inventory: Query {actual_counts['Query']}, Mutation {actual_counts['Mutation']}, Subscription {actual_counts['Subscription']} = {len(upstream)}.",
         f"- Backend root fields compared to Saleor by name: {len(shared)}.",
-        f"- Signature mismatches: {len(mismatches)}.",
+        f"- Signature mismatches against Saleor: {len(mismatches)}.",
+        f"- PR-base root removals/signature changes: {len(base_regressions)}.",
         f"- Saleor roots not yet declared by the backend: {len(upstream_only)} (tracked by the canonical implementation inventory; absence is not reported as implemented).",
         f"- Backend-only root fields: {len(local_only)} (platform extensions; not treated as Saleor roots).",
         "- Scope: checks root field return types, argument names/types and argument defaults. It does not claim full nested type-closure parity or operation-level execution coverage.",
         "",
     ]
     if mismatches:
-        report.extend(["### Root signature mismatches", ""])
+        report.extend(["### Root signature mismatches against Saleor", ""])
         for type_name, name, expected, actual in mismatches[:100]:
             report.append(f"- {type_name}.{name}")
             report.append(f"  - Saleor: {expected}")
             report.append(f"  - Backend: {actual}")
         if len(mismatches) > 100:
             report.append(f"- ... and {len(mismatches) - 100} additional mismatches")
+    if base_regressions:
+        report.extend(["", "### PR-base schema regressions", ""])
+        for type_name, name, reason, previous, current in base_regressions[:100]:
+            report.append(f"- {type_name}.{name}: {reason}")
+            report.append(f"  - PR base: {previous}")
+            report.append(f"  - Current: {current or '(removed)'}")
+        if len(base_regressions) > 100:
+            report.append(f"- ... and {len(base_regressions) - 100} additional base regressions")
     output = "\n".join(report) + "\n"
     print(output, end="")
     if args.summary:
@@ -138,6 +165,11 @@ def main() -> None:
         fail(
             "the backend changes the wire signature of declared Saleor roots; "
             "preserve the pinned Saleor signature or record/implement an explicitly approved contract decision"
+        )
+    if base_regressions:
+        fail(
+            "the backend removes or changes a GraphQL root declared on the PR base; "
+            "preserve the existing wire contract or use the reviewed compatibility process"
         )
 
 
