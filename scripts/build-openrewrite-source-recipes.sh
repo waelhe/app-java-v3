@@ -41,7 +41,7 @@ build_and_publish_from() {
 build_and_publish() { build_and_publish_from openrewrite "$1" "$2"; }
 
 # The official core build includes Java 8, 11, 17, 21, and 25 parser modules.
-build_and_publish rewrite 8.93.11
+build_and_publish rewrite 8.93.0
 build_and_publish_from moderneinc rewrite-mainframe 3.2.1
 
 # Source Available recipe packs, in dependency order; versions align with recipe BOM 3.41.0.
