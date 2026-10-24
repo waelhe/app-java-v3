@@ -22,7 +22,7 @@ Canonical product/UX authority: [Platform Administration Operating System Produc
 | Spring Boot | **4.1.2** عبر الوراثة من `spring-boot-starter-parent` | `pom.xml:7-10` |
 | Spring Modulith | 2.1.2 (BOM مستورد) | `pom.xml:250-256` |
 | Spring Authorization Server | 7.1.2 (قادم عبر BOM الإطار؛ مصادر 7.1.1 مخبأة محلياً — §10) | `scripts/verify-aud-claim/sas-all/` |
-| Maven | wrapper 3.10.0 (`./mvnw`)، enforcer يشترط `[3.10,)` (أرضية مرتفعة مع ترقية التوزيعة 2026-10-24 — انعكاس الأرضية بنمط PR #711 يمنع العودة الصامتة إلى 3.9.x) | `mvnw` + `pom.xml:983` |
+| Maven | توزيعة (distribution) `3.10.0` + أداة Wrapper `3.3.4` (`./mvnw`)، enforcer يشترط `[3.10,)` (أرضية مرتفعة مع ترقية التوزيعة 2026-10-24 — انعكاس الأرضية بنمط PR #711 يمنع العودة الصامتة إلى 3.9.x) | الخاصيتان `distributionUrl`/`wrapperUrl` في `.mvn/wrapper/maven-wrapper.properties`؛ أرضية enforcer في `pom.xml:983` |
 | قاعدة البيانات | PostgreSQL 18 في المستودع (CI/compose/Testcontainers)؛ **قناة قاعدة الإنتاج = Neon الخارجية** (`ep-weathered-pond…neon.tech/neondb`) منذ 2026-09-18T01:58Z (سجل Flyway حي عليها **67 مدخلًا (65 نسخية V1..V66 يقفز V35 + بذرتان تكراريتان) بعد وصول V64/V65/V66 (L45)** — قياس §15 2026-09-19: النشرة `2266b7af` الحاملة لـ`16117d8`) وخدمة `postgres-18` (= **postgis/postgis:18-3.6** بتبديل P-1 في المكان 2026-09-12 [خطة PostGIS §4-P3] + فوليوم، 18.6) صارت **قناة تراثية** (سجلها بلغ v62 عند 2026-09-17T19:47:18Z ولم تعد قناة التطبيق)؛ **فصل الهويات مقيس 2026-09-13 (§15):** الترحيل عبر `flyway_migrator` (خارق — `SPRING_FLYWAY_*`) والتشغيل عبر `marketplace_app` (NOSUPERUSER — `DB_*`) والمستخدم التأسيسي `marketplace` طوارئ حصرًا (حارس المنصة يمنع نزع خوارقه) | `.github/workflows/ci.yml:23-24` + `docker-compose.yml:3` + سجل الإقلاع الحي (§15) |
 | الذاكرة/الجلسات | Redis 8 في المستودع (CI/compose) **وفي الإنتاج** (8.2: ترقية في المكان + فوليوم + requirepass + RDB 2026-09-04 — §15)؛ Lettuce 7.5.2 (BOM) يدعم رسمياً «Redis 2.6+ up to Redis 8.x» | `.github/workflows/ci.yml:36-37` + `application.yml:109-111` |
 | الجودة | JaCoCo 0.8.15، عتبة تغطية ≥ 70% لكل وحدة (BUNDLE) — البوابة مقيسةُ مثبتةً على أكبر وحدة نطاقية (catalog): «Analyzed bundle 'marketplace-catalog' with 32 classes» ثم «All coverage checks have been met» (تشغيل CI على main ‏`70638fe`، 2026-09-27T11:54Z — التحقق من أولويات تدقيق 2026-09-25: البند الثاني)؛ قياس #408 عند الإضافة: 0.718 | `pom.xml:61-62` + سجل CI |
@@ -58,7 +58,8 @@ Canonical product/UX authority: [Platform Administration Operating System Produc
 | compile | compiler | `failOnWarning` — أي تحذير يُفشل البناء |
 | test | surefire | اختبارات الوحدة (`*Test`) — منفصلة تماماً عن التكامل |
 | integration-test / verify | failsafe | اختبارات التكامل — **167 ملفًا** تختارها أنماط التضمين (`**/*IT.java` + `**/*IntegrationTest.java`؛ 4 منها بلاحقة `*IT`)؛ البيئية منها تُتخطى بلا Docker (`disabledWithoutDocker`) — الحارس `DocumentationNumbersGuardTest` يستمد العدد من أشجار اختبار الوحدات |
-| verify | jacoco | تقرير + **check: BUNDLE ≥ 0.70 لكل وحدة** (`pom.xml:242-244`) || validate | enforcer | 5 قواعد؛ أشهرها Maven `[3.9,)` (`:230`) وJava `[21,)` (`:233`) |
+| verify | jacoco | تقرير + **check: BUNDLE ≥ 0.70 لكل وحدة** (`pom.xml:1087-1096`) |
+| validate | enforcer | 5 قواعد؛ أشهرها Maven `[3.10,)` (`pom.xml:983`) وJava `[21,)` (`pom.xml:986`) |
 | package | spring-boot-maven | `repackage` → jar تنفيذي لوحدة `marketplace-app` فقط |
 
 **الأوامر المعتمدة:** البوابة الكاملة `./mvnw clean verify` — البناء الموجّه `./mvnw clean verify -pl <module> -am` (قاعدة AGENTS.md: تُشغَّل قبل أي دفع).

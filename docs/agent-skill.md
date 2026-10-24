@@ -67,7 +67,7 @@ this skill is patched to match.
 4. Check in-flight work: `git log --oneline -15` + open PRs/issues via
    the API. Open PRs are forward-contract risk (OpenAPI changes ripple
    to waelhe/web-marketplace).
-5. Toolchain: Temurin JDK 25 + `./mvnw` (wrapper 3.10.0). No Docker
+5. Toolchain: Temurin JDK 25 + `./mvnw` (Maven distribution 3.10.0, wrapper tool 3.3.4). No Docker
    locally — integration tests judge on CI.
 6. Measure before building: live `/v3/api-docs` on staging, success
    AND failure shapes of the target endpoints. Every fact carries its
@@ -96,7 +96,7 @@ this skill is patched to match.
 ## 3. Standing facts (the twin §2 table is the authority)
 
 - Java 25 / Spring Boot 4.1.1 / Modulith 2.1.1 / SAS 7.1.1 / Maven
-  wrapper 3.10.0; 22 modules in the reactor.
+  Maven distribution 3.10.0 (wrapper tool 3.3.4); 30 modules in the reactor.
 - PostgreSQL 18 + PostGIS (production DB = external Neon), Redis 8,
   Flyway (ddl-auto: none; new V{N} migrations only, never edit
   existing).

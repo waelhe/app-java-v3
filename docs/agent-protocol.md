@@ -79,7 +79,7 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
 | | |
 |---|---|
 | Owner | GitHub **waelhe** (repo `waelhe/app-java-v3`, public) — day-to-day engineering owned by the **backend team**; the frontend repo's agent treats this repo as read-and-measure (its standing rule), except owner-granted documented exceptions |
-| Stack | Java 25 (`--release 25`, `pom.xml:41`), Spring Boot 4.1.1 (parent, `pom.xml:7-10`), Spring Modulith 2.1.1 (BOM), Spring Authorization Server 7.1.1, Maven wrapper 3.10.0 with enforcer `[3.10,)` (`pom.xml:983`) — all evidenced in SYSTEM.md §1 |
+| Stack | Java 25 (`--release 25`, `pom.xml:41`), Spring Boot 4.1.1 (parent, `pom.xml:7-10`), Spring Modulith 2.1.1 (BOM), Spring Authorization Server 7.1.1, Maven distribution 3.10.0 + wrapper tool 3.3.4 with enforcer floor `[3.10,)` (`pom.xml:983`) — all evidenced in SYSTEM.md §1 |
 | Modules | **22** Maven modules in the root reactor (measured 2026-09-28; guarded in README/SYSTEM by `DocumentationNumbersGuardTest`, derived from `<modules>`) |
 | Data | PostgreSQL 18 + PostGIS (CI service `postgis/postgis:18-3.6-alpine`, `ci.yml:24`); production DB channel = external Neon (since 2026-09-18, SYSTEM.md §1); Redis 8 (`ci.yml:37`; production 8.2); Flyway with `ddl-auto: none` — latest migration **V70** (measured 2026-09-28) |
 | Quality | JaCoCo 0.8.15, BUNDLE ≥ 70% per module (`pom.xml:61-62, 242-244`); `failOnWarning` at compile; unit (`*Test`, surefire) strictly separated from integration (`*IT`/`*IntegrationTest`, failsafe; environmental ones skip without Docker) |
@@ -234,7 +234,7 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
 | Thing | The measured reality / fix |
 |---|---|
 | JDK | Temurin 25 (25.0.4.1 is the team's recorded build) — download per session; CI uses `setup-java` temurin 25 with maven cache (`ci.yml:62-67`) |
-| Build | `./mvnw` (wrapper 3.10.0); full gate `./mvnw clean verify`; targeted `./mvnw clean verify -pl <module> -am` before any push (AGENTS.md) |
+| Build | `./mvnw` (Maven distribution 3.10.0, wrapper tool 3.3.4); full gate `./mvnw clean verify`; targeted `./mvnw clean verify -pl <module> -am` before any push (AGENTS.md) |
 | No Docker locally | The standing protocol: integration tests judge on CI (`@Testcontainers(disabledWithoutDocker = true)`); the local run covers unit + test-compile |
 | Deploy proof | Railway GraphQL tokens measured dead (403) → the **commit-status channel** is the documented alternative (PROJECT_MAP); python HTTP to Railway is blocked by Cloudflare 1010 → curl with a browser UA (frontend-measured 2026-09-28, applies here) |
 | Secrets | Railway service variables only (45 app variables measured at migration); rotate; never in tracked files — gitleaks (high/critical policy, anchored allowlist) runs first in CI |
