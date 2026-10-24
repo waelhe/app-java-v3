@@ -69,7 +69,7 @@ def parse_discovered(line: str) -> str | None:
         return None
     rest = line[len("[INFO]"):]
     name = rest.strip()
-    if not name.startswith(("org.openrewrite.", "com.marketplace.")):
+    if not name.startswith(("org.openrewrite.", "io.moderne.", "com.marketplace.")):
         return None
     if any(ch.isspace() for ch in name) or not all(ch.isalnum() or ch in "._$" for ch in name):
         return None
