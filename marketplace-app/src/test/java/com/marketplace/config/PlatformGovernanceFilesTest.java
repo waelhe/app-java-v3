@@ -484,6 +484,8 @@ class PlatformGovernanceFilesTest {
                 .contains("--location")
                 .contains("A 302 redirect is normal")
                 .contains("rewrite-maven-plugin-6.50.0.jar")
+                .contains("Write explicit Maven settings for Code Genome")
+                .contains("--settings \"\${RUNNER_TEMP}/openrewrite-settings.xml\"")
                 .contains("rewrite-maven-plugin:6.50.0:discover")
                 .contains("rewrite-maven-plugin:6.50.0:dryRunNoFork");
     }
