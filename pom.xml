@@ -250,6 +250,12 @@
         <awssdk.version>2.57.3</awssdk.version>
         <stripe.version>33.4.2</stripe.version>
         <project.build.outputTimestamp>2026-06-14T08:00:00Z</project.build.outputTimestamp>
+        <!-- OpenRewrite toolchain versions are verified against the official catalog:
+             rewrite-recipe-bom 3.41.0 and rewrite-maven-plugin 6.50.0 (2026-10-24).
+             They are opt-in through -Popenrewrite; application builds remain unchanged. -->
+        <openrewrite.recipe-bom.version>3.41.0</openrewrite.recipe-bom.version>
+        <openrewrite.maven-plugin.version>6.50.0</openrewrite.maven-plugin.version>
+        <openrewrite.spring-recipes.version>6.41.0</openrewrite.spring-recipes.version>
     </properties>
 
     <dependencyManagement>
@@ -1235,6 +1241,160 @@
                     </plugin>
                 </plugins>
             </build>
+        </profile>
+        <!-- OpenRewrite's source-based governance toolchain is deliberately opt-in:
+             ordinary application builds and the production dependency graph do not
+             acquire recipe libraries. Code Genome credentials belong in Maven
+             settings (CI secrets), never in this POM. -->
+        <profile>
+            <id>openrewrite</id>
+            <repositories>
+                <repository>
+                    <id>codegenome</id>
+                    <url>https://artifacts.codegenomeproject.org/maven</url>
+                </repository>
+            </repositories>
+            <pluginRepositories>
+                <pluginRepository>
+                    <id>codegenome</id>
+                    <url>https://artifacts.codegenomeproject.org/maven</url>
+                </pluginRepository>
+            </pluginRepositories>
+            <dependencyManagement>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.openrewrite.recipe</groupId>
+                        <artifactId>rewrite-recipe-bom</artifactId>
+                        <version>${openrewrite.recipe-bom.version}</version>
+                        <type>pom</type>
+                        <scope>import</scope>
+                    </dependency>
+                </dependencies>
+            </dependencyManagement>
+            <!-- Recipe packs are provided-scope and profile-scoped: they are visible
+                 to OpenRewrite but never packaged into the application. The BOM
+                 governs every managed recipe version; do not reintroduce manual pins. -->
+            <dependencies>
+                <dependency>
+                    <groupId>org.openrewrite</groupId>
+                    <artifactId>rewrite-java</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.openrewrite</groupId>
+                    <artifactId>rewrite-maven</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.openrewrite</groupId>
+                    <artifactId>rewrite-properties</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.openrewrite</groupId>
+                    <artifactId>rewrite-xml</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.openrewrite</groupId>
+                    <artifactId>rewrite-yaml</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.openrewrite.recipe</groupId>
+                    <artifactId>rewrite-java-dependencies</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.openrewrite.recipe</groupId>
+                    <artifactId>rewrite-jackson</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.openrewrite.recipe</groupId>
+                    <artifactId>rewrite-netty</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.openrewrite.recipe</groupId>
+                    <artifactId>rewrite-openapi</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.openrewrite.recipe</groupId>
+                    <artifactId>rewrite-third-party</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.openrewrite.maven</groupId>
+                        <artifactId>rewrite-maven-plugin</artifactId>
+                        <version>${openrewrite.maven-plugin.version}</version>
+                        <configuration>
+                            <activeRecipes>
+                                <recipe>org.openrewrite.java.RemoveUnusedImports</recipe>
+                                <recipe>org.openrewrite.java.OrderImports</recipe>
+                                <recipe>org.openrewrite.maven.BestPractices</recipe>
+                                <recipe>org.openrewrite.maven.OrderPomElements</recipe>
+                            </activeRecipes>
+                            <failOnInvalidActiveRecipes>true</failOnInvalidActiveRecipes>
+                            <!-- First rollout captures the existing diff baseline as a CI artifact.
+                                 Promote dry-run diffs to a blocking gate after baseline remediation. -->
+                            <failOnDryRunResults>false</failOnDryRunResults>
+                            <exportDatatables>true</exportDatatables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- Full multi-language catalog, opt-in with -Popenrewrite,openrewrite-all-catalog.
+             rewrite-all itself is Apache-2.0, but bundles language modules outside this
+             Java/Maven service's scope; the source-available language parsers are excluded
+             here to keep this profile within the no-subscription, Java-platform scope. -->
+        <profile>
+            <id>openrewrite-all-catalog</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.openrewrite.recipe</groupId>
+                    <artifactId>rewrite-all</artifactId>
+                    <scope>provided</scope>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>org.openrewrite</groupId>
+                            <artifactId>rewrite-csharp</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>org.openrewrite</groupId>
+                            <artifactId>rewrite-javascript</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>org.openrewrite</groupId>
+                            <artifactId>rewrite-python</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>org.openrewrite</groupId>
+                            <artifactId>rewrite-mainframe</artifactId>
+                        </exclusion>
+                    </exclusions>
+                </dependency>
+            </dependencies>
+        </profile>
+        <!-- The Spring recipe set is Moderne Source Available. This profile resolves
+             rewrite-spring 6.41.0 from the local Maven repository after the pinned
+             upstream source has been built with scripts/openrewrite/build-spring-recipes.sh.
+             It is intentionally not downloaded as a precompiled subscription artifact. -->
+        <profile>
+            <id>openrewrite-spring-source</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.openrewrite.recipe</groupId>
+                    <artifactId>rewrite-spring</artifactId>
+                    <version>${openrewrite.spring-recipes.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
         </profile>
     </profiles>
 </project>
