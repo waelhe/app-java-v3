@@ -559,8 +559,8 @@ jobs:
         run: |
           set -euo pipefail
           REFERENCE_SCHEMA="${RUNNER_TEMP}/saleor-reference.graphql"
-          curl --fail --silent --show-error --location \\
-            "https://raw.githubusercontent.com/saleor/saleor/${SALEOR_REF}/saleor/graphql/schema.graphql" \\
+          curl --fail --silent --show-error --location \
+            "https://raw.githubusercontent.com/saleor/saleor/${SALEOR_REF}/saleor/graphql/schema.graphql" \
             --output "${REFERENCE_SCHEMA}"
           ACTUAL="$(git hash-object "${REFERENCE_SCHEMA}")"
           EXPECTED="$(python -c "import json; print(json.load(open('docs/governance/plans/saleor-source-pins.json'))['referenceSchema']['gitBlobSha1'])")"
@@ -568,10 +568,10 @@ jobs:
             echo "::error::Pinned Saleor SDL hash mismatch: expected ${EXPECTED}; got ${ACTUAL}"
             exit 1
           }
-          python .ci/check-saleor-root-signatures.py \\
-            --reference "${REFERENCE_SCHEMA}" \\
-            --schema-dir marketplace-app/src/main/resources/graphql \\
-            --pins docs/governance/plans/saleor-source-pins.json \\
+          python .ci/check-saleor-root-signatures.py \
+            --reference "${REFERENCE_SCHEMA}" \
+            --schema-dir marketplace-app/src/main/resources/graphql \
+            --pins docs/governance/plans/saleor-source-pins.json \
             --summary "${GITHUB_STEP_SUMMARY}"
 
   # The app bundle's coverage gate, reconstituted on MERGED data: the 9
