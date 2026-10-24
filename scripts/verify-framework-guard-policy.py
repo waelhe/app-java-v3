@@ -144,14 +144,46 @@ for artifact, version in allowed_modules.items():
             and f"<version>{version}</version>" in rewrite_profile,
             f"OpenRewrite module {artifact}:{version} is missing or not pinned to the reviewed official version.")
 
+# Keep Source Available coordinates out of the default profile, and pin the source-built closure separately.
+source_profile_start = pom_text.find("<id>openrewrite-source-available</id>")
+require(source_profile_start >= 0, "the isolated source-built recipe profile is missing.")
+source_profile_end = pom_text.find("</profile>", source_profile_start)
+require(source_profile_end > source_profile_start, "the source-built recipe profile is malformed.")
+source_profile = pom_text[source_profile_start:source_profile_end]
+source_modules = {
+    "rewrite-spring": "6.41.0",
+    "rewrite-static-analysis": "2.45.0",
+    "rewrite-migrate-java": "3.46.0",
+    "rewrite-joda": "0.12.0",
+    "rewrite-jenkins": "0.38.2",
+    "rewrite-github-actions": "3.33.0",
+    "rewrite-logging-frameworks": "3.34.1",
+    "rewrite-apache": "2.34.0",
+    "rewrite-hibernate": "2.27.0",
+    "rewrite-micrometer": "0.31.2",
+    "rewrite-cucumber-jvm": "2.20.0",
+    "rewrite-testing-frameworks": "3.49.1",
+    "rewrite-third-party": "0.49.0",
+    "rewrite-all": "1.30.2",
+}
+for artifact, version in source_modules.items():
+    require(f"<artifactId>{artifact}</artifactId>" in source_profile
+            and f"<version>{version}</version>" in source_profile,
+            f"source profile is missing official pinned coordinate {artifact}:{version}.")
+require("<artifactId>rewrite-mainframe</artifactId>" in source_profile
+        and "<version>3.3.1</version>" in source_profile,
+        "source profile is missing the official pinned mainframe language parser.")
+
 rewrite_config = file_text("rewrite.yml")
 require("name: com.marketplace.governance.OpenRewriteBaseline" in rewrite_config
         and "name: com.marketplace.governance.OpenRewriteRecommendations" in rewrite_config,
         "both the read-only inventory and manual recommendation recipes must be defined.")
 baseline_start = rewrite_config.index("name: com.marketplace.governance.OpenRewriteBaseline")
 recommendations_start = rewrite_config.index("name: com.marketplace.governance.OpenRewriteRecommendations")
+source_recommendations_start = rewrite_config.index("name: com.marketplace.governance.OpenRewriteSpringRecommendations")
 baseline_recipe = rewrite_config[baseline_start:recommendations_start]
-recommendation_recipe = rewrite_config[recommendations_start:]
+recommendation_recipe = rewrite_config[recommendations_start:source_recommendations_start]
+source_recommendation_recipe = rewrite_config[source_recommendations_start:]
 for recipe_text in ("org.openrewrite.java.dependencies.DependencyList",
                     "scope: TestRuntime", "includeTransitive: true", "validateResolvable: true",
                     "org.openrewrite.java.dependencies.DependencyResolutionDiagnostic"):
@@ -165,8 +197,11 @@ for recipe_text in ("org.openrewrite.java.format.AutoFormat",
 require(all(recipe not in baseline_recipe for recipe in (
         "org.openrewrite.java.format.AutoFormat",
         "org.openrewrite.java.RemoveUnusedImports",
-        "org.openrewrite.maven.BestPractices")),
+        "org.openrewrite.maven.BestPractices",
+        "org.openrewrite.java.spring.boot4.SpringBootProperties_4_1")),
         "source/POM recommendation recipes must not run in the default read-only inventory mode.")
+require("org.openrewrite.java.spring.boot4.SpringBootProperties_4_1" in source_recommendation_recipe,
+        "the source-built Spring Boot 4.1 property recipe must be registered only in its opt-in composite.")
 
 report_script = file_text("scripts/summarize-openrewrite-report.py")
 rewrite_workflow = file_text(".github/workflows/openrewrite.yml")
@@ -186,6 +221,22 @@ require("CODEGENOME_USERNAME and CODEGENOME_TOKEN are required" in rewrite_workf
 require('collect(root,"DependencyListReport.csv"' in report_script
         and "openrewrite-summary.md" in rewrite_workflow,
         "the report summarizer must read dependency data tables and the workflow must publish the human-readable summary.")
+
+source_builder = file_text("scripts/build-openrewrite-source-recipes.sh")
+for evidence in ("rewrite 8.93.11", "moderneinc rewrite-mainframe 3.3.1",
+                 "rewrite-static-analysis 2.45.0", "rewrite-migrate-java 3.46.0",
+                 "rewrite-spring 6.41.0", "rewrite-third-party 0.49.0", "rewrite-all 1.30.2",
+                 "publishToMavenLocal", "mavenLocal()"):
+    require(evidence in source_builder,
+            f"source-build script is missing pinned upstream build behavior: {evidence}")
+source_workflow = file_text(".github/workflows/openrewrite-source-available.yml")
+for evidence in ("scripts/build-openrewrite-source-recipes.sh", "openrewrite-source-available",
+                 "rewrite:discover", "rewrite:dryRun", "SpringBootProperties_4_1",
+                 "source-build-manifest.txt", "actions/upload-artifact@v7"):
+    require(evidence in source_workflow,
+            f"source-built OpenRewrite workflow is missing end-to-end behavior: {evidence}")
+require('choices=("inventory","recommendations","source-recommendations")' in report_script,
+        "report generator must explicitly support source-built recipe mode.")
 
 # Fail closed if architecture verification is deleted or silently disabled.
 architecture = file_text("marketplace-app/src/test/java/com/marketplace/ArchitectureRulesTest.java")

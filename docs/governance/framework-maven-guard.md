@@ -24,11 +24,11 @@ Code Genome requires authentication for downloading current artifacts. The workf
 
 **Observed failure that changed the design:** run [40057579728](https://github.com/waelhe/app-java-v3/actions/runs/40057579728) failed in `rewrite:discover` with HTTP 403 for transitive artifacts including `rewrite-python`, `rewrite-mainframe`, `rewrite-csharp`, `rewrite-javascript`, `rewrite-migrate-java`, `rewrite-github-actions`, `rewrite-static-analysis`, and `rewrite-joda`. The top-level `rewrite-all` and `rewrite-third-party` artifacts are listed as Apache-licensed, but their resolved dependency graph attempted to download artifacts this free account could not access. They have therefore been removed from the executable profile rather than leaving a known-red workflow or claiming that the aggregate is usable.
 
-The current profile uses explicit Apache-licensed recipe packs only. This intentionally limits breadth compared with the catalog's aggregate packs; the exact account entitlement and dependency graph, not the top-level artifact license label alone, determine what actually executes in this environment.
+The default `openrewrite` profile uses explicit Apache-licensed recipe packs. A separate opt-in `openrewrite-source-available` profile is now provided for a CI job that builds the Source Available dependency closure from pinned upstream tags and installs it only in that runner's local Maven repository. It does not rely on the free account downloading precompiled Source Available jars.
 
-`rewrite-spring:6.41.0` is listed as Moderne Source Available. The official license permits an organization to apply such recipes to its own code and links to build-from-source instructions; the precompiled artifact still requires the right Code Genome entitlement. The official `rewrite-spring` source declares runtime dependencies on additional source-available packs, including `rewrite-static-analysis`, `rewrite-apache`, and `rewrite-hibernate`. **A source-built Spring dependency closure is not yet integrated or verified in this PR**; adding only `rewrite-spring` would reproduce the same dependency-resolution failure.
+`rewrite-spring:6.41.0` is listed as Moderne Source Available. The official license permits an organization to apply such recipes to its own code and links to build-from-source instructions; the precompiled artifact still requires the right Code Genome entitlement. The official `rewrite-spring` source declares runtime dependencies on additional source-available packs, including `rewrite-static-analysis`, `rewrite-apache`, and `rewrite-hibernate`. **The source-built profile and workflow are wired in, but the full source-build job must pass before claiming this closure is usable.** It builds core parsers, `rewrite-mainframe`, related Source Available recipe modules, then attempts the two Apache-licensed aggregate packs. It records upstream tags and commit SHAs in an artifact manifest and previews the verified Community Edition `org.openrewrite.java.spring.boot4.SpringBootProperties_4_1` recipe. If any source dependency remains unavailable, the job should fail visibly; no precompiled Source Available jar is copied into the app or uploaded as an artifact.
 
-## Two run modes
+## Three execution paths
 
 ### `inventory` — automatic for relevant pull requests
 
@@ -47,11 +47,15 @@ Select **Actions → OpenRewrite inventory and recommendations → Run workflow 
 
 The first run found 900 AutoFormat result rows and changes in 1,000 unique files. It also revealed formatting drift in multi-line Java records. Consequently these suggestions remain review-only, never auto-applied, until a project style is explicitly established and the diff is accepted.
 
+### Source-built catalog — separate manual/PR workflow
+
+The separate `OpenRewrite source-built catalog` workflow uses pinned upstream tags and installs built jars only in the ephemeral runner's local Maven repository. It runs the opt-in `com.marketplace.governance.OpenRewriteSpringRecommendations` composite, currently previewing the verified Community Edition `org.openrewrite.java.spring.boot4.SpringBootProperties_4_1` recipe relevant to a Spring Boot 4.1 platform. Discovery and `rewrite:dryRun` must succeed before this source-built path is considered usable; changes are never auto-applied.
+
 ## Report and failure behavior
 
 Each run checks the two secrets and fails if either is absent; creates temporary Maven credentials; discovers recipes; executes the selected dry run; generates `openrewrite-summary.md`; renders the summary in GitHub Actions; uploads the report, recipe discovery output, tables, and patches for 14 days; and asserts that tracked source/build files remain unchanged.
 
-Green means the selected recipes executed and produced a valid report; it does not claim full Spring Boot compliance. The inventory isn't a formatting gate. Promote rules to blocking only after reviewing their actual coverage and the repository's existing build/tests/API/architecture/security gates.
+Green on the standard workflow means its Apache-only recipes ran and dependency inventory passed resolution validation. Green on the source-built workflow additionally proves its configured source dependency closure compiled and published locally and that the selected Spring Boot 4.1 property recipe was discoverable and previewable. Neither result alone proves exhaustive recipe coverage or complete Spring Boot compliance. The inventory isn't a formatting gate. Promote rules to blocking only after reviewing their actual coverage and the repository's existing build/tests/API/architecture/security gates.
 
 ## Official references
 

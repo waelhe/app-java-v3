@@ -22,3 +22,12 @@ recipeList:
   - org.openrewrite.java.format.AutoFormat
   - org.openrewrite.java.RemoveUnusedImports
   - org.openrewrite.maven.BestPractices
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.marketplace.governance.OpenRewriteSpringRecommendations
+displayName: Source-built Spring Boot 4.1 property migration preview
+description: >
+  Preview the official community-edition Spring Boot 4.1 property migration recipe,
+  loaded from the source-built OpenRewrite Spring recipe module. This mode is dry-run only.
+recipeList:
+  - org.openrewrite.java.spring.boot4.SpringBootProperties_4_1

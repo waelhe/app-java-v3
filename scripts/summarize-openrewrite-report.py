@@ -21,7 +21,7 @@ def fmt(x): return f"{x:,}"
 
 def main():
     ap=argparse.ArgumentParser()
-    ap.add_argument("--mode",choices=("inventory","recommendations"),required=True)
+    ap.add_argument("--mode",choices=("inventory","recommendations","source-recommendations"),required=True)
     ap.add_argument("--commit",required=True)
     ap.add_argument("--report-root",type=Path,required=True)
     ap.add_argument("--output",type=Path,required=True)
@@ -50,7 +50,7 @@ def main():
             code=r[ci] if ci>=0 and len(r)>ci else "?"; err=r[ei] if ei>=0 and len(r)>ei else ""
             rep.append(f"| `{r[ui]}` | {code} | {err or '—'} |")
     lines=["# OpenRewrite run report","",f"- **Mode:** `{a.mode}`",f"- **Commit:** `{a.commit}`","- **Safety:** changes are preview only and are never automatically applied.","",
-           "Read-only dependency inventory." if a.mode=="inventory" else "Manual Java/Maven recommendations; review all patches before use.","",
+           "Read-only dependency inventory." if a.mode=="inventory" else ("Source-built Spring Boot 4.1 property migration preview; review patches before use." if a.mode=="source-recommendations" else "Manual Java/Maven recommendations; review all patches before use."),"",
            "| Measure | Observed |","|---|---:|",f"| CSV tables | {fmt(len(list(root.rglob('*.csv'))))} |",
            f"| Dependency rows | {fmt(direct+transitive)} |",f"| Direct | {fmt(direct)} |",f"| Transitive | {fmt(transitive)} |",
            f"| Recorded resolution failures | {fmt(len(failures))} |",f"| Unique files with recipe results | {fmt(len(files))} |",

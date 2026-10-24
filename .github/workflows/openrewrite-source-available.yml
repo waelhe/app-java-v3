@@ -1,0 +1,144 @@
+name: OpenRewrite source-built catalog
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/openrewrite-source-available.yml'
+      - 'scripts/build-openrewrite-source-recipes.sh'
+      - 'scripts/verify-framework-guard-policy.py'
+      - 'scripts/summarize-openrewrite-report.py'
+      - 'rewrite.yml'
+      - 'pom.xml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openrewrite-source-available-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-built-catalog:
+    name: Build source recipes and preview Spring Boot 4.1 properties
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check free Code Genome credentials
+        shell: bash
+        env:
+          CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
+          CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$CODEGENOME_USERNAME" || -z "$CODEGENOME_TOKEN" ]]; then
+            echo "::error::Source builds need CODEGENOME_USERNAME and CODEGENOME_TOKEN to resolve upstream build plugins."
+            exit 1
+          fi
+
+      - name: Install JDK 8, 11, 17, 21, and 25 toolchains
+        uses: actions/setup-java@v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            11
+            17
+            21
+            25
+          cache: gradle
+
+      - name: Select JDK 25 for Gradle and Maven
+        uses: actions/setup-java@v6.1.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Write temporary Maven credentials
+        shell: bash
+        env:
+          CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
+          CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.m2"
+          python3 - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          settings = ET.Element("settings")
+          servers = ET.SubElement(settings, "servers")
+          server = ET.SubElement(servers, "server")
+          ET.SubElement(server, "id").text = "codegenome"
+          ET.SubElement(server, "username").text = os.environ["CODEGENOME_USERNAME"]
+          ET.SubElement(server, "password").text = os.environ["CODEGENOME_TOKEN"]
+          path = Path.home() / ".m2" / "settings.xml"
+          ET.indent(settings, space="  ")
+          ET.ElementTree(settings).write(path, encoding="utf-8", xml_declaration=True)
+          path.chmod(0o600)
+          PY
+
+      - name: Build pinned official source dependency closure
+        env:
+          CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
+          CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+          OPENREWRITE_SOURCE_MANIFEST_PATH: ${{ github.workspace }}/target/rewrite/source-build-manifest.txt
+        run: bash scripts/build-openrewrite-source-recipes.sh
+
+      - name: Install platform Maven reactor for dependency validation
+        run: ./mvnw --batch-mode --no-transfer-progress -Dmaven.test.skip=true -DskipITs install
+
+      - name: Discover the source-built Spring Boot 4.1 recipe
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./mvnw --batch-mode --no-transfer-progress -Popenrewrite,openrewrite-source-available \
+            -Drewrite.activeRecipes=com.marketplace.governance.OpenRewriteSpringRecommendations \
+            -Drewrite.failOnInvalidActiveRecipes=true -Ddetail=true rewrite:discover \
+            2>&1 | tee target/rewrite/source-recipe-discovery.txt
+          grep -q 'org.openrewrite.java.spring.boot4.SpringBootProperties_4_1' \
+            target/rewrite/source-recipe-discovery.txt
+
+      - name: Preview Spring Boot 4.1 property migration without modifying tracked files
+        run: |
+          ./mvnw --batch-mode --no-transfer-progress -Popenrewrite,openrewrite-source-available \
+            -Drewrite.activeRecipes=com.marketplace.governance.OpenRewriteSpringRecommendations \
+            -Drewrite.failOnInvalidActiveRecipes=true -Drewrite.exportDatatables=true rewrite:dryRun
+
+      - name: Generate human-readable source-build report
+        if: always()
+        run: |
+          mkdir -p target/rewrite
+          python3 scripts/summarize-openrewrite-report.py \
+            --mode source-recommendations --commit "$GITHUB_SHA" \
+            --report-root target/rewrite --output target/rewrite/openrewrite-source-summary.md
+          cat target/rewrite/openrewrite-source-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Assert source-built dry run left tracked files untouched
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "::error::OpenRewrite dryRun changed tracked files; only preview output is permitted."
+            git diff --stat
+            exit 1
+          fi
+
+      - name: Upload source-build manifest and reports (never upload local Maven cache)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: openrewrite-source-built-${{ github.sha }}
+          path: |
+            target/rewrite/**
+            **/target/rewrite/**
+            **/target/site/rewrite/**
+            **/target/rewrite*.patch
+          if-no-files-found: error
+          retention-days: 14
