@@ -22,6 +22,9 @@ Versions and license labels below are based on the official current module/versi
 | org.openrewrite:rewrite-templating | 1.46.0 | Apache-2.0 | Recipe implementation support |
 | org.openrewrite.meta:rewrite-analysis | 2.39.0 | Apache-2.0 | Analysis metadata |
 | org.openrewrite:rewrite-android | 8.93.11 | Moderne Source Available | Not relevant to current JVM stack |
+| org.openrewrite:rewrite-csharp | 8.93.11 | Moderne Source Available (upstream `build.gradle.kts` applies the SA license plugin) | Required transitively by `rewrite-all`; no application C# source is in scope |
+| org.openrewrite:rewrite-go | 8.93.11 | Moderne Source Available (upstream `build.gradle.kts` applies the SA license plugin) | Required transitively by the source-built catalog; no application Go source is in scope |
+| org.openrewrite:rewrite-javascript | 8.93.11 | Moderne Source Available | Required by the broad catalog; no application JavaScript source is in scope |
 | org.openrewrite:rewrite-python | 8.93.11 | Moderne Source Available | Not relevant to current Java modules |
 | org.openrewrite:rewrite-ruby | 8.93.11 | Moderne Source Available | Not relevant to current Java modules |
 | org.openrewrite:rewrite-scala | 8.93.11 | Moderne Source Available | Not relevant to current Java modules |
