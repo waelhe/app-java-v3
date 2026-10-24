@@ -168,6 +168,7 @@ require(all(recipe not in baseline_recipe for recipe in (
         "org.openrewrite.maven.BestPractices")),
         "source/POM recommendation recipes must not run in the default read-only inventory mode.")
 
+report_script = file_text("scripts/summarize-openrewrite-report.py")
 rewrite_workflow = file_text(".github/workflows/openrewrite.yml")
 for evidence in ("CODEGENOME_USERNAME", "CODEGENOME_TOKEN", "Install reactor for dependency-resolution validation", "-DskipITs install", "rewrite:discover",
                  "rewrite:dryRun", "actions/upload-artifact@v7",
@@ -182,7 +183,6 @@ require("git diff --quiet" in rewrite_workflow and "failOnInvalidActiveRecipes=t
 require("CODEGENOME_USERNAME and CODEGENOME_TOKEN are required" in rewrite_workflow
         and "OpenRewrite is skipped" not in rewrite_workflow,
         "OpenRewrite CI must fail visibly when credentials are missing instead of reporting a silent success.")
-report_script = file_text("scripts/summarize-openrewrite-report.py")
 require('collect(root,"DependencyListReport.csv"' in report_script
         and "openrewrite-summary.md" in rewrite_workflow,
         "the report summarizer must read dependency data tables and the workflow must publish the human-readable summary.")
