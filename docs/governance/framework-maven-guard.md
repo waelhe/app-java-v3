@@ -16,7 +16,7 @@ The official OpenRewrite module/version table checked on 2026-10-24 lists `rewri
 | `org.openrewrite.recipe:rewrite-openapi` | `0.35.0` | OpenAPI recipes |
 | `org.openrewrite:rewrite-docker` | `8.93.11` | Docker/container files |
 
-The official Quickstart explicitly says Maven does not apply BOM management to plugin versions or plugin dependencies. The BOM repository README shows the Maven import pattern for normal project dependencies, but plugin-scoped recipe dependencies are different. Therefore each recipe module is pinned manually to the matching versions from official BOM release `3.41.0`; this is intentional and documented.
+The project imports both official BOMs in the OpenRewrite Maven profile: org.openrewrite:rewrite-bom:8.93.11 for engine/parser modules, and org.openrewrite.recipe:rewrite-recipe-bom:3.41.0 for recipe packs. The official Maven Quickstart says project dependencyManagement does not manage Maven plugin-scoped dependencies, so the plugin's recipe versions remain explicit. CI generates Maven's effective POM and compares these explicit coordinates to the versions managed by the imported BOMs.
 
 ## Free account, observed artifact entitlements, and license boundary
 
@@ -66,3 +66,10 @@ Green on the standard workflow means its Apache-only recipes ran and dependency 
 - [DependencyList and validateResolvable](https://docs.openrewrite.org/recipes/java/dependencies/dependencylist)
 - [Apache Maven best practices](https://docs.openrewrite.org/recipes/maven/bestpractices)
 - [OpenRewrite licensing](https://docs.openrewrite.org/licensing/openrewrite-licensing)
+
+
+## Catalog inventory and audit boundaries
+
+Every standard OpenRewrite run exports target/rewrite/recipe-catalog.csv from the actual rewrite:discover output. The CSV includes each unique discovered recipe ID, display name, probable source module, license attribution, availability, and platform relevance. Module attribution derived from package prefixes is marked as heuristic; unknowns remain flagged for official source/license review. The recipe count alone is not proof of full free-catalog coverage.
+
+The module-level version/license inventory is documented in openrewrite-module-catalog-2026-10-24.md. Both the module inventory and every run's per-recipe CSV are inputs to the remaining full source/license audit.

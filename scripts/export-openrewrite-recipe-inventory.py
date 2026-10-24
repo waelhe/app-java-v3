@@ -3,8 +3,34 @@
 from __future__ import annotations
 import argparse,csv,re
 from pathlib import Path
-RECIPE=re.compile(r"^\\[INFO\\]\\s+((?:org\\.openrewrite|com\\.marketplace)\\.[A-Za-z0-9_.$]+)\\s*$")
-DISPLAY=re.compile(r"^\\[INFO\\]\\s{4}(.+?)\\s*$")
+def is_recipe_line(line):
+    if not line.startswith("[INFO]"):
+        return None
+    rest=line[len("[INFO]"):]
+    stripped=rest.lstrip()
+    indent=len(rest)-len(stripped)
+    tokens=stripped.split()
+    if indent < 9 or len(tokens) != 1:
+        return None
+    name=tokens[0]
+    if not name.startswith(("org.openrewrite.", "com.marketplace.")):
+        return None
+    if not all(ch.isalnum() or ch in "._$" for ch in name):
+        return None
+    return name
+
+def display_line(line):
+    if not line.startswith("[INFO]"):
+        return None
+    rest=line[len("[INFO]"):]
+    stripped=rest.lstrip()
+    indent=len(rest)-len(stripped)
+    if indent != 5 or not stripped:
+        return None
+    if stripped.startswith(("options:", "recipeList:", "Available Recipes:")):
+        return None
+    return stripped.strip()
+
 def attr(n):
     if n.startswith("com.marketplace."): return ("marketplace","Internal recipe","project composite","Platform governance")
     rules=[
@@ -49,15 +75,15 @@ def main():
     if not a.input.is_file(): raise SystemExit(f"recipe discovery log not found: {a.input}")
     rows={}; display=""
     for line in a.input.read_text(encoding="utf-8",errors="replace").splitlines():
-        m=RECIPE.match(line)
-        if m:
-            recipe=m.group(1); module,lic,availability,relevance=attr(recipe)
+        recipe=is_recipe_line(line)
+        if recipe:
+            module,lic,availability,relevance=attr(recipe)
             rows[recipe]=[recipe,display,module,lic,availability,relevance,"package/module heuristic; verify official recipe source before license policy"]
             display=""
             continue
-        dm=DISPLAY.match(line)
-        if dm and dm.group(1).strip() not in {"Available Recipes:"} and not dm.group(1).lstrip().startswith(("options:","recipeList:")):
-            display=dm.group(1).strip()
+        shown=display_line(line)
+        if shown:
+            display=shown
     a.output.parent.mkdir(parents=True,exist_ok=True)
     with a.output.open("w",encoding="utf-8",newline="") as f:
         w=csv.writer(f); w.writerow(["recipe_id","display_name","likely_source_module","license_attribution","availability","platform_relevance","attribution_basis"])
