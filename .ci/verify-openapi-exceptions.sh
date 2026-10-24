@@ -2,116 +2,109 @@
 # Verifies that incompatible OpenAPI changes reported by openapi-diff are fully
 # covered by documented exceptions in .ci/openapi-compat-allowlist.yml.
 #
-# Coverage is exact and bidirectional:
-#   - every reported breaking (path, status) must be documented (uncovered breaks fail),
-#   - every documented exception must match a real reported break (stale exceptions fail).
-# Empty exceptions list is an error by design (a breaking change without a documented
-# exception must never pass the gate silently).
+# Input: the OFFICIAL JSON report of openapitools/openapi-diff (the same tool
+# the gate runs, produced with --json). The JSON carries the tool's full
+# semantic model — every node ships its own compatible/incompatible verdict
+# computed by the official model (ComposedChanged.isCoreChanged) — so this
+# verifier classifies from the tool's own verdicts instead of re-deriving
+# them from console prose. This closes the measured [UNREPRESENTABLE] gap of
+# the console era: the console renderer prints "- Add <param>" for every
+# parameter addition and does not expose required-ness, so a COMPATIBLE
+# optional addition could not be distinguished from an INCOMPATIBLE required
+# one and every add failed closed.
 #
-# Changes outside "Return Type:" are fail-closed: the console report renders
-# parameter and request-body changes without a response status, so the
-# (path, status) allowlist cannot represent them. Grounded in the official
-# openapi-diff model semantics (OpenAPITools/openapi-diff, core module):
-#   - ChangedParameters.isCoreChanged: missing params -> INCOMPATIBLE (REQUEST_PARAMS_DECREASED)
-#   - ChangedParameter.isCoreChanged: required-increase/style/explode/allowEmpty-decrease -> INCOMPATIBLE
-#   - ChangedContent.isCoreChanged: deleted media types -> INCOMPATIBLE (REQUEST/RESPONSE_CONTENT_DECREASED)
-#   - ChangedMediaType: rendered as "Schema: Broken compatibility" when incompatible
-# Therefore all "- Add/- Delete/- Changed <param>" lines and request-side breaks
-# emit [UNREPRESENTABLE] and fail the gate: the console report does not
-# expose parameter required-ness, so "- Add" cannot be distinguished between
-# optional (compatible) and required (incompatible) additions - failing closed
-# on every Add is the conservative default; a compatible optional add
-# co-occurring with a documented response break must be resolved explicitly
-# (revert the add, or switch the gate to a report format that exposes
-# required). Response media-type deletion is representable (the enclosing
-# status is known) and is treated as a (path, status) break.
+# Classification (grounded in the official model; measured on openapi-diff
+# 2.1.7 — org.openapitools.openapidiff.core.model.ChangedParameters):
+#   ChangedParameters.isCoreChanged():
+#     missing (removed params)            -> INCOMPATIBLE (REQUEST_PARAMS_DECREASED)
+#     increased with required == true     -> INCOMPATIBLE (REQUEST_PARAMS_REQUIRED_INCREASED)
+#     increased with required != true     -> COMPATIBLE  (passes, no exception needed)
+# Extracted records and their allowlist representation:
+#   missingEndpoints[]                                        -> (METHOD, path, deleted)
+#   apiResponses.missing keys (status removed)                -> (METHOD, path, code)
+#   apiResponses.changed[code].incompatible == true           -> (METHOD, path, code)
+#     (component-schema breaks propagate to the referencing operation's
+#      response node — measured: a $ref'd schema type change flags
+#      apiResponses.changed["200"].incompatible — so they are representable)
+#   parameters.increased[] with required == true              -> (METHOD, path, parameter-add)
+# Fail-closed classes (no allowlist representation, by design — the console
+# era contract kept literally):
+#   parameters.missing[] (REQUEST_PARAMS_DECREASED)           -> [UNREPRESENTABLE]
+#   parameters.changed[].incompatible (required/style flip)   -> [UNREPRESENTABLE]
+#   requestBody.incompatible (content/schema/required)        -> [UNREPRESENTABLE]
+#   changedOperation.incompatible with no classified record   -> [UNREPRESENTABLE]
+#   report.incompatible with zero extracted records           -> [UNREPRESENTABLE]
+# The umbrellas keep the gate fail-closed under model drift: if a future tool
+# version marks anything else incompatible, it surfaces as an unexplained
+# operation/report instead of passing silently.
 #
-# Usage: verify-openapi-exceptions.sh <openapi-diff-report.txt> <allowlist.yml>
+# Coverage is exact and bidirectional (the governing contract, unchanged):
+#   - every reported breaking change must be documented (uncovered fails),
+#   - every documented exception must match a real reported break (stale fails),
+#   - expiry must be a real calendar date and not in the past,
+#   - breaking changes with an empty exceptions list fail by design,
+#   - a report with zero incompatible changes and an empty list passes (the
+#     tool itself already judged the diff compatible; the CI flow never calls
+#     this verifier in that case — the semantics only matter for local runs).
+#
+# Allowlist entry schema (flat YAML map; response entries are unchanged and
+# backward compatible with the console-era file):
+#   - path: METHOD /path
+#     status: <NNN | deleted>          # response-class entry (default)
+#     ticket: ...
+#     reason: ...
+#     expiry: YYYY-MM-DD
+#   - path: METHOD /path
+#     kind: parameter-add              # required-parameter-add entry
+#     required: true                   # must be exactly true
+#     parameters: "name, name"         # optional documentation
+#     ticket: ...
+#     reason: ...
+#     expiry: YYYY-MM-DD
+#
+# Usage: verify-openapi-exceptions.sh <openapi-diff-report.json> <allowlist.yml>
 #   exit 0 = accepted   exit 1 = rejected with named errors
 set -euo pipefail
 
-REPORT="${1:?verify-openapi-exceptions.sh <report> <allowlist>}"
-ALLOWLIST="${2:?verify-openapi-exceptions.sh <report> <allowlist>}"
+REPORT="${1:?verify-openapi-exceptions.sh <report.json> <allowlist>}"
+ALLOWLIST="${2:?verify-openapi-exceptions.sh <report.json> <allowlist>}"
 TODAY="$(date +%F)"
 
+command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required to read the JSON report (fail closed)"; exit 1; }
 [[ -s "$REPORT" ]] || { echo "ERROR: diff report is empty/missing: $REPORT"; exit 1; }
 [[ -s "$ALLOWLIST" ]] || { echo "ERROR: allowlist is empty/missing: $ALLOWLIST"; exit 1; }
+jq empty "$REPORT" >/dev/null 2>&1 || { echo "ERROR: report is not valid JSON: $REPORT"; exit 1; }
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-### 1. Reported breaking (METHOD path STATUS) from the openapi-diff console report.
-# Console format (per ConsoleRender.java): endpoint items are "- METHOD path";
-# response changes are "- Changed <code> OK" under "Return Type:", each followed by
-# "Schema: Broken compatibility" for incompatible changes; "What's Deleted" lists
-# removed endpoints; "- Deleted <code> OK" under "Return Type:" marks removed responses.
-# Per-operation block order (ol_changed): [Operation ID:] Parameter: Request: Return Type:.
-# POSIX-awk compatible (no gawk-only match(s,re,arr)).
-awk -v UNREP="$TMP/unrep.txt" '
-  function is_del(l) { return l ~ /What.s Deleted/ }
-  function is_chg(l) { return l ~ /What.s Changed/ }
-  /^[[:space:]]*$/ { next }
-  is_del($0) { section = "del"; next }
-  is_chg($0) { section = "chg"; next }
-  /What.s (New|Deprecated)/ { section = ""; next }
-  $0 ~ /^-[[:space:]]+[A-Z]+[[:space:]]+\// {
-    if (section == "del" && NF >= 3) { print $2 "\t" $3 "\t" "deleted"; next }
-    if (section == "chg" && NF >= 3) { method = $2; path = $3; sub(/\r/, "", path); block = ""; broken_code = ""; next }
-    next
-  }
-  section != "chg" || method == "" { next }
-  $0 ~ /Return Type:/ { block = "return"; next }
-  $0 ~ /Parameter:/ { block = "param"; next }
-  $0 ~ /Request:/ { block = "request"; next }
+### 1. Reported breaking changes, extracted from the official JSON model.
+# TSV columns: class \t METHOD \t path \t detail.
+jq -r '
+  def emit(c; m; p; d): [c, m, p, (d // "-")] | @tsv;
+  (.missingEndpoints[]? | emit("deleted"; .method; .pathUrl; "endpoint")),
+  (.changedOperations[]? as $op |
+    (($op.apiResponses.missing // {}) | keys[]
+      | emit("response"; $op.httpMethod; $op.pathUrl; .)),
+    (($op.apiResponses.changed // {}) | to_entries[]
+      | select(.value.incompatible == true)
+      | emit("response"; $op.httpMethod; $op.pathUrl; .key)),
+    (($op.parameters.increased // [])[]
+      | select(.required == true)
+      | emit("param-add"; $op.httpMethod; $op.pathUrl; .name)),
+    (($op.parameters.missing // [])[]
+      | emit("param-remove"; $op.httpMethod; $op.pathUrl; .name)),
+    (($op.parameters.changed // [])[]
+      | select(.incompatible == true)
+      | emit("param-change"; $op.httpMethod; $op.pathUrl; .name)),
+    ($op | select((.requestBody.incompatible // false) == true)
+      | emit("request-body"; .httpMethod; .pathUrl; "incompatible request body"))
+  )
+' "$REPORT" | sort -u > "$TMP/records.tsv"
 
-  # Fail closed: parameter deletions/changes/additions (REQUEST_PARAMS_DECREASED,
-  # REQUEST_PARAMS_REQUIRED_INCREASED and friends in the official model).
-  # "- Add" is failed too: the console report cannot distinguish a compatible
-  # optional add from an incompatible required add (see header).
-  block == "param" && $0 ~ /-[[:space:]]+(Add|Delete|Changed)[[:space:]]+/ {
-    print method "\t" path "\t" "parameter-change" > UNREP
-    next
-  }
-
-  # Fail closed: request-body media type deleted (REQUEST_CONTENT_DECREASED).
-  block == "request" && $0 ~ /-[[:space:]]+Deleted[[:space:]]+/ {
-    print method "\t" path "\t" "request-content-deleted" > UNREP
-    next
-  }
-  # Fail closed: incompatible request schema (ChangedMediaType broken).
-  block == "request" && /Broken compatibility/ {
-    print method "\t" path "\t" "request-schema-incompatible" > UNREP
-    next
-  }
-
-  # Return Type: response-level breaks map to (path, status) - allowlist-representable.
-  block == "return" && /-[[:space:]]+(Changed|Deleted)[[:space:]]+[0-9]{3}/ {
-    if ($2 == "Deleted") print method "\t" path "\t" $3
-    else broken_code = $3
-    next
-  }
-  block == "return" && broken_code != "" && /Broken compatibility/ {
-    print method "\t" path "\t" broken_code
-    broken_code = ""
-    next
-  }
-  # Response media type removed while the status stays (RESPONSE_CONTENT_DECREASED):
-  # representable because the enclosing status is known.
-  block == "return" && broken_code != "" && $0 ~ /-[[:space:]]+Deleted[[:space:]]+/ && $0 !~ /[0-9]{3}/ {
-    print method "\t" path "\t" broken_code
-    broken_code = ""
-    next
-  }
-' <(tr -d '\r' < "$REPORT") | sort -u > "$TMP/reported.txt"
-
-### 2. Documented exceptions -> (METHOD path STATUS) + validity.
-# Allowlist entry schema (flat YAML map):
-#   - path: METHOD /path
-#     status: <NNN | deleted>
-#     ticket: ...
-#     reason: ...
-#     expiry: YYYY-MM-DD (a real calendar date; month lengths and leap years
-#     are validated, not only the YYYY-MM-DD shape)
+### 2. Documented exceptions -> (METHOD path KEY) + validity.
+# KEY is the status code (or "deleted") for response-class entries and
+# "parameter-add" for required-parameter-add entries.
 awk '
   function err(msg) { printf "  [ERROR] %s\n", msg > "/dev/stderr"; bad = 1 }
   function valid_date(s,  y, m, d, leap, md) {
@@ -131,29 +124,41 @@ awk '
     key = l; gsub(/^[[:space:]]+|[[:space:]]+$/, "", key); sub(/[[:space:]]*:.*/, "", key)
     val = l; sub(/^[^:]*:[[:space:]]*/, "", val); sub(/[[:space:]]*$/, "", val)
     gsub(/^"|"$/, "", val); gsub(/\r/, "", val)
-    if      (key == "path")   { path = val; split(val, p, " "); if (p[1] ~ /^[A-Z]+$/) { method = p[1]; path = p[2] != "" ? p[2] : "" } }
-    else if (key == "status") status = val
-    else if (key == "ticket") ticket = val
-    else if (key == "reason") reason = val
-    else if (key == "expiry") expiry = val
+    if      (key == "path")       { path = val; split(val, p, " "); if (p[1] ~ /^[A-Z]+$/) { method = p[1]; path = p[2] != "" ? p[2] : "" } }
+    else if (key == "status")     status = val
+    else if (key == "kind")       kind = val
+    else if (key == "required")   required = val
+    else if (key == "parameters") parameters = val
+    else if (key == "ticket")     ticket = val
+    else if (key == "reason")     reason = val
+    else if (key == "expiry")     expiry = val
     else err(sprintf("unknown key \047%s\047 (line %d)", key, NR))
   }
   function finalize() {
     if (method == "" || path == "") { err("entry missing \047path: METHOD /path\047"); return }
-    if (status == "")                { err("entry missing \047status:\047"); return }
     if (ticket == "")                { err(sprintf("%s %s missing \047ticket:\047", method, path)); return }
     if (reason == "")                { err(sprintf("%s %s missing \047reason:\047", method, path)); return }
     if (expiry == "")                { err(sprintf("%s %s missing \047expiry:\047", method, path)); return }
     if (expiry !~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/) { err(sprintf("%s %s bad expiry \047%s\047 (YYYY-MM-DD)", method, path, expiry)); return }
     if (!valid_date(expiry))         { err(sprintf("%s %s expiry \047%s\047 is not a valid calendar date", method, path, expiry)); return }
-    print method "\t" path "\t" status "\t" expiry
+    if (kind == "") {
+      if (status == "") { err(sprintf("%s %s missing \047status:\047 (response entries need it)", method, path)); return }
+      if (required != "" || parameters != "") { err(sprintf("%s %s uses kind-only keys without \047kind:\047", method, path)); return }
+      print method "\t" path "\t" status "\t" expiry
+    } else if (kind == "parameter-add") {
+      if (status != "") { err(sprintf("%s %s has both \047status:\047 and \047kind:\047 - ambiguous", method, path)); return }
+      if (required != "true") { err(sprintf("%s %s kind parameter-add requires \047required: true\047", method, path)); return }
+      print method "\t" path "\t" "parameter-add" "\t" expiry
+    } else {
+      err(sprintf("%s %s unknown kind \047%s\047 (only parameter-add exists)", method, path, kind))
+    }
     if (expiry < TODAY) err(sprintf("%s %s expired on %s", method, path, expiry))
   }
   /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
   /^exceptions:/ { next }
   /^[[:space:]]+- / {
     if (has_entry) finalize()
-    has_entry = 1; method = ""; path = ""; status = ""; ticket = ""; reason = ""; expiry = ""
+    has_entry = 1; method = ""; path = ""; status = ""; kind = ""; required = ""; parameters = ""; ticket = ""; reason = ""; expiry = ""
     line = $0; sub(/^[[:space:]]*-[[:space:]]*/, "", line); dispatch(line)
     next
   }
@@ -167,20 +172,23 @@ awk '
 ' TODAY="$TODAY" "$ALLOWLIST" > "$TMP/allow.txt" 2> "$TMP/allow-errors.txt" \
   || { echo "Allowlist validation failed:"; cat "$TMP/allow-errors.txt"; exit 1; }
 
-if [[ ! -s "$TMP/allow.txt" ]]; then
-  echo "OpenAPI incompatible changes detected and no allowlist exceptions are documented."
-  exit 1
-fi
 awk -F '\t' '{ print $1 "\t" $2 "\t" $3 }' "$TMP/allow.txt" | sort -u > "$TMP/allow-norm.txt"
 
-### 3. Named errors: uncovered breaks, stale exceptions, unrepresentable changes.
+### 3. Coverage keys from the extracted records.
+awk -F '\t' '
+  $1 == "deleted"  { print $2 "\t" $3 "\t" "deleted" }
+  $1 == "response" { print $2 "\t" $3 "\t" $4 }
+  $1 == "param-add" { print $2 "\t" $3 "\t" "parameter-add" }
+' "$TMP/records.tsv" | sort -u > "$TMP/reported.txt"
+
+### 4. Named errors: uncovered, stale, unrepresentable, unexplained, expired.
 FAIL=0
 
 # Reported breaking changes with no documented exception.
 comm -23 "$TMP/reported.txt" "$TMP/allow-norm.txt" > "$TMP/uncovered.txt"
 if [[ -s "$TMP/uncovered.txt" ]]; then
   echo "Uncovered breaking changes (document an exception for each):"
-  while IFS=$'\t' read -r m p s; do printf '  [UNCOVERED] %s %s (status %s)\n' "$m" "$p" "$s"; done < "$TMP/uncovered.txt"
+  while IFS=$'\t' read -r m p k; do printf '  [UNCOVERED] %s %s (key %s)\n' "$m" "$p" "$k"; done < "$TMP/uncovered.txt"
   FAIL=1
 fi
 
@@ -188,15 +196,37 @@ fi
 comm -13 "$TMP/reported.txt" "$TMP/allow-norm.txt" > "$TMP/stale.txt"
 if [[ -s "$TMP/stale.txt" ]]; then
   echo "Stale exceptions (no longer match any reported breaking change - remove them):"
-  while IFS=$'\t' read -r m p s; do printf '  [STALE] %s %s (status %s)\n' "$m" "$p" "$s"; done < "$TMP/stale.txt"
+  while IFS=$'\t' read -r m p k; do printf '  [STALE] %s %s (key %s)\n' "$m" "$p" "$k"; done < "$TMP/stale.txt"
   FAIL=1
 fi
 
-# Incompatible parameter/request-body changes the (path, status) allowlist
-# cannot represent: fail closed rather than passing silently.
+# Incompatible parameter/request-body changes the allowlist cannot represent
+# (fail closed rather than passing silently — the console-era contract).
+awk -F '\t' '$1 == "param-remove" || $1 == "param-change" || $1 == "request-body" { print }' "$TMP/records.tsv" > "$TMP/unrep.txt"
 if [[ -s "$TMP/unrep.txt" ]]; then
-  echo "Incompatible changes the (path,status) allowlist cannot represent (resolve or revert them):"
-  sort -u "$TMP/unrep.txt" | while IFS=$'\t' read -r m p kind; do printf '  [UNREPRESENTABLE] %s %s (%s)\n' "$m" "$p" "$kind"; done
+  echo "Incompatible changes the allowlist cannot represent (resolve or revert them):"
+  while IFS=$'\t' read -r c m p d; do printf '  [UNREPRESENTABLE] %s %s (%s: %s)\n' "$m" "$p" "$c" "$d"; done < "$TMP/unrep.txt"
+  FAIL=1
+fi
+
+# Umbrella: an operation the tool marked incompatible must yield at least one
+# classified record — otherwise its incompatibility source is unclassified
+# (security requirements, extensions, or model drift) and the gate fails closed.
+jq -r '.changedOperations[]? | select(.incompatible == true) | [(.httpMethod // "?"), (.pathUrl // "?")] | @tsv' "$REPORT" \
+  | sort -u > "$TMP/incompatible-ops.tsv"
+while IFS=$'\t' read -r m p; do
+  needle=$'\t'"$m"$'\t'"$p"$'\t'
+  if ! grep -qF "$needle" "$TMP/records.tsv"; then
+    echo "  [UNREPRESENTABLE] $m $p (operation-incompatible: unclassified incompatible child)"
+    FAIL=1
+  fi
+done < "$TMP/incompatible-ops.tsv"
+
+# Umbrella: the report itself marked incompatible but nothing was extractable
+# (e.g. a component-schema break with no referencing operation). Fails closed.
+ROOT_INCOMPATIBLE="$(jq -r '.incompatible // false' "$REPORT")"
+if [[ "$ROOT_INCOMPATIBLE" == "true" && ! -s "$TMP/reported.txt" && ! -s "$TMP/unrep.txt" ]]; then
+  echo "  [UNREPRESENTABLE] report-incompatible: the tool marked the diff incompatible but no classified record was extractable"
   FAIL=1
 fi
 
