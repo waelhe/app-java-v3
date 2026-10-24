@@ -64,6 +64,6 @@ def main():
     if a.mode=="inventory" and not dp: lines += ["## Validation error","","**No DependencyListReport.csv was produced; inventory is incomplete.**",""]
     a.output.parent.mkdir(parents=True,exist_ok=True); a.output.write_text("\n".join(lines)+"\n",encoding="utf-8")
     print(f"OpenRewrite report: {a.output}")
-    return 2 if a.mode=="inventory" and not dp else 0
+    return 2 if a.mode=="inventory" and (not dp or failures) else 0
 
 if __name__=="__main__": raise SystemExit(main())
