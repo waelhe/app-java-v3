@@ -135,7 +135,7 @@ jobs:
         env:
           CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
           CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
-        run: scripts/openrewrite/build-spring-recipes.sh
+        run: bash scripts/openrewrite/build-spring-recipes.sh
 
       - name: Verify Spring recipe discovery from the local build
         run: |
