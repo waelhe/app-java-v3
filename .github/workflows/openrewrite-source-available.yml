@@ -9,6 +9,8 @@ on:
       - 'scripts/build-openrewrite-source-recipes.sh'
       - 'scripts/verify-framework-guard-policy.py'
       - 'scripts/summarize-openrewrite-report.py'
+      - 'scripts/verify-openrewrite-bom-alignment.py'
+      - 'scripts/export-openrewrite-recipe-inventory.py'
       - 'rewrite.yml'
       - 'pom.xml'
 
@@ -95,6 +97,18 @@ jobs:
       - name: Install platform Maven reactor for dependency validation
         run: ./mvnw --batch-mode --no-transfer-progress -Dmaven.test.skip=true -DskipITs install
 
+      - name: Generate effective POM with both OpenRewrite profiles
+        run: |
+          mkdir -p target/rewrite
+          ./mvnw --batch-mode --no-transfer-progress -Popenrewrite,openrewrite-source-available -N \
+            org.apache.maven.plugins:maven-help-plugin:3.5.1:effective-pom \
+            -Doutput=target/rewrite/openrewrite-source-effective-pom.xml
+
+      - name: Verify explicit plugin coordinates against imported BOMs
+        run: |
+          python3 scripts/verify-openrewrite-bom-alignment.py \
+            --project-pom pom.xml --effective-pom target/rewrite/openrewrite-source-effective-pom.xml
+
       - name: Discover the source-built Spring Boot 4.1 recipe
         shell: bash
         run: |
@@ -103,6 +117,7 @@ jobs:
             -Drewrite.activeRecipes=com.marketplace.governance.OpenRewriteSpringRecommendations \
             -Drewrite.failOnInvalidActiveRecipes=true -Ddetail=true rewrite:discover \
             2>&1 | tee target/rewrite/source-recipe-discovery.txt
+          python3 scripts/export-openrewrite-recipe-inventory.py --source --input target/rewrite/source-recipe-discovery.txt --output target/rewrite/source-recipe-catalog.csv
           grep -q 'org.openrewrite.java.spring.boot4.SpringBootProperties_4_1' \
             target/rewrite/source-recipe-discovery.txt
 

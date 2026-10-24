@@ -110,8 +110,13 @@ require(profile_end > profile_start, "the OpenRewrite Maven profile is malformed
 rewrite_profile = pom_text[profile_start:profile_end]
 require("<version>6.50.0</version>" in rewrite_profile,
         "OpenRewrite Maven plugin must match the reviewed official 6.50.0 release.")
-require("rewrite-recipe-bom:3.41.0" in rewrite_profile,
-        "the manually pinned plugin dependencies must document official rewrite-recipe-bom 3.41.0 as their alignment reference.")
+require("<artifactId>rewrite-recipe-bom</artifactId>" in rewrite_profile
+        and "<version>3.41.0</version>" in rewrite_profile
+        and "<artifactId>rewrite-bom</artifactId>" in rewrite_profile
+        and "<version>8.93.11</version>" in rewrite_profile,
+        "OpenRewrite and recipe BOMs must be imported in the OpenRewrite profile dependencyManagement.")
+require("Maven does not apply project dependencyManagement to plugin-scoped dependencies" in pom_text,
+        "POM must document Maven's plugin dependencyManagement limitation and CI's explicit alignment check.")
 require("https://artifacts.codegenomeproject.org/maven" in rewrite_profile
         and "<id>codegenome</id>" in rewrite_profile
         and "https://repo.maven.apache.org/maven2" in rewrite_profile,
@@ -222,6 +227,10 @@ require('collect(root,"DependencyListReport.csv"' in report_script
         and "openrewrite-summary.md" in rewrite_workflow,
         "the report summarizer must read dependency data tables and the workflow must publish the human-readable summary.")
 
+require("effective-pom" in rewrite_workflow and "verify-openrewrite-bom-alignment.py" in rewrite_workflow,
+        "standard OpenRewrite CI must resolve BOM imports and verify explicit plugin pins.")
+require("recipe-catalog.csv" in rewrite_workflow and "export-openrewrite-recipe-inventory.py" in rewrite_workflow,
+        "standard OpenRewrite CI must export its recipe-level inventory.")
 source_builder = file_text("scripts/build-openrewrite-source-recipes.sh")
 for evidence in ("rewrite 8.93.11", "moderneinc rewrite-mainframe 3.3.1",
                  "rewrite-static-analysis 2.45.0", "rewrite-migrate-java 3.46.0",
@@ -231,8 +240,9 @@ for evidence in ("rewrite 8.93.11", "moderneinc rewrite-mainframe 3.3.1",
             f"source-build script is missing pinned upstream build behavior: {evidence}")
 source_workflow = file_text(".github/workflows/openrewrite-source-available.yml")
 for evidence in ("scripts/build-openrewrite-source-recipes.sh", "openrewrite-source-available",
+                 "verify-openrewrite-bom-alignment.py", "export-openrewrite-recipe-inventory.py",
                  "rewrite:discover", "rewrite:dryRun", "SpringBootProperties_4_1",
-                 "source-build-manifest.txt", "actions/upload-artifact@v7"):
+                 "source-recipe-catalog.csv", "source-build-manifest.txt", "actions/upload-artifact@v7"):
     require(evidence in source_workflow,
             f"source-built OpenRewrite workflow is missing end-to-end behavior: {evidence}")
 require('choices=("inventory","recommendations","source-recommendations")' in report_script,

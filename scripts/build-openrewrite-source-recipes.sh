@@ -22,7 +22,11 @@ allprojects {
 GRADLE
 
 build_and_publish_from() {
-    local org="$1" repo="$2" version="$3" ref="v$3" checkout="$SOURCE_ROOT/$org-$repo"
+    local org="$1"
+    local repo="$2"
+    local version="$3"
+    local ref="v${version}"
+    local checkout="${SOURCE_ROOT}/${org}-${repo}"
     echo "::group::Build official source $org/$repo $ref"
     git clone --depth=1 --single-branch --branch "$ref" "https://github.com/$org/$repo.git" "$checkout"
     printf '%s %s %s\n' "$org/$repo" "$ref" "$(git -C "$checkout" rev-parse HEAD)" | tee -a "$MANIFEST"

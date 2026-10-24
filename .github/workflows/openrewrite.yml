@@ -25,6 +25,8 @@ on:
       - 'docs/governance/framework-maven-guard.md'
       - 'scripts/verify-framework-guard-policy.py'
       - 'scripts/summarize-openrewrite-report.py'
+      - 'scripts/verify-openrewrite-bom-alignment.py'
+      - 'scripts/export-openrewrite-recipe-inventory.py'
 
 permissions:
   contents: read
@@ -107,6 +109,21 @@ jobs:
           ./mvnw --batch-mode --no-transfer-progress \
             -Dmaven.test.skip=true -DskipITs install
 
+      - name: Generate effective POM with official BOM imports
+        if: steps.credentials.outputs.enabled == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p target/rewrite
+          ./mvnw --batch-mode --no-transfer-progress -Popenrewrite -N \
+            org.apache.maven.plugins:maven-help-plugin:3.5.1:effective-pom \
+            -Doutput=target/rewrite/openrewrite-effective-pom.xml
+
+      - name: Verify plugin recipe versions against imported BOMs
+        if: steps.credentials.outputs.enabled == 'true'
+        run: |
+          python3 scripts/verify-openrewrite-bom-alignment.py \
+            --project-pom pom.xml --effective-pom target/rewrite/openrewrite-effective-pom.xml
+
       - name: Discover current recipes
         if: steps.credentials.outputs.enabled == 'true'
         env:
@@ -124,6 +141,7 @@ jobs:
             -Drewrite.activeRecipes="$ACTIVE_RECIPE" \
             -Drewrite.failOnInvalidActiveRecipes=true \
             -Ddetail=true rewrite:discover 2>&1 | tee target/rewrite/recipe-discovery.txt
+          python3 scripts/export-openrewrite-recipe-inventory.py --input target/rewrite/recipe-discovery.txt --output target/rewrite/recipe-catalog.csv
 
       - name: Preview selected recipes without modifying source
         if: steps.credentials.outputs.enabled == 'true'

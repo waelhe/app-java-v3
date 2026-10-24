@@ -1242,6 +1242,24 @@
              never stored in this POM. Paid/source-available recipe packs are excluded. -->
         <profile>
             <id>openrewrite</id>
+            <dependencyManagement>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.openrewrite</groupId>
+                        <artifactId>rewrite-bom</artifactId>
+                        <version>8.93.11</version>
+                        <type>pom</type>
+                        <scope>import</scope>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.openrewrite.recipe</groupId>
+                        <artifactId>rewrite-recipe-bom</artifactId>
+                        <version>3.41.0</version>
+                        <type>pom</type>
+                        <scope>import</scope>
+                    </dependency>
+                </dependencies>
+            </dependencyManagement>
             <repositories>
                 <repository>
                     <id>codegenome</id>
@@ -1279,9 +1297,9 @@
                             <failOnDryRunResults>false</failOnDryRunResults>
                             <reportOutputDirectory>${project.build.directory}/rewrite</reportOutputDirectory>
                         </configuration>
-                        <!-- Versions checked against official rewrite-recipe-bom:3.41.0.
-                             OpenRewrite's Maven documentation says BOMs cannot manage plugin dependencies,
-                             so each plugin-scoped recipe artifact is pinned manually to the aligned release. -->
+                        <!-- rewrite-bom:8.93.11 and rewrite-recipe-bom:3.41.0 are imported in this profile's project dependencyManagement.
+                             Maven does not apply project dependencyManagement to plugin-scoped dependencies; explicit pins
+                             are checked by CI against the versions in the effective POM. -->
                         <dependencies>
                             
                             
