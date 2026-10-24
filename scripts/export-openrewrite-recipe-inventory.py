@@ -39,7 +39,7 @@ RECIPE_LICENSES = {
     "rewrite-static-analysis": "Moderne Source Available",
     "rewrite-testing-frameworks": "Moderne Source Available",
 }
-CORE_SOURCE_AVAILABLE = {"rewrite-android", "rewrite-python", "rewrite-ruby", "rewrite-scala", "rewrite-mainframe"}
+CORE_SOURCE_AVAILABLE = {"rewrite-android", "rewrite-csharp", "rewrite-go", "rewrite-javascript", "rewrite-python", "rewrite-ruby", "rewrite-scala", "rewrite-mainframe"}
 CORE_APACHE = {
     "rewrite-core", "rewrite-java", "rewrite-java-8", "rewrite-java-11", "rewrite-java-17",
     "rewrite-java-21", "rewrite-java-25", "rewrite-maven", "rewrite-gradle", "rewrite-groovy",
