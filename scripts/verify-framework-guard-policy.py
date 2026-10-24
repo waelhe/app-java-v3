@@ -233,6 +233,10 @@ require("effective-pom" in rewrite_workflow and "verify-openrewrite-bom-alignmen
         "standard OpenRewrite CI must resolve BOM imports and verify explicit plugin pins.")
 require("recipe-catalog.csv" in rewrite_workflow and "export-openrewrite-recipe-inventory.py" in rewrite_workflow and "--strict-attribution" in rewrite_workflow,
         "standard OpenRewrite CI must export its recipe-level inventory.")
+bom_checker = file_text("scripts/verify-openrewrite-bom-alignment.py")
+require('key == ("org.openrewrite", "rewrite-mainframe")' in bom_checker
+        and 'pinned != "3.2.1"' in bom_checker,
+        "the separately maintained mainframe parser must be checked against its explicit official source tag, not silently exempted from version verification.")
 source_builder = file_text("scripts/build-openrewrite-source-recipes.sh")
 for evidence in ("rewrite 8.93.0", "moderneinc rewrite-mainframe 3.2.1",
                  "rewrite-static-analysis 2.45.0", "rewrite-feature-flags 1.24.2",
