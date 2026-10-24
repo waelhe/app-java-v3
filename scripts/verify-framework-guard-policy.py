@@ -169,12 +169,14 @@ require(all(recipe not in baseline_recipe for recipe in (
         "source/POM recommendation recipes must not run in the default read-only inventory mode.")
 
 rewrite_workflow = file_text(".github/workflows/openrewrite.yml")
-for evidence in ("CODEGENOME_USERNAME", "CODEGENOME_TOKEN", "rewrite:discover",
+for evidence in ("CODEGENOME_USERNAME", "CODEGENOME_TOKEN", "Install reactor for dependency-resolution validation", "-DskipITs install", "rewrite:discover",
                  "rewrite:dryRun", "actions/upload-artifact@v7",
                  "scripts/summarize-openrewrite-report.py", "recommendations",
                  "GITHUB_STEP_SUMMARY"):
     require(evidence in rewrite_workflow,
             f"OpenRewrite workflow is missing required end-to-end behavior: {evidence}")
+require("return 2 if a.mode==\"inventory\" and (not dp or failures) else 0" in report_script,
+        "the OpenRewrite inventory must fail closed if dependency resolution is incomplete or has failures.")
 require("git diff --quiet" in rewrite_workflow and "failOnInvalidActiveRecipes=true" in rewrite_workflow,
         "OpenRewrite must stay non-mutating and fail on invalid recipes.")
 require("CODEGENOME_USERNAME and CODEGENOME_TOKEN are required" in rewrite_workflow
