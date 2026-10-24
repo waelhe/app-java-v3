@@ -1247,7 +1247,7 @@
                     <dependency>
                         <groupId>org.openrewrite</groupId>
                         <artifactId>rewrite-bom</artifactId>
-                        <version>8.93.11</version>
+                        <version>8.93.0</version>
                         <type>pom</type>
                         <scope>import</scope>
                     </dependency>
@@ -1297,7 +1297,7 @@
                             <failOnDryRunResults>false</failOnDryRunResults>
                             <reportOutputDirectory>${project.build.directory}/rewrite</reportOutputDirectory>
                         </configuration>
-                        <!-- rewrite-bom:8.93.11 and rewrite-recipe-bom:3.41.0 are imported in this profile's project dependencyManagement.
+                        <!-- rewrite-bom:8.93.0 matches rewrite-maven-plugin:6.50.0's declared runtime; rewrite-recipe-bom:3.41.0 manages recipe packs.
                              Maven does not apply project dependencyManagement to plugin-scoped dependencies; explicit pins
                              are checked by CI against the versions in the effective POM. -->
                         <dependencies>
@@ -1326,7 +1326,7 @@
                             <dependency>
                                 <groupId>org.openrewrite</groupId>
                                 <artifactId>rewrite-docker</artifactId>
-                                <version>8.93.11</version>
+                                <version>8.93.0</version>
                             </dependency>
                         </dependencies>
                     </plugin>
