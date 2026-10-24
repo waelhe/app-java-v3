@@ -232,7 +232,7 @@ require("effective-pom" in rewrite_workflow and "verify-openrewrite-bom-alignmen
 require("recipe-catalog.csv" in rewrite_workflow and "export-openrewrite-recipe-inventory.py" in rewrite_workflow and "--strict-attribution" in rewrite_workflow,
         "standard OpenRewrite CI must export its recipe-level inventory.")
 source_builder = file_text("scripts/build-openrewrite-source-recipes.sh")
-for evidence in ("rewrite 8.93.11", "moderneinc rewrite-mainframe 3.3.1",
+for evidence in ("rewrite 8.93.11", "moderneinc rewrite-mainframe 3.2.1",
                  "rewrite-static-analysis 2.45.0", "rewrite-migrate-java 3.46.0",
                  "rewrite-spring 6.41.0", "rewrite-third-party 0.49.0", "rewrite-all 1.30.2",
                  "publishToMavenLocal", "mavenLocal()"):
