@@ -24,7 +24,7 @@
 | Java | **25** (`pom.xml:41`) | openjdk.org/projects/jdk/25 | ✅ |
 | Spring Authorization Server | **`spring-security-oauth2-authorization-server` 7.1.1** عبر starter `spring-boot-starter-security-oauth2-authorization-server` (`marketplace-platform-infra/pom.xml:39`)؛ Jackson override موثق (`pom.xml:91` — الاستثناء #11) | وثائق SAS الرسمية + إدارة Boot BOM | ✅ يعمل على main |
 | Spring Modulith | **BOM 2.1.0** (استثناء #1 موثق) | docs.spring.io/spring-modulith | ✅ verify() في CI |
-| Maven | 3.9.16 + mvnw | maven.apache.org (مرجع إلزامي في ARCHITECTURE.md §Appendix) | ✅ |
+| Maven | 3.10.0 + mvnw (أداة الـwrapper 3.3.4 — مستقلة عن رقم التوزيعة) | maven.apache.org (مرجع إلزامي في ARCHITECTURE.md §Appendix) | ✅ |
 | الوحدات | 16 وحدة Maven (L0–L4) | Maven multi-module reactor | ✅ |
 
 **ما هو مغلَّق على main ويسري على كل عميل مستقبلي** (نتيجة #184/#185/#186):
