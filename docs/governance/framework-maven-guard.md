@@ -14,7 +14,7 @@ The official OpenRewrite module/version table checked on 2026-10-24 lists `rewri
 | `org.openrewrite.recipe:rewrite-jackson` | `1.31.0` | Jackson recipes |
 | `org.openrewrite.recipe:rewrite-netty` | `0.13.2` | Netty recipes |
 | `org.openrewrite.recipe:rewrite-openapi` | `0.35.0` | OpenAPI recipes |
-| `org.openrewrite:rewrite-docker` | `8.93.11` | Docker/container files |
+| `org.openrewrite:rewrite-docker` | `8.93.0` | Docker/container files, BOM-aligned to plugin runtime |
 
 The project imports both official BOMs in the OpenRewrite Maven profile: org.openrewrite:rewrite-bom:8.93.11 for engine/parser modules, and org.openrewrite.recipe:rewrite-recipe-bom:3.41.0 for recipe packs. The official Maven Quickstart says project dependencyManagement does not manage Maven plugin-scoped dependencies, so the plugin's recipe versions remain explicit. CI generates Maven's effective POM and compares these explicit coordinates to the versions managed by the imported BOMs.
 
@@ -73,3 +73,8 @@ Green on the standard workflow means its Apache-only recipes ran and dependency 
 Every standard OpenRewrite run exports target/rewrite/recipe-catalog.csv from the actual rewrite:discover output. The CSV includes each unique discovered recipe ID, display name, probable source module, license attribution, availability, and platform relevance. Module attribution derived from package prefixes is marked as heuristic; unknowns remain flagged for official source/license review. The recipe count alone is not proof of full free-catalog coverage.
 
 The module-level version/license inventory is documented in openrewrite-module-catalog-2026-10-24.md. Both the module inventory and every run's per-recipe CSV are inputs to the remaining full source/license audit.
+
+
+### Plugin/runtime compatibility decision (2026-10-24)
+
+The upstream source POM of [`rewrite-maven-plugin:6.50.0`](https://github.com/openrewrite/rewrite-maven-plugin/blob/v6.50.0/pom.xml) pins `rewrite.version` to `8.93.0`. The source-build path and Maven profile therefore use the `rewrite-bom:8.93.0` family for the core runtime and use `rewrite-recipe-bom:3.41.0` for independently aligned recipe packs. The module/version table advertises core `8.93.11` as a newer available point release; it is not silently substituted into a runner whose own released POM declares core `8.93.0`.
