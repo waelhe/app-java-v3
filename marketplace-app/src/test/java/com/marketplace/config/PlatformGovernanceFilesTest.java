@@ -514,9 +514,9 @@ class PlatformGovernanceFilesTest {
         assertThat(springBuildScript)
                 .as("the source probe must report the actual published coordinate instead of assuming the tag version")
                 .contains("built_version")
-                .contains("rewrite-spring-\\${built_version}.pom")
-                .contains("Source tag \${tag} is publishing rewrite-spring:")
-                .contains("expected release coordinate: \${version}");
+                .contains("rewrite-spring-${built_version}.pom")
+                .contains("Source tag ${tag} is publishing rewrite-spring:")
+                .contains("expected release coordinate: ${version}");
 
         String workflow = read(".github", "workflows", "openrewrite-catalog.yml");
         assertThat(workflow)
