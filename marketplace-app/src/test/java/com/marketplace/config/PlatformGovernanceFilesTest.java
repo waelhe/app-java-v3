@@ -478,6 +478,9 @@ class PlatformGovernanceFilesTest {
                 .as("OpenRewrite catalog audit must not silently skip credential or discovery checks")
                 .contains("CODEGENOME_USERNAME")
                 .contains("CODEGENOME_TOKEN")
+                .contains("server-username-env-var: CODEGENOME_USERNAME")
+                .contains("server-password-env-var: CODEGENOME_TOKEN")
+                .contains("Verify Code Genome artifact authentication")
                 .contains("rewrite-maven-plugin:6.50.0:discover")
                 .contains("rewrite-maven-plugin:6.50.0:dryRunNoFork");
     }
