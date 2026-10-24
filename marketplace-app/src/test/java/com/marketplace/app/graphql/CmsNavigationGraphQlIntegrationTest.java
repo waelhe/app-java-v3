@@ -153,8 +153,8 @@ class CmsNavigationGraphQlIntegrationTest {
                 .variable("id", childId)
                 .execute();
         readBack.errors().verify();
-        readBack.path("menuItem.name").entity(String.class).isEqualTo("Child");
-        readBack.path("menuItem.url").entity(String.class).isEqualTo("/child");
+        assertThat(readBack.path("menuItem.name").entity(String.class).get()).isEqualTo("Child");
+        assertThat(readBack.path("menuItem.url").entity(String.class).get()).isEqualTo("/child");
 
         Integer parentChildLinkCount = jdbcTemplate.queryForObject("""
                 SELECT COUNT(*)
