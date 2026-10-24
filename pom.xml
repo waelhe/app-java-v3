@@ -1320,11 +1320,6 @@
                     <artifactId>rewrite-openapi</artifactId>
                     <scope>provided</scope>
                 </dependency>
-                <dependency>
-                    <groupId>org.openrewrite.recipe</groupId>
-                    <artifactId>rewrite-third-party</artifactId>
-                    <scope>provided</scope>
-                </dependency>
             </dependencies>
             <build>
                 <plugins>
@@ -1349,10 +1344,48 @@
                 </plugins>
             </build>
         </profile>
-        <!-- Full multi-language catalog, opt-in with -Popenrewrite,openrewrite-all-catalog.
-             rewrite-all itself is Apache-2.0, but bundles language modules outside this
-             Java/Maven service's scope; the source-available language parsers are excluded
-             here to keep this profile within the no-subscription, Java-platform scope. -->
+        <!-- Optional broad Java catalog. Source-available language parser modules are
+             excluded because this profile is intended to stay within the Java/Maven
+             service's no-subscription boundary. Third-party recipes are isolated in a
+             separate profile because their published dependency graph pulls subscription-
+             restricted recipe packs in the current catalog. -->
+        <!-- Third-party recipes are independently Apache-licensed, but their current
+             published runtime graph includes MSAL-only modules (verified by HTTP 403
+             without a customer entitlement). Keep the pack separate and exclude those
+             modules in the no-subscription profile; run discovery/dry-run to report any
+             composites that need one of the excluded recipe packs. -->
+        <profile>
+            <id>openrewrite-third-party-free-catalog</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.openrewrite.recipe</groupId>
+                    <artifactId>rewrite-third-party</artifactId>
+                    <scope>provided</scope>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>org.openrewrite.recipe</groupId>
+                            <artifactId>rewrite-migrate-java</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>org.openrewrite.recipe</groupId>
+                            <artifactId>rewrite-github-actions</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>org.openrewrite.recipe</groupId>
+                            <artifactId>rewrite-static-analysis</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>org.openrewrite.recipe</groupId>
+                            <artifactId>rewrite-joda</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>org.openrewrite.recipe</groupId>
+                            <artifactId>rewrite-jenkins</artifactId>
+                        </exclusion>
+                    </exclusions>
+                </dependency>
+            </dependencies>
+        </profile>
         <profile>
             <id>openrewrite-all-catalog</id>
             <dependencies>
