@@ -89,6 +89,42 @@ jobs:
             -Dfailsafe.failIfNoSpecifiedTests=false \
             -Djacoco.coverage.threshold=0.00
 
+      # failIfNoSpecifiedTests=false is needed because the command runs the
+      # reactor; assert concrete app-suite reports so a selector drift or an
+      # accidentally skipped Testcontainers class cannot create a false green.
+      - name: Require functional test evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import glob
+          import sys
+          import xml.etree.ElementTree as ET
+
+          required = {
+              "surefire": "marketplace-app/target/surefire-reports/TEST-com.marketplace.app.graphql.AgentOneMutationDgsTest.xml",
+              "menu-item HTTP + persistence integration": "marketplace-app/target/failsafe-reports/TEST-com.marketplace.app.graphql.CmsNavigationGraphQlIntegrationTest.xml",
+              "catalog HTTP + persistence integration": "marketplace-app/target/failsafe-reports/TEST-com.marketplace.app.graphql.ProductGraphQlIntegrationTest.xml",
+              "identity mutation integration": "marketplace-app/target/failsafe-reports/TEST-com.marketplace.app.graphql.AgentOneMutationIntegrationTest.xml",
+          }
+          errors = []
+          for label, path in required.items():
+              if not glob.glob(path):
+                  errors.append(f"{label}: required JUnit report is missing: {path}")
+                  continue
+              root = ET.parse(path).getroot()
+              tests = int(root.attrib.get("tests", "0"))
+              skipped = int(root.attrib.get("skipped", "0"))
+              failures = int(root.attrib.get("failures", "0"))
+              test_errors = int(root.attrib.get("errors", "0"))
+              print(f"{label}: tests={tests}, skipped={skipped}, failures={failures}, errors={test_errors}")
+              if tests <= 0 or tests == skipped:
+                  errors.append(f"{label}: no test method actually executed (tests={tests}, skipped={skipped})")
+          if errors:
+              print("\n".join(errors), file=sys.stderr)
+              raise SystemExit(1)
+          PY
+
       - name: Publish focused GraphQL test reports
         if: always()
         uses: actions/upload-artifact@v7
