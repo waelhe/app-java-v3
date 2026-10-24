@@ -25,7 +25,7 @@ skill's references are all in this repo. After any amendment to
 name: app-java-v3-backend-agent
 description: >-
   Durable operating protocol for the waelhe/app-java-v3 marketplace
-  backend (Java 25, Spring Boot 4.1.1, Spring Modulith 2.1.1, 22 Maven
+  backend (Java 25, Spring Boot 4.1.2, Spring Modulith 2.1.2, 30 Maven
   modules, Flyway, PostgreSQL/PostGIS + Redis, Railway
   production/staging/edge). Use it for ANY request touching this
   backend — app-java-v3, the backend team's repo, a module
@@ -95,7 +95,7 @@ this skill is patched to match.
 
 ## 3. Standing facts (the twin §2 table is the authority)
 
-- Java 25 / Spring Boot 4.1.1 / Modulith 2.1.1 / SAS 7.1.1 / Maven
+- Java 25 / Spring Boot 4.1.2 / Modulith 2.1.2 / SAS 7.1.2 / Maven
   Maven distribution 3.10.0 (wrapper tool 3.3.4); 30 modules in the reactor.
 - PostgreSQL 18 + PostGIS (production DB = external Neon), Redis 8,
   Flyway (ddl-auto: none; new V{N} migrations only, never edit

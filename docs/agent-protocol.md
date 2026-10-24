@@ -44,10 +44,10 @@ all of it. That is this protocol.
 > re-derived from the repo. Nothing precious is stored only locally.**
 
 And you are a professional software engineer — Java 25, Spring Boot
-4.1.1, Spring Modulith 2.1.1, Spring Authorization Server 7.1.1, Maven,
+4.1.2, Spring Modulith 2.1.2, Spring Authorization Server 7.1.2, Maven,
 Flyway, PostgreSQL/PostGIS, Redis — working to the official docs at the
 pinned versions and the repo's own measured facts, never training
-memory: **Spring Boot 4.1.1 is not the Spring Boot you know.** The
+memory: **Spring Boot 4.1.2 is not the Spring Boot you know.** The
 binding epistemic order (METHODOLOGY.md §1.1, the owner's standing words
 recorded in the repo: «لا أريد ما تراه أنت صحيحًا، أريد التصميم الرسمي
 حسب الإطار والنظام وحقائق الكود» — "I don't want what you think is
@@ -79,7 +79,7 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
 | | |
 |---|---|
 | Owner | GitHub **waelhe** (repo `waelhe/app-java-v3`, public) — day-to-day engineering owned by the **backend team**; the frontend repo's agent treats this repo as read-and-measure (its standing rule), except owner-granted documented exceptions |
-| Stack | Java 25 (`--release 25`, `pom.xml:41`), Spring Boot 4.1.1 (parent, `pom.xml:7-10`), Spring Modulith 2.1.1 (BOM), Spring Authorization Server 7.1.1, Maven distribution 3.10.0 + wrapper tool 3.3.4 with enforcer floor `[3.10,)` (`pom.xml:983`) — all evidenced in SYSTEM.md §1 |
+| Stack | Java 25 (`--release 25`, `pom.xml:58` — `<java.version>`), Spring Boot 4.1.2 (parent, `pom.xml:7-10`), Spring Modulith 2.1.2 (BOM), Spring Authorization Server 7.1.2 (Boot-BOM-managed), Maven distribution 3.10.0 + wrapper tool 3.3.4 with enforcer floor `[3.10,)` (`pom.xml:1007` — `<requireMavenVersion>`) — all evidenced in SYSTEM.md §1 |
 | Modules | **30** Maven modules in the root reactor (measured 2026-10-24 from the root POM's `<modules>` block at the PR #714 head; guarded in README/SYSTEM by `DocumentationNumbersGuardTest`, derived from `<modules>`) |
 | Data | PostgreSQL 18 + PostGIS (CI service `postgis/postgis:18-3.6-alpine`, `ci.yml:24`); production DB channel = external Neon (since 2026-09-18, SYSTEM.md §1); Redis 8 (`ci.yml:37`; production 8.2); Flyway with `ddl-auto: none` — latest migration **V70** (measured 2026-09-28) |
 | Quality | JaCoCo 0.8.15, BUNDLE ≥ 70% per module (`pom.xml:61-62, 242-244`); `failOnWarning` at compile; unit (`*Test`, surefire) strictly separated from integration (`*IT`/`*IntegrationTest`, failsafe; environmental ones skip without Docker) |
@@ -261,7 +261,7 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
 ## 9. Regression list (the failures that return — read this first)
 
 - Trusting training memory over the pinned-version official docs
-  (Spring Boot 4.1.1 is not the Spring Boot you know; Modulith 2.1.1
+  (Spring Boot 4.1.2 is not the Spring Boot you know; Modulith 2.1.2
   boundary semantics differ from memory).
 - A retryable boundary joining a `REQUIRED` carrier transaction —
   rollback-only poisoning, dedup records without settlements (#458).
