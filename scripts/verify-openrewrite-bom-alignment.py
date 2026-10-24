@@ -31,7 +31,13 @@ def main():
     for profile in project.findall("m:profiles/m:profile",NS):
         profile_id=value(profile,"id")
         if profile_id not in {"openrewrite","openrewrite-source-available"}: continue
-        deps=profile.findall("m:build/m:plugins/m:plugin[m:groupId='org.openrewrite.maven' and m:artifactId='rewrite-maven-plugin']/m:dependencies/m:dependency",NS)
+        # ElementTree's XPath subset does not support a compound [A and B] predicate.
+        # Match plugin coordinates explicitly, then inspect its declared recipe dependencies.
+        deps = []
+        plugins = profile.findall("m:build/m:plugins/m:plugin", NS)
+        for plugin in plugins:
+            if value(plugin, "groupId") == "org.openrewrite.maven" and value(plugin, "artifactId") == "rewrite-maven-plugin":
+                deps.extend(plugin.findall("m:dependencies/m:dependency", NS))
         for d in deps:
             g,a,pinned=value(d,"groupId"),value(d,"artifactId"),value(d,"version")
             key=(g,a)
