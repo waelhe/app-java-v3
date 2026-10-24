@@ -141,7 +141,7 @@ jobs:
             -Drewrite.activeRecipes="$ACTIVE_RECIPE" \
             -Drewrite.failOnInvalidActiveRecipes=true \
             -Ddetail=true rewrite:discover 2>&1 | tee target/rewrite/recipe-discovery.txt
-          python3 scripts/export-openrewrite-recipe-inventory.py --input target/rewrite/recipe-discovery.txt --output target/rewrite/recipe-catalog.csv
+          python3 scripts/export-openrewrite-recipe-inventory.py --input target/rewrite/recipe-discovery.txt --output target/rewrite/recipe-catalog.csv --maven-repo "$HOME/.m2/repository" --strict-attribution
 
       - name: Preview selected recipes without modifying source
         if: steps.credentials.outputs.enabled == 'true'

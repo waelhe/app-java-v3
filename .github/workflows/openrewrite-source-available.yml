@@ -117,7 +117,7 @@ jobs:
             -Drewrite.activeRecipes=com.marketplace.governance.OpenRewriteSpringRecommendations \
             -Drewrite.failOnInvalidActiveRecipes=true -Ddetail=true rewrite:discover \
             2>&1 | tee target/rewrite/source-recipe-discovery.txt
-          python3 scripts/export-openrewrite-recipe-inventory.py --source --input target/rewrite/source-recipe-discovery.txt --output target/rewrite/source-recipe-catalog.csv
+          python3 scripts/export-openrewrite-recipe-inventory.py --source --input target/rewrite/source-recipe-discovery.txt --output target/rewrite/source-recipe-catalog.csv --maven-repo "$HOME/.m2/repository" --strict-attribution
           grep -q 'org.openrewrite.java.spring.boot4.SpringBootProperties_4_1' \
             target/rewrite/source-recipe-discovery.txt
 

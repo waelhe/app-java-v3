@@ -229,7 +229,7 @@ require('collect(root,"DependencyListReport.csv"' in report_script
 
 require("effective-pom" in rewrite_workflow and "verify-openrewrite-bom-alignment.py" in rewrite_workflow,
         "standard OpenRewrite CI must resolve BOM imports and verify explicit plugin pins.")
-require("recipe-catalog.csv" in rewrite_workflow and "export-openrewrite-recipe-inventory.py" in rewrite_workflow,
+require("recipe-catalog.csv" in rewrite_workflow and "export-openrewrite-recipe-inventory.py" in rewrite_workflow and "--strict-attribution" in rewrite_workflow,
         "standard OpenRewrite CI must export its recipe-level inventory.")
 source_builder = file_text("scripts/build-openrewrite-source-recipes.sh")
 for evidence in ("rewrite 8.93.11", "moderneinc rewrite-mainframe 3.3.1",
@@ -242,7 +242,7 @@ source_workflow = file_text(".github/workflows/openrewrite-source-available.yml"
 for evidence in ("scripts/build-openrewrite-source-recipes.sh", "openrewrite-source-available",
                  "verify-openrewrite-bom-alignment.py", "export-openrewrite-recipe-inventory.py",
                  "rewrite:discover", "rewrite:dryRun", "SpringBootProperties_4_1",
-                 "source-recipe-catalog.csv", "source-build-manifest.txt", "actions/upload-artifact@v7"):
+                 "source-recipe-catalog.csv", "--strict-attribution", "source-build-manifest.txt", "actions/upload-artifact@v7"):
     require(evidence in source_workflow,
             f"source-built OpenRewrite workflow is missing end-to-end behavior: {evidence}")
 require('choices=("inventory","recommendations","source-recommendations")' in report_script,
