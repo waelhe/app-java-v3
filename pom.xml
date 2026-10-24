@@ -981,10 +981,10 @@
                                 <requireUpperBoundDeps/>
                                 <banDuplicatePomDependencyVersions/>
                                 <requireMavenVersion>
-                                    <version>[3.9,)</version>
+                                    <version>[3.9.16,)</version>
                                 </requireMavenVersion>
                                 <requireJavaVersion>
-                                    <version>[21,)</version>
+                                    <version>[25,26)</version>
                                 </requireJavaVersion>
                             </rules>
                             <fail>${enforcer.fail}</fail>
@@ -1232,39 +1232,6 @@
                                 </configuration>
                             </execution>
                         </executions>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-        <!-- OpenRewrite pilot only: opt-in, non-mutating, and resolved from Maven Central.
-             Both the Maven plugin and this explicitly Apache-2.0 Spring recipe release
-             are selected to avoid a commercial subscription, Code Genome credentials,
-             and recipes under source-available/proprietary terms. Keep non-blocking
-             until its report baseline and rule scope have been reviewed. -->
-        <profile>
-            <id>openrewrite-pilot</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.openrewrite.maven</groupId>
-                        <artifactId>rewrite-maven-plugin</artifactId>
-                        <version>6.46.1</version>
-                        <configuration>
-                            <activeRecipes>
-                                <recipe>org.openrewrite.java.OrderImports</recipe>
-                                <recipe>org.openrewrite.java.spring.NoAutowiredOnConstructor</recipe>
-                            </activeRecipes>
-                            <failOnDryRunResults>false</failOnDryRunResults>
-                            <failOnInvalidActiveRecipes>true</failOnInvalidActiveRecipes>
-                            <reportOutputDirectory>${project.build.directory}/openrewrite-pilot</reportOutputDirectory>
-                        </configuration>
-                        <dependencies>
-                            <dependency>
-                                <groupId>org.openrewrite.recipe</groupId>
-                                <artifactId>rewrite-spring</artifactId>
-                                <version>5.23.0</version>
-                            </dependency>
-                        </dependencies>
                     </plugin>
                 </plugins>
             </build>
