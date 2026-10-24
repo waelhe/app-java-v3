@@ -1,0 +1,126 @@
+name: Saleor Backend Compatibility Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+      - integration/saleor-full-commerce-20261021
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches:
+      - main
+      - integration/saleor-full-commerce-20261021
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: saleor-backend-compatibility-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compatibility:
+    name: Saleor Backend Compatibility Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgis/postgis:18-3.6-alpine
+        env:
+          POSTGRES_DB: marketplace
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Check out the exact PR candidate
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v6.1.0
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Verify Docker and test services
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker info >/dev/null
+          java -version
+          ./mvnw --version
+          pg_isready -h localhost -p 5432 -U test
+          redis-cli -h localhost -p 6379 ping
+
+      # Run the DGS fetcher/mutation contract tests plus the REAL HTTP GraphQL
+      # integration journeys for the Saleor commerce wave: identity/addresses,
+      # catalog/product types/attributes, collections, pricing/vouchers,
+      # orders/checkout, auth/security and error taxonomy. These exercise the
+      # Java application and its real Flyway-backed persistence, not upstream
+      # Saleor's own server or a schema-inventory-only check.
+      - name: Run Saleor GraphQL unit and resolver contract tests
+        env:
+          SPRING_PROFILES_ACTIVE: test
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/marketplace
+          SPRING_DATASOURCE_USERNAME: test
+          SPRING_DATASOURCE_PASSWORD: test
+          SPRING_DATA_REDIS_HOST: localhost
+          SPRING_DATA_REDIS_PORT: 6379
+        run: |
+          set -euo pipefail
+          ./mvnw -pl marketplace-app -am verify --batch-mode \
+            '-Dtest=*DgsTest,*MutationDataFetcherDgsTest,*MutationDataFetcherTest,*GraphQlMapperTest,*GraphQlTest,*PropertiesTest,PreLoginGraphQlGateTest,GraphQlSecurityIntegrationTest,UuidScalarTest,PlatformTokenGrantServiceTest,CheckoutDataFetcherTest,OrderMutationDataFetcherTest' \
+            '-Dit.test=*GraphQlIntegrationTest,AgentOneMutationIntegrationTest,GraphQlSecurityIntegrationTest,GraphQlErrorIntegrationTest,PlatformTokenGrantRotationMultiInstanceIntegrationTest' \
+            -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dfailsafe.failIfNoSpecifiedTests=false \
+            -Djacoco.coverage.threshold=0.00
+
+      - name: Publish focused GraphQL test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: saleor-backend-compatibility-reports
+          path: |
+            marketplace-app/target/surefire-reports/
+            marketplace-app/target/failsafe-reports/
+            **/target/surefire-reports/
+            **/target/failsafe-reports/
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Summarize acceptance evidence
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Saleor Backend Compatibility Gate"
+            echo
+            echo "- Candidate commit: `$GITHUB_SHA`"
+            echo "- Java application GraphQL resolver and mutation tests: selected DGS/fetcher test classes"
+            echo "- HTTP GraphQL integration journeys: identity/addresses, catalog/product types/attributes, collections, discounts/vouchers, orders/checkout, authentication/security and error taxonomy"
+            echo "- Persistent behavior is exercised by the selected integration tests against Flyway-backed PostgreSQL; auth-sensitive paths use the real Spring Security/DGS request chain with test JWT decoding."
+            echo "- This is focused functional coverage of implemented/declared surfaces; it does not claim all 458 Saleor roots are implemented. The canonical root inventory and divergence registry remain separate governance controls."
+            echo
+            echo "Download the `saleor-backend-compatibility-reports` artifact to inspect JUnit XML counts, failures and skipped tests."
+          } >> "$GITHUB_STEP_SUMMARY"
