@@ -78,3 +78,6 @@ The module-level version/license inventory is documented in openrewrite-module-c
 ### Plugin/runtime compatibility decision (2026-10-24)
 
 The upstream source POM of [`rewrite-maven-plugin:6.50.0`](https://github.com/openrewrite/rewrite-maven-plugin/blob/v6.50.0/pom.xml) pins `rewrite.version` to `8.93.0`. The source-build path and Maven profile therefore use the `rewrite-bom:8.93.0` family for the core runtime and use `rewrite-recipe-bom:3.41.0` for independently aligned recipe packs. The module/version table advertises core `8.93.11` as a newer available point release; it is not silently substituted into a runner whose own released POM declares core `8.93.0`.
+
+
+The only intentional non-BOM coordinate in the source-built plugin closure is `org.openrewrite:rewrite-mainframe:3.2.1`. Its upstream repository is `moderneinc/rewrite-mainframe`, separate from `openrewrite/rewrite`, so the core `rewrite-bom` does not manage that artifact. The validator does not silently skip it: it requires exactly the pinned official source tag `v3.2.1` and the CI source-build manifest records its resolved commit SHA.
