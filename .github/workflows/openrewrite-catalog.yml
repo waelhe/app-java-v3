@@ -138,6 +138,10 @@ jobs:
           mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress -Popenrewrite \
             org.openrewrite.maven:rewrite-maven-plugin:6.50.0:discover \
             -Ddetail=true 2>&1 | tee target/openrewrite/recipe-discovery.txt
+          if ! grep -Fq 'org.openrewrite.java.dependencies.UpgradeDependencyVersion' target/openrewrite/recipe-discovery.txt; then
+            echo "::error::The external recipe packs were not loaded on the Rewrite Maven plugin classpath."
+            exit 1
+          fi
 
       - name: Install Maven reactor before Rewrite dry-run
         shell: bash
