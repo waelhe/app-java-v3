@@ -4,8 +4,9 @@
  * their base {@code package-info.java} and five more via the {@code
  * *Module.java} type-level declarations (the official alternative the
  * framework documents), leaving exactly two open — this module and the
- * shared foundation. This file closes the first: {@code OpenApiConfig}
- * and {@code ProviderStatsCacheConfig} import nothing from any
+ * shared foundation. This file closes the first: {@code OpenApiConfig},
+ * {@code ProviderStatsCacheConfig} and
+ * {@code OpenApiJavaTimeSchemaStabilityConfig} import nothing from any
  * application module and expose no cross-module bean reference
  * (Documenter-measured), so the gate pins the module to exactly that
  * zero.

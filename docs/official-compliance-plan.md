@@ -76,7 +76,7 @@
 | Spring Cloud | **2025.1.3** | 2025.1.3 (edge) | ✅ مطابق تماماً |
 | Spring AI | **2.0.1** | 2.0.1 | ✅ مطابق تماماً |
 | ArchUnit | (زوج Modulith الرسمي) | 1.4.2 محاذى قياساً بـdependency:tree | ✅ مطابق |
-| springdoc-openapi | (مجتمع) | 3.1.0 | ✅ أحدث خط رئيسي |
+| springdoc-openapi | (مجتمع) | 3.1.1 | ✅ أحدث خط رئيسي (CVE-2026-75838 مُصلَح + MCP صار opt-in) |
 | Spring Session | **4.1.x** | عبر BOM (spring-session-core) | ✅ مطابق |
 
 **⚠️ قياس حاكم جديد — «Spring Authorization Server» في الـAttic:**
@@ -96,7 +96,7 @@
   `shared, platform-infra, identity, catalog, booking, payments, pricing, reviews, messaging, search, provider, availability, notifications, ledger, disputes, media, geo, realestate, community, ai, app, edge`
 - **Modulith 2.1.1** بالكامل الرسمي: `starter-core` + `starter-jpa` + `events-jpa` + `actuator` + `observability` + `docs` + `starter-test`.
 - **بوابات البنية قائمة مقيساً:** `ModulithVerificationTest` + `ModulithDocumentationTest` في `marketplace-app` (تعملان ضمن CI).
-- **العقود:** springdoc-openapi 3.1.0 (107 مسار مُوثقة حياً) + `oauth2-authorization-server` + `spring-session-core`.
+- **العقود:** springdoc-openapi 3.1.1 (107 مسار مُوثقة حياً) + `oauth2-authorization-server` + `spring-session-core`.
 - **الاختبار:** Testcontainers (junit-jupiter + postgresql) + JaCoCo بعتبة 0.70 + maven-enforcer.
 - **المكدس المكمّل:** Redis • WebSocket (STOMP) • MapStruct 1.6.3 • Resilience4j 2.4.0 • Spring AI 2.0.1 • Spring Cloud 2025.1.3 (edge BFF).
 
@@ -197,7 +197,7 @@ CI (Build & Test JDK 25) + CodeQL + Container Scan (Trivy) + Integration Test (J
 | الأداة | الغرض | مسوّغ الثقة | البديل الرسمي (إن وجد) |
 |---|---|---|---|
 | Testcontainers | اختبارات قارية | **موثقة رسمياً داخل مرجع Boot** (`reference/testing/testcontainers.html`) | هي المسار الرسمي فعلاً |
-| springdoc-openapi 3.1.0 | مواصفة OpenAPI حية | المعيار الفعلي للمنظومة | Spring REST Docs 4.0.1 (رسمي — يُستخدم للعينات الحرجة) |
+| springdoc-openapi 3.1.1 | مواصفة OpenAPI حية | المعيار الفعلي للمنظومة | Spring REST Docs 4.0.1 (رسمي — يُستخدم للعينات الحرجة) |
 | MapStruct 1.6.3 | تحويل الكيانات | معيار مجتمعي واسع | لا يوجد رسمي |
 | Resilience4j 2.4.0 | الصمود | مُدار عبر Spring Cloud CircuitBreaker (رسمي) | --- |
 | Bucket4j | محدد معدل الإرسال | معيار مجتمعي لـrate limiting | لا يوجد رسمي في الإطار |
