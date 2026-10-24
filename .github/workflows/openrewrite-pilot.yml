@@ -1,0 +1,66 @@
+name: OpenRewrite Pilot
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '**/*.java'
+      - '**/pom.xml'
+      - 'pom.xml'
+      - '**/*.yml'
+      - '**/*.yaml'
+      - '.github/workflows/openrewrite-pilot.yml'
+      - 'docs/governance/openrewrite-pilot.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openrewrite-pilot-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dry-run:
+    name: OpenRewrite non-mutating dry run (Java 25)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v6.1.0
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Discover the pinned pilot recipe
+        run: ./mvnw --batch-mode --no-transfer-progress -Popenrewrite-pilot -Drewrite.failOnInvalidActiveRecipes=true rewrite:discover
+
+      - name: Preview changes without modifying source
+        run: ./mvnw --batch-mode --no-transfer-progress -Popenrewrite-pilot -Drewrite.failOnInvalidActiveRecipes=true rewrite:dryRun
+
+      - name: Assert the dry run left tracked files untouched
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "::error::OpenRewrite dryRun changed tracked files; the pilot must remain non-mutating."
+            git diff --stat
+            exit 1
+          fi
+
+      - name: Upload OpenRewrite dry-run reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: openrewrite-pilot-${{ github.sha }}
+          path: |
+            **/target/openrewrite-pilot/**
+            **/target/site/rewrite/**
+            **/target/rewrite/**
+          if-no-files-found: warn
+          retention-days: 14

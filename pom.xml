@@ -1236,5 +1236,30 @@
                 </plugins>
             </build>
         </profile>
+        <!-- OpenRewrite pilot only: opt-in and non-mutating by default.
+             Uses the latest Maven-Central-hosted plugin line (6.46.1) and its
+             built-in Apache-licensed OrderImports recipe, avoiding Code Genome
+             credentials while we measure the pilot baseline. Do not bind this
+             plugin to the normal lifecycle until the baseline has been reviewed. -->
+        <profile>
+            <id>openrewrite-pilot</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.openrewrite.maven</groupId>
+                        <artifactId>rewrite-maven-plugin</artifactId>
+                        <version>6.46.1</version>
+                        <configuration>
+                            <activeRecipes>
+                                <recipe>org.openrewrite.java.OrderImports</recipe>
+                            </activeRecipes>
+                            <failOnDryRunResults>false</failOnDryRunResults>
+                            <failOnInvalidActiveRecipes>true</failOnInvalidActiveRecipes>
+                            <reportOutputDirectory>${project.build.directory}/openrewrite-pilot</reportOutputDirectory>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
     </profiles>
 </project>
