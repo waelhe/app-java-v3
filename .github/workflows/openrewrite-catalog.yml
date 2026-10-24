@@ -139,15 +139,22 @@ jobs:
             org.openrewrite.maven:rewrite-maven-plugin:6.50.0:discover \
             -Ddetail=true 2>&1 | tee target/openrewrite/recipe-discovery.txt
 
+      - name: Install Maven reactor before Rewrite dry-run
+        shell: bash
+        run: |
+          set -o pipefail
+          # Install, not merely package: downstream reactor modules resolve sibling SNAPSHOT
+          # dependencies from the local Maven repository when dryRunNoFork runs.
+          # The ordinary CI workflows remain responsible for executing the test suites.
+          mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress \
+            -DskipTests -Popenrewrite install 2>&1 | tee target/openrewrite/reactor-install.log
+
       - name: Capture dry-run report
         shell: bash
         run: |
           set -o pipefail
-          # Build all reactor modules first so dryRunNoFork can resolve sibling SNAPSHOT artifacts.
-          # Unit/integration tests are skipped here; the ordinary CI workflows own their execution.
           mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress \
-            -DskipTests package -Popenrewrite \
-            org.openrewrite.maven:rewrite-maven-plugin:6.50.0:dryRunNoFork \
+            -Popenrewrite org.openrewrite.maven:rewrite-maven-plugin:6.50.0:dryRunNoFork \
             -Drewrite.exportDatatables=true 2>&1 | tee target/openrewrite/dry-run.log
 
       - name: Upload recipe inventory and dry-run diffs
