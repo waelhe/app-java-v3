@@ -49,7 +49,7 @@ The first run found 900 AutoFormat result rows and changes in 1,000 unique files
 
 ### Source-built catalog — separate manual/PR workflow
 
-The separate `OpenRewrite source-built catalog` workflow uses pinned upstream tags and installs built jars only in the ephemeral runner's local Maven repository. It runs the opt-in `com.marketplace.governance.OpenRewriteSpringRecommendations` composite, currently previewing the verified Community Edition `org.openrewrite.java.spring.boot4.SpringBootProperties_4_1` recipe relevant to a Spring Boot 4.1 platform. Discovery and `rewrite:dryRun` must succeed before this source-built path is considered usable; changes are never auto-applied.
+The separate `OpenRewrite source-built catalog` workflow uses pinned upstream tags and installs built jars only in the ephemeral runner's local Maven repository. Its Gradle builds receive `ORG_GRADLE_PROJECT_codegenomeUsername` and `ORG_GRADLE_PROJECT_codegenomePassword`, which the upstream Code Genome repository plugin explicitly supports, in addition to the Maven `settings.xml` used by the platform reactor. It runs the opt-in `com.marketplace.governance.OpenRewriteSpringRecommendations` composite, currently previewing the verified Community Edition `org.openrewrite.java.spring.boot4.SpringBootProperties_4_1` recipe relevant to a Spring Boot 4.1 platform. Discovery and `rewrite:dryRun` must succeed before this source-built path is considered usable; changes are never auto-applied.
 
 ## Report and failure behavior
 
