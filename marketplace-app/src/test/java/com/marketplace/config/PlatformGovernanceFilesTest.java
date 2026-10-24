@@ -479,6 +479,118 @@ class PlatformGovernanceFilesTest {
                 .check(imported);
     }
 
+    @Test
+    void openRewriteCatalogIsBomAlignedOptInAndAudited() throws IOException {
+        String pom = read("pom.xml");
+        assertThat(pom)
+                .as("OpenRewrite recipe and Maven plugin versions must follow the verified official catalog")
+                .contains("<openrewrite.recipe-bom.version>3.41.0</openrewrite.recipe-bom.version>")
+                .contains("<openrewrite.maven-plugin.version>6.50.0</openrewrite.maven-plugin.version>")
+                .contains("<openrewrite.java-dependencies.version>1.64.1</openrewrite.java-dependencies.version>")
+                .contains("<openrewrite.jackson-recipes.version>1.31.1</openrewrite.jackson-recipes.version>")
+                .contains("<openrewrite.netty-recipes.version>0.13.2</openrewrite.netty-recipes.version>")
+                .contains("<openrewrite.openapi-recipes.version>0.35.0</openrewrite.openapi-recipes.version>")
+                .contains("<artifactId>rewrite-recipe-bom</artifactId>")
+                .contains("<id>openrewrite</id>")
+                .contains("<artifactId>rewrite-third-party</artifactId>")
+                .contains("<id>openrewrite-third-party-free-catalog</id>")
+                .contains("<artifactId>rewrite-migrate-java</artifactId>")
+                .contains("<artifactId>rewrite-github-actions</artifactId>")
+                .contains("<artifactId>rewrite-static-analysis</artifactId>")
+                .contains("<artifactId>rewrite-all</artifactId>")
+                .contains("<artifactId>rewrite-spring</artifactId>")
+                .contains("<failOnInvalidActiveRecipes>true</failOnInvalidActiveRecipes>");
+
+        int openRewriteProfileStart = pom.indexOf("<id>openrewrite</id>");
+        int openRewriteProfileEnd = pom.indexOf("</profile>", openRewriteProfileStart);
+        assertThat(openRewriteProfileStart).isGreaterThanOrEqualTo(0);
+        assertThat(openRewriteProfileEnd).isGreaterThan(openRewriteProfileStart);
+        String baselineProfile = pom.substring(openRewriteProfileStart, openRewriteProfileEnd);
+        assertThat(baselineProfile)
+                .as("the baseline no-subscription profile must not import the catalog whose transitive recipes returned HTTP 403")
+                .doesNotContain("<artifactId>rewrite-third-party</artifactId>");
+        assertThat(baselineProfile.indexOf("<artifactId>rewrite-maven-plugin</artifactId>"))
+                .as("external recipe packs must be loaded on the Rewrite Maven plugin classpath")
+                .isGreaterThanOrEqualTo(0)
+                .isLessThan(baselineProfile.indexOf("<artifactId>rewrite-java-dependencies</artifactId>"));
+        assertThat(baselineProfile)
+                .contains("<artifactId>rewrite-jackson</artifactId>")
+                .contains("<artifactId>rewrite-netty</artifactId>")
+                .contains("<artifactId>rewrite-openapi</artifactId>")
+                .contains("<style>com.marketplace.OpenRewriteBaselineStyle</style>")
+                .contains("<recipe>org.openrewrite.java.RemoveUnusedImports</recipe>")
+                .doesNotContain("<recipe>org.openrewrite.java.OrderImports</recipe>")
+                .doesNotContain("<recipe>org.openrewrite.maven.BestPractices</recipe>")
+                .doesNotContain("<recipe>org.openrewrite.maven.OrderPomElements</recipe>");
+
+        String rewriteStyle = read("rewrite.yml");
+        assertThat(rewriteStyle)
+                .as("OpenRewrite must use an explicit no-wildcard import threshold and preserve four-space indentation")
+                .contains("name: com.marketplace.OpenRewriteBaselineStyle")
+                .contains("classCountToUseStarImport: 999")
+                .contains("nameCountToUseStarImport: 999")
+                .contains("org.openrewrite.java.style.TabsAndIndentsStyle")
+                .contains("org.openrewrite.xml.style.TabsAndIndentsStyle")
+                .contains("indentSize: 4")
+                .contains("continuationIndentSize: 8");
+
+        int springProfileStart = pom.indexOf("<id>openrewrite-spring-source</id>");
+        int springProfileEnd = pom.indexOf("</profile>", springProfileStart);
+        assertThat(springProfileStart).isGreaterThanOrEqualTo(0);
+        assertThat(springProfileEnd).isGreaterThan(springProfileStart);
+        String springProfile = pom.substring(springProfileStart, springProfileEnd);
+        assertThat(springProfile)
+                .as("source-built Spring recipes must be loaded by the Rewrite Maven plugin, not merely added to the application classpath")
+                .contains("<artifactId>rewrite-maven-plugin</artifactId>")
+                .contains("<artifactId>rewrite-spring</artifactId>");
+        assertThat(springProfile.indexOf("<artifactId>rewrite-spring</artifactId>"))
+                .isGreaterThan(springProfile.indexOf("<artifactId>rewrite-maven-plugin</artifactId>"));
+
+        String catalog = read("docs", "governance", "openrewrite-catalog.md");
+        assertThat(catalog)
+                .as("catalog must record the version, licensing and execution boundary")
+                .contains("rewrite-all")
+                .contains("rewrite-third-party")
+                .contains("rewrite-spring")
+                .contains("Not yet proven")
+                .contains("failOnDryRunResults");
+
+        String springBuildScript = read("scripts", "openrewrite", "build-spring-recipes.sh");
+        assertThat(springBuildScript)
+                .as("the source probe must report the actual published coordinate instead of assuming the tag version")
+                .contains("built_version")
+                .contains("rewrite-spring-${built_version}.pom")
+                .contains("Source tag ${tag} is publishing rewrite-spring:")
+                .contains("expected release coordinate: ${version}");
+
+        String workflow = read(".github", "workflows", "openrewrite-catalog.yml");
+        assertThat(workflow)
+                .as("OpenRewrite catalog audit must not silently skip credential or discovery checks")
+                .contains("CODEGENOME_USERNAME")
+                .contains("CODEGENOME_TOKEN")
+                .contains("server-username-env-var: CODEGENOME_USERNAME")
+                .contains("server-password-env-var: CODEGENOME_TOKEN")
+                .contains("Verify Code Genome artifact authentication")
+                .contains("--location")
+                .contains("A 302 redirect is normal")
+                .contains("rewrite-maven-plugin-6.50.0.jar")
+                .contains("Write explicit Maven settings for Code Genome")
+                .contains("--settings \"${RUNNER_TEMP}/openrewrite-settings.xml\"")
+                .contains("rewrite-maven-plugin:6.50.0:discover")
+                .contains("Install Maven reactor before Rewrite dry-run")
+                .contains("rewrite-maven-plugin:6.50.0:dryRunNoFork")
+                .contains("-DskipTests -Popenrewrite install")
+                .contains("org.openrewrite.java.dependencies.UpgradeDependencyVersion")
+                .contains("The external recipe packs were not loaded on the Rewrite Maven plugin classpath.")
+                .contains("org.openrewrite.java.spring.boot3.UpgradeSpringBoot_3_5")
+                .contains("Spring source build completed but the expected community recipe")
+                // The pinned source tag can publish a coordinate different from the tag
+                // number; the probe must flow the measured coordinate into Maven rather
+                // than requesting the guessed release number (review 5638134031).
+                .contains("spring_recipes_built_version")
+                .contains("-Dopenrewrite.spring-recipes.version=\"${spring_recipes_built_version}\"");
+    }
+
     private static Path repoRoot() {
         Path cwd = Paths.get("").toAbsolutePath();
         Path repoRoot = cwd.resolve("..");

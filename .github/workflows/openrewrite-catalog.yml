@@ -1,0 +1,265 @@
+name: OpenRewrite Catalog
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'pom.xml'
+      - '**/pom.xml'
+      - '**/*.java'
+      - '**/*.xml'
+      - '**/*.yaml'
+      - '**/*.yml'
+      - '.github/workflows/openrewrite-catalog.yml'
+      - 'docs/governance/openrewrite-catalog.md'
+      - 'scripts/openrewrite/**'
+  push:
+    branches: [main]
+    paths:
+      - 'pom.xml'
+      - '**/pom.xml'
+      - '**/*.java'
+      - '**/*.xml'
+      - '**/*.yaml'
+      - '**/*.yml'
+      - '.github/workflows/openrewrite-catalog.yml'
+      - 'docs/governance/openrewrite-catalog.md'
+      - 'scripts/openrewrite/**'
+  workflow_dispatch:
+  schedule:
+    - cron: '23 5 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openrewrite-catalog-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  catalog-audit:
+    name: OpenRewrite recipe discovery and dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Require Code Genome repository credentials
+        env:
+          CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
+          CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+        run: |
+          if [[ -z "${CODEGENOME_USERNAME}" || -z "${CODEGENOME_TOKEN}" ]]; then
+            echo "::error::Set CODEGENOME_USERNAME and CODEGENOME_TOKEN GitHub Actions secrets to resolve OpenRewrite artifacts. The job fails closed rather than silently skipping the catalog audit."
+            exit 1
+          fi
+
+      - name: Set up JDK 25 and authenticated Maven settings
+        uses: actions/setup-java@v6.1.0
+        env:
+          CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
+          CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+        with:
+          java-version: '25'
+          distribution: temurin
+          cache: maven
+          server-id: codegenome
+          server-username-env-var: CODEGENOME_USERNAME
+          server-password-env-var: CODEGENOME_TOKEN
+          overwrite-settings: true
+
+      - name: Write explicit Maven settings for Code Genome
+        env:
+          CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
+          CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          ns = "http://maven.apache.org/SETTINGS/1.2.0"
+          ET.register_namespace("", ns)
+          tag = lambda name: f"{{{ns}}}{name}"
+          settings = ET.Element(tag("settings"))
+          servers = ET.SubElement(settings, tag("servers"))
+          server = ET.SubElement(servers, tag("server"))
+          ET.SubElement(server, tag("id")).text = "codegenome"
+          ET.SubElement(server, tag("username")).text = os.environ["CODEGENOME_USERNAME"]
+          ET.SubElement(server, tag("password")).text = os.environ["CODEGENOME_TOKEN"]
+          path = Path(os.environ["RUNNER_TEMP"]) / "openrewrite-settings.xml"
+          ET.ElementTree(settings).write(path, encoding="utf-8", xml_declaration=True)
+
+          # Validate mapping without printing either credential.
+          parsed = ET.parse(path).getroot()
+          servers = parsed.find(tag("servers"))
+          match = next(s for s in servers.findall(tag("server"))
+                       if s.findtext(tag("id")) == "codegenome")
+          if match.findtext(tag("username")) != os.environ["CODEGENOME_USERNAME"]:
+              raise SystemExit("Maven username mapping did not persist")
+          if match.findtext(tag("password")) != os.environ["CODEGENOME_TOKEN"]:
+              raise SystemExit("Maven token mapping did not persist")
+          print("Maven settings contain the expected Code Genome server ID and credential mapping; values not printed.")
+          PY
+
+      - name: Verify Code Genome artifact authentication
+        env:
+          CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
+          CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          base_url="https://artifacts.codegenomeproject.org/maven/org/openrewrite/maven/rewrite-maven-plugin/6.50.0"
+          for artifact in rewrite-maven-plugin-6.50.0.pom rewrite-maven-plugin-6.50.0.jar; do
+            status="$(curl --location --silent --show-error \
+              --output "${RUNNER_TEMP}/${artifact}" \
+              --write-out '%{http_code}' \
+              --user "${CODEGENOME_USERNAME}:${CODEGENOME_TOKEN}" \
+              "${base_url}/${artifact}")"
+            if [[ "${status}" != "200" ]]; then
+              echo "::error::Code Genome artifact download probe for ${artifact} finished with HTTP ${status}. A 302 redirect is normal and is followed by curl; a 401 indicates missing/invalid credentials, while a 403 indicates an entitlement restriction."
+              exit 1
+            fi
+            if [[ ! -s "${RUNNER_TEMP}/${artifact}" ]]; then
+              echo "::error::Code Genome returned HTTP 200 but an empty ${artifact}."
+              exit 1
+            fi
+          done
+          echo "Code Genome authentication and both plugin artifact downloads succeeded; credentials were not printed."
+
+      - name: Discover available recipes
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p target/openrewrite
+          mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress -Popenrewrite \
+            org.openrewrite.maven:rewrite-maven-plugin:6.50.0:discover \
+            -Ddetail=true 2>&1 | tee target/openrewrite/recipe-discovery.txt
+          if ! grep -Fq 'org.openrewrite.java.dependencies.UpgradeDependencyVersion' target/openrewrite/recipe-discovery.txt; then
+            echo "::error::The external recipe packs were not loaded on the Rewrite Maven plugin classpath."
+            exit 1
+          fi
+
+      - name: Install Maven reactor before Rewrite dry-run
+        shell: bash
+        run: |
+          set -o pipefail
+          # Install, not merely package: downstream reactor modules resolve sibling SNAPSHOT
+          # dependencies from the local Maven repository when dryRunNoFork runs.
+          # The ordinary CI workflows remain responsible for executing the test suites.
+          mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress \
+            -DskipTests -Popenrewrite install 2>&1 | tee target/openrewrite/reactor-install.log
+
+      - name: Capture dry-run report
+        shell: bash
+        run: |
+          set -o pipefail
+          mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress \
+            -Popenrewrite org.openrewrite.maven:rewrite-maven-plugin:6.50.0:dryRunNoFork \
+            -Drewrite.exportDatatables=true 2>&1 | tee target/openrewrite/dry-run.log
+
+      - name: Upload recipe inventory and dry-run diffs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: openrewrite-catalog-${{ github.sha }}
+          path: |
+            target/openrewrite/**
+            **/target/rewrite/**
+            **/target/rewrite*
+          if-no-files-found: warn
+          retention-days: 30
+
+  spring-source-build-probe:
+    name: OpenRewrite source-build probe
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout platform repository
+        uses: actions/checkout@v7
+
+      - name: Require artifact repository credentials
+        env:
+          CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
+          CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+        run: |
+          if [[ -z "${CODEGENOME_USERNAME}" || -z "${CODEGENOME_TOKEN}" ]]; then
+            echo "::error::Set CODEGENOME_USERNAME and CODEGENOME_TOKEN secrets to build the pinned Spring recipe source without precompiled subscription artifacts."
+            exit 1
+          fi
+
+      - name: Set up JDK 25 and Maven settings
+        uses: actions/setup-java@v6.1.0
+        env:
+          CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
+          CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+        with:
+          java-version: '25'
+          distribution: temurin
+          cache: maven
+          server-id: codegenome
+          server-username-env-var: CODEGENOME_USERNAME
+          server-password-env-var: CODEGENOME_TOKEN
+          overwrite-settings: true
+
+      - name: Write explicit Maven settings for Code Genome
+        env:
+          CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
+          CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          ns = "http://maven.apache.org/SETTINGS/1.2.0"
+          ET.register_namespace("", ns)
+          tag = lambda name: f"{{{ns}}}{name}"
+          settings = ET.Element(tag("settings"))
+          servers = ET.SubElement(settings, tag("servers"))
+          server = ET.SubElement(servers, tag("server"))
+          ET.SubElement(server, tag("id")).text = "codegenome"
+          ET.SubElement(server, tag("username")).text = os.environ["CODEGENOME_USERNAME"]
+          ET.SubElement(server, tag("password")).text = os.environ["CODEGENOME_TOKEN"]
+          path = Path(os.environ["RUNNER_TEMP"]) / "openrewrite-settings.xml"
+          ET.ElementTree(settings).write(path, encoding="utf-8", xml_declaration=True)
+          print("Wrote explicit Code Genome Maven settings without printing credentials.")
+          PY
+
+      - name: Build rewrite-spring from pinned upstream source
+        env:
+          CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
+          CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+        # The pinned tag can publish a coordinate different from the tag number
+        # (e.g. v6.41.0 -> 6.42.0-SNAPSHOT). The build script reports the
+        # coordinate it actually published; capture it instead of guessing, and
+        # fail closed when the report line is absent (review 5638134031).
+        run: |
+          set -o pipefail
+          built_version="$(
+            bash scripts/openrewrite/build-spring-recipes.sh \
+              | sed -n 's/^Published source-built org\.openrewrite\.recipe:rewrite-spring:\([^ ]\+\) from tag.*/\1/p' \
+              | tail -n 1
+          )"
+          if [[ -z "${built_version}" ]]; then
+            echo "::error::build-spring-recipes.sh finished without reporting the published Maven coordinate; refusing to guess one."
+            exit 1
+          fi
+          echo "spring_recipes_built_version=${built_version}" >> "${GITHUB_ENV}"
+
+      - name: Verify Spring recipe discovery from the local build
+        shell: bash
+        run: |
+          mkdir -p target/openrewrite
+          mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress -Popenrewrite,openrewrite-spring-source \
+            -Dopenrewrite.spring-recipes.version="${spring_recipes_built_version}" \
+            org.openrewrite.maven:rewrite-maven-plugin:6.50.0:discover -Ddetail=true \
+            2>&1 | tee target/openrewrite/spring-source-discovery.log
+          if ! grep -Fq 'org.openrewrite.java.spring.boot3.UpgradeSpringBoot_3_5' target/openrewrite/spring-source-discovery.log; then
+            echo "::error::Spring source build completed but the expected community recipe org.openrewrite.java.spring.boot3.UpgradeSpringBoot_3_5 was not discovered from the local Maven repository."
+            exit 1
+          fi
