@@ -242,7 +242,8 @@ for evidence in ("rewrite 8.93.0", "moderneinc rewrite-mainframe 3.2.1",
                  "rewrite-static-analysis 2.45.0", "rewrite-feature-flags 1.24.2",
                  "rewrite-migrate-java 3.46.0", "rewrite-okhttp 0.25.2",
                  "rewrite-spring 6.41.0", "rewrite-third-party 0.49.0", "rewrite-all 1.30.2",
-                 "publishToMavenLocal", "mavenLocal()"):
+                 "generateAntlrSourcesCobol", "generateAntlrSourcesJcl",
+                 "generateAntlrSourcesControlM", "publishToMavenLocal", "mavenLocal()"):
     require(evidence in source_builder,
             f"source-build script is missing pinned upstream build behavior: {evidence}")
 source_workflow = file_text(".github/workflows/openrewrite-source-available.yml")
