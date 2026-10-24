@@ -14,7 +14,7 @@
 | `org.openrewrite.recipe:rewrite-openapi` | BOM-managed; catalog `0.35.0` | Apache-2.0 | OpenAPI contract/tooling migrations |
 | `org.openrewrite.recipe:rewrite-third-party` | BOM-managed; catalog `0.49.0` | Apache-2.0 | Third-party maintained migration recipes |
 | `org.openrewrite.recipe:rewrite-all` | BOM-managed; catalog `1.30.2` | Apache-2.0 artifact; brings a broad set of language modules | Optional `openrewrite-all-catalog` profile; excludes C#, JavaScript, Python and mainframe parser modules because they are outside the Java/Maven backend scope and some are Moderne Source Available |
-| `org.openrewrite.recipe:rewrite-spring` | `6.41.0` | Moderne Source Available; precompiled access is subscription-gated | Not fetched as a subscription binary. The source-build route is pinned in `scripts/openrewrite/build-spring-recipes.sh` and installed to the local Maven repository when source-build dependencies are accessible |
+| `org.openrewrite.recipe:rewrite-spring` | `6.41.0` | Moderne Source Available; precompiled access is subscription-gated | Not fetched as a subscription binary. The source-build route is pinned in `bash scripts/openrewrite/build-spring-recipes.sh` and installed to the local Maven repository when source-build dependencies are accessible |
 
 The versions shown as “catalog” values come from the official [latest-module list](https://docs.openrewrite.org/reference/latest-versions-of-every-openrewrite-module). In the POM, BOM-managed recipe dependencies deliberately omit their own `<version>` element.
 
@@ -23,7 +23,7 @@ The versions shown as “catalog” values come from the official [latest-module
 - `mvn -Popenrewrite org.openrewrite.maven:rewrite-maven-plugin:6.50.0:discover -Ddetail=true` resolves the baseline Apache-licensed Java/Maven recipe set and prints recipe availability.
 - `mvn -Popenrewrite org.openrewrite.maven:rewrite-maven-plugin:6.50.0:dryRunNoFork` generates a dry-run diff. The first rollout is report-only because existing repository diffs have not yet been measured and remediated; the workflow uploads the diff as an artifact. Do not describe this as a blocking source-conformance gate until that baseline is clean and `failOnDryRunResults` is enabled.
 - `mvn -Popenrewrite,openrewrite-all-catalog org.openrewrite.maven:rewrite-maven-plugin:6.50.0:discover -Ddetail=true` adds the optional `rewrite-all` recipe aggregator with out-of-scope source-available language parsers excluded.
-- Run `scripts/openrewrite/build-spring-recipes.sh` first, then use `mvn -Popenrewrite,openrewrite-spring-source org.openrewrite.maven:rewrite-maven-plugin:6.50.0:discover -Ddetail=true` to probe the source-built Spring recipes.
+- Run `bash scripts/openrewrite/build-spring-recipes.sh` first, then use `mvn -Popenrewrite,openrewrite-spring-source org.openrewrite.maven:rewrite-maven-plugin:6.50.0:discover -Ddetail=true` to probe the source-built Spring recipes.
 
 ## Authentication and no-subscription boundary
 
