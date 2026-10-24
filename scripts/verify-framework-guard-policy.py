@@ -124,12 +124,15 @@ for forbidden in ("org.openrewrite.recipe:rewrite-spring", "rewrite-static-analy
                   "rewrite-logging-frameworks", "rewrite-okhttp", "rewrite-github-actions"):
     require(forbidden not in rewrite_profile,
             f"Source Available/proprietary recipe pack {forbidden} is not approved in the no-commercial-subscription profile.")
+# The aggregate packs are Apache-licensed at their top-level coordinate, but their
+# transitive closure failed with HTTP 403 on the configured free Code Genome account.
+for aggregate in ("rewrite-all", "rewrite-third-party"):
+    require(f"<artifactId>{aggregate}</artifactId>" not in rewrite_profile,
+            f"{aggregate} must stay excluded until its restricted transitive dependency closure is replaced.")
 
 # These plugin dependency versions are pinned manually because OpenRewrite documents that Maven
 # does not apply BOM management to plugin dependencies. Versions were checked against recipe BOM 3.41.0.
 allowed_modules = {
-    "rewrite-all": "1.30.2",
-    "rewrite-third-party": "0.49.0",
     "rewrite-java-dependencies": "1.64.1",
     "rewrite-jackson": "1.31.1",
     "rewrite-netty": "0.13.2",
@@ -178,8 +181,9 @@ require("CODEGENOME_USERNAME and CODEGENOME_TOKEN are required" in rewrite_workf
         and "OpenRewrite is skipped" not in rewrite_workflow,
         "OpenRewrite CI must fail visibly when credentials are missing instead of reporting a silent success.")
 report_script = file_text("scripts/summarize-openrewrite-report.py")
-require("DependencyListReport.csv" in report_script and "openrewrite-summary.md" in report_script,
-        "the report summarizer must read dependency data tables and create the human-readable summary.")
+require('collect(root,"DependencyListReport.csv"' in report_script
+        and "openrewrite-summary.md" in rewrite_workflow,
+        "the report summarizer must read dependency data tables and the workflow must publish the human-readable summary.")
 
 # Fail closed if architecture verification is deleted or silently disabled.
 architecture = file_text("marketplace-app/src/test/java/com/marketplace/ArchitectureRulesTest.java")
