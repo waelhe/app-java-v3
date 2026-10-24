@@ -460,9 +460,21 @@ class PlatformGovernanceFilesTest {
                 .contains("<artifactId>rewrite-recipe-bom</artifactId>")
                 .contains("<id>openrewrite</id>")
                 .contains("<artifactId>rewrite-third-party</artifactId>")
+                .contains("<id>openrewrite-third-party-free-catalog</id>")
+                .contains("<artifactId>rewrite-migrate-java</artifactId>")
+                .contains("<artifactId>rewrite-github-actions</artifactId>")
+                .contains("<artifactId>rewrite-static-analysis</artifactId>")
                 .contains("<artifactId>rewrite-all</artifactId>")
                 .contains("<artifactId>rewrite-spring</artifactId>")
                 .contains("<failOnInvalidActiveRecipes>true</failOnInvalidActiveRecipes>");
+
+        int openRewriteProfileStart = pom.indexOf("<id>openrewrite</id>");
+        int openRewriteProfileEnd = pom.indexOf("</profile>", openRewriteProfileStart);
+        assertThat(openRewriteProfileStart).isGreaterThanOrEqualTo(0);
+        assertThat(openRewriteProfileEnd).isGreaterThan(openRewriteProfileStart);
+        assertThat(pom.substring(openRewriteProfileStart, openRewriteProfileEnd))
+                .as("the baseline no-subscription profile must not import the catalog whose transitive recipes returned HTTP 403")
+                .doesNotContain("<artifactId>rewrite-third-party</artifactId>");
 
         String catalog = read("docs", "governance", "openrewrite-catalog.md");
         assertThat(catalog)
