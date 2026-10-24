@@ -37,6 +37,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -391,6 +392,71 @@ class AgentOneMutationDgsTest {
                 query { pages(first: 5, search: "terms") { edges { node { id } } } }
                 """, "data.pages"))
                 .hasMessageContaining("search is not implemented");
+    }
+
+    @Test
+    void menuItemCreateUsesSaleorInputShapeAndDelegatesItsMenuAndParent() {
+        actAs("agent-one-admin@example.com", "ADMIN");
+        UUID menuId = UUID.randomUUID();
+        UUID parentId = UUID.randomUUID();
+        UUID createdId = UUID.randomUUID();
+        when(cmsNavigationSpi.createMenuItem(any(), eq(menuId), eq(parentId),
+                eq("Home"), eq("/home"), isNull(), isNull()))
+                .thenReturn(new CmsNavigationSpi.MenuItemView(createdId, menuId, parentId,
+                        "Home", "/home", null, null, 0, Map.of()));
+
+        Object result = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation {
+                    menuItemCreate(input: {
+                        name: "Home",
+                        menu: "%s",
+                        parent: "%s",
+                        url: "/home"
+                    }) {
+                        menuItem { id name url menu { id } }
+                        errors { code }
+                    }
+                }
+                """.formatted(globalId("Menu", menuId), globalId("MenuItem", parentId)),
+                "data.menuItemCreate");
+
+        assertThat(result).isNotNull();
+        verify(cmsNavigationSpi).createMenuItem(any(), eq(menuId), eq(parentId),
+                eq("Home"), eq("/home"), isNull(), isNull());
+    }
+
+    @Test
+    void menuItemCreateRejectsUnsupportedCollectionTargetsExplicitly() {
+        actAs("agent-one-admin@example.com", "ADMIN");
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation {
+                    menuItemCreate(input: {
+                        name: "Collection",
+                        menu: "%s",
+                        collection: "%s"
+                    }) {
+                        menuItem { id }
+                    }
+                }
+                """.formatted(globalId("Menu", UUID.randomUUID()),
+                        globalId("Collection", UUID.randomUUID())),
+                "data.menuItemCreate"))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("Collection-backed menu items are not implemented");
+    }
+
+    @Test
+    void pageTypeUpdateKeepsSaleorNullableIdWireContractButRejectsMissingIdAtExecution() {
+        actAs("agent-one-admin@example.com", "ADMIN");
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation {
+                    pageTypeUpdate(id: null, input: { name: "Renamed" }) {
+                        pageType { id }
+                    }
+                }
+                """, "data.pageTypeUpdate"))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("A page type ID is required");
     }
 
     @Test
