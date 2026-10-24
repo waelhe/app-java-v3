@@ -41,4 +41,47 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select o from Order o where o.id = :id")
     Optional<Order> findByIdForUpdate(@Param("id") UUID id);
+
+    // ------------------------------------------------------------------
+    // Campaign packet campaign-b5-b (the Saleor orders read root): the
+    // ADMIN management population's derived keyset scrolls — the
+    // scrollStaffUsers precedent (Window-returning, KeysetScrollPosition/
+    // Limit-taking, the static ordering baked into the method name with
+    // the id tiebreaker). The population is the whole live order set (no
+    // public slice exists on this management root), so Hibernate's own
+    // @SoftDelete filter and the framework's own keyset predicate carry
+    // the whole contract. Three owning sort keys: the placement instant
+    // (the D-N5 complete ordering key's own column), the audit instant,
+    // and the lifecycle state (the stored enum text).
+    // ------------------------------------------------------------------
+
+    /** The order population's CREATED_AT (placement-instant) ascending keyset scroll. */
+    org.springframework.data.domain.Window<Order> findByOrderByPlacedAtAscIdAsc(
+            org.springframework.data.domain.KeysetScrollPosition position,
+            org.springframework.data.domain.Limit limit);
+
+    /** The order population's CREATED_AT (placement-instant) descending keyset scroll. */
+    org.springframework.data.domain.Window<Order> findByOrderByPlacedAtDescIdDesc(
+            org.springframework.data.domain.KeysetScrollPosition position,
+            org.springframework.data.domain.Limit limit);
+
+    /** The order population's LAST_MODIFIED_AT ascending keyset scroll. */
+    org.springframework.data.domain.Window<Order> findByOrderByUpdatedAtAscIdAsc(
+            org.springframework.data.domain.KeysetScrollPosition position,
+            org.springframework.data.domain.Limit limit);
+
+    /** The order population's LAST_MODIFIED_AT descending keyset scroll. */
+    org.springframework.data.domain.Window<Order> findByOrderByUpdatedAtDescIdDesc(
+            org.springframework.data.domain.KeysetScrollPosition position,
+            org.springframework.data.domain.Limit limit);
+
+    /** The order population's STATUS ascending keyset scroll (the stored enum text, id tiebreaker). */
+    org.springframework.data.domain.Window<Order> findByOrderByStatusAscIdAsc(
+            org.springframework.data.domain.KeysetScrollPosition position,
+            org.springframework.data.domain.Limit limit);
+
+    /** The order population's STATUS descending keyset scroll (the stored enum text, id tiebreaker). */
+    org.springframework.data.domain.Window<Order> findByOrderByStatusDescIdDesc(
+            org.springframework.data.domain.KeysetScrollPosition position,
+            org.springframework.data.domain.Limit limit);
 }

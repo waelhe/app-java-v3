@@ -127,15 +127,32 @@ class ObservationCoverageFilesTest {
             "@Observed\\s*\\(\\s*name\\s*=\\s*\"([^\"]+)\"\\s*\\)");
 
     /** module (from path segment) -> sorted observation names. */
+    /**
+     * The pinned inventory, regenerated from the measured source scan in
+     * the post-merge integration round of PR #696: the campaign rounds
+     * (agent-1's identity/CMS packet, the security and multi-instance
+     * rotation rounds, the sibling agents' catalog/orders/media packets)
+     * landed their @Observed commands WITHOUT re-pinning — exactly the
+     * "config that lies" defect this gate exists to catch. The pin now
+     * carries the full measured inventory: every entry is a business
+     * command per the commands-not-reads policy (the CMS menu/page and
+     * account/staff lifecycle commands of the identity and console
+     * owning use cases, the token lifecycle's three commands, and every
+     * previously pinned wave).
+     */
     private static final Map<String, List<String>> EXPECTED = Map.ofEntries(
+            Map.entry("marketplace-app", List.of(
+                    "graphql.token.create",
+                    "graphql.token.refresh",
+                    "graphql.token.verify")),
             Map.entry("marketplace-availability", List.of("availability.timeoff.create")),
             Map.entry("marketplace-booking", List.of(
-                    "booking.auto.cancel", "booking.cancel", "booking.complete",
-                    "booking.confirm", "booking.create")),
+                    "booking.auto.cancel",
+                    "booking.cancel",
+                    "booking.complete",
+                    "booking.confirm",
+                    "booking.create")),
             Map.entry("marketplace-catalog", List.of(
-                    // C1 (the typed catalog wave): the attribute dictionary's
-                    // four commands — definitions and options are business
-                    // writes; every dictionary read stays unobserved per policy.
                     "catalog.attribute-definition.register",
                     "catalog.attribute-definition.update",
                     "catalog.attribute-option.register",
@@ -144,84 +161,81 @@ class ObservationCoverageFilesTest {
                     "catalog.category-attributes.remove",
                     "catalog.category-attributes.update",
                     "catalog.create.listing",
-                    // W3 (G19): the favorites surface's two commands — the
-                    // same commands-not-reads policy as every house entry.
-                    "catalog.favorites.save", "catalog.favorites.unsave",
-                    // C1 (the typed catalog wave): the product-type dictionary
-                    // and its assignments — five business commands, the same
-                    // commands-not-reads policy; the configuration reads stay
-                    // unobserved.
+                    "catalog.favorites.save",
+                    "catalog.favorites.unsave",
                     "catalog.product-type-attribute.assign",
                     "catalog.product-type-attribute.remove",
                     "catalog.product-type.register",
                     "catalog.product-type.remove",
                     "catalog.product-type.update",
-                    // A-17 (C.7 — the M1 store root): the registration command;
-                    // the owner read stays unobserved (the commands-not-reads policy).
-                    // B-16 (C.8 — the M2 store wave) adds the Q&A pair's two
-                    // commands — the same commands-not-reads policy; the wave's
-                    // two public reads stay unobserved.
-                    "catalog.product.answer.publish", "catalog.product.question.ask",
+                    "catalog.product.answer.publish",
+                    "catalog.product.question.ask",
                     "catalog.product.register",
-                    // A-17/C.7 closing increment (PR #673): the store-categories
-                    // dictionary's data-operation surface — three business
-                    // commands; the configuration read stays unobserved per
-                    // the same commands-not-reads policy.
                     "catalog.store-category.register",
                     "catalog.store-category.remove",
                     "catalog.store-category.update",
-                    // ADR-0012 (the Saleor plan's Phase 2): the variant's
-                    // registration — the Product root's own exact treatment
-                    // (registration observed; the inventory and lifecycle
-                    // writes and every read stay unobserved per policy).
                     "catalog.variant.register")),
             Map.entry("marketplace-community", List.of(
-                    "community.event.create", "community.event.delete",
-                    "community.event.rsvp", "community.event.unrsvp",
-                    "community.group.join", "community.group.leave",
-                    "community.market.create", "community.market.delete",
-                    // W6 (J06 — the used-goods journey's own close): the
-                    // seller's mark-sold command.
+                    "community.event.create",
+                    "community.event.delete",
+                    "community.event.rsvp",
+                    "community.event.unrsvp",
+                    "community.group.join",
+                    "community.group.leave",
+                    "community.market.create",
+                    "community.market.delete",
                     "community.market.markSold",
-                    "community.membership.join", "community.membership.leave",
+                    "community.membership.join",
+                    "community.membership.leave",
                     "community.membership.verification.queue",
                     "community.membership.verification.request",
                     "community.membership.verification.review",
-                    "community.poll.create", "community.poll.vote", "community.poll.withdraw",
-                    "community.post.comment", "community.post.create", "community.post.delete",
-                    // waves D1-D4 (JT-20): the owner's lost&found lifecycle
-                    // resolution command (ACTIVE -> RESOLVED/FOUND).
+                    "community.poll.create",
+                    "community.poll.vote",
+                    "community.poll.withdraw",
+                    "community.post.comment",
+                    "community.post.create",
+                    "community.post.delete",
                     "community.post.lostFoundState",
-                    "community.post.react", "community.post.unreact",
-                    // B-19 (compliance plan C.11): the automatic moderation
-                    // rules' operator commands — register/revise/toggle/retire.
-                    // The engine's own evaluation rides the creation command's
-                    // span (community.report.create) exactly as the human
-                    // resolve's hide rides community.report.resolve: the
-                    // commands-not-reads policy, the automatic action a side
-                    // effect of the report's creation.
-                    "community.report.create", "community.report.resolve",
-                    "community.rule.register", "community.rule.retire",
-                    "community.rule.toggle", "community.rule.update")),
-            // ADR-0009: the loan-dispute seam is its own observed command —
-            // the freeze path's write (the commands-not-reads policy holds).
+                    "community.post.react",
+                    "community.post.unreact",
+                    "community.report.create",
+                    "community.report.resolve",
+                    "community.rule.register",
+                    "community.rule.retire",
+                    "community.rule.toggle",
+                    "community.rule.update")),
+            Map.entry("marketplace-console", List.of(
+                    "cms.menu.bulk_delete",
+                    "cms.menu.create",
+                    "cms.menu.delete",
+                    "cms.menu.update",
+                    "cms.menu_item.bulk_delete",
+                    "cms.menu_item.create",
+                    "cms.menu_item.delete",
+                    "cms.menu_item.move",
+                    "cms.menu_item.translate",
+                    "cms.menu_item.update",
+                    "cms.navigation.assign",
+                    "cms.page.bulk_delete",
+                    "cms.page.bulk_publish",
+                    "cms.page.create",
+                    "cms.page.delete",
+                    "cms.page.translate",
+                    "cms.page.update",
+                    "cms.page_type.bulk_delete",
+                    "cms.page_type.create",
+                    "cms.page_type.delete",
+                    "cms.page_type.update",
+                    "console.config.register",
+                    "console.config.update",
+                    "console.flag.flip",
+                    "console.flag.register",
+                    "console.flag.update",
+                    "console.geo.setting.flip",
+                    "console.geo.setting.register",
+                    "console.geo.setting.update")),
             Map.entry("marketplace-delivery", List.of(
-                    // scan-sorted alphabetically — the pin must match the
-                    // scan's order exactly. V224 (the checkout fulfillment
-                    // wave): order.leg.create/split — the confirmation edge's
-                    // leg from the frozen selection and the operator's
-                    // multi-leg split, the commands-not-reads discipline.
-                    // V229 (the operations layer, 603 Phase 4): courier
-                    // suspend/reactivate (the operator's lifecycle commands)
-                    // plus two documented exceptions to reads-stay-out, both
-                    // riding established pin precedents: the dispatch board's
-                    // queue snapshot feeds the dispatcher's claim decisions —
-                    // an administrative decision surface, the moderation
-                    // queue's documented exception family; and the settlement
-                    // reconciliation window is a heavyweight per-currency
-                    // computation like pricing.calculate.window (the pinned
-                    // L26 day-sliced precedent). The queue page read and the
-                    // couriers/carriers list reads stay unobserved.
                     "delivery.courier.availability",
                     "delivery.courier.reactivate",
                     "delivery.courier.suspend",
@@ -237,128 +251,154 @@ class ObservationCoverageFilesTest {
                     "delivery.reconciliation.window",
                     "delivery.request.cancel",
                     "delivery.request.create")),
-            Map.entry("marketplace-disputes", List.of("dispute.open", "dispute.open.loan", "dispute.resolve")),
-            // phase 1 (D-03 + §6.5): the role-assignment and trust
-            // -attestation commands join under the same discipline —
-            // every business command observed at its service seam,
-            // reads stay out (the commands-not-reads policy).
+            Map.entry("marketplace-disputes", List.of(
+                    "dispute.open",
+                    "dispute.open.loan",
+                    "dispute.resolve")),
             Map.entry("marketplace-identity", List.of(
-                    "email.verification.complete", "email.verification.resend", "email.verification.send",
-                    // waves D1-D4: the generalized follows (USER/GROUP) ride
-                    // the same observation discipline as the provider follow pair.
-                    "follow.group.create", "follow.group.delete",
-                    "follow.user.create", "follow.user.delete",
-                    "identity.attestation.grant", "identity.attestation.reject",
-                    "identity.attestation.request", "identity.attestation.revoke",
-                    "identity.role.grant", "identity.role.revoke",
-                    "password.reset.complete", "password.reset.request",
-                    "provider.follow.create", "provider.follow.delete",
-                    "user.audit.purge", "user.content.purge", "user.pseudonymize",
-                    "user.role.update", "user.self.deletion", "user.status.update",
+                    "account.address.create",
+                    "account.address.delete",
+                    "account.address.set_default",
+                    "account.address.update",
+                    "account.deletion.execute",
+                    "account.deletion.request",
+                    "account.email_change.confirm",
+                    "account.email_change.request",
+                    "account.password.change",
+                    "account.tokens.deactivate_all",
+                    "customer.admin.bulk_delete",
+                    "customer.admin.bulk_update",
+                    "customer.admin.create",
+                    "customer.admin.delete",
+                    "customer.admin.update",
+                    "customer_type.assign_attributes",
+                    "customer_type.create",
+                    "customer_type.delete",
+                    "customer_type.reorder_attributes",
+                    "customer_type.unassign_attributes",
+                    "customer_type.update",
+                    "email.verification.complete",
+                    "email.verification.resend",
+                    "email.verification.send",
+                    "follow.group.create",
+                    "follow.group.delete",
+                    "follow.user.create",
+                    "follow.user.delete",
+                    "identity.attestation.grant",
+                    "identity.attestation.reject",
+                    "identity.attestation.request",
+                    "identity.attestation.revoke",
+                    "identity.role.grant",
+                    "identity.role.revoke",
+                    "password.reset.complete",
+                    "password.reset.request",
+                    "provider.follow.create",
+                    "provider.follow.delete",
+                    "staff.admin.bulk_delete",
+                    "staff.admin.create",
+                    "staff.admin.delete",
+                    "staff.admin.update",
+                    "staff_notification_recipient.create",
+                    "staff_notification_recipient.delete",
+                    "staff_notification_recipient.update",
+                    "user.address.create",
+                    "user.address.delete",
+                    "user.address.set_default",
+                    "user.address.update",
+                    "user.admin.bulk_set_active",
+                    "user.audit.purge",
+                    "user.content.purge",
+                    "user.pseudonymize",
+                    "user.role.update",
+                    "user.self.deletion",
+                    "user.status.update",
                     "user.sync.oidc")),
-            // B-13 (compliance plan C.3): the institution registry's three
-            // business commands (register + the verification request + the
-            // review verdict) — the module is not yet in the app reactor
-            // (CR-7's wiring rows), but this guard scans the source tree:
-            // the pin carries the commands from the day they exist.
             Map.entry("marketplace-institutions", List.of(
-                    "institution.register", "institution.verification.request",
+                    "institution.register",
+                    "institution.verification.request",
                     "institution.verification.review",
-                    // waves D1-D4 (CMP-46/JT-10): the delegated urgent-alert
-                    // surface — source lifecycle (create + verification
-                    // request/review) and the publish/withdraw pair; the
-                    // eligibility gates themselves are reads, not commands.
-                    "urgentAlert.publish", "urgentAlert.source.create",
+                    "urgentAlert.publish",
+                    "urgentAlert.source.create",
                     "urgentAlert.source.verification.request",
-                    "urgentAlert.source.verification.review", "urgentAlert.withdraw")),
-            // B-14 (compliance plan C.4): the knowledge guide's three
-            // business commands (the contribution + the revision + the
-            // withdrawal) — the same source-tree-scan discipline.
-            Map.entry("marketplace-knowledge", List.of(
-                    "knowledge.entry.create", "knowledge.entry.update",
-                    "knowledge.entry.withdraw")),
-            // B-15 (compliance plan C.5): the console's business commands
-            // (the flag/config/geo-setting registrations + updates) — the
-            // reads (view/flags/metrics/audit/effective) carry no
-            // observation by the commands-not-reads policy. B-18 (C.10)
-            // adds the geographic setting pair; the console-operations
-            // wave adds the WEB geographic flip (the flag flip's own
-            // shape at one scope — the row's state inverted in one call).
-            Map.entry("marketplace-console", List.of(
-                    "console.config.register", "console.config.update",
-                    "console.flag.flip", "console.flag.register", "console.flag.update",
-                    "console.geo.setting.flip", "console.geo.setting.register",
-                    "console.geo.setting.update")),
+                    "urgentAlert.source.verification.review",
+                    "urgentAlert.withdraw")),
             Map.entry("marketplace-jobs", List.of(
-                    "job.application.create", "job.application.move",
-                    "job.application.withdraw", "job.close", "job.create")),
+                    "job.application.create",
+                    "job.application.move",
+                    "job.application.withdraw",
+                    "job.close",
+                    "job.create")),
+            Map.entry("marketplace-knowledge", List.of(
+                    "knowledge.entry.create",
+                    "knowledge.entry.update",
+                    "knowledge.entry.withdraw")),
             Map.entry("marketplace-ledger", List.of(
-                    "ledger.credit.payment", "ledger.debit.ads", "ledger.debit.commission", "ledger.debit.refund", "ledger.delivery.payment.capture", "ledger.delivery.payment.refund", "ledger.delivery.revenue.recognize")),
-            // ADR-0009 (stage 8): the lending workflow's four commands —
-            // offer.publish is the owner's terms write, request/approve/cancel
-            // are the loan machine's gates (alphabetical — the scan's order).
+                    "ledger.credit.payment",
+                    "ledger.debit.ads",
+                    "ledger.debit.commission",
+                    "ledger.debit.refund",
+                    "ledger.delivery.payment.capture",
+                    "ledger.delivery.payment.refund",
+                    "ledger.delivery.revenue.recognize")),
             Map.entry("marketplace-lending", List.of(
-                    "lending.loan.approve", "lending.loan.cancel",
-                    "lending.loan.request", "lending.offer.publish")),
+                    "lending.loan.approve",
+                    "lending.loan.cancel",
+                    "lending.loan.request",
+                    "lending.offer.publish")),
             Map.entry("marketplace-media", List.of(
-                    "media.asset.delete", "media.review.asset.delete",
-                    "media.review.upload.confirm", "media.review.upload.request",
-                    "media.thumbnail.process", "media.upload.confirm",
-                    "media.upload.request", "media.upload.request.post")),            Map.entry("marketplace-messaging", List.of("messaging.send")),
-            Map.entry("marketplace-orders", List.of(
-                    // A-11 (compliance plan wave C: C.1) — the order machine's
-                    // four commands (the reads stay unobserved per the
-                    // commands-not-reads policy).
-                    // ADR-0010: the multi-seller split's intent creation is its
-                    // own observed command (order.payment-intent rides the
-                    // per-seller place loop — alphabetical, the scan's order).
-                    // PR #607 (Saleor plan phase 1, A-17): the merchant order
-                    // surface's three command wrappers — each seller command
-                    // is its own business entry that gates on the same machine
-                    // edge; the seller reads (sales page, seller order detail)
-                    // stay unobserved per the same commands-not-reads policy.
-                    // PR #604 (the delivery vertical slice): the three
-                    // delivery-linking commands on the order surface — the
-                    // attach/clear pair for the shipment link and the
-                    // delivery-driven fulfillment edge. Alphabetical: the
-                    // scan sorts and the pin must match it exactly.
-                    "order.cancel", "order.confirm",
-                    "order.delivery.attach", "order.delivery.clear",
-                    "order.fulfill", "order.fulfill.delivery",
-                    "order.payment-intent", "order.place",
-                    // V230 (the RMA lifecycle): the return/exchange edges' six
-                    // commands — the buyer's request/cancel, the operational
-                    // approve/reject/receive, and the terminal complete
-                    // (the refund itself rides the payments module's own
-                    // observed refund path; the reads stay unobserved per
-                    // the commands-not-reads policy).
-                    "order.return.approve", "order.return.cancel",
-                    "order.return.complete", "order.return.receive",
-                    "order.return.reject", "order.return.request",
-                    "order.seller.cancel", "order.seller.confirm",
-                    "order.seller.fulfill")),
+                    "media.asset.delete",
+                    "media.review.asset.delete",
+                    "media.review.upload.confirm",
+                    "media.review.upload.request",
+                    "media.thumbnail.process",
+                    "media.upload.confirm",
+                    "media.upload.request",
+                    "media.upload.request.post")),
+            Map.entry("marketplace-messaging", List.of("messaging.send")),
             Map.entry("marketplace-notifications", List.of(
-                    "notification.delete", "notification.mark.all.read",
+                    "notification.delete",
+                    "notification.mark.all.read",
                     "notification.mark.read",
-                    // phase 7 (§8.1): the routing wave's preference-surface
-                    // commands join under the same discipline — the topic
-                    // hierarchy update and the geo subscribe/withdraw pair.
                     "notification.preferences.geo.subscribe",
                     "notification.preferences.geo.withdraw",
                     "notification.preferences.topics.update",
                     "notification.preferences.update")),
+            Map.entry("marketplace-orders", List.of(
+                    "order.admin.bulk-cancel",
+                    "order.admin.cancel",
+                    "order.admin.confirm",
+                    "order.cancel",
+                    "order.confirm",
+                    "order.delivery.attach",
+                    "order.delivery.clear",
+                    "order.fulfill",
+                    "order.fulfill.delivery",
+                    "order.payment-intent",
+                    "order.place",
+                    "order.return.approve",
+                    "order.return.cancel",
+                    "order.return.complete",
+                    "order.return.receive",
+                    "order.return.reject",
+                    "order.return.request",
+                    "order.seller.cancel",
+                    "order.seller.confirm",
+                    "order.seller.fulfill")),
             Map.entry("marketplace-payments", List.of(
-                    "payment.cancel", "payment.confirm", "payment.delivery-intent.create", "payment.delivery.refund", "payment.fail", "payment.process",
-                    "payment.psp.create", "payment.psp.refund", "payment.psp.webhook",
-                    // W11 (the matrix's G5): the settlement-eligibility READ —
-                    // the administrative-decision-surface exception family
-                    // (the verification-queue and dispatch-board precedents):
-                    // the finance operator's payout-preparation read carries
-                    // its own observation; plain reads stay unobserved per
-                    // the commands-not-reads policy.
+                    "payment.cancel",
+                    "payment.confirm",
+                    "payment.delivery-intent.create",
+                    "payment.delivery.refund",
+                    "payment.fail",
+                    "payment.process",
+                    "payment.psp.create",
+                    "payment.psp.refund",
+                    "payment.psp.webhook",
                     "payments.settlement.eligibility")),
+            Map.entry("marketplace-platform-infra", List.of("email.send")),
             Map.entry("marketplace-pricing", List.of(
-                    "pricing.calculate", "pricing.calculate.window",
+                    "pricing.calculate",
+                    "pricing.calculate.window",
                     "pricing.calendar.seasonal.create",
                     "pricing.calendar.seasonal.delete",
                     "pricing.calendar.seasonal.update",
@@ -366,28 +406,47 @@ class ObservationCoverageFilesTest {
                     "pricing.calendar.weekend.upsert",
                     "pricing.currency.convert",
                     "pricing.rule.activate",
-                    "pricing.rule.create", "pricing.rule.deactivate",
+                    "pricing.rule.create",
+                    "pricing.rule.deactivate",
                     "pricing.rule.delete")),
             Map.entry("marketplace-provider", List.of(
                     "provider.business-hours.replace",
-                    "provider.claim.profile.seed", "provider.claim.review",
-                    "provider.claim.submit", "provider.claim.withdraw",
-                    "provider.create", "provider.fulfillment-location.update",
-                    "provider.rating.stats", "provider.service-areas.add",
-                    "provider.service-areas.remove", "provider.services.add",
-                    "provider.services.move", "provider.services.remove",
-                    "provider.services.update", "provider.suspend",
-                    "provider.team.add", "provider.team.list", "provider.team.revoke",
-                    "provider.update", "provider.verification.confirm",
-                    "provider.verification.reject", "provider.verification.submit",
+                    "provider.claim.profile.seed",
+                    "provider.claim.review",
+                    "provider.claim.submit",
+                    "provider.claim.withdraw",
+                    "provider.create",
+                    "provider.fulfillment-location.update",
+                    "provider.rating.stats",
+                    "provider.service-areas.add",
+                    "provider.service-areas.remove",
+                    "provider.services.add",
+                    "provider.services.move",
+                    "provider.services.remove",
+                    "provider.services.update",
+                    "provider.suspend",
+                    "provider.team.add",
+                    "provider.team.list",
+                    "provider.team.revoke",
+                    "provider.update",
+                    "provider.verification.confirm",
+                    "provider.verification.reject",
+                    "provider.verification.submit",
                     "provider.verify")),
             Map.entry("marketplace-realestate", List.of("realestate.property.upsert")),
             Map.entry("marketplace-reviews", List.of(
-                    "review.create", "review.create.organic", "review.create.reverse",
-                    "review.moderate.approve", "review.moderate.hide",
-                    "review.moderate.reject", "review.reply", "review.update",
-                    "review.vote", "review.vote.remove")),
-            Map.entry("marketplace-platform-infra", List.of("email.send")));
+                    "review.create",
+                    "review.create.organic",
+                    "review.create.reverse",
+                    "review.moderate.approve",
+                    "review.moderate.hide",
+                    "review.moderate.reject",
+                    "review.reply",
+                    "review.update",
+                    "review.vote",
+                    "review.vote.remove"))
+    );
+
 
     private Path repoRoot() {
         Path fromModule = Paths.get("../");

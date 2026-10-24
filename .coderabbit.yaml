@@ -5,7 +5,7 @@
 # with ZERO CodeRabbit reviews — the bot was rate-limited (14:14:37Z) and its
 # legacy commit status reported "success | Review rate limited" because
 # fail_commit_status defaults to false. This configuration makes review
-# failures loud; the branch ruleset (required check "CodeRabbit" +
+# failures loud; the branch ruleset update (required check "CodeRabbit" +
 # "CodeRabbit Gate" + required review-thread resolution) makes them
 # merge-blocking.
 # Config is read from the pull request's head branch (official docs).
