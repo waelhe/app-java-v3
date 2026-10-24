@@ -476,6 +476,18 @@ class PlatformGovernanceFilesTest {
                 .as("the baseline no-subscription profile must not import the catalog whose transitive recipes returned HTTP 403")
                 .doesNotContain("<artifactId>rewrite-third-party</artifactId>");
 
+        int springProfileStart = pom.indexOf("<id>openrewrite-spring-source</id>");
+        int springProfileEnd = pom.indexOf("</profile>", springProfileStart);
+        assertThat(springProfileStart).isGreaterThanOrEqualTo(0);
+        assertThat(springProfileEnd).isGreaterThan(springProfileStart);
+        String springProfile = pom.substring(springProfileStart, springProfileEnd);
+        assertThat(springProfile)
+                .as("source-built Spring recipes must be loaded by the Rewrite Maven plugin, not merely added to the application classpath")
+                .contains("<artifactId>rewrite-maven-plugin</artifactId>")
+                .contains("<artifactId>rewrite-spring</artifactId>");
+        assertThat(springProfile.indexOf("<artifactId>rewrite-spring</artifactId>"))
+                .isGreaterThan(springProfile.indexOf("<artifactId>rewrite-maven-plugin</artifactId>"));
+
         String catalog = read("docs", "governance", "openrewrite-catalog.md");
         assertThat(catalog)
                 .as("catalog must record the version, licensing and execution boundary")
@@ -501,7 +513,9 @@ class PlatformGovernanceFilesTest {
                 .contains("rewrite-maven-plugin:6.50.0:discover")
                 .contains("Install Maven reactor before Rewrite dry-run")
                 .contains("rewrite-maven-plugin:6.50.0:dryRunNoFork")
-                .contains("-DskipTests -Popenrewrite install");
+                .contains("-DskipTests -Popenrewrite install")
+                .contains("org.openrewrite.java.spring.boot3.UpgradeSpringBoot_3_5")
+                .contains("Spring source build completed but the expected community recipe");
     }
 
     private static Path repoRoot() {
