@@ -13,8 +13,10 @@ import org.springframework.context.annotation.Configuration;
  * <p><strong>Why this exists (measured 2026-10-24, PR #722 CI):</strong>
  * springdoc-openapi 3.1.1 change #3351 stopped forcing these three types to a
  * bare string and let swagger-core 2.2.55 resolve them natively, which stamps
- * a {@code format} on them ({@code partial-time} for LocalTime/OffsetTime,
- * {@code duration} for Duration — springdoc-openapi CHANGELOG
+ * a {@code format} on them ({@code time-local} for LocalTime, {@code time}
+ * for OffsetTime, {@code duration} for Duration — the EXTERNAL_CLASSES
+ * registration measured in swagger-core 2.2.55's PrimitiveType.java;
+ * springdoc-openapi CHANGELOG
  * {@code [3.1.1] - 2026-09-06}, PR springdoc/springdoc-openapi#3351: the diff
  * removed {@code customClasses().put("java.time.Duration"/"java.time.LocalTime"/
  * "java.time.OffsetTime", PrimitiveType.STRING)} from
@@ -39,7 +41,9 @@ import org.springframework.context.annotation.Configuration;
  * deviation from the 3.1.1 default):</strong></p>
  * <ul>
  *   <li><strong>Reason:</strong> the 3.1.1 upgrade is a security patch
- *       (CVE-2026-75838 + eight MCP GHSAs) — a security line move must not
+ *       (CVE-2026-75838 + seven GHSAs — five MCP ones made opt-in by
+ *       springdoc.ai.mcp.enabled defaulting to false, two non-MCP ones
+ *       fixed by the release itself) — a security line move must not
  *       silently evolve the published API contract; separating the two
  *       concerns keeps the contract frozen while the security fixes land.</li>
  *   <li><strong>Compatibility evidence:</strong> swagger-core 2.2.55 sources
@@ -48,7 +52,8 @@ import org.springframework.context.annotation.Configuration;
  *       2026-10-24, PR #714 run 40056156849).</li>
  *   <li><strong>Owner:</strong> platform maintainers.</li>
  *   <li><strong>Follow-up review:</strong> the next release re-baseline —
- *       adopting the richer {@code partial-time}/{@code duration} formats is
+ *       adopting the richer {@code time-local}/{@code time}/{@code
+ *       duration} formats is
  *       a deliberate contract-evolution decision that must ride a documented
  *       baseline-tag cut (the allowlist lifecycle), not a dependency bump.</li>
  * </ul>

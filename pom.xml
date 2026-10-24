@@ -74,16 +74,22 @@
         <enforcer.fail>true</enforcer.fail>
         <!-- springdoc 3.1.1 (2026-10-24, deferred-upgrades plan phase 2b):
              the security motive — CVE-2026-75838 (XSS in the DOMPurify
-             bundled with swagger-ui; fixed by swagger-ui 5.32.14) plus eight
-             GHSAs around the MCP layer, which 3.1.1 makes opt-in
-             (springdoc.ai.mcp.enabled defaults to false). The public
+             bundled with swagger-ui; fixed by swagger-ui 5.32.14), five MCP
+             GHSAs (GHSA-6f5m-mhjg-qwxq, GHSA-4v2q-56v7-2cpw,
+             GHSA-m4cg-mhpg-rh2r, GHSA-5f9r-4mc4-qh3c,
+             GHSA-jcgg-59c8-w4wh) which 3.1.1 makes opt-in
+             (springdoc.ai.mcp.enabled defaults to false), and two non-MCP
+             GHSAs (GHSA-rhhx-6j8h-8cvw per-locale OpenAPI cache exhaustion;
+             GHSA-c925-vm88-mpp9 Scalar forwarded headers) fixed by the
+             release itself — the official advisory split, not a blanket
+             MCP claim. The public
              /v3/api-docs contract generator moves off a two-patch-stale
              security line. The gate side landed first (the official
              openapi-diff JSON report). The first CI run of phase 2b
              (measured 2026-10-24, run 40056551784) falsified the plan's
              delta classification: the #3351 java.time change (Duration/
              LocalTime/OffsetTime resolved by swagger-core 2.2.55 with
-             formats partial-time/duration instead of the forced bare
+             formats time-local/time/duration instead of the forced bare
              string) is NOT an optional add nor allowlist-documentable —
              openapi-diff 2.1.7 judged it an incompatible param-change +
              response-schema break on the availability/rules endpoint,
@@ -93,8 +99,8 @@
              it): OpenApiJavaTimeSchemaStabilityConfig restores the three
              PrimitiveType.customClasses STRING entries, freezing the
              published contract while the security fixes land — the
-             partial-time adoption is deferred to a deliberate re-baseline
-             decision (version-policy §6 documents reason/evidence/owner/
+             time-local/time/duration adoption is deferred to a deliberate
+             re-baseline decision (version-policy §6 documents reason/evidence/owner/
              review date). The 2026-10-07 revert decision is closed by
              this upgrade. -->
         <springdoc.version>3.1.1</springdoc.version>
