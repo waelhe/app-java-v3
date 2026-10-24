@@ -7,14 +7,14 @@ Versions and license labels below are based on the official current module/versi
 | Artifact | Version | Official license | Relevance / treatment |
 |---|---:|---|---|
 | org.openrewrite:rewrite-maven-plugin | 6.50.0 | Apache-2.0 | Active recipe runner |
-| org.openrewrite:rewrite-bom | 8.93.11 | Apache-2.0 | Imported in OpenRewrite profile |
+| org.openrewrite:rewrite-bom | 8.93.0 | Apache-2.0 | Selected core BOM; matches plugin 6.50.0's declared runtime |
 | org.openrewrite.recipe:rewrite-recipe-bom | 3.41.0 | Apache-2.0 | Imported in OpenRewrite profile |
 | org.openrewrite:rewrite-core | 8.93.11 | Apache-2.0 | Runtime/core |
 | org.openrewrite:rewrite-java | 8.93.11 | Apache-2.0 | Java parsing and core recipes |
 | org.openrewrite:rewrite-maven | 8.93.11 | Apache-2.0 | Maven/POM recipe family |
 | org.openrewrite:rewrite-gradle | 8.93.11 | Apache-2.0 | Gradle recipe family |
 | org.openrewrite:rewrite-gradle-plugin | 7.44.1 | Apache-2.0 | Gradle runner; not needed for the Maven project |
-| org.openrewrite:rewrite-docker | 8.93.11 | Apache-2.0 | Active container recipes |
+| org.openrewrite:rewrite-docker | 8.93.0 | Apache-2.0 | Active; aligned to selected core BOM |
 | org.openrewrite:rewrite-json | 8.93.11 | Apache-2.0 | JSON files |
 | org.openrewrite:rewrite-properties | 8.93.11 | Apache-2.0 | JVM configuration |
 | org.openrewrite:rewrite-xml | 8.93.11 | Apache-2.0 | XML/POM files |
@@ -69,6 +69,10 @@ Versions and license labels below are based on the official current module/versi
 - Source-build run 40061545912 failed before any source compilation because a Bash local statement referred to sibling variables under set -u. That was an implementation bug; the script has since been corrected and rerun.
 - The per-run recipe CSV records the discovered IDs. Package-prefix license attribution remains labelled as heuristic until cross-checked to each official recipe source; no claim of full catalog coverage is made solely from a count.
 
+
+## Core runtime alignment to the selected Maven plugin
+
+The official module table checked on 2026-10-24 advertises `rewrite-bom:8.93.11`, while the official `rewrite-maven-plugin:6.50.0` POM sets `rewrite.version=8.93.0`. The current runtime uses `rewrite-bom:8.93.0` and `rewrite-docker:8.93.0` so the declared plugin runtime and direct core parser stay aligned. Upgrading the plugin to a release whose own POM declares the newer core version is the appropriate way to move this core runtime forward; do not silently mix these versions.
 
 ## Recipe BOM 3.41.0 alignment observed in effective-POM
 
