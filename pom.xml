@@ -1306,12 +1306,12 @@
                             <dependency>
                                 <groupId>org.openrewrite.recipe</groupId>
                                 <artifactId>rewrite-java-dependencies</artifactId>
-                                <version>1.64.1</version>
+                                <version>1.64.0</version>
                             </dependency>
                             <dependency>
                                 <groupId>org.openrewrite.recipe</groupId>
                                 <artifactId>rewrite-jackson</artifactId>
-                                <version>1.31.1</version>
+                                <version>1.31.0</version>
                             </dependency>
                             <dependency>
                                 <groupId>org.openrewrite.recipe</groupId>
@@ -1402,7 +1402,7 @@
                             <dependency>
                                 <groupId>org.openrewrite.recipe</groupId>
                                 <artifactId>rewrite-testing-frameworks</artifactId>
-                                <version>3.49.1</version>
+                                <version>3.49.0</version>
                             </dependency>
                             <dependency>
                                 <groupId>org.openrewrite.recipe</groupId>
@@ -1417,7 +1417,7 @@
                             <dependency>
                                 <groupId>org.openrewrite</groupId>
                                 <artifactId>rewrite-mainframe</artifactId>
-                                <version>3.3.1</version>
+                                <version>3.2.1</version>
                             </dependency>
                         </dependencies>
                     </plugin>
