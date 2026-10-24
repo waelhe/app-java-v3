@@ -530,6 +530,50 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+  # Saleor wire-contract guard. This runs on every CI-triggering PR/push,
+  # not only when SDL files change, so resolver-only changes cannot bypass it.
+  # The official schema is immutable-pinned and hash-verified before comparing
+  # every already-declared Saleor Query/Mutation/Subscription root signature.
+  saleor-root-contract:
+    name: Saleor Root Contract Gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned GraphQL SDL parser
+        run: python -m pip install --disable-pip-version-check graphql-core==3.2.6
+
+      - name: Download, verify and compare against the pinned Saleor contract
+        env:
+          SALEOR_REF: "3.23.43"
+        run: |
+          set -euo pipefail
+          REFERENCE_SCHEMA="${RUNNER_TEMP}/saleor-reference.graphql"
+          curl --fail --silent --show-error --location \\
+            "https://raw.githubusercontent.com/saleor/saleor/${SALEOR_REF}/saleor/graphql/schema.graphql" \\
+            --output "${REFERENCE_SCHEMA}"
+          ACTUAL="$(git hash-object "${REFERENCE_SCHEMA}")"
+          EXPECTED="$(python -c "import json; print(json.load(open('docs/governance/plans/saleor-source-pins.json'))['referenceSchema']['gitBlobSha1'])")"
+          test "${ACTUAL}" = "${EXPECTED}" || {
+            echo "::error::Pinned Saleor SDL hash mismatch: expected ${EXPECTED}; got ${ACTUAL}"
+            exit 1
+          }
+          python .ci/check-saleor-root-signatures.py \\
+            --reference "${REFERENCE_SCHEMA}" \\
+            --schema-dir marketplace-app/src/main/resources/graphql \\
+            --pins docs/governance/plans/saleor-source-pins.json \\
+            --summary "${GITHUB_STEP_SUMMARY}"
+
   # The app bundle's coverage gate, reconstituted on MERGED data: the 9
   # partial .exec files (8 IT shards + the unit pass) combine through the
   # jacoco merge mojo (the root pom's ci-coverage-merge profile — the
@@ -656,7 +700,7 @@ jobs:
   # shard failure from a flake retry).
   build-test:
     name: Build & Test (JDK 25)
-    needs: [ build, test-app, test-modules, openapi-gate, graphql-schema-gate, coverage, android-graphql ]
+    needs: [ build, test-app, test-modules, openapi-gate, graphql-schema-gate, coverage, android-graphql, saleor-root-contract ]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -668,4 +712,4 @@ jobs:
             echo "::error::One or more required gates did not pass — see the failed jobs in this run."
             exit 1
           fi
-          echo "All gates green: build, 8 app shards, modules suite, OpenAPI gate, GraphQL schema gate, Android GraphQL contract gate, coverage gate."
+          echo "All gates green: build, 8 app shards, modules suite, OpenAPI gate, GraphQL schema gate, Android GraphQL contract gate, Saleor root-contract guard, coverage gate."
