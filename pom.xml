@@ -256,6 +256,14 @@
         <openrewrite.recipe-bom.version>3.41.0</openrewrite.recipe-bom.version>
         <openrewrite.maven-plugin.version>6.50.0</openrewrite.maven-plugin.version>
         <openrewrite.spring-recipes.version>6.41.0</openrewrite.spring-recipes.version>
+        <!-- Maven does not apply project dependencyManagement/BOMs to plugin dependencies.
+             Keep recipe-pack versions pinned to the verified rewrite-recipe-bom 3.41.0 catalog. -->
+        <openrewrite.java-dependencies.version>1.64.1</openrewrite.java-dependencies.version>
+        <openrewrite.jackson-recipes.version>1.31.1</openrewrite.jackson-recipes.version>
+        <openrewrite.netty-recipes.version>0.13.2</openrewrite.netty-recipes.version>
+        <openrewrite.openapi-recipes.version>0.35.0</openrewrite.openapi-recipes.version>
+        <openrewrite.third-party-recipes.version>0.49.0</openrewrite.third-party-recipes.version>
+        <openrewrite.all-recipes.version>1.30.2</openrewrite.all-recipes.version>
     </properties>
 
     <dependencyManagement>
@@ -1271,62 +1279,37 @@
                     </dependency>
                 </dependencies>
             </dependencyManagement>
-            <!-- Recipe packs are provided-scope and profile-scoped: they are visible
-                 to OpenRewrite but never packaged into the application. The BOM
-                 governs every managed recipe version; do not reintroduce manual pins. -->
-            <dependencies>
-                <dependency>
-                    <groupId>org.openrewrite</groupId>
-                    <artifactId>rewrite-java</artifactId>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.openrewrite</groupId>
-                    <artifactId>rewrite-maven</artifactId>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.openrewrite</groupId>
-                    <artifactId>rewrite-properties</artifactId>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.openrewrite</groupId>
-                    <artifactId>rewrite-xml</artifactId>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.openrewrite</groupId>
-                    <artifactId>rewrite-yaml</artifactId>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.openrewrite.recipe</groupId>
-                    <artifactId>rewrite-java-dependencies</artifactId>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.openrewrite.recipe</groupId>
-                    <artifactId>rewrite-jackson</artifactId>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.openrewrite.recipe</groupId>
-                    <artifactId>rewrite-netty</artifactId>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.openrewrite.recipe</groupId>
-                    <artifactId>rewrite-openapi</artifactId>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
+            <!-- External recipe packs belong on the Rewrite Maven plugin classpath.
+                 Maven does not apply project dependencyManagement/BOMs to plugin dependencies,
+                 so their versions are pinned above to the same official BOM catalog. -->
             <build>
                 <plugins>
                     <plugin>
                         <groupId>org.openrewrite.maven</groupId>
                         <artifactId>rewrite-maven-plugin</artifactId>
                         <version>${openrewrite.maven-plugin.version}</version>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.openrewrite.recipe</groupId>
+                                <artifactId>rewrite-java-dependencies</artifactId>
+                                <version>${openrewrite.java-dependencies.version}</version>
+                            </dependency>
+                            <dependency>
+                                <groupId>org.openrewrite.recipe</groupId>
+                                <artifactId>rewrite-jackson</artifactId>
+                                <version>${openrewrite.jackson-recipes.version}</version>
+                            </dependency>
+                            <dependency>
+                                <groupId>org.openrewrite.recipe</groupId>
+                                <artifactId>rewrite-netty</artifactId>
+                                <version>${openrewrite.netty-recipes.version}</version>
+                            </dependency>
+                            <dependency>
+                                <groupId>org.openrewrite.recipe</groupId>
+                                <artifactId>rewrite-openapi</artifactId>
+                                <version>${openrewrite.openapi-recipes.version}</version>
+                            </dependency>
+                        </dependencies>
                         <configuration>
                             <activeRecipes>
                                 <recipe>org.openrewrite.java.RemoveUnusedImports</recipe>
@@ -1356,63 +1339,52 @@
              composites that need one of the excluded recipe packs. -->
         <profile>
             <id>openrewrite-third-party-free-catalog</id>
-            <dependencies>
-                <dependency>
-                    <groupId>org.openrewrite.recipe</groupId>
-                    <artifactId>rewrite-third-party</artifactId>
-                    <scope>provided</scope>
-                    <exclusions>
-                        <exclusion>
-                            <groupId>org.openrewrite.recipe</groupId>
-                            <artifactId>rewrite-migrate-java</artifactId>
-                        </exclusion>
-                        <exclusion>
-                            <groupId>org.openrewrite.recipe</groupId>
-                            <artifactId>rewrite-github-actions</artifactId>
-                        </exclusion>
-                        <exclusion>
-                            <groupId>org.openrewrite.recipe</groupId>
-                            <artifactId>rewrite-static-analysis</artifactId>
-                        </exclusion>
-                        <exclusion>
-                            <groupId>org.openrewrite.recipe</groupId>
-                            <artifactId>rewrite-joda</artifactId>
-                        </exclusion>
-                        <exclusion>
-                            <groupId>org.openrewrite.recipe</groupId>
-                            <artifactId>rewrite-jenkins</artifactId>
-                        </exclusion>
-                    </exclusions>
-                </dependency>
-            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.openrewrite.maven</groupId>
+                        <artifactId>rewrite-maven-plugin</artifactId>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.openrewrite.recipe</groupId>
+                                <artifactId>rewrite-third-party</artifactId>
+                                <version>${openrewrite.third-party-recipes.version}</version>
+                                <exclusions>
+                                    <exclusion><groupId>org.openrewrite.recipe</groupId><artifactId>rewrite-migrate-java</artifactId></exclusion>
+                                    <exclusion><groupId>org.openrewrite.recipe</groupId><artifactId>rewrite-github-actions</artifactId></exclusion>
+                                    <exclusion><groupId>org.openrewrite.recipe</groupId><artifactId>rewrite-static-analysis</artifactId></exclusion>
+                                    <exclusion><groupId>org.openrewrite.recipe</groupId><artifactId>rewrite-joda</artifactId></exclusion>
+                                    <exclusion><groupId>org.openrewrite.recipe</groupId><artifactId>rewrite-jenkins</artifactId></exclusion>
+                                </exclusions>
+                            </dependency>
+                        </dependencies>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
         <profile>
             <id>openrewrite-all-catalog</id>
-            <dependencies>
-                <dependency>
-                    <groupId>org.openrewrite.recipe</groupId>
-                    <artifactId>rewrite-all</artifactId>
-                    <scope>provided</scope>
-                    <exclusions>
-                        <exclusion>
-                            <groupId>org.openrewrite</groupId>
-                            <artifactId>rewrite-csharp</artifactId>
-                        </exclusion>
-                        <exclusion>
-                            <groupId>org.openrewrite</groupId>
-                            <artifactId>rewrite-javascript</artifactId>
-                        </exclusion>
-                        <exclusion>
-                            <groupId>org.openrewrite</groupId>
-                            <artifactId>rewrite-python</artifactId>
-                        </exclusion>
-                        <exclusion>
-                            <groupId>org.openrewrite</groupId>
-                            <artifactId>rewrite-mainframe</artifactId>
-                        </exclusion>
-                    </exclusions>
-                </dependency>
-            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.openrewrite.maven</groupId>
+                        <artifactId>rewrite-maven-plugin</artifactId>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.openrewrite.recipe</groupId>
+                                <artifactId>rewrite-all</artifactId>
+                                <version>${openrewrite.all-recipes.version}</version>
+                                <exclusions>
+                                    <exclusion><groupId>org.openrewrite</groupId><artifactId>rewrite-csharp</artifactId></exclusion>
+                                    <exclusion><groupId>org.openrewrite</groupId><artifactId>rewrite-javascript</artifactId></exclusion>
+                                    <exclusion><groupId>org.openrewrite</groupId><artifactId>rewrite-python</artifactId></exclusion>
+                                    <exclusion><groupId>org.openrewrite</groupId><artifactId>rewrite-mainframe</artifactId></exclusion>
+                                </exclusions>
+                            </dependency>
+                        </dependencies>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
         <!-- The Spring recipe set is Moderne Source Available. This profile resolves
              rewrite-spring 6.41.0 from the local Maven repository after the pinned
