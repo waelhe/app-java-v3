@@ -15,8 +15,8 @@
 # merge. Any future rebind must first measure the account that ACTUALLY
 # builds from main — the one whose GitHub connection fires on merges.
 # so Maven's local repository
-# (~/.m2 of the build-stage root user, including the mvnw 3.9.16 wrapper
-# distribution) survives across builds — the "exploit the cache" guidance of the
+# (~/.m2 of the build-stage root user, including the Maven 3.10.0 distribution
+# the wrapper tool 3.3.4 downloads) survives across builds — the "exploit the cache" guidance of the
 # Dockerfile best practices (docs.docker.com — saved copy:
 # dockerfile-best-practices.txt). Local Docker/BuildKit treats the id as an
 # ordinary cache key, so the same Dockerfile stays portable.
