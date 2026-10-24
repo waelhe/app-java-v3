@@ -6,10 +6,6 @@ on:
       - main
       - integration/saleor-full-commerce-20261021
     types: [opened, synchronize, reopened, ready_for_review]
-  push:
-    branches:
-      - main
-      - integration/saleor-full-commerce-20261021
   workflow_dispatch:
   workflow_call:
 
