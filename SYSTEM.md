@@ -37,7 +37,7 @@ Canonical product/UX authority: [Platform Administration Operating System Produc
 
 | الجانب | المالك | الآلية | الدليل |
 |---|---|---|---|
-| ترتيب بناء الوحدات | Maven | Reactor يستنتجه من جراف الاعتماديات في `<modules>` | `pom.xml` — كتلة `<modules>` في الجذر (30 وحدة) |
+| ترتيب بناء الوحدات | Maven | Reactor يستنتج الترتيب من علاقات الاعتماد بين المشاريع المسجّلة في كتلة `<modules>` | `pom.xml` — كتلة `<modules>` في الجذر (30 وحدة) |
 | إصدارات الاعتماديات | Maven | الوراثة (parent 4.1.2) + `dependencyManagement` (BOMs + استثناءات موثقة) | `pom.xml:7-10` + كتلة `<dependencyManagement>` في الجذر (مرجع قسم مستقر — النطاقات الرقمية تنجرف مع كل تعديل pom) |
 | بوابات الجودة | Maven | أهداف plugins مربوطة بمراحل دورة الحياة | `pom.xml` — كتلة `<build>/<plugins>` في الجذر |
 | مخطط قاعدة البيانات | Flyway | ترحيلات V/R — **وحدد صفر `ddl-auto:none`** | `application.yml:28, 41` + `db/migration/` |

@@ -25,7 +25,7 @@
 | Spring Authorization Server | **`spring-security-oauth2-authorization-server` 7.1.2** عبر starter `spring-boot-starter-security-oauth2-authorization-server` (`marketplace-platform-infra/pom.xml:39`) — مُدار من BOM الإطار (Boot 4.1.2 يدير Security 7.1.2 — مقيس من spring-boot-dependencies-4.1.2.pom)؛ Jackson override موثق (كتلة `dependencyManagement` في الجذر — `tools.jackson:jackson-bom`، مرجع قسم مستقر لا نطاق أسطر ينجرف) | وثائق SAS الرسمية + إدارة Boot BOM | ✅ يعمل على main |
 | Spring Modulith | **BOM 2.1.2** (استثناء #1 موثق) | docs.spring.io/spring-modulith | ✅ verify() في CI |
 | Maven | 3.10.0 + mvnw (أداة الـwrapper 3.3.4 — مستقلة عن رقم التوزيعة) | maven.apache.org (مرجع إلزامي في ARCHITECTURE.md §Appendix) | ✅ |
-| الوحدات | 30 وحدة Maven في Reactor الجذر (25 نطاقية + التجميع + المشتركة + البنية التحتية + الحافة edge — مطابق لـSYSTEM.md §1) | Maven multi-module reactor | ✅ |
+| الوحدات | 30 وحدة Maven في Reactor الجذر (عدّ مقيس لكتلة `<modules>` في الجذر — تشمل وحدات النطاق التوصيل `marketplace-delivery` والإقراض `marketplace-lending` والدفتر `marketplace-ledger` والمعرفة `marketplace-knowledge`، إضافة إلى `marketplace-shared` المشتركة و`marketplace-platform-infra` البنية التحتية و`marketplace-app` التجميع و`marketplace-edge` حافة BFF) | Maven multi-module reactor | ✅ |
 
 **ما هو مغلَّق على main ويسري على كل عميل مستقبلي** (نتيجة #184/#185/#186):
 - **PKCE مفروض فعليًا عند التبادل** + حماية downgrade مزدوجة (RFC 9700 §2.1.1 — بايت-كود 7.1.1 مُحقَّق).
