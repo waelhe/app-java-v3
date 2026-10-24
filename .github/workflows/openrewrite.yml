@@ -96,6 +96,17 @@ jobs:
           path.chmod(0o600)
           PY
 
+      - name: Install reactor for dependency-resolution validation
+        if: steps.credentials.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # DependencyList's validateResolvable check uses Maven's local repository.
+          # Install this reactor first so com.marketplace:* artifacts are resolved locally
+          # instead of being incorrectly requested from Code Genome/Maven Central.
+          ./mvnw --batch-mode --no-transfer-progress \
+            -Dmaven.test.skip=true -DskipITs install
+
       - name: Discover current recipes
         if: steps.credentials.outputs.enabled == 'true'
         env:
