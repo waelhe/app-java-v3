@@ -79,3 +79,6 @@ The effective POM generated in CI on 2026-10-24 reported these managed versions.
 | `org.openrewrite:rewrite-mainframe` | 3.3.1 | 3.2.1 |
 
 This is deliberate BOM alignment rather than accidental drift. An override to a newer module outside the imported BOM must be documented as a separate tested compatibility override, not silently described as BOM-aligned.
+
+
+The per-run catalog CSV resolves discovered recipe FQNs against both `.class` entries and `META-INF/rewrite/*.yml` descriptors in the downloaded/source-built JARs. The artifact coordinate and its official module license are recorded from the JAR that contains the implementation or descriptor. Unknown/conflicting attribution is a strict failure, not counted as audited. The source-built profile includes `rewrite-okhttp` because `android/app` uses an OkHttp client, plus `rewrite-feature-flags` for review against the platform's custom feature-flag model.

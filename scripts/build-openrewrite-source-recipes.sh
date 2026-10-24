@@ -46,6 +46,7 @@ build_and_publish_from moderneinc rewrite-mainframe 3.2.1
 
 # Source Available recipe packs, in dependency order; versions align with recipe BOM 3.41.0.
 build_and_publish rewrite-static-analysis 2.45.0
+build_and_publish rewrite-feature-flags 1.24.2
 build_and_publish rewrite-joda 0.12.0
 build_and_publish rewrite-jenkins 0.38.2
 build_and_publish rewrite-github-actions 3.33.0
@@ -55,7 +56,8 @@ build_and_publish rewrite-apache 2.34.0
 build_and_publish rewrite-hibernate 2.27.0
 build_and_publish rewrite-micrometer 0.31.2
 build_and_publish rewrite-cucumber-jvm 2.20.0
-build_and_publish rewrite-testing-frameworks 3.49.1
+build_and_publish rewrite-testing-frameworks 3.49.0
+build_and_publish rewrite-okhttp 0.25.2
 build_and_publish rewrite-spring 6.41.0
 
 # Apache-licensed aggregates are attempted only after their restricted closures were source-built.

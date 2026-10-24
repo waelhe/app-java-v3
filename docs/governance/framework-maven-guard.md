@@ -10,8 +10,8 @@ The official OpenRewrite module/version table checked on 2026-10-24 lists `rewri
 
 | Maven artifact | Version | Purpose |
 |---|---:|---|
-| `org.openrewrite.recipe:rewrite-java-dependencies` | `1.64.1` | Dependency inventory and resolution diagnostics |
-| `org.openrewrite.recipe:rewrite-jackson` | `1.31.1` | Jackson recipes |
+| `org.openrewrite.recipe:rewrite-java-dependencies` | `1.64.0` | Dependency inventory and resolution diagnostics |
+| `org.openrewrite.recipe:rewrite-jackson` | `1.31.0` | Jackson recipes |
 | `org.openrewrite.recipe:rewrite-netty` | `0.13.2` | Netty recipes |
 | `org.openrewrite.recipe:rewrite-openapi` | `0.35.0` | OpenAPI recipes |
 | `org.openrewrite:rewrite-docker` | `8.93.11` | Docker/container files |
@@ -26,7 +26,7 @@ Code Genome requires authentication for downloading current artifacts. The workf
 
 The default `openrewrite` profile uses explicit Apache-licensed recipe packs. A separate opt-in `openrewrite-source-available` profile is now provided for a CI job that builds the Source Available dependency closure from pinned upstream tags and installs it only in that runner's local Maven repository. It does not rely on the free account downloading precompiled Source Available jars.
 
-`rewrite-spring:6.41.0` is listed as Moderne Source Available. The official license permits an organization to apply such recipes to its own code and links to build-from-source instructions; the precompiled artifact still requires the right Code Genome entitlement. The official `rewrite-spring` source declares runtime dependencies on additional source-available packs, including `rewrite-static-analysis`, `rewrite-apache`, and `rewrite-hibernate`. **The source-built profile and workflow are wired in, but the full source-build job must pass before claiming this closure is usable.** It builds core parsers, `rewrite-mainframe`, related Source Available recipe modules, then attempts the two Apache-licensed aggregate packs. It records upstream tags and commit SHAs in an artifact manifest and previews the verified Community Edition `org.openrewrite.java.spring.boot4.SpringBootProperties_4_1` recipe. If any source dependency remains unavailable, the job should fail visibly; no precompiled Source Available jar is copied into the app or uploaded as an artifact.
+`rewrite-spring:6.41.0` is listed as Moderne Source Available. The official license permits an organization to apply such recipes to its own code and links to build-from-source instructions; the precompiled artifact still requires the right Code Genome entitlement. The official `rewrite-spring` source declares runtime dependencies on additional source-available packs, including `rewrite-static-analysis`, `rewrite-apache`, and `rewrite-hibernate`. **The source-built profile and workflow are wired in, but the full source-build job must pass before claiming this closure is usable.** It builds core parsers, `rewrite-mainframe`, the Spring/Java migration and static-analysis closure, the `rewrite-okhttp` recipes used by the repository's Android app, and the feature-flags catalog for review against the platform's custom flag model, then attempts the two Apache-licensed aggregate packs. It records upstream tags and commit SHAs in an artifact manifest and previews the verified Community Edition `org.openrewrite.java.spring.boot4.SpringBootProperties_4_1` recipe. If any source dependency remains unavailable, the job should fail visibly; no precompiled Source Available jar is copied into the app or uploaded as an artifact.
 
 ## Three execution paths
 

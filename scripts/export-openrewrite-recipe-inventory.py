@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export discovered recipes with source-artifact and license attribution."""
+"""Export discovered recipes by matching FQNs to class files and YAML descriptors in their source JARs."""
 from __future__ import annotations
 
 import argparse
@@ -58,6 +58,8 @@ RELEVANCE = {
     "rewrite-migrate-java": "Java migration and language APIs",
     "rewrite-logging-frameworks": "Logging",
     "rewrite-micrometer": "Metrics/observability",
+    "rewrite-okhttp": "OkHttp client migration; OkHttp is used by the repository Android app",
+    "rewrite-feature-flags": "Feature-flag recipes; compare each recipe against the platform's custom flag model",
     "rewrite-github-actions": "GitHub Actions workflows",
     "rewrite-hibernate": "Hibernate/JPA if present",
     "rewrite-all": "Broad aggregate",
@@ -110,8 +112,10 @@ def license_of(group: str, artifact: str) -> str:
         return "UNKNOWN"
     if group == "org.openrewrite.meta":
         return "Apache-2.0" if artifact == "rewrite-analysis" else "UNKNOWN"
-    if group == "io.moderne":
+    if group.startswith("io.moderne"):
         return "Moderne Source Available"
+    if group.startswith("org.openrewrite") and artifact == "rewrite-maven-plugin":
+        return "Apache-2.0"
     return "UNKNOWN"
 
 def coordinate(group: str, artifact: str, version: str) -> str:
@@ -132,6 +136,12 @@ def collect_artifact_recipes(maven_repo: Path):
                 continue
             with zipfile.ZipFile(jar) as archive:
                 for item in archive.namelist():
+                    # Most core OpenRewrite recipes are Java classes, not YAML descriptors.
+                    # Attribute an exact discovered FQN to the JAR that contains its class file.
+                    if item.endswith(".class") and not item.startswith("META-INF/"):
+                        class_name = item[:-6].replace("/", ".")
+                        if class_name.startswith(("org.openrewrite.", "io.moderne.", "com.marketplace.")):
+                            by_recipe[class_name].add((group, artifact, version, license_of(group, artifact)))
                     if not item.startswith("META-INF/rewrite/") or not item.lower().endswith((".yml", ".yaml")):
                         continue
                     try:

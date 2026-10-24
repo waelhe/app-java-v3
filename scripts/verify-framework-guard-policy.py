@@ -158,6 +158,7 @@ source_profile = pom_text[source_profile_start:source_profile_end]
 source_modules = {
     "rewrite-spring": "6.41.0",
     "rewrite-static-analysis": "2.45.0",
+    "rewrite-feature-flags": "1.24.2",
     "rewrite-migrate-java": "3.46.0",
     "rewrite-joda": "0.12.0",
     "rewrite-jenkins": "0.38.2",
@@ -168,6 +169,7 @@ source_modules = {
     "rewrite-micrometer": "0.31.2",
     "rewrite-cucumber-jvm": "2.20.0",
     "rewrite-testing-frameworks": "3.49.0",
+    "rewrite-okhttp": "0.25.2",
     "rewrite-third-party": "0.49.0",
     "rewrite-all": "1.30.2",
 }
@@ -233,7 +235,8 @@ require("recipe-catalog.csv" in rewrite_workflow and "export-openrewrite-recipe-
         "standard OpenRewrite CI must export its recipe-level inventory.")
 source_builder = file_text("scripts/build-openrewrite-source-recipes.sh")
 for evidence in ("rewrite 8.93.11", "moderneinc rewrite-mainframe 3.2.1",
-                 "rewrite-static-analysis 2.45.0", "rewrite-migrate-java 3.46.0",
+                 "rewrite-static-analysis 2.45.0", "rewrite-feature-flags 1.24.2",
+                 "rewrite-migrate-java 3.46.0", "rewrite-okhttp 0.25.2",
                  "rewrite-spring 6.41.0", "rewrite-third-party 0.49.0", "rewrite-all 1.30.2",
                  "publishToMavenLocal", "mavenLocal()"):
     require(evidence in source_builder,
@@ -241,6 +244,7 @@ for evidence in ("rewrite 8.93.11", "moderneinc rewrite-mainframe 3.2.1",
 source_workflow = file_text(".github/workflows/openrewrite-source-available.yml")
 for evidence in ("scripts/build-openrewrite-source-recipes.sh", "openrewrite-source-available",
                  "verify-openrewrite-bom-alignment.py", "export-openrewrite-recipe-inventory.py",
+                 "ORG_GRADLE_PROJECT_codegenomeUsername", "ORG_GRADLE_PROJECT_codegenomePassword",
                  "rewrite:discover", "rewrite:dryRun", "SpringBootProperties_4_1",
                  "source-recipe-catalog.csv", "--strict-attribution", "source-build-manifest.txt", "actions/upload-artifact@v7"):
     require(evidence in source_workflow,

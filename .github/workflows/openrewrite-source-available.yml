@@ -91,6 +91,8 @@ jobs:
         env:
           CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
           CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+          ORG_GRADLE_PROJECT_codegenomeUsername: ${{ secrets.CODEGENOME_USERNAME }}
+          ORG_GRADLE_PROJECT_codegenomePassword: ${{ secrets.CODEGENOME_TOKEN }}
           OPENREWRITE_SOURCE_MANIFEST_PATH: ${{ github.workspace }}/target/rewrite/source-build-manifest.txt
         run: bash scripts/build-openrewrite-source-recipes.sh
 

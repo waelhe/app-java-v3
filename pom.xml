@@ -1356,6 +1356,11 @@
                             </dependency>
                             <dependency>
                                 <groupId>org.openrewrite.recipe</groupId>
+                                <artifactId>rewrite-feature-flags</artifactId>
+                                <version>1.24.2</version>
+                            </dependency>
+                            <dependency>
+                                <groupId>org.openrewrite.recipe</groupId>
                                 <artifactId>rewrite-migrate-java</artifactId>
                                 <version>3.46.0</version>
                             </dependency>
@@ -1403,6 +1408,11 @@
                                 <groupId>org.openrewrite.recipe</groupId>
                                 <artifactId>rewrite-testing-frameworks</artifactId>
                                 <version>3.49.0</version>
+                            </dependency>
+                            <dependency>
+                                <groupId>org.openrewrite.recipe</groupId>
+                                <artifactId>rewrite-okhttp</artifactId>
+                                <version>0.25.2</version>
                             </dependency>
                             <dependency>
                                 <groupId>org.openrewrite.recipe</groupId>
