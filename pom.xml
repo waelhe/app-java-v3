@@ -1420,14 +1420,21 @@
              It is intentionally not downloaded as a precompiled subscription artifact. -->
         <profile>
             <id>openrewrite-spring-source</id>
-            <dependencies>
-                <dependency>
-                    <groupId>org.openrewrite.recipe</groupId>
-                    <artifactId>rewrite-spring</artifactId>
-                    <version>${openrewrite.spring-recipes.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.openrewrite.maven</groupId>
+                        <artifactId>rewrite-maven-plugin</artifactId>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.openrewrite.recipe</groupId>
+                                <artifactId>rewrite-spring</artifactId>
+                                <version>${openrewrite.spring-recipes.version}</version>
+                            </dependency>
+                        </dependencies>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
     </profiles>
 </project>
