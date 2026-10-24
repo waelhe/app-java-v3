@@ -40,6 +40,14 @@ def main():
         for d in deps:
             g,a,pinned=value(d,"groupId"),value(d,"artifactId"),value(d,"version")
             key=(g,a)
+            # The core BOM only manages modules in openrewrite/rewrite. Mainframe
+            # is maintained in the separate moderneinc/rewrite-mainframe repository,
+            # so it has an independently pinned source tag rather than a BOM-managed version.
+            if key == ("org.openrewrite", "rewrite-mainframe"):
+                if pinned != "3.2.1":
+                    fail(f"{profile_id}: external source module rewrite-mainframe must stay pinned to official tag 3.2.1")
+                checked.append((profile_id,g,a,pinned))
+                continue
             expected=managed.get(key)
             if expected is None: fail(f"{profile_id}: {g}:{a}:{pinned} absent from imported BOM management")
             if pinned!=expected: fail(f"{profile_id}: {g}:{a} pinned {pinned}, BOM manages {expected}")
