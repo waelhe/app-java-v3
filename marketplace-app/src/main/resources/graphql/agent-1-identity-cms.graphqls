@@ -95,7 +95,7 @@ extend type Mutation {
 
     # --- P5: CMS page types ---------------------------------------------------
     pageTypeCreate(input: PageTypeCreateInput!): PageTypeCreate
-    pageTypeUpdate(id: ID!, input: PageTypeUpdateInput!): PageTypeUpdate
+    pageTypeUpdate(id: ID, input: PageTypeUpdateInput!): PageTypeUpdate
     pageTypeDelete(id: ID!): PageTypeDelete
     pageTypeBulkDelete(ids: [ID!]!): PageTypeBulkDelete
     pageAttributeAssign(attributeIds: [ID!]!, pageTypeId: ID!): PageAttributeAssign
@@ -108,7 +108,7 @@ extend type Mutation {
     menuUpdate(id: ID!, input: MenuInput!): MenuUpdate
     menuDelete(id: ID!): MenuDelete
     menuBulkDelete(ids: [ID!]!): MenuBulkDelete
-    menuItemCreate(input: MenuItemCreateInput!, menu: ID!, parent: ID): MenuItemCreate
+    menuItemCreate(input: MenuItemCreateInput!): MenuItemCreate
     menuItemUpdate(id: ID!, input: MenuItemInput!): MenuItemUpdate
     menuItemDelete(id: ID!): MenuItemDelete
     menuItemBulkDelete(ids: [ID!]!): MenuItemBulkDelete
@@ -514,8 +514,11 @@ input MenuInput {
 
 input MenuItemCreateInput {
     name: String!
+    menu: ID!
+    parent: ID
     url: String
     category: ID
+    collection: ID
     page: ID
 }
 
@@ -523,6 +526,7 @@ input MenuItemInput {
     name: String
     url: String
     category: ID
+    collection: ID
     page: ID
 }
 
