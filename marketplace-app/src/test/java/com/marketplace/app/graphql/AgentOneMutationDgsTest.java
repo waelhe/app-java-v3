@@ -446,17 +446,25 @@ class AgentOneMutationDgsTest {
     }
 
     @Test
-    void pageTypeUpdateKeepsSaleorNullableIdWireContractButRejectsMissingIdAtExecution() {
+    void pageTypeUpdateWithoutIdMatchesSaleorsCreateFallback() {
         actAs("agent-one-admin@example.com", "ADMIN");
-        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+        UUID createdId = UUID.randomUUID();
+        CmsPageSpi.PageTypeView created = new CmsPageSpi.PageTypeView(
+                createdId, "Created", "created", List.of());
+        when(cmsPageSpi.createPageType(any(), eq("Created"), eq("created"), eq(List.of())))
+                .thenReturn(created);
+
+        Object result = dgsQueryExecutor.executeAndExtractJsonPath("""
                 mutation {
-                    pageTypeUpdate(id: null, input: { name: "Renamed" }) {
-                        pageType { id }
+                    pageTypeUpdate(id: null, input: { name: "Created", slug: "created" }) {
+                        pageType { id name slug }
+                        errors { code }
                     }
                 }
-                """, "data.pageTypeUpdate"))
-                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
-                .hasMessageContaining("A page type ID is required");
+                """, "data.pageTypeUpdate");
+
+        assertThat(result).isNotNull();
+        verify(cmsPageSpi).createPageType(any(), eq("Created"), eq("created"), eq(List.of()));
     }
 
     @Test
