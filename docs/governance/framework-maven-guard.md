@@ -10,8 +10,6 @@ The official OpenRewrite module/version table checked on 2026-10-24 lists `rewri
 
 | Maven artifact | Version | Purpose |
 |---|---:|---|
-| `org.openrewrite.recipe:rewrite-all` | `1.30.2` | Broad language/recipe catalog |
-| `org.openrewrite.recipe:rewrite-third-party` | `0.49.0` | Community-contributed Apache-licensed recipes |
 | `org.openrewrite.recipe:rewrite-java-dependencies` | `1.64.1` | Dependency inventory and resolution diagnostics |
 | `org.openrewrite.recipe:rewrite-jackson` | `1.31.1` | Jackson recipes |
 | `org.openrewrite.recipe:rewrite-netty` | `0.13.2` | Netty recipes |
@@ -20,11 +18,15 @@ The official OpenRewrite module/version table checked on 2026-10-24 lists `rewri
 
 The official Quickstart explicitly says Maven does not apply BOM management to plugin versions or plugin dependencies. The BOM repository README shows the Maven import pattern for normal project dependencies, but plugin-scoped recipe dependencies are different. Therefore each recipe module is pinned manually to the matching versions from official BOM release `3.41.0`; this is intentional and documented.
 
-## Free account and licensing
+## Free account, observed artifact entitlements, and license boundary
 
 Code Genome requires authentication for downloading current artifacts. The workflow reads `CODEGENOME_USERNAME` and `CODEGENOME_TOKEN` from GitHub Actions secrets and writes a temporary, permission-restricted Maven `settings.xml`. Secrets are not committed, printed, or uploaded.
 
-Licensing is module-specific. The official table marks `rewrite-spring:6.41.0`, `rewrite-static-analysis`, `rewrite-migrate-java`, and other modules as Moderne Source Available. These are not direct dependencies here. A free authenticated account does not turn Source Available/Proprietary licenses into Apache 2.0.
+**Observed failure that changed the design:** run [40057579728](https://github.com/waelhe/app-java-v3/actions/runs/40057579728) failed in `rewrite:discover` with HTTP 403 for transitive artifacts including `rewrite-python`, `rewrite-mainframe`, `rewrite-csharp`, `rewrite-javascript`, `rewrite-migrate-java`, `rewrite-github-actions`, `rewrite-static-analysis`, and `rewrite-joda`. The top-level `rewrite-all` and `rewrite-third-party` artifacts are listed as Apache-licensed, but their resolved dependency graph attempted to download artifacts this free account could not access. They have therefore been removed from the executable profile rather than leaving a known-red workflow or claiming that the aggregate is usable.
+
+The current profile uses explicit Apache-licensed recipe packs only. This intentionally limits breadth compared with the catalog's aggregate packs; the exact account entitlement and dependency graph, not the top-level artifact license label alone, determine what actually executes in this environment.
+
+`rewrite-spring:6.41.0` is listed as Moderne Source Available. The official license permits an organization to apply such recipes to its own code and links to build-from-source instructions; the precompiled artifact still requires the right Code Genome entitlement. The official `rewrite-spring` source declares runtime dependencies on additional source-available packs, including `rewrite-static-analysis`, `rewrite-apache`, and `rewrite-hibernate`. **A source-built Spring dependency closure is not yet integrated or verified in this PR**; adding only `rewrite-spring` would reproduce the same dependency-resolution failure.
 
 ## Two run modes
 
