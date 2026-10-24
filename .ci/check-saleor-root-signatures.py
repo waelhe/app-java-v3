@@ -15,11 +15,43 @@ from collections import Counter
 from pathlib import Path
 
 from graphql import Source, parse, print_ast
-from graphql.language.ast import ObjectTypeDefinitionNode, ObjectTypeExtensionNode
+from graphql.language.ast import (
+    InputObjectTypeDefinitionNode,
+    ObjectTypeDefinitionNode,
+    ObjectTypeExtensionNode,
+)
 
 ROOT_TYPES = {"Query", "Mutation", "Subscription"}
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PINS = ROOT / "docs/governance/plans/saleor-source-pins.json"
+
+# These input objects are on active CMS mutation paths. Root-field signature
+# checks alone cannot catch drift inside an input object, so pin their fields
+# and nullability to Saleor 3.23.43 until type-closure parity is generalized.
+INPUT_FIELD_CONTRACTS = {
+    "MenuItemCreateInput": {
+        "name": "String!",
+        "menu": "ID!",
+        "parent": "ID",
+        "url": "String",
+        "category": "ID",
+        "collection": "ID",
+        "page": "ID",
+    },
+    "MenuItemInput": {
+        "name": "String",
+        "url": "String",
+        "category": "ID",
+        "collection": "ID",
+        "page": "ID",
+    },
+    "PageTypeUpdateInput": {
+        "name": "String",
+        "slug": "String",
+        "addAttributes": "[ID!]",
+        "removeAttributes": "[ID!]",
+    },
+}
 
 
 def fail(message: str) -> None:
@@ -63,6 +95,48 @@ def read_root_fields(schema_files: list[Path], label: str) -> dict[tuple[str, st
     return fields
 
 
+def read_input_contracts(schema_files: list[Path], label: str) -> dict[str, dict[str, str]]:
+    found: dict[str, dict[str, str]] = {}
+    wanted = set(INPUT_FIELD_CONTRACTS)
+    for path in sorted(schema_files):
+        try:
+            document = parse(Source(path.read_text(encoding="utf-8"), name=str(path)))
+        except Exception as exc:
+            fail(f"could not parse {label} SDL {path}: {exc}")
+        for definition in document.definitions:
+            if not isinstance(definition, InputObjectTypeDefinitionNode):
+                continue
+            type_name = definition.name.value
+            if type_name not in wanted:
+                continue
+            if type_name in found:
+                fail(f"{label} SDL defines input object {type_name} more than once")
+            found[type_name] = {
+                field.name.value: print_ast(field.type)
+                for field in (definition.fields or [])
+            }
+    missing_types = wanted - set(found)
+    if missing_types:
+        fail(f"{label} SDL is missing guarded input types: {sorted(missing_types)}")
+    return found
+
+
+def assert_input_contracts(reference_files: list[Path], local_files: list[Path]) -> list[str]:
+    reference = read_input_contracts(reference_files, "official Saleor")
+    local = read_input_contracts(local_files, "backend")
+    failures = []
+    for type_name, expected in INPUT_FIELD_CONTRACTS.items():
+        if reference[type_name] != expected:
+            fail(
+                f"guard definition for {type_name} is stale versus official Saleor: "
+                f"expected {expected}, actual {reference[type_name]}"
+            )
+        actual = local[type_name]
+        if actual != expected:
+            failures.append(f"{type_name}: expected {expected}, backend has {actual}")
+    return failures
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reference", required=True, type=Path, help="verified official Saleor SDL")
@@ -79,6 +153,7 @@ def main() -> None:
     if not local_paths:
         fail(f"no .graphqls files found under {args.schema_dir}")
     local = read_root_fields(local_paths, "backend")
+    input_contract_failures = assert_input_contracts([args.reference], local_paths)
 
     upstream_counts = Counter(type_name for type_name, _ in upstream)
     expected_counts = {
@@ -132,12 +207,17 @@ def main() -> None:
         f"- Verified Saleor root inventory: Query {actual_counts['Query']}, Mutation {actual_counts['Mutation']}, Subscription {actual_counts['Subscription']} = {len(upstream)}.",
         f"- Backend root fields compared to Saleor by name: {len(shared)}.",
         f"- Signature mismatches against Saleor: {len(mismatches)}.",
+        f"- Guarded active input-object contract mismatches: {len(input_contract_failures)}.",
         f"- PR-base root removals/signature changes: {len(base_regressions)}.",
         f"- Saleor roots not yet declared by the backend: {len(upstream_only)} (tracked by the canonical implementation inventory; absence is not reported as implemented).",
         f"- Backend-only root fields: {len(local_only)} (platform extensions; not treated as Saleor roots).",
         "- Scope: checks root field return types, argument names/types and argument defaults. It does not claim full nested type-closure parity or operation-level execution coverage.",
         "",
     ]
+    if input_contract_failures:
+        report.extend(["### Active input-object contract mismatches", ""])
+        report.extend(f"- {failure}" for failure in input_contract_failures)
+        report.append("")
     if mismatches:
         report.extend(["### Root signature mismatches against Saleor", ""])
         for type_name, name, expected, actual in mismatches[:100]:
@@ -170,6 +250,11 @@ def main() -> None:
         fail(
             "the backend removes or changes a GraphQL root declared on the PR base; "
             "preserve the existing wire contract or use the reviewed compatibility process"
+        )
+    if input_contract_failures:
+        fail(
+            "the backend changes a guarded active Saleor input-object contract; "
+            "preserve the pinned field names and nullability or record an approved divergence"
         )
 
 
