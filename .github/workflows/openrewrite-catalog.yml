@@ -234,13 +234,29 @@ jobs:
         env:
           CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
           CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
-        run: bash scripts/openrewrite/build-spring-recipes.sh
+        # The pinned tag can publish a coordinate different from the tag number
+        # (e.g. v6.41.0 -> 6.42.0-SNAPSHOT). The build script reports the
+        # coordinate it actually published; capture it instead of guessing, and
+        # fail closed when the report line is absent (review 5638134031).
+        run: |
+          set -o pipefail
+          built_version="$(
+            bash scripts/openrewrite/build-spring-recipes.sh \
+              | sed -n 's/^Published source-built org\.openrewrite\.recipe:rewrite-spring:\([^ ]\+\) from tag.*/\1/p' \
+              | tail -n 1
+          )"
+          if [[ -z "${built_version}" ]]; then
+            echo "::error::build-spring-recipes.sh finished without reporting the published Maven coordinate; refusing to guess one."
+            exit 1
+          fi
+          echo "spring_recipes_built_version=${built_version}" >> "${GITHUB_ENV}"
 
       - name: Verify Spring recipe discovery from the local build
         shell: bash
         run: |
           mkdir -p target/openrewrite
           mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress -Popenrewrite,openrewrite-spring-source \
+            -Dopenrewrite.spring-recipes.version="${spring_recipes_built_version}" \
             org.openrewrite.maven:rewrite-maven-plugin:6.50.0:discover -Ddetail=true \
             2>&1 | tee target/openrewrite/spring-source-discovery.log
           if ! grep -Fq 'org.openrewrite.java.spring.boot3.UpgradeSpringBoot_3_5' target/openrewrite/spring-source-discovery.log; then

@@ -554,7 +554,12 @@ class PlatformGovernanceFilesTest {
                 .contains("org.openrewrite.java.dependencies.UpgradeDependencyVersion")
                 .contains("The external recipe packs were not loaded on the Rewrite Maven plugin classpath.")
                 .contains("org.openrewrite.java.spring.boot3.UpgradeSpringBoot_3_5")
-                .contains("Spring source build completed but the expected community recipe");
+                .contains("Spring source build completed but the expected community recipe")
+                // The pinned source tag can publish a coordinate different from the tag
+                // number; the probe must flow the measured coordinate into Maven rather
+                // than requesting the guessed release number (review 5638134031).
+                .contains("spring_recipes_built_version")
+                .contains("-Dopenrewrite.spring-recipes.version=\"${spring_recipes_built_version}\"");
     }
 
     private static Path repoRoot() {

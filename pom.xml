@@ -279,6 +279,11 @@
              They are opt-in through -Popenrewrite; application builds remain unchanged. -->
         <openrewrite.recipe-bom.version>3.41.0</openrewrite.recipe-bom.version>
         <openrewrite.maven-plugin.version>6.50.0</openrewrite.maven-plugin.version>
+        <!-- Expected release coordinate of the pinned upstream tag (v6.41.0). The
+             tag's own build can publish a different coordinate (e.g. 6.42.0-SNAPSHOT);
+             the source-build probe therefore overrides this property with the
+             coordinate measured from the local build (-Dopenrewrite.spring-recipes.version
+             in openrewrite-catalog.yml) instead of guessing one. -->
         <openrewrite.spring-recipes.version>6.41.0</openrewrite.spring-recipes.version>
         <!-- Maven does not apply project dependencyManagement/BOMs to plugin dependencies.
              Keep recipe-pack versions pinned to the verified rewrite-recipe-bom 3.41.0 catalog. -->
@@ -1410,9 +1415,11 @@
             </build>
         </profile>
         <!-- The Spring recipe set is Moderne Source Available. This profile resolves
-             rewrite-spring 6.41.0 from the local Maven repository after the pinned
-             upstream source has been built with scripts/openrewrite/build-spring-recipes.sh.
-             It is intentionally not downloaded as a precompiled subscription artifact. -->
+             rewrite-spring from the local Maven repository after the pinned upstream
+             source has been built with scripts/openrewrite/build-spring-recipes.sh; the
+             discovery invocation passes the coordinate the script actually published
+             (the tag's build version can differ from the tag number). It is
+             intentionally not downloaded as a precompiled subscription artifact. -->
         <profile>
             <id>openrewrite-spring-source</id>
             <build>
