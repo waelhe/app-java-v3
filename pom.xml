@@ -1279,6 +1279,33 @@
                             <failOnDryRunResults>false</failOnDryRunResults>
                             <reportOutputDirectory>${project.build.directory}/rewrite</reportOutputDirectory>
                         </configuration>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.openrewrite.recipe</groupId>
+                                <artifactId>rewrite-java-dependencies</artifactId>
+                                <version>1.64.1</version>
+                            </dependency>
+                            <dependency>
+                                <groupId>org.openrewrite.recipe</groupId>
+                                <artifactId>rewrite-jackson</artifactId>
+                                <version>1.31.1</version>
+                            </dependency>
+                            <dependency>
+                                <groupId>org.openrewrite.recipe</groupId>
+                                <artifactId>rewrite-netty</artifactId>
+                                <version>0.13.2</version>
+                            </dependency>
+                            <dependency>
+                                <groupId>org.openrewrite.recipe</groupId>
+                                <artifactId>rewrite-openapi</artifactId>
+                                <version>0.35.0</version>
+                            </dependency>
+                            <dependency>
+                                <groupId>org.openrewrite</groupId>
+                                <artifactId>rewrite-docker</artifactId>
+                                <version>8.93.11</version>
+                            </dependency>
+                        </dependencies>
                     </plugin>
                 </plugins>
             </build>

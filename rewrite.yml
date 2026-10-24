@@ -10,3 +10,6 @@ recipeList:
   - org.openrewrite.java.format.AutoFormat
   - org.openrewrite.java.RemoveUnusedImports
   - org.openrewrite.maven.BestPractices
+  - org.openrewrite.java.dependencies.DependencyList:
+      includeTransitive: true
+  - org.openrewrite.java.dependencies.DependencyResolutionDiagnostic

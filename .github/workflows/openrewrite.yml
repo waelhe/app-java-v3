@@ -49,12 +49,8 @@ jobs:
               echo
               echo "The current OpenRewrite release requires authenticated Code Genome downloads. No commercial subscription is required for Apache-licensed recipes, but the repository must have the free account credentials stored as CODEGENOME_USERNAME and CODEGENOME_TOKEN secrets."
             } >> "$GITHUB_STEP_SUMMARY"
-            if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
-              echo "::error::Set CODEGENOME_USERNAME and CODEGENOME_TOKEN to a free Code Genome account's download credentials, then rerun this workflow."
-              exit 1
-            fi
-            echo "::warning::OpenRewrite is skipped until the free Code Genome credentials are configured."
-            exit 0
+            echo "::error::CODEGENOME_USERNAME and CODEGENOME_TOKEN are required. Add a free Code Genome account's credentials as repository Actions secrets; this job will not report green when OpenRewrite did not run."
+            exit 1
           fi
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 

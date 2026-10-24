@@ -118,16 +118,32 @@ require("com.marketplace.governance.OpenRewriteBaseline" in rewrite_profile
         and "${maven.multiModuleProjectDirectory}/rewrite.yml" in rewrite_profile,
         "OpenRewrite profile must execute the checked-in root recipe manifest.")
 for forbidden in ("org.openrewrite.recipe:rewrite-spring", "rewrite-static-analysis",
-                  "rewrite-migrate-java", "rewrite-hibernate", "rewrite-micrometer"):
+                  "rewrite-migrate-java", "rewrite-hibernate", "rewrite-micrometer",
+                  "rewrite-logging-frameworks", "rewrite-okhttp", "rewrite-github-actions"):
     require(forbidden not in rewrite_profile,
             f"Source Available/proprietary recipe pack {forbidden} is not approved in the no-subscription profile.")
+
+# Keep only exact, currently documented Apache-licensed module versions available to this project.
+allowed_modules = {
+    "rewrite-java-dependencies": "1.64.1",
+    "rewrite-jackson": "1.31.1",
+    "rewrite-netty": "0.13.2",
+    "rewrite-openapi": "0.35.0",
+    "rewrite-docker": "8.93.11",
+}
+for artifact, version in allowed_modules.items():
+    require(f"<artifactId>{artifact}</artifactId>" in rewrite_profile
+            and f"<version>{version}</version>" in rewrite_profile,
+            f"OpenRewrite Apache module {artifact}:{version} is missing or drifted.")
 
 rewrite_config = file_text("rewrite.yml")
 require("com.marketplace.governance.OpenRewriteBaseline" in rewrite_config,
         "the project OpenRewrite recipe manifest is missing its root baseline recipe.")
 for recipe in ("org.openrewrite.java.format.AutoFormat",
                "org.openrewrite.java.RemoveUnusedImports",
-               "org.openrewrite.maven.BestPractices"):
+               "org.openrewrite.maven.BestPractices",
+               "org.openrewrite.java.dependencies.DependencyList",
+               "org.openrewrite.java.dependencies.DependencyResolutionDiagnostic"):
     require(recipe in rewrite_config, f"required Apache-licensed baseline recipe is missing: {recipe}")
 
 rewrite_workflow = file_text(".github/workflows/openrewrite.yml")
@@ -137,6 +153,8 @@ for evidence in ("CODEGENOME_USERNAME", "CODEGENOME_TOKEN", "rewrite:discover",
             f"OpenRewrite CI workflow is missing required end-to-end behavior: {evidence}")
 require("git diff --quiet" in rewrite_workflow and "failOnInvalidActiveRecipes=true" in rewrite_workflow,
         "OpenRewrite CI must remain non-mutating and fail on invalid recipe configuration.")
+require("OpenRewrite is skipped" not in rewrite_workflow and "exit 1" in rewrite_workflow,
+        "OpenRewrite CI must fail visibly when credentials are missing instead of reporting a silent success.")
 
 # Fail closed if architecture verification is deleted or silently disabled.
 architecture = file_text("marketplace-app/src/test/java/com/marketplace/ArchitectureRulesTest.java")
