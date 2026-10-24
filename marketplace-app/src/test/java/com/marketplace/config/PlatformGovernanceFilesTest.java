@@ -457,6 +457,10 @@ class PlatformGovernanceFilesTest {
                 .as("OpenRewrite recipe and Maven plugin versions must follow the verified official catalog")
                 .contains("<openrewrite.recipe-bom.version>3.41.0</openrewrite.recipe-bom.version>")
                 .contains("<openrewrite.maven-plugin.version>6.50.0</openrewrite.maven-plugin.version>")
+                .contains("<openrewrite.java-dependencies.version>1.64.1</openrewrite.java-dependencies.version>")
+                .contains("<openrewrite.jackson-recipes.version>1.31.1</openrewrite.jackson-recipes.version>")
+                .contains("<openrewrite.netty-recipes.version>0.13.2</openrewrite.netty-recipes.version>")
+                .contains("<openrewrite.openapi-recipes.version>0.35.0</openrewrite.openapi-recipes.version>")
                 .contains("<artifactId>rewrite-recipe-bom</artifactId>")
                 .contains("<id>openrewrite</id>")
                 .contains("<artifactId>rewrite-third-party</artifactId>")
@@ -472,9 +476,18 @@ class PlatformGovernanceFilesTest {
         int openRewriteProfileEnd = pom.indexOf("</profile>", openRewriteProfileStart);
         assertThat(openRewriteProfileStart).isGreaterThanOrEqualTo(0);
         assertThat(openRewriteProfileEnd).isGreaterThan(openRewriteProfileStart);
-        assertThat(pom.substring(openRewriteProfileStart, openRewriteProfileEnd))
+        String baselineProfile = pom.substring(openRewriteProfileStart, openRewriteProfileEnd);
+        assertThat(baselineProfile)
                 .as("the baseline no-subscription profile must not import the catalog whose transitive recipes returned HTTP 403")
                 .doesNotContain("<artifactId>rewrite-third-party</artifactId>");
+        assertThat(baselineProfile.indexOf("<artifactId>rewrite-maven-plugin</artifactId>"))
+                .as("external recipe packs must be loaded on the Rewrite Maven plugin classpath")
+                .isGreaterThanOrEqualTo(0)
+                .isLessThan(baselineProfile.indexOf("<artifactId>rewrite-java-dependencies</artifactId>"));
+        assertThat(baselineProfile)
+                .contains("<artifactId>rewrite-jackson</artifactId>")
+                .contains("<artifactId>rewrite-netty</artifactId>")
+                .contains("<artifactId>rewrite-openapi</artifactId>");
 
         int springProfileStart = pom.indexOf("<id>openrewrite-spring-source</id>");
         int springProfileEnd = pom.indexOf("</profile>", springProfileStart);
@@ -514,6 +527,8 @@ class PlatformGovernanceFilesTest {
                 .contains("Install Maven reactor before Rewrite dry-run")
                 .contains("rewrite-maven-plugin:6.50.0:dryRunNoFork")
                 .contains("-DskipTests -Popenrewrite install")
+                .contains("org.openrewrite.java.dependencies.UpgradeDependencyVersion")
+                .contains("The external recipe packs were not loaded on the Rewrite Maven plugin classpath.")
                 .contains("org.openrewrite.java.spring.boot3.UpgradeSpringBoot_3_5")
                 .contains("Spring source build completed but the expected community recipe");
     }
