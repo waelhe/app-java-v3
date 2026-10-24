@@ -499,8 +499,9 @@ class PlatformGovernanceFilesTest {
                 .contains("Write explicit Maven settings for Code Genome")
                 .contains("--settings \"${RUNNER_TEMP}/openrewrite-settings.xml\"")
                 .contains("rewrite-maven-plugin:6.50.0:discover")
+                .contains("Install Maven reactor before Rewrite dry-run")
                 .contains("rewrite-maven-plugin:6.50.0:dryRunNoFork")
-                .contains("-DskipTests package");
+                .contains("-DskipTests -Popenrewrite install");
     }
 
     private static Path repoRoot() {
