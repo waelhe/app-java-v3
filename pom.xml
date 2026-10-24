@@ -1236,11 +1236,11 @@
                 </plugins>
             </build>
         </profile>
-        <!-- OpenRewrite pilot only: opt-in and non-mutating by default.
-             Uses the latest Maven-Central-hosted plugin line (6.46.1) and its
-             built-in Apache-licensed OrderImports recipe, avoiding Code Genome
-             credentials while we measure the pilot baseline. Do not bind this
-             plugin to the normal lifecycle until the baseline has been reviewed. -->
+        <!-- OpenRewrite pilot only: opt-in, non-mutating, and resolved from Maven Central.
+             Both the Maven plugin and this explicitly Apache-2.0 Spring recipe release
+             are selected to avoid a commercial subscription, Code Genome credentials,
+             and recipes under source-available/proprietary terms. Keep non-blocking
+             until its report baseline and rule scope have been reviewed. -->
         <profile>
             <id>openrewrite-pilot</id>
             <build>
@@ -1252,11 +1252,19 @@
                         <configuration>
                             <activeRecipes>
                                 <recipe>org.openrewrite.java.OrderImports</recipe>
+                                <recipe>org.openrewrite.java.spring.NoAutowiredOnConstructor</recipe>
                             </activeRecipes>
                             <failOnDryRunResults>false</failOnDryRunResults>
                             <failOnInvalidActiveRecipes>true</failOnInvalidActiveRecipes>
                             <reportOutputDirectory>${project.build.directory}/openrewrite-pilot</reportOutputDirectory>
                         </configuration>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.openrewrite.recipe</groupId>
+                                <artifactId>rewrite-spring</artifactId>
+                                <version>5.23.0</version>
+                            </dependency>
+                        </dependencies>
                     </plugin>
                 </plugins>
             </build>

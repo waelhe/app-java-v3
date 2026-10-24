@@ -1,52 +1,49 @@
 # OpenRewrite pilot
 
-**Status:** Experimental, non-blocking, non-mutating pilot. This is not yet an approved compliance rule.
+**Status:** Experimental, opt-in, non-blocking, and non-mutating. This pilot is not a complete Spring Boot compliance gate.
 
-## Why this configuration
+## Free, Maven Central-only recipe selection
 
-- The repository is a Java 25, Maven multi-module Spring Boot application. OpenRewrite's Maven plugin is a credible tool for large-scale, recipe-based refactoring, and its official plugin supports `discover`, `dryRun`, and `run`.
-- The current OpenRewrite release stream is published through the authenticated Code Genome Project repository. The most recent version listed on Maven Central in this assessment is `org.openrewrite.maven:rewrite-maven-plugin:6.46.1`; that version is Apache-2.0 licensed and includes Java 25 parser support in its published dependency set.
-- To keep this first experiment reproducible without introducing new repository credentials, it uses the Maven-Central-hosted plugin and its built-in `org.openrewrite.java.OrderImports` recipe. No separate recipe artifact, Code Genome repository, or secret is required for this pilot.
-- The recipe is a mechanics/baseline test: it identifies import-order changes. It does **not** prove Spring Boot, Spring Framework, Spring Security, or architecture compliance. Do not mislabel its output as a complete framework guard.
+This pilot deliberately avoids a commercial Moderne subscription and does not configure the authenticated Code Genome repository.
 
-## How to run
+- Maven plugin: `org.openrewrite.maven:rewrite-maven-plugin:6.46.1`, published to Maven Central under Apache License 2.0.
+- Spring recipes: `org.openrewrite.recipe:rewrite-spring:5.23.0`, an older release whose Maven Central POM declares Apache License 2.0. The pinned source for `org.openrewrite.java.spring.NoAutowiredOnConstructor` is also Apache-licensed.
+- Active recipes: `org.openrewrite.java.OrderImports` and `org.openrewrite.java.spring.NoAutowiredOnConstructor`.
 
-Locally, with JDK 25 and the repository's Maven Wrapper:
+The Spring rule removes redundant `@Autowired` on a bean's only constructor, while retaining cases the recipe explicitly guards (including multiple constructors, Lombok constructor annotations, and `@ConfigurationProperties`). It is a general Spring convention, **not** a Spring Boot 4 migration or a complete framework-conformance rule.
+
+The current Spring recipe stream contains newer recipes distributed via Code Genome and recipes under the Moderne Source Available License. They are intentionally excluded from this no-commercial-subscription pilot. In particular, this pilot does not claim to validate Spring Boot 4 property migrations, Spring Security policy, or all Spring APIs.
+
+## Run
+
+Use the repository's Maven Wrapper with JDK 25:
 
 ```shell
-./mvnw --batch-mode -Popenrewrite-pilot -Drewrite.failOnInvalidActiveRecipes=true rewrite:discover
-./mvnw --batch-mode -Popenrewrite-pilot -Drewrite.failOnInvalidActiveRecipes=true rewrite:dryRun
+./mvnw --batch-mode --no-transfer-progress -Popenrewrite-pilot -Drewrite.failOnInvalidActiveRecipes=true rewrite:discover
+./mvnw --batch-mode --no-transfer-progress -Popenrewrite-pilot -Drewrite.failOnInvalidActiveRecipes=true rewrite:dryRun
 ```
 
-The dedicated GitHub Actions workflow runs on manual dispatch and on PRs that change Java, Maven POM, YAML workflow, or this pilot policy. It uploads dry-run reports when produced. The workflow is intentionally not a required branch-protection status and it does not change files.
+The dedicated GitHub Actions workflow runs on manual dispatch and on relevant pull requests. It asserts tracked files remain unchanged and uploads available reports. It does not run `rewrite:run`, does not write source changes, and is not a required branch-protection check.
 
-## Why not run `rewrite:run` automatically?
+## Safety and acceptance criteria
 
-The official plugin documents `rewrite:run` as a source-mutating goal and `rewrite:dryRun` as a report-producing, non-mutating preview. The pilot must first establish the baseline and allow reviewers to inspect diffs. Only after a recipe is explicitly approved should a separate migration PR apply it and run the complete Maven build, integration tests, architecture checks, and API compatibility gates.
+- Maven resolves the pinned plugin and recipe artifacts through Maven Central only; no Code Genome credentials or commercial subscription are expected.
+- `rewrite:discover` resolves both active recipe IDs.
+- `rewrite:dryRun` completes on the Java 25 Maven reactor and emits reports or a clean no-change result.
+- Tracked files remain unchanged.
+- Reports are reviewed before deciding whether to fix existing findings or promote any rule into a blocking check.
+- A separate migration PR applies any approved changes and runs the repository's regular build, tests, architecture checks, and API compatibility gates.
 
-## Spring-specific recipes: separate decision required
+## Evidence and limits
 
-OpenRewrite's catalog documents recipes such as `org.openrewrite.java.spring.boot4.SpringBootProperties_4_1`. However, current OpenRewrite documentation says its newer artifacts are distributed through Code Genome, which requires authentication, and that source-available recipes may require a Moderne subscription. This repository has not yet configured or verified Code Genome credentials and license eligibility. Therefore, this pilot does not silently introduce a proprietary/source-available Spring recipe.
+This repository is a Java 25, Maven multi-module project on Spring Boot 4.1.2. The OpenRewrite dry-run is an additional tool, not a replacement for the Maven Enforcer rules, ArchUnit, Spring Modulith verification, tests, or existing CI security checks.
 
-Before adopting a Spring-specific recipe:
-1. Confirm the exact recipe and version in the official recipe catalog and source repository.
-2. Verify its license and required account entitlement.
-3. Provide Code Genome credentials via GitHub Actions secrets and Maven `settings.xml` generation; never store credentials in the POM or repository.
-4. Run the recipe in dry-run mode on a separate branch and review the generated patch.
-5. Apply accepted changes in a separate PR and require the full existing CI suite.
-
-## Acceptance criteria for this pilot
-
-- `rewrite:discover` resolves and reports `org.openrewrite.java.OrderImports`.
-- `rewrite:dryRun` runs across the Maven reactor and produces a report or a clean no-change result.
-- No tracked source/build files are changed by the dry-run workflow.
-- Reports are uploaded for reviewer inspection.
-- The pilot does not block normal builds or merges until its baseline and future policy rules are explicitly approved.
+The Apache-licensed `rewrite-spring:5.23.0` predates Spring Boot 4. It is selected for one general Spring coding convention that remains relevant across versions. We will not represent it as Boot 4-specific coverage. The latest recipe catalog must be assessed recipe-by-recipe for licensing and artifact access before considering a future free or paid option.
 
 ## Official references
 
-- Maven plugin and goal semantics: https://docs.openrewrite.org/reference/rewrite-maven-plugin
-- Official quickstart and repository/authentication model: https://docs.openrewrite.org/running-recipes/getting-started
-- Maven Central-hosted plugin metadata: https://central.sonatype.com/artifact/org.openrewrite.maven/rewrite-maven-plugin
-- Spring Boot 4.x recipe catalog: https://docs.openrewrite.org/recipes/java/spring/boot4
-- OpenRewrite Maven plugin source: https://github.com/openrewrite/rewrite-maven-plugin
+- Maven Central metadata and Apache license for the plugin: https://central.sonatype.com/artifact/org.openrewrite.maven/rewrite-maven-plugin/6.46.1
+- Maven Central metadata and Apache license for `rewrite-spring:5.23.0`: https://central.sonatype.com/artifact/org.openrewrite.recipe/rewrite-spring/5.23.0/jar
+- Pinned Apache-licensed Spring recipe source: https://github.com/openrewrite/rewrite-spring/blob/v5.23.0/src/main/java/org/openrewrite/java/spring/NoAutowiredOnConstructor.java
+- OpenRewrite licensing distinctions: https://docs.openrewrite.org/licensing/openrewrite-licensing
+- OpenRewrite Maven plugin reference and goal semantics: https://docs.openrewrite.org/reference/rewrite-maven-plugin
