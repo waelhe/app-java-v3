@@ -1,0 +1,143 @@
+name: OpenRewrite Catalog
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'pom.xml'
+      - '**/pom.xml'
+      - '**/*.java'
+      - '**/*.xml'
+      - '**/*.yaml'
+      - '**/*.yml'
+      - '.github/workflows/openrewrite-catalog.yml'
+      - 'docs/governance/openrewrite-catalog.md'
+      - 'scripts/openrewrite/**'
+  push:
+    branches: [main]
+    paths:
+      - 'pom.xml'
+      - '**/pom.xml'
+      - '**/*.java'
+      - '**/*.xml'
+      - '**/*.yaml'
+      - '**/*.yml'
+      - '.github/workflows/openrewrite-catalog.yml'
+      - 'docs/governance/openrewrite-catalog.md'
+      - 'scripts/openrewrite/**'
+  workflow_dispatch:
+  schedule:
+    - cron: '23 5 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openrewrite-catalog-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  catalog-audit:
+    name: OpenRewrite recipe discovery and dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Require Code Genome repository credentials
+        env:
+          CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
+          CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+        run: |
+          if [[ -z "${CODEGENOME_USERNAME}" || -z "${CODEGENOME_TOKEN}" ]]; then
+            echo "::error::Set CODEGENOME_USERNAME and CODEGENOME_TOKEN GitHub Actions secrets to resolve OpenRewrite artifacts. The job fails closed rather than silently skipping the catalog audit."
+            exit 1
+          fi
+
+      - name: Set up JDK 25 and authenticated Maven settings
+        uses: actions/setup-java@v6.1.0
+        env:
+          CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
+          CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+        with:
+          java-version: '25'
+          distribution: temurin
+          cache: maven
+          server-id: codegenome
+          server-username: CODEGENOME_USERNAME
+          server-password: CODEGENOME_TOKEN
+          overwrite-settings: true
+
+      - name: Discover available recipes
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p target/openrewrite
+          mvn --batch-mode --no-transfer-progress -Popenrewrite \
+            org.openrewrite.maven:rewrite-maven-plugin:6.50.0:discover \
+            -Ddetail=true 2>&1 | tee target/openrewrite/recipe-discovery.txt
+
+      - name: Capture dry-run report
+        shell: bash
+        run: |
+          set -o pipefail
+          mvn --batch-mode --no-transfer-progress -Popenrewrite \
+            org.openrewrite.maven:rewrite-maven-plugin:6.50.0:dryRunNoFork \
+            -Drewrite.exportDatatables=true 2>&1 | tee target/openrewrite/dry-run.log
+
+      - name: Upload recipe inventory and dry-run diffs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: openrewrite-catalog-${{ github.sha }}
+          path: |
+            target/openrewrite/**
+            **/target/rewrite/**
+            **/target/rewrite*
+          if-no-files-found: warn
+          retention-days: 30
+
+  spring-source-build-probe:
+    name: OpenRewrite source-build probe
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout platform repository
+        uses: actions/checkout@v7
+
+      - name: Require artifact repository credentials
+        env:
+          CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
+          CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+        run: |
+          if [[ -z "${CODEGENOME_USERNAME}" || -z "${CODEGENOME_TOKEN}" ]]; then
+            echo "::error::Set CODEGENOME_USERNAME and CODEGENOME_TOKEN secrets to build the pinned Spring recipe source without precompiled subscription artifacts."
+            exit 1
+          fi
+
+      - name: Set up JDK 25 and Maven settings
+        uses: actions/setup-java@v6.1.0
+        env:
+          CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
+          CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+        with:
+          java-version: '25'
+          distribution: temurin
+          cache: maven
+          server-id: codegenome
+          server-username: CODEGENOME_USERNAME
+          server-password: CODEGENOME_TOKEN
+          overwrite-settings: true
+
+      - name: Build rewrite-spring from pinned upstream source
+        env:
+          CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
+          CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+        run: scripts/openrewrite/build-spring-recipes.sh
+
+      - name: Verify Spring recipe discovery from the local build
+        run: |
+          mvn --batch-mode --no-transfer-progress -Popenrewrite,openrewrite-spring-source \
+            org.openrewrite.maven:rewrite-maven-plugin:6.50.0:discover -Ddetail=true
