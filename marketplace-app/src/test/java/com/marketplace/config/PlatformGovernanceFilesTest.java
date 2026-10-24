@@ -510,6 +510,14 @@ class PlatformGovernanceFilesTest {
                 .contains("Not yet proven")
                 .contains("failOnDryRunResults");
 
+        String springBuildScript = read("scripts", "openrewrite", "build-spring-recipes.sh");
+        assertThat(springBuildScript)
+                .as("the source probe must report the actual published coordinate instead of assuming the tag version")
+                .contains("built_version")
+                .contains("rewrite-spring-\\${built_version}.pom")
+                .contains("Source tag \${tag} is publishing rewrite-spring:")
+                .contains("expected release coordinate: \${version}");
+
         String workflow = read(".github", "workflows", "openrewrite-catalog.yml");
         assertThat(workflow)
                 .as("OpenRewrite catalog audit must not silently skip credential or discovery checks")
