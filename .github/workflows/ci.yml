@@ -588,6 +588,16 @@ jobs:
           fi
           python .ci/check-saleor-root-signatures.py "${ARGS[@]}"
 
+  # Dedicated, reusable functional gate for the Java GraphQL backend.
+  # Keeping this as its own job gives the check a clear name while the
+  # required Build & Test aggregate below makes it merge-blocking even when
+  # repository rulesets cannot be edited by the automation identity.
+  saleor-backend-compatibility:
+    name: Saleor Backend Compatibility Gate
+    uses: ./.github/workflows/saleor-backend-compatibility.yml
+    permissions:
+      contents: read
+
   # The app bundle's coverage gate, reconstituted on MERGED data: the 9
   # partial .exec files (8 IT shards + the unit pass) combine through the
   # jacoco merge mojo (the root pom's ci-coverage-merge profile — the
@@ -714,7 +724,7 @@ jobs:
   # shard failure from a flake retry).
   build-test:
     name: Build & Test (JDK 25)
-    needs: [ build, test-app, test-modules, openapi-gate, graphql-schema-gate, coverage, android-graphql, saleor-root-contract ]
+    needs: [ build, test-app, test-modules, openapi-gate, graphql-schema-gate, coverage, android-graphql, saleor-root-contract, saleor-backend-compatibility ]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -726,4 +736,4 @@ jobs:
             echo "::error::One or more required gates did not pass — see the failed jobs in this run."
             exit 1
           fi
-          echo "All gates green: build, 8 app shards, modules suite, OpenAPI gate, GraphQL schema gate, Android GraphQL contract gate, Saleor root-contract guard, coverage gate."
+          echo "All gates green: build, 8 app shards, modules suite, OpenAPI gate, GraphQL schema gate, Android GraphQL contract gate, Saleor root-contract guard, Saleor Backend Compatibility Gate, coverage gate."
