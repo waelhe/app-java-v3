@@ -301,43 +301,76 @@ exceptions:
     expiry: 2099-12-31
 YML
 
+# A minimal single-break report: exactly one GET /pet/findByStatus 200
+# response break. Field-validation cases (expiry / calendar / kind /
+# required / ambiguity) pair it with a single defective entry so the ONLY
+# failure reason is the validation branch under test (CodeRabbit review on
+# #716: a case must keep failing for its intended reason when every other
+# check is hypothetically removed).
+cat > "$TMP/report-single.json" <<'JSON'
+{
+  "compatible": false, "incompatible": true, "different": true, "unchanged": false,
+  "missingEndpoints": [],
+  "changedOperations": [
+    {
+      "pathUrl": "/pet/findByStatus", "httpMethod": "GET",
+      "incompatible": true, "compatible": false,
+      "parameters": {"increased": [], "missing": [], "changed": [], "incompatible": false, "compatible": true},
+      "apiResponses": {
+        "missing": {}, "increased": {},
+        "changed": {"200": {"incompatible": true, "compatible": false}},
+        "incompatible": true, "compatible": false
+      }
+    }
+  ]
+}
+JSON
+
 check() {
-  local desc="$1" want="$2"; shift 2
-  if "$VERIFY" "$@" >/dev/null 2>&1; then got=0; else got=1; fi
+  # check <desc> <want-exit> <message-pattern> <report> <allowlist>
+  # The pattern (may be empty for expected-success cases) must appear in
+  # the verifier output: it pins each failure case to its INTENDED branch,
+  # so deleting any other check cannot keep the case green unnoticed.
+  local desc="$1" want="$2" pattern="$3"; shift 3
+  local out
+  if out="$("$VERIFY" "$@" 2>&1)"; then got=0; else got=1; fi
   if [[ "$got" != "$want" ]]; then
     echo "FAIL: $desc (want exit $want, got $got)"; exit 1
+  fi
+  if [[ -n "$pattern" ]] && ! grep -q -- "$pattern" <<<"$out"; then
+    echo "FAIL: $desc (exit ok but output lacks /$pattern/)"; exit 1
   fi
   echo "OK: $desc"
 }
 
 # -------------------------------------------------- console-era guarantees
-check "breaks + empty allowlist -> 1"                 1 "$TMP/report-mixed.json" "$TMP/allow-empty.yml"
-check "full coverage of mixed report -> 0"            0 "$TMP/report-mixed.json" "$TMP/allow-full.yml"
-check "partial coverage -> 1 (uncovered)"             1 "$TMP/report-mixed.json" "$TMP/allow-partial.yml"
-check "stale exception -> 1"                          1 "$TMP/report-compatible.json" "$TMP/allow-stale.yml"
-check "expired expiry -> 1"                           1 "$TMP/report-mixed.json" "$TMP/allow-expired.yml"
-check "invalid calendar expiry (Feb 30) -> 1"         1 "$TMP/report-mixed.json" "$TMP/allow-bad-date.yml"
-check "parameter removal -> 1 (unrepresentable)"      1 "$TMP/report-param-remove.json" "$TMP/allow-full.yml"
-check "parameter required flip -> 1 (unrepresentable)" 1 "$TMP/report-param-change.json" "$TMP/allow-full.yml"
-check "request body incompatible -> 1 (unrepresentable)" 1 "$TMP/report-request-body.json" "$TMP/allow-full.yml"
+check "breaks + empty allowlist -> 1"                  1 "UNCOVERED"            "$TMP/report-mixed.json" "$TMP/allow-empty.yml"
+check "partial coverage -> 1 (uncovered)"             1 "UNCOVERED"            "$TMP/report-mixed.json" "$TMP/allow-partial.yml"
+check "stale exception -> 1"                           1 "STALE"                "$TMP/report-compatible.json" "$TMP/allow-stale.yml"
+check "expired expiry -> 1"                            1 "expired"              "$TMP/report-single.json" "$TMP/allow-expired.yml"
+check "invalid calendar expiry (Feb 30) -> 1"          1 "not a valid calendar date" "$TMP/report-single.json" "$TMP/allow-bad-date.yml"
+check "parameter removal -> 1 (unrepresentable)"       1 "UNREPRESENTABLE.*param-remove"   "$TMP/report-param-remove.json" "$TMP/allow-empty.yml"
+check "parameter required flip -> 1 (unrepresentable)" 1 "UNREPRESENTABLE.*param-change"  "$TMP/report-param-change.json" "$TMP/allow-empty.yml"
+check "request body incompatible -> 1 (unrepresentable)" 1 "UNREPRESENTABLE.*request-body" "$TMP/report-request-body.json" "$TMP/allow-empty.yml"
 
 # -------------------------------------------------- JSON-era classification
-# The springdoc shape: optional additions co-present with covered breaks.
-check "optional adds co-present + full coverage -> 0" 0 "$TMP/report-mixed.json" "$TMP/allow-full.yml"
-check "required param add uncovered -> 1"             1 "$TMP/report-mixed.json" "$TMP/allow-partial.yml"
-check "param-add entry without required:true -> 1"    1 "$TMP/report-mixed.json" "$TMP/allow-param-no-required.yml"
-check "param-add entry with status too -> 1"          1 "$TMP/report-mixed.json" "$TMP/allow-param-ambiguous.yml"
-check "unknown kind -> 1"                             1 "$TMP/report-mixed.json" "$TMP/allow-unknown-kind.yml"
-check "unclassified incompatible operation -> 1"      1 "$TMP/report-op-umbrella.json" "$TMP/allow-full.yml"
-check "schema-only incompatible report -> 1"          1 "$TMP/report-schema-only.json" "$TMP/allow-full.yml"
-check "compatible-only report + empty allowlist -> 0" 0 "$TMP/report-compatible.json" "$TMP/allow-empty.yml"
-check "compatible-only report + non-empty allowlist -> 1 (stale)" 1 "$TMP/report-compatible.json" "$TMP/allow-stale.yml"
+# The springdoc shape: optional additions co-present with covered breaks
+# (this also proves full coverage of the mixed report -> 0).
+check "optional adds co-present + full coverage -> 0"  0 ""                     "$TMP/report-mixed.json" "$TMP/allow-full.yml"
+check "required param add uncovered -> 1"              1 "UNCOVERED.*parameter-add"       "$TMP/report-mixed.json" "$TMP/allow-partial.yml"
+check "param-add entry without required:true -> 1"     1 "required: true"                "$TMP/report-single.json" "$TMP/allow-param-no-required.yml"
+check "param-add entry with status too -> 1"           1 "ambiguous"                     "$TMP/report-single.json" "$TMP/allow-param-ambiguous.yml"
+check "unknown kind -> 1"                               1 "unknown kind"                  "$TMP/report-single.json" "$TMP/allow-unknown-kind.yml"
+check "unclassified incompatible operation -> 1"       1 "operation-incompatible"        "$TMP/report-op-umbrella.json" "$TMP/allow-empty.yml"
+check "schema-only incompatible report -> 1"           1 "report-incompatible"           "$TMP/report-schema-only.json" "$TMP/allow-empty.yml"
+check "compatible-only report + empty allowlist -> 0"  0 ""                             "$TMP/report-compatible.json" "$TMP/allow-empty.yml"
+check "compatible-only report + non-empty allowlist -> 1 (stale)" 1 "STALE"       "$TMP/report-compatible.json" "$TMP/allow-stale.yml"
 
 # -------------------------------------------------- backward compatibility
 # The repository's live allowlist file must keep working unchanged against
 # its documented break (the disputes 200->201 status move).
-check "live repo allowlist covers its break -> 0"     0 "$TMP/report-disputes.json" "$SCRIPT_DIR/openapi-compat-allowlist.yml"
+check "live repo allowlist covers its break -> 0"     0 ""                     "$TMP/report-disputes.json" "$SCRIPT_DIR/openapi-compat-allowlist.yml"
 # And it must be flagged stale against a report that does not contain the break.
-check "live repo allowlist stale without break -> 1"  1 "$TMP/report-compatible.json" "$SCRIPT_DIR/openapi-compat-allowlist.yml"
+check "live repo allowlist stale without break -> 1"  1 "STALE"                "$TMP/report-compatible.json" "$SCRIPT_DIR/openapi-compat-allowlist.yml"
 
 echo "All verify-openapi-exceptions.sh contract tests passed."

@@ -96,6 +96,13 @@ generate_spec "current" "$WORK_DIR/current-openapi.json"
 # rationale: a fail-closed gate must not ride a floating :latest whose JSON
 # shape can drift under the parser; the version bump is a one-line change
 # with its own release-notes read (version-policy style).
+# Fail-closed hygiene (CodeRabbit review on #716, 2026-10-24): remove any
+# previous JSON report BEFORE the run. WORK_DIR is a persistent in-repo
+# (.ci/openapi-compat) directory, so a report left by an earlier invocation
+# survives; if openapi-diff fails or crashes without writing a fresh report,
+# the verifier below must never read that stale one and accept a result that
+# does not belong to the current pair of specs.
+rm -f "$WORK_DIR/openapi-diff-report.json"
 openapi_diff_exit=0
 docker run --rm -t -v "$WORK_DIR:/spec" openapitools/openapi-diff:2.1.7 \
   /spec/baseline-openapi.json /spec/current-openapi.json \
