@@ -233,6 +233,13 @@ jobs:
         run: bash scripts/openrewrite/build-spring-recipes.sh
 
       - name: Verify Spring recipe discovery from the local build
+        shell: bash
         run: |
+          mkdir -p target/openrewrite
           mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress -Popenrewrite,openrewrite-spring-source \
-            org.openrewrite.maven:rewrite-maven-plugin:6.50.0:discover -Ddetail=true
+            org.openrewrite.maven:rewrite-maven-plugin:6.50.0:discover -Ddetail=true \
+            2>&1 | tee target/openrewrite/spring-source-discovery.log
+          if ! grep -Fq 'org.openrewrite.java.spring.boot3.UpgradeSpringBoot_3_5' target/openrewrite/spring-source-discovery.log; then
+            echo "::error::Spring source build completed but the expected community recipe org.openrewrite.java.spring.boot3.UpgradeSpringBoot_3_5 was not discovered from the local Maven repository."
+            exit 1
+          fi
