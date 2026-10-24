@@ -1,16 +1,7 @@
 name: Saleor Backend Compatibility Gate
 
 on:
-  pull_request:
-    branches:
-      - main
-      - integration/saleor-full-commerce-20261021
-    types: [opened, synchronize, reopened, ready_for_review]
-  push:
-    branches:
-      - main
-      - integration/saleor-full-commerce-20261021
-  workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -90,7 +81,7 @@ jobs:
         run: |
           set -euo pipefail
           ./mvnw -pl marketplace-app -am verify --batch-mode \
-            '-Dtest=*DgsTest,*MutationDataFetcherDgsTest,*MutationDataFetcherTest,*GraphQlMapperTest,*GraphQlTest,*PropertiesTest,PreLoginGraphQlGateTest,GraphQlSecurityIntegrationTest,UuidScalarTest,PlatformTokenGrantServiceTest,CheckoutDataFetcherTest,OrderMutationDataFetcherTest' \
+            '-Dtest=*DgsTest,*MutationDataFetcherDgsTest,*MutationDataFetcherTest,*GraphQlMapperTest,*GraphQlTest,*PropertiesTest,PreLoginGraphQlGateTest,UuidScalarTest,PlatformTokenGrantServiceTest,CheckoutDataFetcherTest,OrderMutationDataFetcherTest' \
             '-Dit.test=*GraphQlIntegrationTest,AgentOneMutationIntegrationTest,GraphQlSecurityIntegrationTest,GraphQlErrorIntegrationTest,PlatformTokenGrantRotationMultiInstanceIntegrationTest' \
             -Dsurefire.failIfNoSpecifiedTests=false \
             -Dfailsafe.failIfNoSpecifiedTests=false \
