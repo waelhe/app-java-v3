@@ -80,7 +80,7 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
 |---|---|
 | Owner | GitHub **waelhe** (repo `waelhe/app-java-v3`, public) — day-to-day engineering owned by the **backend team**; the frontend repo's agent treats this repo as read-and-measure (its standing rule), except owner-granted documented exceptions |
 | Stack | Java 25 (`--release 25`, `pom.xml:41`), Spring Boot 4.1.1 (parent, `pom.xml:7-10`), Spring Modulith 2.1.1 (BOM), Spring Authorization Server 7.1.1, Maven distribution 3.10.0 + wrapper tool 3.3.4 with enforcer floor `[3.10,)` (`pom.xml:983`) — all evidenced in SYSTEM.md §1 |
-| Modules | **22** Maven modules in the root reactor (measured 2026-09-28; guarded in README/SYSTEM by `DocumentationNumbersGuardTest`, derived from `<modules>`) |
+| Modules | **30** Maven modules in the root reactor (measured 2026-10-24 from the root POM's `<modules>` block at the PR #714 head; guarded in README/SYSTEM by `DocumentationNumbersGuardTest`, derived from `<modules>`) |
 | Data | PostgreSQL 18 + PostGIS (CI service `postgis/postgis:18-3.6-alpine`, `ci.yml:24`); production DB channel = external Neon (since 2026-09-18, SYSTEM.md §1); Redis 8 (`ci.yml:37`; production 8.2); Flyway with `ddl-auto: none` — latest migration **V70** (measured 2026-09-28) |
 | Quality | JaCoCo 0.8.15, BUNDLE ≥ 70% per module (`pom.xml:61-62, 242-244`); `failOnWarning` at compile; unit (`*Test`, surefire) strictly separated from integration (`*IT`/`*IntegrationTest`, failsafe; environmental ones skip without Docker) |
 | OpenAPI | `GET /v3/api-docs` — **128 operations across 111 paths** (re-measured live on staging 2026-09-28; matches CONTRIBUTING.md §4 @2026-09-27; its re-verification jq command is the authority) |
