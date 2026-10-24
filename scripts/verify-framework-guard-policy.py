@@ -113,7 +113,7 @@ require("<version>6.50.0</version>" in rewrite_profile,
 require("<artifactId>rewrite-recipe-bom</artifactId>" in rewrite_profile
         and "<version>3.41.0</version>" in rewrite_profile
         and "<artifactId>rewrite-bom</artifactId>" in rewrite_profile
-        and "<version>8.93.11</version>" in rewrite_profile,
+        and "<version>8.93.0</version>" in rewrite_profile,
         "OpenRewrite and recipe BOMs must be imported in the OpenRewrite profile dependencyManagement.")
 require("Maven does not apply project dependencyManagement to plugin-scoped dependencies" in pom_text,
         "POM must document Maven's plugin dependencyManagement limitation and CI's explicit alignment check.")
@@ -142,7 +142,7 @@ allowed_modules = {
     "rewrite-jackson": "1.31.0",
     "rewrite-netty": "0.13.2",
     "rewrite-openapi": "0.35.0",
-    "rewrite-docker": "8.93.11",
+    "rewrite-docker": "8.93.0",
 }
 for artifact, version in allowed_modules.items():
     require(f"<artifactId>{artifact}</artifactId>" in rewrite_profile
@@ -234,7 +234,7 @@ require("effective-pom" in rewrite_workflow and "verify-openrewrite-bom-alignmen
 require("recipe-catalog.csv" in rewrite_workflow and "export-openrewrite-recipe-inventory.py" in rewrite_workflow and "--strict-attribution" in rewrite_workflow,
         "standard OpenRewrite CI must export its recipe-level inventory.")
 source_builder = file_text("scripts/build-openrewrite-source-recipes.sh")
-for evidence in ("rewrite 8.93.11", "moderneinc rewrite-mainframe 3.2.1",
+for evidence in ("rewrite 8.93.0", "moderneinc rewrite-mainframe 3.2.1",
                  "rewrite-static-analysis 2.45.0", "rewrite-feature-flags 1.24.2",
                  "rewrite-migrate-java 3.46.0", "rewrite-okhttp 0.25.2",
                  "rewrite-spring 6.41.0", "rewrite-third-party 0.49.0", "rewrite-all 1.30.2",
