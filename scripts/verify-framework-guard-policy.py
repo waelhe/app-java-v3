@@ -138,8 +138,8 @@ for aggregate in ("rewrite-all", "rewrite-third-party"):
 # These plugin dependency versions are pinned manually because OpenRewrite documents that Maven
 # does not apply BOM management to plugin dependencies. Versions were checked against recipe BOM 3.41.0.
 allowed_modules = {
-    "rewrite-java-dependencies": "1.64.1",
-    "rewrite-jackson": "1.31.1",
+    "rewrite-java-dependencies": "1.64.0",
+    "rewrite-jackson": "1.31.0",
     "rewrite-netty": "0.13.2",
     "rewrite-openapi": "0.35.0",
     "rewrite-docker": "8.93.11",
@@ -167,7 +167,7 @@ source_modules = {
     "rewrite-hibernate": "2.27.0",
     "rewrite-micrometer": "0.31.2",
     "rewrite-cucumber-jvm": "2.20.0",
-    "rewrite-testing-frameworks": "3.49.1",
+    "rewrite-testing-frameworks": "3.49.0",
     "rewrite-third-party": "0.49.0",
     "rewrite-all": "1.30.2",
 }
@@ -176,7 +176,7 @@ for artifact, version in source_modules.items():
             and f"<version>{version}</version>" in source_profile,
             f"source profile is missing official pinned coordinate {artifact}:{version}.")
 require("<artifactId>rewrite-mainframe</artifactId>" in source_profile
-        and "<version>3.3.1</version>" in source_profile,
+        and "<version>3.2.1</version>" in source_profile,
         "source profile is missing the official pinned mainframe language parser.")
 
 rewrite_config = file_text("rewrite.yml")
