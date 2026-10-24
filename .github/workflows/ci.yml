@@ -556,6 +556,7 @@ jobs:
       - name: Download, verify and compare against the pinned Saleor contract
         env:
           SALEOR_REF: "3.23.43"
+          GITHUB_BASE_REF: ${{ github.base_ref }}
         run: |
           set -euo pipefail
           REFERENCE_SCHEMA="${RUNNER_TEMP}/saleor-reference.graphql"
@@ -568,11 +569,24 @@ jobs:
             echo "::error::Pinned Saleor SDL hash mismatch: expected ${EXPECTED}; got ${ACTUAL}"
             exit 1
           }
-          python .ci/check-saleor-root-signatures.py \
-            --reference "${REFERENCE_SCHEMA}" \
-            --schema-dir marketplace-app/src/main/resources/graphql \
-            --pins docs/governance/plans/saleor-source-pins.json \
+
+          ARGS=(
+            --reference "${REFERENCE_SCHEMA}"
+            --schema-dir marketplace-app/src/main/resources/graphql
+            --pins docs/governance/plans/saleor-source-pins.json
             --summary "${GITHUB_STEP_SUMMARY}"
+          )
+          if [ -n "${GITHUB_BASE_REF:-}" ]; then
+            git fetch --no-tags origin \
+              "refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+            BASE_SCHEMA_ROOT="${RUNNER_TEMP}/saleor-base-tree"
+            mkdir -p "${BASE_SCHEMA_ROOT}"
+            git archive "refs/remotes/origin/${GITHUB_BASE_REF}" \
+              marketplace-app/src/main/resources/graphql \
+              | tar -x -C "${BASE_SCHEMA_ROOT}" --strip-components=4
+            ARGS+=(--base-schema-dir "${BASE_SCHEMA_ROOT}/graphql")
+          fi
+          python .ci/check-saleor-root-signatures.py "${ARGS[@]}"
 
   # The app bundle's coverage gate, reconstituted on MERGED data: the 9
   # partial .exec files (8 IT shards + the unit pass) combine through the
