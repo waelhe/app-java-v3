@@ -489,7 +489,9 @@ class PlatformGovernanceFilesTest {
                 .contains("<artifactId>rewrite-netty</artifactId>")
                 .contains("<artifactId>rewrite-openapi</artifactId>")
                 .contains("<style>com.marketplace.OpenRewriteBaselineStyle</style>")
+                .contains("<recipe>org.openrewrite.java.RemoveUnusedImports</recipe>")
                 .doesNotContain("<recipe>org.openrewrite.java.OrderImports</recipe>")
+                .doesNotContain("<recipe>org.openrewrite.maven.BestPractices</recipe>")
                 .doesNotContain("<recipe>org.openrewrite.maven.OrderPomElements</recipe>");
 
         String rewriteStyle = read("rewrite.yml");

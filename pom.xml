@@ -1336,7 +1336,6 @@
                         <configuration>
                             <activeRecipes>
                                 <recipe>org.openrewrite.java.RemoveUnusedImports</recipe>
-                                <recipe>org.openrewrite.maven.BestPractices</recipe>
                             </activeRecipes>
                             <activeStyles>
                                 <style>com.marketplace.OpenRewriteBaselineStyle</style>
