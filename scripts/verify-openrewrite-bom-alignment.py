@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse, sys, xml.etree.ElementTree as ET
 from pathlib import Path
 NS={"m":"http://maven.apache.org/POM/4.0.0"}
-EXTERNAL_UNMANAGED={("org.openrewrite","rewrite-mainframe")}
 def fail(message):
     print("::error::OpenRewrite BOM alignment failure: "+message)
     raise SystemExit(1)
@@ -41,9 +40,6 @@ def main():
         for d in deps:
             g,a,pinned=value(d,"groupId"),value(d,"artifactId"),value(d,"version")
             key=(g,a)
-            if key in EXTERNAL_UNMANAGED:
-                if not pinned: fail(f"{profile_id}: external {g}:{a} must be pinned to an official source tag")
-                continue
             expected=managed.get(key)
             if expected is None: fail(f"{profile_id}: {g}:{a}:{pinned} absent from imported BOM management")
             if pinned!=expected: fail(f"{profile_id}: {g}:{a} pinned {pinned}, BOM manages {expected}")
