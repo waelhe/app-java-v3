@@ -70,6 +70,41 @@ jobs:
           server-password-env-var: CODEGENOME_TOKEN
           overwrite-settings: true
 
+      - name: Write explicit Maven settings for Code Genome
+        env:
+          CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
+          CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          ns = "http://maven.apache.org/SETTINGS/1.2.0"
+          ET.register_namespace("", ns)
+          tag = lambda name: f"{{{ns}}}{name}"
+          settings = ET.Element(tag("settings"))
+          servers = ET.SubElement(settings, tag("servers"))
+          server = ET.SubElement(servers, tag("server"))
+          ET.SubElement(server, tag("id")).text = "codegenome"
+          ET.SubElement(server, tag("username")).text = os.environ["CODEGENOME_USERNAME"]
+          ET.SubElement(server, tag("password")).text = os.environ["CODEGENOME_TOKEN"]
+          path = Path(os.environ["RUNNER_TEMP"]) / "openrewrite-settings.xml"
+          ET.ElementTree(settings).write(path, encoding="utf-8", xml_declaration=True)
+
+          # Validate mapping without printing either credential.
+          parsed = ET.parse(path).getroot()
+          servers = parsed.find(tag("servers"))
+          match = next(s for s in servers.findall(tag("server"))
+                       if s.findtext(tag("id")) == "codegenome")
+          if match.findtext(tag("username")) != os.environ["CODEGENOME_USERNAME"]:
+              raise SystemExit("Maven username mapping did not persist")
+          if match.findtext(tag("password")) != os.environ["CODEGENOME_TOKEN"]:
+              raise SystemExit("Maven token mapping did not persist")
+          print("Maven settings contain the expected Code Genome server ID and credential mapping; values not printed.")
+          PY
+
       - name: Verify Code Genome artifact authentication
         env:
           CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
@@ -155,6 +190,31 @@ jobs:
           server-username: CODEGENOME_USERNAME
           server-password: CODEGENOME_TOKEN
           overwrite-settings: true
+
+      - name: Write explicit Maven settings for Code Genome
+        env:
+          CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
+          CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          ns = "http://maven.apache.org/SETTINGS/1.2.0"
+          ET.register_namespace("", ns)
+          tag = lambda name: f"{{{ns}}}{name}"
+          settings = ET.Element(tag("settings"))
+          servers = ET.SubElement(settings, tag("servers"))
+          server = ET.SubElement(servers, tag("server"))
+          ET.SubElement(server, tag("id")).text = "codegenome"
+          ET.SubElement(server, tag("username")).text = os.environ["CODEGENOME_USERNAME"]
+          ET.SubElement(server, tag("password")).text = os.environ["CODEGENOME_TOKEN"]
+          path = Path(os.environ["RUNNER_TEMP"]) / "openrewrite-settings.xml"
+          ET.ElementTree(settings).write(path, encoding="utf-8", xml_declaration=True)
+          print("Wrote explicit Code Genome Maven settings without printing credentials.")
+          PY
 
       - name: Build rewrite-spring from pinned upstream source
         env:
