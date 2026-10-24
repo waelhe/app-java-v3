@@ -81,3 +81,8 @@ The upstream source POM of [`rewrite-maven-plugin:6.50.0`](https://github.com/op
 
 
 The only intentional non-BOM coordinate in the source-built plugin closure is `org.openrewrite:rewrite-mainframe:3.2.1`. Its upstream repository is `moderneinc/rewrite-mainframe`, separate from `openrewrite/rewrite`, so the core `rewrite-bom` does not manage that artifact. The validator does not silently skip it: it requires exactly the pinned official source tag `v3.2.1` and the CI source-build manifest records its resolved commit SHA.
+
+
+### Mainframe source build correction
+
+The official `moderneinc/rewrite-mainframe:v3.2.1` source registers ANTLR grammar generation tasks but does not make the COBOL/JCL/etc generation tasks prerequisites of `compileJava`. The CI source-build script therefore invokes the source repository's generator tasks before `publishToMavenLocal`. This is required to compile the tagged source tree reproducibly; it is not a platform source mutation.
