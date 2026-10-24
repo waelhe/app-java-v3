@@ -32,6 +32,17 @@ build_and_publish_from() {
     printf '%s %s %s\n' "$org/$repo" "$ref" "$(git -C "$checkout" rev-parse HEAD)" | tee -a "$MANIFEST"
     (
         cd "$checkout"
+        if [[ "$repo" == "rewrite-mainframe" ]]; then
+            # This upstream project registers ANTLR generation tasks for its COBOL/JCL/etc grammars.
+            # They are not wired as compileJava dependencies in the tagged source, so run them first;
+            # otherwise checked-in generated parser classes can be stale relative to the grammar.
+            ./gradlew --no-daemon --no-configuration-cache --max-workers=4 \
+                -Preleasing -I "$INIT_SCRIPT" -x test -x check \
+                generateAntlrSourcesCobol generateAntlrSourcesJcl generateAntlrSourcesBms \
+                generateAntlrSourcesIms generateAntlrSourcesDb2 generateAntlrSourcesBind \
+                generateAntlrSourcesLinkEdit generateAntlrSourcesSort generateAntlrSourcesIdcams \
+                generateAntlrSourcesUtility generateAntlrSourcesControlM
+        fi
         ./gradlew --no-daemon --no-configuration-cache --max-workers=4 \
             -Preleasing -I "$INIT_SCRIPT" -x test -x check publishToMavenLocal
     )
