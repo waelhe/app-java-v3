@@ -77,16 +77,23 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          artifact_url="https://artifacts.codegenomeproject.org/maven/org/openrewrite/maven/rewrite-maven-plugin/6.50.0/rewrite-maven-plugin-6.50.0.pom"
-          status="$(curl --silent --show-error --output "${RUNNER_TEMP}/openrewrite-plugin.pom" \
-            --write-out '%{http_code}' \
-            --user "${CODEGENOME_USERNAME}:${CODEGENOME_TOKEN}" \
-            "${artifact_url}")"
-          if [[ "${status}" != "200" ]]; then
-            echo "::error::Code Genome rejected the configured credential pair (HTTP ${status}). The secrets are present, but CODEGENOME_USERNAME must be the exact email/username used to sign in to Code Genome, and CODEGENOME_TOKEN must be a valid download token."
-            exit 1
-          fi
-          echo "Code Genome authenticated artifact download succeeded (HTTP 200); credentials were not printed."
+          base_url="https://artifacts.codegenomeproject.org/maven/org/openrewrite/maven/rewrite-maven-plugin/6.50.0"
+          for artifact in rewrite-maven-plugin-6.50.0.pom rewrite-maven-plugin-6.50.0.jar; do
+            status="$(curl --location --silent --show-error \
+              --output "${RUNNER_TEMP}/${artifact}" \
+              --write-out '%{http_code}' \
+              --user "${CODEGENOME_USERNAME}:${CODEGENOME_TOKEN}" \
+              "${base_url}/${artifact}")"
+            if [[ "${status}" != "200" ]]; then
+              echo "::error::Code Genome artifact download probe for ${artifact} finished with HTTP ${status}. A 302 redirect is normal and is followed by curl; a 401 indicates missing/invalid credentials, while a 403 indicates an entitlement restriction."
+              exit 1
+            fi
+            if [[ ! -s "${RUNNER_TEMP}/${artifact}" ]]; then
+              echo "::error::Code Genome returned HTTP 200 but an empty ${artifact}."
+              exit 1
+            fi
+          done
+          echo "Code Genome authentication and both plugin artifact downloads succeeded; credentials were not printed."
 
       - name: Discover available recipes
         shell: bash
