@@ -759,7 +759,20 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     // (the plan's D-R6 decision — the criteria record gained six components;
     // the key generator's prefix bump keeps the key spaces disjoint AND the
     // name bump evicts at deploy time through the deploy itself).
-    static final Set<String> CATALOG_CACHE_NAMES =
+    //
+    // row 1 (agent findings 2026-10-25, the catalog twin of the reviews
+    // eviction row): widened from package-private to PUBLIC — the module's
+    // own {@code spi} purge adapter (ListingContentPurgeAdapter, a different
+    // package inside THIS module) joins the in-module publisher set (the
+    // batch executors and the write paths above) as the purge's cache-
+    // eviction source, so the erased text cannot survive in the cached
+    // summaries after the purge transaction commits. The set stays the
+    // module's single source of truth: one name list, every publisher —
+    // a per-adapter copy would drift. The Modulith boundary is unchanged:
+    // the module's package-info allowedDependencies still admits no other
+    // module import (the visibility widening serves an intra-module
+    // consumer only).
+    public static final Set<String> CATALOG_CACHE_NAMES =
             Set.of("catalog-active-v4", "catalog-by-category-v4", "catalog-search-v4", "search-results-v6");
 
     /**
