@@ -324,7 +324,7 @@ security chains:
 | Spring Boot | 4.1.2 | https://docs.spring.io/spring-boot/ |
 | Spring Modulith | 2.1.2 | https://docs.spring.io/spring-modulith/ |
 | Spring Security | 7.x | https://docs.spring.io/spring-security/ |
-| Maven | 3.9.16 | https://maven.apache.org/ |
+| Maven | 3.10.0 | https://maven.apache.org/ |
 
 ### Build & Quality
 

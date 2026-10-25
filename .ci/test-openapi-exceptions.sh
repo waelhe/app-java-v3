@@ -1,14 +1,32 @@
 #!/usr/bin/env bash
 # Local test for verify-openapi-exceptions.sh (no docker required).
-# Proves the plan's acceptance criterion for C2 plus the CodeRabbit round-3 fixes:
-#   empty exceptions list -> exit 1
-#   non-empty covered list -> exit 0
-#   non-empty uncovered / stale / expired -> exit 1
-#   expiry must be a real calendar date (month lengths, leap years) -> exit 1 otherwise
-#   incompatible parameter / request-body changes fail closed even when a
-#   response break is covered -> exit 1 (including "- Add" params: the console
-#   report cannot distinguish optional from required additions)
-#   response media-type deletion is representable and may be covered -> exit 0
+# Feeds the verifier OFFICIAL-shape JSON reports (the structure measured from
+# openapi-diff 2.1.7's --json output on isolated scenarios) and proves the
+# gate's full contract matrix:
+#
+#   console-era guarantees (kept literally):
+#     empty exceptions list + breaks          -> exit 1
+#     full coverage                           -> exit 0
+#     uncovered break                         -> exit 1
+#     stale exception                         -> exit 1
+#     expired expiry                          -> exit 1
+#     expiry must be a real calendar date     -> exit 1 otherwise (Feb 30 etc.)
+#     incompatible parameter / request-body   -> exit 1 (fail closed)
+#     deleted endpoints / removed statuses    -> representable, coverable -> 0
+#
+#   JSON-era classification (new, grounded in ChangedParameters.isCoreChanged):
+#     optional parameter additions co-present with covered breaks -> exit 0
+#     required parameter addition uncovered                     -> exit 1
+#     required parameter addition covered by kind: parameter-add -> exit 0
+#     parameter-add entry without required: true                -> exit 1
+#     parameter-add entry with status too (ambiguous)           -> exit 1
+#     unknown kind value                                       -> exit 1
+#     changedOperation incompatible with no classified record   -> exit 1
+#     report incompatible with zero extractable records        -> exit 1
+#     compatible-only report + empty allowlist                 -> exit 0
+#     compatible-only report + non-empty allowlist             -> exit 1 (stale)
+#     backward compatibility: the repo's live allowlist file
+#       covers its documented (POST disputes, 200) break        -> exit 0
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -17,302 +35,342 @@ VERIFY="$SCRIPT_DIR/verify-openapi-exceptions.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-cat > "$TMP/report.txt" <<'REPORT'
-==========================================================================
-==                            API CHANGE LOG                            ==
-==========================================================================
---------------------------------------------------------------------------
---                            What's Deleted                            --
---------------------------------------------------------------------------
-- GET    /pet/{petId}
+# ---------------------------------------------------------------- fixtures
+# Structurally faithful to the measured 2.1.7 --json output: node-level
+# compatible/incompatible flags, apiResponses.changed keyed by status code,
+# parameters.{increased,missing,changed} with required-ness on Parameter.
+cat > "$TMP/report-mixed.json" <<'JSON'
+{
+  "compatible": false, "incompatible": true, "different": true, "unchanged": false,
+  "missingEndpoints": [
+    {"method": "DELETE", "pathUrl": "/pet/{petId}", "path": "/pet/{petId}", "operation": {}}
+  ],
+  "newEndpoints": [],
+  "deprecatedEndpoints": [],
+  "changedOperations": [
+    {
+      "pathUrl": "/pet/findByStatus", "httpMethod": "GET",
+      "incompatible": true, "compatible": false,
+      "parameters": {
+        "increased": [
+          {"name": "page", "in": "query", "required": false, "schema": {"type": "integer"}},
+          {"name": "force", "in": "query", "required": true, "schema": {"type": "boolean"}}
+        ],
+        "missing": [], "changed": [],
+        "incompatible": true, "compatible": false
+      },
+      "apiResponses": {
+        "missing": {}, "increased": {},
+        "changed": {"200": {"incompatible": true, "compatible": false}},
+        "incompatible": true, "compatible": false
+      }
+    },
+    {
+      "pathUrl": "/users", "httpMethod": "GET",
+      "incompatible": true, "compatible": false,
+      "parameters": {
+        "increased": [{"name": "size", "in": "query", "required": false}],
+        "missing": [], "changed": [],
+        "incompatible": false, "compatible": true
+      },
+      "apiResponses": {
+        "missing": {"204": {"description": "deleted"}},
+        "increased": {}, "changed": {},
+        "incompatible": true, "compatible": false
+      }
+    }
+  ]
+}
+JSON
 
---------------------------------------------------------------------------
---                            What's Changed                            --
---------------------------------------------------------------------------
-- GET    /pet/findByStatus
-  Return Type:
-    - Changed 200 OK
-      Media types:
-        - Changed application/json
-          Schema: Broken compatibility
-- DELETE /pet/{petId}
-  Return Type:
-    - Deleted 204 No Content
---------------------------------------------------------------------------
---                                Result                                --
---------------------------------------------------------------------------
-                 API changes broke backward compatibility
---------------------------------------------------------------------------
-REPORT
+cat > "$TMP/report-param-remove.json" <<'JSON'
+{
+  "compatible": false, "incompatible": true, "different": true, "unchanged": false,
+  "missingEndpoints": [],
+  "changedOperations": [
+    {
+      "pathUrl": "/pet/findByStatus", "httpMethod": "GET",
+      "incompatible": true, "compatible": false,
+      "parameters": {
+        "increased": [], "changed": [],
+        "missing": [{"name": "q", "in": "query", "required": false}],
+        "incompatible": true, "compatible": false
+      },
+      "apiResponses": {"missing": {}, "increased": {}, "changed": {}, "incompatible": false, "compatible": true}
+    }
+  ]
+}
+JSON
 
-# Case 1: empty exceptions -> exit 1
+cat > "$TMP/report-param-change.json" <<'JSON'
+{
+  "compatible": false, "incompatible": true, "different": true, "unchanged": false,
+  "missingEndpoints": [],
+  "changedOperations": [
+    {
+      "pathUrl": "/pet/findByStatus", "httpMethod": "GET",
+      "incompatible": true, "compatible": false,
+      "parameters": {
+        "increased": [], "missing": [],
+        "changed": [{"name": "q", "in": "query", "incompatible": true, "compatible": false}],
+        "incompatible": true, "compatible": false
+      },
+      "apiResponses": {"missing": {}, "increased": {}, "changed": {}, "incompatible": false, "compatible": true}
+    }
+  ]
+}
+JSON
+
+cat > "$TMP/report-request-body.json" <<'JSON'
+{
+  "compatible": false, "incompatible": true, "different": true, "unchanged": false,
+  "missingEndpoints": [],
+  "changedOperations": [
+    {
+      "pathUrl": "/things", "httpMethod": "POST",
+      "incompatible": true, "compatible": false,
+      "requestBody": {
+        "incompatible": true, "compatible": false,
+        "content": {"missing": {"application/json": {}}, "increased": {}, "changed": {}}
+      },
+      "apiResponses": {"missing": {}, "increased": {}, "changed": {}, "incompatible": false, "compatible": true}
+    }
+  ]
+}
+JSON
+
+cat > "$TMP/report-op-umbrella.json" <<'JSON'
+{
+  "compatible": false, "incompatible": true, "different": true, "unchanged": false,
+  "missingEndpoints": [],
+  "changedOperations": [
+    {
+      "pathUrl": "/secure", "httpMethod": "GET",
+      "incompatible": true, "compatible": false,
+      "apiResponses": {"missing": {}, "increased": {}, "changed": {}, "incompatible": false, "compatible": true}
+    }
+  ]
+}
+JSON
+
+cat > "$TMP/report-schema-only.json" <<'JSON'
+{
+  "compatible": false, "incompatible": true, "different": true, "unchanged": false,
+  "missingEndpoints": [],
+  "changedSchemas": [
+    {"schema": {"type": "object"}, "incompatible": true, "compatible": false}
+  ],
+  "changedOperations": []
+}
+JSON
+
+cat > "$TMP/report-compatible.json" <<'JSON'
+{
+  "compatible": true, "incompatible": false, "different": true, "unchanged": false,
+  "missingEndpoints": [],
+  "changedOperations": [
+    {
+      "pathUrl": "/pet/findByStatus", "httpMethod": "GET",
+      "incompatible": false, "compatible": true,
+      "parameters": {
+        "increased": [{"name": "page", "in": "query", "required": false}],
+        "missing": [], "changed": [],
+        "incompatible": false, "compatible": true
+      },
+      "apiResponses": {"missing": {}, "increased": {}, "changed": {}, "incompatible": false, "compatible": true}
+    }
+  ]
+}
+JSON
+
+# The repo's LIVE allowlist entry (POST disputes 200) + the matching record.
+cat > "$TMP/report-disputes.json" <<'JSON'
+{
+  "compatible": false, "incompatible": true, "different": true, "unchanged": false,
+  "missingEndpoints": [],
+  "changedOperations": [
+    {
+      "pathUrl": "/api/v1/bookings/{bookingId}/disputes", "httpMethod": "POST",
+      "incompatible": true, "compatible": false,
+      "apiResponses": {
+        "missing": {"200": {"description": "ok"}},
+        "increased": {}, "changed": {},
+        "incompatible": true, "compatible": false
+      }
+    }
+  ]
+}
+JSON
+
+# ---------------------------------------------------------------- allowlists
 cat > "$TMP/allow-empty.yml" <<'YML'
 # Documented temporary exceptions for backward-incompatible OpenAPI changes.
 exceptions: []
 YML
-if "$VERIFY" "$TMP/report.txt" "$TMP/allow-empty.yml" >/dev/null 2>&1; then
-  echo "FAIL case 1: empty exceptions must exit 1"; exit 1
-fi
-echo "OK case 1: empty exceptions -> exit 1"
 
-# Case 2: non-empty list covering every reported break -> exit 0
-cat > "$TMP/allow-covered.yml" <<'YML'
+cat > "$TMP/allow-full.yml" <<'YML'
+# Documented temporary exceptions for backward-incompatible OpenAPI changes.
 exceptions:
-  - path: GET /pet/{petId}
-    status: deleted
-    ticket: TCK-101
-    reason: endpoint retirement scheduled
-    expiry: 2999-01-01
-  - path: GET /pet/findByStatus
-    status: 200
-    ticket: TCK-102
-    reason: schema narrowing migration
-    expiry: 2028-02-29
   - path: DELETE /pet/{petId}
-    status: 204
-    ticket: TCK-103
-    reason: success response removal
-    expiry: 2999-01-01
+    status: deleted
+    ticket: T-1
+    reason: endpoint retired
+    expiry: 2099-12-31
+  - path: GET /pet/findByStatus
+    status: "200"
+    ticket: T-2
+    reason: response schema documented delta
+    expiry: 2099-12-31
+  - path: GET /pet/findByStatus
+    kind: parameter-add
+    required: true
+    parameters: "force"
+    ticket: T-3
+    reason: required filter added
+    expiry: 2099-12-31
+  - path: GET /users
+    status: "204"
+    ticket: T-4
+    reason: status retired
+    expiry: 2099-12-31
 YML
-# (TCK-102 expiry is a valid leap-year day: 2028 is a leap year.)
-if ! "$VERIFY" "$TMP/report.txt" "$TMP/allow-covered.yml" >/dev/null 2>&1; then
-  echo "FAIL case 2: covered exceptions must exit 0"; exit 1
-fi
-echo "OK case 2: covered exceptions (incl. valid leap-day expiry) -> exit 0"
 
-# Case 3: non-empty list with an uncovered real break -> exit 1
 cat > "$TMP/allow-partial.yml" <<'YML'
 exceptions:
-  - path: GET /pet/{petId}
+  - path: DELETE /pet/{petId}
     status: deleted
-    ticket: TCK-101
-    reason: endpoint retirement scheduled
-    expiry: 2999-01-01
-  - path: GET /pet/findByStatus
-    status: 99
-    ticket: TCK-102
-    reason: wrong status documented
-    expiry: 2999-01-01
+    ticket: T-1
+    reason: endpoint retired
+    expiry: 2099-12-31
 YML
-if "$VERIFY" "$TMP/report.txt" "$TMP/allow-partial.yml" >/dev/null 2>&1; then
-  echo "FAIL case 3: uncovered break must exit 1"; exit 1
-fi
-echo "OK case 3: uncovered break -> exit 1"
 
-# Case 4: stale exception matching no real break -> exit 1
 cat > "$TMP/allow-stale.yml" <<'YML'
 exceptions:
-  - path: POST /pet/uploadImage
-    status: 200
-    ticket: TCK-104
-    reason: no longer changing
-    expiry: 2999-01-01
+  - path: GET /nowhere
+    status: "418"
+    ticket: T-9
+    reason: never matches
+    expiry: 2099-12-31
 YML
-if "$VERIFY" "$TMP/report.txt" "$TMP/allow-stale.yml" >/dev/null 2>&1; then
-  echo "FAIL case 4: stale exception must exit 1"; exit 1
-fi
-echo "OK case 4: stale exception -> exit 1"
 
-# Case 5: expired entry -> exit 1
 cat > "$TMP/allow-expired.yml" <<'YML'
 exceptions:
-  - path: GET /pet/{petId}
-    status: deleted
-    ticket: TCK-101
-    reason: long expired
-    expiry: 2000-01-01
-YML
-if "$VERIFY" "$TMP/report.txt" "$TMP/allow-expired.yml" >/dev/null 2>&1; then
-  echo "FAIL case 5: expired entry must exit 1"; exit 1
-fi
-echo "OK case 5: expired entry -> exit 1"
-
-# Case 6: malformed entry (missing fields) -> exit 1
-cat > "$TMP/allow-malformed.yml" <<'YML'
-exceptions:
-  - path: GET /pet/{petId}
-    expiry: 2999-01-01
-YML
-if "$VERIFY" "$TMP/report.txt" "$TMP/allow-malformed.yml" >/dev/null 2>&1; then
-  echo "FAIL case 6: malformed entry must exit 1"; exit 1
-fi
-echo "OK case 6: malformed entry -> exit 1"
-
-# Case 7: expiry matches YYYY-MM-DD but is not a calendar date -> exit 1
-cat > "$TMP/allow-calendar.yml" <<'YML'
-exceptions:
-  - path: GET /pet/{petId}
-    status: deleted
-    ticket: TCK-101
-    reason: endpoint retirement scheduled
-    expiry: 2999-02-31
   - path: GET /pet/findByStatus
-    status: 200
-    ticket: TCK-102
-    reason: schema narrowing migration
-    expiry: 2023-02-29
-  - path: DELETE /pet/{petId}
-    status: 204
-    ticket: TCK-103
-    reason: success response removal
-    expiry: 2999-01-01
+    status: "200"
+    ticket: T-2
+    reason: response schema documented delta
+    expiry: 2020-01-01
 YML
-# 2999-02-31: February never has 31 days; 2023-02-29: 2023 is not a leap year.
-if "$VERIFY" "$TMP/report.txt" "$TMP/allow-calendar.yml" >/dev/null 2>&1; then
-  echo "FAIL case 7: impossible calendar dates must exit 1"; exit 1
-fi
-echo "OK case 7: impossible calendar dates (2999-02-31, 2023-02-29) -> exit 1"
 
-# Report with a request-body break and a covered response break (CodeRabbit
-# round 3: the parser must not clear its block state on Parameter:/Request:).
-cat > "$TMP/report-request.txt" <<'REPORT'
-==========================================================================
-==                            API CHANGE LOG                            ==
-==========================================================================
---------------------------------------------------------------------------
---                            What's Changed                            --
---------------------------------------------------------------------------
-- POST   /pet
-  Request:
-    - Changed application/json
-      Schema: Broken compatibility
-  Return Type:
-    - Changed 200 OK
-      Media types:
-        - Changed application/json
-          Schema: Broken compatibility
---------------------------------------------------------------------------
---                                Result                                --
---------------------------------------------------------------------------
-                 API changes broke backward compatibility
---------------------------------------------------------------------------
-REPORT
-
-# Case 8: response break covered, request-body break not representable -> exit 1
-cat > "$TMP/allow-request.yml" <<'YML'
-exceptions:
-  - path: POST /pet
-    status: 200
-    ticket: TCK-201
-    reason: schema narrowing migration
-    expiry: 2999-01-01
-YML
-if "$VERIFY" "$TMP/report-request.txt" "$TMP/allow-request.yml" >/dev/null 2>&1; then
-  echo "FAIL case 8: request-body break alongside a covered response break must exit 1"; exit 1
-fi
-echo "OK case 8: covered response + incompatible request body -> exit 1"
-
-# Report with parameter changes and a covered response break.
-cat > "$TMP/report-param.txt" <<'REPORT'
-==========================================================================
-==                            API CHANGE LOG                            ==
-==========================================================================
---------------------------------------------------------------------------
---                            What's Changed                            --
---------------------------------------------------------------------------
-- GET    /pet/findByStatus
-  Parameter:
-    - Delete tag in query
-    - Changed limit in query
-  Return Type:
-    - Changed 200 OK
-      Media types:
-        - Changed application/json
-          Schema: Broken compatibility
---------------------------------------------------------------------------
---                                Result                                --
---------------------------------------------------------------------------
-                 API changes broke backward compatibility
---------------------------------------------------------------------------
-REPORT
-
-# Case 9: response break covered, parameter deletion/change not representable -> exit 1
-cat > "$TMP/allow-param.yml" <<'YML'
+cat > "$TMP/allow-bad-date.yml" <<'YML'
 exceptions:
   - path: GET /pet/findByStatus
-    status: 200
-    ticket: TCK-102
-    reason: schema narrowing migration
-    expiry: 2999-01-01
+    status: "200"
+    ticket: T-2
+    reason: response schema documented delta
+    expiry: 2099-02-30
 YML
-if "$VERIFY" "$TMP/report-param.txt" "$TMP/allow-param.yml" >/dev/null 2>&1; then
-  echo "FAIL case 9: parameter changes alongside a covered response break must exit 1"; exit 1
-fi
-echo "OK case 9: covered response + parameter delete/change -> exit 1"
 
-# Report with a response media-type deletion (RESPONSE_CONTENT_DECREASED).
-cat > "$TMP/report-repcontent.txt" <<'REPORT'
-==========================================================================
-==                            API CHANGE LOG                            ==
-==========================================================================
---------------------------------------------------------------------------
---                            What's Changed                            --
---------------------------------------------------------------------------
-- GET    /pet/findByStatus
-  Return Type:
-    - Changed 200 OK
-      Media types:
-        - Deleted application/xml
-        - Changed application/json
-          Schema: Backward compatible
---------------------------------------------------------------------------
---                                Result                                --
---------------------------------------------------------------------------
-                 API changes broke backward compatibility
---------------------------------------------------------------------------
-REPORT
-
-# Case 10: response media-type deletion is representable (status known) -> covered -> exit 0
-cat > "$TMP/allow-repcontent.yml" <<'YML'
+cat > "$TMP/allow-param-no-required.yml" <<'YML'
 exceptions:
   - path: GET /pet/findByStatus
-    status: 200
-    ticket: TCK-301
-    reason: application/xml retirement
-    expiry: 2999-01-01
+    kind: parameter-add
+    ticket: T-3
+    reason: required filter added
+    expiry: 2099-12-31
 YML
-if ! "$VERIFY" "$TMP/report-repcontent.txt" "$TMP/allow-repcontent.yml" >/dev/null 2>&1; then
-  echo "FAIL case 10: representable response content deletion must exit 0 when covered"; exit 1
-fi
-echo "OK case 10: response media-type deletion covered by (path, status) exception -> exit 0"
 
-# Report with a parameter addition and a covered response break. The console
-# report renders "- Add" identically for optional and required additions, so
-# the gate fails closed (CodeRabbit round 3, follow-up finding).
-cat > "$TMP/report-paramadd.txt" <<'REPORT'
-==========================================================================
-==                            API CHANGE LOG                            ==
-==========================================================================
---------------------------------------------------------------------------
---                            What's Changed                            --
---------------------------------------------------------------------------
-- POST   /pet
-  Parameter:
-    - Add name in query
-  Return Type:
-    - Changed 200 OK
-      Media types:
-        - Changed application/json
-          Schema: Broken compatibility
---------------------------------------------------------------------------
---                                Result                                --
---------------------------------------------------------------------------
-                 API changes broke backward compatibility
---------------------------------------------------------------------------
-REPORT
-
-# Case 11: required/ambiguous parameter addition + allowlisted response break -> exit 1
-cat > "$TMP/allow-paramadd.yml" <<'YML'
+cat > "$TMP/allow-param-ambiguous.yml" <<'YML'
 exceptions:
-  - path: POST /pet
-    status: 200
-    ticket: TCK-401
-    reason: schema narrowing migration
-    expiry: 2999-01-01
+  - path: GET /pet/findByStatus
+    kind: parameter-add
+    required: true
+    status: "200"
+    ticket: T-3
+    reason: ambiguous entry
+    expiry: 2099-12-31
 YML
-if "$VERIFY" "$TMP/report-paramadd.txt" "$TMP/allow-paramadd.yml" >/dev/null 2>&1; then
-  echo "FAIL case 11: parameter addition alongside a covered response break must exit 1"; exit 1
-fi
-echo "OK case 11: covered response + parameter addition (required-ness invisible) -> exit 1"
 
-echo "ALL openapi-exceptions allowlist tests passed."
+cat > "$TMP/allow-unknown-kind.yml" <<'YML'
+exceptions:
+  - path: GET /pet/findByStatus
+    kind: header-add
+    required: true
+    ticket: T-3
+    reason: invented kind
+    expiry: 2099-12-31
+YML
+
+# A minimal single-break report: exactly one GET /pet/findByStatus 200
+# response break. Field-validation cases (expiry / calendar / kind /
+# required / ambiguity) pair it with a single defective entry so the ONLY
+# failure reason is the validation branch under test (CodeRabbit review on
+# #716: a case must keep failing for its intended reason when every other
+# check is hypothetically removed).
+cat > "$TMP/report-single.json" <<'JSON'
+{
+  "compatible": false, "incompatible": true, "different": true, "unchanged": false,
+  "missingEndpoints": [],
+  "changedOperations": [
+    {
+      "pathUrl": "/pet/findByStatus", "httpMethod": "GET",
+      "incompatible": true, "compatible": false,
+      "parameters": {"increased": [], "missing": [], "changed": [], "incompatible": false, "compatible": true},
+      "apiResponses": {
+        "missing": {}, "increased": {},
+        "changed": {"200": {"incompatible": true, "compatible": false}},
+        "incompatible": true, "compatible": false
+      }
+    }
+  ]
+}
+JSON
+
+check() {
+  # check <desc> <want-exit> <message-pattern> <report> <allowlist>
+  # The pattern (may be empty for expected-success cases) must appear in
+  # the verifier output: it pins each failure case to its INTENDED branch,
+  # so deleting any other check cannot keep the case green unnoticed.
+  local desc="$1" want="$2" pattern="$3"; shift 3
+  local out
+  if out="$("$VERIFY" "$@" 2>&1)"; then got=0; else got=1; fi
+  if [[ "$got" != "$want" ]]; then
+    echo "FAIL: $desc (want exit $want, got $got)"; exit 1
+  fi
+  if [[ -n "$pattern" ]] && ! grep -q -- "$pattern" <<<"$out"; then
+    echo "FAIL: $desc (exit ok but output lacks /$pattern/)"; exit 1
+  fi
+  echo "OK: $desc"
+}
+
+# -------------------------------------------------- console-era guarantees
+check "breaks + empty allowlist -> 1"                  1 "UNCOVERED"            "$TMP/report-mixed.json" "$TMP/allow-empty.yml"
+check "partial coverage -> 1 (uncovered)"             1 "UNCOVERED"            "$TMP/report-mixed.json" "$TMP/allow-partial.yml"
+check "stale exception -> 1"                           1 "STALE"                "$TMP/report-compatible.json" "$TMP/allow-stale.yml"
+check "expired expiry -> 1"                            1 "expired"              "$TMP/report-single.json" "$TMP/allow-expired.yml"
+check "invalid calendar expiry (Feb 30) -> 1"          1 "not a valid calendar date" "$TMP/report-single.json" "$TMP/allow-bad-date.yml"
+check "parameter removal -> 1 (unrepresentable)"       1 "UNREPRESENTABLE.*param-remove"   "$TMP/report-param-remove.json" "$TMP/allow-empty.yml"
+check "parameter required flip -> 1 (unrepresentable)" 1 "UNREPRESENTABLE.*param-change"  "$TMP/report-param-change.json" "$TMP/allow-empty.yml"
+check "request body incompatible -> 1 (unrepresentable)" 1 "UNREPRESENTABLE.*request-body" "$TMP/report-request-body.json" "$TMP/allow-empty.yml"
+
+# -------------------------------------------------- JSON-era classification
+# The springdoc shape: optional additions co-present with covered breaks
+# (this also proves full coverage of the mixed report -> 0).
+check "optional adds co-present + full coverage -> 0"  0 ""                     "$TMP/report-mixed.json" "$TMP/allow-full.yml"
+check "required param add uncovered -> 1"              1 "UNCOVERED.*parameter-add"       "$TMP/report-mixed.json" "$TMP/allow-partial.yml"
+check "param-add entry without required:true -> 1"     1 "required: true"                "$TMP/report-single.json" "$TMP/allow-param-no-required.yml"
+check "param-add entry with status too -> 1"           1 "ambiguous"                     "$TMP/report-single.json" "$TMP/allow-param-ambiguous.yml"
+check "unknown kind -> 1"                               1 "unknown kind"                  "$TMP/report-single.json" "$TMP/allow-unknown-kind.yml"
+check "unclassified incompatible operation -> 1"       1 "operation-incompatible"        "$TMP/report-op-umbrella.json" "$TMP/allow-empty.yml"
+check "schema-only incompatible report -> 1"           1 "report-incompatible"           "$TMP/report-schema-only.json" "$TMP/allow-empty.yml"
+check "compatible-only report + empty allowlist -> 0"  0 ""                             "$TMP/report-compatible.json" "$TMP/allow-empty.yml"
+check "compatible-only report + non-empty allowlist -> 1 (stale)" 1 "STALE"       "$TMP/report-compatible.json" "$TMP/allow-stale.yml"
+
+# -------------------------------------------------- backward compatibility
+# The repository's live allowlist file must keep working unchanged against
+# its documented break (the disputes 200->201 status move).
+check "live repo allowlist covers its break -> 0"     0 ""                     "$TMP/report-disputes.json" "$SCRIPT_DIR/openapi-compat-allowlist.yml"
+# And it must be flagged stale against a report that does not contain the break.
+check "live repo allowlist stale without break -> 1"  1 "STALE"                "$TMP/report-compatible.json" "$SCRIPT_DIR/openapi-compat-allowlist.yml"
+
+echo "All verify-openapi-exceptions.sh contract tests passed."

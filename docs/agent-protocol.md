@@ -44,10 +44,10 @@ all of it. That is this protocol.
 > re-derived from the repo. Nothing precious is stored only locally.**
 
 And you are a professional software engineer — Java 25, Spring Boot
-4.1.1, Spring Modulith 2.1.1, Spring Authorization Server 7.1.1, Maven,
+4.1.2, Spring Modulith 2.1.2, Spring Authorization Server 7.1.2, Maven,
 Flyway, PostgreSQL/PostGIS, Redis — working to the official docs at the
 pinned versions and the repo's own measured facts, never training
-memory: **Spring Boot 4.1.1 is not the Spring Boot you know.** The
+memory: **Spring Boot 4.1.2 is not the Spring Boot you know.** The
 binding epistemic order (METHODOLOGY.md §1.1, the owner's standing words
 recorded in the repo: «لا أريد ما تراه أنت صحيحًا، أريد التصميم الرسمي
 حسب الإطار والنظام وحقائق الكود» — "I don't want what you think is
@@ -79,8 +79,8 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
 | | |
 |---|---|
 | Owner | GitHub **waelhe** (repo `waelhe/app-java-v3`, public) — day-to-day engineering owned by the **backend team**; the frontend repo's agent treats this repo as read-and-measure (its standing rule), except owner-granted documented exceptions |
-| Stack | Java 25 (`--release 25`, `pom.xml:41`), Spring Boot 4.1.1 (parent, `pom.xml:7-10`), Spring Modulith 2.1.1 (BOM), Spring Authorization Server 7.1.1, Maven wrapper 3.9.16 with enforcer `[3.9,)` (`pom.xml:230`) — all evidenced in SYSTEM.md §1 |
-| Modules | **22** Maven modules in the root reactor (measured 2026-09-28; guarded in README/SYSTEM by `DocumentationNumbersGuardTest`, derived from `<modules>`) |
+| Stack | Java 25 (`--release 25`, `pom.xml:58` — `<java.version>`), Spring Boot 4.1.2 (parent, `pom.xml:7-10`), Spring Modulith 2.1.2 (BOM), Spring Authorization Server 7.1.2 (Boot-BOM-managed), Maven distribution 3.10.0 + wrapper tool 3.3.4 with enforcer floor `[3.10,)` (`pom.xml:1007` — `<requireMavenVersion>`) — all evidenced in SYSTEM.md §1 |
+| Modules | **30** Maven modules in the root reactor (measured 2026-10-24 from the root POM's `<modules>` block at the PR #714 head; guarded in README/SYSTEM by `DocumentationNumbersGuardTest`, derived from `<modules>`) |
 | Data | PostgreSQL 18 + PostGIS (CI service `postgis/postgis:18-3.6-alpine`, `ci.yml:24`); production DB channel = external Neon (since 2026-09-18, SYSTEM.md §1); Redis 8 (`ci.yml:37`; production 8.2); Flyway with `ddl-auto: none` — latest migration **V70** (measured 2026-09-28) |
 | Quality | JaCoCo 0.8.15, BUNDLE ≥ 70% per module (`pom.xml:61-62, 242-244`); `failOnWarning` at compile; unit (`*Test`, surefire) strictly separated from integration (`*IT`/`*IntegrationTest`, failsafe; environmental ones skip without Docker) |
 | OpenAPI | `GET /v3/api-docs` — **128 operations across 111 paths** (re-measured live on staging 2026-09-28; matches CONTRIBUTING.md §4 @2026-09-27; its re-verification jq command is the authority) |
@@ -119,7 +119,7 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
    list are the fresher truth; the map is a dated snapshot.
 5. **Rebuild the toolchain** (it never survives): Temurin JDK 25
    (25.0.4.1 is the team's recorded build), then `./mvnw` (wrapper
-   3.9.16, self-contained). No Docker locally is the standing reality —
+   3.10.0, self-contained). No Docker locally is the standing reality —
    see §7.
 6. **Measure before building** (METHODOLOGY.md Stage 2 is not optional):
    live `/v3/api-docs` on staging, the target endpoints' success AND
@@ -234,7 +234,7 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
 | Thing | The measured reality / fix |
 |---|---|
 | JDK | Temurin 25 (25.0.4.1 is the team's recorded build) — download per session; CI uses `setup-java` temurin 25 with maven cache (`ci.yml:62-67`) |
-| Build | `./mvnw` (wrapper 3.9.16); full gate `./mvnw clean verify`; targeted `./mvnw clean verify -pl <module> -am` before any push (AGENTS.md) |
+| Build | `./mvnw` (Maven distribution 3.10.0, wrapper tool 3.3.4); full gate `./mvnw clean verify`; targeted `./mvnw clean verify -pl <module> -am` before any push (AGENTS.md) |
 | No Docker locally | The standing protocol: integration tests judge on CI (`@Testcontainers(disabledWithoutDocker = true)`); the local run covers unit + test-compile |
 | Deploy proof | Railway GraphQL tokens measured dead (403) → the **commit-status channel** is the documented alternative (PROJECT_MAP); python HTTP to Railway is blocked by Cloudflare 1010 → curl with a browser UA (frontend-measured 2026-09-28, applies here) |
 | Secrets | Railway service variables only (45 app variables measured at migration); rotate; never in tracked files — gitleaks (high/critical policy, anchored allowlist) runs first in CI |
@@ -261,7 +261,7 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
 ## 9. Regression list (the failures that return — read this first)
 
 - Trusting training memory over the pinned-version official docs
-  (Spring Boot 4.1.1 is not the Spring Boot you know; Modulith 2.1.1
+  (Spring Boot 4.1.2 is not the Spring Boot you know; Modulith 2.1.2
   boundary semantics differ from memory).
 - A retryable boundary joining a `REQUIRED` carrier transaction —
   rollback-only poisoning, dedup records without settlements (#458).

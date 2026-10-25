@@ -83,10 +83,31 @@ git checkout -q "$CURRENT_SHA"
 generate_spec "current" "$WORK_DIR/current-openapi.json"
 
 # Breaking-change gate: endpoint deletions, schema narrowing, status/media type changes.
+# The tool runs pinned (2.1.7) and exports its OFFICIAL JSON report (--json):
+# the JSON carries the tool's full semantic model — every node ships its own
+# compatible/incompatible verdict computed by the official model
+# (ComposedChanged.isCoreChanged) — so the verifier below classifies from the
+# tool's own verdicts instead of re-deriving them from console prose. That
+# closes the measured [UNREPRESENTABLE] gap of the console era: the console
+# renderer prints "- Add <param>" for every parameter addition without
+# required-ness, so COMPATIBLE optional additions could not be told apart
+# from INCOMPATIBLE required ones and every add failed closed. The console
+# rendering is still captured as the human-readable log/artifact. Pin
+# rationale: a fail-closed gate must not ride a floating :latest whose JSON
+# shape can drift under the parser; the version bump is a one-line change
+# with its own release-notes read (version-policy style).
+# Fail-closed hygiene (CodeRabbit review on #716, 2026-10-24): remove any
+# previous JSON report BEFORE the run. WORK_DIR is a persistent in-repo
+# (.ci/openapi-compat) directory, so a report left by an earlier invocation
+# survives; if openapi-diff fails or crashes without writing a fresh report,
+# the verifier below must never read that stale one and accept a result that
+# does not belong to the current pair of specs.
+rm -f "$WORK_DIR/openapi-diff-report.json"
 openapi_diff_exit=0
-docker run --rm -t -v "$WORK_DIR:/spec" openapitools/openapi-diff:latest \
+docker run --rm -t -v "$WORK_DIR:/spec" openapitools/openapi-diff:2.1.7 \
   /spec/baseline-openapi.json /spec/current-openapi.json \
-  --fail-on-incompatible > "$WORK_DIR/openapi-diff-report.txt" 2>&1 || openapi_diff_exit=$?
+  --fail-on-incompatible --json /spec/openapi-diff-report.json \
+  > "$WORK_DIR/openapi-diff-report.txt" 2>&1 || openapi_diff_exit=$?
 
 if [[ "$openapi_diff_exit" -eq 0 ]]; then
   echo "OpenAPI backward compatibility gate passed."
@@ -94,10 +115,15 @@ if [[ "$openapi_diff_exit" -eq 0 ]]; then
 fi
 
 # Incompatible changes detected: an empty exceptions list is always a failure;
-# a non-empty list must cover every reported breaking (path, status) change.
+# a non-empty list must cover every reported breaking change. Optional
+# parameter additions are COMPATIBLE per the official model
+# (ChangedParameters.isCoreChanged) and pass without an exception;
+# required-parameter additions are breaks documented with
+# kind: parameter-add allowlist entries; response breaks and deleted
+# endpoints keep their (path, status) coverage exactly as before.
 verify_exit=0
 bash "$ROOT_DIR/.ci/verify-openapi-exceptions.sh" \
-  "$WORK_DIR/openapi-diff-report.txt" "$ROOT_DIR/.ci/openapi-compat-allowlist.yml" \
+  "$WORK_DIR/openapi-diff-report.json" "$ROOT_DIR/.ci/openapi-compat-allowlist.yml" \
   || verify_exit=$?
 
 cat "$WORK_DIR/openapi-diff-report.txt"

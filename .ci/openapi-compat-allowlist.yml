@@ -6,9 +6,19 @@
 # release tag is cut, the baseline regenerates from it, the exception
 # turns STALE (the gate fails main until it is removed), and the re-baseline
 # PR must delete it — the mechanism that keeps this list temporary.
-exceptions:
-  - path: POST /api/v1/bookings/{bookingId}/disputes
-    status: "200"
-    ticket: plan item 2.7 (comprehensive-reverification-repair-plan-2026-09-26.md section 10, PR fix/s27-disputes-created)
-    reason: Intentional creation-semantics correction per RFC 9110 section 15.3.2 (201 Created = a new resource was created) — the dispute-open operation creates a resource, so its success status moves from 200 to 201, the same in-repo creation precedent as MessagingController.createConversation; the response body schema is unchanged (DisputeResponse) and no parameters change; remove this entry in the release re-baseline PR that follows the next tag.
-    expiry: 2026-12-31
+#
+# 2026-10-24 (PR #722, phase 2b): removed the disputes entry — measured
+# stale at birth. It documented a 200 -> 201 spec change that never existed
+# in the generated contract: springdoc documents the DEFAULT 200 for
+# ResponseEntity-returning handlers regardless of the programmatic
+# ResponseEntity.status(HttpStatus.CREATED) the controller builds (verified
+# against the v0.1.0 tag: its DisputeController.open returned
+# ResponseEntity.ok — the spec carried 200 then, and it carries 200 now).
+# The entry therefore matched no reported breaking change; the verifier
+# only surfaces that on a dirty diff, which is why it survived undetected
+# since 2026-09-26. The RUNTIME behavior change (201 on creation) is real
+# and stays; the spec-accuracy gap it exposed (creation endpoints whose
+# 201 is documented as 200 — fixable per the springdoc README via
+# @ResponseStatus declarations) is tracked in its own issue with its own
+# gate-exception requirements.
+exceptions: []
