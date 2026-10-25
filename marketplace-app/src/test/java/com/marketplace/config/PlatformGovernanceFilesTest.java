@@ -687,12 +687,12 @@ class PlatformGovernanceFilesTest {
         int resetToBaseIndex = workflow.indexOf("git reset --hard \"${TARGET_SHA}\"");
         assertThat(batchPatchIndex).isGreaterThanOrEqualTo(0);
         assertThat(resetToBaseIndex).isGreaterThan(batchPatchIndex);
-        int publishJobIndex = workflow.indexOf("\\n  publish:");
+        int publishJobIndex = workflow.indexOf("\n  publish:");
         assertThat(publishJobIndex).isGreaterThan(resetToBaseIndex);
         String applyJob = workflow.substring(workflow.indexOf("  apply:"), publishJobIndex);
         String publishJob = workflow.substring(publishJobIndex);
         assertThat(applyJob)
-                .contains("permissions:\\n      contents: read")
+                .contains("permissions:\n      contents: read")
                 .contains("persist-credentials: false")
                 .contains("actions/upload-artifact@v6")
                 .doesNotContain("GH_TOKEN:");
