@@ -11,6 +11,7 @@ on:
       - '**/*.yaml'
       - '**/*.yml'
       - '.github/workflows/openrewrite-catalog.yml'
+      - '.ci/openrewrite-bom-audit/**'
       - 'docs/governance/openrewrite-catalog.md'
       - 'scripts/openrewrite/**'
   push:
@@ -23,6 +24,7 @@ on:
       - '**/*.yaml'
       - '**/*.yml'
       - '.github/workflows/openrewrite-catalog.yml'
+      - '.ci/openrewrite-bom-audit/**'
       - 'docs/governance/openrewrite-catalog.md'
       - 'scripts/openrewrite/**'
   workflow_dispatch:
@@ -105,6 +107,35 @@ jobs:
           print("Maven settings contain the expected Code Genome server ID and credential mapping; values not printed.")
           PY
 
+      - name: Read OpenRewrite version pins from root POM
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import os
+          import re
+          import xml.etree.ElementTree as ET
+
+          namespace = {"m": "http://maven.apache.org/POM/4.0.0"}
+          root = ET.parse("pom.xml").getroot()
+          properties = root.find("m:properties", namespace)
+          required = {
+              "OPENREWRITE_MAVEN_PLUGIN_VERSION": "openrewrite.maven-plugin.version",
+              "OPENREWRITE_RECIPE_BOM_VERSION": "openrewrite.recipe-bom.version",
+          }
+          values = {}
+          for environment_name, property_name in required.items():
+              node = properties.find(f"m:{property_name}", namespace) if properties is not None else None
+              value = (node.text or "").strip() if node is not None else ""
+              if not value or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?", value):
+                  raise SystemExit(f"Missing or invalid root property {property_name}")
+              values[environment_name] = value
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              for name, value in values.items():
+                  env.write(f"{name}={value}\n")
+          print(f"OpenRewrite Maven plugin version: {values['OPENREWRITE_MAVEN_PLUGIN_VERSION']}")
+          print(f"OpenRewrite recipe BOM version: {values['OPENREWRITE_RECIPE_BOM_VERSION']}")
+
       - name: Verify Code Genome artifact authentication
         env:
           CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
@@ -112,8 +143,8 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          base_url="https://artifacts.codegenomeproject.org/maven/org/openrewrite/maven/rewrite-maven-plugin/6.50.0"
-          for artifact in rewrite-maven-plugin-6.50.0.pom rewrite-maven-plugin-6.50.0.jar; do
+          base_url="https://artifacts.codegenomeproject.org/maven/org/openrewrite/maven/rewrite-maven-plugin/${OPENREWRITE_MAVEN_PLUGIN_VERSION}"
+          for artifact in rewrite-maven-plugin-${OPENREWRITE_MAVEN_PLUGIN_VERSION}.pom rewrite-maven-plugin-${OPENREWRITE_MAVEN_PLUGIN_VERSION}.jar; do
             status="$(curl --location --silent --show-error \
               --output "${RUNNER_TEMP}/${artifact}" \
               --write-out '%{http_code}' \
@@ -134,18 +165,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          bom_version="$(python3 - <<'PY'
-          import xml.etree.ElementTree as ET
-          root = ET.parse("pom.xml").getroot()
-          ns = {"m": "http://maven.apache.org/POM/4.0.0"}
-          properties = root.find("m:properties", ns)
-          node = properties.find("m:openrewrite.recipe-bom.version", ns) if properties is not None else None
-          version = (node.text or "").strip() if node is not None else ""
-          if not version:
-              raise SystemExit("Root pom.xml is missing openrewrite.recipe-bom.version")
-          print(version)
-          PY
-          )"
+          bom_version="${OPENREWRITE_RECIPE_BOM_VERSION}"
           mkdir -p target/openrewrite
           mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress \
             -f .ci/openrewrite-bom-audit/pom.xml \
@@ -163,7 +183,7 @@ jobs:
           set -o pipefail
           mkdir -p target/openrewrite
           mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress -Popenrewrite \
-            org.openrewrite.maven:rewrite-maven-plugin:6.50.0:discover \
+            org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:discover \
             -Ddetail=true 2>&1 | tee target/openrewrite/recipe-discovery.txt
           if ! grep -Fq 'org.openrewrite.java.dependencies.UpgradeDependencyVersion' target/openrewrite/recipe-discovery.txt; then
             echo "::error::The external recipe packs were not loaded on the Rewrite Maven plugin classpath."
@@ -185,7 +205,7 @@ jobs:
         run: |
           set -o pipefail
           mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress \
-            -Popenrewrite org.openrewrite.maven:rewrite-maven-plugin:6.50.0:dryRunNoFork \
+            -Popenrewrite org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:dryRunNoFork \
             -Drewrite.exportDatatables=true 2>&1 | tee target/openrewrite/dry-run.log
 
       - name: Upload recipe inventory and dry-run diffs
@@ -284,7 +304,7 @@ jobs:
           mkdir -p target/openrewrite
           mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress -Popenrewrite,openrewrite-spring-source \
             -Dopenrewrite.spring-recipes.version="${spring_recipes_built_version}" \
-            org.openrewrite.maven:rewrite-maven-plugin:6.50.0:discover -Ddetail=true \
+            org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:discover -Ddetail=true \
             2>&1 | tee target/openrewrite/spring-source-discovery.log
           if ! grep -Fq 'org.openrewrite.java.spring.boot3.UpgradeSpringBoot_3_5' target/openrewrite/spring-source-discovery.log; then
             echo "::error::Spring source build completed but the expected community recipe org.openrewrite.java.spring.boot3.UpgradeSpringBoot_3_5 was not discovered from the local Maven repository."
