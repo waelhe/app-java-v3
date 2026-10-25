@@ -274,9 +274,9 @@
         <awssdk.version>2.57.3</awssdk.version>
         <stripe.version>33.4.2</stripe.version>
         <project.build.outputTimestamp>2026-06-14T08:00:00Z</project.build.outputTimestamp>
-            <!-- OpenRewrite toolchain versions are verified against the official catalog:
-             rewrite-recipe-bom 3.41.0 and rewrite-maven-plugin 6.50.0 (2026-10-24).
-             They are opt-in through -Popenrewrite; application builds remain unchanged. -->
+            <!-- OpenRewrite versions are opt-in through -Popenrewrite; application builds remain unchanged.
+             CI resolves the official recipe BOM in an isolated effective POM and checks these
+             explicit Maven-plugin dependency properties against its managed versions. -->
         <openrewrite.recipe-bom.version>3.41.0</openrewrite.recipe-bom.version>
         <openrewrite.maven-plugin.version>6.50.0</openrewrite.maven-plugin.version>
         <!-- Expected release coordinate of the pinned upstream tag (v6.41.0). The
@@ -1296,20 +1296,10 @@
                     <url>https://artifacts.codegenomeproject.org/maven</url>
                 </pluginRepository>
             </pluginRepositories>
-            <dependencyManagement>
-                <dependencies>
-                    <dependency>
-                        <groupId>org.openrewrite.recipe</groupId>
-                        <artifactId>rewrite-recipe-bom</artifactId>
-                        <version>${openrewrite.recipe-bom.version}</version>
-                        <type>pom</type>
-                        <scope>import</scope>
-                    </dependency>
-                </dependencies>
-            </dependencyManagement>
             <!-- External recipe packs belong on the Rewrite Maven plugin classpath.
-                 Maven does not apply project dependencyManagement/BOMs to plugin dependencies,
-                 so their versions are pinned above to the same official BOM catalog. -->
+                 Maven does not apply project dependencyManagement/BOMs to plugin dependencies.
+                 Their versions are explicit properties checked against effective versions from
+                 the official BOM by the isolated audit project before recipe discovery in CI. -->
             <build>
                 <plugins>
                     <plugin>

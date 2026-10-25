@@ -453,6 +453,32 @@ class PlatformGovernanceFilesTest {
     @Test
     void openRewriteCatalogIsBomAlignedOptInAndAudited() throws IOException {
         String pom = read("pom.xml");
+        String bomAuditPom = read(".ci", "openrewrite-bom-audit", "pom.xml");
+        String bomAuditScript = read("scripts", "openrewrite", "verify-bom-alignment.py");
+        assertThat(bomAuditPom)
+                .as("the audit POM must import the official BOM and leave the tested recipes versionless")
+                .contains("<artifactId>rewrite-recipe-bom</artifactId>")
+                .contains("<version>${openrewrite.recipe-bom.version}</version>")
+                .contains("<artifactId>rewrite-java-dependencies</artifactId>")
+                .contains("<artifactId>rewrite-jackson</artifactId>")
+                .contains("<artifactId>rewrite-netty</artifactId>")
+                .contains("<artifactId>rewrite-openapi</artifactId>")
+                .contains("<artifactId>rewrite-third-party</artifactId>")
+                .contains("<artifactId>rewrite-all</artifactId>")
+                .contains("<artifactId>rewrite-spring</artifactId>")
+                .contains("<pluginRepositories>");
+        assertThat(bomAuditScript)
+                .as("the validator must mechanically compare plugin pins against effective BOM versions")
+                .contains("openrewrite.java-dependencies.version")
+                .contains("openrewrite.jackson-recipes.version")
+                .contains("openrewrite.netty-recipes.version")
+                .contains("openrewrite.openapi-recipes.version")
+                .contains("openrewrite.third-party-recipes.version")
+                .contains("openrewrite.all-recipes.version")
+                .contains("openrewrite.spring-recipes.version")
+                .contains("effective_pom")
+                .contains("Version mismatch");
+
         assertThat(pom)
                 .as("OpenRewrite recipe and Maven plugin versions must follow the verified official catalog")
                 .contains("<openrewrite.recipe-bom.version>3.41.0</openrewrite.recipe-bom.version>")
@@ -461,7 +487,6 @@ class PlatformGovernanceFilesTest {
                 .contains("<openrewrite.jackson-recipes.version>1.31.1</openrewrite.jackson-recipes.version>")
                 .contains("<openrewrite.netty-recipes.version>0.13.2</openrewrite.netty-recipes.version>")
                 .contains("<openrewrite.openapi-recipes.version>0.35.0</openrewrite.openapi-recipes.version>")
-                .contains("<artifactId>rewrite-recipe-bom</artifactId>")
                 .contains("<id>openrewrite</id>")
                 .contains("<artifactId>rewrite-third-party</artifactId>")
                 .contains("<id>openrewrite-third-party-free-catalog</id>")
@@ -559,7 +584,11 @@ class PlatformGovernanceFilesTest {
                 // number; the probe must flow the measured coordinate into Maven rather
                 // than requesting the guessed release number (review 5638134031).
                 .contains("spring_recipes_built_version")
-                .contains("-Dopenrewrite.spring-recipes.version=\"${spring_recipes_built_version}\"");
+                .contains("-Dopenrewrite.spring-recipes.version=\"${spring_recipes_built_version}\"")
+                .contains("Verify recipe versions against the official BOM")
+                .contains("maven-help-plugin:3.5.1:effective-pom")
+                .contains("verify-bom-alignment.py")
+                .contains("recipe-bom-effective-pom.xml");
     }
 
     private static Path repoRoot() {

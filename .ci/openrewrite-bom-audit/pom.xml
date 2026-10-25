@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.marketplace.governance</groupId>
+    <artifactId>openrewrite-recipe-bom-audit</artifactId>
+    <version>1.0.0</version>
+    <name>OpenRewrite recipe BOM alignment audit</name>
+    <properties>
+        <!-- The CI workflow overrides this from the root POM; retained only as a local default. -->
+        <openrewrite.recipe-bom.version>3.41.0</openrewrite.recipe-bom.version>
+    </properties>
+    <repositories>
+        <repository>
+            <id>codegenome</id>
+            <url>https://artifacts.codegenomeproject.org/maven</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>true</enabled></snapshots>
+        </repository>
+    </repositories>
+    <pluginRepositories>
+        <pluginRepository>
+            <id>codegenome</id>
+            <url>https://artifacts.codegenomeproject.org/maven</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>true</enabled></snapshots>
+        </pluginRepository>
+    </pluginRepositories>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.openrewrite.recipe</groupId>
+                <artifactId>rewrite-recipe-bom</artifactId>
+                <version>${openrewrite.recipe-bom.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+    <!-- Deliberately omit versions: effective-pom must supply them from the published BOM. -->
+    <dependencies>
+        <dependency><groupId>org.openrewrite.recipe</groupId><artifactId>rewrite-java-dependencies</artifactId></dependency>
+        <dependency><groupId>org.openrewrite.recipe</groupId><artifactId>rewrite-jackson</artifactId></dependency>
+        <dependency><groupId>org.openrewrite.recipe</groupId><artifactId>rewrite-netty</artifactId></dependency>
+        <dependency><groupId>org.openrewrite.recipe</groupId><artifactId>rewrite-openapi</artifactId></dependency>
+        <dependency><groupId>org.openrewrite.recipe</groupId><artifactId>rewrite-third-party</artifactId></dependency>
+        <dependency><groupId>org.openrewrite.recipe</groupId><artifactId>rewrite-all</artifactId></dependency>
+        <dependency><groupId>org.openrewrite.recipe</groupId><artifactId>rewrite-spring</artifactId></dependency>
+    </dependencies>
+</project>

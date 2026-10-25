@@ -130,6 +130,33 @@ jobs:
           done
           echo "Code Genome authentication and both plugin artifact downloads succeeded; credentials were not printed."
 
+      - name: Verify recipe versions against the official BOM
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bom_version="$(python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse("pom.xml").getroot()
+          ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+          properties = root.find("m:properties", ns)
+          node = properties.find("m:openrewrite.recipe-bom.version", ns) if properties is not None else None
+          version = (node.text or "").strip() if node is not None else ""
+          if not version:
+              raise SystemExit("Root pom.xml is missing openrewrite.recipe-bom.version")
+          print(version)
+          PY
+          )"
+          mkdir -p target/openrewrite
+          mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress \
+            -f .ci/openrewrite-bom-audit/pom.xml \
+            -Dopenrewrite.recipe-bom.version="${bom_version}" \
+            org.apache.maven.plugins:maven-help-plugin:3.5.1:effective-pom \
+            -Doutput="${GITHUB_WORKSPACE}/target/openrewrite/recipe-bom-effective-pom.xml"
+          python3 scripts/openrewrite/verify-bom-alignment.py \
+            --root-pom pom.xml \
+            --audit-pom .ci/openrewrite-bom-audit/pom.xml \
+            --effective-pom target/openrewrite/recipe-bom-effective-pom.xml
+
       - name: Discover available recipes
         shell: bash
         run: |
