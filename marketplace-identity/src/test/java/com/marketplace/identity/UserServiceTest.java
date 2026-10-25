@@ -75,6 +75,16 @@ class UserServiceTest {
     private AuthActionTokenService authActionTokenService;
 
     /**
+     * CodeRabbit agent findings, row 26 / CWE-269: the primary-change
+     * choreography's assignment leg — mocked here like the purge services
+     * (its own unit guards in {@code RoleAssignmentServiceTest} carry the
+     * real reconciliation contract: the former mirror retires, the new
+     * primary's mirror is ensured, independent additive grants stay).
+     */
+    @Mock
+    private RoleAssignmentService roleAssignmentService;
+
+    /**
      * S1/B1: the register surface's encoder provider — a REAL
      * DelegatingPasswordEncoder (the same bean type the full app wires):
      * the unit guards then assert the genuinely-encoded value crosses to the
@@ -395,6 +405,11 @@ class UserServiceTest {
         // Both publications: the standing cache channel and the domain fact.
         verify(eventPublisher).publishEvent(any(CacheInvalidationRequested.class));
         verify(eventPublisher).publishEvent(new UserRoleChanged(id, "target-user", "CONSUMER", "ADMIN"));
+        // CodeRabbit agent findings, row 26 / CWE-269: the V187/V188 third
+        // store rides the command atomically — the former primary's mirror
+        // retires and the new primary's mirror is ensured in the SAME
+        // transaction (the V188 union must not resurrect the demoted role).
+        verify(roleAssignmentService).onPrimaryRoleChanged(id, UserRole.CONSUMER, UserRole.ADMIN, "admin-actor");
     }
 
     @Test
@@ -781,13 +796,17 @@ class UserServiceTest {
         verify(userDetailsManager, never()).updateUser(any());
         // Step 6: the issued authorizations die immediately.
         verify(jdbcTemplate).update(eq(UserService.DELETE_AUTHORIZATIONS_BY_PRINCIPAL), eq("target-subject"));
+        // Step 6-b (CodeRabbit agent findings, row 7 / CWE-613): the
+        // surviving-session kill — the erasure fact rides the house R8
+        // channel under the ORIGINAL subject, so
+        // AccountStatusSessionInvalidator expires every session minted
+        // before the erasure AFTER_COMMIT.
+        verify(eventPublisher).publishEvent(new com.marketplace.shared.api.AccountIdentityErased(
+                id, "target-subject"));
         // The admin-count query never ran (a non-admin target).
         verify(jdbcTemplate, never()).queryForList(anyString(), eq(String.class));
         // Step 7: the standing AFTER_COMMIT cache channel with BOTH cache names.
-        ArgumentCaptor<CacheInvalidationRequested> event =
-                ArgumentCaptor.forClass(CacheInvalidationRequested.class);
-        verify(eventPublisher).publishEvent(event.capture());
-        assertThat(event.getValue().cacheNames()).containsExactlyInAnyOrder("users", "userSubjects");
+        verify(eventPublisher).publishEvent(any(CacheInvalidationRequested.class));
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.marketplace.identity;
 
 import com.marketplace.identity.spi.AuditHistoryPurgeResult;
 import com.marketplace.identity.spi.IdentitySpi;
+import com.marketplace.shared.api.AccountIdentityErased;
 import com.marketplace.shared.api.AccountStatusChanged;
 import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ConflictException;
@@ -497,6 +498,15 @@ public class UserService implements IdentitySpi {
         // kill — the L23 documented SAS basis, see the javadoc above).
         jdbcTemplate.update(DELETE_AUTHORIZATIONS_BY_PRINCIPAL, username);
 
+        // The V187/V188 third store (CodeRabbit agent findings, row 26 /
+        // CWE-269): the former primary's mirrored assignment dies with the
+        // primary it represented and the new primary's mirror is ensured —
+        // the V188 effective-authorities union must neither resurrect the
+        // demoted role at the next login nor lose the promoted one.
+        // ATOMIC with this command's writes (REQUIRED joins this
+        // transaction); genuinely independent additive grants stay.
+        roleAssignmentService.onPrimaryRoleChanged(userId, previous, target, actor);
+
         eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));
         // R8 Wave 1: username joins the payload so the session invalidator
         // consumes the fact without a query back into this module — the
@@ -808,6 +818,17 @@ public class UserService implements IdentitySpi {
 
         // Step 6 — issued authorizations die immediately (no 7-day wait).
         jdbcTemplate.update(DELETE_AUTHORIZATIONS_BY_PRINCIPAL, originalSubject);
+
+        // Step 6-b — the surviving-session kill (CodeRabbit agent findings,
+        // row 7 / CWE-613): the login row and the grants die here, but a
+        // live browser session holds its authenticated principal (and its
+        // cached authorities) in the session store — a session minted
+        // before the erasure keeps authorizing as the erased identity.
+        // The house R8 channel: the domain fact published in THIS
+        // transaction, consumed AFTER_COMMIT by AccountStatusSessionInvalidator
+        // under the ORIGINAL subject (the name the session index is built
+        // on), with the framework's resubmission on failure.
+        eventPublisher.publishEvent(new AccountIdentityErased(userId, originalSubject));
 
         // Step 7 — the standing AFTER_COMMIT cache channel (I5-guarded).
         eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));

@@ -1,5 +1,6 @@
 package com.marketplace.identity;
 
+import com.marketplace.shared.api.AccountCredentialsRotated;
 import com.marketplace.shared.api.PasswordResetRequestedEvent;
 import io.micrometer.observation.annotation.Observed;
 import org.slf4j.Logger;
@@ -168,6 +169,17 @@ public class PasswordResetService {
         // minted under the OLD password must not survive the owner rotating
         // the secret it guards.
         jdbcTemplate.update(DELETE_AUTHORIZATIONS_BY_PRINCIPAL, username);
+        // The surviving-session kill (CodeRabbit agent findings, row 14 /
+        // CWE-613): a live browser session holds its cached principal across
+        // this credential write — the pre-reset cookie would re-mint through
+        // the authorization-server chain exactly the grants this recovery
+        // just revoked. The house R8 channel: the rotation fact published in
+        // THIS transaction, consumed AFTER_COMMIT by
+        // AccountStatusSessionInvalidator — every session of the account
+        // expires with the commit, the owner re-authenticates with the new
+        // credential, and the framework's resubmission covers a failed
+        // expiry.
+        eventPublisher.publishEvent(new AccountCredentialsRotated(username));
         log.info("Password reset completed: username={}", username);
     }
 }
