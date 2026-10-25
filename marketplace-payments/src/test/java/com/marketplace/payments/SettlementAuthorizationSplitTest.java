@@ -8,7 +8,10 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import java.lang.reflect.Method;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Architecture gate for the N2 fix: the authorization split between the
