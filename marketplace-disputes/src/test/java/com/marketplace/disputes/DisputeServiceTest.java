@@ -30,6 +30,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
@@ -381,5 +382,31 @@ class DisputeServiceTest {
         DisputeResolvedEvent event = (DisputeResolvedEvent) captor.getValue();
         assertThat(event.resolution()).isEqualTo(DisputeResolution.RELEASE_PROVIDER);
         assertThat(event.refundedAmountCents()).isNull();
+    }
+
+    /**
+     * CodeRabbit agent findings, row 9: a loan subject's resolution chain
+     * executes the FULL-refund contract only (the lending listener's
+     * cancellation edge refunds the whole charge), so an administrator's
+     * partial amount would be silently DROPPED and money could move beyond
+     * the approved partial amount. The honest 400 precedes every mutation
+     * — the dispute row stays open, no event is published.
+     */
+    @Test
+    void resolve_partialAmountOnALoanSubject_is400BeforeAnyMovement() {
+        UUID loanId = UUID.randomUUID();
+        Dispute dispute = Dispute.openLoan(loanId, UUID.randomUUID(), "damage");
+        when(repository.findById(dispute.getId())).thenReturn(Optional.of(dispute));
+
+        assertThatThrownBy(() -> disputeService.resolve(
+                dispute.getId(), DisputeResolution.REFUND_CONSUMER, 2500L, authentication))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class)
+                .hasMessageContaining("full-refund contract");
+
+        // The refusal precedes every mutation: the dispute is untouched,
+        // no refund, no resolution event.
+        assertThat(dispute.getResolution()).isNull();
+        verify(paymentRefundPort, never()).refundForBooking(any(), any());
+        verify(eventPublisher, never()).publishEvent(any());
     }
 }

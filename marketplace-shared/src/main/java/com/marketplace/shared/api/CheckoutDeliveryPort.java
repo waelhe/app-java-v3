@@ -36,6 +36,19 @@ public interface CheckoutDeliveryPort {
     long remainingActiveLegs(UUID orderId);
 
     /**
+     * The order's already-DELIVERED legs (CodeRabbit agent findings, row
+     * 16 / the delivered-goods guard): a full cancellation releases ALL
+     * reserved inventory and requests a FULL refund, so it must refuse
+     * whenever any package was physically delivered — the buyer keeps
+     * delivered goods, and only a partial-cancellation operation (a
+     * separate future surface) may refund the undelivered rest. The
+     * terminal-reconciliation read rides the same count: an aggregate
+     * delivery with every leg terminal and at least one delivered has
+     * completed IN FACT and fulfills through the verified edge.
+     */
+    long deliveredLegs(UUID orderId);
+
+    /**
      * One seller group's delivery fare — the facts the checkout shows and
      * the placement freezes. {@code refusal} carries the honest
      * non-serviceability reason (null when serviceable).

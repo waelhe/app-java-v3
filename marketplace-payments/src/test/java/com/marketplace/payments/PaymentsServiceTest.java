@@ -909,4 +909,31 @@ class PaymentsServiceTest {
         assertThrows(ConflictException.class, () -> service.createAdIntent(
                 UUID.randomUUID(), UUID.randomUUID(), LocalDate.parse("2026-10-01"), 0L, "SAR", "k"));
     }
+
+    @Test
+    void createIntent_refusesTheReservedServerPayableKeyPrefixes() {
+        // CodeRabbit agent findings, rows 17/18: the booking surface lets
+        // the CALLER choose the idempotency key, while the order, loan,
+        // delivery, and ad-bill paths DERIVE theirs from the payable's
+        // identity. A caller key that pre-occupies a derived namespace
+        // could make a cheaper booking intent satisfy that payable's gate,
+        // so the reserved prefixes are refused outright — the structural
+        // isolation layer (the complete origin+payable verification on the
+        // reuse paths is the defense in depth).
+        UUID bookingId = create(UUID.class);
+        UUID consumerId = create(UUID.class);
+        for (String reserved : new String[]{
+                "order-" + UUID.randomUUID(),
+                "loan-" + UUID.randomUUID(),
+                "delivery-" + UUID.randomUUID(),
+                "ad-debit-" + UUID.randomUUID() + "-2026-10-25"}) {
+            assertThrows(com.marketplace.shared.api.ConflictException.class,
+                    () -> service.createIntent(bookingId, consumerId, reserved),
+                    "the reserved server key prefix must be refused: " + reserved);
+        }
+        // Nothing was written and no booking info was even consulted — the
+        // refusal precedes every read and write of the booking path.
+        verifyNoInteractions(bookingParticipantProvider);
+        verify(intentRepository, never()).save(any(PaymentIntent.class));
+    }
 }

@@ -103,4 +103,9 @@ public class CheckoutDeliveryAdapter implements CheckoutDeliveryPort {
     public long remainingActiveLegs(UUID orderId) {
         return requests.countActiveByOrderId(orderId);
     }
+
+    @Override
+    public long deliveredLegs(UUID orderId) {
+        return requests.countDeliveredByOrderId(orderId);
+    }
 }

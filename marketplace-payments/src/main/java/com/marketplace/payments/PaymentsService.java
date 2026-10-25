@@ -417,6 +417,20 @@ public class PaymentsService implements PaymentsSpi {
 
     @PreAuthorize("hasRole('CONSUMER')")
     public PaymentIntent createIntent(UUID bookingId, UUID consumerId, String idempotencyKey) {
+        // The caller-selected key namespace is CLOSED to the server's own
+        // deterministic payable keys (CodeRabbit agent findings, rows
+        // 17/18): booking callers choose their keys, while the order and
+        // loan checkout paths derive theirs as "order-{orderId}" /
+        // "loan-{loanId}" — a booking key that pre-occupies the derived
+        // namespace could make a cheaper booking intent satisfy an order's
+        // or loan's payment gate. The prefix refusal is the structural
+        // isolation; the origin+payable verification on the reuse paths is
+        // the defense in depth (the same two-layer model the V81 unique
+        // index rides behind the friendly gate).
+        if (idempotencyKey != null && isServerPayableKey(idempotencyKey)) {
+            throw new ConflictException("Idempotency key '" + idempotencyKey
+                    + "' is reserved for a server-generated payable — booking callers must choose their own key");
+        }
         // Idempotency: return existing intent if same key
         if (idempotencyKey != null) {
             var existing = paymentIntentRepository.findByIdempotencyKey(idempotencyKey);
@@ -513,10 +527,28 @@ public class PaymentsService implements PaymentsSpi {
         String idempotencyKey = "order-" + orderId;
         var existing = paymentIntentRepository.findByIdempotencyKey(idempotencyKey);
         if (existing.isPresent()) {
-            if (!existing.get().getConsumerId().equals(consumerId)) {
+            PaymentIntent found = existing.get();
+            if (!found.getConsumerId().equals(consumerId)) {
                 throw new AccessDeniedException("Idempotency key belongs to another payer");
             }
-            return existing.get();
+            // CodeRabbit agent findings, row 18: the deterministic order key
+            // must return THE order's own payable — a same-payer intent that
+            // pre-occupied the key (any origin, any amount) must never
+            // satisfy this order's payment gate. The complete binding check
+            // mirrors the delivery settlement's own authoritative-payable
+            // verification (DeliveryService.onPaymentStateChanged): origin,
+            // subject, amount, and currency must ALL match, else the honest
+            // refusal — money never moves on a mismatched identifier.
+            if (!PaymentIntent.ORIGIN_ORDER.equals(found.getOrigin())
+                    || !orderId.equals(found.getOrderId())
+                    || found.getAmountCents() == null || found.getAmountCents() != amountCents
+                    || found.getCurrency() == null || !found.getCurrency().equals(currency)) {
+                throw new ConflictException("Idempotency key '" + idempotencyKey
+                        + "' is held by a non-matching payment intent (" + found.getId()
+                        + ", origin=" + found.getOrigin() + ") — the order's payable"
+                        + " cannot be satisfied by it");
+            }
+            return found;
         }
         if (amountCents <= 0) {
             throw new ConflictException("An order intent requires a positive amount: " + amountCents + " cents");
@@ -563,10 +595,27 @@ public class PaymentsService implements PaymentsSpi {
         String idempotencyKey = "loan-" + loanId;
         var existing = paymentIntentRepository.findByIdempotencyKey(idempotencyKey);
         if (existing.isPresent()) {
-            if (!existing.get().getConsumerId().equals(borrowerId)) {
+            PaymentIntent found = existing.get();
+            if (!found.getConsumerId().equals(borrowerId)) {
                 throw new AccessDeniedException("Idempotency key belongs to another payer");
             }
-            return existing.get();
+            // CodeRabbit agent findings, row 17: the deterministic loan key
+            // must return THE loan's own payable — a same-borrower booking
+            // intent that pre-occupied the key must never satisfy the loan's
+            // paid gate. The complete binding check (origin, subject,
+            // amount, currency) mirrors the delivery settlement's own
+            // authoritative-payable verification; the honest refusal on any
+            // mismatch, never a silent link of unrelated money.
+            if (!PaymentIntent.ORIGIN_LOAN.equals(found.getOrigin())
+                    || !loanId.equals(found.getLoanId())
+                    || found.getAmountCents() == null || found.getAmountCents() != amountCents
+                    || found.getCurrency() == null || !found.getCurrency().equals(currency)) {
+                throw new ConflictException("Idempotency key '" + idempotencyKey
+                        + "' is held by a non-matching payment intent (" + found.getId()
+                        + ", origin=" + found.getOrigin() + ") — the loan's payable"
+                        + " cannot be satisfied by it");
+            }
+            return found;
         }
         if (amountCents <= 0) {
             throw new ConflictException("A loan intent requires a positive amount: " + amountCents + " cents");
@@ -576,6 +625,23 @@ public class PaymentsService implements PaymentsSpi {
         PaymentIntent saved = paymentIntentRepository.save(intent);
         eventPublisher.publishEvent(new PaymentStateChangedEvent(saved.getId(), "INITIATED"));
         return saved;
+    }
+
+    /**
+     * The server-generated payable-key namespace (CodeRabbit agent findings,
+     * rows 17/18): the order, loan, delivery, and ad-bill checkout paths
+     * DERIVE their idempotency keys from the payable's identity
+     * ({@code order-}/{@code loan-}/{@code delivery-}/{@code ad-debit-}
+     * prefixes), while the booking path lets the CALLER choose the key. A
+     * caller-selected key that pre-occupies a derived namespace could make
+     * an unrelated cheaper intent satisfy that payable's payment gate, so
+     * the booking surface refuses the reserved prefixes outright — the
+     * structural isolation layer; the complete origin+payable verification
+     * on each derived key's reuse path is the defense in depth.
+     */
+    private static boolean isServerPayableKey(String key) {
+        return key.startsWith("order-") || key.startsWith("loan-")
+                || key.startsWith("delivery-") || key.startsWith("ad-debit-");
     }
 
     /**

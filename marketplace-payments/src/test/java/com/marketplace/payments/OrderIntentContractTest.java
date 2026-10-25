@@ -140,4 +140,76 @@ class OrderIntentContractTest {
         verify(intentRepository).save(paid);
         verify(eventPublisher).publishEvent(new PaymentStateChangedEvent(paid.getId(), "REFUNDED"));
     }
+
+    // ------------------------------------------------------------------
+    // CodeRabbit agent findings, rows 17/18 — the derived-key namespace
+    // must answer ONLY the payable it was derived from
+    // ------------------------------------------------------------------
+
+    @Test
+    void createOrderIntent_refusesAKeyPreOccupiedByABookingIntent() {
+        // The finding's exact attack: a CONSUMER books a cheap booking with
+        // the caller-selected key "order-{orderId}" (the expensive order's
+        // own derived key), then opens the order checkout — the replay must
+        // NOT hand the booking intent to the order's payment gate.
+        UUID orderId = UUID.randomUUID();
+        UUID buyer = UUID.randomUUID();
+        PaymentIntent preOccupied = PaymentIntent.create(
+                UUID.randomUUID(), buyer, 700L, "SAR", "order-" + orderId, null);
+        when(intentRepository.findByIdempotencyKey("order-" + orderId))
+                .thenReturn(Optional.of(preOccupied));
+
+        assertThatThrownBy(() -> service.createOrderIntent(orderId, buyer, 17400L, "SAR"))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("non-matching payment intent");
+        verify(intentRepository, never()).save(any());
+    }
+
+    @Test
+    void createOrderIntent_refusesAKeyHeldByAnAmountMismatchedOrderIntent() {
+        // The complete binding check includes the AUTHORITATIVE amount: a
+        // same-origin, same-order intent created under a different total
+        // (a stale price snapshot) must never satisfy the current payable.
+        UUID orderId = UUID.randomUUID();
+        UUID buyer = UUID.randomUUID();
+        PaymentIntent stale = PaymentIntent.createForOrder(
+                orderId, buyer, 9900L, "SAR", "order-" + orderId, null);
+        when(intentRepository.findByIdempotencyKey("order-" + orderId)).thenReturn(Optional.of(stale));
+
+        assertThatThrownBy(() -> service.createOrderIntent(orderId, buyer, 17400L, "SAR"))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("non-matching payment intent");
+    }
+
+    @Test
+    void createLoanIntent_refusesAKeyPreOccupiedByABookingIntent() {
+        // Row 17's exact attack: the borrower pre-occupies "loan-{loanId}"
+        // with a cheap booking intent, then the loan approval asks for its
+        // payable — the replay must refuse, never link unrelated money.
+        UUID loanId = UUID.randomUUID();
+        UUID borrower = UUID.randomUUID();
+        PaymentIntent preOccupied = PaymentIntent.create(
+                UUID.randomUUID(), borrower, 700L, "SAR", "loan-" + loanId, null);
+        when(intentRepository.findByIdempotencyKey("loan-" + loanId))
+                .thenReturn(Optional.of(preOccupied));
+
+        assertThatThrownBy(() -> service.createLoanIntent(loanId, borrower, 50000L, "SAR"))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("non-matching payment intent");
+        verify(intentRepository, never()).save(any());
+    }
+
+    @Test
+    void createLoanIntent_replaysTheSameIntentForTheSameLoan() {
+        UUID loanId = UUID.randomUUID();
+        UUID borrower = UUID.randomUUID();
+        PaymentIntent existing = PaymentIntent.createForLoan(
+                loanId, borrower, 50000L, "SAR", "loan-" + loanId, null);
+        when(intentRepository.findByIdempotencyKey("loan-" + loanId)).thenReturn(Optional.of(existing));
+
+        PaymentIntent replayed = service.createLoanIntent(loanId, borrower, 50000L, "SAR");
+
+        assertThat(replayed).isSameAs(existing);
+        verify(intentRepository, never()).save(any());
+    }
 }
