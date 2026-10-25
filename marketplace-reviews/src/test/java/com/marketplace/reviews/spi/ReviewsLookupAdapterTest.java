@@ -93,4 +93,28 @@ class ReviewsLookupAdapterTest {
 
         assertTrue(adapter.hideAsModerator(reviewId).isEmpty());
     }
+
+    // -- B-19/C.11 row 3: the automatic engine's narrow internal path ----
+
+    @Test
+    void hideAsModerationEngine_delegatesToTheOwningService() {
+        UUID reviewId = UUID.randomUUID();
+        UUID reviewerId = UUID.randomUUID();
+        when(reviewsService.hideByModerationEngine(reviewId)).thenReturn(Optional.of(reviewerId));
+
+        assertEquals(Optional.of(reviewerId), adapter.hideAsModerationEngine(reviewId));
+        verify(reviewsService).hideByModerationEngine(reviewId);
+        // The engine path never touches the admin-gated manual method —
+        // one physics, two authority paths.
+        verify(reviewsService, org.mockito.Mockito.never()).hideByModerator(org.mockito.ArgumentMatchers.any());
+        verifyNoInteractions(reviewRepository);
+    }
+
+    @Test
+    void hideAsModerationEngine_passesTheSkipThroughWhenTheGoalIsAlreadyMet() {
+        UUID reviewId = UUID.randomUUID();
+        when(reviewsService.hideByModerationEngine(reviewId)).thenReturn(Optional.empty());
+
+        assertTrue(adapter.hideAsModerationEngine(reviewId).isEmpty());
+    }
 }

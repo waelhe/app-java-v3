@@ -40,7 +40,9 @@ import java.util.UUID;
  * hide carries):</b> the reported content hides (a POST flips
  * {@code HIDDEN_BY_MODERATOR}, a COMMENT takes the house soft delete,
  * a REVIEW rides the reviews module's port INSIDE this same
- * transaction — the one-unit-of-work rule), the author's alert fires
+ * transaction — the one-unit-of-work rule — on the engine's OWN narrow
+ * internal path (row 3: the machine's authority after the rule +
+ * threshold validation, not the reporter's privileges), the author's alert fires
  * ({@code ContentModeratedEvent} on the REAL transition only — the
  * documented skip: an already-hidden or author-deleted target carries
  * no new fact, one real hide = one author alert), and EVERY live OPEN
@@ -207,10 +209,16 @@ public class ModerationRuleEngine {
                                 comment.getAuthorId(), ReportTargetType.COMMENT.name(),
                                 comment.getId()));
                     });
-            // The review hide runs INSIDE this transaction through the reviews
-            // module's port — the PUBLISHED->HIDDEN flip answers the review's
-            // author on a real flip only (the documented skip).
-            case REVIEW -> reviewLookupPort.hideAsModerator(report.getTargetId())
+            // The review hide runs INSIDE this transaction through the
+            // reviews module's port — on the engine's OWN narrow internal
+            // path (row 3): the rule and the threshold are already validated
+            // here, so the ordinary (non-admin) reporter's qualifying report
+            // hides the review and commits with the report's creation —
+            // the PUBLISHED->HIDDEN flip answers the review's author on a
+            // real flip only (the documented skip). The engine carries the
+            // machine's authority; the manual path's ADMIN gate stays on
+            // the human resolve.
+            case REVIEW -> reviewLookupPort.hideAsModerationEngine(report.getTargetId())
                     .ifPresent(authorId -> eventPublisher.publishEvent(new ContentModeratedEvent(
                             authorId, ReportTargetType.REVIEW.name(), report.getTargetId())));
         }

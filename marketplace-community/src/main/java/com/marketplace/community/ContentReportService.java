@@ -207,9 +207,10 @@ public class ContentReportService {
                     });
             // W1 §4.5: the review hide runs INSIDE this transaction through
             // the reviews module's port (the one-unit-of-work rule) — the
-            // port answers the review's author on a real PUBLISHED->HIDDEN
-            // flip only (an already-hidden or pending review is the
-            // documented skip: no second flip, no duplicate alert).
+            // MANUAL path: this resolve is admin-gated at every layer, so
+            // the port's hideAsModerator keeps its ADMIN re-check (defense
+            // in depth). The engine's automatic action rides its own
+            // narrow internal path instead (row 3 — ModerationRuleEngine).
             case REVIEW -> reviewLookupPort.hideAsModerator(report.getTargetId())
                     .ifPresent(authorId -> eventPublisher.publishEvent(new ContentModeratedEvent(
                             authorId, ReportTargetType.REVIEW.name(), report.getTargetId())));

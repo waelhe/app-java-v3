@@ -516,6 +516,37 @@ public class ReviewsService {
     @Observed(name = "review.moderate.hide")
     @PreAuthorize("hasRole('ADMIN')")
     public Optional<UUID> hideByModerator(UUID id) {
+        return hidePublishedReview(id);
+    }
+
+    /**
+     * B-19/C.11 — the automatic engine's hide (row 3, the narrow internal
+     * path): the SAME physics {@link #hideByModerator(UUID)} applies — the
+     * same {@code PUBLISHED}-only flip, the same {@code ReviewUpdatedEvent},
+     * the same {@code "reviews"} cache eviction, the same documented skip
+     * and the same author-id return — invoked by the community rule engine
+     * AFTER it has validated the enabled rule and the distinct-reporter
+     * threshold. This path deliberately carries NO ADMIN gate: the engine's
+     * authority is the machine's own (the measured rule + threshold), not
+     * the reporter's privileges — before this split the engine rode the
+     * admin-gated manual path, so an ordinary (non-admin) reporter's
+     * qualifying report failed authorization inside the creation
+     * transaction and rolled the whole unit back, report included. The
+     * manual path above keeps its ADMIN gate untouched.
+     */
+    public Optional<UUID> hideByModerationEngine(UUID id) {
+        return hidePublishedReview(id);
+    }
+
+    /**
+     * The one physics both moderation paths apply (the single source of
+     * truth — no parallel mechanisms): the {@code PUBLISHED}-only filter,
+     * the real-transition flip, the update event for the stored averages,
+     * the targeted {@code "reviews"} cache eviction and the author id for
+     * the caller's alert. Unknown, soft-deleted, pending or already-hidden
+     * rows answer empty — the documented skip.
+     */
+    private Optional<UUID> hidePublishedReview(UUID id) {
         return reviewRepository.findById(id)
                 .filter(review -> review.getModerationStatus() == ReviewModerationStatus.PUBLISHED)
                 .map(review -> {
