@@ -25,6 +25,20 @@ import java.util.stream.Collectors;
  * wave, gap #7, the registered contract's own real write: «صوت واحد لكل
  * عضو»). One read, three commands — all the house precedents, measured:
  *
+ * <p><b>The operational kill-switch on the write legs (CodeRabbit agent
+ * findings, row 5 / CWE-862):</b> the console's registered lever for THIS
+ * capability — {@code community.polls.enabled} — guards the TWO ADDITIVE
+ * writes (authoring a poll, casting a vote) through ONE shared service
+ * guard, the first gate by design exactly like the board read's own first
+ * line: the capability itself is off — the geo port, the membership rule
+ * and every type-level gate answer nothing until the switch is back, and
+ * both HTTP entries (POST /api/v1/neighborhood/polls and POST
+ * /api/v1/polls/{pollId}/vote) route through this service, so the one
+ * guard closes both. The withdraw seam deliberately stays live: an
+ * operator's incident lever silences the delivery channel, never the
+ * owner's own removal seam — the Wave-4 urgent-channel precedent (the
+ * withdrawal seams documented as untouched by design there).
+ *
  * <p><b>The read gate (G-N3's default, verbatim from the feed, the
  * events board, the market board and the groups board):</b> the polls
  * are for ACTIVE members of the neighborhood — an authenticated caller
@@ -198,6 +212,10 @@ public class NeighborhoodPollService {
     @Observed(name = "community.poll.create")
     public NeighborhoodPollView create(UUID authorId, UUID locationId, String question,
                                        String authorLabel, List<String> optionLabels) {
+        // The kill-switch FIRST (row 5) — before the port resolve, before
+        // any membership read, before any write: the capability itself is
+        // off, so every later gate answers nothing.
+        requirePollsEnabled();
         GeoLookupPort.GeoNode node = geoLookupPort.getLocation(locationId);
         if (node.level() != NEIGHBORHOOD_LEVEL) {
             throw new BadRequestException(
@@ -238,6 +256,11 @@ public class NeighborhoodPollService {
      */
     @Observed(name = "community.poll.vote")
     public NeighborhoodPollVoteView vote(UUID memberId, UUID pollId, UUID optionId) {
+        // The kill-switch FIRST (row 5) — the same shared guard, before
+        // the poll's own existence gate: the capability is off, so even
+        // the honest 404 stays silent (the board read's own posture —
+        // nothing about the surface answers while the switch is off).
+        requirePollsEnabled();
         NeighborhoodPoll poll = pollRepository.findById(pollId)
                 .orElseThrow(() -> new ResourceNotFoundException("Poll", pollId));
         NeighborhoodPollOption option = optionRepository.findById(optionId)
@@ -313,6 +336,28 @@ public class NeighborhoodPollService {
     private NeighborhoodMembership requireMembership(UUID callerId, String noMembershipMessage) {
         return membershipRepository.findByUserId(callerId)
                 .orElseThrow(() -> new AccessDeniedException(noMembershipMessage));
+    }
+
+    /**
+     * The operational kill-switch on the write legs (CodeRabbit agent
+     * findings, row 5 / CWE-862): ONE shared guard for the TWO ADDITIVE
+     * writes — authoring a poll and casting a vote — the same registered
+     * lever the board read already consults ({@code community.polls.enabled},
+     * the Day-1 seed's row; an absent row keeps the built behavior through
+     * the fallback). The honest refusal is the 409: the caller is fully
+     * authorized and the request is well-formed, but it conflicts with the
+     * capability's current administrative state — the operator paused
+     * THIS surface, so nothing new may be written into it. The withdraw
+     * seam is deliberately NOT guarded here (the class javadoc's own
+     * boundary: an owner's removal of his own vote rides the kill-switch
+     * world exactly as the urgent channel's withdrawal seams do).
+     */
+    private void requirePollsEnabled() {
+        if (!featureGate.isEnabled("community.polls.enabled", true)) {
+            throw new ConflictException(
+                    "Polls are currently switched off by the platform operator — "
+                            + "creation and voting are paused");
+        }
     }
 
     /**
