@@ -28,6 +28,12 @@ on:
       - 'docs/governance/openrewrite-catalog.md'
       - 'scripts/openrewrite/**'
   workflow_dispatch:
+    inputs:
+      run_spring_source_probe:
+        description: 'Opt in to the experimental, source-built Spring recipe dependency/discovery probe.'
+        required: false
+        default: false
+        type: boolean
   schedule:
     - cron: '23 5 * * 1'
 
@@ -221,7 +227,7 @@ jobs:
 
   spring-source-build-probe:
     name: OpenRewrite source-build probe
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_spring_source_probe == true)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout platform repository
