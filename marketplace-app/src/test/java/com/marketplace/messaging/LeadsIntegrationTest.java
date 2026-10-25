@@ -299,6 +299,49 @@ class LeadsIntegrationTest {
     }
 
     @Test
+    void purgeScrubsTheArmoredLeadToo_row23() {
+        // CodeRabbit agent findings, row 23 — the caller-armored lead: a
+        // submitter writes "[purged]" as the MESSAGE (caller-authored
+        // content the old single-column skip trusted as purge state)
+        // while supplying REAL contact fields. The erasure must scrub
+        // the contact data on the base table AND the Envers mirror —
+        // caller content is never a purge-state indicator.
+        UUID armorerId = UUID.randomUUID();
+        seedUser(armorerId, "row23-armorer-" + armorerId + "@example.com");
+
+        when(currentUserProvider.tryGetCurrentUserId(any())).thenReturn(Optional.of(armorerId));
+        LeadResponse armored = leadsService.createLead(listingId,
+                new LeadRequest("Real Name", "+963991112223", "[purged]"),
+                null, "203.0.113.15");
+
+        // The armored row exists exactly as submitted.
+        Map<String, Object> before = jdbc.queryForMap(
+                "SELECT contact_name, contact_phone, message FROM listing_leads WHERE id = ?",
+                armored.id());
+        assertThat(before.get("contact_name")).isEqualTo("Real Name");
+        assertThat(before.get("message")).isEqualTo("[purged]");
+
+        int purged = purgeAdapter.purgeAuthoredTexts(armorerId);
+        assertThat(purged).isGreaterThanOrEqualTo(1);
+
+        // The contact fields died base and mirror — the armor failed.
+        Map<String, Object> row = jdbc.queryForMap(
+                "SELECT contact_name, contact_phone, message FROM listing_leads WHERE id = ?",
+                armored.id());
+        assertThat(row.get("contact_name")).isEqualTo("[purged]");
+        assertThat(row.get("contact_phone")).isEqualTo("[purged]");
+        assertThat(row.get("message")).isEqualTo("[purged]");
+        Integer mirrorScrubbed = jdbc.queryForObject(
+                "SELECT count(*) FROM listing_leads_aud WHERE id = ? AND contact_name = ? "
+                        + "AND contact_phone = ? AND message = ?",
+                Integer.class, armored.id(), "[purged]", "[purged]", "[purged]");
+        assertThat(mirrorScrubbed).isGreaterThanOrEqualTo(1);
+
+        // Idempotence — the port contract: a re-run matches nothing.
+        assertThat(purgeAdapter.purgeAuthoredTexts(armorerId)).isEqualTo(0);
+    }
+
+    @Test
     void concurrentSubmissionsFromOneFingerprintSerializeOnTheAdvisoryLock() throws Exception {
         // The CodeRabbit round-1 adoption proof: two threads, one
         // fingerprint, cap 1 — the advisory transaction lock makes the

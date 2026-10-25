@@ -46,6 +46,21 @@ import org.springframework.transaction.annotation.Transactional;
  * statement idempotent with exact counts: already-purged rows (the
  * marker) and never-had-content rows (NULL — Envers DEL revisions) match
  * nothing.
+ *
+ * <p><b>CodeRabbit agent findings, row 23 — the leads' skip law:</b> a
+ * lead carries THREE sensitive columns, so a single-column skip would
+ * trust caller-authored content as a purge-state indicator: a lead
+ * submitted with {@code message = '[purged]'} (a string the submitter
+ * writes) would slip the old {@code message <> ?} filter and keep its
+ * real {@code contact_name} and {@code contact_phone} forever. The
+ * leads' statements therefore skip a row ONLY when EVERY sensitive
+ * column already carries the marker — caller content is never a trusted
+ * purge-state signal. The base columns are NOT NULL (V52), so plain
+ * {@code <>} is exact there; the Envers mirror's columns are nullable
+ * (DEL revisions carry NULLs), so a mirror row needs scrubbing only
+ * where a column carries unscrubbed content — {@code IS NOT NULL AND
+ * <> ?}, the NULL-safe form: an all-NULL DEL revision matches nothing,
+ * exactly like the messages mirror.
  */
 @Component
 public class MessagingContentPurgeAdapter implements AuthoredContentPurgePort {
@@ -69,16 +84,28 @@ public class MessagingContentPurgeAdapter implements AuthoredContentPurgePort {
                 AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
         // L34: the leads this subject submitted while authenticated — all
         // three text columns carry his contact data, base and mirror.
+        // Row 23: skip a row ONLY when EVERY sensitive column is already
+        // the marker — a caller-written "[purged]" message must never
+        // armor the real contact_name/contact_phone against the erasure.
         int leads = jdbcTemplate.update(
                 "UPDATE listing_leads SET contact_name = ?, contact_phone = ?, message = ? "
-                        + "WHERE sender_user_id = ? AND message <> ?",
+                        + "WHERE sender_user_id = ? "
+                        + "AND (contact_name <> ? OR contact_phone <> ? OR message <> ?)",
                 AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
-                AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
+                AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER,
+                AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER);
+        // The Envers mirror's columns are nullable (DEL revisions carry
+        // NULLs) — the NULL-safe form: a column needs scrubbing only when
+        // it carries unscrubbed content; an all-NULL row matches nothing.
         int leadAuditRows = jdbcTemplate.update(
                 "UPDATE listing_leads_aud SET contact_name = ?, contact_phone = ?, message = ? "
-                        + "WHERE sender_user_id = ? AND message <> ?",
+                        + "WHERE sender_user_id = ? "
+                        + "AND ((contact_name IS NOT NULL AND contact_name <> ?) "
+                        + "OR (contact_phone IS NOT NULL AND contact_phone <> ?) "
+                        + "OR (message IS NOT NULL AND message <> ?))",
                 AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
-                AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
+                AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER,
+                AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER);
         log.info("Messaging content purge: userId={}, messages={}, auditRows={}, leads={}, leadAuditRows={}",
                 userId, messages, auditRows, leads, leadAuditRows);
         return messages + auditRows + leads + leadAuditRows;
