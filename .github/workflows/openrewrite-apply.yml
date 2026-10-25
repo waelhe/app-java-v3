@@ -506,6 +506,51 @@ jobs:
           print(f"Validated {len(batches)} batch(es) for {meta['target_ref']} at {meta['target_sha']}.")
           PY
 
+      - name: Verify patch content and exact planned paths before publication
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          publication_dir="target/openrewrite/publication"
+          plan="${publication_dir}/batches.json"
+          # The approved baseline recipe only removes unused import statements. The write-enabled
+          # job revalidates the artifact independently and will refuse arbitrary Java edits.
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          pub = Path("target/openrewrite/publication")
+          batches = json.loads((pub / "batches.json").read_text(encoding="utf-8"))
+          patches = [pub / "automatic-rewrite.patch"] + [pub / "patches" / f"batch-{b['number']}.patch" for b in batches]
+          for patch in patches:
+              if not patch.is_file() or patch.stat().st_size == 0:
+                  raise SystemExit(f"Missing or empty patch artifact: {patch}")
+              for number, line in enumerate(patch.read_text(encoding="utf-8", errors="strict").splitlines(), 1):
+                  if line.startswith(("+++", "---")) or not line.startswith(("+", "-")):
+                      continue
+                  content = line[1:]
+                  if content.strip() and not content.lstrip().startswith("import "):
+                      raise SystemExit(f"Non-import source change in {patch}:{number}; refusing publication.")
+          print(f"Validated import-only content for {len(patches)} patch artifact(s).")
+          PY
+          git switch --detach "${TARGET_SHA}"
+          for idx in $(seq 1 "${BATCH_COUNT}"); do
+            patch_file="${publication_dir}/patches/batch-${idx}.patch"
+            paths_file="${RUNNER_TEMP}/openrewrite-validated-batch-${idx}.paths"
+            jq -r ".[${idx}-1].paths[]" "${plan}" | sort > "${paths_file}"
+            git reset --hard "${TARGET_SHA}"
+            git apply --check "${patch_file}"
+            git apply "${patch_file}"
+            mapfile -t actual_paths < <(git diff --name-only "${TARGET_SHA}" | sort)
+            diff -u "${paths_file}" <(printf '%s\\n' "${actual_paths[@]}")
+          done
+          # Validate the full patch used by changed-modules mode against the exact planned path set.
+          git reset --hard "${TARGET_SHA}"
+          mapfile -t expected_all < <(jq -r '.[].paths[]' "${plan}" | sort -u)
+          git apply --check "${publication_dir}/automatic-rewrite.patch"
+          git apply "${publication_dir}/automatic-rewrite.patch"
+          mapfile -t actual_all < <(git diff --name-only "${TARGET_SHA}" | sort)
+          diff -u <(printf '%s\\n' "${expected_all[@]}") <(printf '%s\\n' "${actual_all[@]}")
+          git reset --hard "${TARGET_SHA}"
+
       - name: Publish generated transformations without running Maven
         shell: bash
         run: |

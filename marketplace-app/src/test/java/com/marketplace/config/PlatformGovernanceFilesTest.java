@@ -701,6 +701,9 @@ class PlatformGovernanceFilesTest {
                 .contains("contents: write")
                 .contains("GH_TOKEN: ${{ github.token }}")
                 .contains("actions/download-artifact@v6")
+                .contains("Verify patch content and exact planned paths before publication")
+                .contains("Non-import source change in")
+                .contains("git apply --check")
                 .contains("Publish generated transformations without running Maven")
                 .doesNotContain("./mvnw")
                 .doesNotContain("mvn --settings");
