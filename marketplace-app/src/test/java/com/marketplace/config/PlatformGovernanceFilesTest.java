@@ -477,7 +477,9 @@ class PlatformGovernanceFilesTest {
                 .contains("openrewrite.all-recipes.version")
                 .contains("openrewrite.spring-recipes.version")
                 .contains("effective_pom")
-                .contains("Version mismatch");
+                .contains("Version mismatch")
+                .doesNotContain("effective_bom_version")
+                .doesNotContain("effective audit POM");
 
         assertThat(pom)
                 .as("OpenRewrite recipe and Maven plugin versions must follow the verified official catalog")
