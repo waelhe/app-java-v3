@@ -22,6 +22,7 @@ import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
 import org.springframework.ai.session.SessionService;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.util.function.Consumer;
 import java.util.stream.Stream;
@@ -106,8 +107,11 @@ class AiAutoConfigurationTest {
             return null;
         }).when(vectorStores).ifAvailable(any());
 
+        ObjectProvider<AiWithdrawnSourceStore> withdrawnSources = mock(ObjectProvider.class);
+        when(withdrawnSources.getIfAvailable()).thenReturn(mock(AiWithdrawnSourceStore.class));
+
         AiChatGateway gateway = new AiAutoConfiguration()
-                .aiChatGateway(builder, sessionService, searchTools, modelRouters, selfRefineAdvisors, guardrailAdvisors, retrievalAugmentationAdvisors, vectorStores);
+                .aiChatGateway(builder, sessionService, searchTools, modelRouters, selfRefineAdvisors, guardrailAdvisors, retrievalAugmentationAdvisors, vectorStores, withdrawnSources);
 
         assertThat(gateway).isNotNull();
         verify(searchTools).ifAvailable(any());
@@ -149,6 +153,15 @@ class AiAutoConfigurationTest {
      * The class's own mapping behavior stays pinned by AiQueryUnderstandingTest.
      */
 
+    /**
+     * Row 32 (agent findings 2026-10-25, CWE-367): the withdrawal record's
+     * JDBC infrastructure AND a transaction manager — the per-source
+     * publication/withdrawal advisory-lock protocol is transaction-scoped
+     * (held to the commit that makes the record and the vector writes
+     * visible together). Without a transaction manager there is no
+     * protocol, so the gateway backs off rather than index without
+     * serialization; the middle block below is exactly that back-off.
+     */
     @Test
     void knowledgeGatewayNeedsTheExactRecordStoreSoNeverDependsOnVectorRecall() {
         // VectorStore alone is no longer enough: the withdrawal decision is
@@ -161,10 +174,22 @@ class AiAutoConfigurationTest {
                         .doesNotHaveBean(AiWithdrawnSourceStore.class)
                         .doesNotHaveBean(AiKnowledgeGateway.class));
 
+        // ...and row 32: still not enough without a transaction manager —
+        // the advisory lock would be released at statement end, so the
+        // gateway refuses to exist rather than degrade the protocol.
         contextRunner
                 .withPropertyValues("spring.ai.model.chat=none", "spring.ai.chat.client.enabled=false")
                 .withBean(VectorStore.class, () -> mock(VectorStore.class))
                 .withBean(JdbcTemplate.class, () -> mock(JdbcTemplate.class))
+                .run(context -> assertThat(context)
+                        .hasSingleBean(AiWithdrawnSourceStore.class)
+                        .doesNotHaveBean(AiKnowledgeGateway.class));
+
+        contextRunner
+                .withPropertyValues("spring.ai.model.chat=none", "spring.ai.chat.client.enabled=false")
+                .withBean(VectorStore.class, () -> mock(VectorStore.class))
+                .withBean(JdbcTemplate.class, () -> mock(JdbcTemplate.class))
+                .withBean(PlatformTransactionManager.class, () -> mock(PlatformTransactionManager.class))
                 .run(context -> assertThat(context)
                         .hasSingleBean(AiWithdrawnSourceStore.class)
                         .hasSingleBean(AiKnowledgeGateway.class));
