@@ -125,15 +125,19 @@ class LedgerArithmeticPropertyTest {
 
     @Test
     void debit_neverWrapsAnUnfundedBalanceIntoALargePositiveOne() {
+        // The finding's exact shape: an UNFUNDED balance that legitimately
+        // went negative, then one provider-selected large charge whose
+        // subtraction would wrap it into a large POSITIVE balance.
         ProviderBalance balance = ProviderBalance.empty(UUID.randomUUID(), "SAR");
-        balance.credit(1000L);
+        balance.debit(100L);
+        assertThat(balance.getAvailableCents()).isEqualTo(-100L);
 
         assertThatThrownBy(() -> balance.debit(Long.MAX_VALUE))
                 .isInstanceOf(ArithmeticException.class);
 
         // The refused debit leaves the balance untouched — the exception
         // aborts the caller's transaction; nothing wrapped anywhere.
-        assertThat(balance.getAvailableCents()).isEqualTo(1000L);
+        assertThat(balance.getAvailableCents()).isEqualTo(-100L);
     }
 
     @Test
