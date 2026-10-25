@@ -654,7 +654,7 @@ class PlatformGovernanceFilesTest {
                 .contains("full-project")
                 .contains("changed-modules")
                 .contains("MAX_FILES_PER_PR=95")
-                .contains("One-time baseline: discover all reactor modules from the Maven reactor.")
+                .contains("One-time baseline: discover all reactor modules from the root POM; no hand-maintained module list.")
                 .contains("'!marketplace-app/src/test/java/com/marketplace/config/PlatformGovernanceFilesTest.java'")
                 .contains("git diff --name-only")
                 .contains("OPENREWRITE_MODULES")
