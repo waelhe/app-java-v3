@@ -6,19 +6,29 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * The REST contract for an availability slot — a 1:1 snapshot of
- * {@link AvailabilitySlot}'s JSON surface (entity fields plus the audit
- * columns inherited from the shared {@code BaseEntity}: version, createdBy,
- * createdAt, updatedBy, updatedAt). Introduced so the HTTP boundary stops
- * exposing the JPA entity itself (audit 2026-09-25, clean-architecture
- * finding 1; the entity stays internal to the module per the Modulith
- * module-API model).
+ * The REST contract for an availability slot — the public operational
+ * surface of {@link AvailabilitySlot}: the bookable window, its state and
+ * the concurrency {@code version} consumers need for optimistic reads.
+ * Introduced so the HTTP boundary stops exposing the JPA entity (audit
+ * 2026-09-25, clean-architecture finding 1; the entity stays internal to
+ * the module per the Modulith module-API model).
  *
- * <p>Field-for-field wire compatibility is deliberate: the component set
- * mirrors the entity's getter surface exactly, and {@code @Schema(name)}
- * pins the OpenAPI schema name to the entity's historical name so the
- * published contract — measured live from the production {@code /v3/api-docs}
- * — is byte-for-byte unchanged.
+ * <p><b>CodeRabbit agent findings row 33 (CWE-200, 2026-10-25):</b> the
+ * audit identity columns ({@code createdBy}/{@code updatedBy}) left this
+ * contract together with the operational fields — and those columns carry
+ * the account subject, which for native registrations IS the login email
+ * ({@code AuditorAwareImpl} returns {@code Authentication.getName()}).
+ * The shared read path {@code GET /providers/{id}/availability} serves
+ * ANY authenticated reader, so an unrelated account could harvest a
+ * provider's (or, after a booking-driven {@code releaseSlot}, a
+ * consumer's) private contact address from every slot row. The fix is
+ * the plan's own law from row 2: <b>the public REST contract carries no
+ * audit identities</b> — the operational fields stay; audit history
+ * remains queryable through the module's own {@code _aud} mirrors and
+ * any future audit surface must be a separate endpoint with explicit
+ * authorization (the finding's recommendation), not a rider on the
+ * shared response. The timestamps ({@code createdAt}/{@code updatedAt})
+ * are not personal data and keep their wire place.</p>
  */
 @Schema(name = "AvailabilitySlot")
 public record AvailabilitySlotResponse(
@@ -28,9 +38,7 @@ public record AvailabilitySlotResponse(
         Instant endsAt,
         boolean booked,
         Long version,
-        String createdBy,
         Instant createdAt,
-        String updatedBy,
         Instant updatedAt) {
 
     static AvailabilitySlotResponse from(AvailabilitySlot slot) {
@@ -41,9 +49,7 @@ public record AvailabilitySlotResponse(
                 slot.getEndsAt(),
                 slot.isBooked(),
                 slot.getVersion(),
-                slot.getCreatedBy(),
                 slot.getCreatedAt(),
-                slot.getUpdatedBy(),
                 slot.getUpdatedAt());
     }
 }
