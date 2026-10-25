@@ -184,7 +184,7 @@ jobs:
           if [[ "${TARGET_REF}" == "main" ]]; then
             MODE="pull-request"
             AUTO_BRANCH="automation/openrewrite-working-${GITHUB_RUN_ID}"
-            EXPECTED_REMOTE_SHA="$(git ls-remote origin "refs/heads/${AUTO_BRANCH}" | awk '{print $1}')"
+            EXPECTED_REMOTE_SHA=""
             git switch -c "${AUTO_BRANCH}"
           else
             MODE="direct-branch-update"
@@ -517,19 +517,43 @@ jobs:
           # job revalidates the artifact independently and will refuse arbitrary Java edits.
           python3 - <<'PY'
           import json
+          import re
           from pathlib import Path
+
+          # Only complete Java import declarations may be added or removed.
+          # Parse git-diff state explicitly so binary payloads and mode/rename headers
+          # cannot bypass this gate by failing to start with '+' or '-'.
+          IMPORT = re.compile(
+              r"\s*import\s+(?:static\s+)?[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*(?:\.\*)?\s*;\s*"
+          )
           pub = Path("target/openrewrite/publication")
           batches = json.loads((pub / "batches.json").read_text(encoding="utf-8"))
           patches = [pub / "automatic-rewrite.patch"] + [pub / "patches" / f"batch-{b['number']}.patch" for b in batches]
           for patch in patches:
               if not patch.is_file() or patch.stat().st_size == 0:
                   raise SystemExit(f"Missing or empty patch artifact: {patch}")
+              state = None
               for number, line in enumerate(patch.read_text(encoding="utf-8", errors="strict").splitlines(), 1):
-                  if line.startswith(("+++", "---")) or not line.startswith(("+", "-")):
+                  if line.startswith("diff --git "):
+                      state = "header"
                       continue
-                  content = line[1:]
-                  if content.strip() and not content.lstrip().startswith("import "):
-                      raise SystemExit(f"Non-import source change in {patch}:{number}; refusing publication.")
+                  if state == "header":
+                      if line.startswith(("index ", "--- a/", "+++ b/")):
+                          continue
+                      if line.startswith("@@ "):
+                          state = "hunk"
+                          continue
+                      raise SystemExit(f"Disallowed patch header in {patch}:{number}; refusing publication.")
+                  if state != "hunk":
+                      raise SystemExit(f"Content outside a diff in {patch}:{number}; refusing publication.")
+                  if line.startswith("@@ ") or line.startswith(" ") or line == "" or line.startswith("\\ No newline"):
+                      continue
+                  if line.startswith(("+", "-")):
+                      content = line[1:]
+                      if content.strip() and not IMPORT.fullmatch(content):
+                          raise SystemExit(f"Non-import source change in {patch}:{number}; refusing publication.")
+                      continue
+                  raise SystemExit(f"Unexpected patch line in {patch}:{number}; refusing publication.")
           print(f"Validated import-only content for {len(patches)} patch artifact(s).")
           PY
           git switch --detach "${TARGET_SHA}"
@@ -560,7 +584,7 @@ jobs:
           git switch --detach "${TARGET_SHA}"
           git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if [[ "${WRITE_MODE}" == "direct-branch-update" ]]; then
-            git apply --binary "${pub}/automatic-rewrite.patch"
+            git apply "${pub}/automatic-rewrite.patch"
             mapfile -t changed_paths < <(git diff --name-only "${TARGET_SHA}" | sort)
             (( ${#changed_paths[@]} > 0 )) || { echo "::error::Patch contains no changes."; exit 1; }
             for path in "${changed_paths[@]}"; do [[ "${path}" == *.java ]] || { echo "::error::Unexpected non-Java diff: ${path}"; exit 1; }; done
@@ -575,7 +599,7 @@ jobs:
               jq -r ".[${idx}-1].paths[]" "${plan}" > "${paths_file}"; mapfile -t batch_paths < "${paths_file}"
               module_names="$(jq -r ".[${idx}-1].modules | join(\",\")" "${plan}")"; batch_reason="$(jq -r ".[${idx}-1].reason // empty" "${plan}")"
               git switch --detach "${TARGET_SHA}"; batch_branch="automation/openrewrite-${OPENREWRITE_SCOPE}-${TARGET_SHA:0:12}-batch-${idx}"; git switch -C "${batch_branch}"
-              git apply --binary "${patch_file}"; git add -- "${batch_paths[@]}"; git diff --cached --check
+              git apply "${patch_file}"; git add -- "${batch_paths[@]}"; git diff --cached --check
               mapfile -t staged_paths < <(git diff --cached --name-only | sort); mapfile -t expected_paths < <(printf '%s\n' "${batch_paths[@]}" | sort)
               diff -u <(printf '%s\n' "${expected_paths[@]}") <(printf '%s\n' "${staged_paths[@]}")
               git commit -m "chore(openrewrite): ${OPENREWRITE_SCOPE} batch ${idx}/${BATCH_COUNT}"
