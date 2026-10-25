@@ -6,12 +6,14 @@ import io.micrometer.observation.annotation.Observed;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -63,21 +65,40 @@ public class EmailVerificationService {
     /** The deep-link route the client implements for the verification landing page. */
     static final String VERIFY_ROUTE = "/verify-email?token=";
 
+    /**
+     * row 8 (agent findings 2026-10-25, CWE-367): the account-level
+     * serialization point — the login row's Postgres row lock. Every
+     * administrative surface that shuts an account writes this row FIRST
+     * ({@code JdbcUserDetailsManager.updateUser}/{@code deleteUser} — the
+     * UPDATE/DELETE take the same lock), so a {@code FOR UPDATE} taken here
+     * before any verification state is read makes the two writers mutually
+     * exclusive on the account: whichever commits second re-reads the
+     * committed truth of the first. The statement rides the caller's
+     * transaction through the same transaction-scoped {@link JdbcTemplate}
+     * discipline the {@code UserService} advisory locks use — the lock is
+     * held until the surrounding transaction commits.
+     */
+    static final String LOCK_ACCOUNT_ROW =
+            "select username from auth_users where username = ? for update";
+
     private final UserRepository userRepository;
     private final UserDetailsManager userDetailsManager;
     private final ApplicationEventPublisher eventPublisher;
     private final AuthActionTokenService authActionTokenService;
+    private final JdbcTemplate jdbcTemplate;
     private final IdentityMailProperties properties;
 
     public EmailVerificationService(UserRepository userRepository,
                                     UserDetailsManager userDetailsManager,
                                     ApplicationEventPublisher eventPublisher,
                                     AuthActionTokenService authActionTokenService,
+                                    JdbcTemplate jdbcTemplate,
                                     IdentityMailProperties properties) {
         this.userRepository = userRepository;
         this.userDetailsManager = userDetailsManager;
         this.eventPublisher = eventPublisher;
         this.authActionTokenService = authActionTokenService;
+        this.jdbcTemplate = jdbcTemplate;
         this.properties = properties;
     }
 
@@ -120,6 +141,24 @@ public class EmailVerificationService {
      * administratively consumed one all take the same silent path, and the
      * caller answers the constant 202 for every case (the OWASP
      * enumeration wall — measured line in PasswordResetService's javadoc).
+     *
+     * <p><b>row 8 (agent findings 2026-10-25, CWE-367) — the eligibility
+     * read and the issuance run under the account's row lock.</b> The
+     * prior shape read the pending state, then issued inside the same
+     * transaction but WITHOUT the account-level serialization point: an
+     * administrative disable committing between the read and the INSERT
+     * consumed only the tokens already present, so the resend could mint
+     * a fresh redemption right on a banned account — and redeeming it
+     * lifted the administrative disable. Taking {@link #LOCK_ACCOUNT_ROW}
+     * BEFORE the eligibility read closes every interleaving: a disable
+     * that waits (its UPDATE blocks on this lock) proceeds to consume
+     * whatever this transaction issued — {@code invalidateOutstanding}
+     * runs under its own row lock, after this commit; a disable that
+     * committed first leaves a consumed latest row, and this read declines.
+     * No ordering can end with a live redemption right on a disabled
+     * account. The registration birth needs no lock: the account row it
+     * creates IS the serialization point (no administrative surface can
+     * write a row that does not exist yet).</p>
      */
     @Observed(name = "email.verification.resend")
     public void resend(String email) {
@@ -128,6 +167,9 @@ public class EmailVerificationService {
             log.info("Verification resend requested for an address with no login account — silent no-op");
             return;
         }
+        // row 8: the serialization point precedes the eligibility read —
+        // the decision and the issuance both happen under the lock.
+        lockAccountRow(subject);
         // The state guard: re-arm ONLY a pending verification. A consumed
         // latest row means finished — the owner completed it, or an
         // administrative surface consumed the outstanding right (the
@@ -154,12 +196,42 @@ public class EmailVerificationService {
      * administrative disable loses its outstanding token first (the
      * invariant's consume happens in that surface's transaction), so the
      * two writers can never both commit against the same live token row.
+     *
+     * <p><b>row 8 (agent findings 2026-10-25, CWE-367) — the account's row
+     * lock precedes the consumption stamp.</b> The lock needs the account's
+     * identity, which only the token carries, so the leg first resolves the
+     * account through the non-consuming pre-read
+     * ({@link AuthActionTokenService#accountOf}) and takes
+     * {@link #LOCK_ACCOUNT_ROW} BEFORE consuming. The unlocked prior shape
+     * had a window a disable could slip through: it commits between the
+     * consume and the hold-lifting write, its {@code invalidateOutstanding}
+     * finds the token already consumed (a no-op), and the redemption's
+     * {@code updateUser} then re-enables what the administrator shut. Under
+     * the lock the disable either waits — and applies its ban on top of the
+     * completed redemption, the honest last-writer order — or has already
+     * consumed the token, and the wall below answers the honest 400 with
+     * the hold-lifting write never reached: <b>verification redemption
+     * cannot remove a ban</b>. The finding's alternative (a separate
+     * administrative-disable column) is unnecessary by the registered V112
+     * state model: a LIVE token on the account implies no committed ban
+     * (every administrative surface consumes the outstanding rights under
+     * the same row lock), so the token lifecycle itself is the separate
+     * state — no second enabled-like bit is invented outside the official
+     * account model.</p>
      */
     @Observed(name = "email.verification.complete")
     public void completeVerification(String token) {
+        String username = authActionTokenService
+                .accountOf(token, AuthActionTokenPurpose.EMAIL_VERIFICATION)
+                .orElseThrow(() -> new BadRequestException(
+                        // the same construction the single-use wall's own
+                        // unknown-token verdict uses — one message, one truth
+                        "This " + AuthActionTokenPurpose.EMAIL_VERIFICATION.name()
+                                .toLowerCase().replace('_', ' ')
+                                + " link is invalid or has already been used"));
+        lockAccountRow(username);
         AuthActionToken redeemed = authActionTokenService
                 .consume(token, AuthActionTokenPurpose.EMAIL_VERIFICATION);
-        String username = redeemed.getUsername();
         UserDetails stored = userDetailsManager.loadUserByUsername(username);
         userDetailsManager.updateUser(org.springframework.security.core.userdetails.User
                 .withUsername(username)
@@ -171,5 +243,17 @@ public class EmailVerificationService {
                 .disabled(false)
                 .build());
         log.info("Email verification completed — the hold is lifted: username={}", username);
+    }
+
+    /**
+     * row 8: takes {@link #LOCK_ACCOUNT_ROW} on the caller's transaction.
+     * An absent row locks nothing — the caller's own existence gate owns
+     * that verdict (the V112 FK guarantees a token row's account exists).
+     */
+    private void lockAccountRow(String username) {
+        List<String> locked = jdbcTemplate.queryForList(LOCK_ACCOUNT_ROW, String.class, username);
+        if (locked.isEmpty() && log.isDebugEnabled()) {
+            log.debug("Verification account lock found no login row: username={}", username);
+        }
     }
 }
