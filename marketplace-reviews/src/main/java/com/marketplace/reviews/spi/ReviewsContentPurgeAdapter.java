@@ -1,10 +1,14 @@
 package com.marketplace.reviews.spi;
 
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.UUID;
 
 import com.marketplace.shared.api.AuthoredContentPurgePort;
+import com.marketplace.shared.api.CacheInvalidationRequested;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -59,6 +63,31 @@ import org.springframework.transaction.annotation.Transactional;
  * {@code reply} (V24 §8 + V37's mirror alteration), so the mirror purges
  * with the same predicates.</p>
  *
+ * <p><b>Cache invalidation (row 27 — CodeRabbit agent findings, the
+ * {@code ProviderProfileContentPurgeAdapter} house pattern verbatim):</b>
+ * the purge runs as raw JDBC inside the orchestrator's transaction — no
+ * entity write, so no service-level {@code CacheInvalidationRequested}
+ * fires — and the {@code "reviews"} cache
+ * ({@code ReviewsService.getById}, keyed by review id alone) would keep
+ * serving the erased comment/reply texts to the public single-review
+ * read. This adapter therefore resolves every affected review id —
+ * BOTH authored classes: the subject's comments (reviewer_id) and his
+ * replies (provider_id) — and publishes the TARGETED invalidation
+ * through the house mechanism (the AFTER_COMMIT relay — the event fires
+ * only after this transaction commits, so the eviction cannot race a
+ * rollback). The resolution runs BEFORE the UPDATEs: the {@code IS NOT
+ * NULL} predicates that select this purge's rows are the same
+ * predicates the UPDATEs null out, so resolving afterwards would find
+ * nothing and a cached entry could outlive the purge it was meant to
+ * evict. The whole-cache clear alternative is deliberately NOT taken,
+ * with the measured fact as the documented reason: a cache entry can
+ * only exist for a row that resolved here (a read that populated the
+ * cache read the row this purge targets), and a zero-resolution purge
+ * (nothing authored by the subject) would needlessly wipe every other
+ * user's cached reviews on each such erasure. Targeted evictions are
+ * idempotent — the already-purged re-run resolves nothing and simply
+ * publishes no event at all.</p>
+ *
  * <p><b>Statement shape (the port's contract):</b> native JDBC UPDATE,
  * idempotent by the {@code IS NOT NULL} filters — exact counts, zero
  * matches on re-run; no Envers revision for the purge itself (the
@@ -69,15 +98,36 @@ public class ReviewsContentPurgeAdapter implements AuthoredContentPurgePort {
 
     private static final Logger log = LoggerFactory.getLogger(ReviewsContentPurgeAdapter.class);
 
-    private final JdbcTemplate jdbcTemplate;
+    private static final Set<String> REVIEWS_CACHE_NAMES = Set.of("reviews");
 
-    public ReviewsContentPurgeAdapter(JdbcTemplate jdbcTemplate) {
+    private final JdbcTemplate jdbcTemplate;
+    private final ApplicationEventPublisher eventPublisher;
+
+    public ReviewsContentPurgeAdapter(JdbcTemplate jdbcTemplate,
+                                      ApplicationEventPublisher eventPublisher) {
         this.jdbcTemplate = jdbcTemplate;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
     @Transactional
     public int purgeAuthoredTexts(UUID userId) {
+        // Row 27 — the affected review ids resolve BEFORE the UPDATEs run:
+        // the IS NOT NULL predicates that select this purge's rows are the
+        // same predicates the UPDATEs null out, so resolving after would
+        // match nothing and the "reviews" cache would keep serving the
+        // erased texts. The union covers BOTH authored classes — the
+        // subject's comments (reviewer_id) and his replies (provider_id) —
+        // and a review carrying both (his comment, his reply) resolves
+        // once (the set's own dedup).
+        Set<UUID> affectedReviewIds = new LinkedHashSet<>();
+        affectedReviewIds.addAll(jdbcTemplate.queryForList(
+                "SELECT id FROM reviews WHERE reviewer_id = ? AND comment IS NOT NULL",
+                UUID.class, userId));
+        affectedReviewIds.addAll(jdbcTemplate.queryForList(
+                "SELECT id FROM reviews WHERE reply IS NOT NULL AND provider_id = ?",
+                UUID.class, userId));
+
         int comments = jdbcTemplate.update(
                 "UPDATE reviews SET comment = NULL WHERE reviewer_id = ? AND comment IS NOT NULL",
                 userId);
@@ -93,9 +143,18 @@ public class ReviewsContentPurgeAdapter implements AuthoredContentPurgePort {
         int replyAudits = jdbcTemplate.update(
                 "UPDATE reviews_aud SET reply = NULL WHERE reply IS NOT NULL AND provider_id = ?",
                 userId);
+
+        // The targeted cache invalidation (see the class javadoc): every
+        // affected review id gets its "reviews" entry evicted AFTER this
+        // transaction commits — the erased comment/reply texts are never
+        // served from the cache to the public single-review read.
+        for (UUID reviewId : affectedReviewIds) {
+            eventPublisher.publishEvent(new CacheInvalidationRequested(REVIEWS_CACHE_NAMES, reviewId));
+        }
+
         log.info("Reviews content purge: userId={}, comments={}, commentAuditRows={}, "
-                        + "replies={}, replyAuditRows={}",
-                userId, comments, commentAudits, replies, replyAudits);
+                        + "replies={}, replyAuditRows={}, cacheEvictions={}",
+                userId, comments, commentAudits, replies, replyAudits, affectedReviewIds.size());
         return comments + commentAudits + replies + replyAudits;
     }
 }
