@@ -65,6 +65,21 @@ public class ProviderBalance extends BaseEntity {
     public UUID getProviderId(){ return id == null ? null : id.providerId(); }
     public String getCurrency(){ return id == null ? null : id.currency(); }
     public long getAvailableCents(){return availableCents;}
-    public void credit(long amountCents){ this.availableCents += amountCents; }
-    public void debit(long amountCents){ this.availableCents -= amountCents; }
+    /**
+     * Checked arithmetic (CodeRabbit agent findings, row 22 / CWE-190):
+     * a credit must never wrap the signed balance — an overflow aborts the
+     * entry-and-balance transaction (the ArithmeticException propagates,
+     * the caller's transaction rolls back) instead of materializing a
+     * wrapped value the ledger would then persist as truth.
+     */
+    public void credit(long amountCents){ this.availableCents = Math.addExact(this.availableCents, amountCents); }
+    /**
+     * Checked arithmetic (CodeRabbit agent findings, row 22 / CWE-190):
+     * provider-selected ad prices could accumulate debits large enough to
+     * wrap an unfunded negative balance into a large POSITIVE one —
+     * {@link Math#subtractExact} makes the wrap an ArithmeticException
+     * that aborts the entry-and-balance transaction, so the balance is
+     * either honestly debited or honestly refused, never silently wrapped.
+     */
+    public void debit(long amountCents){ this.availableCents = Math.subtractExact(this.availableCents, amountCents); }
 }

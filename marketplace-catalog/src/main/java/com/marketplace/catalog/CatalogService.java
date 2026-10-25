@@ -718,9 +718,32 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
                 : Pageable.unpaged();
     }
 
-    /** The min/max price mapping shared by the criteria paths. */
+    /** The price-filter ceiling: 100,000,000 major units — see {@link #toMinorUnits}. */
+    private static final BigDecimal MAX_PRICE_FILTER_MAJOR = new BigDecimal("100000000");
+
+    /**
+     * The min/max price mapping shared by the criteria paths — bounded
+     * BEFORE the scale (CodeRabbit agent findings, row 34 / CWE-400): a
+     * compact scientific-notation value like {@code 1e+100000000} passes
+     * request binding as eleven characters, and {@code movePointRight(2)}
+     * would materialize a ~100-million-digit integer in shared heap BEFORE
+     * {@code longValue()} narrows it — one anonymous request,
+     * disproportionate CPU and memory. {@link BigDecimal#compareTo}
+     * never materializes (it compares through the scale/precision
+     * arithmetic — the class's documented contract), so the range gate is
+     * itself immune: the supported monetary range is 0 .. 100,000,000
+     * major units (10,000,000,000 minor units — far inside long), and an
+     * out-of-range filter answers the honest 400 instead of the expansion.
+     */
     private static Long toMinorUnits(BigDecimal price) {
-        return price != null ? price.movePointRight(2).longValue() : null;
+        if (price == null) {
+            return null;
+        }
+        if (price.compareTo(BigDecimal.ZERO) < 0 || price.compareTo(MAX_PRICE_FILTER_MAJOR) > 0) {
+            throw new BadRequestException("Price filters are limited to the supported monetary range:"
+                    + " 0 .. 100000000 (major units)");
+        }
+        return price.movePointRight(2).longValue();
     }
 
     // Cache names are NAMESPACED BY SCHEMA VERSION (CodeRabbit #241): the four

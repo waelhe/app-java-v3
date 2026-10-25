@@ -768,4 +768,27 @@ class ReviewsServiceTest {
                 () -> service.voteHelpful(reviewId, authentication));
         verify(reviewVoteRepository, never()).save(any());
     }
+
+    /**
+     * CodeRabbit agent findings, row 13 / CWE-862: the reply path assembles
+     * the review's protected contents into its response — a non-PUBLISHED
+     * review (hidden by moderation or pending) is restricted to its author
+     * and administrators, so the provider's write-and-read surface refuses
+     * it BEFORE any mutation (the state machine's honest 409).
+     */
+    @Test
+    void reply_refusesANonPublishedReviewBeforeAnyMutation() {
+        UUID reviewId = Instancio.create(UUID.class);
+        UUID providerUserId = Instancio.create(UUID.class);
+        Review review = reviewFor(providerUserId);
+        review.hideByModerator();
+        when(reviewRepository.findById(reviewId)).thenReturn(Optional.of(review));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(providerUserId);
+
+        assertThrows(com.marketplace.shared.api.ConflictException.class,
+                () -> service.reply(reviewId, "Thanks", authentication));
+
+        assertNull(review.getReply());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
 }
