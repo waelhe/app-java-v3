@@ -123,6 +123,7 @@ class SavedSearchIntegrationTest {
         // Envers revisions, so the deletes are order-free and audit-silent.
         jdbc.update("DELETE FROM saved_search_matches");
         jdbc.update("DELETE FROM saved_searches");
+        jdbc.update("DELETE FROM saved_search_scan_claims");
         jdbc.update("DELETE FROM notifications WHERE type = 'SAVED_SEARCH_MATCH'");
 
         consumerUserId = UUID.randomUUID();
@@ -358,11 +359,55 @@ class SavedSearchIntegrationTest {
         activateListing(listingId);
         awaitNotification(consumerUserId, 1);
 
+        // Row 25 (CWE-400): the claim's activation budget would coalesce
+        // the re-run for free — but criterion 3-b is the LEDGER's contract,
+        // so the claim row is cleared first: the re-run really walks the
+        // population again and the ON CONFLICT skip must absorb it alone.
+        jdbc.update("DELETE FROM saved_search_scan_claims WHERE listing_id = ?", listingId);
         // second delivery of the same (listing, provider) pair — the
         // listener body re-run (the registry's at-least-once contract)
         savedSearchService.processListingActivated(listingId, providerUserId);
 
         awaitScanCompleted(listingId);
+        Integer notifications = jdbc.queryForObject(
+                "SELECT count(*) FROM notifications WHERE recipient_id = ? AND type = 'SAVED_SEARCH_MATCH'",
+                Integer.class, consumerUserId);
+        assertThat(notifications).isEqualTo(1);
+        Integer matches = jdbc.queryForObject(
+                "SELECT count(*) FROM saved_search_matches WHERE listing_id = ?", Integer.class, listingId);
+        assertThat(matches).isEqualTo(1);
+    }
+
+    @Test
+    void repeatedActivationWithinTheBudgetIsCoalesced() throws Exception {
+        // Row 25 (agent findings 2026-10-25 — CWE-400): the per-listing
+        // activation budget — the finding's exact shape. The second
+        // activation inside the cooldown window performs NO new population
+        // work: the claim's stamp stays at the FIRST scan's instant (a
+        // re-stamp would mean the scan ran again), and the single
+        // notification of the first scan is the final state.
+        UUID listingId = seedDraftListingWithProperty();
+        saveSearch("{\"minRooms\": 2, \"locationId\": \"" + QUDSAYYA_CITY + "\"}");
+
+        activateListing(listingId);
+        awaitNotification(consumerUserId, 1);
+        awaitScanCompleted(listingId);
+        java.sql.Timestamp firstScan = jdbc.queryForObject(
+                "SELECT last_scan_at FROM saved_search_scan_claims WHERE listing_id = ?",
+                java.sql.Timestamp.class, listingId);
+        assertThat(firstScan).as("the running scan stamped its claim").isNotNull();
+
+        // the replay — pause is irrelevant to the gate; the activation
+        // event alone is the amplified trigger, and it is coalesced
+        activateListing(listingId);
+        awaitScanCompleted(listingId);
+
+        java.sql.Timestamp secondScan = jdbc.queryForObject(
+                "SELECT last_scan_at FROM saved_search_scan_claims WHERE listing_id = ?",
+                java.sql.Timestamp.class, listingId);
+        assertThat(secondScan)
+                .as("the coalesced activation re-stamped nothing — zero population work")
+                .isEqualTo(firstScan);
         Integer notifications = jdbc.queryForObject(
                 "SELECT count(*) FROM notifications WHERE recipient_id = ? AND type = 'SAVED_SEARCH_MATCH'",
                 Integer.class, consumerUserId);

@@ -18,7 +18,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.sql.Timestamp;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -30,6 +32,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -77,8 +80,29 @@ class SavedSearchServiceTest {
         service = new SavedSearchService(repository, matcher, geoLookupPort, eventPublisher,
                 jdbcTemplate, mapper,
                 Clock.fixed(Instant.parse("2026-09-14T12:00:00Z"), java.time.ZoneOffset.UTC),
-                new SearchProperties(new SearchProperties.SavedSearches(20)),
+                new SearchProperties(new SearchProperties.SavedSearches(20, Duration.ofHours(1))),
                 entityManager);
+    }
+
+    /** The fixed clock's now — the claim stamps and budget arithmetic pin to it. */
+    private static final Instant NOW = Instant.parse("2026-09-14T12:00:00Z");
+
+    /**
+     * Row 25: the claim gate's happy path — no scan in flight (the TRY
+     * advisory lock answers TRUE) and no prior claim (first activation
+     * for the listing). Every scan test starts from here.
+     */
+    private void givenTheScanClaimIsAvailable() {
+        when(jdbcTemplate.queryForList(eq(SavedSearchService.TRY_SCAN_LOCK), eq(Boolean.class), anyString()))
+                .thenReturn(List.of(Boolean.TRUE));
+        when(jdbcTemplate.queryForList(eq(SavedSearchService.READ_SCAN_CLAIM), eq(Timestamp.class), any()))
+                .thenReturn(List.of());
+    }
+
+    /** Row 25: the prior claim's stamp — the last ACTUAL scan's instant. */
+    private void givenTheLastScanWasAt(Instant lastScanAt) {
+        when(jdbcTemplate.queryForList(eq(SavedSearchService.READ_SCAN_CLAIM), eq(Timestamp.class), any()))
+                .thenReturn(List.of(Timestamp.from(lastScanAt)));
     }
 
     private static SavedSearch searchOf(UUID userId, boolean alertEnabled) {
@@ -156,12 +180,22 @@ class SavedSearchServiceTest {
 
     @Test
     void scan_matchingSearch_publishesOneAggregatedEventPerUser_andStampsTheSearch() {
+        givenTheScanClaimIsAvailable();
         SavedSearch a = searchOf(USER, true);
         SavedSearch b = searchOf(USER, true);
         SavedSearch other = searchOf(OTHER_USER, true);
         when(repository.findFirstAlertEnabledBatch(any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(a, b, other)));
         when(matcher.matches(any(SearchCriteria.class), eq(LISTING), eq(PROVIDER))).thenReturn(true);
+        // the claim stamp (3-arg form) is a DIFFERENT jdbc call than the
+        // ledger insert (5-arg form) — both are stubbed explicitly so
+        // strict stubs see the exact shapes the scan issues. The stamp's
+        // matchers are TYPED (UUID/Timestamp): untyped any() would let
+        // javac bind the stub to JdbcTemplate.update(String, Object[],
+        // int[]) — a different overload than the varargs one the service
+        // calls — and the stub would silently never match.
+        when(jdbcTemplate.update(eq(SavedSearchService.STAMP_SCAN_CLAIM), any(UUID.class), any(Timestamp.class)))
+                .thenReturn(1);
         when(jdbcTemplate.update(anyString(), any(), any(), any(), any()))
                 .thenReturn(1);
 
@@ -183,6 +217,7 @@ class SavedSearchServiceTest {
 
     @Test
     void scan_noMatch_publishesNothing() {
+        givenTheScanClaimIsAvailable();
         SavedSearch a = searchOf(USER, true);
         when(repository.findFirstAlertEnabledBatch(any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(a)));
@@ -197,10 +232,15 @@ class SavedSearchServiceTest {
 
     @Test
     void scan_alreadyReportedPair_isTheDocumentedSkip_noSecondEvent() {
+        givenTheScanClaimIsAvailable();
         SavedSearch a = searchOf(USER, true);
         when(repository.findFirstAlertEnabledBatch(any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(a)));
         when(matcher.matches(any(SearchCriteria.class), eq(LISTING), eq(PROVIDER))).thenReturn(true);
+        // the claim stamp (3-arg form) — typed matchers, see the
+        // aggregation test's note on the overload trap
+        when(jdbcTemplate.update(eq(SavedSearchService.STAMP_SCAN_CLAIM), any(UUID.class), any(Timestamp.class)))
+                .thenReturn(1);
         when(jdbcTemplate.update(anyString(), any(), any(), any(), any()))
                 .thenReturn(0); // ON CONFLICT DO NOTHING — already reported
 
@@ -212,6 +252,7 @@ class SavedSearchServiceTest {
 
     @Test
     void scan_followsTheKeyset_noRowIsVisitedTwice() {
+        givenTheScanClaimIsAvailable();
         // The CodeRabbit round-1 adoption: the keyset contract — the next
         // batch resumes strictly after the LAST SEEN id, never after an
         // offset window (a concurrent soft delete cannot shift the keyset).
@@ -243,5 +284,107 @@ class SavedSearchServiceTest {
         // the persistence context is bounded per batch (flush+clear)
         verify(entityManager, org.mockito.Mockito.atLeastOnce()).flush();
         verify(entityManager, org.mockito.Mockito.atLeastOnce()).clear();
+    }
+
+    // ------------------------------------------------------------------
+    // Row 25 (CWE-400): the coalescing gate — the activation budget
+    // ------------------------------------------------------------------
+
+    @Test
+    void scan_firstActivation_takesTheClaimAndStampsItWithTheScan() {
+        givenTheScanClaimIsAvailable();
+        SavedSearch a = searchOf(USER, true);
+        when(repository.findFirstAlertEnabledBatch(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(a)));
+        when(matcher.matches(any(SearchCriteria.class), eq(LISTING), eq(PROVIDER))).thenReturn(false);
+
+        service.processListingActivated(LISTING, PROVIDER);
+
+        // the claim stamp rides the scan's own transaction (the row-8
+        // affected-count discipline: the SQL is pinned by the constant)
+        verify(jdbcTemplate).update(eq(SavedSearchService.STAMP_SCAN_CLAIM), eq(LISTING),
+                eq(Timestamp.from(NOW)));
+        verify(repository).findFirstAlertEnabledBatch(any(Pageable.class));
+    }
+
+    @Test
+    void scan_secondActivationInsideTheBudget_isCoalescedWithZeroWork() {
+        // The finding's exact shape: a provider re-activates a listing
+        // whose scan is still inside the activation budget (default 1h) —
+        // NO batch, NO matcher call, NO ledger write, NO re-stamp (the
+        // budget anchors to the last ACTUAL scan).
+        when(jdbcTemplate.queryForList(eq(SavedSearchService.TRY_SCAN_LOCK), eq(Boolean.class), anyString()))
+                .thenReturn(List.of(Boolean.TRUE));
+        givenTheLastScanWasAt(NOW.minus(Duration.ofMinutes(30)));
+
+        service.processListingActivated(LISTING, PROVIDER);
+
+        verifyNoInteractions(repository, matcher);
+        verify(eventPublisher, never()).publishEvent(any(SavedSearchMatchedEvent.class));
+        verify(jdbcTemplate, never()).update(eq(SavedSearchService.STAMP_SCAN_CLAIM),
+                any(UUID.class), any(Timestamp.class));
+        verify(jdbcTemplate, never()).update(org.mockito.ArgumentMatchers.contains("saved_search_matches"),
+                any(), any(), any(), any());
+    }
+
+    @Test
+    void scan_afterTheBudgetPasses_scansAgain() {
+        when(jdbcTemplate.queryForList(eq(SavedSearchService.TRY_SCAN_LOCK), eq(Boolean.class), anyString()))
+                .thenReturn(List.of(Boolean.TRUE));
+        // the last scan is 1h + 1s ago — outside the budget
+        givenTheLastScanWasAt(NOW.minus(Duration.ofHours(1)).minus(Duration.ofSeconds(1)));
+        SavedSearch a = searchOf(USER, true);
+        when(repository.findFirstAlertEnabledBatch(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(a)));
+        when(matcher.matches(any(SearchCriteria.class), eq(LISTING), eq(PROVIDER))).thenReturn(false);
+
+        service.processListingActivated(LISTING, PROVIDER);
+
+        verify(repository).findFirstAlertEnabledBatch(any(Pageable.class));
+        // the re-claim re-stamps at NOW — the next budget window starts here
+        verify(jdbcTemplate).update(eq(SavedSearchService.STAMP_SCAN_CLAIM), eq(LISTING),
+                eq(Timestamp.from(NOW)));
+    }
+
+    @Test
+    void scan_inFlightDuplicate_isCoalescedImmediately_theClaimIsNeverRead() {
+        // A scan for this listing is already running — the TRY advisory
+        // lock answers FALSE and the claim row is not even read (fail
+        // fast, never a parked listener thread).
+        when(jdbcTemplate.queryForList(eq(SavedSearchService.TRY_SCAN_LOCK), eq(Boolean.class), anyString()))
+                .thenReturn(List.of(Boolean.FALSE));
+
+        service.processListingActivated(LISTING, PROVIDER);
+
+        verify(jdbcTemplate, never())
+                .queryForList(eq(SavedSearchService.READ_SCAN_CLAIM), eq(Timestamp.class), any());
+        verifyNoInteractions(repository, matcher);
+        verify(jdbcTemplate, never()).update(anyString(),
+                any(UUID.class), any(Timestamp.class));
+    }
+
+    @Test
+    void scan_zeroBudget_runsOnEveryActivation_theInFlightGateAloneRemains() {
+        // 0s is the documented escape hatch: the time budget is OFF (the
+        // pre-row-25 behaviour returns), only the in-flight coalescing
+        // still holds. A claim stamped at NOW itself must not block the
+        // very next activation (plus(ZERO).isAfter(now) is false at
+        // equality — the boundary is inclusive on purpose).
+        SavedSearchService unclocked = new SavedSearchService(repository, matcher, geoLookupPort,
+                eventPublisher, jdbcTemplate, mapper,
+                Clock.fixed(NOW, java.time.ZoneOffset.UTC),
+                new SearchProperties(new SearchProperties.SavedSearches(20, Duration.ZERO)),
+                entityManager);
+        when(jdbcTemplate.queryForList(eq(SavedSearchService.TRY_SCAN_LOCK), eq(Boolean.class), anyString()))
+                .thenReturn(List.of(Boolean.TRUE));
+        givenTheLastScanWasAt(NOW);
+        SavedSearch a = searchOf(USER, true);
+        when(repository.findFirstAlertEnabledBatch(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(a)));
+        when(matcher.matches(any(SearchCriteria.class), eq(LISTING), eq(PROVIDER))).thenReturn(false);
+
+        unclocked.processListingActivated(LISTING, PROVIDER);
+
+        verify(repository).findFirstAlertEnabledBatch(any(Pageable.class));
     }
 }
