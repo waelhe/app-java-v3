@@ -18,6 +18,7 @@ import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.Currency;
 import java.util.EnumSet;
 import java.util.List;
@@ -34,6 +35,13 @@ public class PricingService implements EffectivePricePort {
     private final SeasonalRateRepository seasonalRateRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final ObjectProvider<CurrencyExchangePort> currencyExchange;
+    /**
+     * Row 11 (agent findings 2026-10-25 — CWE-834): the day-sliced
+     * model's business bound — the priced-nights cap that keeps one
+     * booking request's computation bounded no matter what window the
+     * caller (or a provider's published slot) carries.
+     */
+    private final PricingProperties pricingProperties;
 
     private static final Set<String> PRICING_CACHE_NAMES = Set.of("pricing-calculations");
 
@@ -51,21 +59,25 @@ public class PricingService implements EffectivePricePort {
                           ListingWeekendRuleRepository weekendRuleRepository,
                           SeasonalRateRepository seasonalRateRepository,
                           ApplicationEventPublisher eventPublisher,
-                          ObjectProvider<CurrencyExchangePort> currencyExchange) {
+                          ObjectProvider<CurrencyExchangePort> currencyExchange,
+                          PricingProperties pricingProperties) {
         this.pricingRuleRepository = pricingRuleRepository;
         this.weekendRuleRepository = weekendRuleRepository;
         this.seasonalRateRepository = seasonalRateRepository;
         this.eventPublisher = eventPublisher;
         this.currencyExchange = currencyExchange;
+        this.pricingProperties = pricingProperties;
     }
 
     /**
      * Test convenience — the pre-B4 constructor shape: no exchange channel
      * bound (the dormant default), no calendar repositories (the flat
-     * pre-L26 computation).
+     * pre-L26 computation). The row-11 bound rides at its documented
+     * default so even the flat seams price with the production guard.
      */
     PricingService(PricingRuleRepository pricingRuleRepository, ApplicationEventPublisher eventPublisher) {
-        this(pricingRuleRepository, null, null, eventPublisher, null);
+        this(pricingRuleRepository, null, null, eventPublisher, null,
+                new PricingProperties(PricingProperties.DEFAULT_MAX_STAY_NIGHTS));
     }
 
     /**
@@ -77,7 +89,8 @@ public class PricingService implements EffectivePricePort {
      */
     PricingService(PricingRuleRepository pricingRuleRepository, ApplicationEventPublisher eventPublisher,
                    ObjectProvider<CurrencyExchangePort> currencyExchange) {
-        this(pricingRuleRepository, null, null, eventPublisher, currencyExchange);
+        this(pricingRuleRepository, null, null, eventPublisher, currencyExchange,
+                new PricingProperties(PricingProperties.DEFAULT_MAX_STAY_NIGHTS));
     }
 
     /**
@@ -177,6 +190,23 @@ public class PricingService implements EffectivePricePort {
     /**
      * The effective per-day sum — package-private seam for the windowed
      * quote and the port implementation (one code path, two surfaces).
+     *
+     * <p><b>Row 11 (agent findings 2026-10-25 — CWE-834): the business
+     * bound runs BEFORE any repository read and before the per-date
+     * loop.</b> The calendar model computes one {@code effectiveNightCents}
+     * per represented UTC date, so an unbounded window turns one request
+     * into millions of iterations (each scanning seasonal rows) — the
+     * finding's exact shape: a provider publishes a matching enormous
+     * availability slot and a compact consumer request replays the work.
+     * A window whose priced-night count exceeds the configured bound
+     * ({@code marketplace.pricing.max-stay-nights}, default 365) answers
+     * 400 on BOTH surfaces before a single repository query — the same
+     * gate family as the reversed-window 400 directly above it, and the
+     * finding's own recommendation verbatim ("reject intervals exceeding
+     * a business-defined maximum before pricing"). Within the bound the
+     * loop is finite and cheap; the seasonal-boundary arithmetic the
+     * recommendation mentions is only needed where long intervals are
+     * SUPPORTED — they are not, by this business bound.
      */
     long effectiveTotalCents(UUID listingId, long basePriceCents, Instant checkIn, Instant checkOut) {
         if (checkOut.isBefore(checkIn)) {
@@ -185,6 +215,17 @@ public class PricingService implements EffectivePricePort {
             // (quote and booking seam), flat model or not.
             throw new com.marketplace.shared.api.BadRequestException(
                     "Check-out must not be before check-in");
+        }
+        LocalDate from = LocalDate.ofInstant(checkIn, ZoneOffset.UTC);
+        LocalDate to = LocalDate.ofInstant(checkOut, ZoneOffset.UTC);
+        // Row 11: the priced-night count under the SAME day-slicing the
+        // loop applies (same-date windows price their single check-in
+        // date — one night, never zero).
+        long nights = from.isBefore(to) ? ChronoUnit.DAYS.between(from, to) : 1L;
+        long maxNights = pricingProperties.maxStayNights();
+        if (nights > maxNights) {
+            throw new com.marketplace.shared.api.BadRequestException(
+                    "Stays longer than " + maxNights + " nights are not supported");
         }
         ListingWeekendRule weekendRule = weekendRuleRepository == null
                 ? null
@@ -197,8 +238,6 @@ public class PricingService implements EffectivePricePort {
             return basePriceCents;
         }
 
-        LocalDate from = LocalDate.ofInstant(checkIn, ZoneOffset.UTC);
-        LocalDate to = LocalDate.ofInstant(checkOut, ZoneOffset.UTC);
         if (!from.isBefore(to)) {
             // Same-date window — the single check-in date is priced.
             return effectiveNightCents(from, basePriceCents, weekendRule, rates);
