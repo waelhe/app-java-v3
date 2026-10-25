@@ -1,5 +1,7 @@
 package com.marketplace.notifications;
 
+import com.marketplace.notifications.routing.NotificationTopic;
+import com.marketplace.notifications.routing.NotificationTopicPreferenceService;
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.micrometer.observation.annotation.Observed;
@@ -58,13 +60,16 @@ public class NotificationPreferenceService {
 
     private final NotificationPreferenceRepository repository;
     private final CurrentUserProvider currentUserProvider;
+    private final NotificationTopicPreferenceService topicPreferences;
     private final TransactionTemplate upsertTransaction;
 
     public NotificationPreferenceService(NotificationPreferenceRepository repository,
                                          CurrentUserProvider currentUserProvider,
+                                         NotificationTopicPreferenceService topicPreferences,
                                          PlatformTransactionManager transactionManager) {
         this.repository = repository;
         this.currentUserProvider = currentUserProvider;
+        this.topicPreferences = topicPreferences;
         this.upsertTransaction = new TransactionTemplate(transactionManager);
         this.upsertTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -84,6 +89,63 @@ public class NotificationPreferenceService {
     public boolean isChannelEnabled(UUID userId, NotificationType type, NotificationChannel channel) {
         return repository.findByUserIdAndTypeAndChannel(userId, type, channel)
                 .map(NotificationPreference::isEnabled)
+                .orElse(true);
+    }
+
+    /**
+     * Row 28 (CodeRabbit agent findings — the ONE effective-preference
+     * resolver): the hierarchical answer every ORDINARY channel send
+     * consults before delivery — the type-level row (V40) first, then the
+     * mapped topic-level row (V198), then the enabled default. The
+     * type-only {@link #isChannelEnabled} above answers the SPARSE level
+     * alone: an absent type row defaults to enabled WITHOUT ever reading
+     * the topic disable, so a recipient who muted a whole subject family
+     * (MESSAGING, DISPUTES, …) still received that family's ordinary
+     * mail and WebSocket pushes whenever no type-specific row existed —
+     * the stored topic preference was dead weight for every direct
+     * delivery leg. This resolver closes that seam: ONE implementation of
+     * the documented order (the routing engine's own hierarchy — type
+     * &gt; topic &gt; default), consulted by the engine AND every
+     * ordinary send, so the two can never drift apart again.
+     *
+     * <p>The explicitly supported security-notification exception stays
+     * OUTSIDE this resolver by design: the password-reset and
+     * email-verification mails (the OWASP-anchored measured exceptions
+     * NotificationService documents) never consult any preference gate —
+     * an account's redemption right is delivered regardless of
+     * marketing-channel opt-outs.</p>
+     *
+     * @param userId  the recipient (users.id space)
+     * @param type    the notification type being delivered
+     * @param channel the delivery channel being consulted
+     * @return the hierarchy's effective answer — false when the nearest
+     *         expressed override (type, else topic) disables the channel
+     */
+    @Transactional(readOnly = true)
+    public boolean isChannelEffectivelyEnabled(UUID userId, NotificationType type,
+                                               NotificationChannel channel) {
+        return isChannelEffectivelyEnabled(userId, type,
+                NotificationTopic.topicFor(type), channel);
+    }
+
+    /**
+     * The engine's own overload of the ONE resolver: the policy carries
+     * its topic already derived (the policy factory's invariant — the
+     * topic always comes from {@link NotificationTopic#topicFor}), so the
+     * engine passes it explicitly and the resolution reads the SAME one
+     * order the ordinary sends ride. An explicit type-level {@code true}
+     * still overrides a topic-level disable — the total order, never
+     * last-disabled-wins.
+     *
+     * @param topic   the notification's subject family (the hierarchy's
+     *                second level)
+     */
+    @Transactional(readOnly = true)
+    public boolean isChannelEffectivelyEnabled(UUID userId, NotificationType type,
+                                               NotificationTopic topic,
+                                               NotificationChannel channel) {
+        return findChannelOverride(userId, type, channel)
+                .or(() -> topicPreferences.findChannelOverride(userId, topic, channel))
                 .orElse(true);
     }
 

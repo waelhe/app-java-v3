@@ -69,7 +69,7 @@ class DisputeChannelDelivery {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     void deliver(UUID recipientId, NotificationType type, String message, UUID sourceEventId) {
-        if (preferences.isChannelEnabled(recipientId, type, NotificationChannel.EMAIL)
+        if (preferences.isChannelEffectivelyEnabled(recipientId, type, NotificationChannel.EMAIL)
                 && deliveryLedger.recordDelivery(sourceEventId, recipientId,
                         NotificationDeliveryChannel.EMAIL)) {
             emailNotificationService.sendEmail(recipientId,
@@ -78,7 +78,7 @@ class DisputeChannelDelivery {
                     "email/notification",
                     java.util.Map.of("message", message));
         }
-        if (preferences.isChannelEnabled(recipientId, type, NotificationChannel.WS)
+        if (preferences.isChannelEffectivelyEnabled(recipientId, type, NotificationChannel.WS)
                 && deliveryLedger.recordDelivery(sourceEventId, recipientId,
                         NotificationDeliveryChannel.WS)) {
             messagingTemplate.ifPresent(template ->
