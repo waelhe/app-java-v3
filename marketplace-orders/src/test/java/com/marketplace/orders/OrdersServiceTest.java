@@ -1125,4 +1125,114 @@ class OrdersServiceTest {
 
         verify(eventPublisher, never()).publishEvent(any());
     }
+
+    // ------------------------------------------------------------------
+    // CodeRabbit agent findings, row 12 — the direct-fulfillment
+    // aggregate gate (the cancellable primary link is not the truth)
+    // ------------------------------------------------------------------
+
+    @Test
+    void directFulfillRefusesWhilePlatformLegsAreStillInFlight() {
+        // The finding's exact scenario: the buyer cancels the PRIMARY leg
+        // (clearing the order's delivery link — the legacy guard goes
+        // blind) while a SECONDARY package is still active. The seller's
+        // direct fulfillment is refused by the aggregate truth: no state
+        // change, no stock commit, no event.
+        Order order = platformDeliveryOrder();
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(checkoutDeliveryPort.remainingActiveLegs(order.getId())).thenReturn(1L);
+
+        assertThatThrownBy(() -> service.fulfill(order.getId()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("in-flight platform delivery cannot be fulfilled directly");
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        verify(orderRepository, never()).save(any(Order.class));
+        verify(productStockPort, never()).commit(any());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void fulfillForSellerRidesTheSameAggregateGate() {
+        // The exploit surface itself: POST /api/v1/orders/seller/{id}/fulfill
+        // after the buyer cancelled the primary — the merchant lever must
+        // answer the house 409, not complete over in-flight legs.
+        Order order = platformDeliveryOrderFor(seller);
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
+        when(checkoutDeliveryPort.remainingActiveLegs(order.getId())).thenReturn(2L);
+
+        assertThatThrownBy(() -> service.fulfillForSeller(order.getId(), authentication))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("in-flight platform delivery cannot be fulfilled directly");
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        verify(orderRepository, never()).save(any(Order.class));
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void directFulfillRefusesWhenNothingWasEverDelivered() {
+        // Every leg terminal and NOTHING delivered: no delivery proof
+        // exists, so no direct fulfillment may write terminal state over
+        // undelivered goods — the aggregate stays cancellable instead.
+        Order order = platformDeliveryOrder();
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(checkoutDeliveryPort.remainingActiveLegs(order.getId())).thenReturn(0L);
+        when(checkoutDeliveryPort.deliveredLegs(order.getId())).thenReturn(0L);
+
+        assertThatThrownBy(() -> service.fulfill(order.getId()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("no delivered package cannot be fulfilled directly");
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        verify(orderRepository, never()).save(any(Order.class));
+        verify(productStockPort, never()).commit(any());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void directFulfillIsSupportedOnceTheAggregateCompletedInFact() {
+        // The gate's honest positive: every leg terminal and at least one
+        // delivered — the exact condition the terminal reconciliation
+        // fulfills under. The direct fulfillment is supported (the row
+        // lock and the state machine make the two edges one).
+        Order order = platformDeliveryOrder();
+        order.markStockReserved();
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(checkoutDeliveryPort.remainingActiveLegs(order.getId())).thenReturn(0L);
+        when(checkoutDeliveryPort.deliveredLegs(order.getId())).thenReturn(1L);
+
+        Order fulfilled = service.fulfill(order.getId());
+
+        assertThat(fulfilled.getStatus()).isEqualTo(OrderStatus.FULFILLED);
+        verify(productStockPort).commit(any());
+        verify(eventPublisher).publishEvent(new OrderFulfilledEvent(order.getId(), consumer));
+    }
+
+    @Test
+    void directFulfillStaysOpenForNonPlatformOrders() {
+        // The gate's honest negative: a pickup (or legacy) order has no
+        // platform aggregate — the machine's own edge stays as open as it
+        // always was (the port is never consulted).
+        Order order = soldOrder();
+        order.confirm(java.time.Instant.now());
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThat(service.fulfill(order.getId()).getStatus()).isEqualTo(OrderStatus.FULFILLED);
+        verify(checkoutDeliveryPort, never()).remainingActiveLegs(any());
+        verify(checkoutDeliveryPort, never()).deliveredLegs(any());
+    }
+
+    private Order platformDeliveryOrderFor(UUID owningSeller) {
+        Order order = Order.placedWithFulfillment(consumer, "SAR", owningSeller,
+                4000L, 0L, 0L, true,
+                FulfillmentMethod.PLATFORM_DELIVERY,
+                "221B Baker Street", 51.52, -0.15, 1500L);
+        order.confirm(java.time.Instant.now());
+        return order;
+    }
 }
