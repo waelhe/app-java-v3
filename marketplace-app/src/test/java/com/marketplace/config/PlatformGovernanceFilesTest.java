@@ -616,6 +616,7 @@ class PlatformGovernanceFilesTest {
                 .contains("org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:runNoFork")
                 .contains("org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:dryRunNoFork")
                 .contains("for pass in $(seq 1 5); do")
+                .contains("cancel-in-progress: true")
                 .contains("These recipes would make changes to ")
                 .contains("OpenRewrite baseline did not converge to zero diff after five attempts.")
                 .contains("Unexpected non-Java changes from the approved baseline recipe:")

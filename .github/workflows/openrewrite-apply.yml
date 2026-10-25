@@ -28,7 +28,7 @@ permissions:
 
 concurrency:
   group: openrewrite-auto-apply-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   apply:
