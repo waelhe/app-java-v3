@@ -11,11 +11,16 @@ name: CodeRabbit Gate
 #   to weaken this gate from inside their PR).
 # - pull_request_review is deliberately ABSENT: empirically proven (run
 #   40033600763) that it executes the pull request's copy of this file.
-# - Re-evaluation after a review completes: re-run the gate RUN itself
-#   (Actions → Re-run: it replays the same pull_request_target event and
-#   posts the fresh verdict on the PR head). workflow_dispatch remains
-#   available for ad-hoc evaluation from main, but its verdict lands on
-#   main's head, not the PR head (measured 2026-10-25 on #727/#726).
+# - Re-evaluation after a review completes (head unchanged): re-run the
+#   gate RUN itself (Actions → Re-run). The re-run replays the original
+#   pull_request_target event context (original GITHUB_SHA/GITHUB_REF),
+#   while the script reads the PR's CURRENT head and its reviews at
+#   execution time, and issues a fresh check-run ON THE PR HEAD (measured
+#   2026-10-25 on #728: re-run attempt 2 created check-run 121135430521
+#   on head 6a35d581e2). If the head moved, synchronize fires a fresh
+#   gate run automatically. workflow_dispatch stays available for ad-hoc
+#   evaluation from main, but its verdict lands on main's head, not the
+#   PR head (measured on #727/#726).
 #
 # Verdict model (human-authored PRs): the LATEST completed coderabbitai[bot]
 # review whose commit_id equals the PR's current head decides; error/rate-
@@ -222,7 +227,7 @@ jobs:
                       print(note)
                       seen.add(note)
                   if time.time() > deadline:
-                      print("FAIL — bot-exemption path: the other checks did not complete within the 60-minute window. Re-run this gate run itself (Actions → Re-run) once they finish — the re-run replays the same event and posts the fresh verdict on this PR head.")
+                      print("FAIL — bot-exemption path: the other checks did not complete within the 60-minute window. Re-run this gate run itself (Actions → Re-run) once they finish — the re-run re-evaluates the PR's current head and issues a fresh check-run on this PR head (measured on #728).")
                       sys.exit(1)
                   time.sleep(60)
 
@@ -266,7 +271,7 @@ jobs:
                   print(note)
                   last_note = note
               if time.time() > deadline:
-                  print("FAIL — no completed CodeRabbit review on the current head within the poll window. This repository gets no automatic reviews (fewer than 10 stars): comment '@coderabbitai review' on the PR, then re-run this gate run itself (Actions → Re-run — the re-run replays the same event and posts the fresh verdict on this PR head).")
+                  print("FAIL — no completed CodeRabbit review on the current head within the poll window. This repository gets no automatic reviews (fewer than 10 stars): comment '@coderabbitai review' on the PR, then re-run this gate run itself (Actions → Re-run — the re-run re-evaluates the PR's current head and issues a fresh check-run on this PR head, measured on #728).")
                   sys.exit(1)
               time.sleep(30)
           PY
