@@ -680,7 +680,7 @@ class PlatformGovernanceFilesTest {
                 .contains("git diff --binary \"${TARGET_SHA}\" -- \"${batch_paths[@]}\" > \"${patch_file}\"")
                 .contains("OpenRewrite batch ${idx} has no patch although changed files were reported.")
                 .doesNotContain("  schedule:")
-                .contains("No eligible Java source changes in this push; skipping OpenRewrite apply.");
+                .contains("No eligible Java changes mapped to modules; skipping auto-apply.");
 
         int batchPatchIndex = workflow.indexOf(
                 "git diff --binary \"${TARGET_SHA}\" -- \"${batch_paths[@]}\" > \"${patch_file}\"");
