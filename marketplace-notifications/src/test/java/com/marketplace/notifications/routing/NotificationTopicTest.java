@@ -4,7 +4,6 @@ import com.marketplace.notifications.NotificationType;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Phase 7 (§8.1 — notification routing): the topic family mapping — the

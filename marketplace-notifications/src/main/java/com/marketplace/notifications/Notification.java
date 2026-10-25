@@ -1,7 +1,10 @@
 package com.marketplace.notifications;
 
 import com.marketplace.shared.jpa.BaseEntity;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import org.hibernate.envers.Audited;
 
 import java.util.UUID;

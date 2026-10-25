@@ -10,7 +10,6 @@ import com.marketplace.shared.api.LoanDisputeResolvedEvent;
 import com.marketplace.shared.api.LoanPaymentPort;
 import com.marketplace.shared.api.LoanRequestedEvent;
 import com.marketplace.shared.api.PaymentIntentDetails;
-import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.ProductPricingPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;

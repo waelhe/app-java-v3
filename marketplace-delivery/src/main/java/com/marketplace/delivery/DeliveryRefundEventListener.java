@@ -1,2 +1,3 @@
-package com.marketplace.delivery;import com.marketplace.shared.api.*;import org.springframework.modulith.events.ApplicationModuleListener;import org.springframework.stereotype.Component;
+package com.marketplace.delivery;import com.marketplace.shared.api.DeliveryPaymentPort;
+import com.marketplace.shared.api.DeliveryRefundRequestedEvent;import org.springframework.modulith.events.ApplicationModuleListener;import org.springframework.stereotype.Component;
 @Component public class DeliveryRefundEventListener{private final DeliveryPaymentPort payments;public DeliveryRefundEventListener(DeliveryPaymentPort p){payments=p;}@ApplicationModuleListener public void onDeliveryRefundRequested(DeliveryRefundRequestedEvent e){payments.cancelOrRefund(e.deliveryRequestId());}}

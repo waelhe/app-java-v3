@@ -1,7 +1,6 @@
 package com.marketplace.community;
 
 import jakarta.persistence.criteria.CriteriaBuilder;
-import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.Path;
 import jakarta.persistence.criteria.Root;
 import org.junit.jupiter.api.BeforeEach;
