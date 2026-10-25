@@ -1,8 +1,6 @@
 package com.marketplace.provider;
 
-import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.PublishedReviewView;
-import com.marketplace.shared.api.RatingDistribution;
 import org.junit.jupiter.api.Test;
 
 import java.time.DayOfWeek;

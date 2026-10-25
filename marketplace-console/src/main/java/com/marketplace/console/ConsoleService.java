@@ -5,11 +5,8 @@ import com.marketplace.shared.api.FeatureGatePort;
 import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Meter;
 import io.micrometer.observation.annotation.Observed;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
