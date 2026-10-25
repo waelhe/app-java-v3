@@ -1,0 +1,449 @@
+name: OpenRewrite Auto Apply
+
+on:
+  # Source application is triggered by Java changes only; config-only setup must not sweep the reactor.
+  push:
+    branches: ['**']
+    paths:
+      - '**/*.java'
+      - '!marketplace-app/src/test/java/com/marketplace/config/PlatformGovernanceFilesTest.java'
+  workflow_dispatch:
+    inputs:
+      target_ref:
+        description: Branch to modernize. main creates a bot PR; a non-main branch is updated on that branch.
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  # Serialize automatic mutations by target branch across push and dispatch triggers.
+  group: openrewrite-auto-apply-${{ inputs.target_ref || github.ref_name }}
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Apply approved OpenRewrite baseline and verify it is clean
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
+      CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+    steps:
+      - name: Checkout target
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.target_ref || github.ref }}
+          fetch-depth: 0
+
+      - name: Require Code Genome credentials
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [[ -z "${CODEGENOME_USERNAME}" || -z "${CODEGENOME_TOKEN}" ]]; then
+            echo "::error::Set CODEGENOME_USERNAME and CODEGENOME_TOKEN GitHub Actions secrets. The OpenRewrite automation fails closed."
+            exit 1
+          fi
+
+      - name: Set up JDK 25 and authenticated Maven
+        uses: actions/setup-java@v6.1.0
+        with:
+          java-version: '25'
+          distribution: temurin
+          cache: maven
+          server-id: codegenome
+          server-username-env-var: CODEGENOME_USERNAME
+          server-password-env-var: CODEGENOME_TOKEN
+          overwrite-settings: true
+
+      - name: Write explicit Code Genome Maven settings
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          ns = "http://maven.apache.org/SETTINGS/1.2.0"
+          ET.register_namespace("", ns)
+          tag = lambda name: f"{{{ns}}}{name}"
+          settings = ET.Element(tag("settings"))
+          servers = ET.SubElement(settings, tag("servers"))
+          server = ET.SubElement(servers, tag("server"))
+          ET.SubElement(server, tag("id")).text = "codegenome"
+          ET.SubElement(server, tag("username")).text = os.environ["CODEGENOME_USERNAME"]
+          ET.SubElement(server, tag("password")).text = os.environ["CODEGENOME_TOKEN"]
+          path = Path(os.environ["RUNNER_TEMP"]) / "openrewrite-settings.xml"
+          ET.ElementTree(settings).write(path, encoding="utf-8", xml_declaration=True)
+
+          parsed = ET.parse(path).getroot()
+          servers = parsed.find(tag("servers"))
+          match = next(s for s in servers.findall(tag("server")) if s.findtext(tag("id")) == "codegenome")
+          if match.findtext(tag("username")) != os.environ["CODEGENOME_USERNAME"]:
+              raise SystemExit("Maven username mapping did not persist")
+          if match.findtext(tag("password")) != os.environ["CODEGENOME_TOKEN"]:
+              raise SystemExit("Maven token mapping did not persist")
+          print("Authenticated Maven settings validated without printing credentials.")
+          PY
+
+      - name: Select target ref and safe write mode
+        id: target
+        shell: bash
+        env:
+          INPUT_TARGET_REF: ${{ inputs.target_ref }}
+          EVENT_BEFORE: ${{ github.event.before }}
+        run: |
+          set -Eeuo pipefail
+          case "${GITHUB_EVENT_NAME}" in
+            push) TARGET_REF="${GITHUB_REF_NAME}" ;;
+            workflow_dispatch) TARGET_REF="${INPUT_TARGET_REF:-${GITHUB_REF_NAME}}" ;;
+            *) echo "::error::Unsupported event ${GITHUB_EVENT_NAME}"; exit 1 ;;
+          esac
+          git check-ref-format --branch "${TARGET_REF}"
+          git fetch origin "${TARGET_REF}"
+          TARGET_SHA="$(git rev-parse FETCH_HEAD)"
+          git switch --detach "${TARGET_SHA}"
+
+          # Only rewrite Maven modules containing Java files changed by this event.
+          # Installing OpenRewrite/configuration never triggers a whole-reactor cleanup.
+          if [[ "${GITHUB_EVENT_NAME}" == "push" && -n "${EVENT_BEFORE}" && ! "${EVENT_BEFORE}" =~ ^0+$ ]]; then
+            RANGE_BASE="${EVENT_BEFORE}"
+            git cat-file -e "${RANGE_BASE}^{commit}" || {
+              echo "::error::Push base ${RANGE_BASE} is unavailable in the checkout."
+              exit 1
+            }
+          else
+            RANGE_BASE="$(git rev-parse "${TARGET_SHA}^" 2>/dev/null || true)"
+          fi
+          if [[ -z "${RANGE_BASE}" ]]; then
+            echo "apply_required=false" >> "$GITHUB_OUTPUT"
+            echo "No parent commit is available; skipping automatic source application."
+            exit 0
+          fi
+          mapfile -t changed_paths < <(git diff --name-only "${RANGE_BASE}" "${TARGET_SHA}")
+          changed_java_paths=()
+          for path in "${changed_paths[@]}"; do
+            [[ "${path}" == *.java ]] || continue
+            [[ "${path}" == "marketplace-app/src/test/java/com/marketplace/config/PlatformGovernanceFilesTest.java" ]] && continue
+            changed_java_paths+=("${path}")
+          done
+          if (( ${#changed_java_paths[@]} == 0 )); then
+            echo "apply_required=false" >> "$GITHUB_OUTPUT"
+            echo "No eligible Java source changes in this push; skipping OpenRewrite apply."
+            exit 0
+          fi
+          declare -A selected_modules=()
+          for path in "${changed_java_paths[@]}"; do
+            module="${path%%/*}"
+            if [[ "${module}" == "${path}" || ! -f "${module}/pom.xml" ]]; then
+              echo "::error::Changed Java path '${path}' does not map to a top-level Maven module; refusing a partial rewrite."
+              exit 1
+            fi
+            selected_modules["${module}"]=1
+          done
+          mapfile -t module_names < <(printf '%s\n' "${!selected_modules[@]}" | sort)
+          MODULES_CSV="$(IFS=,; printf '%s' "${module_names[*]}")"
+          if [[ -z "${MODULES_CSV}" ]]; then
+            echo "::error::Java changes were found but no Maven modules were selected."
+            exit 1
+          fi
+          if [[ "${TARGET_REF}" == "main" ]]; then
+            MODE="pull-request"
+            AUTO_BRANCH="automation/openrewrite-baseline"
+            EXPECTED_REMOTE_SHA="$(git ls-remote origin "refs/heads/${AUTO_BRANCH}" | awk '{print $1}')"
+            git switch -c "${AUTO_BRANCH}"
+            echo "automation_branch=${AUTO_BRANCH}" >> "$GITHUB_OUTPUT"
+          else
+            MODE="direct-branch-update"
+            AUTO_BRANCH="${TARGET_REF}"
+            EXPECTED_REMOTE_SHA=""
+            git switch -c "openrewrite-apply-${GITHUB_RUN_ID}"
+            echo "automation_branch=${TARGET_REF}" >> "$GITHUB_OUTPUT"
+          fi
+          {
+            echo "TARGET_REF=${TARGET_REF}"
+            echo "TARGET_SHA=${TARGET_SHA}"
+            echo "WRITE_MODE=${MODE}"
+            echo "AUTO_BRANCH=${AUTO_BRANCH}"
+            echo "EXPECTED_REMOTE_SHA=${EXPECTED_REMOTE_SHA}"
+            echo "OPENREWRITE_MODULES=${MODULES_CSV}"
+          } >> "$GITHUB_ENV"
+          echo "write_mode=${MODE}" >> "$GITHUB_OUTPUT"
+          echo "target_ref=${TARGET_REF}" >> "$GITHUB_OUTPUT"
+          echo "modules_csv=${MODULES_CSV}" >> "$GITHUB_OUTPUT"
+          echo "apply_required=true" >> "$GITHUB_OUTPUT"
+
+      - name: Read the pinned OpenRewrite toolchain
+        if: steps.target.outputs.apply_required == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import os
+          import re
+          import xml.etree.ElementTree as ET
+
+          ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+          root = ET.parse("pom.xml").getroot()
+          props = root.find("m:properties", ns)
+          required = {
+              "OPENREWRITE_MAVEN_PLUGIN_VERSION": "openrewrite.maven-plugin.version",
+              "OPENREWRITE_RECIPE_BOM_VERSION": "openrewrite.recipe-bom.version",
+          }
+          values = {}
+          for env_name, prop_name in required.items():
+              node = props.find(f"m:{prop_name}", ns) if props is not None else None
+              value = (node.text or "").strip() if node is not None else ""
+              if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?", value):
+                  raise SystemExit(f"Missing or invalid root property {prop_name}")
+              values[env_name] = value
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              for name, value in values.items():
+                  env.write(f"{name}={value}\n")
+          print(f"OpenRewrite Maven plugin: {values['OPENREWRITE_MAVEN_PLUGIN_VERSION']}")
+          print(f"OpenRewrite recipe BOM: {values['OPENREWRITE_RECIPE_BOM_VERSION']}")
+          PY
+
+      - name: Verify recipe pins against the resolved official BOM
+        if: steps.target.outputs.apply_required == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p target/openrewrite
+          ./mvnw --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress \
+            -f .ci/openrewrite-bom-audit/pom.xml \
+            -Dopenrewrite.recipe-bom.version="${OPENREWRITE_RECIPE_BOM_VERSION}" \
+            org.apache.maven.plugins:maven-help-plugin:3.5.1:effective-pom \
+            -Doutput="${GITHUB_WORKSPACE}/target/openrewrite/recipe-bom-effective-pom.xml"
+          python3 scripts/openrewrite/verify-bom-alignment.py \
+            --root-pom pom.xml \
+            --audit-pom .ci/openrewrite-bom-audit/pom.xml \
+            --effective-pom target/openrewrite/recipe-bom-effective-pom.xml
+
+      - name: Discover recipes and verify required baseline recipes
+        if: steps.target.outputs.apply_required == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p target/openrewrite
+          set -o pipefail
+          ./mvnw --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress \
+            -Popenrewrite \
+            org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:discover \
+            -Ddetail=true 2>&1 | tee target/openrewrite/recipe-discovery.txt
+          for recipe in \
+            org.openrewrite.java.RemoveUnusedImports \
+            org.openrewrite.java.dependencies.UpgradeDependencyVersion; do
+            if ! grep -Fq "${recipe}" target/openrewrite/recipe-discovery.txt; then
+              echo "::error::Required recipe ${recipe} was not discovered on the configured plugin classpath."
+              exit 1
+            fi
+          done
+
+      - name: Install the Maven reactor before recipe execution
+        if: steps.target.outputs.apply_required == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p target/openrewrite
+          set -o pipefail
+          ./mvnw --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress \
+            -DskipTests -Popenrewrite install 2>&1 | tee target/openrewrite/reactor-install.log
+
+      - name: Apply the explicitly activated OpenRewrite recipes
+        if: steps.target.outputs.apply_required == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set -o pipefail
+          ./mvnw --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress \
+            -Popenrewrite -pl "${OPENREWRITE_MODULES}" \
+            org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:runNoFork \
+            2>&1 | tee target/openrewrite/run.log
+
+      - name: Converge the automatic baseline and enforce a zero-diff postcondition
+        if: steps.target.outputs.apply_required == 'true'
+        id: postcondition
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p target/openrewrite
+          converged=false
+          for pass in $(seq 1 5); do
+            dry_run_log="target/openrewrite/post-apply-dry-run-${pass}.log"
+            set +e
+            ./mvnw --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress -Popenrewrite -pl "${OPENREWRITE_MODULES}" org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:dryRunNoFork -Drewrite.exportDatatables=true 2>&1 | tee "${dry_run_log}"
+            dry_run_status="${PIPESTATUS[0]}"
+            set -e
+
+            if grep -Fq "These recipes would make changes to " "${dry_run_log}"; then
+              if (( pass == 5 )); then
+                echo "::error::OpenRewrite baseline did not converge to zero diff after five attempts."
+                exit 1
+              fi
+              echo "::notice::Residual baseline diff after attempt ${pass}; reapplying the same explicitly activated recipe set."
+              ./mvnw --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress -Popenrewrite -pl "${OPENREWRITE_MODULES}" org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:runNoFork 2>&1 | tee "target/openrewrite/run-convergence-${pass}.log"
+              continue
+            fi
+
+            if (( dry_run_status != 0 )); then
+              echo "::error::OpenRewrite dry-run failed without a residual recipe diff."
+              exit "${dry_run_status}"
+            fi
+
+            converged=true
+            break
+          done
+
+          if [[ "${converged}" != true ]]; then
+            echo "::error::OpenRewrite baseline did not reach its zero-diff fixed point."
+            exit 1
+          fi
+
+          git diff --check
+          mapfile -t changed_paths < <(git diff --name-only)
+          non_java=()
+          for path in "${changed_paths[@]}"; do
+            [[ "${path}" == *.java ]] || non_java+=("${path}")
+          done
+          if (( ${#non_java[@]} > 0 )); then
+            printf 'Unexpected non-Java changes from the approved baseline recipe:\n' >&2
+            printf '  %s\n' "${non_java[@]}" >&2
+            exit 1
+          fi
+
+          git diff --binary > target/openrewrite/automatic-rewrite.patch
+          echo "changed_file_count=${#changed_paths[@]}" >> "$GITHUB_OUTPUT"
+          if (( ${#changed_paths[@]} == 0 )); then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "The active baseline is already at a verified zero-diff fixed point."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            printf 'OpenRewrite converged after automatic application; committing only %s generated Java files.\n' "${#changed_paths[@]}"
+            git diff --stat
+          fi
+
+      - name: Commit generated transformations on the target feature branch or bot branch
+        id: publish
+        if: steps.target.outputs.apply_required == 'true' && steps.postcondition.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- '*.java'
+          git commit -m "chore(openrewrite): apply approved baseline recipes"
+
+          if [[ "${WRITE_MODE}" == "direct-branch-update" ]]; then
+            # Safe only for non-main branches: never let automation write directly to main.
+            git push origin "HEAD:${TARGET_REF}"
+            CHECK_REF="${TARGET_REF}"
+            PR_NUMBER="$(gh pr list --state open --json number,headRefName,baseRefName \
+              | jq -r --arg head "${TARGET_REF}" '.[] | select(.headRefName == $head) | .number' | head -n 1)"
+          else
+            git push --force-with-lease="refs/heads/${AUTO_BRANCH}:${EXPECTED_REMOTE_SHA}" \
+              origin "HEAD:${AUTO_BRANCH}"
+            CHECK_REF="${AUTO_BRANCH}"
+            PR_NUMBER="$(gh pr list --state open --base "${TARGET_REF}" --json number,headRefName \
+              | jq -r --arg head "${AUTO_BRANCH}" '.[] | select(.headRefName == $head) | .number' | head -n 1)"
+            if [[ -z "${PR_NUMBER}" ]]; then
+              gh pr create --base "${TARGET_REF}" --head "${AUTO_BRANCH}" \
+                --title "chore(openrewrite): apply approved baseline recipes" \
+                --body "This PR contains only transformations generated by the repository's explicitly activated OpenRewrite baseline. The workflow runs `rewrite:runNoFork`, validates a strict zero-diff postcondition with `dryRunNoFork`, and dispatches the repository validation workflows against the generated commit. It never writes directly to `main`."
+              PR_NUMBER="$(gh pr list --state open --base "${TARGET_REF}" --json number,headRefName \
+                | jq -r --arg head "${AUTO_BRANCH}" '.[] | select(.headRefName == $head) | .number' | head -n 1)"
+            else
+              gh pr edit "${PR_NUMBER}" --title "chore(openrewrite): apply approved baseline recipes" \
+                --body "This PR contains only transformations generated by the repository's explicitly activated OpenRewrite baseline. The workflow runs `rewrite:runNoFork`, validates a strict zero-diff postcondition with `dryRunNoFork`, and dispatches the repository validation workflows against the generated commit. It never writes directly to `main`."
+            fi
+          fi
+
+          CHECK_SHA="$(git rev-parse HEAD)"
+          {
+            echo "check_ref=${CHECK_REF}"
+            echo "check_sha=${CHECK_SHA}"
+            echo "pr_number=${PR_NUMBER}"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "CHECK_REF=${CHECK_REF}"
+            echo "CHECK_SHA=${CHECK_SHA}"
+            echo "PR_NUMBER=${PR_NUMBER}"
+          } >> "$GITHUB_ENV"
+
+      - name: Dispatch full validation against the generated commit
+        if: steps.target.outputs.apply_required == 'true' && steps.postcondition.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for workflow in ci.yml integration-test.yml container-scan.yml codeql.yml openrewrite-catalog.yml; do
+            echo "Dispatching ${workflow} against ${CHECK_REF} (${CHECK_SHA})"
+            gh workflow run ".github/workflows/${workflow}" --ref "${CHECK_REF}"
+          done
+
+      - name: Wait for validation runs on the generated commit
+        if: steps.target.outputs.apply_required == 'true' && steps.postcondition.outputs.changed == 'true'
+        shell: bash
+        timeout-minutes: 65
+        run: |
+          set -Eeuo pipefail
+          expected=(
+            ".github/workflows/ci.yml"
+            ".github/workflows/integration-test.yml"
+            ".github/workflows/container-scan.yml"
+            ".github/workflows/codeql.yml"
+            ".github/workflows/openrewrite-catalog.yml"
+          )
+          for attempt in $(seq 1 180); do
+            response="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${CHECK_SHA}&per_page=100")"
+            pending=0
+            failed=0
+            for workflow_path in "${expected[@]}"; do
+              state="$(jq -r --arg sha "${CHECK_SHA}" --arg path "${workflow_path}" '
+                [.workflow_runs[]
+                  | select(.head_sha == $sha and .event == "workflow_dispatch" and .path == $path)]
+                | sort_by(.created_at)
+                | last
+                | if . == null then "missing"
+                  elif .status != "completed" then "pending"
+                  elif .conclusion == "success" then "success"
+                  else "failure:" + (.conclusion // "unknown")
+                  end
+              ' <<< "${response}")"
+              printf '%s: %s\n' "${workflow_path}" "${state}"
+              case "${state}" in
+                success) ;;
+                pending|missing) pending=1 ;;
+                failure:*) failed=1 ;;
+              esac
+            done
+            if (( failed == 1 )); then
+              echo "::error::At least one validation workflow failed for ${CHECK_SHA}."
+              exit 1
+            fi
+            if (( pending == 0 )); then
+              echo "All five validation workflows succeeded for ${CHECK_SHA}."
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "::error::Timed out waiting for validation workflows on ${CHECK_SHA}."
+          exit 1
+
+      - name: Upload automated recipe execution evidence
+        if: always() && steps.target.outputs.apply_required == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: openrewrite-auto-apply-${{ github.run_id }}
+          path: |
+            target/openrewrite/**
+            **/target/rewrite/**
+            **/target/rewrite*
+          if-no-files-found: warn
+          retention-days: 30
