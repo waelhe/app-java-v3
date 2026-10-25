@@ -653,7 +653,7 @@ class PlatformGovernanceFilesTest {
                 .contains("'!marketplace-app/src/test/java/com/marketplace/config/PlatformGovernanceFilesTest.java'")
                 .contains("git diff --name-only")
                 .contains("OPENREWRITE_MODULES")
-                .contains("-pl \"\${OPENREWRITE_MODULES}\"")
+                .contains("-pl \"${OPENREWRITE_MODULES}\"")
                 .contains("apply_required=false")
                 .contains("org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:dryRunNoFork")
                 .contains("for pass in $(seq 1 5); do")
