@@ -1,6 +1,7 @@
 package com.marketplace.app;
 
 import com.marketplace.identity.RoleAssignmentService;
+import com.marketplace.identity.UserService;
 import com.marketplace.identity.VerificationAttestationService;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.TrustType;
@@ -85,6 +86,9 @@ class UserRoleMigrationIntegrationTest {
 
     @Autowired
     private RoleAssignmentService roleAssignmentService;
+
+    @Autowired
+    private UserService userService;
 
     @Autowired
     private VerificationAttestationService attestationService;
@@ -210,6 +214,99 @@ class UserRoleMigrationIntegrationTest {
         assertThat(authoritiesOf(subject))
                 .as("the active re-grant restores the authority")
                 .containsExactlyInAnyOrder("ROLE_CONSUMER", "ROLE_ADMIN");
+    }
+
+    /**
+     * CodeRabbit agent findings, row 19 / CWE-863 (LOW): the last-admin
+     * guard must count the SAME authority source authentication reads.
+     * The finding's own chain, walked end to end on the real legs — an
+     * account completes a password reset while holding an additive ADMIN
+     * grant (the reset's {@code updateUser} replay copies the loaded
+     * effective authorities into NATIVE rows), the grant is then revoked
+     * (the assignment dies; the copied native {@code ROLE_ADMIN} row
+     * survives), and an administrator later requests disabling the LAST
+     * EFFECTIVE administrator: a guard counting native rows sees two and
+     * approves — the platform is left with zero administrators who can
+     * act. The fixed guard counts the V188 view (the revoked-pair filter
+     * drops the stale copy), so the removal answers the same 409 the
+     * counting constraint has always promised.
+     */
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void theLastAdminGuardCountsEffectiveAuthorities_notStaleNativeCopies() {
+        // The last REAL administrator — the maintained V187/V188 shape:
+        // users.role ADMIN, the native projection row, the mirrored
+        // active assignment.
+        String admin = "phase1-it-lastadmin@example.com";
+        UUID adminId = seedAccount("lastadmin", admin, "ADMIN", false);
+        seedAuthUser(admin, "ROLE_ADMIN");
+        seedAssignment(adminId, "ADMIN", false);
+
+        // The stale-copy carrier: a CONSUMER whose additive ADMIN grant
+        // straddles a password reset (the CONSUMER mirror is the V187
+        // backfill's own maintained shape).
+        String stale = "phase1-it-stalecopy@example.com";
+        UUID staleId = seedAccount("stalecopy", stale, "CONSUMER", false);
+        seedAuthUser(stale, "ROLE_CONSUMER");
+        seedAssignment(staleId, "CONSUMER", false);
+        roleAssignmentService.grant(staleId, com.marketplace.identity.UserRole.ADMIN,
+                adminId, "phase1-it-admin");
+
+        // The password reset's own replay (PasswordResetService.completeReset
+        // verbatim): load through the manager — the VIEW, so the active
+        // grant is present — then persist through updateUser, whose
+        // authority writes are NATIVE. The native store now carries the
+        // ROLE_ADMIN copy.
+        UserDetails withGrant = userDetailsManager.loadUserByUsername(stale);
+        assertThat(withGrant.getAuthorities())
+                .as("the reset loads the effective set — the grant is present")
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+        userDetailsManager.updateUser(org.springframework.security.core.userdetails.User
+                .withUsername(stale)
+                .password(withGrant.getPassword())
+                .authorities(withGrant.getAuthorities())
+                .accountExpired(!withGrant.isAccountNonExpired())
+                .accountLocked(!withGrant.isAccountNonLocked())
+                .credentialsExpired(!withGrant.isCredentialsNonExpired())
+                .disabled(!withGrant.isEnabled())
+                .build());
+
+        // The administrative revoke — the assignment dies, the copied
+        // native row stays (the projection's own write path never ran).
+        roleAssignmentService.revoke(staleId, com.marketplace.identity.UserRole.ADMIN,
+                "phase1-it-admin");
+
+        // The world the finding builds, measured on both stores:
+        Integer staleNativeCopies = jdbc.queryForObject(
+                "select count(*) from auth_authorities "
+                        + "where username = ? and authority = 'ROLE_ADMIN'",
+                Integer.class, stale);
+        assertThat(staleNativeCopies)
+                .as("the stale native copy outlives the revoked grant (the finding's premise)")
+                .isEqualTo(1);
+        assertThat(authoritiesOf(stale))
+                .as("the view — what the next login serves — carries no ADMIN")
+                .containsExactlyInAnyOrder("ROLE_CONSUMER");
+
+        // The guard's world through its own counting query: exactly the
+        // one real administrator (the pristine test database seeds no
+        // other — the admin initializer is a no-op under the test
+        // profile's blank seed password).
+        Integer effectiveAdmins = jdbc.queryForObject(
+                "select count(*) from auth_users u where u.enabled = true and exists "
+                        + "(select 1 from auth_effective_authorities a "
+                        + "where a.username = u.username and a.authority = 'ROLE_ADMIN')",
+                Integer.class);
+        assertThat(effectiveAdmins)
+                .as("the effective count the fixed guard reads").isEqualTo(1);
+
+        // The finding's sink through the real service: the disable of the
+        // last EFFECTIVE administrator is refused — the stale copy must
+        // not unblock it (the old native count read 2 and approved).
+        assertThatThrownBy(() -> userService.updateUserStatus(
+                        adminId, "DISABLED", "row 19 evidence", "phase1-it-admin"))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("last active ADMIN");
     }
 
     @Test
