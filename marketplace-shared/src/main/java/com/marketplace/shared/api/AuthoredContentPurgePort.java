@@ -30,7 +30,10 @@ import java.util.UUID;
  *       {@code provider_profiles.display_name} (V14),
  *       {@code disputes.reason} (V20), {@code notifications.message}
  *       (V18), {@code provider_listings.title} (V2 — the §9 listings
- *       row's resolution, the eighth converter) are NOT NULL, so the
+ *       row's resolution, the eighth converter) and the jobs module's
+ *       three ({@code jobs.title}, {@code jobs.description},
+ *       {@code job_applications.cover_message} — all V153, the §9 jobs
+ *       row's resolution, the tenth converter) are NOT NULL, so the
  *       tombstone marker is the honest representation the column
  *       constraint admits. The marker is what the counterparty sees on
  *       the shared record — the plan's declared Art. 20(4) trade-off made
@@ -67,16 +70,21 @@ import java.util.UUID;
  * provider persona's public name and bio, the listings he authored as a
  * provider (their titles and descriptions — {@code provider_listings}
  * via {@code CatalogController.create}'s stored user id, the §9 listings
- * row's resolution), the disputes he opened, his notification feed's
+ * row's resolution), the job listings he authored as an employer and the
+ * cover messages he submitted as a seeker ({@code jobs} and
+ * {@code job_applications} via {@code JobsService.create}/{@code apply}'s
+ * stored user ids — the §9 jobs row's resolution, the tenth converter),
+ * the disputes he opened, his notification feed's
  * message bodies. The counterparty's texts never match the predicates.
  */
 public interface AuthoredContentPurgePort {
 
     /**
-     * The tombstone for NOT NULL text columns (measured: V7/V14/V18/V20/V2).
-     * Bracketed so it is visually and programmatically distinguishable
-     * from user-authored content; documented here as the single constant
-     * every adapter and every reader shares.
+     * The tombstone for NOT NULL text columns (measured:
+     * V7/V14/V18/V20/V2/V153 — the jobs three joined by the ninth
+     * converter). Bracketed so it is visually and programmatically
+     * distinguishable from user-authored content; documented here as the
+     * single constant every adapter and every reader shares.
      */
     String PURGED_MARKER = "[purged]";
 
