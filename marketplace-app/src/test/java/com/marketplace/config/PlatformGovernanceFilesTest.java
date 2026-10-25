@@ -711,7 +711,7 @@ class PlatformGovernanceFilesTest {
         assertThat(catalogWorkflow)
                 .contains("repositoryOrigins")
                 .contains("Read pinned OpenRewrite Maven plugin version for Spring discovery")
-                .contains("OPENREWRITE_MAVEN_PLUGIN_VERSION=${version}");
+                .contains("OPENREWRITE_MAVEN_PLUGIN_VERSION={version}");
     }
 
     private static Path repoRoot() {
