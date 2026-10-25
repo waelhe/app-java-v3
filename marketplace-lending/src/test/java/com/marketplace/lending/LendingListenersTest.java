@@ -17,7 +17,9 @@ import static org.mockito.Mockito.verifyNoInteractions;
  * Stage 8 (ADR-0004) + ADR-0009 — the two module listeners' dispatch law:
  * the payment's COMPLETED event marks the paid gate (anything else is a
  * no-op), and the dispute events freeze/resume/terminate ONLY their LOAN
- * subjects (a BOOKING dispute never touches the lending machine).
+ * subjects (a BOOKING dispute never touches the lending machine). Row 15
+ * (agent findings 2026-10-25): the dispute dispatches forward the event's
+ * disputeId — the freeze/release writes are identity-aware.
  */
 class LendingListenersTest {
 
@@ -42,10 +44,11 @@ class LendingListenersTest {
 
     @Test
     void aLoanSubjectDisputeFreezesTheLoan() {
+        UUID disputeId = UUID.randomUUID();
         UUID loanId = UUID.randomUUID();
         disputeListener.onDisputeOpened(new DisputeOpenedEvent(
-                UUID.randomUUID(), DisputeSubject.LOAN, null, loanId, UUID.randomUUID()));
-        verify(lendingService).markDisputedFromDispute(loanId);
+                disputeId, DisputeSubject.LOAN, null, loanId, UUID.randomUUID()));
+        verify(lendingService).markDisputedFromDispute(disputeId, loanId);
     }
 
     @Test
@@ -60,10 +63,11 @@ class LendingListenersTest {
 
     @Test
     void aLoanSubjectResolutionRidesThroughTyped() {
+        UUID disputeId = UUID.randomUUID();
         UUID loanId = UUID.randomUUID();
         disputeListener.onDisputeResolved(new DisputeResolvedEvent(
-                UUID.randomUUID(), DisputeSubject.LOAN, null, loanId, UUID.randomUUID(),
+                disputeId, DisputeSubject.LOAN, null, loanId, UUID.randomUUID(),
                 DisputeResolution.REFUND_CONSUMER, null));
-        verify(lendingService).resolveDisputeFromDisputes(loanId, DisputeResolution.REFUND_CONSUMER);
+        verify(lendingService).resolveDisputeFromDisputes(disputeId, loanId, DisputeResolution.REFUND_CONSUMER);
     }
 }

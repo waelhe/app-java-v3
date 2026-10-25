@@ -1,6 +1,7 @@
 package com.marketplace.lending;
 
 import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.DisputeLookupPort;
 import com.marketplace.shared.api.DisputeResolution;
 import com.marketplace.shared.api.LoanApprovedEvent;
 import com.marketplace.shared.api.LoanCancelledEvent;
@@ -57,6 +58,7 @@ public class LendingService {
     private final LoanRepository loanRepository;
     private final ProductPricingPort productPricingPort;
     private final LoanPaymentPort loanPaymentPort;
+    private final DisputeLookupPort disputeLookupPort;
     private final CurrentUserProvider currentUserProvider;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -64,12 +66,14 @@ public class LendingService {
                           LoanRepository loanRepository,
                           ProductPricingPort productPricingPort,
                           LoanPaymentPort loanPaymentPort,
+                          DisputeLookupPort disputeLookupPort,
                           CurrentUserProvider currentUserProvider,
                           ApplicationEventPublisher eventPublisher) {
         this.offerRepository = offerRepository;
         this.loanRepository = loanRepository;
         this.productPricingPort = productPricingPort;
         this.loanPaymentPort = loanPaymentPort;
+        this.disputeLookupPort = disputeLookupPort;
         this.currentUserProvider = currentUserProvider;
         this.eventPublisher = eventPublisher;
     }
@@ -292,11 +296,23 @@ public class LendingService {
      * both parties (the event ADR-0004's javadoc promised, now real).
      * Idempotent by the state guard: a redelivered DisputeOpenedEvent for
      * an already-DISPUTED (or moved-past) loan is a silent no-op.
+     *
+     * <p><b>Row 15 (agent findings 2026-10-25) — the freeze tracks OPEN
+     * disputes by identity:</b> the shared event carries the dispute's
+     * own id, and the freeze is applied only while that dispute is STILL
+     * open in the disputes module's committed state (the owner answers
+     * through the {@link DisputeLookupPort} contract pair). A redelivered
+     * open event for a dispute the administration already resolved —
+     * possible under the documented resubmission machinery, whose retry
+     * can land after the resolution's own event has been consumed — must
+     * not re-freeze a resumed loan: a freeze no future resolution would
+     * ever release.
      */
     @Transactional
-    public void markDisputedFromDispute(UUID loanId) {
+    public void markDisputedFromDispute(UUID disputeId, UUID loanId) {
         loanRepository.findById(loanId)
                 .filter(loan -> loan.getStatus() == LoanStatus.ACTIVE)
+                .filter(loan -> disputeLookupPort.isDisputeOpen(disputeId))
                 .ifPresent(loan -> {
                     loan.markDisputed();
                     loanRepository.save(loan);
@@ -313,9 +329,25 @@ public class LendingService {
      * here), any other decision releases the freeze and resumes the ACTIVE
      * edge (the DisputeResolvedEvent outcome the notifications module
      * writes receipts from). Idempotent by the state guard.
+     *
+     * <p><b>Row 15 (agent findings 2026-10-25) — the release is held while
+     * any open dispute still requires the freeze, and an approved refund
+     * is never silently discarded:</b> the shared event carries the
+     * dispute's own id, and the two failure modes the finding measured are
+     * closed — (1) resolving ONE of several concurrent disputes no longer
+     * resumes the loan: the non-refund branch releases only when NO other
+     * open dispute remains (the dispute-owning module answers through the
+     * {@link DisputeLookupPort} contract pair, the resolving dispute
+     * discounted by identity), so a later approved refund still finds the
+     * loan DISPUTED and its cancellation edge legal — the exact
+     * discarded-refund sequence the finding reported; (2) the refund
+     * branch stays terminal-first: an approved refund terminates the loan
+     * regardless of other open disputes — the strongest decision wins, and
+     * the remaining disputes' resolutions no-op on the terminal loan by
+     * the state guard (nothing left to freeze or release).
      */
     @Transactional
-    public void resolveDisputeFromDisputes(UUID loanId, DisputeResolution resolution) {
+    public void resolveDisputeFromDisputes(UUID disputeId, UUID loanId, DisputeResolution resolution) {
         loanRepository.findById(loanId)
                 .filter(loan -> loan.getStatus() == LoanStatus.DISPUTED)
                 .ifPresent(loan -> {
@@ -324,12 +356,19 @@ public class LendingService {
                         loanRepository.save(loan);
                         eventPublisher.publishEvent(new LoanCancelledEvent(
                                 loan.getId(), loan.getBorrowerId()));
-                    } else {
+                    } else if (!disputeLookupPort.hasOpenDisputeForLoan(loanId, disputeId)) {
+                        // The LAST open dispute resolved — the freeze's exit.
                         loan.resumeFromDispute();
                         loanRepository.save(loan);
                         eventPublisher.publishEvent(new LoanDisputeResolvedEvent(
                                 loan.getId(), loan.getBorrowerId(), loan.getOwnerId()));
                     }
+                    // else: another open dispute still requires the freeze —
+                    // the loan STAYS DISPUTED. The resolved dispute's own
+                    // receipt already reached both parties through the
+                    // disputes module's DisputeResolvedEvent consumers; no
+                    // loan-state event lies about a resume that did not
+                    // happen.
                 });
     }
 
