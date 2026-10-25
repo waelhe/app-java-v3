@@ -1336,9 +1336,9 @@
                                 <style>com.marketplace.OpenRewriteBaselineStyle</style>
                             </activeStyles>
                             <failOnInvalidActiveRecipes>true</failOnInvalidActiveRecipes>
-                            <!-- First rollout captures the existing diff baseline as a CI artifact.
-                                 Promote dry-run diffs to a blocking gate after baseline remediation. -->
-                            <failOnDryRunResults>false</failOnDryRunResults>
+                            <!-- Keep the catalog gate blocking. The auto-apply workflow converges the active
+                                 recipe set before publishing generated Java and fails closed on residual diffs. -->
+                            <failOnDryRunResults>true</failOnDryRunResults>
                             <exportDatatables>true</exportDatatables>
                         </configuration>
                     </plugin>

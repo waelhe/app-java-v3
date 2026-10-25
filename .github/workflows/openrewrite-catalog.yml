@@ -227,7 +227,7 @@ jobs:
 
   spring-source-build-probe:
     name: OpenRewrite source-build probe
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_spring_source_probe == true)
+    if: inputs.run_spring_source_probe == true
     runs-on: ubuntu-latest
     steps:
       - name: Checkout platform repository

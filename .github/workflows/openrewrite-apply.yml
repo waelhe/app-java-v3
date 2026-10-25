@@ -222,12 +222,44 @@ jobs:
             org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:runNoFork \
             2>&1 | tee target/openrewrite/run.log
 
-      - name: Enforce a zero-diff postcondition before publishing source changes
+      - name: Converge the automatic baseline and enforce a zero-diff postcondition
         id: postcondition
         shell: bash
         run: |
           set -Eeuo pipefail
           mkdir -p target/openrewrite
+          converged=false
+          for pass in $(seq 1 5); do
+            dry_run_log="target/openrewrite/post-apply-dry-run-${pass}.log"
+            set +e
+            ./mvnw --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress -Popenrewrite org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:dryRunNoFork -Drewrite.exportDatatables=true 2>&1 | tee "${dry_run_log}"
+            dry_run_status="${PIPESTATUS[0]}"
+            set -e
+
+            if grep -Fq "These recipes would make changes to " "${dry_run_log}"; then
+              if (( pass == 5 )); then
+                echo "::error::OpenRewrite baseline did not converge to zero diff after five attempts."
+                exit 1
+              fi
+              echo "::notice::Residual baseline diff after attempt ${pass}; reapplying the same explicitly activated recipe set."
+              ./mvnw --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress -Popenrewrite org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:runNoFork 2>&1 | tee "target/openrewrite/run-convergence-${pass}.log"
+              continue
+            fi
+
+            if (( dry_run_status != 0 )); then
+              echo "::error::OpenRewrite dry-run failed without a residual recipe diff."
+              exit "${dry_run_status}"
+            fi
+
+            converged=true
+            break
+          done
+
+          if [[ "${converged}" != true ]]; then
+            echo "::error::OpenRewrite baseline did not reach its zero-diff fixed point."
+            exit 1
+          fi
+
           git diff --check
           mapfile -t changed_paths < <(git diff --name-only)
           non_java=()
@@ -240,21 +272,14 @@ jobs:
             exit 1
           fi
 
-          set -o pipefail
-          ./mvnw --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress \
-            -Popenrewrite \
-            org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:dryRunNoFork \
-            -Drewrite.failOnDryRunResults=true \
-            2>&1 | tee target/openrewrite/post-apply-dry-run.log
-
           git diff --binary > target/openrewrite/automatic-rewrite.patch
           echo "changed_file_count=${#changed_paths[@]}" >> "$GITHUB_OUTPUT"
           if (( ${#changed_paths[@]} == 0 )); then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "The active baseline is already clean; no commit or automated branch update is needed."
+            echo "The active baseline is already at a verified zero-diff fixed point."
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            printf 'OpenRewrite generated changes in %s Java files. No hand-written transformations were applied.\n' "${#changed_paths[@]}"
+            printf 'OpenRewrite converged after automatic application; committing only %s generated Java files.\n' "${#changed_paths[@]}"
             git diff --stat
           fi
 

@@ -587,7 +587,8 @@ class PlatformGovernanceFilesTest {
                 .contains("org.openrewrite.java.spring.boot3.UpgradeSpringBoot_3_5")
                 .contains("Spring source build completed but the expected community recipe")
                 .contains("run_spring_source_probe")
-                .contains("inputs.run_spring_source_probe == true")
+                .contains("if: inputs.run_spring_source_probe == true")
+                .doesNotContain("if: github.event_name == 'schedule' ||")
                 // The pinned source tag can publish a coordinate different from the tag
                 // number; the probe must flow the measured coordinate into Maven rather
                 // than requesting the guessed release number (review 5638134031).
@@ -598,6 +599,28 @@ class PlatformGovernanceFilesTest {
                 .contains("-Dopenrewrite.recipe-bom.version=\"${OPENREWRITE_RECIPE_BOM_VERSION}\"")
                 .contains("verify-bom-alignment.py")
                 .contains("recipe-bom-effective-pom.xml");
+    }
+
+
+    @Test
+    void openRewriteAutoApplyConvergesAndFailsClosed() throws IOException {
+        String pom = read("pom.xml");
+        String workflow = read(".github", "workflows", "openrewrite-apply.yml");
+
+        assertThat(pom)
+                .as("the regular catalog dry-run must be a blocking zero-diff gate")
+                .contains("<failOnDryRunResults>true</failOnDryRunResults>");
+
+        assertThat(workflow)
+                .as("the automatic path applies only activated recipes and fails closed unless the source reaches a fixed point")
+                .contains("org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:runNoFork")
+                .contains("org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:dryRunNoFork")
+                .contains("for pass in $(seq 1 5); do")
+                .contains("These recipes would make changes to ")
+                .contains("OpenRewrite baseline did not converge to zero diff after five attempts.")
+                .contains("Unexpected non-Java changes from the approved baseline recipe:")
+                .contains("gh workflow run")
+                .contains("Never writes directly to `main`.");
     }
 
     private static Path repoRoot() {
