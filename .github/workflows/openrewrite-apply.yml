@@ -10,10 +10,18 @@ on:
   workflow_dispatch:
     inputs:
       target_ref:
-        description: Branch to modernize. main creates a bot PR; a non-main branch is updated on that branch.
+        description: Branch to modernize. Full-project is permitted only as an explicit workflow dispatch against main.
         required: true
         default: main
         type: string
+      scope:
+        description: Run full-project once after merge; routine updates always use changed-modules.
+        required: true
+        default: changed-modules
+        type: choice
+        options:
+          - changed-modules
+          - full-project
 
 permissions:
   contents: write
@@ -98,86 +106,80 @@ jobs:
         shell: bash
         env:
           INPUT_TARGET_REF: ${{ inputs.target_ref }}
+          INPUT_SCOPE: ${{ inputs.scope }}
           EVENT_BEFORE: ${{ github.event.before }}
         run: |
           set -Eeuo pipefail
           case "${GITHUB_EVENT_NAME}" in
-            push) TARGET_REF="${GITHUB_REF_NAME}" ;;
-            workflow_dispatch) TARGET_REF="${INPUT_TARGET_REF:-${GITHUB_REF_NAME}}" ;;
+            push) TARGET_REF="${GITHUB_REF_NAME}"; SCOPE="changed-modules" ;;
+            workflow_dispatch) TARGET_REF="${INPUT_TARGET_REF:-${GITHUB_REF_NAME}}"; SCOPE="${INPUT_SCOPE:-changed-modules}" ;;
             *) echo "::error::Unsupported event ${GITHUB_EVENT_NAME}"; exit 1 ;;
           esac
           git check-ref-format --branch "${TARGET_REF}"
+          if [[ "${SCOPE}" != "changed-modules" && "${SCOPE}" != "full-project" ]]; then echo "::error::Unsupported scope ${SCOPE}"; exit 1; fi
+          if [[ "${SCOPE}" == "full-project" && ( "${GITHUB_EVENT_NAME}" != "workflow_dispatch" || "${TARGET_REF}" != "main" ) ]]; then
+            echo "::error::Full-project baseline is permitted only as an explicit workflow dispatch targeting main."; exit 1
+          fi
           git fetch origin "${TARGET_REF}"
           TARGET_SHA="$(git rev-parse FETCH_HEAD)"
           git switch --detach "${TARGET_SHA}"
-
-          # Only rewrite Maven modules containing Java files changed by this event.
-          # Installing OpenRewrite/configuration never triggers a whole-reactor cleanup.
-          if [[ "${GITHUB_EVENT_NAME}" == "push" && -n "${EVENT_BEFORE}" && ! "${EVENT_BEFORE}" =~ ^0+$ ]]; then
-            RANGE_BASE="${EVENT_BEFORE}"
-            git cat-file -e "${RANGE_BASE}^{commit}" || {
-              echo "::error::Push base ${RANGE_BASE} is unavailable in the checkout."
-              exit 1
-            }
+          module_names=()
+          if [[ "${SCOPE}" == "full-project" ]]; then
+            # One-time baseline: discover all reactor modules from the root POM; no hand-maintained module list.
+            mapfile -t module_names < <(python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+          root = ET.parse("pom.xml").getroot()
+          modules = root.find("m:modules", ns)
+          if modules is None:
+              raise SystemExit("Root POM has no <modules>; refusing a partial full-project baseline.")
+          names = [(node.text or "").strip() for node in modules.findall("m:module", ns)]
+          if not names or any(not name for name in names):
+              raise SystemExit("Root Maven module list is empty or malformed.")
+          for name in names:
+              print(name)
+          PY
+            )
+            for module in "${module_names[@]}"; do [[ -f "${module}/pom.xml" ]] || { echo "::error::Reactor module '${module}' has no pom.xml."; exit 1; }; done
           else
-            RANGE_BASE="$(git rev-parse "${TARGET_SHA}^" 2>/dev/null || true)"
-          fi
-          if [[ -z "${RANGE_BASE}" ]]; then
-            echo "apply_required=false" >> "$GITHUB_OUTPUT"
-            echo "No parent commit is available; skipping automatic source application."
-            exit 0
-          fi
-          mapfile -t changed_paths < <(git diff --name-only "${RANGE_BASE}" "${TARGET_SHA}")
-          changed_java_paths=()
-          for path in "${changed_paths[@]}"; do
-            [[ "${path}" == *.java ]] || continue
-            [[ "${path}" == "marketplace-app/src/test/java/com/marketplace/config/PlatformGovernanceFilesTest.java" ]] && continue
-            changed_java_paths+=("${path}")
-          done
-          if (( ${#changed_java_paths[@]} == 0 )); then
-            echo "apply_required=false" >> "$GITHUB_OUTPUT"
-            echo "No eligible Java source changes in this push; skipping OpenRewrite apply."
-            exit 0
-          fi
-          declare -A selected_modules=()
-          for path in "${changed_java_paths[@]}"; do
-            module="${path%%/*}"
-            if [[ "${module}" == "${path}" || ! -f "${module}/pom.xml" ]]; then
-              echo "::error::Changed Java path '${path}' does not map to a top-level Maven module; refusing a partial rewrite."
-              exit 1
+            # Routine mode: select only Maven modules with Java files changed in this event.
+            if [[ "${GITHUB_EVENT_NAME}" == "push" && -n "${EVENT_BEFORE}" && ! "${EVENT_BEFORE}" =~ ^0+$ ]]; then
+              RANGE_BASE="${EVENT_BEFORE}"
+              git cat-file -e "${RANGE_BASE}^{commit}" || { echo "::error::Push base is unavailable."; exit 1; }
+            else
+              RANGE_BASE="$(git rev-parse "${TARGET_SHA}^" 2>/dev/null || true)"
             fi
-            selected_modules["${module}"]=1
-          done
-          mapfile -t module_names < <(printf '%s\n' "${!selected_modules[@]}" | sort)
-          MODULES_CSV="$(IFS=,; printf '%s' "${module_names[*]}")"
-          if [[ -z "${MODULES_CSV}" ]]; then
-            echo "::error::Java changes were found but no Maven modules were selected."
-            exit 1
+            if [[ -z "${RANGE_BASE}" ]]; then echo "apply_required=false" >> "$GITHUB_OUTPUT"; echo "No parent commit; skipping auto-apply."; exit 0; fi
+            mapfile -t changed_paths < <(git diff --name-only "${RANGE_BASE}" "${TARGET_SHA}")
+            declare -A selected_modules=()
+            for path in "${changed_paths[@]}"; do
+              [[ "${path}" == *.java ]] || continue
+              [[ "${path}" == "marketplace-app/src/test/java/com/marketplace/config/PlatformGovernanceFilesTest.java" ]] && continue
+              module="${path%%/*}"
+              if [[ "${module}" == "${path}" || ! -f "${module}/pom.xml" ]]; then echo "::error::Changed Java path '${path}' is not in a top-level Maven module."; exit 1; fi
+              selected_modules["${module}"]=1
+            done
+            if (( ${#selected_modules[@]} == 0 )); then echo "apply_required=false" >> "$GITHUB_OUTPUT"; echo "No eligible Java changes mapped to modules; skipping auto-apply."; exit 0; fi
+            mapfile -t module_names < <(printf '%s\n' "${!selected_modules[@]}" | sort)
           fi
+          MODULES_CSV="$(IFS=,; printf '%s' "${module_names[*]}")"
+          [[ -n "${MODULES_CSV}" ]] || { echo "::error::No Maven modules selected."; exit 1; }
           if [[ "${TARGET_REF}" == "main" ]]; then
             MODE="pull-request"
-            AUTO_BRANCH="automation/openrewrite-baseline"
+            AUTO_BRANCH="automation/openrewrite-working-${GITHUB_RUN_ID}"
             EXPECTED_REMOTE_SHA="$(git ls-remote origin "refs/heads/${AUTO_BRANCH}" | awk '{print $1}')"
             git switch -c "${AUTO_BRANCH}"
-            echo "automation_branch=${AUTO_BRANCH}" >> "$GITHUB_OUTPUT"
           else
             MODE="direct-branch-update"
             AUTO_BRANCH="${TARGET_REF}"
             EXPECTED_REMOTE_SHA=""
             git switch -c "openrewrite-apply-${GITHUB_RUN_ID}"
-            echo "automation_branch=${TARGET_REF}" >> "$GITHUB_OUTPUT"
           fi
-          {
-            echo "TARGET_REF=${TARGET_REF}"
-            echo "TARGET_SHA=${TARGET_SHA}"
-            echo "WRITE_MODE=${MODE}"
-            echo "AUTO_BRANCH=${AUTO_BRANCH}"
-            echo "EXPECTED_REMOTE_SHA=${EXPECTED_REMOTE_SHA}"
-            echo "OPENREWRITE_MODULES=${MODULES_CSV}"
-          } >> "$GITHUB_ENV"
+          { echo "TARGET_REF=${TARGET_REF}"; echo "TARGET_SHA=${TARGET_SHA}"; echo "WRITE_MODE=${MODE}"; echo "AUTO_BRANCH=${AUTO_BRANCH}"; echo "EXPECTED_REMOTE_SHA=${EXPECTED_REMOTE_SHA}"; echo "OPENREWRITE_MODULES=${MODULES_CSV}"; echo "OPENREWRITE_SCOPE=${SCOPE}"; } >> "$GITHUB_ENV"
           echo "write_mode=${MODE}" >> "$GITHUB_OUTPUT"
           echo "target_ref=${TARGET_REF}" >> "$GITHUB_OUTPUT"
           echo "modules_csv=${MODULES_CSV}" >> "$GITHUB_OUTPUT"
+          echo "scope=${SCOPE}" >> "$GITHUB_OUTPUT"
           echo "apply_required=true" >> "$GITHUB_OUTPUT"
 
       - name: Read the pinned OpenRewrite toolchain
@@ -330,7 +332,7 @@ jobs:
             git diff --stat
           fi
 
-      - name: Commit generated transformations on the target feature branch or bot branch
+      - name: Publish generated transformations in review-sized batches
         id: publish
         if: steps.target.outputs.apply_required == 'true' && steps.postcondition.outputs.changed == 'true'
         shell: bash
@@ -338,103 +340,107 @@ jobs:
           set -Eeuo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- '*.java'
-          git commit -m "chore(openrewrite): apply approved baseline recipes"
-
+          mapfile -t changed_paths < <(git diff --name-only "${TARGET_SHA}")
+          if (( ${#changed_paths[@]} == 0 )); then echo "::error::No diff paths found after changed=true."; exit 1; fi
+          for path in "${changed_paths[@]}"; do [[ "${path}" == *.java ]] || { echo "::error::Unexpected non-Java diff at publication: ${path}"; exit 1; }; done
           if [[ "${WRITE_MODE}" == "direct-branch-update" ]]; then
-            # Safe only for non-main branches: never let automation write directly to main.
+            git add -- "${changed_paths[@]}"
+            git commit -m "chore(openrewrite): apply approved recipes to changed modules"
             git push origin "HEAD:${TARGET_REF}"
-            CHECK_REF="${TARGET_REF}"
-            PR_NUMBER="$(gh pr list --state open --json number,headRefName,baseRefName \
-              | jq -r --arg head "${TARGET_REF}" '.[] | select(.headRefName == $head) | .number' | head -n 1)"
-          else
-            git push --force-with-lease="refs/heads/${AUTO_BRANCH}:${EXPECTED_REMOTE_SHA}" \
-              origin "HEAD:${AUTO_BRANCH}"
-            CHECK_REF="${AUTO_BRANCH}"
-            PR_NUMBER="$(gh pr list --state open --base "${TARGET_REF}" --json number,headRefName \
-              | jq -r --arg head "${AUTO_BRANCH}" '.[] | select(.headRefName == $head) | .number' | head -n 1)"
-            if [[ -z "${PR_NUMBER}" ]]; then
-              gh pr create --base "${TARGET_REF}" --head "${AUTO_BRANCH}" \
-                --title "chore(openrewrite): apply approved baseline recipes" \
-                --body "This PR contains only transformations generated by the repository's explicitly activated OpenRewrite baseline. The workflow runs `rewrite:runNoFork`, validates a strict zero-diff postcondition with `dryRunNoFork`, and dispatches the repository validation workflows against the generated commit. It never writes directly to `main`."
-              PR_NUMBER="$(gh pr list --state open --base "${TARGET_REF}" --json number,headRefName \
-                | jq -r --arg head "${AUTO_BRANCH}" '.[] | select(.headRefName == $head) | .number' | head -n 1)"
-            else
-              gh pr edit "${PR_NUMBER}" --title "chore(openrewrite): apply approved baseline recipes" \
-                --body "This PR contains only transformations generated by the repository's explicitly activated OpenRewrite baseline. The workflow runs `rewrite:runNoFork`, validates a strict zero-diff postcondition with `dryRunNoFork`, and dispatches the repository validation workflows against the generated commit. It never writes directly to `main`."
-            fi
+            CHECK_SHA="$(git rev-parse HEAD)"
+            PR_NUMBER="$(gh pr list --state open --json number,headRefName | jq -r --arg head "${TARGET_REF}" '.[] | select(.headRefName == $head) | .number' | head -n 1)"
+            echo "BATCH_COUNT=1" >> "$GITHUB_ENV"; echo "CHECK_REF_1=${TARGET_REF}" >> "$GITHUB_ENV"; echo "CHECK_SHA_1=${CHECK_SHA}" >> "$GITHUB_ENV"; echo "PR_NUMBER_1=${PR_NUMBER}" >> "$GITHUB_ENV"
+            exit 0
           fi
+          MAX_FILES_PER_PR=95
+          printf '%s\n' "${changed_paths[@]}" > "${RUNNER_TEMP}/openrewrite-changed-paths.txt"
+          python3 - <<'PY'
+          import json, os
+          from collections import defaultdict
+          limit = 95
+          paths_file = os.path.join(os.environ["RUNNER_TEMP"], "openrewrite-changed-paths.txt")
+          paths = [line.strip() for line in open(paths_file, encoding="utf-8") if line.strip()]
+          by_module = defaultdict(list)
+          for path in paths:
+              module = path.split("/", 1)[0]
+              if module == path: raise SystemExit(f"Changed path is not under a Maven module: {path}")
+              by_module[module].append(path)
+          batches, current = [], {"paths": [], "modules": []}
+          for module, module_paths in sorted(by_module.items()):
+              if len(module_paths) > limit: raise SystemExit(f"Module {module} changed {len(module_paths)} files; refusing to split a module silently.")
+              if current["paths"] and len(current["paths"]) + len(module_paths) > limit:
+                  batches.append(current); current = {"paths": [], "modules": []}
+              current["paths"].extend(module_paths); current["modules"].append(module)
+          if current["paths"]: batches.append(current)
+          if not batches or any(len(b["paths"]) > limit for b in batches): raise SystemExit("Invalid review-sized batch plan")
+          for number, batch in enumerate(batches, 1): batch["number"] = number; batch["paths"] = sorted(batch["paths"])
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "openrewrite-batches.json"), "w", encoding="utf-8") as out: json.dump(batches, out)
+          print("Planned batches:", [(b["number"], len(b["paths"]), b["modules"]) for b in batches])
+          PY
+          BATCH_COUNT="$(jq 'length' "${RUNNER_TEMP}/openrewrite-batches.json")"
+          (( BATCH_COUNT > 0 )) || { echo "::error::No publication batches generated."; exit 1; }
+          echo "BATCH_COUNT=${BATCH_COUNT}" >> "$GITHUB_ENV"
+          git reset --hard "${TARGET_SHA}"
+          for idx in $(seq 1 "${BATCH_COUNT}"); do
+            paths_file="${RUNNER_TEMP}/openrewrite-batch-${idx}.paths"; patch_file="${RUNNER_TEMP}/openrewrite-batch-${idx}.patch"
+            jq -r ".[$((idx-1))].paths[]" "${RUNNER_TEMP}/openrewrite-batches.json" > "${paths_file}"
+            mapfile -t batch_paths < "${paths_file}"
+            module_names="$(jq -r ".[$((idx-1))].modules | join(\",\")" "${RUNNER_TEMP}/openrewrite-batches.json")"
+            git diff --binary "${TARGET_SHA}" -- "${batch_paths[@]}" > "${patch_file}"
+            batch_branch="automation/openrewrite-${OPENREWRITE_SCOPE}-${TARGET_SHA:0:12}-batch-${idx}"
+            git switch --detach "${TARGET_SHA}"; git switch -C "${batch_branch}"
+            git apply --binary "${patch_file}"
+            git add -- "${batch_paths[@]}"; git diff --cached --check
+            git commit -m "chore(openrewrite): ${OPENREWRITE_SCOPE} batch ${idx}/${BATCH_COUNT}"
+            remote_sha="$(git ls-remote origin "refs/heads/${batch_branch}" | awk '{print $1}')"
+            git push --force-with-lease="refs/heads/${batch_branch}:${remote_sha}" origin "HEAD:${batch_branch}"
+            CHECK_SHA="$(git rev-parse HEAD)"
+            PR_NUMBER="$(gh pr list --state open --base "${TARGET_REF}" --json number,headRefName | jq -r --arg head "${batch_branch}" '.[] | select(.headRefName == $head) | .number' | head -n 1)"
+            PR_TITLE="chore(openrewrite): ${OPENREWRITE_SCOPE} batch ${idx}/${BATCH_COUNT}"
+            PR_BODY="OpenRewrite-generated Java changes. Scope=${OPENREWRITE_SCOPE}; batch ${idx}/${BATCH_COUNT}; files=${#batch_paths[@]}/${MAX_FILES_PER_PR}; Maven modules=${module_names}. All changed files are visible in the diff; none are excluded."
+            if [[ -z "${PR_NUMBER}" ]]; then
+              gh pr create --base "${TARGET_REF}" --head "${batch_branch}" --title "${PR_TITLE}" --body "${PR_BODY}"
+              PR_NUMBER="$(gh pr list --state open --base "${TARGET_REF}" --json number,headRefName | jq -r --arg head "${batch_branch}" '.[] | select(.headRefName == $head) | .number' | head -n 1)"
+            else gh pr edit "${PR_NUMBER}" --title "${PR_TITLE}" --body "${PR_BODY}"; fi
+            [[ -n "${PR_NUMBER}" ]] || { echo "::error::Could not identify generated PR for ${batch_branch}."; exit 1; }
+            echo "CHECK_REF_${idx}=${batch_branch}" >> "$GITHUB_ENV"; echo "CHECK_SHA_${idx}=${CHECK_SHA}" >> "$GITHUB_ENV"; echo "PR_NUMBER_${idx}=${PR_NUMBER}" >> "$GITHUB_ENV"
+            echo "Published batch ${idx}/${BATCH_COUNT}: PR #${PR_NUMBER}, files=${#batch_paths[@]}, sha=${CHECK_SHA}"
+          done
 
-          CHECK_SHA="$(git rev-parse HEAD)"
-          {
-            echo "check_ref=${CHECK_REF}"
-            echo "check_sha=${CHECK_SHA}"
-            echo "pr_number=${PR_NUMBER}"
-          } >> "$GITHUB_OUTPUT"
-          {
-            echo "CHECK_REF=${CHECK_REF}"
-            echo "CHECK_SHA=${CHECK_SHA}"
-            echo "PR_NUMBER=${PR_NUMBER}"
-          } >> "$GITHUB_ENV"
-
-      - name: Dispatch full validation against the generated commit
+      - name: Dispatch validation workflows for each generated batch
         if: steps.target.outputs.apply_required == 'true' && steps.postcondition.outputs.changed == 'true'
         shell: bash
         run: |
           set -Eeuo pipefail
-          for workflow in ci.yml integration-test.yml container-scan.yml codeql.yml openrewrite-catalog.yml; do
-            echo "Dispatching ${workflow} against ${CHECK_REF} (${CHECK_SHA})"
-            gh workflow run ".github/workflows/${workflow}" --ref "${CHECK_REF}"
+          workflows=(ci.yml integration-test.yml container-scan.yml codeql.yml openrewrite-catalog.yml)
+          for idx in $(seq 1 "${BATCH_COUNT}"); do
+            ref_var="CHECK_REF_${idx}"; sha_var="CHECK_SHA_${idx}"; check_ref="${!ref_var}"; check_sha="${!sha_var}"
+            for workflow in "${workflows[@]}"; do echo "Dispatching ${workflow} for batch ${idx}/${BATCH_COUNT} (${check_sha})"; gh workflow run ".github/workflows/${workflow}" --ref "${check_ref}"; done
           done
 
-      - name: Wait for validation runs on the generated commit
+      - name: Wait for validation workflows on every generated batch
         if: steps.target.outputs.apply_required == 'true' && steps.postcondition.outputs.changed == 'true'
         shell: bash
         timeout-minutes: 65
         run: |
           set -Eeuo pipefail
-          expected=(
-            ".github/workflows/ci.yml"
-            ".github/workflows/integration-test.yml"
-            ".github/workflows/container-scan.yml"
-            ".github/workflows/codeql.yml"
-            ".github/workflows/openrewrite-catalog.yml"
-          )
+          expected=(".github/workflows/ci.yml" ".github/workflows/integration-test.yml" ".github/workflows/container-scan.yml" ".github/workflows/codeql.yml" ".github/workflows/openrewrite-catalog.yml")
           for attempt in $(seq 1 180); do
-            response="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${CHECK_SHA}&per_page=100")"
-            pending=0
-            failed=0
-            for workflow_path in "${expected[@]}"; do
-              state="$(jq -r --arg sha "${CHECK_SHA}" --arg path "${workflow_path}" '
-                [.workflow_runs[]
-                  | select(.head_sha == $sha and .event == "workflow_dispatch" and .path == $path)]
-                | sort_by(.created_at)
-                | last
-                | if . == null then "missing"
-                  elif .status != "completed" then "pending"
-                  elif .conclusion == "success" then "success"
-                  else "failure:" + (.conclusion // "unknown")
-                  end
-              ' <<< "${response}")"
-              printf '%s: %s\n' "${workflow_path}" "${state}"
-              case "${state}" in
-                success) ;;
-                pending|missing) pending=1 ;;
-                failure:*) failed=1 ;;
-              esac
+            pending=0; failed=0
+            for idx in $(seq 1 "${BATCH_COUNT}"); do
+              sha_var="CHECK_SHA_${idx}"; check_sha="${!sha_var}"
+              response="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${check_sha}&per_page=100")"
+              for workflow_path in "${expected[@]}"; do
+                state="$(jq -r --arg sha "${check_sha}" --arg path "${workflow_path}" '[.workflow_runs[] | select(.head_sha == $sha and .event == "workflow_dispatch" and .path == $path)] | sort_by(.created_at) | last | if . == null then "missing" elif .status != "completed" then "pending" elif .conclusion == "success" then "success" else "failure:" + (.conclusion // "unknown") end' <<< "${response}")"
+                printf 'Batch %s %s: %s\n' "${idx}" "${workflow_path}" "${state}"
+                case "${state}" in success) ;; pending|missing) pending=1 ;; failure:*) failed=1 ;; esac
+              done
             done
-            if (( failed == 1 )); then
-              echo "::error::At least one validation workflow failed for ${CHECK_SHA}."
-              exit 1
-            fi
-            if (( pending == 0 )); then
-              echo "All five validation workflows succeeded for ${CHECK_SHA}."
-              exit 0
-            fi
+            if (( failed == 1 )); then echo "::error::At least one validation workflow failed for a generated batch."; exit 1; fi
+            if (( pending == 0 )); then echo "All five validation workflows succeeded for every generated batch."; exit 0; fi
             sleep 20
           done
-          echo "::error::Timed out waiting for validation workflows on ${CHECK_SHA}."
-          exit 1
+          echo "::error::Timed out waiting for validation workflows on generated batches."; exit 1
 
       - name: Upload automated recipe execution evidence
         if: always() && steps.target.outputs.apply_required == 'true'
