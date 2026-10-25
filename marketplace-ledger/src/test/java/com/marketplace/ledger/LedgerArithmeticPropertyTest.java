@@ -10,7 +10,10 @@ import net.jqwik.api.Property;
 import java.util.List;
 import java.util.UUID;
 
+import org.junit.jupiter.api.Test;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Exception #17 proof test (community adoption wave, owner's word
@@ -110,5 +113,37 @@ class LedgerArithmeticPropertyTest {
 
         assertThat(bySteps.getAvailableCents())
                 .isEqualTo(atOnce.getAvailableCents());
+    }
+
+    // ------------------------------------------------------------------
+    // CodeRabbit agent findings, row 22 / CWE-190 — the checked arithmetic:
+    // a wrap is an ArithmeticException that aborts the entry-and-balance
+    // transaction, never a silently wrapped balance the ledger would
+    // persist as truth (the example-based edge the properties' generated
+    // bounds deliberately stay far from).
+    // ------------------------------------------------------------------
+
+    @Test
+    void debit_neverWrapsAnUnfundedBalanceIntoALargePositiveOne() {
+        ProviderBalance balance = ProviderBalance.empty(UUID.randomUUID(), "SAR");
+        balance.credit(1000L);
+
+        assertThatThrownBy(() -> balance.debit(Long.MAX_VALUE))
+                .isInstanceOf(ArithmeticException.class);
+
+        // The refused debit leaves the balance untouched — the exception
+        // aborts the caller's transaction; nothing wrapped anywhere.
+        assertThat(balance.getAvailableCents()).isEqualTo(1000L);
+    }
+
+    @Test
+    void credit_neverWrapsTheSignedBalance() {
+        ProviderBalance balance = ProviderBalance.empty(UUID.randomUUID(), "SAR");
+        balance.credit(Long.MAX_VALUE - 100L);
+
+        assertThatThrownBy(() -> balance.credit(1000L))
+                .isInstanceOf(ArithmeticException.class);
+
+        assertThat(balance.getAvailableCents()).isEqualTo(Long.MAX_VALUE - 100L);
     }
 }

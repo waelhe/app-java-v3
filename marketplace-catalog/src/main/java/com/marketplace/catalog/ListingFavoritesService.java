@@ -53,14 +53,23 @@ public class ListingFavoritesService {
     @Observed(name = "catalog.favorites.save")
     @Transactional
     public ListingFavoriteView save(UUID userId, UUID listingId) {
-        listingRepository.findById(listingId)
+        // CodeRabbit agent findings, row 21 / CWE-862 — the public-visibility
+        // gate BEFORE the write AND the response: a non-ACTIVE listing
+        // (DRAFT/PAUSED/ARCHIVED, soft-deleted) is not on the public surface
+        // (getActiveById's own filter), so a NEW favorite may neither be
+        // created for it nor return its current unpublished edits. The
+        // separately intended retention behavior is untouched: a favorite
+        // established while the listing WAS public keeps its view (the
+        // read paths answer it exactly as before).
+        ProviderListing listing = listingRepository.findById(listingId)
+                .filter(l -> l.getStatus() == ListingStatus.ACTIVE)
                 .orElseThrow(() -> new ResourceNotFoundException("Listing", listingId));
         if (favoriteRepository.existsByUserIdAndListingId(userId, listingId)) {
             throw new ConflictException(
                     "Listing already saved — DELETE /api/v1/me/favorites/{listingId} withdraws it");
         }
         ListingFavorite saved = favoriteRepository.save(ListingFavorite.save(userId, listingId));
-        return viewOf(saved, listingRepository.findById(listingId).orElse(null));
+        return viewOf(saved, listing);
     }
 
     /**
