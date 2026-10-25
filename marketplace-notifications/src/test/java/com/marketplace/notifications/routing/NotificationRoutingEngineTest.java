@@ -54,16 +54,13 @@ class NotificationRoutingEngineTest {
     private NotificationPreferenceService typePreferences;
 
     @Mock
-    private NotificationTopicPreferenceService topicPreferences;
-
-    @Mock
     private CommunityMembershipPort membershipPort;
 
     @Mock
     private NotificationGeoSubscriptionRepository geoSubscriptions;
 
     private NotificationRoutingEngine engine(Optional<PushNotificationChannel> pushChannel) {
-        return new NotificationRoutingEngine(typePreferences, topicPreferences,
+        return new NotificationRoutingEngine(typePreferences,
                 membershipPort, geoSubscriptions, pushChannel, FIXED_CLOCK);
     }
 
@@ -83,7 +80,11 @@ class NotificationRoutingEngineTest {
     void aDefaultPolicyDeliversInboxEmailAndWebSocketAndHoldsThePush() {
         // No overrides stored anywhere, no membership gate (unscoped), no
         // push provider (D-10 pending): the decision names every channel
-        // and explains the one held back.
+        // and explains the one held back. The resolver's default answer
+        // (row 28's one hierarchy: no type row, no topic row) is enabled.
+        when(typePreferences.isChannelEffectivelyEnabled(any(), any(), any(), any()))
+                .thenReturn(true);
+
         RoutingDecision decision = engine(Optional.empty()).route(unscopedPolicy());
 
         assertThat(decision.recipientId()).isEqualTo(RECIPIENT);
@@ -112,7 +113,7 @@ class NotificationRoutingEngineTest {
         assertThat(decision.push()).isFalse();
         assertThat(decision.suppressions()).containsExactly(RoutingSuppression.SELF_ACTION);
         // The gates that answer first never touch the per-user state.
-        verifyNoInteractions(typePreferences, topicPreferences, membershipPort,
+        verifyNoInteractions(typePreferences, membershipPort,
                 geoSubscriptions);
     }
 
@@ -135,6 +136,10 @@ class NotificationRoutingEngineTest {
                 NotificationType.URGENT_ALERT, "URGENT_ALERT", SOURCE,
                 RoutingSection.OFFICIAL, RECIPIENT, null, NotificationPriority.URGENT,
                 FIXED_CLOCK.instant().plusSeconds(3600), null, SOURCE);
+        // Row 28: the channels ride the ONE resolver — its enabled default
+        // (no type row, no topic row) keeps both amplification legs on.
+        when(typePreferences.isChannelEffectivelyEnabled(any(), any(), any(), any()))
+                .thenReturn(true);
 
         RoutingDecision decision = engine(Optional.empty()).route(valid);
 
@@ -193,7 +198,7 @@ class NotificationRoutingEngineTest {
 
         assertThat(decision.inbox()).isFalse();
         assertThat(decision.suppressions()).containsExactly(RoutingSuppression.GEO_SCOPE);
-        verifyNoInteractions(typePreferences, topicPreferences);
+        verifyNoInteractions(typePreferences);
     }
 
     @Test
@@ -201,11 +206,16 @@ class NotificationRoutingEngineTest {
         // The hierarchy's second level: an OFFICIAL topic opt-out holds
         // EMAIL and WS — and ONLY those two channels (تعطيل قناة يوقف
         // توصيلها فقط). The inbox row and the push dimension answer
-        // independently.
-        when(topicPreferences.findChannelOverride(RECIPIENT, NotificationTopic.OFFICIAL,
-                NotificationChannel.EMAIL)).thenReturn(Optional.of(false));
-        when(topicPreferences.findChannelOverride(RECIPIENT, NotificationTopic.OFFICIAL,
-                NotificationChannel.WS)).thenReturn(Optional.of(false));
+        // independently. Row 28: the engine consumes the ONE resolver's
+        // hierarchical answer — the topic level's disable arrives through
+        // it, and the suppression still names the TOPIC level because no
+        // type-level row exists.
+        when(typePreferences.isChannelEffectivelyEnabled(RECIPIENT,
+                NotificationType.URGENT_ALERT, NotificationTopic.OFFICIAL,
+                NotificationChannel.EMAIL)).thenReturn(false);
+        when(typePreferences.isChannelEffectivelyEnabled(RECIPIENT,
+                NotificationType.URGENT_ALERT, NotificationTopic.OFFICIAL,
+                NotificationChannel.WS)).thenReturn(false);
         // The geo gate passes first (the opt-in subscription admits the
         // recipient) — this test exercises the CHANNEL hierarchy, not the
         // geographic one.
@@ -229,10 +239,17 @@ class NotificationRoutingEngineTest {
         // delivers it (the override is a real state, not
         // last-disabled-wins); the topic level is consulted only when the
         // type level has no row (covered by the topic-opt-out test).
+        // Row 28: the engine reads the ONE resolver's answer; the
+        // suppression still names the TYPE level through the resolver's
+        // own first level.
+        when(typePreferences.isChannelEffectivelyEnabled(RECIPIENT,
+                NotificationType.URGENT_ALERT, NotificationTopic.OFFICIAL,
+                NotificationChannel.EMAIL)).thenReturn(false);
+        when(typePreferences.isChannelEffectivelyEnabled(RECIPIENT,
+                NotificationType.URGENT_ALERT, NotificationTopic.OFFICIAL,
+                NotificationChannel.WS)).thenReturn(true);
         when(typePreferences.findChannelOverride(RECIPIENT, NotificationType.URGENT_ALERT,
                 NotificationChannel.EMAIL)).thenReturn(Optional.of(false));
-        when(typePreferences.findChannelOverride(RECIPIENT, NotificationType.URGENT_ALERT,
-                NotificationChannel.WS)).thenReturn(Optional.of(true));
         // The geo gate passes (the opt-in subscription) — the hierarchy
         // under test here is the type level's, not the geography's.
         when(geoSubscriptions.existsByUserIdAndLocationId(RECIPIENT, NEIGHBORHOOD))
@@ -257,10 +274,12 @@ class NotificationRoutingEngineTest {
                 .thenReturn(false);
         when(membershipPort.getActiveNeighborhoodId(RECIPIENT))
                 .thenReturn(Optional.of(NEIGHBORHOOD));
-        when(typePreferences.findChannelOverride(RECIPIENT, NotificationType.URGENT_ALERT,
-                NotificationChannel.EMAIL)).thenReturn(Optional.of(false));
-        when(typePreferences.findChannelOverride(RECIPIENT, NotificationType.URGENT_ALERT,
-                NotificationChannel.WS)).thenReturn(Optional.of(false));
+        when(typePreferences.isChannelEffectivelyEnabled(RECIPIENT,
+                NotificationType.URGENT_ALERT, NotificationTopic.OFFICIAL,
+                NotificationChannel.EMAIL)).thenReturn(false);
+        when(typePreferences.isChannelEffectivelyEnabled(RECIPIENT,
+                NotificationType.URGENT_ALERT, NotificationTopic.OFFICIAL,
+                NotificationChannel.WS)).thenReturn(false);
 
         RoutingDecision decision = engine(Optional.empty()).route(scopedPolicy());
 
@@ -276,7 +295,11 @@ class NotificationRoutingEngineTest {
         // The D-10 seam: one implementation bean activates the channel —
         // zero engine changes (the preference machinery arrives WITH the
         // provider decision; until then a present provider delivers by
-        // default, the WS default-on semantics).
+        // default, the WS default-on semantics). The resolver keeps its
+        // enabled default answer for EMAIL/WS.
+        when(typePreferences.isChannelEffectivelyEnabled(any(), any(), any(), any()))
+                .thenReturn(true);
+
         RoutingDecision decision = engine(Optional.of(new PushNotificationChannel() {
             @Override
             public void send(UUID recipientId, String title, String body) {
@@ -292,11 +315,16 @@ class NotificationRoutingEngineTest {
     void theWebSocketDecisionIsIndependentOfTheEmailDecision() {
         // The channels are separate policies: an explicit type-level WS
         // opt-out holds ONLY the WS leg — the email leg keeps its own
-        // answer (the standing L22 semantics, engine-encoded).
+        // answer (the standing L22 semantics, engine-encoded). Row 28:
+        // each channel consults the ONE resolver separately.
+        when(typePreferences.isChannelEffectivelyEnabled(RECIPIENT,
+                NotificationType.POST_COMMENTED, NotificationTopic.COMMUNITY,
+                NotificationChannel.WS)).thenReturn(false);
+        when(typePreferences.isChannelEffectivelyEnabled(RECIPIENT,
+                NotificationType.POST_COMMENTED, NotificationTopic.COMMUNITY,
+                NotificationChannel.EMAIL)).thenReturn(true);
         when(typePreferences.findChannelOverride(RECIPIENT, NotificationType.POST_COMMENTED,
                 NotificationChannel.WS)).thenReturn(Optional.of(false));
-        when(typePreferences.findChannelOverride(RECIPIENT, NotificationType.POST_COMMENTED,
-                NotificationChannel.EMAIL)).thenReturn(Optional.of(true));
 
         RoutingDecision decision = engine(Optional.empty()).route(unscopedPolicy());
 

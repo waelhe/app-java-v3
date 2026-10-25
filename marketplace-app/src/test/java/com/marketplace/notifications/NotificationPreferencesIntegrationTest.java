@@ -6,6 +6,8 @@ import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.PaymentIntentDetails;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
+import com.marketplace.notifications.routing.NotificationTopic;
+import com.marketplace.notifications.routing.NotificationTopicPreferenceService;
 import com.marketplace.shared.email.EmailService;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
@@ -99,6 +101,9 @@ class NotificationPreferencesIntegrationTest {
 
     @Autowired
     private NotificationPreferenceService preferenceService;
+
+    @Autowired
+    private NotificationTopicPreferenceService topicPreferenceService;
 
     @Autowired
     private NotificationPreferenceRepository preferenceRepository;
@@ -262,5 +267,51 @@ class NotificationPreferencesIntegrationTest {
         assertThat(revisions.getContent()).hasSize(2);
         assertThat(revisions.getContent().getFirst().getEntity().isEnabled()).isFalse();
         assertThat(revisions.getContent().get(1).getEntity().isEnabled()).isTrue();
+    }
+
+    /**
+     * Row 28 (CodeRabbit agent findings — the live end-to-end pin): a
+     * recipient who muted the whole MESSAGING family at the TOPIC level
+     * (a real V198 row written through the real topic service — no
+     * type-specific row exists) still received the family's ordinary
+     * email before the fix: the ordinary send gate answered the
+     * type-only sparse default (enabled) without ever reading the topic
+     * disable. The ONE effective resolver (type &gt; topic &gt; default)
+     * now gates the ordinary legs: the topic mute holds the email, the
+     * in-app row still lands (always on), and the unmuted WS leg still
+     * pushes — the finding's exact sink path (onMessageReceived).
+     */
+    @Test
+    void aTopicLevelMessagingMuteHoldsTheOrdinaryEmailLeg_row28() {
+        UUID recipientId = UUID.randomUUID();
+        String recipientEmail = "row28-recipient-" + recipientId + "@example.com";
+        seedUser(recipientId, recipientEmail, "CONSUMER");
+        when(currentUserProvider.getCurrentUserId(any())).thenReturn(recipientId);
+
+        // The topic-level mute — a real V198 row through the real service:
+        // MESSAGING mutes EMAIL only; the WS leg stays unmuted everywhere.
+        topicPreferenceService.updateMyTopicPreferences(
+                SecurityContextHolder.getContext().getAuthentication(),
+                new NotificationTopicPreferencesUpdateRequest(List.of(
+                        new NotificationTopicPreferenceUpdate(
+                                NotificationTopic.MESSAGING, NotificationChannel.EMAIL, false))));
+
+        notificationService.onMessageReceived(UUID.randomUUID(), recipientId);
+
+        // The always-on in-app row landed.
+        assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(
+                recipientId, Pageable.unpaged()).getContent())
+                .hasSize(1);
+        assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(
+                recipientId, Pageable.unpaged()).getContent()
+                .getFirst().getType()).isEqualTo(NotificationType.MESSAGE_RECEIVED.name());
+
+        // The ordinary email leg is held by the TOPIC-level mute — the
+        // exact delivery the pre-fix type-only gate let through.
+        verify(emailService, never()).send(eq(recipientEmail), anyString(), anyString(), anyMap());
+
+        // The unmuted WS leg still pushes (the hierarchy answered EMAIL
+        // and WS separately, as the §8.1 separate-policies rule demands).
+        verify(messagingTemplate, times(1)).convertAndSend(anyString(), any(WebSocketNotification.class));
     }
 }

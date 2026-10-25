@@ -82,8 +82,9 @@ class NotificationsModuleIntegrationTest {
      * lives in platform-infra's ClockConfig, which this slice does not scan
      * (the catalog slice's exact pattern, CatalogModuleIntegrationTest's
      * nested ClockBean — one Clock per context, never two; the CI-measured
-     * round: NotificationRoutingEngine's constructor parameter 5 stops the
-     * context boot without it).
+     * round: NotificationRoutingEngine's constructor parameter 4 (the
+     * Clock, after row 28's resolver delegation slimmed the constructor)
+     * stops the context boot without it).
      */
     @org.springframework.boot.test.context.TestConfiguration
     static class ClockBean {

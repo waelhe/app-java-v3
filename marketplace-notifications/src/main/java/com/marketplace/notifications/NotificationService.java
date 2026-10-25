@@ -79,13 +79,13 @@ public class NotificationService {
         // always").
         repository.save(Notification.create(info.consumerId(), NotificationType.BOOKING_CREATED.name(), consumerMessage));
         repository.save(Notification.create(info.providerId(), NotificationType.BOOKING_CREATED.name(), providerMessage));
-        if (preferences.isChannelEnabled(info.consumerId(), NotificationType.BOOKING_CREATED, NotificationChannel.EMAIL)) {
+        if (preferences.isChannelEffectivelyEnabled(info.consumerId(), NotificationType.BOOKING_CREATED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(info.consumerId(),
                     text.compose("email.BOOKING_CREATED.consumer.subject", platform),
                     "email/notification",
                     Map.of("message", text.compose("email.BOOKING_CREATED.consumer.body", platform, bookingId)));
         }
-        if (preferences.isChannelEnabled(info.providerId(), NotificationType.BOOKING_CREATED, NotificationChannel.EMAIL)) {
+        if (preferences.isChannelEffectivelyEnabled(info.providerId(), NotificationType.BOOKING_CREATED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(info.providerId(),
                     text.compose("email.BOOKING_CREATED.provider.subject", platform),
                     "email/notification",
@@ -111,11 +111,11 @@ public class NotificationService {
         // triggered it — a second provider row here would duplicate that
         // alert, not carry a new fact. Same delivery shape as
         // onBookingCreated: the in-app row is always on, EMAIL rides the
-        // per-type/channel preference matrix (L22) from day one, WS honors
+        // hierarchical preference gate (L22's type > topic > default — row 28's effective resolver) from day one, WS honors
         // an explicit opt-out.
         repository.save(Notification.create(info.consumerId(),
                 NotificationType.BOOKING_CONFIRMED.name(), "Booking confirmed: " + bookingId));
-        if (preferences.isChannelEnabled(info.consumerId(), NotificationType.BOOKING_CONFIRMED, NotificationChannel.EMAIL)) {
+        if (preferences.isChannelEffectivelyEnabled(info.consumerId(), NotificationType.BOOKING_CONFIRMED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(info.consumerId(), "Booking Confirmed", "email/notification",
                     Map.of("message", "Your booking " + bookingId + " has been confirmed."));
         }
@@ -133,7 +133,7 @@ public class NotificationService {
                                          String stateWord, String message) {
         repository.save(Notification.create(intent.consumerId(),
                 NotificationType.PAYMENT_STATE.name(), message));
-        if (preferences.isChannelEnabled(intent.consumerId(),
+        if (preferences.isChannelEffectivelyEnabled(intent.consumerId(),
                 NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(intent.consumerId(),
                     text.compose("email.PAYMENT_STATE.subject", platform, stateWord),
@@ -203,12 +203,12 @@ public class NotificationService {
             // L22: the in-app channel is always on (see onBookingCreated).
             repository.save(Notification.create(intent.consumerId(), NotificationType.PAYMENT_STATE.name(), message));
             repository.save(Notification.create(bookingInfo.providerId(), NotificationType.PAYMENT_STATE.name(), message));
-            if (preferences.isChannelEnabled(intent.consumerId(), NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL)) {
+            if (preferences.isChannelEffectivelyEnabled(intent.consumerId(), NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL)) {
                 emailNotificationService.sendEmail(intent.consumerId(),
                         text.compose("email.PAYMENT_STATE.subject", platform, stateWord),
                         "email/notification", Map.of("message", message));
             }
-            if (preferences.isChannelEnabled(bookingInfo.providerId(), NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL)) {
+            if (preferences.isChannelEffectivelyEnabled(bookingInfo.providerId(), NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL)) {
                 emailNotificationService.sendEmail(bookingInfo.providerId(),
                         text.compose("email.PAYMENT_STATE.subject", platform, stateWord),
                         "email/notification", Map.of("message", message));
@@ -224,7 +224,7 @@ public class NotificationService {
      * L34 (realestate systems plan §5 — lead capture): the provider's
      * LEAD_RECEIVED alert — the same delivery shape as the two event
      * points above (in-app row always lands; WebSocket and email ride
-     * their L22 per-type/channel preferences).
+     * their L22 preference hierarchy — type override, then topic override, then default (row 28's effective resolver)).
      *
      * <p><b>The recipient is the listing's provider id — which lives in
      * the users.id space (the A1/V2 measured fact:
@@ -242,7 +242,7 @@ public class NotificationService {
         // L22: the in-app channel is always on (see onBookingCreated).
         repository.save(Notification.create(providerUserId,
                 NotificationType.LEAD_RECEIVED.name(), message));
-        if (preferences.isChannelEnabled(providerUserId,
+        if (preferences.isChannelEffectivelyEnabled(providerUserId,
                 NotificationType.LEAD_RECEIVED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(providerUserId,
                     text.compose("email.LEAD_RECEIVED.subject", platform),
@@ -256,7 +256,7 @@ public class NotificationService {
      * L35 (realestate systems plan §5 — saved searches and alerts): the
      * SAVED_SEARCH_MATCH alert — the same delivery shape as the event
      * points above (in-app row always lands; WebSocket and email ride
-     * their L22 per-type/channel preferences). The event arrives
+     * their L22 preference hierarchy — type override, then topic override, then default (row 28's effective resolver)). The event arrives
      * pre-aggregated (the matcher's structural aggregation — one event
      * per user per listing), so the count reads "N of your saved
      * searches" without any de-duplication here.
@@ -272,7 +272,7 @@ public class NotificationService {
         // L22: the in-app channel is always on (see onBookingCreated).
         repository.save(Notification.create(userId,
                 NotificationType.SAVED_SEARCH_MATCH.name(), message));
-        if (preferences.isChannelEnabled(userId,
+        if (preferences.isChannelEffectivelyEnabled(userId,
                 NotificationType.SAVED_SEARCH_MATCH, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(userId,
                     text.compose("email.SAVED_SEARCH_MATCH.subject", platform),
@@ -286,7 +286,7 @@ public class NotificationService {
      * L42 (neighborhood community plan §5 — the posts/feed/comments
      * layer): the post author's POST_COMMENTED alert — the same delivery
      * shape as the event points above (in-app row always lands; WebSocket
-     * and email ride their L22 per-type/channel preferences). The
+     * and email ride their L22 preference hierarchy — type override, then topic override, then default (row 28's effective resolver)). The
      * recipient is the post's author id, which lives in the users.id
      * space — the id IS the recipient, the same seam
      * {@code onLeadReceived} uses for its provider.
@@ -304,7 +304,7 @@ public class NotificationService {
         // L22: the in-app channel is always on (see onBookingCreated).
         repository.save(Notification.create(postAuthorId,
                 NotificationType.POST_COMMENTED.name(), message));
-        if (preferences.isChannelEnabled(postAuthorId,
+        if (preferences.isChannelEffectivelyEnabled(postAuthorId,
                 NotificationType.POST_COMMENTED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(postAuthorId,
                     text.compose("email.POST_COMMENTED.subject", platform),
@@ -336,7 +336,7 @@ public class NotificationService {
         // L22: the in-app channel is always on (see onBookingCreated).
         repository.save(Notification.create(recipientId,
                 NotificationType.NEW_LISTING_IN_NEIGHBORHOOD.name(), message));
-        if (preferences.isChannelEnabled(recipientId,
+        if (preferences.isChannelEffectivelyEnabled(recipientId,
                 NotificationType.NEW_LISTING_IN_NEIGHBORHOOD, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(recipientId,
                     text.compose("email.NEW_LISTING_IN_NEIGHBORHOOD.subject", platform),
@@ -350,7 +350,7 @@ public class NotificationService {
      * L45 (neighborhood community plan §5 — the moderation &amp; reports
      * layer): the moderated content's author alert — the same delivery
      * shape as the event points above (in-app row always lands; WebSocket
-     * and email ride their L22 per-type/channel preferences). The
+     * and email ride their L22 preference hierarchy — type override, then topic override, then default (row 28's effective resolver)). The
      * recipient is the content's author in the users.id space — the id
      * IS the recipient, the same seam {@code onPostCommented} uses.
      *
@@ -372,7 +372,7 @@ public class NotificationService {
         // L22: the in-app channel is always on (see onBookingCreated).
         repository.save(Notification.create(recipientId,
                 NotificationType.CONTENT_MODERATED.name(), message));
-        if (preferences.isChannelEnabled(recipientId,
+        if (preferences.isChannelEffectivelyEnabled(recipientId,
                 NotificationType.CONTENT_MODERATED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(recipientId,
                     text.compose("email.CONTENT_MODERATED.subject", platform),
@@ -386,7 +386,7 @@ public class NotificationService {
      * L47 (the Nextdoor-2026 completeness wave — gap #1, the reactions
      * layer): the thanked post's author's POST_REACTED alert — the same
      * delivery shape as the event points above (in-app row always lands;
-     * WebSocket and email ride their L22 per-type/channel preferences).
+     * WebSocket and email ride their L22 preference hierarchy — type override, then topic override, then default (row 28's effective resolver)).
      * The recipient is the post's author id, which lives in the
      * users.id space — the id IS the recipient, the same seam
      * {@code onPostCommented} uses.
@@ -404,7 +404,7 @@ public class NotificationService {
         // L22: the in-app channel is always on (see onBookingCreated).
         repository.save(Notification.create(postAuthorId,
                 NotificationType.POST_REACTED.name(), message));
-        if (preferences.isChannelEnabled(postAuthorId,
+        if (preferences.isChannelEffectivelyEnabled(postAuthorId,
                 NotificationType.POST_REACTED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(postAuthorId,
                     text.compose("email.POST_REACTED.subject", platform),
@@ -418,7 +418,7 @@ public class NotificationService {
      * W4 (yelp-level plan §5 — the reviewer identity &amp; engagement wave,
      * G21): the follower's FOLLOWED_PROVIDER_NEW_LISTING alert — the same
      * delivery shape as the event points above (in-app row always lands;
-     * WebSocket and email ride their L22 per-type/channel preferences).
+     * WebSocket and email ride their L22 preference hierarchy — type override, then topic override, then default (row 28's effective resolver)).
      * The recipient is the follower's user id, which lives in the
      * users.id space — the id IS the recipient, the same seam
      * {@code onNewListingInNeighborhood} uses.
@@ -438,7 +438,7 @@ public class NotificationService {
         // L22: the in-app channel is always on (see onBookingCreated).
         repository.save(Notification.create(recipientId,
                 NotificationType.FOLLOWED_PROVIDER_NEW_LISTING.name(), message));
-        if (preferences.isChannelEnabled(recipientId,
+        if (preferences.isChannelEffectivelyEnabled(recipientId,
                 NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(recipientId,
                     text.compose("email.FOLLOWED_PROVIDER_NEW_LISTING.subject", platform),
@@ -499,7 +499,7 @@ public class NotificationService {
      * CONFIRMED leg). The recipient is the order's CONSUMER alone — the
      * party waiting on the merchant's acceptance. The same delivery shape
      * as onBookingConfirmed: the in-app row is always on, EMAIL rides the
-     * per-type/channel preference matrix (L22) from day one, WS honors an
+     * hierarchical preference gate (L22's type > topic > default — row 28's effective resolver) from day one, WS honors an
      * explicit opt-out. The event payload carries the consumer id, so
      * unlike the booking legs this path never consults the participant
      * provider — the payload IS the resolution (the ledger's placement
@@ -509,7 +509,7 @@ public class NotificationService {
         String message = "Order confirmed: " + orderId;
         repository.save(Notification.create(consumerId,
                 NotificationType.ORDER_CONFIRMED.name(), message));
-        if (preferences.isChannelEnabled(consumerId, NotificationType.ORDER_CONFIRMED, NotificationChannel.EMAIL)) {
+        if (preferences.isChannelEffectivelyEnabled(consumerId, NotificationType.ORDER_CONFIRMED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(consumerId, "Order Confirmed", "email/notification",
                     Map.of("message", "Your order " + orderId + " has been confirmed."));
         }
@@ -525,7 +525,7 @@ public class NotificationService {
         String message = "Order fulfilled: " + orderId;
         repository.save(Notification.create(consumerId,
                 NotificationType.ORDER_FULFILLED.name(), message));
-        if (preferences.isChannelEnabled(consumerId, NotificationType.ORDER_FULFILLED, NotificationChannel.EMAIL)) {
+        if (preferences.isChannelEffectivelyEnabled(consumerId, NotificationType.ORDER_FULFILLED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(consumerId, "Order Fulfilled", "email/notification",
                     Map.of("message", "Your order " + orderId + " has been fulfilled."));
         }
@@ -542,7 +542,7 @@ public class NotificationService {
         String message = "Order cancelled: " + orderId + (reason == null || reason.isBlank() ? "" : " — " + reason);
         repository.save(Notification.create(consumerId,
                 NotificationType.ORDER_CANCELLED.name(), message));
-        if (preferences.isChannelEnabled(consumerId, NotificationType.ORDER_CANCELLED, NotificationChannel.EMAIL)) {
+        if (preferences.isChannelEffectivelyEnabled(consumerId, NotificationType.ORDER_CANCELLED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(consumerId, "Order Cancelled", "email/notification",
                     Map.of("message", "Your order " + orderId + " was cancelled"
                             + (reason == null || reason.isBlank() ? "." : ": " + reason)));
@@ -562,7 +562,7 @@ public class NotificationService {
         String message = "Lending request received: " + loanId;
         repository.save(Notification.create(ownerId,
                 NotificationType.LOAN_REQUESTED.name(), message));
-        if (preferences.isChannelEnabled(ownerId, NotificationType.LOAN_REQUESTED, NotificationChannel.EMAIL)) {
+        if (preferences.isChannelEffectivelyEnabled(ownerId, NotificationType.LOAN_REQUESTED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(ownerId, "Lending Request", "email/notification",
                     Map.of("message", "A borrowing request arrived for your item (loan " + loanId + ")."));
         }
@@ -574,7 +574,7 @@ public class NotificationService {
         String message = "Lending request approved: " + loanId;
         repository.save(Notification.create(borrowerId,
                 NotificationType.LOAN_APPROVED.name(), message));
-        if (preferences.isChannelEnabled(borrowerId, NotificationType.LOAN_APPROVED, NotificationChannel.EMAIL)) {
+        if (preferences.isChannelEffectivelyEnabled(borrowerId, NotificationType.LOAN_APPROVED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(borrowerId, "Lending Approved", "email/notification",
                     Map.of("message", "Your borrowing request " + loanId + " was approved — the fee's payment is ready."));
         }
@@ -600,7 +600,7 @@ public class NotificationService {
         for (UUID recipient : java.util.List.of(borrowerId, ownerId)) {
             repository.save(Notification.create(recipient,
                     NotificationType.LOAN_DISPUTED.name(), message));
-            if (preferences.isChannelEnabled(recipient, NotificationType.LOAN_DISPUTED, NotificationChannel.EMAIL)) {
+            if (preferences.isChannelEffectivelyEnabled(recipient, NotificationType.LOAN_DISPUTED, NotificationChannel.EMAIL)) {
                 emailNotificationService.sendEmail(recipient, "Loan Disputed", "email/notification",
                         Map.of("message", "A dispute was opened on loan " + loanId + " — it is frozen until resolution."));
             }
@@ -614,7 +614,7 @@ public class NotificationService {
         for (UUID recipient : java.util.List.of(borrowerId, ownerId)) {
             repository.save(Notification.create(recipient,
                     NotificationType.LOAN_DISPUTE_RESOLVED.name(), message));
-            if (preferences.isChannelEnabled(recipient, NotificationType.LOAN_DISPUTE_RESOLVED, NotificationChannel.EMAIL)) {
+            if (preferences.isChannelEffectivelyEnabled(recipient, NotificationType.LOAN_DISPUTE_RESOLVED, NotificationChannel.EMAIL)) {
                 emailNotificationService.sendEmail(recipient, "Loan Dispute Resolved", "email/notification",
                         Map.of("message", "The dispute on loan " + loanId + " was resolved — the loan resumed."));
             }
@@ -633,7 +633,7 @@ public class NotificationService {
         for (UUID recipient : java.util.List.of(borrowerId, ownerId)) {
             repository.save(Notification.create(recipient,
                     NotificationType.LOAN_CLOSED.name(), message));
-            if (preferences.isChannelEnabled(recipient, NotificationType.LOAN_CLOSED, NotificationChannel.EMAIL)) {
+            if (preferences.isChannelEffectivelyEnabled(recipient, NotificationType.LOAN_CLOSED, NotificationChannel.EMAIL)) {
                 emailNotificationService.sendEmail(recipient, "Loan Closed", "email/notification",
                         Map.of("message", "Loan " + loanId + " is closed — the settlement record is complete."));
             }
@@ -643,9 +643,10 @@ public class NotificationService {
     }
 
     private void sendWebSocket(UUID userId, NotificationType type, String message) {
-        // L22: WS sends by default and honors an explicit opt-out — the
-        // preference check is the single gate before the push.
-        if (!preferences.isChannelEnabled(userId, type, NotificationChannel.WS)) {
+        // L22 (row 28): WS sends by default and honors an explicit opt-out
+        // at EITHER level — type or topic — the one effective resolver is
+        // the single gate before the push.
+        if (!preferences.isChannelEffectivelyEnabled(userId, type, NotificationChannel.WS)) {
             return;
         }
         messagingTemplate.ifPresent(template ->
@@ -656,14 +657,15 @@ public class NotificationService {
 
     /**
      * Stage 7 (plan D-10, ADR-0003): the push channel's routing half —
-     * the EMAIL gate semantics verbatim (the stored preference gates the
-     * send) plus the device-token registry (a user with no token answers
-     * nothing; the sparse-override default keeps existing behavior
-     * unchanged). The provider's verdicts prune the dead tokens inside
+     * the EMAIL gate semantics verbatim — the stored preference gates
+     * the send at its hierarchical level through the row-28 effective
+     * resolver (type override, then topic override, then default) — plus
+     * the device-token registry (a user with no token answers nothing;
+     * the sparse-override default keeps existing behavior unchanged). The provider's verdicts prune the dead tokens inside
      * {@link PushTokenService#sendToUser} — the self-healing registry.
      */
     private void sendPush(UUID userId, NotificationType type, String message) {
-        if (!preferences.isChannelEnabled(userId, type, NotificationChannel.PUSH)) {
+        if (!preferences.isChannelEffectivelyEnabled(userId, type, NotificationChannel.PUSH)) {
             return;
         }
         pushTokenService.sendToUser(userId, type, type.name(), message);
@@ -673,7 +675,7 @@ public class NotificationService {
      * B-08 (compliance plan 0.10 — the §3.4-8 defect): the arrival
      * notification for the conversation's OTHER participant — the same
      * delivery shape as the event points above (in-app row always lands;
-     * WebSocket and email ride their L22 per-type/channel preferences).
+     * WebSocket and email ride their L22 preference hierarchy — type override, then topic override, then default (row 28's effective resolver)).
      * The recipient arrives resolved at the source (the messaging
      * publisher holds the conversation) — this method delivers
      * unconditionally, so the delivery contract stays one shape for every
@@ -687,7 +689,7 @@ public class NotificationService {
         // L22: the in-app channel is always on (see onBookingCreated).
         repository.save(Notification.create(recipientId,
                 NotificationType.MESSAGE_RECEIVED.name(), message));
-        if (preferences.isChannelEnabled(recipientId,
+        if (preferences.isChannelEffectivelyEnabled(recipientId,
                 NotificationType.MESSAGE_RECEIVED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(recipientId,
                     text.compose("email.MESSAGE_RECEIVED.subject", platform),
@@ -704,7 +706,8 @@ public class NotificationService {
      * notification for every event; an event without a listener is a
      * measured defect). The same delivery shape as the event points
      * above (in-app row always lands; WebSocket and email ride their L22
-     * per-type/channel preferences). The recipient arrives resolved at
+     * preference hierarchy — type override, then topic override, then
+     * default (row 28's effective resolver)). The recipient arrives resolved at
      * the source ({@code MembershipVerificationGrantedEvent} carries the
      * complete trust fact — member, neighborhood, membership row) — this
      * method delivers unconditionally, keeping the delivery contract one
@@ -722,7 +725,7 @@ public class NotificationService {
         // L22: the in-app channel is always on (see onBookingCreated).
         repository.save(Notification.create(userId,
                 NotificationType.MEMBERSHIP_VERIFIED.name(), message));
-        if (preferences.isChannelEnabled(userId,
+        if (preferences.isChannelEffectivelyEnabled(userId,
                 NotificationType.MEMBERSHIP_VERIFIED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(userId,
                     text.compose("email.MEMBERSHIP_VERIFIED.subject", platform),
@@ -761,7 +764,7 @@ public class NotificationService {
         // L22: the in-app channel is always on (see onBookingCreated).
         repository.save(Notification.create(reporterId,
                 NotificationType.REPORT_RESOLVED.name(), message));
-        if (preferences.isChannelEnabled(reporterId,
+        if (preferences.isChannelEffectivelyEnabled(reporterId,
                 NotificationType.REPORT_RESOLVED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(reporterId,
                     text.compose("email.REPORT_RESOLVED.subject", platform),
@@ -841,7 +844,7 @@ public class NotificationService {
     /**
      * Task 5-f: the shared dispute delivery shape — the same delivery shape
      * as the event points above (in-app row always lands; WebSocket and
-     * email ride their L22 per-type/channel preferences). The recipient is
+     * email ride their L22 preference hierarchy — type override, then topic override, then default (row 28's effective resolver)). The recipient is
      * the dispute's opener in the users.id space — the id IS the recipient,
      * the same seam every carried-fact delivery here uses.
      *

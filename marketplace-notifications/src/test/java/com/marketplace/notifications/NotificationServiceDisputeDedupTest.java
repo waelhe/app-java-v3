@@ -122,9 +122,9 @@ class NotificationServiceDisputeDedupTest {
         // the gates shut (the unstubbed boolean default) the && would
         // short-circuit and the ledger stubs would never be consumed
         // (Mockito STRICT_STUBS: UnnecessaryStubbingException).
-        when(preferences.isChannelEnabled(OPENER_ID, NotificationType.DISPUTE_OPENED,
+        when(preferences.isChannelEffectivelyEnabled(OPENER_ID, NotificationType.DISPUTE_OPENED,
                 NotificationChannel.EMAIL)).thenReturn(true);
-        when(preferences.isChannelEnabled(OPENER_ID, NotificationType.DISPUTE_OPENED,
+        when(preferences.isChannelEffectivelyEnabled(OPENER_ID, NotificationType.DISPUTE_OPENED,
                 NotificationChannel.WS)).thenReturn(true);
         when(deliveryLedger.recordDelivery(eq(DISPUTE_ID), eq(OPENER_ID),
                 eq(com.marketplace.notifications.routing.NotificationDeliveryChannel.EMAIL)))
@@ -191,9 +191,9 @@ class NotificationServiceDisputeDedupTest {
                                 + "\"uq_notifications_source_event_once\""));
         // The L22 preference gates stand OPEN — the silence under test is
         // the LEDGER's verdict on the deterministic key, not the gate's.
-        when(preferences.isChannelEnabled(OPENER_ID, NotificationType.DISPUTE_RESOLVED,
+        when(preferences.isChannelEffectivelyEnabled(OPENER_ID, NotificationType.DISPUTE_RESOLVED,
                 NotificationChannel.EMAIL)).thenReturn(true);
-        when(preferences.isChannelEnabled(OPENER_ID, NotificationType.DISPUTE_RESOLVED,
+        when(preferences.isChannelEffectivelyEnabled(OPENER_ID, NotificationType.DISPUTE_RESOLVED,
                 NotificationChannel.WS)).thenReturn(true);
         when(deliveryLedger.recordDelivery(eq(deterministicKey()), eq(OPENER_ID),
                 eq(com.marketplace.notifications.routing.NotificationDeliveryChannel.EMAIL)))
