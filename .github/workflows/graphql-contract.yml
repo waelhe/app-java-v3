@@ -45,15 +45,36 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      # The exact commit CI booted and gated — not whatever main points at
-      # by the time this workflow runs. persist-credentials stays ON (the
-      # default): the contract-branch push authenticates with the
-      # checkout-stored header, so a token never appears in a push URL or
-      # the logs.
-      - name: Checkout the exact commit CI validated
+      # CodeRabbit agent findings, row 35 / CWE-829 — the provenance gate:
+      # the publication job carries contents: write, and a fork PR whose
+      # head branch is NAMED "main" matches the workflow_run branch filter
+      # (the filter sees the head branch NAME, not the repository). Any run
+      # that did not originate as a PUSH inside THIS repository is refused
+      # outright — fail-closed with the explicit error, never a silent skip
+      # that could mask the attempt.
+      - name: Refuse untrusted provenance (fork runs never publish)
+        if: ${{ github.event.workflow_run.head_repository.full_name != github.repository || github.event.workflow_run.event != 'push' }}
+        run: |
+          echo "::error::Refusing to publish the GraphQL contract from an untrusted source:"
+          echo "- source repository: ${{ github.event.workflow_run.head_repository.full_name }}"
+          echo "- triggering event: ${{ github.event.workflow_run.event }}"
+          echo "Publication requires a successful CI push from this repository's main branch."
+          exit 1
+
+      # The publication LOGIC is checked out from THIS repository's trusted
+      # default branch — never from the triggering commit (CodeRabbit agent
+      # findings, row 35 / CWE-829: the fork's commit could carry a replaced
+      # publication script, and the job's persisted credential must never
+      # execute lower-trust code). The triggering run's schema stays DATA —
+      # it crosses through the downloaded artifact below, and its provenance
+      # is recorded in the manifest (SOURCE_SHA/SOURCE_RUN). The exact
+      # validated SDL therefore still publishes unchanged; only the CODE
+      # that publishes it is now trusted by construction.
+      # persist-credentials stays ON (the default): the contract-branch push
+      # authenticates with the checkout-stored header, so a token never
+      # appears in a push URL or the logs.
+      - name: Checkout the trusted publication logic
         uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
 
       # Cross-workflow-run artifact download — the documented run-id +
       # github-token pattern (actions/download-artifact); the artifact

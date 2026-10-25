@@ -239,6 +239,17 @@ spring:
     properties:
       mail.smtp.auth: true
       mail.smtp.starttls.enable: true
+      # CodeRabbit agent findings, row 20 / CWE-319: STARTTLS alone is
+      # OPPORTUNISTIC (Jakarta Mail's documented default — starttls.required
+      # defaults to false), so an active attacker impersonating an endpoint
+      # without STARTTLS could harvest the SMTP credentials and the security
+      # emails' contents (including usable password-reset tokens). The
+      # protected transport is now MANDATORY: no TLS, no authentication, no
+      # delivery — and the server identity is verified against the
+      # certificate (checkserveridentity), so a mismatched host fails
+      # closed instead of silently proceeding.
+      mail.smtp.starttls.required: true
+      mail.smtp.ssl.checkserveridentity: true
       mail.smtp.connectiontimeout: 5000
       mail.smtp.timeout: 3000
       mail.smtp.writetimeout: 5000
