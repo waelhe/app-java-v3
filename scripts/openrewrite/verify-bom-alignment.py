@@ -94,15 +94,13 @@ def main():
         if dependency.find("m:version", NS) is not None:
             raise ValueError(f"Audit dependency {coordinate[1]} has a hard-coded version; it must be BOM-managed")
 
-    effective_properties = effective.find("m:properties", NS)
-    effective_bom_version = property_value(effective_properties, "openrewrite.recipe-bom.version")
+    # The workflow passes the root BOM version as a Maven CLI user property.
+    # The effective-POM <properties> section can retain the audit POM's literal
+    # default, so it is not evidence of which imported BOM managed dependencies.
+    # Compare the dependency versions Maven actually resolved from that import below.
     effective_deps = dependencies_by_coordinate(effective)
     failures = []
     results = []
-    if effective_bom_version and effective_bom_version != expected_bom_version:
-        failures.append(
-            f"Recipe BOM version mismatch: root={expected_bom_version}, effective audit POM={effective_bom_version}"
-        )
 
     # Verify each explicit version property is wired to the recipe dependency of the Maven plugin.
     root_plugin_coordinates = {}
