@@ -165,11 +165,10 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          bom_version="${OPENREWRITE_RECIPE_BOM_VERSION}"
           mkdir -p target/openrewrite
           mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress \
             -f .ci/openrewrite-bom-audit/pom.xml \
-            -Dopenrewrite.recipe-bom.version="${bom_version}" \
+            -Dopenrewrite.recipe-bom.version="${OPENREWRITE_RECIPE_BOM_VERSION}" \
             org.apache.maven.plugins:maven-help-plugin:3.5.1:effective-pom \
             -Doutput="${GITHUB_WORKSPACE}/target/openrewrite/recipe-bom-effective-pom.xml"
           python3 scripts/openrewrite/verify-bom-alignment.py \
