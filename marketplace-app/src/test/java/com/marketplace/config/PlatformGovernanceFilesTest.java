@@ -586,6 +586,8 @@ class PlatformGovernanceFilesTest {
                 .contains("The external recipe packs were not loaded on the Rewrite Maven plugin classpath.")
                 .contains("org.openrewrite.java.spring.boot3.UpgradeSpringBoot_3_5")
                 .contains("Spring source build completed but the expected community recipe")
+                .contains("run_spring_source_probe")
+                .contains("inputs.run_spring_source_probe == true")
                 // The pinned source tag can publish a coordinate different from the tag
                 // number; the probe must flow the measured coordinate into Maven rather
                 // than requesting the guessed release number (review 5638134031).
