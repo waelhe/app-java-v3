@@ -12,4 +12,19 @@ public interface DisputeRepository extends JpaRepository<Dispute, UUID>, JpaSpec
 
     /** ADR-0009: the loan subject's trail (the booking twin). */
     List<Dispute> findByLoanId(UUID loanId);
+
+    /**
+     * Row 15 (agent findings 2026-10-25): the freeze edge's open-state
+     * fact — the lending module's dispute listener asks whether the
+     * dispute it just heard opened is STILL open (the
+     * {@code DisputeLookupPort} contract pair; derived existence query).
+     */
+    boolean existsByIdAndStatus(UUID id, DisputeStatus status);
+
+    /**
+     * Row 15: the release edge's open-state fact — whether ANOTHER open
+     * dispute on the loan still requires the freeze, after the resolving
+     * dispute's own id is discounted (dispute-identity idempotency).
+     */
+    boolean existsByLoanIdAndStatusAndIdNot(UUID loanId, DisputeStatus status, UUID id);
 }
