@@ -40,9 +40,12 @@ public class IdentityProviderNameResolver implements ProviderNameResolver {
         if (user.getDisplayName() != null && !user.getDisplayName().isBlank()) {
             return user.getDisplayName();
         }
-        if (user.getEmail() != null && !user.getEmail().isBlank()) {
-            return user.getEmail();
-        }
+        // A blank display name falls back to the NEUTRAL label — never the
+        // account email (CodeRabbit agent findings, row 2 / CWE-200): this
+        // projection feeds the PUBLIC providerName of catalog listing
+        // summaries, and a private login address is not publishable provider
+        // identity. The email leg is removed, not masked: every reader of
+        // the public summary sees the same neutral label.
         return "Provider";
     }
 }

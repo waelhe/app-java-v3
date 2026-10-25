@@ -38,7 +38,7 @@ class IdentityProviderNameResolverTest {
     }
 
     @Test
-    void resolveNames_fallsBackToEmailThenDefault() {
+    void resolveNames_fallsBackToTheNeutralLabelNeverTheEmail() {
         UUID emailFallbackId = Instancio.create(UUID.class);
         UUID defaultFallbackId = Instancio.create(UUID.class);
         User emailOnly = Instancio.of(User.class)
@@ -60,7 +60,11 @@ class IdentityProviderNameResolverTest {
 
         Map<UUID, String> result = resolver.resolveNames(Set.of(emailFallbackId, defaultFallbackId));
 
-        assertEquals("fallback@example.com", result.get(emailFallbackId));
+        // CodeRabbit agent findings, row 2 / CWE-200: the public
+        // provider-name projection must never disclose the account email —
+        // a blank display name answers the NEUTRAL label, and a null email
+        // takes the same path.
+        assertEquals("Provider", result.get(emailFallbackId));
         assertEquals("Provider", result.get(defaultFallbackId));
     }
 

@@ -245,4 +245,79 @@ class RoleAssignmentServiceTest {
         verify(repository).save(any(RoleAssignment.class));
         verify(eventPublisher, never()).publishEvent(any());
     }
+
+    // ------------------------------------------------------------------
+    // onPrimaryRoleChanged — the primary-change choreography's assignment
+    // leg (CodeRabbit agent findings, row 26 / CWE-269)
+    // ------------------------------------------------------------------
+
+    @Test
+    void primaryChange_retiresTheFormerMirrorAndEnsuresTheNewOne() {
+        // The demotion scenario the finding measured: the ADMIN mirror row
+        // survives the primary change, the V188 union resurrects ROLE_ADMIN
+        // at the next login. The choreography leg retires the former mirror
+        // and grants the new primary's mirror when absent.
+        UUID userId = UUID.randomUUID();
+        RoleAssignment adminMirror = RoleAssignment.grant(
+                UUID.randomUUID(), userId, UserRole.ADMIN, NOW.minusSeconds(3600), null, "BACKFILL");
+        when(repository.findByUserIdAndRoleAndRevokedAtIsNull(userId, UserRole.ADMIN))
+                .thenReturn(Optional.of(adminMirror));
+        when(repository.findByUserIdAndRoleAndRevokedAtIsNull(userId, UserRole.CONSUMER))
+                .thenReturn(Optional.empty());
+        when(repository.save(any(RoleAssignment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.onPrimaryRoleChanged(userId, UserRole.ADMIN, UserRole.CONSUMER, "admin");
+
+        assertThat(adminMirror.isActive())
+                .as("the former primary's mirrored assignment is retired with the change")
+                .isFalse();
+        verify(repository).save(adminMirror);
+        ArgumentCaptor<RoleAssignment> granted = ArgumentCaptor.forClass(RoleAssignment.class);
+        verify(repository, org.mockito.Mockito.times(2)).save(granted.capture());
+        assertThat(granted.getAllValues().get(1).getId()).isNotNull();
+    }
+
+    @Test
+    void primaryChange_anExistingAdditiveGrantBecomesTheMirror_noDuplicateInsert() {
+        // An account holding an independent additive grant of the TARGET
+        // role keeps it as the mirror itself — the duplicate-active gate
+        // (V187's partial unique index) must never see a second insert.
+        UUID userId = UUID.randomUUID();
+        RoleAssignment formerMirror = RoleAssignment.grant(
+                UUID.randomUUID(), userId, UserRole.CONSUMER, NOW.minusSeconds(3600), null, "BACKFILL");
+        RoleAssignment additiveAdmin = RoleAssignment.grant(
+                UUID.randomUUID(), userId, UserRole.ADMIN, NOW.minusSeconds(1800), null, "ADMIN");
+        when(repository.findByUserIdAndRoleAndRevokedAtIsNull(userId, UserRole.CONSUMER))
+                .thenReturn(Optional.of(formerMirror));
+        when(repository.findByUserIdAndRoleAndRevokedAtIsNull(userId, UserRole.ADMIN))
+                .thenReturn(Optional.of(additiveAdmin));
+
+        service.onPrimaryRoleChanged(userId, UserRole.CONSUMER, UserRole.ADMIN, "admin");
+
+        assertThat(formerMirror.isActive()).isFalse();
+        assertThat(additiveAdmin.isActive())
+                .as("the independent additive grant stays active and becomes the mirror")
+                .isTrue();
+        verify(repository).save(formerMirror);
+        verify(repository, org.mockito.Mockito.times(1)).save(any(RoleAssignment.class));
+    }
+
+    @Test
+    void primaryChange_anAbsentFormerMirrorIsACleanNoOpRetire() {
+        // A drifted account (no mirror row for the former primary — the
+        // pre-V187 stock) takes the retire as a no-op; the new primary's
+        // mirror is still ensured.
+        UUID userId = UUID.randomUUID();
+        when(repository.findByUserIdAndRoleAndRevokedAtIsNull(userId, UserRole.CONSUMER))
+                .thenReturn(Optional.empty());
+        when(repository.findByUserIdAndRoleAndRevokedAtIsNull(userId, UserRole.PROVIDER))
+                .thenReturn(Optional.empty());
+        when(repository.save(any(RoleAssignment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.onPrimaryRoleChanged(userId, UserRole.CONSUMER, UserRole.PROVIDER, "admin");
+
+        ArgumentCaptor<RoleAssignment> granted = ArgumentCaptor.forClass(RoleAssignment.class);
+        verify(repository, org.mockito.Mockito.times(1)).save(granted.capture());
+        assertThat(granted.getValue().isActive()).isTrue();
+    }
 }

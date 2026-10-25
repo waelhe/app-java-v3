@@ -166,6 +166,15 @@ class PasswordResetServiceTest {
         // not survive the rotation.
         verify(jdbcTemplate).update(
                 eq(PasswordResetService.DELETE_AUTHORIZATIONS_BY_PRINCIPAL), eq(EMAIL));
+        // CodeRabbit agent findings, row 14 / CWE-613 — the surviving-session
+        // kill: the rotation fact rides the house R8 channel so
+        // AccountStatusSessionInvalidator expires every session of the
+        // account AFTER_COMMIT (a pre-reset cookie must not re-mint the
+        // grants this recovery just revoked).
+        ArgumentCaptor<com.marketplace.shared.api.AccountCredentialsRotated> rotated =
+                ArgumentCaptor.forClass(com.marketplace.shared.api.AccountCredentialsRotated.class);
+        verify(eventPublisher).publishEvent(rotated.capture());
+        assertThat(rotated.getValue().username()).isEqualTo(EMAIL);
     }
 
     @Test
