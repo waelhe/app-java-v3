@@ -548,7 +548,7 @@ class PlatformGovernanceFilesTest {
                 .contains("rewrite-all")
                 .contains("rewrite-third-party")
                 .contains("rewrite-spring")
-                .contains("Not yet proven")
+                .contains("complete recipe resolution and discovery still require a successful scheduled/manual run")
                 .contains("failOnDryRunResults");
 
         String springBuildScript = read("scripts", "openrewrite", "build-spring-recipes.sh");
