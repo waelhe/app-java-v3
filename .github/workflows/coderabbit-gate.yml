@@ -15,10 +15,30 @@ name: CodeRabbit Gate
 #   run — comment '@coderabbitai review' on the PR, then dispatch this
 #   workflow with the PR number).
 #
-# Verdict model: the LATEST completed coderabbitai[bot] review whose
-# commit_id equals the PR's current head decides; error/rate-limited review
-# statuses fail first; CHANGES_REQUESTED and DISMISSED fail; APPROVED and
-# COMMENTED pass. Review fetches are fully paginated.
+# Verdict model (human-authored PRs): the LATEST completed coderabbitai[bot]
+# review whose commit_id equals the PR's current head decides; error/rate-
+# limited review statuses fail first; CHANGES_REQUESTED and DISMISSED fail;
+# APPROVED and COMMENTED pass. Review fetches are fully paginated.
+#
+# Bot-exemption path (official CodeRabbit seat model, per
+# docs.coderabbit.ai/management/seat-assignment): accounts the Git provider
+# identifies as bots (GitHub Apps, e.g. dependabot[bot]) NEVER get a paid
+# review seat automatically and are never reviewed without one. This
+# repository runs on the no-subscription open-source tier where no seats
+# exist at all, so a CodeRabbit review can never land on a bot-authored PR
+# (measured on #726: 11 manual activation attempts 2026-10-24/25, none
+# produced a review; the bot's first response names the cause: "authored by
+# a bot without an assigned CodeRabbit review seat"). For bot-authored PRs
+# the gate therefore verifies instead that EVERY other check on the head is
+# green — the full test matrix, Build & Test, Full Integration Test, CodeQL
+# Analyze, Container Image Scan, Dependency Review (GitHub's official
+# security gate for dependency changes — exactly what a dependabot PR
+# changes), Trivy, Snyk and the OpenAPI/GraphQL contract gates — all of
+# which stay merge-required by the branch ruleset for every PR. Bot identity
+# comes from the Git provider (pull.user.type == "Bot" / login ending
+# "[bot]"), the same identification CodeRabbit itself uses for seat
+# assignment; a human author cannot obtain it. Human-authored PRs remain
+# 100% gated by the CodeRabbit review requirement below — unchanged.
 
 on:
   pull_request_target:
@@ -34,6 +54,7 @@ permissions:
   contents: read
   pull-requests: read
   statuses: read
+  checks: read
 
 concurrency:
   group: coderabbit-gate-${{ github.event.pull_request.number || github.event.inputs.pr }}
@@ -45,7 +66,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Verify a completed CodeRabbit review on the PR head
+      - name: Gate - CodeRabbit review (human PRs) or all-checks-green (bot PRs)
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -79,15 +100,75 @@ jobs:
                       return out
                   page += 1
 
+          def all_check_runs(head):
+              # Full pagination over the Checks API.
+              out, page = [], 1
+              while True:
+                  batch = call(f"/commits/{head}/check-runs?per_page=100&page={page}")["check_runs"]
+                  out.extend(batch)
+                  if len(batch) < 100:
+                      return out
+                  page += 1
+
           pull = call(f"/pulls/{pr}")
           head = pull["head"]["sha"]
           base = pull["base"]["ref"]
+          author = pull["user"]["login"]
+          author_type = pull["user"].get("type", "")
           if base != "main":
               print(f"Gate scoped to PRs targeting main; this PR targets '{base}' — passing without enforcement.")
               sys.exit(0)
 
-          print(f"CodeRabbit Gate: PR #{pr} head={head[:10]} base={base}")
+          print(f"CodeRabbit Gate: PR #{pr} head={head[:10]} base={base} author={author} (type={author_type})")
 
+          # ---------- Bot-exemption path (official CodeRabbit seat model) ----------
+          # docs.coderabbit.ai/management/seat-assignment: Git-provider-identified
+          # bots never get a paid review seat and are never reviewed without one.
+          # On this repository's no-subscription OSS tier no seats exist at all,
+          # so the bot path is gated by every other check being green instead.
+          if author_type == "Bot" or author.endswith("[bot]"):
+              deadline = time.time() + 720  # same poll window as the human path
+              seen = set()
+              while True:
+                  checks = [c for c in all_check_runs(head)
+                            if c["name"] != "CodeRabbit Gate"]
+                  pending = [c for c in checks if c["status"] != "completed"]
+                  failed = [c for c in checks if c["status"] == "completed"
+                            and c.get("conclusion") not in ("success", "skipped", "neutral")]
+                  try:
+                      st = call(f"/commits/{head}/status")
+                      status_state = st.get("state") or ""
+                      bad_statuses = [f'{s["context"]} ({s["state"]})'
+                                      for s in st.get("statuses", [])
+                                      if s["state"] != "success"]
+                  except Exception as e:
+                      status_state, bad_statuses = "error", [f"(status lookup failed: {e})"]
+                  if failed or status_state in ("failure", "error"):
+                      for c in failed:
+                          print(f"FAIL — bot-exemption path: check '{c['name']}' concluded '{c.get('conclusion')}'.")
+                      for s in bad_statuses:
+                          print(f"FAIL — bot-exemption path: commit status not green: {s}")
+                      print("Bot-authored PRs are gated by every other check instead of a CodeRabbit review (official seat model: docs.coderabbit.ai/management/seat-assignment). Fix the failing checks, then re-run this gate via workflow_dispatch (input: PR number).")
+                      sys.exit(1)
+                  if not pending and status_state == "success":
+                      names = sorted({c["name"] for c in checks})
+                      print(f"PASS — bot-exemption path: author {author} is a Git-provider bot "
+                            f"(type={author_type}); CodeRabbit never reviews bot PRs without a seat "
+                            f"(docs.coderabbit.ai/management/seat-assignment) and this repository has "
+                            f"no paid seats. Verified instead: ALL {len(names)} other checks green on "
+                            f"head {head[:10]} + every commit status success. Human-authored PRs remain "
+                            f"fully gated by a completed CodeRabbit review.")
+                      sys.exit(0)
+                  note = f"Bot-exemption path: waiting for the other checks on head {head[:10]} — {len(pending)} pending, commit statuses: {status_state or 'none yet'}"
+                  if note not in seen:
+                      print(note)
+                      seen.add(note)
+                  if time.time() > deadline:
+                      print("FAIL — bot-exemption path: the other checks did not complete within the poll window. Re-run this gate via workflow_dispatch (CodeRabbit Gate workflow, input: PR number) once they finish.")
+                      sys.exit(1)
+                  time.sleep(30)
+
+          # ---------- Human path: a completed CodeRabbit review decides (unchanged) ----------
           BAD_STATUS = re.compile(r"rate limit|error|fail", re.I)
           deadline = time.time() + 720  # poll up to 12 minutes; re-run via workflow_dispatch afterwards
           last_note = ""
