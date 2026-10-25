@@ -650,6 +650,7 @@ class PlatformGovernanceFilesTest {
                 .as("the automatic path applies only activated recipes and fails closed unless the source reaches a fixed point")
                 .contains("org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:runNoFork")
                 .contains("'**/*.java'")
+                .contains("'!automation/openrewrite-**'")
                 .contains("  scope:")
                 .contains("full-project")
                 .contains("changed-modules")

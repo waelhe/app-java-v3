@@ -3,7 +3,8 @@ name: OpenRewrite Auto Apply
 on:
   # Source application is triggered by Java changes only; config-only setup must not sweep the reactor.
   push:
-    branches: ['**']
+    # Generated batch branches must not re-trigger the auto-apply workflow.
+    branches: ['**', '!automation/openrewrite-**']
     paths:
       - '**/*.java'
       - '!marketplace-app/src/test/java/com/marketplace/config/PlatformGovernanceFilesTest.java'
