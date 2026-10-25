@@ -86,7 +86,7 @@ jobs:
           import xml.etree.ElementTree as ET
           from pathlib import Path
 
-          ns = "http://maven.apache.org/SETTINGS/1.2.0"
+          ns = "http://maven.apache.org/SETTINGS/1.3.0"
           ET.register_namespace("", ns)
           tag = lambda name: f"{{{ns}}}{name}"
           settings = ET.Element(tag("settings"))
@@ -95,6 +95,8 @@ jobs:
           ET.SubElement(server, tag("id")).text = "codegenome"
           ET.SubElement(server, tag("username")).text = os.environ["CODEGENOME_USERNAME"]
           ET.SubElement(server, tag("password")).text = os.environ["CODEGENOME_TOKEN"]
+          origins = ET.SubElement(server, tag("repositoryOrigins"))
+          ET.SubElement(origins, tag("repositoryOrigin")).text = "https://artifacts.codegenomeproject.org"
           path = Path(os.environ["RUNNER_TEMP"]) / "openrewrite-settings.xml"
           ET.ElementTree(settings).write(path, encoding="utf-8", xml_declaration=True)
 

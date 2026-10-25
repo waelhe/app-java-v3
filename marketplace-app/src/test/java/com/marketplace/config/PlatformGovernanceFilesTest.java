@@ -653,7 +653,7 @@ class PlatformGovernanceFilesTest {
                 .contains("  scope:")
                 .contains("full-project")
                 .contains("changed-modules")
-                .contains("MAX_FILES_PER_PR=95")
+                .contains("limit=95")
                 .contains("One-time baseline: discover all reactor modules from the root POM; no hand-maintained module list.")
                 .contains("'!marketplace-app/src/test/java/com/marketplace/config/PlatformGovernanceFilesTest.java'")
                 .contains("git diff --name-only")
@@ -687,6 +687,27 @@ class PlatformGovernanceFilesTest {
         int resetToBaseIndex = workflow.indexOf("git reset --hard \"${TARGET_SHA}\"");
         assertThat(batchPatchIndex).isGreaterThanOrEqualTo(0);
         assertThat(resetToBaseIndex).isGreaterThan(batchPatchIndex);
+        int publishJobIndex = workflow.indexOf("\\n  publish:");
+        assertThat(publishJobIndex).isGreaterThan(resetToBaseIndex);
+        String applyJob = workflow.substring(workflow.indexOf("  apply:"), publishJobIndex);
+        String publishJob = workflow.substring(publishJobIndex);
+        assertThat(applyJob)
+                .contains("permissions:\\n      contents: read")
+                .contains("persist-credentials: false")
+                .contains("actions/upload-artifact@v6")
+                .doesNotContain("GH_TOKEN:");
+        assertThat(publishJob)
+                .contains("needs: apply")
+                .contains("contents: write")
+                .contains("GH_TOKEN: ${{ github.token }}")
+                .contains("actions/download-artifact@v6")
+                .contains("Publish generated transformations without running Maven")
+                .doesNotContain("./mvnw")
+                .doesNotContain("mvn --settings");
+        assertThat(catalogWorkflow)
+                .contains("repositoryOrigins")
+                .contains("Read pinned OpenRewrite Maven plugin version for Spring discovery")
+                .contains("OPENREWRITE_MAVEN_PLUGIN_VERSION=${version}");
     }
 
     private static Path repoRoot() {
