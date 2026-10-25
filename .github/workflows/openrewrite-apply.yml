@@ -541,7 +541,7 @@ jobs:
             git apply --check "${patch_file}"
             git apply "${patch_file}"
             mapfile -t actual_paths < <(git diff --name-only "${TARGET_SHA}" | sort)
-            diff -u "${paths_file}" <(printf '%s\\n' "${actual_paths[@]}")
+            diff -u "${paths_file}" <(printf '%s\n' "${actual_paths[@]}")
           done
           # Validate the full patch used by changed-modules mode against the exact planned path set.
           git reset --hard "${TARGET_SHA}"
@@ -549,7 +549,7 @@ jobs:
           git apply --check "${publication_dir}/automatic-rewrite.patch"
           git apply "${publication_dir}/automatic-rewrite.patch"
           mapfile -t actual_all < <(git diff --name-only "${TARGET_SHA}" | sort)
-          diff -u <(printf '%s\\n' "${expected_all[@]}") <(printf '%s\\n' "${actual_all[@]}")
+          diff -u <(printf '%s\n' "${expected_all[@]}") <(printf '%s\n' "${actual_all[@]}")
           git reset --hard "${TARGET_SHA}"
 
       - name: Publish generated transformations without running Maven
