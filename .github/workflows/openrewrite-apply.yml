@@ -380,13 +380,22 @@ jobs:
           BATCH_COUNT="$(jq 'length' "${RUNNER_TEMP}/openrewrite-batches.json")"
           (( BATCH_COUNT > 0 )) || { echo "::error::No publication batches generated."; exit 1; }
           echo "BATCH_COUNT=${BATCH_COUNT}" >> "$GITHUB_ENV"
+          # Capture batch diffs while the OpenRewrite-generated working tree still contains the edits.
+          # Resetting first makes `git diff TARGET_SHA -- paths` empty and would publish no-op batches.
+          for idx in $(seq 1 "${BATCH_COUNT}"); do
+            paths_file="${RUNNER_TEMP}/openrewrite-batch-${idx}.paths"; patch_file="${RUNNER_TEMP}/openrewrite-batch-${idx}.patch"
+            jq -r ".[$((idx-1))].paths[]" "${RUNNER_TEMP}/openrewrite-batches.json" > "${paths_file}"
+            mapfile -t batch_paths < "${paths_file}"
+            git diff --binary "${TARGET_SHA}" -- "${batch_paths[@]}" > "${patch_file}"
+            [[ -s "${patch_file}" ]] || { echo "::error::OpenRewrite batch ${idx} has no patch although changed files were reported."; exit 1; }
+          done
           git reset --hard "${TARGET_SHA}"
           for idx in $(seq 1 "${BATCH_COUNT}"); do
             paths_file="${RUNNER_TEMP}/openrewrite-batch-${idx}.paths"; patch_file="${RUNNER_TEMP}/openrewrite-batch-${idx}.patch"
             jq -r ".[$((idx-1))].paths[]" "${RUNNER_TEMP}/openrewrite-batches.json" > "${paths_file}"
             mapfile -t batch_paths < "${paths_file}"
             module_names="$(jq -r ".[$((idx-1))].modules | join(\",\")" "${RUNNER_TEMP}/openrewrite-batches.json")"
-            git diff --binary "${TARGET_SHA}" -- "${batch_paths[@]}" > "${patch_file}"
+            # Patch was captured before reset in the pre-publication pass.
             batch_branch="automation/openrewrite-${OPENREWRITE_SCOPE}-${TARGET_SHA:0:12}-batch-${idx}"
             git switch --detach "${TARGET_SHA}"; git switch -C "${batch_branch}"
             git apply --binary "${patch_file}"

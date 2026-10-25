@@ -674,9 +674,19 @@ class PlatformGovernanceFilesTest {
                 .contains("OpenRewrite baseline did not converge to zero diff after five attempts.")
                 .contains("Unexpected non-Java changes from the approved baseline recipe:")
                 .contains("gh workflow run")
-                .contains("It never writes directly to `main`.")
+                .contains("if [[ \"${TARGET_REF}\" == \"main\" ]]; then")
+                .contains("MODE=\"pull-request\"")
+                .contains("MODE=\"direct-branch-update\"")
+                .contains("git diff --binary \"${TARGET_SHA}\" -- \"${batch_paths[@]}\" > \"${patch_file}\"")
+                .contains("OpenRewrite batch ${idx} has no patch although changed files were reported.")
                 .doesNotContain("  schedule:")
                 .contains("No eligible Java source changes in this push; skipping OpenRewrite apply.");
+
+        int batchPatchIndex = workflow.indexOf(
+                "git diff --binary \"${TARGET_SHA}\" -- \"${batch_paths[@]}\" > \"${patch_file}\"");
+        int resetToBaseIndex = workflow.indexOf("git reset --hard \"${TARGET_SHA}\"");
+        assertThat(batchPatchIndex).isGreaterThanOrEqualTo(0);
+        assertThat(resetToBaseIndex).isGreaterThan(batchPatchIndex);
     }
 
     private static Path repoRoot() {
