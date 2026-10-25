@@ -40,9 +40,20 @@ import java.util.UUID;
  * overlapping run's loser surfaces as the charge insert's
  * {@link DataIntegrityViolationException} — the EXPECTED deterministic
  * outcome (one window, one charge), logged and skipped so the run keeps
- * settling the other campaigns. Any other failure propagates: the job
- * fails loudly and the next run retries the unsettled windows (the
- * marker never advanced).</p>
+ * settling the other campaigns.</p>
+ *
+ * <p><b>Per-campaign isolation (CodeRabbit agent findings row 31,
+ * CWE-190):</b> any OTHER settlement failure — a campaign whose numbers
+ * break an assumption, a poisoned row, an unexpected integrity violation
+ * — is isolated to that one campaign: the failure is logged, the loop
+ * settles every remaining candidate, and only THEN is the first failure
+ * rethrown. The loud-failure contract is preserved (the run surfaces the
+ * error; the failed campaign's marker never advanced, so the next run
+ * retries it), but ONE broken campaign can no longer stop the rest of
+ * the run — and can no longer wedge the daily cycle permanently by
+ * failing at the same list position every day. {@code Error} is
+ * deliberately NOT caught: fatal JVM conditions must propagate
+ * immediately.</p>
  */
 @Component
 public class AdBillingJob {
@@ -83,11 +94,19 @@ public class AdBillingJob {
      * Settles every campaign's open windows strictly before the horizon (a
      * complete-UTC-days-only boundary — the exclusive {@code today} of the
      * midnight the event fired, carried by the event itself).
+     *
+     * <p>Per-campaign isolation (row 31): a campaign-scoped failure — the
+     * overflow that started this, or any integrity violation that is NOT
+     * the window-uniqueness overlap — is logged and set aside; the run
+     * settles the remaining candidates and rethrows the first failure only
+     * after the loop. One campaign cannot stop the rest of the run.</p>
      */
     void settleWindowsThrough(LocalDate horizon) {
         List<UUID> candidates = campaignRepository.findBillableBefore(horizon);
         int settled = 0;
         int overlaps = 0;
+        int failed = 0;
+        RuntimeException firstFailure = null;
         for (UUID campaignId : candidates) {
             try {
                 batchExecutor.settleOneCampaign(campaignId, horizon);
@@ -99,16 +118,44 @@ public class AdBillingJob {
                 // integrity failure is a billing bug this run must surface
                 // loudly, never swallow as a fake overlap.
                 if (!isWindowUniquenessViolation(violation)) {
-                    throw violation;
+                    failed++;
+                    if (firstFailure == null) {
+                        firstFailure = violation;
+                    }
+                    log.error("Ad billing settlement of campaign {} failed — isolated, the run "
+                            + "settles the remaining campaigns and will surface this failure "
+                            + "after the loop (the campaign's marker never advanced; the next "
+                            + "run retries it)", campaignId, violation);
+                    continue;
                 }
                 overlaps++;
                 log.info("Ad billing overlap: campaign {}'s window was settled by a concurrent run "
                                 + "(the deterministic backstop rejected this one) — one window, one charge",
                         campaignId);
+            } catch (RuntimeException campaignFailure) {
+                // Row 31's second half: whatever breaks ONE campaign's
+                // settlement must not stop the rest of the batch — the
+                // failure is isolated here, every other candidate still
+                // settles, and the first failure is rethrown after the
+                // loop (the loud contract, just no longer at the cost of
+                // wedging the whole daily cycle).
+                failed++;
+                if (firstFailure == null) {
+                    firstFailure = campaignFailure;
+                }
+                log.error("Ad billing settlement of campaign {} failed — isolated, the run "
+                        + "settles the remaining campaigns and will surface this failure "
+                        + "after the loop (the campaign's marker never advanced; the next "
+                        + "run retries it)", campaignId, campaignFailure);
             }
         }
-        log.info("Ad billing run over {} candidates: {} settled, {} overlaps, horizon {}",
-                candidates.size(), settled, overlaps, horizon);
+        log.info("Ad billing run over {} candidates: {} settled, {} overlaps, {} failed, horizon {}",
+                candidates.size(), settled, overlaps, failed, horizon);
+        if (firstFailure != null) {
+            // The loud failure — AFTER every other campaign got its chance
+            // (row 31: isolation first, loudness preserved).
+            throw firstFailure;
+        }
     }
 
     /**
