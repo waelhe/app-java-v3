@@ -1,6 +1,5 @@
 package com.marketplace.catalog;
 
-import com.marketplace.catalog.ProviderListingSpecifications;
 import com.marketplace.catalog.spi.CatalogSpi;
 import org.springframework.data.jpa.domain.Specification;
 import com.marketplace.shared.api.CatalogSearchPort;

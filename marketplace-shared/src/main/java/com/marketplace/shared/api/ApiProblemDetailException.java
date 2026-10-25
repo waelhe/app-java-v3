@@ -2,7 +2,6 @@ package com.marketplace.shared.api;
 
 import java.net.URI;
 
-import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.ErrorResponseException;
 

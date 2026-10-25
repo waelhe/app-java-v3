@@ -1,6 +1,5 @@
 package com.marketplace.admin;
 
-import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ContentReportQueuePort;
 import com.marketplace.shared.api.InstitutionReviewQueuePort;

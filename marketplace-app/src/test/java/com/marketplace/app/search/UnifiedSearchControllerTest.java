@@ -4,7 +4,6 @@ import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.PagedRequest;
 import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.UnifiedSearchDomain;
-import com.marketplace.shared.api.UnifiedSearchHit;
 import com.marketplace.shared.api.UnifiedSearchPort;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.AfterEach;

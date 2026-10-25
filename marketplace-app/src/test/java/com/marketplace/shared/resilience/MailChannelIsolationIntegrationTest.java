@@ -1,6 +1,5 @@
 package com.marketplace.shared.resilience;
 
-import java.time.Duration;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
