@@ -24,9 +24,7 @@ on:
           - full-project
 
 permissions:
-  contents: write
-  pull-requests: write
-  actions: write
+  contents: read
 
 concurrency:
   # Serialize automatic mutations by target branch across push and dispatch triggers.
@@ -39,16 +37,25 @@ jobs:
     name: Apply approved OpenRewrite baseline and verify it is clean
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: read
+    outputs:
+      apply_required: ${{ steps.target.outputs.apply_required }}
+      target_ref: ${{ steps.target.outputs.target_ref }}
+      target_sha: ${{ steps.target.outputs.target_sha }}
+      scope: ${{ steps.target.outputs.scope }}
+      write_mode: ${{ steps.target.outputs.write_mode }}
+      changed: ${{ steps.postcondition.outputs.changed }}
     env:
-      GH_TOKEN: ${{ github.token }}
       CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
       CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
     steps:
-      - name: Checkout target
+      - name: Checkout target without persisting credentials
         uses: actions/checkout@v7
         with:
           ref: ${{ inputs.target_ref || github.ref }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Require Code Genome credentials
         shell: bash
@@ -120,8 +127,7 @@ jobs:
           if [[ "${SCOPE}" == "full-project" && ( "${GITHUB_EVENT_NAME}" != "workflow_dispatch" || "${TARGET_REF}" != "main" ) ]]; then
             echo "::error::Full-project baseline is permitted only as an explicit workflow dispatch targeting main."; exit 1
           fi
-          git fetch origin "${TARGET_REF}"
-          TARGET_SHA="$(git rev-parse FETCH_HEAD)"
+          TARGET_SHA="$(git rev-parse HEAD)"
           git switch --detach "${TARGET_SHA}"
           module_names=()
           if [[ "${SCOPE}" == "full-project" ]]; then
@@ -143,10 +149,18 @@ jobs:
             for module in "${module_names[@]}"; do [[ -f "${module}/pom.xml" ]] || { echo "::error::Reactor module '${module}' has no pom.xml."; exit 1; }; done
           else
             # Routine mode: select only Maven modules with Java files changed in this event.
+            RANGE_BASE=""
             if [[ "${GITHUB_EVENT_NAME}" == "push" && -n "${EVENT_BEFORE}" && ! "${EVENT_BEFORE}" =~ ^0+$ ]]; then
               RANGE_BASE="${EVENT_BEFORE}"
-              git cat-file -e "${RANGE_BASE}^{commit}" || { echo "::error::Push base is unavailable."; exit 1; }
-            else
+              if ! git cat-file -e "${RANGE_BASE}^{commit}" 2>/dev/null; then
+                git fetch --no-tags origin "${EVENT_BEFORE}" >/dev/null 2>&1 || true
+              fi
+              if ! git cat-file -e "${RANGE_BASE}^{commit}" 2>/dev/null; then RANGE_BASE=""; fi
+            fi
+            if [[ -z "${RANGE_BASE}" ]]; then
+              RANGE_BASE="$(git merge-base origin/main "${TARGET_SHA}" 2>/dev/null || true)"
+            fi
+            if [[ -z "${RANGE_BASE}" ]]; then
               RANGE_BASE="$(git rev-parse "${TARGET_SHA}^" 2>/dev/null || true)"
             fi
             if [[ -z "${RANGE_BASE}" ]]; then echo "apply_required=false" >> "$GITHUB_OUTPUT"; echo "No parent commit; skipping auto-apply."; exit 0; fi
@@ -178,6 +192,7 @@ jobs:
           { echo "TARGET_REF=${TARGET_REF}"; echo "TARGET_SHA=${TARGET_SHA}"; echo "WRITE_MODE=${MODE}"; echo "AUTO_BRANCH=${AUTO_BRANCH}"; echo "EXPECTED_REMOTE_SHA=${EXPECTED_REMOTE_SHA}"; echo "OPENREWRITE_MODULES=${MODULES_CSV}"; echo "OPENREWRITE_SCOPE=${SCOPE}"; } >> "$GITHUB_ENV"
           echo "write_mode=${MODE}" >> "$GITHUB_OUTPUT"
           echo "target_ref=${TARGET_REF}" >> "$GITHUB_OUTPUT"
+          echo "target_sha=${TARGET_SHA}" >> "$GITHUB_OUTPUT"
           echo "modules_csv=${MODULES_CSV}" >> "$GITHUB_OUTPUT"
           echo "scope=${SCOPE}" >> "$GITHUB_OUTPUT"
           echo "apply_required=true" >> "$GITHUB_OUTPUT"
@@ -332,92 +347,204 @@ jobs:
             git diff --stat
           fi
 
-      - name: Publish generated transformations in review-sized batches
-        id: publish
+      - name: Prepare generated patch and review-sized batch plan
         if: steps.target.outputs.apply_required == 'true' && steps.postcondition.outputs.changed == 'true'
         shell: bash
         run: |
           set -Eeuo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          mapfile -t changed_paths < <(git diff --name-only "${TARGET_SHA}")
-          if (( ${#changed_paths[@]} == 0 )); then echo "::error::No diff paths found after changed=true."; exit 1; fi
-          for path in "${changed_paths[@]}"; do [[ "${path}" == *.java ]] || { echo "::error::Unexpected non-Java diff at publication: ${path}"; exit 1; }; done
-          if [[ "${WRITE_MODE}" == "direct-branch-update" ]]; then
-            git add -- "${changed_paths[@]}"
-            git commit -m "chore(openrewrite): apply approved recipes to changed modules"
-            git push origin "HEAD:${TARGET_REF}"
-            CHECK_SHA="$(git rev-parse HEAD)"
-            PR_NUMBER="$(gh pr list --state open --json number,headRefName | jq -r --arg head "${TARGET_REF}" '.[] | select(.headRefName == $head) | .number' | head -n 1)"
-            echo "BATCH_COUNT=1" >> "$GITHUB_ENV"; echo "CHECK_REF_1=${TARGET_REF}" >> "$GITHUB_ENV"; echo "CHECK_SHA_1=${CHECK_SHA}" >> "$GITHUB_ENV"; echo "PR_NUMBER_1=${PR_NUMBER}" >> "$GITHUB_ENV"
-            exit 0
-          fi
-          MAX_FILES_PER_PR=95
-          printf '%s\n' "${changed_paths[@]}" > "${RUNNER_TEMP}/openrewrite-changed-paths.txt"
+          publication_dir="target/openrewrite/publication"
+          mkdir -p "${publication_dir}/patches"
           python3 - <<'PY'
-          import json, os
+          import json, os, re, subprocess
           from collections import defaultdict
-          limit = 95
-          paths_file = os.path.join(os.environ["RUNNER_TEMP"], "openrewrite-changed-paths.txt")
-          paths = [line.strip() for line in open(paths_file, encoding="utf-8") if line.strip()]
-          by_module = defaultdict(list)
-          for path in paths:
-              module = path.split("/", 1)[0]
-              if module == path: raise SystemExit(f"Changed path is not under a Maven module: {path}")
-              by_module[module].append(path)
-          batches, current = [], {"paths": [], "modules": []}
-          for module, module_paths in sorted(by_module.items()):
-              if len(module_paths) > limit: raise SystemExit(f"Module {module} changed {len(module_paths)} files; refusing to split a module silently.")
-              if current["paths"] and len(current["paths"]) + len(module_paths) > limit:
-                  batches.append(current); current = {"paths": [], "modules": []}
-              current["paths"].extend(module_paths); current["modules"].append(module)
-          if current["paths"]: batches.append(current)
-          if not batches or any(len(b["paths"]) > limit for b in batches): raise SystemExit("Invalid review-sized batch plan")
-          for number, batch in enumerate(batches, 1): batch["number"] = number; batch["paths"] = sorted(batch["paths"])
-          with open(os.path.join(os.environ["RUNNER_TEMP"], "openrewrite-batches.json"), "w", encoding="utf-8") as out: json.dump(batches, out)
-          print("Planned batches:", [(b["number"], len(b["paths"]), b["modules"]) for b in batches])
+          from pathlib import Path
+          root=Path.cwd(); target=os.environ["TARGET_SHA"]; limit=95
+          changed=sorted(set(subprocess.check_output(["git","diff","--name-only",target],text=True).splitlines()))
+          if not changed: raise SystemExit("Postcondition reported changes but generated paths are empty.")
+          if any(not p.endswith(".java") for p in changed): raise SystemExit("Refusing to publish non-Java changes.")
+          by_module=defaultdict(list)
+          for path in changed:
+              parts=Path(path).parts
+              if path.startswith("/") or ".." in parts or len(parts)<2 or not (root/parts[0]/"pom.xml").is_file(): raise SystemExit(f"Changed path is not in a Maven module: {path}")
+              by_module[parts[0]].append(path)
+          def app_packages(module):
+              found=[]
+              for f in (root/module).rglob("package-info.java"):
+                  try: text=f.read_text(encoding="utf-8")
+                  except OSError: continue
+                  if not re.search(r"@(?:[\w.]+\.)?ApplicationModule\b",text): continue
+                  m=re.search(r"\bpackage\s+([\w.]+)\s*;",text)
+                  if m: found.append(m.group(1))
+              return sorted(set(found),key=lambda x:(-len(x),x))
+          def pkg(path):
+              parts=Path(path).parts
+              for i in range(len(parts)-2):
+                  if tuple(parts[i:i+3]) in (("src","main","java"),("src","test","java"),("src","integrationTest","java")): return ".".join(parts[i+3:-1])
+              return ".".join(parts[1:-1])
+          units=[]
+          for module,files in sorted(by_module.items()):
+              files=sorted(files)
+              if len(files)<=limit: units.append({"module":module,"boundary":"whole-module","paths":files,"reason":""}); continue
+              boundaries=app_packages(module); grouped=defaultdict(list)
+              for path in files:
+                  package=pkg(path); match=next((b for b in boundaries if package==b or package.startswith(b+".")),None)
+                  boundary=("@ApplicationModule:"+match) if match else ("package:"+".".join(package.split(".")[:2]) if package else "source-path:"+str(Path(path).parent))
+                  grouped[boundary].append(path)
+              reason=(f"Module {module} had {len(files)} Java files and was split by discovered @ApplicationModule package boundaries. " if boundaries else f"Module {module} had {len(files)} Java files and no @ApplicationModule package-info boundary; it was split by Java package/source path. ") + "Any oversized boundary is chunked to stay under 95 files because the active RemoveUnusedImports recipe changes imports within individual files."
+              for boundary,paths in sorted(grouped.items()):
+                  for offset in range(0,len(paths),limit): units.append({"module":module,"boundary":boundary,"paths":sorted(paths[offset:offset+limit]),"reason":reason})
+          mode=os.environ["WRITE_MODE"]
+          if mode=="direct-branch-update":
+              batches=[{"number":1,"paths":changed,"modules":sorted(by_module),"partitions":[{"module":m,"boundary":"whole-module","files":len(v)} for m,v in sorted(by_module.items())],"reason":"Routine changed-modules update."}]
+          else:
+              batches=[]; current={"paths":[],"modules":[],"partitions":[],"reasons":[]}
+              for unit in units:
+                  if len(unit["paths"])>limit: raise SystemExit(f"Batch unit exceeds {limit} files: {unit['module']} / {unit['boundary']}")
+                  if current["paths"] and len(current["paths"])+len(unit["paths"])>limit: batches.append(current); current={"paths":[],"modules":[],"partitions":[],"reasons":[]}
+                  current["paths"].extend(unit["paths"])
+                  if unit["module"] not in current["modules"]: current["modules"].append(unit["module"])
+                  current["partitions"].append({"module":unit["module"],"boundary":unit["boundary"],"files":len(unit["paths"])})
+                  if unit["reason"] and unit["reason"] not in current["reasons"]: current["reasons"].append(unit["reason"])
+              if current["paths"]: batches.append(current)
+              for n,b in enumerate(batches,1): b["number"]=n;b["paths"]=sorted(b["paths"]);b["modules"]=sorted(b["modules"]);b["reason"]=" ".join(b.pop("reasons"))
+              if not batches or any(len(b["paths"])>limit for b in batches): raise SystemExit("Invalid review-sized plan; no partial publication.")
+          if not batches: raise SystemExit("No publication batches generated.")
+          pub=root/"target/openrewrite/publication"
+          (pub/"batches.json").write_text(json.dumps(batches,indent=2)+"\n",encoding="utf-8")
+          meta={"target_ref":os.environ["TARGET_REF"],"target_sha":target,"scope":os.environ["OPENREWRITE_SCOPE"],"write_mode":mode,"expected_remote_sha":os.environ.get("EXPECTED_REMOTE_SHA",""),"changed_file_count":len(changed),"recipe":"org.openrewrite.java.RemoveUnusedImports","max_files_per_pr":limit}
+          (pub/"metadata.json").write_text(json.dumps(meta,indent=2)+"\n",encoding="utf-8")
+          (pub/"automatic-rewrite.patch").write_bytes(subprocess.check_output(["git","diff","--binary",target,"--",*changed]))
+          print("Planned batches:",[(b["number"],len(b["paths"]),b["modules"],b.get("reason","")) for b in batches])
           PY
-          BATCH_COUNT="$(jq 'length' "${RUNNER_TEMP}/openrewrite-batches.json")"
+          BATCH_COUNT="$(jq 'length' "${publication_dir}/batches.json")"
           (( BATCH_COUNT > 0 )) || { echo "::error::No publication batches generated."; exit 1; }
-          echo "BATCH_COUNT=${BATCH_COUNT}" >> "$GITHUB_ENV"
-          # Capture batch diffs while the OpenRewrite-generated working tree still contains the edits.
-          # Resetting first makes `git diff TARGET_SHA -- paths` empty and would publish no-op batches.
           for idx in $(seq 1 "${BATCH_COUNT}"); do
-            paths_file="${RUNNER_TEMP}/openrewrite-batch-${idx}.paths"; patch_file="${RUNNER_TEMP}/openrewrite-batch-${idx}.patch"
-            jq -r ".[$((idx-1))].paths[]" "${RUNNER_TEMP}/openrewrite-batches.json" > "${paths_file}"
+            paths_file="${RUNNER_TEMP}/openrewrite-batch-${idx}.paths"; patch_file="${publication_dir}/patches/batch-${idx}.patch"
+            jq -r ".[${idx}-1].paths[]" "${publication_dir}/batches.json" > "${paths_file}"
             mapfile -t batch_paths < "${paths_file}"
             git diff --binary "${TARGET_SHA}" -- "${batch_paths[@]}" > "${patch_file}"
             [[ -s "${patch_file}" ]] || { echo "::error::OpenRewrite batch ${idx} has no patch although changed files were reported."; exit 1; }
           done
           git reset --hard "${TARGET_SHA}"
-          for idx in $(seq 1 "${BATCH_COUNT}"); do
-            paths_file="${RUNNER_TEMP}/openrewrite-batch-${idx}.paths"; patch_file="${RUNNER_TEMP}/openrewrite-batch-${idx}.patch"
-            jq -r ".[$((idx-1))].paths[]" "${RUNNER_TEMP}/openrewrite-batches.json" > "${paths_file}"
-            mapfile -t batch_paths < "${paths_file}"
-            module_names="$(jq -r ".[$((idx-1))].modules | join(\",\")" "${RUNNER_TEMP}/openrewrite-batches.json")"
-            # Patch was captured before reset in the pre-publication pass.
-            batch_branch="automation/openrewrite-${OPENREWRITE_SCOPE}-${TARGET_SHA:0:12}-batch-${idx}"
-            git switch --detach "${TARGET_SHA}"; git switch -C "${batch_branch}"
-            git apply --binary "${patch_file}"
-            git add -- "${batch_paths[@]}"; git diff --cached --check
-            git commit -m "chore(openrewrite): ${OPENREWRITE_SCOPE} batch ${idx}/${BATCH_COUNT}"
-            remote_sha="$(git ls-remote origin "refs/heads/${batch_branch}" | awk '{print $1}')"
-            git push --force-with-lease="refs/heads/${batch_branch}:${remote_sha}" origin "HEAD:${batch_branch}"
+
+      - name: Upload generated patch and batch plan
+        if: steps.target.outputs.apply_required == 'true' && steps.postcondition.outputs.changed == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: openrewrite-publication-${{ github.run_id }}
+          path: target/openrewrite/publication/**
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload automated recipe execution evidence
+        if: always() && steps.target.outputs.apply_required == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: openrewrite-auto-apply-${{ github.run_id }}
+          path: |
+            target/openrewrite/**
+            **/target/rewrite/**
+            **/target/rewrite*
+          if-no-files-found: warn
+          retention-days: 30
+  publish:
+    name: Publish verified OpenRewrite patches
+    needs: apply
+    if: needs.apply.outputs.apply_required == 'true' && needs.apply.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout target with write credentials isolated to publish job
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.apply.outputs.target_ref }}
+          fetch-depth: 0
+          persist-credentials: true
+          token: ${{ github.token }}
+
+      - name: Download read-only apply artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: openrewrite-publication-${{ github.run_id }}
+          path: target/openrewrite/publication
+
+      - name: Validate publication metadata and load target context
+        shell: bash
+        env:
+          EXPECTED_TARGET_REF: ${{ needs.apply.outputs.target_ref }}
+          EXPECTED_TARGET_SHA: ${{ needs.apply.outputs.target_sha }}
+          EXPECTED_SCOPE: ${{ needs.apply.outputs.scope }}
+          EXPECTED_WRITE_MODE: ${{ needs.apply.outputs.write_mode }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          pub=Path("target/openrewrite/publication"); meta=json.loads((pub/"metadata.json").read_text(encoding="utf-8"))
+          expected={"target_ref":os.environ["EXPECTED_TARGET_REF"],"target_sha":os.environ["EXPECTED_TARGET_SHA"],"scope":os.environ["EXPECTED_SCOPE"],"write_mode":os.environ["EXPECTED_WRITE_MODE"]}
+          for key,value in expected.items():
+              if meta.get(key)!=value: raise SystemExit(f"Publication artifact metadata mismatch for {key}; refusing to publish.")
+          if meta.get("recipe")!="org.openrewrite.java.RemoveUnusedImports": raise SystemExit("Unexpected recipe metadata; refusing to publish.")
+          batches=json.loads((pub/"batches.json").read_text(encoding="utf-8"))
+          if not batches: raise SystemExit("Publication batch plan is empty.")
+          for n,b in enumerate(batches,1):
+              if b.get("number")!=n or not b.get("paths"): raise SystemExit("Malformed batch plan.")
+              if meta["write_mode"]=="pull-request" and len(b["paths"])>int(meta["max_files_per_pr"]): raise SystemExit(f"Batch {n} exceeds review cap.")
+              for path in b["paths"]:
+                  if not path.endswith(".java") or path.startswith("/") or ".." in Path(path).parts: raise SystemExit(f"Unsafe publication path: {path}")
+          values={"TARGET_REF":meta["target_ref"],"TARGET_SHA":meta["target_sha"],"OPENREWRITE_SCOPE":meta["scope"],"WRITE_MODE":meta["write_mode"],"EXPECTED_REMOTE_SHA":meta.get("expected_remote_sha",""),"BATCH_COUNT":str(len(batches))}
+          with open(os.environ["GITHUB_ENV"],"a",encoding="utf-8") as out:
+              for key,value in values.items(): out.write(f"{key}={value}\n")
+          print(f"Validated {len(batches)} batch(es) for {meta['target_ref']} at {meta['target_sha']}.")
+          PY
+
+      - name: Publish generated transformations without running Maven
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          pub="target/openrewrite/publication"; plan="${pub}/batches.json"
+          git switch --detach "${TARGET_SHA}"
+          git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [[ "${WRITE_MODE}" == "direct-branch-update" ]]; then
+            git apply --binary "${pub}/automatic-rewrite.patch"
+            mapfile -t changed_paths < <(git diff --name-only "${TARGET_SHA}" | sort)
+            (( ${#changed_paths[@]} > 0 )) || { echo "::error::Patch contains no changes."; exit 1; }
+            for path in "${changed_paths[@]}"; do [[ "${path}" == *.java ]] || { echo "::error::Unexpected non-Java diff: ${path}"; exit 1; }; done
+            git add -- "${changed_paths[@]}"; git diff --cached --check
+            git commit -m "chore(openrewrite): apply approved recipes to changed modules"; git push origin "HEAD:${TARGET_REF}"
             CHECK_SHA="$(git rev-parse HEAD)"
-            PR_NUMBER="$(gh pr list --state open --base "${TARGET_REF}" --json number,headRefName | jq -r --arg head "${batch_branch}" '.[] | select(.headRefName == $head) | .number' | head -n 1)"
-            PR_TITLE="chore(openrewrite): ${OPENREWRITE_SCOPE} batch ${idx}/${BATCH_COUNT}"
-            PR_BODY="OpenRewrite-generated Java changes. Scope=${OPENREWRITE_SCOPE}; batch ${idx}/${BATCH_COUNT}; files=${#batch_paths[@]}/${MAX_FILES_PER_PR}; Maven modules=${module_names}. All changed files are visible in the diff; none are excluded."
-            if [[ -z "${PR_NUMBER}" ]]; then
-              gh pr create --base "${TARGET_REF}" --head "${batch_branch}" --title "${PR_TITLE}" --body "${PR_BODY}"
-              PR_NUMBER="$(gh pr list --state open --base "${TARGET_REF}" --json number,headRefName | jq -r --arg head "${batch_branch}" '.[] | select(.headRefName == $head) | .number' | head -n 1)"
-            else gh pr edit "${PR_NUMBER}" --title "${PR_TITLE}" --body "${PR_BODY}"; fi
-            [[ -n "${PR_NUMBER}" ]] || { echo "::error::Could not identify generated PR for ${batch_branch}."; exit 1; }
-            echo "CHECK_REF_${idx}=${batch_branch}" >> "$GITHUB_ENV"; echo "CHECK_SHA_${idx}=${CHECK_SHA}" >> "$GITHUB_ENV"; echo "PR_NUMBER_${idx}=${PR_NUMBER}" >> "$GITHUB_ENV"
-            echo "Published batch ${idx}/${BATCH_COUNT}: PR #${PR_NUMBER}, files=${#batch_paths[@]}, sha=${CHECK_SHA}"
-          done
+            PR_NUMBER="$(gh pr list --state open --json number,headRefName | jq -r --arg head "${TARGET_REF}" '.[] | select(.headRefName == $head) | .number' | head -n 1)"
+            echo "BATCH_COUNT=1" >> "$GITHUB_ENV"; echo "CHECK_REF_1=${TARGET_REF}" >> "$GITHUB_ENV"; echo "CHECK_SHA_1=${CHECK_SHA}" >> "$GITHUB_ENV"; echo "PR_NUMBER_1=${PR_NUMBER}" >> "$GITHUB_ENV"
+          else
+            for idx in $(seq 1 "${BATCH_COUNT}"); do
+              paths_file="${RUNNER_TEMP}/openrewrite-batch-${idx}.paths"; patch_file="${pub}/patches/batch-${idx}.patch"
+              jq -r ".[${idx}-1].paths[]" "${plan}" > "${paths_file}"; mapfile -t batch_paths < "${paths_file}"
+              module_names="$(jq -r ".[${idx}-1].modules | join(\",\")" "${plan}")"; batch_reason="$(jq -r ".[${idx}-1].reason // empty" "${plan}")"
+              git switch --detach "${TARGET_SHA}"; batch_branch="automation/openrewrite-${OPENREWRITE_SCOPE}-${TARGET_SHA:0:12}-batch-${idx}"; git switch -C "${batch_branch}"
+              git apply --binary "${patch_file}"; git add -- "${batch_paths[@]}"; git diff --cached --check
+              mapfile -t staged_paths < <(git diff --cached --name-only | sort); mapfile -t expected_paths < <(printf '%s\n' "${batch_paths[@]}" | sort)
+              diff -u <(printf '%s\n' "${expected_paths[@]}") <(printf '%s\n' "${staged_paths[@]}")
+              git commit -m "chore(openrewrite): ${OPENREWRITE_SCOPE} batch ${idx}/${BATCH_COUNT}"
+              remote_sha="$(git ls-remote origin "refs/heads/${batch_branch}" | awk '{print $1}')"; git push --force-with-lease="refs/heads/${batch_branch}:${remote_sha}" origin "HEAD:${batch_branch}"
+              CHECK_SHA="$(git rev-parse HEAD)"; PR_NUMBER="$(gh pr list --state open --base "${TARGET_REF}" --json number,headRefName | jq -r --arg head "${batch_branch}" '.[] | select(.headRefName == $head) | .number' | head -n 1)"
+              PR_TITLE="chore(openrewrite): ${OPENREWRITE_SCOPE} batch ${idx}/${BATCH_COUNT}"
+              PR_BODY="OpenRewrite-generated Java changes. Scope=${OPENREWRITE_SCOPE}; batch ${idx}/${BATCH_COUNT}; files=${#batch_paths[@]}/95; Maven modules=${module_names}. All changed files are visible; none are excluded."
+              if [[ -n "${batch_reason}" ]]; then PR_BODY+=$'\n\nPartition rationale: '"${batch_reason}"; fi
+              if [[ -z "${PR_NUMBER}" ]]; then gh pr create --base "${TARGET_REF}" --head "${batch_branch}" --title "${PR_TITLE}" --body "${PR_BODY}"; PR_NUMBER="$(gh pr list --state open --base "${TARGET_REF}" --json number,headRefName | jq -r --arg head "${batch_branch}" '.[] | select(.headRefName == $head) | .number' | head -n 1)"; else gh pr edit "${PR_NUMBER}" --title "${PR_TITLE}" --body "${PR_BODY}"; fi
+              [[ -n "${PR_NUMBER}" ]] || { echo "::error::Could not identify generated PR for ${batch_branch}."; exit 1; }
+              echo "CHECK_REF_${idx}=${batch_branch}" >> "$GITHUB_ENV"; echo "CHECK_SHA_${idx}=${CHECK_SHA}" >> "$GITHUB_ENV"; echo "PR_NUMBER_${idx}=${PR_NUMBER}" >> "$GITHUB_ENV"
+              echo "Published batch ${idx}/${BATCH_COUNT}: PR #${PR_NUMBER}, files=${#batch_paths[@]}, sha=${CHECK_SHA}"
+            done
+          fi
 
       - name: Dispatch validation workflows for each generated batch
-        if: steps.target.outputs.apply_required == 'true' && steps.postcondition.outputs.changed == 'true'
+        if: needs.apply.outputs.apply_required == 'true' && needs.apply.outputs.changed == 'true'
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -428,7 +555,7 @@ jobs:
           done
 
       - name: Wait for validation workflows on every generated batch
-        if: steps.target.outputs.apply_required == 'true' && steps.postcondition.outputs.changed == 'true'
+        if: needs.apply.outputs.apply_required == 'true' && needs.apply.outputs.changed == 'true'
         shell: bash
         timeout-minutes: 65
         run: |
@@ -451,14 +578,3 @@ jobs:
           done
           echo "::error::Timed out waiting for validation workflows on generated batches."; exit 1
 
-      - name: Upload automated recipe execution evidence
-        if: always() && steps.target.outputs.apply_required == 'true'
-        uses: actions/upload-artifact@v6
-        with:
-          name: openrewrite-auto-apply-${{ github.run_id }}
-          path: |
-            target/openrewrite/**
-            **/target/rewrite/**
-            **/target/rewrite*
-          if-no-files-found: warn
-          retention-days: 30
