@@ -110,6 +110,20 @@ jobs:
                       return out
                   page += 1
 
+          def all_statuses(head):
+              # Full pagination over the combined commit-status endpoint
+              # (review note 4370030611): its `statuses` array is ONE page —
+              # total_count tells how many entries exist, so a verdict must
+              # never be issued from a partial status list.
+              out, page = [], 1
+              while True:
+                  batch = call(f"/commits/{head}/status?per_page=100&page={page}")
+                  page_statuses = batch.get("statuses", [])
+                  out.extend(page_statuses)
+                  if not page_statuses or len(out) >= batch.get("total_count", len(out)):
+                      return out
+                  page += 1
+
           pull = call(f"/pulls/{pr}")
           head = pull["head"]["sha"]
           base = pull["base"]["ref"]
@@ -127,16 +141,31 @@ jobs:
           # On this repository's no-subscription OSS tier no seats exist at all,
           # so the bot path is gated by every other check being green instead.
           if author_type == "Bot" or author.endswith("[bot]"):
+              # The CI-defining checks must REGISTER before this path may pass
+              # (review note 4370030613): this gate starts on pull_request_target
+              # while CI starts on pull_request, so an early read can see an
+              # empty check list. ci.yml and integration-test.yml run on
+              # pull_request to main with no path filters, so both checks
+              # register for every PR to main (Dependabot included). Waiting for
+              # their COMPLETION stays the job of the pending conditions below.
+              expected_checks = {
+                  "Build & Test (JDK 25)",
+                  "Full Integration Test (JDK 25)",
+              }
               deadline = time.time() + 720  # same poll window as the human path
               seen = set()
               while True:
                   checks = [c for c in all_check_runs(head)
                             if c["name"] != "CodeRabbit Gate"]
+                  missing_expected = expected_checks - {c["name"] for c in checks}
                   pending = [c for c in checks if c["status"] != "completed"]
                   failed = [c for c in checks if c["status"] == "completed"
                             and c.get("conclusion") not in ("success", "skipped", "neutral")]
                   try:
-                      st = call(f"/commits/{head}/status")
+                      # All pages of the combined status list (note 4370030611) —
+                      # the first page alone can hide later entries; the verdict
+                      # must consider every status ever posted on the head.
+                      st_list = all_statuses(head)
                       # Exclude the CodeRabbit status context: on bot PRs it is the
                       # silent-pass artifact this gate exists to replace — it can
                       # report pending or a rate-limit failure while every real
@@ -144,7 +173,7 @@ jobs:
                       # the LATEST status per remaining context (the API can return
                       # several entries per context); an empty list is success.
                       latest_by_ctx = {}
-                      for s in st.get("statuses", []):
+                      for s in st_list:
                           if s.get("context") == "CodeRabbit":
                               continue
                           prev = latest_by_ctx.get(s["context"])
@@ -163,7 +192,7 @@ jobs:
                           print(f"FAIL — bot-exemption path: commit status not green: {s}")
                       print("Bot-authored PRs are gated by every other check instead of a CodeRabbit review (official seat model: docs.coderabbit.ai/management/seat-assignment). Fix the failing checks, then re-run this gate via workflow_dispatch (input: PR number).")
                       sys.exit(1)
-                  if not pending and not pending_statuses:
+                  if not pending and not pending_statuses and not missing_expected:
                       names = sorted({c["name"] for c in checks})
                       print(f"PASS — bot-exemption path: author {author} is a Git-provider bot "
                             f"(type={author_type}); CodeRabbit never reviews bot PRs without a seat "
@@ -173,7 +202,7 @@ jobs:
                             f"status context excluded per the seat model). Human-authored PRs remain "
                             f"fully gated by a completed CodeRabbit review.")
                       sys.exit(0)
-                  note = f"Bot-exemption path: waiting for the other checks on head {head[:10]} — {len(pending)} check-runs pending, {len(pending_statuses)} statuses pending"
+                  note = f"Bot-exemption path: waiting for the other checks on head {head[:10]} — {len(pending)} check-runs pending, {len(pending_statuses)} statuses pending, {len(missing_expected)} expected CI checks not yet registered"
                   if note not in seen:
                       print(note)
                       seen.add(note)
