@@ -36,6 +36,18 @@ public interface DeliveryRequestRepository extends JpaRepository<DeliveryRequest
             + " com.marketplace.delivery.DeliveryRequestStatus.IN_TRANSIT)")
     long countActiveByOrderId(@Param("orderId") UUID orderId);
 
+    /**
+     * The order's already-DELIVERED legs (CodeRabbit agent findings, row
+     * 16): the cancellation gate's delivered-goods guard — a full
+     * cancellation releases ALL reserved inventory and requests a FULL
+     * refund, so it must refuse whenever any package was physically
+     * delivered (the buyer keeps delivered goods; only a future
+     * partial-cancellation operation may refund the undelivered rest).
+     */
+    @Query("select count(r) from DeliveryRequest r where r.orderId = :orderId"
+            + " and r.status = com.marketplace.delivery.DeliveryRequestStatus.DELIVERED")
+    long countDeliveredByOrderId(@Param("orderId") UUID orderId);
+
     // ---- The V229 dispatch-queue reads (the operational board) ----
 
     /** The board's per-state counts — one grouped query, never N+1. */

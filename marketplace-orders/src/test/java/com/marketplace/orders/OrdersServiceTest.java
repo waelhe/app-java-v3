@@ -1017,4 +1017,112 @@ class OrdersServiceTest {
         // users.id the seller-scope gate compares the caller against).
         return Order.placed(consumer, 5000L, "SAR", seller);
     }
+
+    // ------------------------------------------------------------------
+    // CodeRabbit agent findings, row 16 — the delivered-goods guard and
+    // the aggregate-fulfillment reconciliation
+    // ------------------------------------------------------------------
+
+    private Order platformDeliveryOrder() {
+        Order order = Order.placedWithFulfillment(consumer, "SAR", null,
+                4000L, 0L, 0L, true,
+                FulfillmentMethod.PLATFORM_DELIVERY,
+                "221B Baker Street", 51.52, -0.15, 1500L);
+        order.confirm(java.time.Instant.now());
+        return order;
+    }
+
+    @Test
+    void cancelRefusesWhenAPackageWasAlreadyDelivered() {
+        // The finding's exact scenario: a secondary package was delivered,
+        // the buyer cancels the uncollected primary (the active count drops
+        // to zero) and then asks for the FULL cancellation + refund while
+        // keeping the delivered goods. The delivered-goods guard refuses.
+        Order order = platformDeliveryOrder();
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(checkoutDeliveryPort.remainingActiveLegs(order.getId())).thenReturn(0L);
+        when(checkoutDeliveryPort.deliveredLegs(order.getId())).thenReturn(1L);
+
+        assertThatThrownBy(() -> service.cancel(order.getId(), "keep the goods, refund the rest"))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("delivered package cannot be fully cancelled");
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        verify(orderRepository, never()).save(any(Order.class));
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void cancelStillLegalForAnAllCancelledPlatformAggregate() {
+        // The guard's honest negative: nothing delivered at all — the
+        // aggregate stays cancellable through the existing surface.
+        Order order = platformDeliveryOrder();
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(checkoutDeliveryPort.remainingActiveLegs(order.getId())).thenReturn(0L);
+        when(checkoutDeliveryPort.deliveredLegs(order.getId())).thenReturn(0L);
+
+        assertThat(service.cancel(order.getId(), "nothing arrived").getStatus())
+                .isEqualTo(OrderStatus.CANCELLED);
+    }
+
+    @Test
+    void reconcileDeliveryTermination_fulfillsTheOrderCompletedInFact() {
+        // The multi-leg law's liveness gap: one leg DELIVERED (its event
+        // waited behind the still-active sibling), then the sibling is
+        // CANCELLED — the termination fact reconciles the aggregate and the
+        // order fulfills through the same verified edge.
+        Order order = platformDeliveryOrder();
+        UUID terminatedLeg = java.util.UUID.randomUUID();
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(checkoutDeliveryPort.remainingActiveLegs(order.getId())).thenReturn(0L);
+        when(checkoutDeliveryPort.deliveredLegs(order.getId())).thenReturn(1L);
+
+        service.reconcileDeliveryTermination(order.getId(), terminatedLeg);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.FULFILLED);
+        verify(eventPublisher).publishEvent(new OrderFulfilledEvent(order.getId(), consumer));
+    }
+
+    @Test
+    void reconcileDeliveryTermination_nothingDeliveredIsAHonestNoOp() {
+        // Every leg terminal but NOTHING delivered: the aggregate stays
+        // cancellable — no fulfillment, no exception (the redelivery
+        // contract), no state change.
+        Order order = platformDeliveryOrder();
+        UUID terminatedLeg = java.util.UUID.randomUUID();
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(checkoutDeliveryPort.remainingActiveLegs(order.getId())).thenReturn(0L);
+        when(checkoutDeliveryPort.deliveredLegs(order.getId())).thenReturn(0L);
+
+        service.reconcileDeliveryTermination(order.getId(), terminatedLeg);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void reconcileDeliveryTermination_legsStillInFlightIsAHonestNoOp() {
+        Order order = platformDeliveryOrder();
+        UUID terminatedLeg = java.util.UUID.randomUUID();
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(checkoutDeliveryPort.remainingActiveLegs(order.getId())).thenReturn(1L);
+
+        service.reconcileDeliveryTermination(order.getId(), terminatedLeg);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void reconcileDeliveryTermination_anUnknownOrderIsAHonestNoOp() {
+        UUID unknown = java.util.UUID.randomUUID();
+        when(orderRepository.findById(unknown)).thenReturn(Optional.empty());
+
+        service.reconcileDeliveryTermination(unknown, java.util.UUID.randomUUID());
+
+        verify(eventPublisher, never()).publishEvent(any());
+    }
 }
