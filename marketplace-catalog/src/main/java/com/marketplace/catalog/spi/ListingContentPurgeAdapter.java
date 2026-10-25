@@ -2,9 +2,12 @@ package com.marketplace.catalog.spi;
 
 import java.util.UUID;
 
+import com.marketplace.catalog.CatalogService;
 import com.marketplace.shared.api.AuthoredContentPurgePort;
+import com.marketplace.shared.api.CacheInvalidationRequested;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,6 +49,30 @@ import org.springframework.transaction.annotation.Transactional;
  * {@code <> marker} filters — exact counts, zero matches on re-run; no
  * Envers revision for the purge itself (the orchestrator's structured log
  * line is the audit record).
+ *
+ * <p><b>row 1 (agent findings 2026-10-25 — the derived-cache eviction the
+ * purge owes its contract):</b> the §9 listings row measured that the
+ * surviving search indexes are expressions over the table's own columns
+ * (V9 FTS / V34 trgm — they follow the UPDATE), but that measurement
+ * stopped at the database boundary: the four <em>cached</em> public
+ * summaries ({@code CatalogService.CATALOG_CACHE_NAMES} — catalog-active-v4,
+ * catalog-by-category-v4, catalog-search-v4, search-results-v6) hold
+ * <b>copies</b> of the erased title, and a warm cache hit served the
+ * original text after the purge reported success — up to the 1h TTL, a
+ * live contradiction of the purge contract's replacement-marker
+ * behavior. The fix reuses the module's existing shared invalidation
+ * mechanism verbatim (CodeRabbit's own recommendation): when rows were
+ * actually purged, this adapter publishes {@link CacheInvalidationRequested}
+ * <em>inside this method's transaction</em>, and the platform relay
+ * ({@code CacheInvalidationRelay}) evicts the four caches
+ * <em>AFTER_COMMIT</em> — the official Spring transaction-bound event
+ * phase (Spring Framework Reference, Transaction-bound Events: "the
+ * listener is bound to the commit phase of the transaction by default"),
+ * the exact shape every catalog write path and the L33 expiry batch
+ * executor already ride. An idempotent re-run (zero rows) publishes
+ * nothing: the database is unchanged, so the caches hold no new stale
+ * copy (the zero-row re-run stays free of needless full-cache clears —
+ * the expiry executor's {@code !isEmpty()} discipline).
  */
 @Component
 public class ListingContentPurgeAdapter implements AuthoredContentPurgePort {
@@ -53,9 +80,12 @@ public class ListingContentPurgeAdapter implements AuthoredContentPurgePort {
     private static final Logger log = LoggerFactory.getLogger(ListingContentPurgeAdapter.class);
 
     private final JdbcTemplate jdbcTemplate;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public ListingContentPurgeAdapter(JdbcTemplate jdbcTemplate) {
+    public ListingContentPurgeAdapter(JdbcTemplate jdbcTemplate,
+                                      ApplicationEventPublisher eventPublisher) {
         this.jdbcTemplate = jdbcTemplate;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -77,9 +107,18 @@ public class ListingContentPurgeAdapter implements AuthoredContentPurgePort {
                 "UPDATE provider_listings_aud SET title = ? WHERE provider_id = ? "
                         + "AND title IS NOT NULL AND title <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
+        int total = titles + descriptions + titleAudits + descriptionAudits;
         log.info("Listing content purge: userId={}, titles={}, descriptions={}, "
                         + "auditRows={}",
                 userId, titles, descriptions, titleAudits + descriptionAudits);
-        return titles + descriptions + titleAudits + descriptionAudits;
+        if (total > 0) {
+            // AFTER_COMMIT relay: published inside THIS adapter's transaction,
+            // evicted at its commit — the erased text leaves the cached public
+            // summaries (the four CATALOG_CACHE_NAMES caches) with the same
+            // durability point as every catalog write path.
+            eventPublisher.publishEvent(
+                    new CacheInvalidationRequested(CatalogService.CATALOG_CACHE_NAMES));
+        }
+        return total;
     }
 }
