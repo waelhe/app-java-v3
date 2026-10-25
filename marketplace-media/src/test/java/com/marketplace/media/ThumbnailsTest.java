@@ -18,7 +18,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * numeric and live here: width bound honored, aspect preserved, format kept,
  * already-small originals answered as "no duplicate needed" (null), plus the
  * CodeRabbit #263 hardening contracts: raster budget bypass, alpha preserved
- * through scaling.
+ * through scaling — and the row-4 decoder format permit (agent findings
+ * 2026-10-25): a stream outside JPEG/PNG is refused at reader selection,
+ * before any of its plugin's work runs.
  */
 class ThumbnailsTest {
 
@@ -26,7 +28,12 @@ class ThumbnailsTest {
      *  dedicated tests below. */
     private static final long UNLIMITED = 100_000_000L;
 
-    /** Renders a deterministic w×h image and encodes it as JPEG or PNG bytes. */
+    /**
+     * Renders a deterministic w×h image and encodes it as JPEG or PNG bytes.
+     * Any OTHER ImageIO format name (bmp, gif, tiff, …) passes through so
+     * the row-4 permit tests can forge the finding's lying-declaration
+     * uploads with REAL bytes from the JDK's own writers.
+     */
     private static byte[] render(int width, int height, String contentType) throws IOException {
         return render(width, height, contentType, false);
     }
@@ -42,9 +49,16 @@ class ThumbnailsTest {
                         | (withAlpha ? 0x80000000 : 0));
             }
         }
-        String format = "image/png".equals(contentType) ? "png" : "jpeg";
+        String format = switch (contentType) {
+            case "image/png" -> "png";
+            case "image/jpeg" -> "jpeg";
+            default -> contentType; // a raw ImageIO format name (bmp/gif/tiff/wbmp)
+        };
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        ImageIO.write(image, format, out);
+        if (!ImageIO.write(image, format, out)) {
+            throw new IllegalStateException("No ImageIO writer for " + format
+                    + " in this JDK — the permit test cannot forge real bytes");
+        }
         return out.toByteArray();
     }
 
@@ -158,5 +172,52 @@ class ThumbnailsTest {
     @DisplayName("dimensions() reports the encoded image size")
     void dimensionsRead() throws Exception {
         assertThat(Thumbnails.dimensions(render(100, 50, "image/png"))).containsExactly(100, 50);
+    }
+
+    // ------------------------------------------------------------------
+    // Row 4 (agent findings 2026-10-25) — the decoder format permit
+    // ------------------------------------------------------------------
+
+    /**
+     * The finding's exact shape: REAL BMP bytes (the JDK ships both the
+     * writer and the reader) under a processable declaration — small honest
+     * width×height, so the raster budget and the width bound would both
+     * pass and the decode would have reached the BMP reader, whose
+     * allocation follows the separate imageSize header field. The permit is
+     * on the ACTUAL encoded format, never the caller's declaration, and it
+     * fires at reader selection — before any of the BMP plugin's work.
+     */
+    @Test
+    @DisplayName("BMP bytes under a processable declaration are refused at reader selection (row 4)")
+    void bmpBytesAreRefusedBeforeDecoding() throws Exception {
+        byte[] bmp = render(2000, 1000, "bmp");
+
+        assertThatThrownBy(() -> Thumbnails.scaleToMaxWidth(bmp, 640, "image/png", UNLIMITED))
+                .isInstanceOf(IOException.class)
+                .isNotInstanceOf(ThumbnailEncodingException.class)
+                .hasMessageContaining("outside the permitted JPEG/PNG set");
+    }
+
+    /** The permit is the pair, not a BMP special case: gif likewise. */
+    @Test
+    @DisplayName("GIF bytes under a processable declaration are refused the same way")
+    void gifBytesAreRefusedTheSameWay() throws Exception {
+        byte[] gif = render(2000, 1000, "gif");
+
+        assertThatThrownBy(() -> Thumbnails.scaleToMaxWidth(gif, 640, "image/jpeg", UNLIMITED))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("outside the permitted JPEG/PNG set");
+    }
+
+    /**
+     * The diagnostic surface enforces the same permit — a non-permitted
+     * stream never even gets its header read through the refusing plugin.
+     */
+    @Test
+    @DisplayName("dimensions() enforces the same permit — no non-permitted header reads either")
+    void dimensionsEnforcesThePermit() throws Exception {
+        assertThatThrownBy(() -> Thumbnails.dimensions(render(100, 50, "bmp")))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("outside the permitted JPEG/PNG set");
     }
 }

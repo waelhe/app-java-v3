@@ -33,6 +33,21 @@ final class Thumbnails {
 
     private static final Set<String> PROCESSABLE_TYPES = Set.of("image/jpeg", "image/png");
 
+    /**
+     * The decoder's format permit — the canonical {@code getFormatName()}
+     * values of the JDK's JPEG and PNG reader plugins ("JPEG" and "png").
+     * The declared MIME type only gates <em>processing</em> (whether a
+     * thumbnail is attempted at all — {@link #isProcessable}); the DECODER
+     * is selected from the actual bytes, so the stream's own plugin must
+     * be verified to sit inside the same two-format permit before any
+     * raster work (row 4, agent findings 2026-10-25). A crafted stream in
+     * any other registered format — a BMP whose {@code imageSize} header
+     * field commands a gigabyte-scale allocation that the budget-checked
+     * {@code width × height} never sees — is refused at reader selection
+     * and never reaches its decoder.
+     */
+    private static final Set<String> PERMITTED_READER_FORMATS = Set.of("JPEG", "png");
+
     private Thumbnails() {
     }
 
@@ -49,6 +64,21 @@ final class Thumbnails {
      * (aspect ratio preserved, bilinear interpolation) and re-encodes it in
      * the SAME format — PNG stays lossless PNG, JPEG stays JPEG (no
      * cross-format surprises, no alpha flattening, no alpha invention).
+     *
+     * <p><b>Decoder format permit (row 4, agent findings 2026-10-25):</b>
+     * the reader is selected ONCE, its {@code getFormatName()} (the official
+     * ImageIO disclosure of which plugin will decode the stream) is verified
+     * against the JPEG/PNG permit, and the raster is decoded through that
+     * SAME validated reader. The former {@code ImageIO.read()} re-selected a
+     * reader from the raw bytes with no permit check, so crafted bytes in a
+     * non-permitted registered format could pass the header budget on small
+     * {@code width × height} and still reach their own decoder — the BMP
+     * reader allocates from the separate {@code imageSize} header field,
+     * outside the raster budget's math. Bytes outside the permit fail at the
+     * DECODE stage exactly like unreadable bytes: a processing failure the
+     * caller counts and the documented resubmission machinery owns (never a
+     * silent fallback, and never a mislabeled original served as its own
+     * thumbnail).
      *
      * <p><b>Raster budget (CodeRabbit #263 hardening):</b> the source header's
      * {@code width × height} is read through an {@link ImageReader} WITHOUT
@@ -89,21 +119,49 @@ final class Thumbnails {
      */
     static byte[] scaleToMaxWidth(byte[] encoded, int maxWidth, String contentType,
                                   long maxSourcePixels) throws IOException {
-        int[] header = headerDimensions(encoded);
-        if ((long) header[0] * header[1] > maxSourcePixels) {
-            // Raster budget exceeded — never decode (header-only read above).
-            return null;
+        try (ImageInputStream input = ImageIO.createImageInputStream(new ByteArrayInputStream(encoded))) {
+            if (input == null) {
+                throw new IOException("No ImageIO stream for the media bytes");
+            }
+            // ONE reader selection for the whole pass — format-permitted up
+            // front (row 4), header-read for the budget, and the raster
+            // decode through the SAME validated plugin.
+            ImageReader reader = selectPermittedReader(input);
+            try {
+                reader.setInput(input, true, true);
+                int width = reader.getWidth(0);
+                int height = reader.getHeight(0);
+                if (width <= 0 || height <= 0) {
+                    throw new IOException("Image header carries no usable dimensions");
+                }
+                if ((long) width * height > maxSourcePixels) {
+                    // Raster budget exceeded — never decode (header-only read above).
+                    return null;
+                }
+                if (width <= maxWidth) {
+                    // Within the width bound — no scaling needed, no duplicate stored.
+                    return null;
+                }
+                BufferedImage source = reader.read(0);
+                if (source == null) {
+                    // Defensive: the permitted reader decoded no raster — a
+                    // processing failure by contract, not a silent fallback.
+                    throw new IOException("The permitted reader decoded no raster");
+                }
+                return scaleAndEncode(source, maxWidth, contentType);
+            } finally {
+                reader.dispose();
+            }
         }
-        if (header[0] <= maxWidth) {
-            // Within the width bound — no scaling needed, no duplicate stored.
-            return null;
-        }
-        BufferedImage source = ImageIO.read(new ByteArrayInputStream(encoded));
-        if (source == null) {
-            // No registered reader accepted the bytes (corrupt/empty) — a
-            // processing failure by contract, not a silent fallback.
-            throw new IOException("No ImageIO reader accepted the media bytes");
-        }
+    }
+
+    /**
+     * The scaling half (unchanged math): bilinear, aspect preserved,
+     * same-format re-encode — split out so the reader lifecycle stays
+     * entirely inside {@link #scaleToMaxWidth}'s try-with-resources.
+     */
+    private static byte[] scaleAndEncode(BufferedImage source, int maxWidth, String contentType)
+            throws IOException {
         double scale = (double) maxWidth / source.getWidth();
         int targetWidth = maxWidth;
         int targetHeight = (int) Math.round(source.getHeight() * scale);
@@ -130,30 +188,17 @@ final class Thumbnails {
 
     /**
      * Reads the pixel dimensions of the encoded image from its header — used
-     * by the raster budget gate, tests and diagnostics; same failure contract
-     * as {@link #scaleToMaxWidth}. Header-only: no raster is decoded.
+     * by tests and diagnostics; same failure contract as
+     * {@link #scaleToMaxWidth}, INCLUDING the JPEG/PNG reader permit (row 4):
+     * a stream in any other registered format is refused before its reader
+     * runs, header reads included. Header-only: no raster is decoded.
      */
     static int[] dimensions(byte[] encoded) throws IOException {
-        return headerDimensions(encoded);
-    }
-
-    /**
-     * The header-only dimension read (official ImageReader contract): picks
-     * the registered reader for the stream and asks it for
-     * {@code getWidth(0)} / {@code getHeight(0)} — both answered from the
-     * format header, so a gigapixel declaration costs a few bytes of parsing,
-     * not the raster allocation a full {@link ImageIO#read} would make.
-     */
-    private static int[] headerDimensions(byte[] encoded) throws IOException {
         try (ImageInputStream input = ImageIO.createImageInputStream(new ByteArrayInputStream(encoded))) {
             if (input == null) {
                 throw new IOException("No ImageIO stream for the media bytes");
             }
-            Iterator<ImageReader> readers = ImageIO.getImageReaders(input);
-            if (!readers.hasNext()) {
-                throw new IOException("No ImageIO reader accepted the media bytes");
-            }
-            ImageReader reader = readers.next();
+            ImageReader reader = selectPermittedReader(input);
             try {
                 reader.setInput(input, true, true);
                 int width = reader.getWidth(0);
@@ -166,6 +211,39 @@ final class Thumbnails {
                 reader.dispose();
             }
         }
+    }
+
+    /**
+     * The format permit's gate (row 4): ImageIO picks the plugin by sniffing
+     * the bytes (the official reader-selection contract —
+     * {@link ImageIO#getImageReaders}), and the FIRST accepting reader is
+     * checked against {@link #PERMITTED_READER_FORMATS} through its
+     * {@link ImageReader#getFormatName()} BEFORE any header or raster work.
+     * A reader outside the permit is disposed and refused with the decode-stage
+     * IOException — the caller's failure contract (publication FAILED, retried
+     * by the documented machinery; the same never-silent-drop rule as
+     * unreadable bytes). {@code equalsIgnoreCase} on the canonical names
+     * so a differently-cased registration of the SAME plugin still passes,
+     * while every other format (bmp, gif, tiff, wbmp, "jpeg 2000", …) fails
+     * the equality outright.
+     */
+    private static ImageReader selectPermittedReader(ImageInputStream input) throws IOException {
+        Iterator<ImageReader> readers = ImageIO.getImageReaders(input);
+        if (!readers.hasNext()) {
+            // No registered reader accepted the bytes (corrupt/empty) — a
+            // processing failure by contract, not a silent fallback.
+            throw new IOException("No ImageIO reader accepted the media bytes");
+        }
+        ImageReader reader = readers.next();
+        String format = reader.getFormatName();
+        boolean permitted = PERMITTED_READER_FORMATS.stream()
+                .anyMatch(allowed -> allowed.equalsIgnoreCase(format));
+        if (!permitted) {
+            reader.dispose();
+            throw new IOException("Image format '" + format
+                    + "' is outside the permitted JPEG/PNG set — refusing to decode");
+        }
+        return reader;
     }
 
     private static byte[] encode(BufferedImage image, String contentType) throws IOException {
