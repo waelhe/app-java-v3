@@ -2,7 +2,7 @@ name: OpenRewrite Auto Apply
 
 on:
   push:
-    branches: [main, feat/openrewrite-current-free-catalog]
+    branches: ['**']
     paths:
       - 'pom.xml'
       - '**/pom.xml'

@@ -614,6 +614,7 @@ class PlatformGovernanceFilesTest {
         assertThat(workflow)
                 .as("the automatic path applies only activated recipes and fails closed unless the source reaches a fixed point")
                 .contains("org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:runNoFork")
+                .contains("branches: ['**']")
                 .contains("org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:dryRunNoFork")
                 .contains("for pass in $(seq 1 5); do")
                 .contains("cancel-in-progress: false")
