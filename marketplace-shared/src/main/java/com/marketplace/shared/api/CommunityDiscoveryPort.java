@@ -42,11 +42,30 @@ public interface CommunityDiscoveryPort {
     PagedResponse<DiscoveryEventCard> findUpcomingEvents(UUID locationId, PagedRequest page);
 
     /**
-     * The newest VISIBLE posts authored by the given users (the
-     * followed-sources rail's community leg — the reader's explicit
-     * follow choice, never an algorithmic substitute, AC-20-05).
+     * The newest VISIBLE posts the given users authored INSIDE the
+     * caller's neighborhood (the followed-sources rail's community leg —
+     * the reader's explicit follow choice, never an algorithmic
+     * substitute, AC-20-05).
+     *
+     * <p><b>The neighborhood scope is load-bearing (row 24, CWE-862):</b>
+     * the follow relationship widens the AUTHOR axis only — never the
+     * geographic one. A unilateral follow must never surface post text
+     * the normal post-read boundary denies the same caller: the
+     * {@code getFeed}/{@code getPost} gates scope every read to the
+     * caller's active-membership neighborhood, so the followed-authors
+     * query composes the SAME {@code locationId} predicate the feed
+     * rides. A followed author's post from another neighborhood is
+     * absent here by construction — the adapter enforces the scope, the
+     * port never trusts the caller to re-filter (the house rule this
+     * interface's own javadoc states).</p>
+     *
+     * @param locationId the caller's ACTIVE neighborhood — the same
+     *                   membership-derived scope every community read
+     *                   composes
+     * @param authorIds  the followed authors (the caller's stored USER
+     *                   follows)
      */
-    PagedResponse<DiscoveryPostCard> findRecentByAuthors(Set<UUID> authorIds, PagedRequest page);
+    PagedResponse<DiscoveryPostCard> findRecentByAuthors(UUID locationId, Set<UUID> authorIds, PagedRequest page);
 
     /** One neighborhood post as the projection speaks it. */
     record DiscoveryPostCard(

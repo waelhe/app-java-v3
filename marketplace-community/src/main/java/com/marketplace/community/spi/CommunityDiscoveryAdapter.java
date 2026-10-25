@@ -156,7 +156,7 @@ public class CommunityDiscoveryAdapter implements CommunityDiscoveryPort {
     }
 
     @Override
-    public PagedResponse<DiscoveryPostCard> findRecentByAuthors(Set<UUID> authorIds, PagedRequest page) {
+    public PagedResponse<DiscoveryPostCard> findRecentByAuthors(UUID locationId, Set<UUID> authorIds, PagedRequest page) {
         // The honest empty page: an empty whitelist is an empty answer,
         // never a query (PagedResponse.empty's own documented contract).
         if (authorIds == null || authorIds.isEmpty()) {
@@ -167,8 +167,15 @@ public class CommunityDiscoveryAdapter implements CommunityDiscoveryPort {
                     "findRecentByAuthors accepts at most " + MAX_AUTHOR_IDS
                             + " author ids, got " + authorIds.size());
         }
+        // Row 24 (CWE-862): the follow widens the AUTHOR axis only — the
+        // geographic axis stays the caller's active neighborhood, the SAME
+        // hasLocation predicate every neighborhood-scoped rail here
+        // composes. A unilateral follow therefore can never surface post
+        // text the normal post-read boundary (getFeed/getPost's
+        // membership-derived scope) denies the same caller.
         Page<NeighborhoodPost> result = postRepository.findAll(
-                NeighborhoodPostSpecifications.isVisible()
+                NeighborhoodPostSpecifications.hasLocation(locationId)
+                        .and(NeighborhoodPostSpecifications.isVisible())
                         .and((root, query, cb) -> root.get("authorId").in(authorIds)),
                 pageableOf(page, RECENCY_SORT));
         return PagedResponse.of(result.map(CommunityDiscoveryAdapter::toPostCard));
