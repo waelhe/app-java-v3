@@ -49,7 +49,8 @@ class PricingServiceWindowTest {
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
 
     private final PricingService service = new PricingService(
-            ruleRepository, weekendRuleRepository, seasonalRateRepository, eventPublisher, null);
+            ruleRepository, weekendRuleRepository, seasonalRateRepository, eventPublisher, null,
+            new PricingProperties(PricingProperties.DEFAULT_MAX_STAY_NIGHTS));
 
     private void givenNoActiveRule() {
         when(ruleRepository.findByCategoryAndActiveTrue(any())).thenReturn(Optional.empty());
@@ -217,5 +218,66 @@ class PricingServiceWindowTest {
         verify(weekendRuleRepository, never()).findByListingId(any());
         verify(seasonalRateRepository, never()).findByListingIdOrderByFromDateAsc(any());
         verify(ruleRepository, never()).findByCategoryAndActiveTrue(any());
+    }
+
+    // ------------------------------------------------------------------
+    // Row 11 (agent findings 2026-10-25 — CWE-834): the business bound
+    // ------------------------------------------------------------------
+
+    /**
+     * Row 11 — the finding's exact shape: a window spanning far beyond any
+     * supported stay (the finding's measured exploit carries a
+     * +200000-year endpoint) is 400 on BOTH surfaces BEFORE any repository
+     * read. The per-date loop is finite by construction now; the reversed
+     * window's own never() triple above is the same proof shape.
+     */
+    @Test
+    void oversizedWindow_isRejectedBeforeAnyRead_onBothSurfaces() {
+        Instant farEnd = Instant.parse("9999-01-01T10:00:00Z"); // ~7,900 years of priced dates
+
+        assertThrows(com.marketplace.shared.api.BadRequestException.class,
+                () -> service.calculateBookingTotalCents(LISTING, BASE, CHECK_IN, farEnd));
+        assertThrows(com.marketplace.shared.api.BadRequestException.class,
+                () -> service.calculatePrice(LISTING, BASE, "services", CHECK_IN, farEnd));
+
+        verify(weekendRuleRepository, never()).findByListingId(any());
+        verify(seasonalRateRepository, never()).findByListingIdOrderByFromDateAsc(any());
+        verify(ruleRepository, never()).findByCategoryAndActiveTrue(any());
+    }
+
+    /**
+     * Row 11 — the boundary is inclusive: a window of EXACTLY the
+     * configured nights (365 by default) is priced, not rejected. A
+     * covering seasonal range makes the total deterministic:
+     * 365 nights x 5 000 cents.
+     */
+    @Test
+    void windowAtTheExactBound_isPricedNotRejected() {
+        Instant in = Instant.parse("2026-01-01T00:00:00Z");
+        Instant out = Instant.parse("2027-01-01T00:00:00Z"); // 365 nights (2026 is not a leap year)
+        givenSeasonalRanges(range("2025-12-01", "2027-03-01", 5_000L));
+
+        long total = service.calculateBookingTotalCents(LISTING, BASE, in, out);
+
+        assertEquals(365L * 5_000L, total);
+    }
+
+    /**
+     * Row 11 — the bound is a business knob, not a hardcode: a deployment
+     * configured for 3-night stays rejects the 4-night window before any
+     * read, on the same gate the default bound rides.
+     */
+    @Test
+    void configuredBound_isEnforcedFromConfiguration() {
+        PricingService tight = new PricingService(ruleRepository, weekendRuleRepository,
+                seasonalRateRepository, eventPublisher, null, new PricingProperties(3));
+
+        Instant fourNightsIn = Instant.parse("2026-01-15T14:00:00Z");
+        Instant fourNightsOut = Instant.parse("2026-01-19T11:00:00Z");
+
+        assertThrows(com.marketplace.shared.api.BadRequestException.class,
+                () -> tight.calculateBookingTotalCents(LISTING, BASE, fourNightsIn, fourNightsOut));
+        verify(weekendRuleRepository, never()).findByListingId(any());
+        verify(seasonalRateRepository, never()).findByListingIdOrderByFromDateAsc(any());
     }
 }

@@ -23,7 +23,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(SpringExtension.class)
-@ContextConfiguration(classes = { AvailabilityService.class })
+@ContextConfiguration(classes = { AvailabilityService.class, AvailabilityConfig.class })
 @EnableMethodSecurity(proxyTargetClass = true)
 class AvailabilityServiceSecurityTest {
 
