@@ -729,6 +729,55 @@ class ReviewsServiceTest {
                         ev instanceof com.marketplace.shared.api.ReviewUpdatedEvent));
     }
 
+    // -- B-19/C.11 row 3: the automatic engine's narrow internal path ----
+
+    @Test
+    void hideByModerationEngine_flipsPublishedReviewAndReturnsItsAuthor() {
+        UUID reviewId = Instancio.create(UUID.class);
+        UUID authorId = Instancio.create(UUID.class);
+        Review published = Review.create(Instancio.create(UUID.class), authorId,
+                Instancio.create(UUID.class), 5, "reported");
+        when(reviewRepository.findById(reviewId)).thenReturn(Optional.of(published));
+
+        // Row 3 — the engine path: the SAME physics as the manual hide,
+        // with no ADMIN gate — the ordinary reporter's qualifying report
+        // commits the hide together with its creation (no
+        // AccessDeniedException rolling the unit back).
+        java.util.Optional<UUID> author = service.hideByModerationEngine(reviewId);
+
+        assertEquals(authorId, author.orElseThrow());
+        assertEquals(ReviewModerationStatus.HIDDEN_BY_MODERATOR, published.getModerationStatus());
+        verify(eventPublisher).publishEvent(
+                org.mockito.ArgumentMatchers.argThat((Object ev) ->
+                        ev instanceof com.marketplace.shared.api.ReviewUpdatedEvent));
+        // The same "reviews" cache eviction the manual path publishes —
+        // one physics, two authority paths. The eviction's key is the
+        // ENTITY's own id (hidePublishedReview reads the row by the
+        // caller's id and publishes review.getId()) — in production the
+        // two are the same value; the mock's entity carries its own
+        // generated id, so the pin compares against it.
+        verify(eventPublisher).publishEvent(
+                org.mockito.ArgumentMatchers.argThat((Object ev) -> ev instanceof
+                        com.marketplace.shared.api.CacheInvalidationRequested invalidation
+                        && invalidation.cacheNames().contains("reviews")
+                        && invalidation.key().equals(published.getId())
+                        && !invalidation.clearAll()));
+    }
+
+    @Test
+    void hideByModerationEngine_pendingOrHiddenIsTheDocumentedSkip() {
+        UUID reviewId = Instancio.create(UUID.class);
+        Review queued = Review.createOrganic(Instancio.create(UUID.class),
+                Instancio.create(UUID.class), null, 5, "queued");
+        queued.queueForReview();
+        when(reviewRepository.findById(reviewId)).thenReturn(Optional.of(queued));
+
+        assertTrue(service.hideByModerationEngine(reviewId).isEmpty());
+        verify(eventPublisher, never()).publishEvent(
+                org.mockito.ArgumentMatchers.argThat((Object ev) ->
+                        ev instanceof com.marketplace.shared.api.ReviewUpdatedEvent));
+    }
+
     // -- W1: the helpful votes (§4.5) --------------------------------------
 
     @Test
