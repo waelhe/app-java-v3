@@ -113,11 +113,23 @@ public class AdBillingBatchExecutor {
                 campaign.getListingId(), windowStart, horizon);
         long clicks = clicksRepository.sumClicksForCampaignBetween(
                 campaign.getId(), windowStart, horizon);
-        long computed = Math.addExact(
-                Math.multiplyExact(impressions, campaign.getImpressionPriceCents()),
-                Math.multiplyExact(clicks, campaign.getClickPriceCents()));
+        // CodeRabbit agent findings row 31 (CWE-190): the accepted campaign
+        // prices carry no upper bound, so the checked arithmetic used to
+        // throw ArithmeticException BEFORE the budget cap could answer —
+        // the run's loop then died on the same campaign every day. The
+        // exact sum now runs on BigInteger and the remaining-budget cap is
+        // applied BEFORE any long conversion: min(uncapped, remaining) is
+        // always <= remaining < Long.MAX_VALUE (the campaign budget is a
+        // long and hasRemainingBudget guarantees the difference positive),
+        // so longValueExact() can never overflow. Any prices a provider
+        // can settle with simply cap at the budget — the campaign's own
+        // «حملة بميزانية تنتهي بنفادها» law.
+        java.math.BigInteger uncapped = java.math.BigInteger.valueOf(impressions)
+                .multiply(java.math.BigInteger.valueOf(campaign.getImpressionPriceCents()))
+                .add(java.math.BigInteger.valueOf(clicks)
+                        .multiply(java.math.BigInteger.valueOf(campaign.getClickPriceCents())));
         long remaining = campaign.getBudgetCents() - campaign.getConsumedCents();
-        long amount = Math.min(computed, remaining);
+        long amount = uncapped.min(java.math.BigInteger.valueOf(remaining)).longValueExact();
 
         // The marker's atomic advance — same transaction as the charge
         // insert below (and the consume move): a crash or a lost overlap
@@ -156,7 +168,7 @@ public class AdBillingBatchExecutor {
         log.info("Ad window [{}, {}) of campaign {} frozen: {} impressions x {} + {} clicks x {} "
                         + "= {} of {} computed, capped at {} remaining — {} {} billed",
                 windowStart, horizon, campaignId, impressions, campaign.getImpressionPriceCents(),
-                clicks, campaign.getClickPriceCents(), amount, computed, remaining,
+                clicks, campaign.getClickPriceCents(), amount, uncapped, remaining,
                 amount, campaign.getCurrency());
     }
 
