@@ -11,9 +11,16 @@ name: CodeRabbit Gate
 #   to weaken this gate from inside their PR).
 # - pull_request_review is deliberately ABSENT: empirically proven (run
 #   40033600763) that it executes the pull request's copy of this file.
-# - Re-evaluation after a review completes: workflow_dispatch (safe manual
-#   run — comment '@coderabbitai review' on the PR, then dispatch this
-#   workflow with the PR number).
+# - Re-evaluation after a review completes (head unchanged): re-run the
+#   gate RUN itself (Actions → Re-run). The re-run replays the original
+#   pull_request_target event context (original GITHUB_SHA/GITHUB_REF),
+#   while the script reads the PR's CURRENT head and its reviews at
+#   execution time, and issues a fresh check-run ON THE PR HEAD (measured
+#   2026-10-25 on #728: re-run attempt 2 created check-run 121135430521
+#   on head 6a35d581e2). If the head moved, synchronize fires a fresh
+#   gate run automatically. workflow_dispatch stays available for ad-hoc
+#   evaluation from main, but its verdict lands on main's head, not the
+#   PR head (measured on #727/#726).
 #
 # Verdict model (human-authored PRs): the LATEST completed coderabbitai[bot]
 # review whose commit_id equals the PR's current head decides; error/rate-
@@ -64,7 +71,13 @@ jobs:
   gate:
     name: CodeRabbit Gate
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 75-minute job ceiling (gap closure 2026-10-25): the bot-exemption path
+    # polls up to 60 minutes so a fresh PR's full CI matrix (~25-30 min
+    # measured) completes INSIDE one gate run — future Dependabot PRs go
+    # green with zero manual re-runs. Public repository: Actions minutes are
+    # free. The human path's decision deadline stays 720s — this only raises
+    # the roof, not its logic.
+    timeout-minutes: 75
     steps:
       - name: Gate - CodeRabbit review (human PRs) or all-checks-green (bot PRs)
         env:
@@ -152,7 +165,14 @@ jobs:
                   "Build & Test (JDK 25)",
                   "Full Integration Test (JDK 25)",
               }
-              deadline = time.time() + 720  # same poll window as the human path
+              # 60-minute window (gap closure 2026-10-25): the CI matrix
+              # takes ~25-30 min (measured on #727: 07:39→08:04), so the
+              # previous 12-minute window would time out before CI finishes
+              # and leave every future bot PR red until manually re-run.
+              # Poll load: ~3 API calls per 60s cycle ≈ 180/hour, well under
+              # the GITHUB_TOKEN limit of 1,000/hour per repository
+              # (docs.github.com/en/rest/rate-limit).
+              deadline = time.time() + 3600
               seen = set()
               while True:
                   checks = [c for c in all_check_runs(head)
@@ -190,7 +210,7 @@ jobs:
                           print(f"FAIL — bot-exemption path: check '{c['name']}' concluded '{c.get('conclusion')}'.")
                       for s in bad_statuses:
                           print(f"FAIL — bot-exemption path: commit status not green: {s}")
-                      print("Bot-authored PRs are gated by every other check instead of a CodeRabbit review (official seat model: docs.coderabbit.ai/management/seat-assignment). Fix the failing checks, then re-run this gate via workflow_dispatch (input: PR number).")
+                      print("Bot-authored PRs are gated by every other check instead of a CodeRabbit review (official seat model: docs.coderabbit.ai/management/seat-assignment). Fix the failing checks, then re-run this gate run itself (Actions → Re-run).")
                       sys.exit(1)
                   if not pending and not pending_statuses and not missing_expected:
                       names = sorted({c["name"] for c in checks})
@@ -207,13 +227,13 @@ jobs:
                       print(note)
                       seen.add(note)
                   if time.time() > deadline:
-                      print("FAIL — bot-exemption path: the other checks did not complete within the poll window. Re-run this gate via workflow_dispatch (CodeRabbit Gate workflow, input: PR number) once they finish.")
+                      print("FAIL — bot-exemption path: the other checks did not complete within the 60-minute window. Re-run this gate run itself (Actions → Re-run) once they finish — the re-run re-evaluates the PR's current head and issues a fresh check-run on this PR head (measured on #728).")
                       sys.exit(1)
-                  time.sleep(30)
+                  time.sleep(60)
 
           # ---------- Human path: a completed CodeRabbit review decides (unchanged) ----------
           BAD_STATUS = re.compile(r"rate limit|error|fail", re.I)
-          deadline = time.time() + 720  # poll up to 12 minutes; re-run via workflow_dispatch afterwards
+          deadline = time.time() + 720  # poll up to 12 minutes; re-run the gate run afterwards if it expires
           last_note = ""
           while True:
               reviews = [r for r in all_reviews(pr)
@@ -251,7 +271,7 @@ jobs:
                   print(note)
                   last_note = note
               if time.time() > deadline:
-                  print("FAIL — no completed CodeRabbit review on the current head within the poll window. This repository gets no automatic reviews (fewer than 10 stars): comment '@coderabbitai review' on the PR, then re-run this gate via workflow_dispatch (CodeRabbit Gate workflow, input: PR number).")
+                  print("FAIL — no completed CodeRabbit review on the current head within the poll window. This repository gets no automatic reviews (fewer than 10 stars): comment '@coderabbitai review' on the PR, then re-run this gate run itself (Actions → Re-run — the re-run re-evaluates the PR's current head and issues a fresh check-run on this PR head, measured on #728).")
                   sys.exit(1)
               time.sleep(30)
           PY
