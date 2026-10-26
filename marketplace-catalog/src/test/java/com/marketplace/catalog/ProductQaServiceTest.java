@@ -74,7 +74,7 @@ class ProductQaServiceTest {
 
     @Test
     void askAnswers404ForUnknownProduct_BeforeAnyWrite() {
-        when(productRepository.findById(productId)).thenReturn(Optional.empty());
+        when(storefrontRepository.findActiveProduct(productId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.ask(productId, "Does it ship with a filter basket?", authentication))
                 .isInstanceOf(ResourceNotFoundException.class)
@@ -84,7 +84,7 @@ class ProductQaServiceTest {
 
     @Test
     void askSavesWithTheCallerAsAsker() {
-        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+        when(storefrontRepository.findActiveProduct(productId)).thenReturn(Optional.of(product));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
         when(questionRepository.save(any(ProductQuestion.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -178,7 +178,25 @@ class ProductQaServiceTest {
         // FIRST — an unknown product never answers an empty 200 page, and
         // a soft-deleted product's still-live question rows are absent
         // exactly as the product itself is (the community feed's posture).
-        when(productRepository.findById(productId)).thenReturn(Optional.empty());
+        when(storefrontRepository.findActiveProduct(productId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getQuestions(productId,
+                PageRequest.of(0, 20)))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(questionRepository, never())
+                .findByProductIdOrderByCreatedAtDescIdDesc(any(UUID.class), any(Pageable.class));
+    }
+
+    @Test
+    void feedAnswersTheSame404ForASuspendedProduct_EvenThoughItsRowExists() {
+        // Row 20 (agent findings 2026-10-26): the finding's own scenario —
+        // a suspended/archived product's row EXISTS (findById answers it)
+        // while the ACTIVE-only lookup answers empty. The public question
+        // feed must serve the SAME unavailable response the hidden product
+        // detail serves: the honest 404 BEFORE any feed query, so the
+        // questions and official answers disappear with their product.
+        when(storefrontRepository.findActiveProduct(productId)).thenReturn(Optional.empty());
+        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
 
         assertThatThrownBy(() -> service.getQuestions(productId,
                 PageRequest.of(0, 20)))
@@ -193,7 +211,7 @@ class ProductQaServiceTest {
         ProductQuestion unanswered = ProductQuestion.ask(productId, UUID.randomUUID(), "Colors?");
         ProductAnswer official = ProductAnswer.publish(answered.getId(), caller, "Yes — 12 months.");
         Pageable pageable = PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id")));
-        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+        when(storefrontRepository.findActiveProduct(productId)).thenReturn(Optional.of(product));
         when(questionRepository.findByProductIdOrderByCreatedAtDescIdDesc(productId, pageable))
                 .thenReturn(new PageImpl<>(List.of(answered, unanswered), pageable, 2));
         when(answerRepository.findByQuestionIdIn(List.of(answered.getId(), unanswered.getId())))
