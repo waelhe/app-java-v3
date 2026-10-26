@@ -791,6 +791,16 @@ class UserServiceTest {
         // reference to auth_users, and the ban-vs-verification invariant
         // (a pseudonymized account holds no redemption right).
         verify(authActionTokenService).invalidateOutstanding("target-subject");
+        // Agent findings 2026-10-26T13:11 export, row 8: the FK leg — the
+        // token HISTORY physically leaves before the login row dies, in the
+        // documented order (consumption first for the audit revision, then
+        // the physical removal, then the identity's death).
+        verify(authActionTokenService).purgeHistory("target-subject");
+        org.mockito.InOrder fkLegOrder = org.mockito.inOrder(
+                authActionTokenService, userDetailsManager);
+        fkLegOrder.verify(authActionTokenService).invalidateOutstanding("target-subject");
+        fkLegOrder.verify(authActionTokenService).purgeHistory("target-subject");
+        fkLegOrder.verify(userDetailsManager).deleteUser("target-subject");
         // The L23 flip channel is never touched (pseudonymization deletes,
         // it does not disable).
         verify(userDetailsManager, never()).updateUser(any());

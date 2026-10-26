@@ -885,10 +885,12 @@ class PaymentsServiceTest {
         UUID providerId = create(UUID.class);
         UUID campaignId = create(UUID.class);
         String key = "ad-debit-" + campaignId + "-2026-10-01";
-        PaymentIntent existing = of(PaymentIntent.class)
-                .set(field(PaymentIntent::getConsumerId), providerId)
-                .set(field(PaymentIntent::getIdempotencyKey), key)
-                .create();
+        // Row 39 (agent findings 2026-10-26T13:11): the replay answers only
+        // the window's OWN payable — the existing intent carries the same
+        // binding tuple (origin, campaign, amount, currency) the listener
+        // derives from the frozen window.
+        PaymentIntent existing = PaymentIntent.createForAds(providerId, campaignId,
+                7500L, "SAR", key, null);
         when(intentRepository.findByIdempotencyKey(key)).thenReturn(Optional.of(existing));
 
         PaymentIntent result = service.createAdIntent(providerId, campaignId,

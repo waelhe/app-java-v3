@@ -290,6 +290,50 @@ class OrdersDeliveryPortTest {
         assertThat(selection.currency()).isEqualTo("SAR");
     }
 
+    // ------------------------------------------------------------------
+    // Agent findings 2026-10-26T13:11 export, row 41 — the settlement
+    // edge's resolution: the order a settled intent pays for, present
+    // only when CONFIRMED with a known seller; every other shape is the
+    // honest absent, never an exception.
+    // ------------------------------------------------------------------
+
+    @Test
+    void findOrderFulfillmentByPaymentIntentAnswersTheConfirmedSelection() {
+        Order order = Order.placedWithFulfillment(buyerId, "SAR", sellerId,
+                3000L, 0, 0, true, FulfillmentMethod.PLATFORM_DELIVERY,
+                "Riyadh downtown", 24.7136, 46.6753, 1500L);
+        order.confirm(Instant.now());
+        UUID paymentIntentId = UUID.randomUUID();
+        when(orderRepository.findByPaymentIntentId(paymentIntentId)).thenReturn(Optional.of(order));
+
+        java.util.Optional<com.marketplace.shared.api.OrderFulfillmentSelection> selection =
+                service().findOrderFulfillmentByPaymentIntent(paymentIntentId);
+
+        assertThat(selection).isPresent();
+        assertThat(selection.get().platformDelivery()).isTrue();
+        assertThat(selection.get().orderId()).isEqualTo(order.getId());
+        assertThat(selection.get().buyerId()).isEqualTo(buyerId);
+    }
+
+    @Test
+    void findOrderFulfillmentByPaymentIntentIsAbsentForNonOrderIntentsAndNonConfirmedOrders() {
+        // A booking/ad/loan intent resolves no order at all.
+        UUID foreignIntentId = UUID.randomUUID();
+        when(orderRepository.findByPaymentIntentId(foreignIntentId)).thenReturn(Optional.empty());
+        assertThat(service().findOrderFulfillmentByPaymentIntent(foreignIntentId)).isEmpty();
+
+        // An order still PLACED (the seller-first flow before confirmation)
+        // is NOT the settlement edge's to answer — the confirmation edge
+        // still owes its leg once payment verifies... and an unconfirmed
+        // order's selection read would throw, so the edge answers absent.
+        Order placed = Order.placedWithFulfillment(buyerId, "SAR", sellerId,
+                3000L, 0, 0, true, FulfillmentMethod.PLATFORM_DELIVERY,
+                "Riyadh downtown", 24.7136, 46.6753, 1500L);
+        UUID placedIntentId = UUID.randomUUID();
+        when(orderRepository.findByPaymentIntentId(placedIntentId)).thenReturn(Optional.of(placed));
+        assertThat(service().findOrderFulfillmentByPaymentIntent(placedIntentId)).isEmpty();
+    }
+
     @Test
     void aCompletingNonFinalLegHoldsTheOrderOpen() {
         Order order = Order.placedWithFulfillment(buyerId, "SAR", sellerId,

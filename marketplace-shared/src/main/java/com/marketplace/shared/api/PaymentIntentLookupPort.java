@@ -17,4 +17,18 @@ public interface PaymentIntentLookupPort {
      * caller's own absent-intent semantics apply per leg.
      */
     List<PaymentIntentDetails> findAllById(Collection<UUID> paymentIntentIds);
+
+    /**
+     * Agent findings 2026-10-26T13:11 export, row 41: the checkout
+     * delivery leg's PAYMENT PROOF. A dispatch-ready platform-delivery
+     * leg requires verified payment for the order's frozen payable — a
+     * seller's bare confirmation never proves the money moved. The
+     * answer is the payments module's own state vocabulary decision:
+     * the settled family (SUCCEEDED, or the refunded family that
+     * implies the money landed at least once) — exactly the family the
+     * order auto-refund edge treats as collected. Absent intent or any
+     * unsettled state answers false: the honest "not yet verified",
+     * never an exception (the FeatureGatePort's absent-row law).
+     */
+    boolean isOrderPayableSettled(UUID orderId);
 }

@@ -44,8 +44,29 @@ public interface SystemSettingsPort {
      */
     <T> Optional<T> get(String key, Class<T> type);
 
+    /**
+     * The admission read — authoritative, never cached (agent findings
+     * 2026-10-26T13:11 export, row 15). A policy that DECIDES whether a
+     * write is admitted must read the committed row, not the cache: the
+     * cached path's own documented race — a read that began before an
+     * administrator's change commits can populate the cache AFTER the
+     * change's AFTER_COMMIT eviction (the {@code @Cacheable}
+     * put-after-evict window), and every later request then trusts the
+     * obsolete policy, admitting writes the platform already restricted.
+     * The {@link FeatureGatePort} precedent verbatim: a request-time
+     * decision gate is a cheap point read, safe to call on every request,
+     * honest about an absent row — never a cache hop. Benign read
+     * surfaces (display, reporting) keep the cached accessors above.
+     */
+    Optional<String> getStringAuthoritative(String key);
+
     default String getStringOrDefault(String key, String defaultValue) {
         return getString(key).orElse(defaultValue);
+    }
+
+    /** The admission read's own default form — the caller's built behavior. */
+    default String getStringAuthoritativeOrDefault(String key, String defaultValue) {
+        return getStringAuthoritative(key).orElse(defaultValue);
     }
 
     default int getIntOrDefault(String key, int defaultValue) {

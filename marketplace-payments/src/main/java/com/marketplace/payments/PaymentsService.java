@@ -514,7 +514,30 @@ public class PaymentsService implements PaymentsSpi {
                 if (!existing.get().getConsumerId().equals(providerId)) {
                     throw new AccessDeniedException("Idempotency key belongs to another payer");
                 }
-                return existing.get();
+                // Agent findings 2026-10-26T13:11 export, row 39: the replay
+                // decision must return THE window's own payable — a
+                // same-payer intent from the caller-writable booking
+                // namespace that pre-occupied the key must never satisfy
+                // the ad bill's line (the billing event would be treated
+                // as handled while its AD intent was never created). The
+                // complete binding check (origin, campaign, amount,
+                // currency) mirrors the loan settlement's own
+                // authoritative-payable verification — the honest refusal
+                // on any mismatch, never a silent adoption of unrelated
+                // money. The booking surface's own prefix refusal
+                // (isServerPayableKey) is the structural isolation layer;
+                // this is the defense in depth on the reuse path.
+                PaymentIntent found = existing.get();
+                if (!PaymentIntent.ORIGIN_AD.equals(found.getOrigin())
+                        || !campaignId.equals(found.getAdCampaignId())
+                        || found.getAmountCents() == null || found.getAmountCents() != amountCents
+                        || found.getCurrency() == null || !found.getCurrency().equals(currency)) {
+                    throw new ConflictException("Idempotency key '" + idempotencyKey
+                            + "' is held by a non-matching payment intent (" + found.getId()
+                            + ", origin=" + found.getOrigin() + ") — the ad window's payable"
+                            + " cannot be satisfied by it");
+                }
+                return found;
             }
         }
         if (amountCents <= 0) {

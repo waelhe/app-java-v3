@@ -28,11 +28,14 @@ public class OrderFulfillmentListener {
 
     private final DeliveryService deliveryService;
     private final com.marketplace.shared.api.OrderDeliveryPort orders;
+    private final com.marketplace.shared.api.PaymentIntentLookupPort payments;
 
     public OrderFulfillmentListener(DeliveryService deliveryService,
-                                    com.marketplace.shared.api.OrderDeliveryPort orders) {
+                                    com.marketplace.shared.api.OrderDeliveryPort orders,
+                                    com.marketplace.shared.api.PaymentIntentLookupPort payments) {
         this.deliveryService = deliveryService;
         this.orders = orders;
+        this.payments = payments;
     }
 
     @ApplicationModuleListener
@@ -52,6 +55,21 @@ public class OrderFulfillmentListener {
         if (!selection.platformDelivery()) {
             log.debug("Order {} confirmed without a checkout delivery selection — no leg to create",
                     event.orderId());
+            return;
+        }
+        // Agent findings 2026-10-26T13:11 export, row 41 (CWE-841): the
+        // seller's confirmation alone is NOT proof the money moved — a
+        // seller can confirm an unpaid order. The dispatch-ready leg
+        // requires VERIFIED payment for the order's frozen payable; the
+        // unverified confirmation skips here and the settlement edge
+        // (DeliveryPaymentSettlementListener on the payment's COMPLETED
+        // event) creates the leg the moment the money lands — the two
+        // edges together keep the end-to-end flow whole for every
+        // ordering of confirmation and payment, with no leg ever
+        // dispatching on the seller's bare word.
+        if (!payments.isOrderPayableSettled(selection.orderId())) {
+            log.info("Order {} confirmed — the checkout delivery leg waits for verified payment "
+                    + "(the settlement edge creates it when the money lands)", event.orderId());
             return;
         }
         deliveryService.createOrderLegFromFulfillment(selection);

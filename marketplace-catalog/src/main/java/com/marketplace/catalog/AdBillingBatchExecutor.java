@@ -81,8 +81,27 @@ public class AdBillingBatchExecutor {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void settleOneCampaign(UUID campaignId, LocalDate today) {
         AdCampaign campaign = campaignRepository.findById(campaignId).orElse(null);
-        if (campaign == null || campaign.getStatus() == AdCampaignStatus.PAUSED) {
-            return; // gone or dark — the dark gap never bills
+        if (campaign == null) {
+            return; // gone — the run's candidate list is advisory
+        }
+        settleOpenWindow(campaign, today);
+    }
+
+    /**
+     * Agent findings 2026-10-26T13:11 export, row 45: the settlement body
+     * as a transaction-JOINING operation — the pause path settles its
+     * accrued complete ACTIVE days and flips the hold in ONE atomic unit
+     * (the marker's advance, the charge row, the consume move and the
+     * PAUSED flip commit together or roll back together). The daily run
+     * keeps its own REQUIRES_NEW door ({@link #settleOneCampaign}); this
+     * door carries NO transaction boundary of its own, so the caller's
+     * unit owns the commit. The PAUSED guard stays at the top of the
+     * body: the dark gap never bills, whichever door the settlement
+     * walks through.
+     */
+    public void settleOpenWindow(AdCampaign campaign, LocalDate today) {
+        if (campaign.getStatus() == AdCampaignStatus.PAUSED) {
+            return; // dark — the dark gap never bills
         }
 
         // The duration's own end: a campaign past its ends_at settles its

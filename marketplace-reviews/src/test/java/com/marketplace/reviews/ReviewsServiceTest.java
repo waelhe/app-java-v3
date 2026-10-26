@@ -55,7 +55,10 @@ class ReviewsServiceTest {
                 reviewFlagRepository, clock);
         // The seed mode: every booking-path test below runs the pre-W1
         // behaviour byte for byte (the plan's "no modified line" criterion).
-        when(systemSettingsPort.getStringOrDefault(
+        // Row 15 (agent findings 2026-10-26T13:11): mode() reads the
+        // AUTHORITATIVE admission surface — the stub rides the same
+        // default-method shape the production call makes.
+        when(systemSettingsPort.getStringAuthoritativeOrDefault(
                 org.mockito.ArgumentMatchers.eq(SystemSettingKeys.REVIEWS_MODE),
                 org.mockito.ArgumentMatchers.anyString()))
                 .thenReturn(ReviewMode.VERIFIED_ONLY.name());
@@ -499,7 +502,7 @@ class ReviewsServiceTest {
     // -- W1: the mode gate and the organic path (§4.1/§4.3/§4.5) ----------
 
     private void openMode() {
-        when(systemSettingsPort.getStringOrDefault(
+        when(systemSettingsPort.getStringAuthoritativeOrDefault(
                         org.mockito.ArgumentMatchers.eq(SystemSettingKeys.REVIEWS_MODE),
                         org.mockito.ArgumentMatchers.anyString()))
                 .thenReturn(ReviewMode.OPEN.name());
@@ -541,6 +544,23 @@ class ReviewsServiceTest {
                 () -> service.create(Instancio.create(UUID.class), Instancio.create(UUID.class),
                         4, "m"));
         verify(reviewRepository, never()).save(any());
+    }
+
+    @Test
+    void createReverse_bookingPathRefusedWhenModeIsOpen() {
+        // Agent findings 2026-10-26T13:11 export, row 3 (CWE-863): the
+        // booking-origin creation policy is SHARED — OPEN is organic-only
+        // for BOTH directions, the same explicit 400 before any booking
+        // lookup or write (a provider never publishes the disabled review
+        // type through the reverse surface).
+        openMode();
+
+        assertThrows(BadRequestException.class,
+                () -> service.createReverse(Instancio.create(UUID.class), 4, "m", authentication));
+        verify(reviewRepository, never()).save(any());
+        // The refusal precedes every other collaborator — not even the
+        // booking's existence is probed in the organic-only mode.
+        org.mockito.Mockito.verifyNoInteractions(bookingParticipantProvider);
     }
 
     @Test

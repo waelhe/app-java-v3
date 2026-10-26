@@ -912,6 +912,17 @@ public class UserService implements IdentitySpi {
         // pseudonymized account must hold no redemption right either way
         // (the ban-vs-verification invariant, the auditable consumption).
         authActionTokenService.invalidateOutstanding(originalSubject);
+        // Agent findings 2026-10-26T13:11 export, row 8: consumption alone
+        // leaves the ROWS alive — V112's FK is plain (not ON DELETE), so any
+        // token HISTORY (consumed redemptions from past resets or
+        // verifications) still holds the login row's death and the whole
+        // erasure rolls back. The house FK leg (the login-identity move's
+        // own purgeHistory — the same physical statement, the Envers issue
+        // and consumption revisions keep the redemption audit trail):
+        // every token row for the subject physically leaves BEFORE
+        // deleteUser, so the FK releases the login row however much
+        // history the account accumulated.
+        authActionTokenService.purgeHistory(originalSubject);
         userDetailsManager.deleteUser(originalSubject);
 
         // Step 6 — issued authorizations die immediately (no 7-day wait).
