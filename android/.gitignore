@@ -10,3 +10,6 @@ local.properties
 # (docs/api/graphql-target-architecture.md §11-Phase-5 acceptance:
 # "no hand-copied SDL between repositories").
 app/src/main/graphql/schema.graphqls
+# Kotlin 2.4 build session directory (gradle runs leave it next to the build
+# output; it is machine-local state, never source).
+.kotlin/
