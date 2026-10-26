@@ -174,7 +174,8 @@ public class DisputeService {
         dispute.resolve(resolution);
         Long refundedAmountCents = null;
         if (resolution == DisputeResolution.REFUND_CONSUMER && dispute.getSubjectType() == DisputeSubject.BOOKING) {
-            RefundOutcome outcome = paymentRefundPort.refundForBooking(dispute.getBookingId(), refundAmountCents);
+            RefundOutcome outcome = paymentRefundPort.refundForBooking(
+                    dispute.getBookingId(), refundAmountCents, id);
             dispute.recordRefund(outcome.paymentId(), outcome.refundedAmountCents());
             refundedAmountCents = outcome.refundedAmountCents();
         }
