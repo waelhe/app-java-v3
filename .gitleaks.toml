@@ -44,6 +44,9 @@ paths = [
 # allow below is therefore the COMPLETE Java statement, anchored from line
 # start to the statement-terminating semicolon: a typed local declaration
 # whose sole string literal is a strictly-shaped lowercase RFC 4122 UUID.
+# CodeRabbit review round 2 tightened the literal to the RFC's own alphabet:
+# the version nibble carries 1-5 and the variant nibble 8/9/a/b — a shape
+# no generic credential vocabulary shares.
 # Measured against the 8.24.3 binary (the CI's exact version): the pure
 # fixture line is exempted, while the same statement carrying an appended
 # AWS key on the same line stays DETECTED — nothing else on that line, in
@@ -59,5 +62,5 @@ paths = [
 regexTarget = "line"
 regexes = [
   '''Collected git\.commit\.id with value [a-fA-F0-9]{40}\s*$''',
-  '''^\s*[\w.]+\s+\w+\s*=\s*new WebSocketUserIdentity\(token, "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"\);\s*$'''
+  '''^\s*[\w.]+\s+\w+\s*=\s*new WebSocketUserIdentity\(token, "[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"\);\s*$'''
 ]
