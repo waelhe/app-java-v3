@@ -104,7 +104,7 @@ class NeighborhoodPollServiceTest {
     }
 
     private NeighborhoodPoll pollIn(UUID location) {
-        return NeighborhoodPoll.authored(location,
+        return NeighborhoodPoll.authored(UUID.randomUUID(), location,
                 "ما المواعيد الأنسب لفتح الممشى المظلل خلال الصيف؟", "لجنة تطوير الحي");
     }
 
