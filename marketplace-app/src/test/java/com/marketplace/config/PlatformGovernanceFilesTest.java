@@ -879,15 +879,24 @@ class PlatformGovernanceFilesTest {
     private static ValidatorResult runPatchValidator(Path publicationDir) throws IOException, InterruptedException {
         Path script = repoRoot().resolve("scripts").resolve("openrewrite").resolve("validate-patches.py");
         assertThat(script).as("scripts/openrewrite/validate-patches.py must exist").exists();
-        Process process = new ProcessBuilder("python3", script.toString(), publicationDir.toString())
-                .redirectErrorStream(true)
-                .start();
-        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        if (!process.waitFor(60, TimeUnit.SECONDS)) {
-            process.destroyForcibly();
-            throw new IllegalStateException("OpenRewrite patch validator did not terminate within 60 seconds");
+        // The validator output goes to a temp FILE, never the process pipe: reading
+        // the pipe directly blocks until the child closes it, so a hung validator
+        // would hang the test instead of tripping the 60-second deadline below
+        // (CodeRabbit review on #732, Minor - Stability).
+        Path outputFile = Files.createTempFile("openrewrite-validator-output", ".txt");
+        try {
+            Process process = new ProcessBuilder("python3", script.toString(), publicationDir.toString())
+                    .redirectErrorStream(true)
+                    .redirectOutput(outputFile.toFile())
+                    .start();
+            if (!process.waitFor(60, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                throw new IllegalStateException("OpenRewrite patch validator did not terminate within 60 seconds");
+            }
+            return new ValidatorResult(process.exitValue(), Files.readString(outputFile, StandardCharsets.UTF_8));
+        } finally {
+            Files.deleteIfExists(outputFile);
         }
-        return new ValidatorResult(process.exitValue(), output);
     }
 
     private record ValidatorResult(int exitCode, String output) {}
