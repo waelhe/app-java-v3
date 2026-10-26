@@ -114,8 +114,18 @@ public class ProviderProfileContentPurgeAdapter implements AuthoredContentPurgeP
         // bio's own storage convention) — the operational fields
         // (duration, price, position) stay so the page's structure
         // survives the erasure. Base table and Envers mirror both.
+        // Row 4 (agent findings 2026-10-26 14:33 export, CWE-362): the text
+        // erasure ADVANCES the live row's optimistic-lock version in the
+        // SAME statement — a delegated menu writer holding a pre-erasure
+        // entity snapshot (title/description loaded before the purge) fails
+        // its flush on the version the erasure just advanced, instead of
+        // writing the erased text back through the passed check (the
+        // booking/disputes/search purge adapters' own "version = version +
+        // 1" family). The audit mirror carries no version column (Envers
+        // revisions) — the Envers twin below stays as-is.
         int serviceTitles = jdbcTemplate.update(
-                "UPDATE provider_services s SET title = ?, description = NULL "
+                "UPDATE provider_services s SET title = ?, description = NULL, "
+                        + "version = version + 1 "
                         + "FROM provider_profiles p "
                         + "WHERE s.provider_id = p.id AND p.user_id = ? "
                         + "AND (s.title <> ? OR s.description IS NOT NULL)",

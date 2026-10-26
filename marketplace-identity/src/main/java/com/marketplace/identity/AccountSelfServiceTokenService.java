@@ -34,11 +34,14 @@ import java.util.regex.Pattern;
  *
  * <p>The password change: the caller's old password verified through the
  * official {@code PasswordEncoder#matches} primitive, the new secret
- * encoded by the same delegating encoder registration, the login row
- * updated through the framework {@code UserDetailsManager} replaying
- * every stored flag verbatim, and the account's issued authorizations
- * killed in the same transaction (the L23 refresh-resurrection kill every
- * secret-rotating surface applies).</p>
+ * encoded by the same delegating encoder registration, the login row's
+ * PASSWORD COLUMN written alone (the {@code PasswordResetService}
+ * {@code UPDATE_PASSWORD_ONLY} shape — never the {@code updateUser}
+ * snapshot replay), the account's issued authorizations killed in the same
+ * transaction (the L23 refresh-resurrection kill every secret-rotating
+ * surface applies), and the rotation fact published for the AFTER_COMMIT
+ * session kill — a live browser session must not keep authorizing under
+ * the credential its owner just replaced.</p>
  */
 @Service
 @Transactional
@@ -129,16 +132,36 @@ public class AccountSelfServiceTokenService {
         if (!encoder.getObject().matches(oldPassword, stored.getPassword())) {
             throw new BadCredentialsException("Password verification failed");
         }
-        userDetailsManager.updateUser(org.springframework.security.core.userdetails.User
-                .withUsername(subject)
-                .password(encoder.getObject().encode(newPassword))
-                .authorities(stored.getAuthorities())
-                .accountExpired(!stored.isAccountNonExpired())
-                .accountLocked(!stored.isAccountNonLocked())
-                .credentialsExpired(!stored.isCredentialsNonExpired())
-                .disabled(!stored.isEnabled())
-                .build());
+        // Rows 22 + 24 (agent findings 2026-10-26 14:33 export): the PASSWORD
+        // COLUMN ONLY — the pre-fix {@code updateUser} replay bound the
+        // verification-time snapshot's enabled flag and authorities into the
+        // write (measured 7.1.1 bytecode: updateUser binds password AND
+        // enabled from the one snapshot, then deletes/reinserts the
+        // authority rows), so an administrator's disablement or role removal
+        // landing between the load and the write was silently reverted. The
+        // {@code PasswordResetService} UPDATE_PASSWORD_ONLY shape verbatim:
+        // the flags and authorities stay exactly as their owning admin
+        // surfaces wrote them (each under the account row lock), this
+        // surface rotates the credential and nothing else.
+        jdbcTemplate.update(PasswordResetService.UPDATE_PASSWORD_ONLY,
+                encoder.getObject().encode(newPassword), subject);
+        // Issued authorizations die with the change — the same measured SAS
+        // kill every secret-rotating surface applies: a refresh token minted
+        // under the OLD password must not survive the owner rotating the
+        // secret it guards.
         jdbcTemplate.update(DELETE_AUTHORIZATIONS_BY_PRINCIPAL, subject);
-        log.info("Account password changed and authorizations killed: subject={}", subject);
+        // Row 22 (CWE-613): the surviving-session kill — a live browser
+        // session holds its authenticated principal and cached authorities
+        // across this credential write; without the expiry the pre-change
+        // cookie would keep minting fresh tokens through the
+        // authorization-server chain exactly as if the rotation never
+        // happened. The house R8 channel: the rotation fact published in
+        // THIS transaction, consumed AFTER_COMMIT by
+        // AccountStatusSessionInvalidator — every session of the account
+        // expires with the commit (the password-reset completion's own
+        // shape), and the framework's resubmission covers a failed expiry.
+        eventPublisher.publishEvent(new com.marketplace.shared.api
+                .AccountCredentialsRotated(subject));
+        log.info("Account password changed, authorizations and sessions killed: subject={}", subject);
     }
 }

@@ -766,7 +766,26 @@ class UserServiceTest {
     private static final String DERIVED_SUBJECT =
             "anon-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
+    /**
+     * Row 7 (agent findings 2026-10-26 14:33 export, CWE-613): the
+     * login-identity move's own aftermath — the retired subject's grants
+     * die AND the surviving-session kill fact is published in the same
+     * transaction (consumed AFTER_COMMIT under the retired name — the
+     * name the session index is built on), so a live browser session
+     * authenticated under the retired subject cannot keep minting fresh
+     * authorization codes after the move.
+     */
     @Test
+    void loginIdentityMoved_killsTheRetiredGrants_andPublishesTheSessionKillFact() {
+        userService.loginIdentityMoved("retired-subject@example.com");
+
+        verify(jdbcTemplate).update(UserService.DELETE_AUTHORIZATIONS_BY_PRINCIPAL,
+                "retired-subject@example.com");
+        verify(eventPublisher).publishEvent(any(CacheInvalidationRequested.class));
+        verify(eventPublisher).publishEvent(
+                new com.marketplace.shared.api.AccountLoginIdentityMoved("retired-subject@example.com"));
+    }
+
     void pseudonymizeAccount_transformsDeletesIdentityAndPublishesCacheInvalidation() {
         UUID id = UUID.randomUUID();
         User user = User.create("target-subject", "t@b.com", "Target", UserRole.CONSUMER);
@@ -796,7 +815,10 @@ class UserServiceTest {
         // documented order (consumption first for the audit revision, then
         // the physical removal, then the identity's death).
         verify(authActionTokenService).purgeHistory("target-subject");
-        org.mockito.InOrder fkLegOrder = org.mockito.inOrder(
+        // (The 82831117 carry-over: org.mockito.inOrder is not a valid
+        // package-level call — inOrder is Mockito's own static; the module's
+        // house imports resolve it.)
+        org.mockito.InOrder fkLegOrder = org.mockito.Mockito.inOrder(
                 authActionTokenService, userDetailsManager);
         fkLegOrder.verify(authActionTokenService).invalidateOutstanding("target-subject");
         fkLegOrder.verify(authActionTokenService).purgeHistory("target-subject");

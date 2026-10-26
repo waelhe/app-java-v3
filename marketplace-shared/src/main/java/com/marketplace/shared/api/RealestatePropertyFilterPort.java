@@ -45,6 +45,24 @@ import java.util.UUID;
 public interface RealestatePropertyFilterPort {
 
     /**
+     * Row 2 (agent findings 2026-10-26 14:33 export, CWE-400): the
+     * ONE-LISTING membership forms the saved-search alert matcher needs.
+     * Testing one activated listing against a saved search only needs that
+     * listing's own answer — the set forms materialize the search's whole
+     * matching-property population (unpaged) for a membership question one
+     * row can answer. Same predicates as the set forms, one row's answer.
+     */
+    boolean listingMatchesCriteria(PropertyCriteria criteria, UUID listingId);
+
+    /**
+     * Row 2's radius twin: whether the ONE listing's coordinates lie
+     * within the radius — the set form's own predicate, answered for a
+     * single listing at the storage layer.
+     */
+    boolean listingIsWithinRadius(BigDecimal latitude, BigDecimal longitude,
+                                  long radiusMeters, UUID listingId);
+
+    /**
      * Listing ids whose property details match the criteria (unrestricted
      * form — no stay window).
      */

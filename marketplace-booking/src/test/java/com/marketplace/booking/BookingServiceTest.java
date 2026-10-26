@@ -44,6 +44,14 @@ class BookingServiceTest {
      */
     private final EffectivePricePort effectivePricePort = mock(EffectivePricePort.class);
     private final Authentication authentication = mock(Authentication.class);
+    /**
+     * Row 14 (agent findings 2026-10-26 14:33 export): the per-window
+     * cancellation advisory lock's executor — a no-op stub (the unit tests
+     * assert the booking logic, not the serialization; the concurrency
+     * contract rides the real statement in CI).
+     */
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate =
+            mock(org.springframework.jdbc.core.JdbcTemplate.class);
     private BookingService service;
 
     @BeforeEach
@@ -51,7 +59,7 @@ class BookingServiceTest {
         when(effectivePricePort.calculateBookingTotalCents(any(), anyLong(), any(), any()))
                 .thenAnswer(inv -> inv.getArgument(1));
         service = new BookingService(bookingRepository, currentUserProvider, eventPublisher,
-                listingPriceProvider, availabilityPort, effectivePricePort);
+                listingPriceProvider, availabilityPort, effectivePricePort, jdbcTemplate);
     }
 
     @Test

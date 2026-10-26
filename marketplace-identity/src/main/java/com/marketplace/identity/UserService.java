@@ -591,6 +591,19 @@ public class UserService implements IdentitySpi {
     void loginIdentityMoved(String oldSubject) {
         jdbcTemplate.update(DELETE_AUTHORIZATIONS_BY_PRINCIPAL, oldSubject);
         eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));
+        // Row 7 (agent findings 2026-10-26 14:33 export, CWE-613): the
+        // retired subject's own AFTER_COMMIT session kill. The grants die
+        // above, but a live browser session authenticated under the RETIRED
+        // subject keeps its cached principal and authorities — without this
+        // expiry it keeps minting fresh authorization codes under the dead
+        // name, and a later demotion or disablement (indexed under the
+        // REPLACEMENT subject) never reaches it. The house R8 channel: the
+        // move fact published in THIS transaction, consumed AFTER_COMMIT by
+        // AccountStatusSessionInvalidator under the retired name (the name
+        // the session index is built on), the framework's resubmission on
+        // failure.
+        eventPublisher.publishEvent(
+                new com.marketplace.shared.api.AccountLoginIdentityMoved(oldSubject));
     }
 
     /**

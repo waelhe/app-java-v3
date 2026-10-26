@@ -42,6 +42,34 @@ public interface PropertyDetailsRepository
     // ------------------------------------------------------------------
 
     /**
+     * Row 2 (agent findings 2026-10-26 14:33 export, CWE-400): the
+     * ONE-LISTING existence form of the radius predicate. The saved-search
+     * alert matcher tests a single activated listing's membership — the
+     * set form materialized EVERY matching property row of the search's
+     * criteria (unpaged entity load), multiplying transfer and processing
+     * by the matching-property population across the whole alert scan.
+     * This form reads exactly one row's index answer: the same partial
+     * predicates as the set form (the planner matches the same V50 index),
+     * the membership question answered at the storage layer.
+     */
+    @Query(value = """
+            SELECT EXISTS(
+                SELECT 1 FROM property_details
+                WHERE listing_id = :listingId
+                  AND is_deleted = FALSE
+                  AND latitude IS NOT NULL AND longitude IS NOT NULL
+                  AND ST_DWithin(
+                        ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography,
+                        ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
+                        :radiusMeters))
+            """,
+            nativeQuery = true)
+    boolean existsListingIdWithinRadius(@Param("latitude") BigDecimal latitude,
+                                        @Param("longitude") BigDecimal longitude,
+                                        @Param("radiusMeters") long radiusMeters,
+                                        @Param("listingId") UUID listingId);
+
+    /**
      * The listing ids whose coordinates lie within the radius (the set
      * form — the D-E6 set-restriction integration).
      */

@@ -218,6 +218,32 @@ public class PlatformTokenGrantService {
             throw new org.springframework.security.authentication.BadCredentialsException(
                     "The refresh token is invalid, expired or revoked");
         }
+        // Row 25 (agent findings 2026-10-26 14:33 export, CWE-287): the
+        // authorization must belong to THIS surface's own public client.
+        // The pre-fix flow accepted ANY active refresh token in the shared
+        // store — a token issued to a confidential client through the
+        // OAuth token endpoint could be replayed here to mint a platform
+        // access token carrying the roles attribute without that client's
+        // own client-authentication wall. The official partition: each
+        // client refreshes through ITS channel — this GraphQL surface is
+        // the configured public client's channel alone (the
+        // authorization-code + refresh grant origins it issues); every
+        // other client's tokens answer at the OAuth token endpoint, where
+        // the client's own credentials are verified.
+        // The SAS storage contract: the authorization's registeredClientId
+        // is the RegisteredClient's INTERNAL id — resolved through the
+        // repository's own findById (the official path), then compared by
+        // the client id THIS surface was configured with.
+        String authorizationClient = authorization.getRegisteredClientId();
+        boolean ownedByThisClient = false;
+        if (authorizationClient != null) {
+            RegisteredClient owner = registeredClientRepository().findById(authorizationClient);
+            ownedByThisClient = owner != null && publicClientId.equals(owner.getClientId());
+        }
+        if (!ownedByThisClient) {
+            throw new org.springframework.security.authentication.BadCredentialsException(
+                    "The refresh token does not belong to this surface's client");
+        }
         String principal = authorization.getPrincipalName();
         @SuppressWarnings("unchecked")
         Set<String> roles = (Set<String>) authorization.getAttributes()

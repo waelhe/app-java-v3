@@ -100,7 +100,8 @@ class JobsContentPurgeAdapterTest {
         adapter.purgeAuthoredTexts(SUBJECT);
 
         verify(jdbcTemplate).update(
-                "UPDATE job_applications SET cover_message = ? WHERE seeker_id = ? "
+                "UPDATE job_applications SET cover_message = ?, version = version + 1 "
+                        + "WHERE seeker_id = ? "
                         + "AND cover_message IS NOT NULL AND cover_message <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, SUBJECT, AuthoredContentPurgePort.PURGED_MARKER);
     }

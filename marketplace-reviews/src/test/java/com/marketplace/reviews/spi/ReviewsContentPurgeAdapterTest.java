@@ -65,7 +65,8 @@ class ReviewsContentPurgeAdapterTest {
         assertEquals(0, adapter.purgeAuthoredTexts(userId));
 
         verify(jdbcTemplate).update(
-                "UPDATE reviews SET comment = NULL WHERE reviewer_id = ? AND comment IS NOT NULL",
+                "UPDATE reviews SET comment = NULL, version = version + 1 "
+                                + "WHERE reviewer_id = ? AND comment IS NOT NULL",
                 userId);
     }
 
@@ -80,7 +81,8 @@ class ReviewsContentPurgeAdapterTest {
         adapter.purgeAuthoredTexts(userId);
 
         verify(jdbcTemplate).update(
-                "UPDATE reviews SET reply = NULL WHERE reply IS NOT NULL AND provider_id = ?",
+                "UPDATE reviews SET reply = NULL, version = version + 1 "
+                                + "WHERE reply IS NOT NULL AND provider_id = ?",
                 userId);
         verify(jdbcTemplate).update(
                 "UPDATE reviews_aud SET reply = NULL WHERE reply IS NOT NULL AND provider_id = ?",
@@ -146,7 +148,8 @@ class ReviewsContentPurgeAdapterTest {
                 "SELECT id FROM reviews WHERE reply IS NOT NULL AND provider_id = ?",
                 UUID.class, userId);
         inOrder.verify(jdbcTemplate).update(
-                "UPDATE reviews SET comment = NULL WHERE reviewer_id = ? AND comment IS NOT NULL",
+                "UPDATE reviews SET comment = NULL, version = version + 1 "
+                                + "WHERE reviewer_id = ? AND comment IS NOT NULL",
                 userId);
     }
 

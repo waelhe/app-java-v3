@@ -92,16 +92,31 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
         Optional<Product> parent = productId == null
                 ? Optional.empty()
                 : productRepository.findById(productId);
+        // Row 12 (agent findings 2026-10-26 14:33 export, CWE-203): the
+        // ownership decision is resolved FIRST and gates the seller's own
+        // namespace queries. The pre-fix flow kept validating after a
+        // foreign-parent refusal — the SKU uniqueness check ran against
+        // the STRANGER's namespace (parent loaded regardless of
+        // ownership), so its ALREADY_EXISTS error disclosed whether a
+        // guessed SKU exists in the foreign seller's namespace. The
+        // recommendation verbatim: "Return the same product refusal
+        // immediately for missing and foreign parents. Perform SKU
+        // uniqueness checks only after establishing ownership." The
+        // collected-errors shape stays for every OWNED-product failure
+        // (the API's own contract); the foreign/missing parent alone ends
+        // the evaluation — the stranger's product answers the same
+        // REQUIRED refusal shape as an unknown id (never an existence
+        // disclosure — the R5 posture), with NOTHING else measured.
         if (productId == null || parent.isEmpty()) {
-            errors.add(new ProductVariantMutationError("product", ProductVariantMutationErrorCode.REQUIRED,
-                    "A variant registers under an owning product"));
-        } else if (!parent.get().getProviderId()
+            return ProductVariantMutationResult.failure(List.of(new ProductVariantMutationError(
+                    "product", ProductVariantMutationErrorCode.REQUIRED,
+                    "A variant registers under an owning product")));
+        }
+        if (!parent.get().getProviderId()
                 .equals(currentUserProvider.getCurrentUserId(authentication))) {
-            // The ownership law's own safe absence: a stranger's product
-            // answers the same REQUIRED refusal shape (never an
-            // existence disclosure — the R5 posture).
-            errors.add(new ProductVariantMutationError("product", ProductVariantMutationErrorCode.REQUIRED,
-                    "A variant registers under an owning product"));
+            return ProductVariantMutationResult.failure(List.of(new ProductVariantMutationError(
+                    "product", ProductVariantMutationErrorCode.REQUIRED,
+                    "A variant registers under an owning product")));
         }
         String sku = command.sku() == null ? null : command.sku().strip();
         if (sku == null || sku.isBlank()) {
@@ -110,8 +125,8 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
         } else if (sku.length() > SKU_MAX_LENGTH) {
             errors.add(new ProductVariantMutationError("sku", ProductVariantMutationErrorCode.INVALID,
                     "A variant SKU is at most " + SKU_MAX_LENGTH + " characters"));
-        } else if (parent.isPresent()
-                && variantRepository.findByProviderIdAndSku(parent.get().getProviderId(), sku).isPresent()) {
+        } else if (variantRepository
+                .findByProviderIdAndSku(parent.get().getProviderId(), sku).isPresent()) {
             errors.add(new ProductVariantMutationError("sku", ProductVariantMutationErrorCode.ALREADY_EXISTS,
                     "The SKU is already used in this seller's namespace"));
         }

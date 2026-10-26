@@ -79,6 +79,44 @@ class ThumbnailsTest {
         assertThat(dims(scaled)[0]).isLessThan(dims(original)[0]);
     }
 
+    /**
+     * Row 29 (agent findings 2026-10-26 14:33 export, CWE-400): a LEGITIMATE
+     * progressive JPEG — the JDK writer's default progressive encoding
+     * carries 10 scans (MEASURED) — stays inside the conservative 50-scan
+     * ceiling and receives its thumbnail exactly like a baseline file; the
+     * ceiling refuses only the abnormal scan counts whose repeated raster
+     * reconstruction burns CPU disproportionate to the upload's byte size.
+     */
+    @Test
+    @DisplayName("A default progressive JPEG (10 scans, measured) still scales — the ceiling refuses only abnormal scan counts")
+    void progressiveJpegWithinTheMeasuredDefaultStillScales() throws Exception {
+        // Progressive encoding through the writer's own contract: explicit
+        // mode first (the ImageWriteParam rule), then the default table.
+        BufferedImage image = new BufferedImage(2000, 1000, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < 1000; y++) {
+            for (int x = 0; x < 2000; x++) {
+                image.setRGB(x, y, (((x * 31 + y * 17) % 256) << 16));
+            }
+        }
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        javax.imageio.ImageWriter writer = javax.imageio.ImageIO
+                .getImageWritersByFormatName("jpeg").next();
+        try (var stream = javax.imageio.ImageIO.createImageOutputStream(out)) {
+            writer.setOutput(stream);
+            javax.imageio.ImageWriteParam param = writer.getDefaultWriteParam();
+            param.setProgressiveMode(javax.imageio.ImageWriteParam.MODE_DEFAULT);
+            writer.write(null, new javax.imageio.IIOImage(image, null, null), param);
+        } finally {
+            writer.dispose();
+        }
+        byte[] progressive = out.toByteArray();
+
+        byte[] scaled = Thumbnails.scaleToMaxWidth(progressive, 640, "image/jpeg", UNLIMITED);
+
+        assertThat(scaled).isNotNull();
+        assertThat(dims(scaled)).containsExactly(640, 320);
+    }
+
     @Test
     @DisplayName("Non-round aspect still lands inside the bound with aspect preserved")
     void nonRoundAspectScales() throws Exception {

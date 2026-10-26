@@ -4,6 +4,8 @@ import java.util.List;
 
 import com.marketplace.shared.api.AccountCredentialsRotated;
 import com.marketplace.shared.api.AccountIdentityErased;
+import com.marketplace.shared.api.AccountLoginIdentityMoved;
+import com.marketplace.shared.api.AccountSessionsRevoked;
 import com.marketplace.shared.api.AccountStatusChanged;
 import com.marketplace.shared.api.UserRoleAssignmentRevoked;
 import com.marketplace.shared.api.UserRoleChanged;
@@ -188,6 +190,38 @@ public class AccountStatusSessionInvalidator {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onAccountCredentialsRotated(AccountCredentialsRotated event) {
         expireAllSessions(event.username(), "credentials rotated (password reset)");
+    }
+
+    /**
+     * CodeRabbit agent findings (2026-10-26 14:33 export, row 7, CWE-613):
+     * the login-identity move's own AFTER_COMMIT edge. The move revokes the
+     * RETIRED subject's issued grants, but a live browser session
+     * authenticated under that retired subject keeps its cached principal
+     * and authorities — without this expiry it would keep minting fresh
+     * authorization codes under the dead name, and a later demotion or
+     * disablement (indexed under the REPLACEMENT subject) would never reach
+     * it. Every session the retired identity authenticated expires with the
+     * move's commit; the owner re-authenticates under the new address.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void onAccountLoginIdentityMoved(AccountLoginIdentityMoved event) {
+        expireAllSessions(event.username(), "login identity moved");
+    }
+
+    /**
+     * CodeRabbit agent findings (2026-10-26 14:33 export, row 13, CWE-613):
+     * the owner's "sign out everywhere" — the stored OAuth authorizations
+     * die inside the revocation's transaction, and this AFTER_COMMIT edge
+     * completes the intent on the session side: a live browser session
+     * otherwise keeps its authenticated security context and authorizes
+     * again immediately, re-creating exactly the replacement grants the
+     * revocation just removed, without any credential challenge.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void onAccountSessionsRevoked(AccountSessionsRevoked event) {
+        expireAllSessions(event.username(), "all sessions revoked by the owner");
     }
 
     private void expireAllSessions(String username, String reason) {

@@ -128,11 +128,18 @@ class AccountSelfServiceTokenServiceTest {
 
         service.changePassword(caller, "old", "new-password-1");
 
-        ArgumentCaptor<UserDetails> updated = ArgumentCaptor.forClass(UserDetails.class);
-        verify(userDetailsManager).updateUser(updated.capture());
-        assertThat(updated.getValue().getPassword()).isEqualTo("{bcrypt}new");
+        // Rows 22 + 24 (agent findings 2026-10-26 14:33 export): the
+        // PASSWORD COLUMN ONLY — never the updateUser snapshot replay
+        // (the pre-fix replay bound the verification-time enabled flag and
+        // authorities into the write) — plus the AFTER_COMMIT rotation
+        // fact that kills the surviving sessions.
+        verify(jdbcTemplate).update(PasswordResetService.UPDATE_PASSWORD_ONLY,
+                "{bcrypt}new", SUBJECT);
+        verify(userDetailsManager, never()).updateUser(any());
         verify(jdbcTemplate).update(
                 "DELETE FROM oauth2_authorization WHERE principal_name = ?", SUBJECT);
+        verify(eventPublisher).publishEvent(
+                new com.marketplace.shared.api.AccountCredentialsRotated(SUBJECT));
     }
 
     @Test

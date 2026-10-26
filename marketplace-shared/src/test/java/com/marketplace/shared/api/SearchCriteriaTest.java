@@ -111,6 +111,33 @@ class SearchCriteriaTest {
                 .hasMessage("minPrice must be less than or equal to maxPrice");
     }
 
+    /**
+     * Row 3 (agent findings 2026-10-26 14:33 export, CWE-755): the shared
+     * price-filter ceiling — the catalogue consumer's own supported
+     * monetary range (100000000 major units), enforced at construction so
+     * a stored saved search can never carry a criterion its eventual
+     * query consumer would reject at scan time (the deterministic abort
+     * of the population-wide alert transaction).
+     */
+    @Test
+    void constructor_rejectsPricesBeyondTheSupportedMonetaryRange() {
+        assertThatThrownBy(() -> new SearchCriteria(null, null,
+                new BigDecimal("100000001"), null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("minPrice is limited to the supported monetary range: 0 .. 100000000 (major units)");
+        assertThatThrownBy(() -> new SearchCriteria(null, null,
+                null, new BigDecimal("100000000.01"), null, null, null,
+                null, null, null, null, null, null, null, null, null, null))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("maxPrice is limited to the supported monetary range: 0 .. 100000000 (major units)");
+        // The boundary itself is legal — the consumer's own inclusive cap.
+        SearchCriteria atTheCap = new SearchCriteria(null, null,
+                new BigDecimal("100000000"), new BigDecimal("100000000"), null, null, null,
+                null, null, null, null, null, null, null, null, null, null);
+        assertThat(atTheCap.minPrice()).isEqualByComparingTo(new BigDecimal("100000000"));
+    }
+
     @Test
     void constructor_acceptsTheZeroFloorAndTheExactFreeMatch() {
         // Zero is VALID on both bounds — the free-floor filter [0, max]

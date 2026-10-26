@@ -133,9 +133,15 @@ class AccountEmailChangeServiceTest {
         // boundary (before the password check and the token issue).
         String tooLong = "a".repeat(40) + "@example.com";
 
+        // Row 17 (agent findings 2026-10-26 14:33 export, CWE-1333): the
+        // domain bound now fires FIRST — the shape pattern is evaluated
+        // only for an input already inside the 50-character domain, so the
+        // oversized address is refused by the bound gate's own message
+        // (the same clean 400, one gate earlier, before any backtracking
+        // match work).
         assertThatThrownBy(() -> service.requestChange(caller, tooLong, "pw"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("exceeds 50 characters");
+                .hasMessageContaining("A valid new email address is required");
         verify(userDetailsManager, never()).loadUserByUsername(anyString());
     }
 

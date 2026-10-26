@@ -71,7 +71,18 @@ public class AccountEmailChangeService {
     @Observed(name = "account.email_change.request")
     public void requestChange(Authentication caller, String newEmail, String rawPassword) {
         String subject = caller.getName();
-        if (newEmail == null || !EMAIL_SHAPE.matcher(newEmail.trim()).matches()) {
+        // Row 17 (agent findings 2026-10-26 14:33 export, CWE-1333): the
+        // domain bounds FIRST — trim once, reject past the login store's
+        // 50-character address domain (V13), and only then evaluate the
+        // EMAIL_SHAPE pattern. The pre-fix order ran the quadratic
+        // backtracking matcher on the raw unbounded input (an
+        // authenticated caller could burn shared CPU with an oversized
+        // invalid destination before any limit applied).
+        if (newEmail == null) {
+            throw new IllegalArgumentException("A valid new email address is required");
+        }
+        String trimmedTarget = newEmail.trim();
+        if (trimmedTarget.length() > 50 || !EMAIL_SHAPE.matcher(trimmedTarget).matches()) {
             throw new IllegalArgumentException("A valid new email address is required");
         }
         // The case-insensitive account-identifier discipline (the CodeRabbit
@@ -81,7 +92,7 @@ public class AccountEmailChangeService {
         // and then MISS the case-sensitive existsBySubject/userExists lookups
         // at confirm time (two accounts for one address, logins that never
         // resolve).
-        String target = newEmail.trim().toLowerCase(Locale.ROOT);
+        String target = trimmedTarget.toLowerCase(Locale.ROOT);
         // The login store's own domain (the round-2 CodeRabbit finding): the
         // address becomes the login username — auth_users.username caps at
         // 50 characters (V13), and the failure would otherwise surface at

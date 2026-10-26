@@ -37,12 +37,23 @@ class AvailabilityServiceTest {
      * separate bean with its own REQUIRES_NEW transaction.
      */
     private final AvailabilitySlotGenerator slotGenerator = mock(AvailabilitySlotGenerator.class);
+    /**
+     * Row 11 (agent findings 2026-10-26 14:33 export): the eligibility
+     * seam — VERIFIED for every provider by default (the pre-existing
+     * assertions' world); the suspension tests stub it per scenario.
+     */
+    private final com.marketplace.shared.api.ProviderLookupPort providerLookupPort =
+            mock(com.marketplace.shared.api.ProviderLookupPort.class);
     private AvailabilityService service;
 
     @BeforeEach
     void setUp() {
+        when(providerLookupPort.findByUserId(any(UUID.class)))
+                .thenAnswer(inv -> java.util.Optional.of(new com.marketplace.shared.api.ProviderSummary(
+                        create(UUID.class), "Eligible Provider", "VERIFIED", inv.getArgument(0))));
         service = new AvailabilityService(repository, ruleRepository, timeOffRepository, eventPublisher,
-                slotGenerator, new AvailabilityProperties(AvailabilityProperties.DEFAULT_MAX_SLOT_DAYS));
+                slotGenerator, new AvailabilityProperties(AvailabilityProperties.DEFAULT_MAX_SLOT_DAYS),
+                providerLookupPort);
     }
 
     @Test
@@ -60,6 +71,47 @@ class AvailabilityServiceTest {
         assertThat(slot.endsAt()).isEqualTo(endsAt);
         assertThat(slot.booked()).isFalse();
         verify(repository).save(any(AvailabilitySlot.class));
+    }
+
+    /**
+     * Row 11 (agent findings 2026-10-26 14:33 export): a SUSPENDED provider
+     * publishes no bookable slot — the eligibility gate precedes the write
+     * (the honest 409), exactly as it lists no public inventory.
+     */
+    @Test
+    void createSlot_refusesASuspendedProvider() {
+        UUID providerId = create(UUID.class);
+        when(providerLookupPort.findByUserId(providerId)).thenReturn(java.util.Optional.of(
+                new com.marketplace.shared.api.ProviderSummary(
+                        create(UUID.class), "Suspended Broker", "SUSPENDED", providerId)));
+
+        assertThatThrownBy(() -> service.createSlot(providerId,
+                Instant.parse("2026-06-01T09:00:00Z"), Instant.parse("2026-06-01T10:00:00Z")))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("Provider eligibility required");
+        verify(repository, never()).save(any(AvailabilitySlot.class));
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    /**
+     * Row 11: the CLAIM gate — booking creation and confirmation both claim
+     * through bookSlot, so the eligibility refusal here answers both
+     * surfaces: a suspended provider's existing open slot cannot be booked.
+     */
+    @Test
+    void bookSlot_refusesASuspendedProvider() {
+        UUID providerId = create(UUID.class);
+        when(providerLookupPort.findByUserId(providerId)).thenReturn(java.util.Optional.of(
+                new com.marketplace.shared.api.ProviderSummary(
+                        create(UUID.class), "Suspended Broker", "SUSPENDED", providerId)));
+
+        assertThatThrownBy(() -> service.bookSlot(providerId,
+                Instant.parse("2026-06-01T09:00:00Z"), Instant.parse("2026-06-01T10:00:00Z"),
+                create(UUID.class)))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("Provider eligibility required");
+        verify(repository, never()).findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(
+                any(UUID.class), any(Instant.class), any(Instant.class));
     }
 
     // ------------------------------------------------------------------
@@ -117,7 +169,8 @@ class AvailabilityServiceTest {
         // The bound is a business knob, not a hardcode: a 7-day
         // deployment rejects the 8-day slot and accepts the 7-day one.
         AvailabilityService tight = new AvailabilityService(repository, ruleRepository,
-                timeOffRepository, eventPublisher, slotGenerator, new AvailabilityProperties(7));
+                timeOffRepository, eventPublisher, slotGenerator, new AvailabilityProperties(7),
+                providerLookupPort);
         UUID providerId = create(UUID.class);
 
         assertThatThrownBy(() -> tight.createSlot(providerId,

@@ -247,7 +247,26 @@ public class Loan extends BaseEntity {
      * controlled path).
      */
     public void cancelFromDispute(String reason, Instant at) {
-        require(LoanStatus.DISPUTED, "dispute resolution (refund-cancel)");
+        // Row 15 (agent findings 2026-10-26 14:33 export): the edge is
+        // legal from EVERY PAID state the dispute API accepts — ACTIVE,
+        // RETURN_REQUESTED, RETURNED, DISPUTED. The dispute gate
+        // (LoanPartyProviderAdapter.getLoanInfo) carries no state filter,
+        // so a dispute opened AFTER the return began addresses a
+        // RETURN_REQUESTED/RETURNED loan the freeze edge (ACTIVE-only, by
+        // ADR-0004's gate) never froze; the refund decision for that
+        // dispute was recorded but never executed — the pre-fix edge
+        // answered only the DISPUTED shape. The refund is terminal in
+        // every paid state (CANCELLED is terminal from multiple states,
+        // exactly like the pre-money cancel()); the money rides the same
+        // ONE refund contract, and nothing resumes from a terminal edge.
+        if (status != LoanStatus.DISPUTED
+                && status != LoanStatus.ACTIVE
+                && status != LoanStatus.RETURN_REQUESTED
+                && status != LoanStatus.RETURNED) {
+            throw new IllegalStateException("Loan " + id + " is " + status
+                    + " — dispute refund-cancel is legal from a paid state only"
+                    + " (ACTIVE/RETURN_REQUESTED/RETURNED/DISPUTED)");
+        }
         status = LoanStatus.CANCELLED;
         cancelReason = reason;
         cancelledAt = at;

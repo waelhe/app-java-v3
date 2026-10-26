@@ -136,10 +136,20 @@ final class BearerSessionExpirationGuard {
 
     private void scheduleClose(String sessionId, Instant expiresAt) {
         if (expiresAt.isBefore(Instant.now())) {
-            // An already-expired token: nothing to schedule — its next
-            // inbound frame is rejected (and the socket closed) by the
-            // interceptor's re-validation, the same contract as a
-            // resource-server 401.
+            // Row 23 (agent findings 2026-10-26 14:33 export, CWE-613): an
+            // already-past deadline on an ADMITTED session closes NOW. The
+            // pre-fix shape returned without scheduling anything and leaned
+            // on the interceptor's next inbound frame — but the JWT
+            // validator accepts recently expired tokens within its clock
+            // skew, so a session can be admitted holding a token whose
+            // expiry has already passed; a QUIET session then carries the
+            // retained principal and its private-message subscriptions
+            // indefinitely (no inbound frame to reject, no scheduled
+            // closure). The guard's own contract — "a closed socket is the
+            // honest contract" — closes it immediately at admission time;
+            // the clock-skew tolerance belongs to the validator's token
+            // decision, never to an open-ended session lifetime.
+            closeSession(sessionId);
             return;
         }
         TaskScheduler scheduler = taskScheduler.getIfAvailable();

@@ -175,7 +175,15 @@ public class AccountLifecycleDataFetcher {
         // lowercases as the case-insensitive account identifier (the
         // requireEmail discipline: one address owns exactly one account).
         String email = input.getEmail().trim().toLowerCase(java.util.Locale.ROOT);
-        if (!email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$") || email.length() > 50) {
+        // Row 16 (agent findings 2026-10-26 14:33 export, CWE-1333): the
+        // length gate FIRST — the shape pattern is evaluated only for an
+        // input already inside the login store's domain
+        // (auth_users.username VARCHAR(50), V13). The pre-fix order ran
+        // the ambiguous backtracking pattern on the raw input before the
+        // length cap, so a malformed domain with many dot separators made
+        // the matcher rescan suffixes quadratically past the cap — the
+        // bounded input answers in bounded time.
+        if (email.length() > 50 || !email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
             throw new IllegalArgumentException(
                     "A valid email address of at most 50 characters is required");
         }

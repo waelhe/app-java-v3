@@ -153,6 +153,20 @@ public record SearchCriteria(
         if (maxPrice != null && maxPrice.compareTo(BigDecimal.ZERO) < 0) {
             throw new BadRequestException("maxPrice must be non-negative");
         }
+        // Row 3: the ceiling — the catalogue consumer's own supported
+        // monetary range, enforced at construction so a stored saved search
+        // can never carry a criterion its eventual query consumer rejects
+        // (the pre-fix gap: the save-time gates checked the range's
+        // internal shape alone, and the ceiling landed only at scan time
+        // as the deterministic abort of the whole alert transaction).
+        if (minPrice != null && minPrice.compareTo(MAX_PRICE_MAJOR) > 0) {
+            throw new BadRequestException(
+                    "minPrice is limited to the supported monetary range: 0 .. 100000000 (major units)");
+        }
+        if (maxPrice != null && maxPrice.compareTo(MAX_PRICE_MAJOR) > 0) {
+            throw new BadRequestException(
+                    "maxPrice is limited to the supported monetary range: 0 .. 100000000 (major units)");
+        }
         if (minPrice != null && maxPrice != null && minPrice.compareTo(maxPrice) > 0) {
             throw new BadRequestException("minPrice must be less than or equal to maxPrice");
         }
@@ -320,6 +334,21 @@ public record SearchCriteria(
      * power-of-ten construction can ride an unbounded scale.
      */
     private static final int MAX_COORDINATE_SCALE = 32;
+
+    /**
+     * Row 3 (agent findings 2026-10-26 14:33 export, CWE-755): the shared
+     * price-filter ceiling — the SAME bound the catalogue's query consumer
+     * enforces on its own filters ({@code CatalogService}'s
+     * {@code MAX_PRICE_FILTER_MAJOR}, 100000000 major units). The saved
+     * search stores this record's criteria and replays them against the
+     * catalogue's search on every listing activation — a bound the consumer
+     * alone would reject only at scan time (the deterministic exception
+     * that used to abort the population-wide alert transaction). The
+     * CONTRACT owns the bound: the record is the one place every consumer
+     * (interactive dispatch AND stored saved search) constructs the
+     * criteria, so the gate here covers both, before anything is stored.
+     */
+    private static final BigDecimal MAX_PRICE_MAJOR = new BigDecimal("100000000");
 
     /**
      * Row 1's representation gate — a value whose scale exceeds the

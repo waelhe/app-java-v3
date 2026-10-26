@@ -25,6 +25,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -139,16 +140,21 @@ class SavedSearchMatcherTest {
     @Test
     void propertyCriteria_composesFacetSetAndCatalogSide() {
         when(geoLookupPort.findSelfAndDescendants(LOCATION)).thenReturn(Set.of(LOCATION));
-        when(realestatePropertyFilterPort.findListingIdsMatching(any(PropertyCriteria.class)))
-                .thenReturn(Set.of(LISTING));
+        // Row 2 (agent findings 2026-10-26 14:33 export): the matcher asks
+        // the ONE-LISTING membership form — the pre-fix set form
+        // materialized the whole matching-property population.
+        when(realestatePropertyFilterPort.listingMatchesCriteria(any(PropertyCriteria.class),
+                eq(LISTING))).thenReturn(true);
         catalogAnswers(List.of(summary()));
 
         assertThat(matcher.matches(property(2), LISTING, PROVIDER)).isTrue();
 
         var criteriaCaptor = org.mockito.ArgumentCaptor.forClass(PropertyCriteria.class);
-        verify(realestatePropertyFilterPort).findListingIdsMatching(criteriaCaptor.capture());
+        verify(realestatePropertyFilterPort).listingMatchesCriteria(criteriaCaptor.capture(),
+                eq(LISTING));
         assertThat(criteriaCaptor.getValue().locationIds()).containsExactly(LOCATION);
         assertThat(criteriaCaptor.getValue().minRooms()).isEqualTo(2);
+        verify(realestatePropertyFilterPort, never()).findListingIdsMatching(any(PropertyCriteria.class));
         verify(catalogSearchPort).searchByCriteriaRestrictedToListings(
                 any(SearchCriteria.class), eq(Set.of(LISTING)), any(PagedRequest.class));
     }
@@ -156,8 +162,10 @@ class SavedSearchMatcherTest {
     @Test
     void propertyCriteria_listingOutsideTheFacetSet_isAMiss_withoutAnyCatalogQuery() {
         when(geoLookupPort.findSelfAndDescendants(LOCATION)).thenReturn(Set.of(LOCATION));
-        when(realestatePropertyFilterPort.findListingIdsMatching(any(PropertyCriteria.class)))
-                .thenReturn(Set.of(UUID.randomUUID())); // someone else's listing
+        // Row 2: the one-listing membership answers the miss directly —
+        // someone else's listing is not in the facet set.
+        when(realestatePropertyFilterPort.listingMatchesCriteria(any(PropertyCriteria.class),
+                eq(LISTING))).thenReturn(false);
 
         assertThat(matcher.matches(property(2), LISTING, PROVIDER)).isFalse();
         verify(catalogSearchPort, never()).searchByCriteriaRestrictedToListings(
@@ -166,14 +174,18 @@ class SavedSearchMatcherTest {
 
     @Test
     void radiusCriteria_usesTheRadiusSet() {
-        when(realestatePropertyFilterPort.findListingIdsWithinRadius(
-                new BigDecimal("33.558889"), new BigDecimal("36.056944"), 10_000L))
-                .thenReturn(Set.of(LISTING));
+        // Row 2: the one-listing existence form — the same predicate the
+        // set form carried, answered for the single listing under test.
+        when(realestatePropertyFilterPort.listingIsWithinRadius(
+                new BigDecimal("33.558889"), new BigDecimal("36.056944"), 10_000L, LISTING))
+                .thenReturn(true);
         catalogAnswers(List.of(summary()));
 
         assertThat(matcher.matches(radius(), LISTING, PROVIDER)).isTrue();
-        verify(realestatePropertyFilterPort).findListingIdsWithinRadius(
-                new BigDecimal("33.558889"), new BigDecimal("36.056944"), 10_000L);
+        verify(realestatePropertyFilterPort).listingIsWithinRadius(
+                new BigDecimal("33.558889"), new BigDecimal("36.056944"), 10_000L, LISTING);
+        verify(realestatePropertyFilterPort, never()).findListingIdsWithinRadius(
+                any(BigDecimal.class), any(BigDecimal.class), anyLong());
     }
 
     @Test

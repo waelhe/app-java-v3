@@ -19,6 +19,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -127,6 +128,31 @@ class ProductVariantWriteServiceTest {
         assertThat(result.errors()).singleElement()
                 .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
                 .containsExactly(ProductVariantMutationErrorCode.REQUIRED, "product");
+        verify(variantRepository, never()).save(any());
+    }
+
+    /**
+     * Row 12 (agent findings 2026-10-26 14:33 export, CWE-203): the foreign
+     * parent ends the evaluation — the SKU uniqueness check (which reads
+     * the STRANGER's namespace) is never reached, so its ALREADY_EXISTS
+     * error cannot disclose whether a guessed SKU exists in the foreign
+     * seller's namespace. The refusal carries the product error alone,
+     * and the seller's own namespace query never runs.
+     */
+    @Test
+    void aStrangersProductSkipsTheSkuNamespaceQueryEntirely() {
+        Product strangerProduct = productOwnedBy(ProviderIds.STRANGER);
+        when(productRepository.findById(strangerProduct.getId()))
+                .thenReturn(Optional.of(strangerProduct));
+
+        ProductVariantMutationResult result = service.createVariant(
+                create(strangerProduct.getId(), "SKU-9", "Large", 1000L), caller);
+
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
+                .containsExactly(ProductVariantMutationErrorCode.REQUIRED, "product");
+        verify(variantRepository, never())
+                .findByProviderIdAndSku(any(), anyString());
         verify(variantRepository, never()).save(any());
     }
 
