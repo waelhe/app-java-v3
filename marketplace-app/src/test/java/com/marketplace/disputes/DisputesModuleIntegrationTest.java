@@ -121,6 +121,14 @@ class DisputesModuleIntegrationTest {
                 Dispute.openBooking(bookingId, consumerId, "the consumer's authored damage report"));
         assertThat(seeded.getReason()).isEqualTo("the consumer's authored damage report");
 
+        // The seed must reach the database before the purge runs: the
+        // entity's id is assigned in code (no identity insert), so
+        // persist() defers the INSERT, and the purge's native UPDATE
+        // rides JdbcTemplate — a channel Hibernate does not auto-flush
+        // for — so without this flush the UPDATE matches zero rows and
+        // the whole scenario is vacuous (measured: purged == 0 on CI).
+        entityManager.flush();
+
         // The concurrent resolution's load: a managed entity holding the
         // pre-purge version.
         Dispute staleLoaded = entityManager.find(Dispute.class, seeded.getId());

@@ -190,19 +190,26 @@ class ProductQaServiceTest {
     @Test
     void feedAnswersTheSame404ForASuspendedProduct_EvenThoughItsRowExists() {
         // Row 20 (agent findings 2026-10-26): the finding's own scenario —
-        // a suspended/archived product's row EXISTS (findById answers it)
-        // while the ACTIVE-only lookup answers empty. The public question
-        // feed must serve the SAME unavailable response the hidden product
-        // detail serves: the honest 404 BEFORE any feed query, so the
-        // questions and official answers disappear with their product.
+        // a suspended/archived product's row EXISTS while the ACTIVE-only
+        // lookup answers empty. The public question feed must serve the
+        // SAME unavailable response the hidden product detail serves: the
+        // honest 404 BEFORE any feed query, so the questions and official
+        // answers disappear with their product. The gate resolves through
+        // the ACTIVE-only lookup ALONE — the raw row lookup is never
+        // consulted (asserted below), so the row's existence cannot leak
+        // into the feed's decision.
         when(storefrontRepository.findActiveProduct(productId)).thenReturn(Optional.empty());
-        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
 
         assertThatThrownBy(() -> service.getQuestions(productId,
                 PageRequest.of(0, 20)))
                 .isInstanceOf(ResourceNotFoundException.class);
         verify(questionRepository, never())
                 .findByProductIdOrderByCreatedAtDescIdDesc(any(UUID.class), any(Pageable.class));
+        // Mockito strictness measured the pre-fix shape: a stubbed
+        // findById was never consumed — the gate never reads the raw row.
+        // The assertion below pins that contract so a future regression
+        // to the existence-only check fails here instead.
+        verify(productRepository, never()).findById(any(UUID.class));
     }
 
     @Test
