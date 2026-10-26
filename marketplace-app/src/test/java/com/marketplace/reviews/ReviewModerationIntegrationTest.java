@@ -6,11 +6,8 @@ import com.marketplace.identity.UserRole;
 import com.marketplace.provider.ProviderProfile;
 import com.marketplace.provider.ProviderRepository;
 import com.marketplace.provider.ProviderService;
-import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ReviewStats;
 import com.marketplace.shared.api.SystemSettingKeys;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,7 +16,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.data.domain.Pageable;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -37,7 +33,6 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * W1 (§4.4/§4.5 — the moderation and the dual badges): the pending
