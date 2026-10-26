@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -100,7 +101,12 @@ class DisputesContentPurgeAdapterTest {
 
         assertEquals(2, adapter.purgeAuthoredTexts(SUBJECT));
 
-        verify(jdbcTemplate).update(
+        // BOTH statements carry the predicate — the live row's erasure AND
+        // the audit mirror's scrub share the same authorship predicate and
+        // idempotence filter (measured on CI: the single-invocation verify
+        // was a TooManyActualInvocations because both updates match; the
+        // pin is stronger as a pair — the predicate binds both statements).
+        verify(jdbcTemplate, times(2)).update(
                 contains("WHERE opened_by = ? AND reason IS NOT NULL AND reason <> ?"),
                 eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
                 eq(AuthoredContentPurgePort.PURGED_MARKER));
