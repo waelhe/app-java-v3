@@ -119,7 +119,10 @@ fi
 # parameter additions are COMPATIBLE per the official model
 # (ChangedParameters.isCoreChanged) and pass without an exception;
 # required-parameter additions are breaks documented with
-# kind: parameter-add allowlist entries; response breaks and deleted
+# kind: parameter-add allowlist entries; security-requirement removals
+# (SECURITY_REQUIREMENTS_DECREASED per ChangedSecurityRequirements.
+# isCoreChanged — enabled by default) are breaks documented with
+# kind: security-remove allowlist entries; response breaks and deleted
 # endpoints keep their (path, status) coverage exactly as before.
 verify_exit=0
 bash "$ROOT_DIR/.ci/verify-openapi-exceptions.sh" \

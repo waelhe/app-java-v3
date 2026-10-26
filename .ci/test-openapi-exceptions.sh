@@ -25,8 +25,17 @@
 #     report incompatible with zero extractable records        -> exit 1
 #     compatible-only report + empty allowlist                 -> exit 0
 #     compatible-only report + non-empty allowlist             -> exit 1 (stale)
+#
+#   security-era classification (grounded in
+#   ChangedSecurityRequirements.isCoreChanged — the PR #736 alignment wave):
+#     security-requirement removal uncovered                       -> exit 1
+#     security-requirement removal covered by kind: security-remove -> exit 0
+#     security-remove entry with status too (ambiguous)            -> exit 1
+#     security-remove entry with parameter keys                    -> exit 1
+#     scope increase on a surviving requirement (SECURITY_REQUIREMENT_
+#       SCHEMES_INCREASED) — even when the removal is covered      -> exit 1 (fail closed)
 #     backward compatibility: the repo's live allowlist file
-#       covers its documented (POST disputes, 200) break        -> exit 0
+#       covers its documented ten security-remove breaks          -> exit 0
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -183,20 +192,129 @@ cat > "$TMP/report-compatible.json" <<'JSON'
 }
 JSON
 
-# The repo's LIVE allowlist entry (POST disputes 200) + the matching record.
-cat > "$TMP/report-disputes.json" <<'JSON'
+# The repo's LIVE allowlist entries + the matching records: since PR #736's
+# alignment wave the live file documents exactly the ten security-requirement
+# removals on the baseline-era public operations (the measured shape of the
+# official 2.1.7 report: securityRequirements.missing [{"bearerAuth": []}]
+# with every other node compatible). The #722-era disputes fixture was
+# retired with its entry (measured stale at birth — its 200->201 spec change
+# never existed in the generated contract).
+cat > "$TMP/report-live.json" <<'JSON'
+{
+  "compatible": false, "incompatible": true, "different": true, "unchanged": false,
+  "missingEndpoints": [],
+  "changedOperations": [
+    {"pathUrl": "/api/v1/listings", "httpMethod": "GET", "incompatible": true, "compatible": false,
+     "securityRequirements": {"missing": [{"bearerAuth": []}], "increased": null, "changed": [], "incompatible": true, "compatible": false},
+     "apiResponses": {"missing": {}, "increased": {}, "changed": {}, "incompatible": false, "compatible": true},
+     "description": {"incompatible": false, "compatible": true}, "summary": {"incompatible": false, "compatible": true}},
+    {"pathUrl": "/api/v1/listings/{id}", "httpMethod": "GET", "incompatible": true, "compatible": false,
+     "securityRequirements": {"missing": [{"bearerAuth": []}], "increased": null, "changed": [], "incompatible": true, "compatible": false},
+     "apiResponses": {"missing": {}, "increased": {}, "changed": {}, "incompatible": false, "compatible": true},
+     "description": {"incompatible": false, "compatible": true}, "summary": {"incompatible": false, "compatible": true}},
+    {"pathUrl": "/api/v1/listings/category/{category}", "httpMethod": "GET", "incompatible": true, "compatible": false,
+     "securityRequirements": {"missing": [{"bearerAuth": []}], "increased": null, "changed": [], "incompatible": true, "compatible": false},
+     "apiResponses": {"missing": {}, "increased": {}, "changed": {}, "incompatible": false, "compatible": true},
+     "description": {"incompatible": false, "compatible": true}, "summary": {"incompatible": false, "compatible": true}},
+    {"pathUrl": "/api/v1/listings/provider/{providerId}", "httpMethod": "GET", "incompatible": true, "compatible": false,
+     "securityRequirements": {"missing": [{"bearerAuth": []}], "increased": null, "changed": [], "incompatible": true, "compatible": false},
+     "apiResponses": {"missing": {}, "increased": {}, "changed": {}, "incompatible": false, "compatible": true},
+     "description": {"incompatible": false, "compatible": true}, "summary": {"incompatible": false, "compatible": true}},
+    {"pathUrl": "/api/v1/reviews/{id}", "httpMethod": "GET", "incompatible": true, "compatible": false,
+     "securityRequirements": {"missing": [{"bearerAuth": []}], "increased": null, "changed": [], "incompatible": true, "compatible": false},
+     "apiResponses": {"missing": {}, "increased": {}, "changed": {}, "incompatible": false, "compatible": true},
+     "description": {"incompatible": false, "compatible": true}, "summary": {"incompatible": false, "compatible": true}},
+    {"pathUrl": "/api/v1/reviews/reviewer/{reviewerId}", "httpMethod": "GET", "incompatible": true, "compatible": false,
+     "securityRequirements": {"missing": [{"bearerAuth": []}], "increased": null, "changed": [], "incompatible": true, "compatible": false},
+     "apiResponses": {"missing": {}, "increased": {}, "changed": {}, "incompatible": false, "compatible": true},
+     "description": {"incompatible": false, "compatible": true}, "summary": {"incompatible": false, "compatible": true}},
+    {"pathUrl": "/api/v1/reviews/provider/{providerId}", "httpMethod": "GET", "incompatible": true, "compatible": false,
+     "securityRequirements": {"missing": [{"bearerAuth": []}], "increased": null, "changed": [], "incompatible": true, "compatible": false},
+     "apiResponses": {"missing": {}, "increased": {}, "changed": {}, "incompatible": false, "compatible": true},
+     "description": {"incompatible": false, "compatible": true}, "summary": {"incompatible": false, "compatible": true}},
+    {"pathUrl": "/api/v1/search", "httpMethod": "GET", "incompatible": true, "compatible": false,
+     "securityRequirements": {"missing": [{"bearerAuth": []}], "increased": null, "changed": [], "incompatible": true, "compatible": false},
+     "apiResponses": {"missing": {}, "increased": {}, "changed": {}, "incompatible": false, "compatible": true},
+     "description": {"incompatible": false, "compatible": true}, "summary": {"incompatible": false, "compatible": true}},
+    {"pathUrl": "/api/v1/search/category/{category}", "httpMethod": "GET", "incompatible": true, "compatible": false,
+     "securityRequirements": {"missing": [{"bearerAuth": []}], "increased": null, "changed": [], "incompatible": true, "compatible": false},
+     "apiResponses": {"missing": {}, "increased": {}, "changed": {}, "incompatible": false, "compatible": true},
+     "description": {"incompatible": false, "compatible": true}, "summary": {"incompatible": false, "compatible": true}},
+    {"pathUrl": "/api/v1/payments/webhooks/{provider}", "httpMethod": "POST", "incompatible": true, "compatible": false,
+     "securityRequirements": {"missing": [{"bearerAuth": []}], "increased": null, "changed": [], "incompatible": true, "compatible": false},
+     "apiResponses": {"missing": {}, "increased": {}, "changed": {}, "incompatible": false, "compatible": true},
+     "description": {"incompatible": false, "compatible": true}, "summary": {"incompatible": false, "compatible": true}}
+  ]
+}
+JSON
+
+# Two pure security-requirement removals (everything else compatible) — the
+# measured shape of the alignment wave's operations.
+cat > "$TMP/report-security.json" <<'JSON'
 {
   "compatible": false, "incompatible": true, "different": true, "unchanged": false,
   "missingEndpoints": [],
   "changedOperations": [
     {
-      "pathUrl": "/api/v1/bookings/{bookingId}/disputes", "httpMethod": "POST",
+      "pathUrl": "/pet/findByStatus", "httpMethod": "GET",
       "incompatible": true, "compatible": false,
-      "apiResponses": {
-        "missing": {"200": {"description": "ok"}},
-        "increased": {}, "changed": {},
+      "securityRequirements": {
+        "missing": [{"bearerAuth": []}], "increased": null, "changed": [],
         "incompatible": true, "compatible": false
-      }
+      },
+      "apiResponses": {"missing": {}, "increased": {}, "changed": {}, "incompatible": false, "compatible": true}
+    },
+    {
+      "pathUrl": "/payment/{provider}", "httpMethod": "POST",
+      "incompatible": true, "compatible": false,
+      "securityRequirements": {
+        "missing": [{"bearerAuth": []}], "increased": null, "changed": [],
+        "incompatible": true, "compatible": false
+      },
+      "apiResponses": {"missing": {}, "increased": {}, "changed": {}, "incompatible": false, "compatible": true}
+    }
+  ]
+}
+JSON
+
+# Field-validation companion: exactly ONE security removal, so each defective
+# entry case fails for its intended reason alone (the harness's own rule from
+# the CodeRabbit review on #716).
+cat > "$TMP/report-security-single.json" <<'JSON'
+{
+  "compatible": false, "incompatible": true, "different": true, "unchanged": false,
+  "missingEndpoints": [],
+  "changedOperations": [
+    {
+      "pathUrl": "/pet/findByStatus", "httpMethod": "GET",
+      "incompatible": true, "compatible": false,
+      "securityRequirements": {
+        "missing": [{"bearerAuth": []}], "increased": null, "changed": [],
+        "incompatible": true, "compatible": false
+      },
+      "apiResponses": {"missing": {}, "increased": {}, "changed": {}, "incompatible": false, "compatible": true}
+    }
+  ]
+}
+JSON
+
+# Mixed case: the SAME operation carries a covered removal (missing) AND a
+# scope increase on the surviving requirement (changed[0].incompatible) —
+# the removal's coverage must NOT silence the unrepresentable scope increase.
+cat > "$TMP/report-security-change.json" <<'JSON'
+{
+  "compatible": false, "incompatible": true, "different": true, "unchanged": false,
+  "missingEndpoints": [],
+  "changedOperations": [
+    {
+      "pathUrl": "/pet/findByStatus", "httpMethod": "GET",
+      "incompatible": true, "compatible": false,
+      "securityRequirements": {
+        "missing": [{"bearerAuth": []}], "increased": null,
+        "changed": [{"incompatible": true, "compatible": false, "increased": {"bearerAuth": ["admin"]}}],
+        "incompatible": true, "compatible": false
+      },
+      "apiResponses": {"missing": {}, "increased": {}, "changed": {}, "incompatible": false, "compatible": true}
     }
   ]
 }
@@ -301,6 +419,49 @@ exceptions:
     expiry: 2099-12-31
 YML
 
+cat > "$TMP/allow-security-full.yml" <<'YML'
+exceptions:
+  - path: GET /pet/findByStatus
+    kind: security-remove
+    ticket: T-S1
+    reason: public read alignment
+    expiry: 2099-12-31
+  - path: POST /payment/{provider}
+    kind: security-remove
+    ticket: T-S2
+    reason: webhook ingress alignment
+    expiry: 2099-12-31
+YML
+
+cat > "$TMP/allow-security-single.yml" <<'YML'
+exceptions:
+  - path: GET /pet/findByStatus
+    kind: security-remove
+    ticket: T-S1
+    reason: public read alignment
+    expiry: 2099-12-31
+YML
+
+cat > "$TMP/allow-security-ambiguous.yml" <<'YML'
+exceptions:
+  - path: GET /pet/findByStatus
+    kind: security-remove
+    status: "401"
+    ticket: T-S1
+    reason: ambiguous entry
+    expiry: 2099-12-31
+YML
+
+cat > "$TMP/allow-security-paramkeys.yml" <<'YML'
+exceptions:
+  - path: GET /pet/findByStatus
+    kind: security-remove
+    required: true
+    ticket: T-S1
+    reason: parameter keys on a security entry
+    expiry: 2099-12-31
+YML
+
 # A minimal single-break report: exactly one GET /pet/findByStatus 200
 # response break. Field-validation cases (expiry / calendar / kind /
 # required / ambiguity) pair it with a single defective entry so the ONLY
@@ -366,11 +527,27 @@ check "schema-only incompatible report -> 1"           1 "report-incompatible"  
 check "compatible-only report + empty allowlist -> 0"  0 ""                             "$TMP/report-compatible.json" "$TMP/allow-empty.yml"
 check "compatible-only report + non-empty allowlist -> 1 (stale)" 1 "STALE"       "$TMP/report-compatible.json" "$TMP/allow-stale.yml"
 
+# -------------------------------------------------- security-era classification
+# ChangedSecurityRequirements.isCoreChanged: missing -> INCOMPATIBLE
+# (SECURITY_REQUIREMENTS_DECREASED, enabled by default — the pinned image
+# runs with no config override); increased alone -> COMPATIBLE. The fixtures
+# carry the measured 2.1.7 --json shape of the PR #736 alignment wave.
+check "security removal uncovered -> 1"                       1 "UNCOVERED.*security-remove"       "$TMP/report-security.json" "$TMP/allow-empty.yml"
+check "security removal covered by kind: security-remove -> 0" 0 ""                                 "$TMP/report-security.json" "$TMP/allow-security-full.yml"
+check "security removal partial coverage -> 1"                1 "UNCOVERED.*security-remove"       "$TMP/report-security.json" "$TMP/allow-security-single.yml"
+check "security-remove entry with status too -> 1"            1 "ambiguous"                         "$TMP/report-security-single.json" "$TMP/allow-security-ambiguous.yml"
+check "security-remove entry with parameter keys -> 1"        1 "parameter keys"                    "$TMP/report-security-single.json" "$TMP/allow-security-paramkeys.yml"
+check "security scope increase stays unrepresentable -> 1"    1 "UNREPRESENTABLE.*security-change"  "$TMP/report-security-change.json" "$TMP/allow-security-single.yml"
+
 # -------------------------------------------------- backward compatibility
 # The repository's live allowlist file must keep working unchanged against
-# its documented break (the disputes 200->201 status move).
-check "live repo allowlist covers its break -> 0"     0 ""                     "$TMP/report-disputes.json" "$SCRIPT_DIR/openapi-compat-allowlist.yml"
-# And it must be flagged stale against a report that does not contain the break.
-check "live repo allowlist stale without break -> 1"  1 "STALE"                "$TMP/report-compatible.json" "$SCRIPT_DIR/openapi-compat-allowlist.yml"
+# its documented breaks — since PR #736's alignment wave, the ten
+# security-remove entries for the baseline-era public operations (the
+# disputes entry was removed in #722 as stale-at-birth: its 200->201 spec
+# change never existed in the generated contract, so the fixture retired
+# with it).
+check "live repo allowlist covers its breaks -> 0"     0 ""                     "$TMP/report-live.json" "$SCRIPT_DIR/openapi-compat-allowlist.yml"
+# And it must be flagged stale against a report that does not contain the breaks.
+check "live repo allowlist stale without breaks -> 1"  1 "STALE"                "$TMP/report-compatible.json" "$SCRIPT_DIR/openapi-compat-allowlist.yml"
 
 echo "All verify-openapi-exceptions.sh contract tests passed."

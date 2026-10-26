@@ -71,6 +71,21 @@ public class OpenApiConfig {
         };
     }
 
+    /**
+     * The served contract's security-vs-reality alignment (2026-10-26): the root-level
+     * bearerAuth requirement above advertises every operation as JWT-required, while the
+     * resource-server chain deliberately opens a family of public reads/POSTs (39 of the
+     * 412 served operations in the measured spec of 2026-10-25). The customizer marks
+     * exactly those operations {@code security: []} so the contract stops promising 401s
+     * the service never answers — see {@link PublicApiSecurityCustomizer} (the ordered
+     * rules mirror SecurityConfig's authorizeHttpRequests declaration order; first
+     * match wins).
+     */
+    @Bean
+    public OpenApiCustomizer publicApiSecurityCustomizer() {
+        return new PublicApiSecurityCustomizer();
+    }
+
     private static void addResponseIfMissing(io.swagger.v3.oas.models.Operation operation, String statusCode, String ref) {
         if (operation.getResponses() == null) {
             operation.setResponses(new io.swagger.v3.oas.models.responses.ApiResponses());
