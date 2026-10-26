@@ -8,6 +8,7 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
@@ -48,14 +49,30 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private final ObjectProvider<JwtAuthenticationConverter> jwtAuthenticationConverter;
     private final ObjectProvider<UserLookupPort> userLookupPort;
 
+    /**
+     * Row 10 (agent findings 2026-10-25, CWE-613): the bearer-session
+     * expiration guard — one instance for the whole websocket boundary,
+     * shared by the CONNECT-frame token lifter (which arms it) and the
+     * session-tracking handler decorator (which feeds it the live
+     * sessions and releases them on disconnect). Built here, not as a
+     * bean: it is websocket plumbing internal to this configuration, the
+     * same construction shape as the interceptors themselves. The
+     * {@link ObjectProvider} for {@link TaskScheduler} keeps module-slice
+     * contexts (no scheduler bean) inert — the inbound-frame
+     * re-validation in the interceptor remains their active defense.
+     */
+    private final BearerSessionExpirationGuard bearerSessionExpirationGuard;
+
     public WebSocketConfig(MarketplaceProperties properties,
                            ObjectProvider<JwtDecoder> jwtDecoder,
                            ObjectProvider<JwtAuthenticationConverter> jwtAuthenticationConverter,
-                           ObjectProvider<UserLookupPort> userLookupPort) {
+                           ObjectProvider<UserLookupPort> userLookupPort,
+                           ObjectProvider<TaskScheduler> taskScheduler) {
         this.properties = properties;
         this.jwtDecoder = jwtDecoder;
         this.jwtAuthenticationConverter = jwtAuthenticationConverter;
         this.userLookupPort = userLookupPort;
+        this.bearerSessionExpirationGuard = new BearerSessionExpirationGuard(taskScheduler);
     }
 
     @Override
@@ -110,7 +127,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
         registration.interceptors(
-                new JwtChannelAuthenticationInterceptor(jwtDecoder, jwtAuthenticationConverter),
+                new JwtChannelAuthenticationInterceptor(jwtDecoder, jwtAuthenticationConverter, bearerSessionExpirationGuard),
                 new WebSocketIdentityChannelInterceptor(userLookupPort));
     }
 
@@ -120,5 +137,13 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         registry.setSendBufferSizeLimit(512 * 1024);
         registry.setSendTimeLimit(15 * 1000);
         registry.setTimeToFirstMessage(30000);
+        // Row 10 (agent findings 2026-10-25, CWE-613): the official
+        // decorator-factory seam — every established WebSocket session is
+        // handed to the bearer-session expiration guard (and released on
+        // disconnect), so an expired token's socket is closed at its exp
+        // even when it sits idle behind its subscriptions. The decorator
+        // only observes the lifecycle; every callback delegates unchanged.
+        registry.addDecoratorFactory(
+                handler -> new BearerSessionTrackingHandlerDecorator(handler, bearerSessionExpirationGuard));
     }
 }
