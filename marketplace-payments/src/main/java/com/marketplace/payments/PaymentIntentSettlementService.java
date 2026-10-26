@@ -128,6 +128,16 @@ public class PaymentIntentSettlementService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public PaymentIntent confirm(UUID id, String externalId, WebhookEventRef inboxRow) {
         PaymentIntent intent = requireIntent(id);
+        // Row 15 (agent findings 2026-10-26T11:43 export): the capture that
+        // WON the race against an abandonment settles the books here — the
+        // provider is the money truth, and the abandonment's own decision
+        // ("this money returns to the buyer") rides the captured event to
+        // the durable recovery listener AFTER this settlement commits. The
+        // pre-settlement status is read BEFORE the transition; the organic
+        // FAILED law (W7/G7) is untouched — only the CANCELLATION_PENDING
+        // abandonment takes this branch, and the ORGANIC terminal verdict
+        // still answers the machine's own guard.
+        boolean abandonedMidFlight = intent.getStatus() == PaymentIntentStatus.CANCELLATION_PENDING;
         intent.markSucceeded();
         paymentRepository.findByPaymentIntentId(id)
                 .ifPresent(p -> p.markCompleted(externalId));
@@ -138,6 +148,16 @@ public class PaymentIntentSettlementService {
             // contract; the idempotent filter inside leaves a row the retry
             // attempt already marked untouched.
             webhookEventRecorder.markSettled(inboxRow.provider(), inboxRow.eventId());
+        }
+        if (abandonedMidFlight) {
+            // published INSIDE the settlement transaction: the Modulith
+            // Event Publication Registry records it durably — a crash before
+            // the listener runs resubmits it, and the abandonment-scoped PSP
+            // idempotency key keeps every resubmission a replay of the SAME
+            // remote refund, never a second payment
+            eventPublisher.publishEvent(new PaymentAbandonmentCapturedEvent(id));
+            log.info("Captured intent {} was abandoned mid-flight (CANCELLATION_PENDING) — the books"
+                    + " settled to the provider truth and the abandonment refund is dispatched durably", id);
         }
         return intent;
     }
@@ -176,6 +196,43 @@ public class PaymentIntentSettlementService {
             webhookEventRecorder.markSettled(inboxRow.provider(), inboxRow.eventId());
         }
         log.info("Payment intent {} settled as FAILED by the provider", id);
+        return intent;
+    }
+
+    /**
+     * Row 15 (agent findings 2026-10-26T11:43 export) — the remote
+     * abandonment's terminal resolution: the provider itself cancelled or
+     * expired the in-flight intent ({@code payment_intent.canceled} /
+     * {@code payment_intent.expired}), so no money ever moved — the
+     * CANCELLATION_PENDING abandonment resolves to FAILED and its PENDING
+     * payment row follows (mirrors {@link #fail(UUID, WebhookEventRef)}
+     * exactly: state machine, payment row, event, cache invalidation,
+     * atomic inbox settlement).
+     *
+     * <p>Every OTHER state is the honest idempotent no-op read — the event
+     * was processed, the row settles, and terminal verdicts stay exactly as
+     * they are (the pre-fix dispatch ignored these event types entirely; a
+     * logged default that never touched any state — the resolution ONLY
+     * ever closes an open abandonment).</p>
+     */
+    @Observed(name = "payment.abandonment.resolve")
+    public PaymentIntent resolveAbandonment(UUID id, WebhookEventRef inboxRow) {
+        PaymentIntent intent = requireIntent(id);
+        if (inboxRow != null) {
+            webhookEventRecorder.markSettled(inboxRow.provider(), inboxRow.eventId());
+        }
+        if (intent.getStatus() != PaymentIntentStatus.CANCELLATION_PENDING) {
+            log.info("Provider cancellation/expiry for intent {} is the idempotent no-op read — status {}"
+                    + " keeps its verdict (only an open abandonment resolves)", id, intent.getStatus());
+            return intent;
+        }
+        intent.markFailed();
+        paymentRepository.findByPaymentIntentId(id)
+                .ifPresent(Payment::markFailed);
+        eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "FAILED"));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), id));
+        log.info("Abandoned intent {} resolved as FAILED — the provider itself cancelled/expired the"
+                + " in-flight charge; no money ever moved", id);
         return intent;
     }
 

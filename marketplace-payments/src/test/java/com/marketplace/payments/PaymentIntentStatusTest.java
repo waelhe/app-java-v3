@@ -71,4 +71,39 @@ class PaymentIntentStatusTest {
     void partiallyRefunded_rejectsSucceeded() {
         assertThrows(ConflictException.class, () -> PaymentIntentStatus.PARTIALLY_REFUNDED.validateTransitionTo(PaymentIntentStatus.SUCCEEDED));
     }
+
+    // ------------------------------------------------------------------
+    // Row 15 (agent findings 2026-10-26T11:43 export) — the abandonment's
+    // own state: CANCELLATION_PENDING is born from PROCESSING only, and the
+    // PROVIDER's own truth resolves it (succeeded settles the books, its own
+    // failure/cancellation resolves to FAILED). It is NOT collectible, NOT
+    // retryable — the money may still land, so no new attempt may open.
+    // ------------------------------------------------------------------
+
+    @Test
+    void processing_acceptsCancellationPending() {
+        assertDoesNotThrow(() -> PaymentIntentStatus.PROCESSING.validateTransitionTo(PaymentIntentStatus.CANCELLATION_PENDING));
+    }
+
+    @Test
+    void cancellationPending_acceptsSucceeded_theCaptureThatWonTheRace() {
+        assertDoesNotThrow(() -> PaymentIntentStatus.CANCELLATION_PENDING.validateTransitionTo(PaymentIntentStatus.SUCCEEDED));
+    }
+
+    @Test
+    void cancellationPending_acceptsFailed_theProviderOwnResolution() {
+        assertDoesNotThrow(() -> PaymentIntentStatus.CANCELLATION_PENDING.validateTransitionTo(PaymentIntentStatus.FAILED));
+    }
+
+    @Test
+    void cancellationPending_rejectsCancelled_theAbandonmentIsNotTheUnpaidCancelPath() {
+        assertThrows(ConflictException.class, () -> PaymentIntentStatus.CANCELLATION_PENDING.validateTransitionTo(PaymentIntentStatus.CANCELLED));
+    }
+
+    @Test
+    void cancellationPending_isNeitherCollectibleNorRetryable() {
+        assertFalse(PaymentIntentStatus.COLLECTIBLE.contains(PaymentIntentStatus.CANCELLATION_PENDING));
+        assertFalse(PaymentIntentStatus.RETRYABLE.contains(PaymentIntentStatus.CANCELLATION_PENDING));
+        assertFalse(PaymentIntentStatus.COLLECTED.contains(PaymentIntentStatus.CANCELLATION_PENDING));
+    }
 }

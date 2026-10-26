@@ -775,7 +775,14 @@ class PaymentsServiceTest {
     }
 
     @Test
-    void autoRefundByBooking_processingIntent_failsInFlight() {
+    void autoRefundByBooking_processingIntent_recordsTheAbandonment() {
+        // Row 15 (agent findings 2026-10-26T11:43 export): the in-flight
+        // abandonment is NOT a terminal failure — the remote capture may
+        // still win the race. The intent lands CANCELLATION_PENDING, the
+        // payment row keeps PENDING (the remote outcome owns its terminal
+        // state), and the provider's own events resolve the race (succeeded
+        // settles + pays the abandonment refund; failed/canceled/expired
+        // resolve to FAILED).
         UUID bookingId = create(UUID.class);
         UUID intentId = create(UUID.class);
         PaymentIntent intent = of(PaymentIntent.class)
@@ -795,13 +802,15 @@ class PaymentsServiceTest {
                 bookingId, PaymentIntentStatus.COLLECTIBLE)).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(payment));
         when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.autoRefundByBooking(bookingId);
 
-        assertEquals(PaymentIntentStatus.FAILED, intent.getStatus());
-        assertEquals(PaymentStatus.FAILED, payment.getStatus());
-        verify(eventPublisher).publishEvent(new PaymentStateChangedEvent(intentId, "FAILED"));
+        assertEquals(PaymentIntentStatus.CANCELLATION_PENDING, intent.getStatus());
+        // the payment row keeps PENDING — never terminally failed while the
+        // remote race is open (the pre-fix pair-FAILED stranded a winning
+        // capture with no settlement and no refund)
+        assertEquals(PaymentStatus.PENDING, payment.getStatus());
+        verify(eventPublisher).publishEvent(new PaymentStateChangedEvent(intentId, "CANCELLATION_PENDING"));
         verify(eventPublisher).publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), intentId));
     }
 

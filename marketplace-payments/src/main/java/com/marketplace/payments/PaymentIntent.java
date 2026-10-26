@@ -283,6 +283,19 @@ public class PaymentIntent extends BaseEntity {
         this.status = PaymentIntentStatus.FAILED;
     }
 
+    /**
+     * Row 15 (agent findings 2026-10-26T11:43 export) — the abandonment's
+     * own edge: a domain cancellation hit an in-flight payment. NOT a
+     * terminal failure: the remote capture may still win the race, and the
+     * provider's own events resolve this state (succeeded → the settlement
+     * pays the abandonment's ONE durable refund back; failed/canceled/
+     * expired → FAILED, no money moved).
+     */
+    public void markCancellationPending() {
+        this.status.validateTransitionTo(PaymentIntentStatus.CANCELLATION_PENDING);
+        this.status = PaymentIntentStatus.CANCELLATION_PENDING;
+    }
+
     public void cancel() {
         this.status.validateTransitionTo(PaymentIntentStatus.CANCELLED);
         this.status = PaymentIntentStatus.CANCELLED;
