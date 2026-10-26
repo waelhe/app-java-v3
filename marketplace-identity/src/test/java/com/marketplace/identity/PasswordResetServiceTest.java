@@ -19,6 +19,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -141,7 +142,7 @@ class PasswordResetServiceTest {
     }
 
     @Test
-    void completeReset_encodesTheNewSecretPreservesEveryFlagAndKillsTheAuthorizations() {
+    void completeReset_writesThePasswordColumnOnlyAndKillsTheAuthorizations() {
         AuthActionToken token = AuthActionToken.issue(
                 EMAIL, AuthActionTokenPurpose.PASSWORD_RESET, "c".repeat(64), NOW.plus(TTL));
         when(authActionTokenService.consume("raw-token", AuthActionTokenPurpose.PASSWORD_RESET))
@@ -153,15 +154,22 @@ class PasswordResetServiceTest {
 
         service.completeReset("raw-token", "the-new-password");
 
-        ArgumentCaptor<UserDetails> updated = ArgumentCaptor.forClass(UserDetails.class);
-        verify(userDetailsManager).updateUser(updated.capture());
-        // The official store: the NEW secret in the delegating encoder's
-        // {bcrypt} form — never the clear value; every other flag replayed.
-        assertThat(updated.getValue().getPassword()).startsWith("{bcrypt}");
-        assertThat(updated.getValue().getPassword()).doesNotContain("the-new-password");
-        assertThat(updated.getValue().isEnabled()).isTrue();
-        assertThat(updated.getValue().getAuthorities())
-                .anyMatch(a -> a.getAuthority().equals("ROLE_CONSUMER"));
+        // Row 46 (agent findings 2026-10-26 — CWE-362): the credential write
+        // is the PASSWORD COLUMN ONLY. The pre-fix flow replayed a full
+        // updateUser from the loaded snapshot — the framework deletes the
+        // CURRENT auth_authorities rows and re-inserts the snapshot's, so an
+        // admin's role removal landing around the encoding was silently
+        // restored. Now: NO updateUser call at all, and the single column
+        // write carries the NEW secret in the delegating encoder's {bcrypt}
+        // form — never the clear value.
+        verify(userDetailsManager, never()).updateUser(any(UserDetails.class));
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbcTemplate).update(sql.capture(),
+                org.mockito.ArgumentMatchers.argThat((Object arg) -> arg instanceof String encoded
+                        && encoded.startsWith("{bcrypt}")
+                        && !encoded.contains("the-new-password")),
+                eq(EMAIL));
+        assertThat(sql.getValue()).isEqualTo(PasswordResetService.UPDATE_PASSWORD_ONLY);
         // The L23 kill: a refresh token minted under the old password does
         // not survive the rotation.
         verify(jdbcTemplate).update(
@@ -178,12 +186,14 @@ class PasswordResetServiceTest {
     }
 
     @Test
-    void completeReset_aDisabledAccountKeepsItsDisabledFlag() {
-        // The reset redeems a token, not a ban: an administratively disabled
-        // account gets a new password but STAYS disabled (the
-        // ban-vs-verification invariant's other face — only the verification
-        // surface lifts the verification hold, and only the administrative
-        // surface lifts a ban).
+    void completeReset_aDisabledAccountIsNeverTouchedByTheCredentialRotation() {
+        // Row 46's other face: the reset redeems a token, not a ban — an
+        // administratively disabled account gets a new password and STAYS
+        // disabled. The pre-fix snapshot replay made this an assertion over
+        // the replayed flags; the password-only write makes it structural:
+        // the flags live in their own columns and the reset's single-column
+        // UPDATE cannot reach them (the ban-vs-verification invariant's
+        // other face — only the administrative surface lifts a ban).
         AuthActionToken token = AuthActionToken.issue(
                 EMAIL, AuthActionTokenPurpose.PASSWORD_RESET, "d".repeat(64), NOW.plus(TTL));
         when(authActionTokenService.consume("raw-token", AuthActionTokenPurpose.PASSWORD_RESET))
@@ -195,10 +205,10 @@ class PasswordResetServiceTest {
 
         service.completeReset("raw-token", "the-new-password");
 
-        ArgumentCaptor<UserDetails> updated = ArgumentCaptor.forClass(UserDetails.class);
-        verify(userDetailsManager).updateUser(updated.capture());
-        assertThat(updated.getValue().isEnabled())
-                .as("the reset never re-enables a disabled account").isFalse();
+        verify(userDetailsManager, never()).updateUser(any(UserDetails.class));
+        verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.startsWith("UPDATE auth_users SET password"),
+                org.mockito.ArgumentMatchers.anyString(), eq(EMAIL));
     }
 
     private static String eq(String value) {
