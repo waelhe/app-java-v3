@@ -110,12 +110,51 @@ public class CommunityContentPurgeAdapter implements AuthoredContentPurgePort {
                         + "WHERE author_id = ? AND (title <> ? OR location_label <> ?)",
                 AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
                 userId, AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER);
+        // Row 18 (agent findings 2026-10-26): the polls' authored text joins
+        // the purge. The question and the committee label are the poll's
+        // own two authored columns (both NOT NULL, V100 — the shared
+        // tombstone marker is the honest representation), keyed by the
+        // STABLE author id (V286) — never by the display label, which a
+        // relabeled row would evade and an identically-labeled stranger
+        // would falsely match. Base table and the Envers mirror both.
+        int polls = jdbcTemplate.update(
+                "UPDATE neighborhood_polls SET question = ?, author_label = ? "
+                        + "WHERE author_id = ? AND (question <> ? OR author_label <> ?)",
+                AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
+                userId, AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER);
+        int pollAuditRows = jdbcTemplate.update(
+                "UPDATE neighborhood_polls_aud SET question = ?, author_label = ? "
+                        + "WHERE author_id = ? AND (question <> ? OR author_label <> ?)",
+                AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
+                userId, AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER);
+        // The options die with their poll (the authored-unit rule — the
+        // creation write inserts the poll and its full option set as ONE
+        // unit, so the purge follows the same ownership THROUGH the
+        // poll's stable author): an option's label is purged exactly when
+        // its poll's author is the subject, base and mirror both (the
+        // provider services' own through-the-owner shape — the target
+        // aliased, the owner joined).
+        int pollOptions = jdbcTemplate.update(
+                "UPDATE neighborhood_poll_options o SET label = ? "
+                        + "FROM neighborhood_polls p "
+                        + "WHERE p.id = o.poll_id AND p.author_id = ? AND o.label <> ?",
+                AuthoredContentPurgePort.PURGED_MARKER,
+                userId, AuthoredContentPurgePort.PURGED_MARKER);
+        int pollOptionAuditRows = jdbcTemplate.update(
+                "UPDATE neighborhood_poll_options_aud o SET label = ? "
+                        + "FROM neighborhood_polls p "
+                        + "WHERE p.id = o.poll_id AND p.author_id = ? AND o.label <> ?",
+                AuthoredContentPurgePort.PURGED_MARKER,
+                userId, AuthoredContentPurgePort.PURGED_MARKER);
         log.info("Community content purge: userId={}, posts={}, postAuditRows={}, "
                         + "comments={}, commentAuditRows={}, events={}, eventAuditRows={}, "
-                        + "marketItems={}, marketItemAuditRows={}",
+                        + "marketItems={}, marketItemAuditRows={}, polls={}, pollAuditRows={}, "
+                        + "pollOptions={}, pollOptionAuditRows={}",
                 userId, posts, postAuditRows, comments, commentAuditRows,
-                events, eventAuditRows, marketItems, marketItemAuditRows);
+                events, eventAuditRows, marketItems, marketItemAuditRows,
+                polls, pollAuditRows, pollOptions, pollOptionAuditRows);
         return posts + postAuditRows + comments + commentAuditRows + events + eventAuditRows
-                + marketItems + marketItemAuditRows;
+                + marketItems + marketItemAuditRows + polls + pollAuditRows
+                + pollOptions + pollOptionAuditRows;
     }
 }

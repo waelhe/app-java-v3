@@ -824,12 +824,12 @@ ON CONFLICT (id) DO NOTHING;
 -- hood's poll so the vote button is live for the browser round.
 -- Reference-shaped rows: ON CONFLICT DO UPDATE converges the seed's
 -- own edits.
-INSERT INTO neighborhood_polls (id, location_id, question, author_label, is_deleted, version, created_by, created_at, updated_by, updated_at) VALUES
-    ('48484848-4848-4484-8484-484848480001', '11111111-1111-4111-8111-111111111104', 'ما المواعيد الأنسب لفتح الممشى المظلل خلال الصيف؟', 'لجنة تطوير الحي', FALSE, 0, 'seed', '2026-09-27 18:00:00+00', 'seed', '2026-09-27 18:00:00+00'),
-    ('48484848-4848-4484-8484-484848480002', '11111111-1111-4111-8111-111111111105', 'ما الخدمة التي تستحق التطوير أولًا في الضاحية؟', 'لجنة تطوير الحي', FALSE, 0, 'seed', '2026-09-28 16:30:00+00', 'seed', '2026-09-28 16:30:00+00'),
-    ('48484848-4848-4484-8484-484848480003', '11111111-1111-4111-8111-111111111106', 'أي يوم يناسب سوق الأحد الأسبوعي في الهامة؟', 'لجنة تطوير الحي', FALSE, 0, 'seed', '2026-09-26 10:00:00+00', 'seed', '2026-09-26 10:00:00+00')
+INSERT INTO neighborhood_polls (id, author_id, location_id, question, author_label, is_deleted, version, created_by, created_at, updated_by, updated_at) VALUES
+    ('48484848-4848-4484-8484-484848480001', '35353535-3535-4535-8353-353535350001', '11111111-1111-4111-8111-111111111104', 'ما المواعيد الأنسب لفتح الممشى المظلل خلال الصيف؟', 'لجنة تطوير الحي', FALSE, 0, 'seed', '2026-09-27 18:00:00+00', 'seed', '2026-09-27 18:00:00+00'),
+    ('48484848-4848-4484-8484-484848480002', '35353535-3535-4535-8353-353535350001', '11111111-1111-4111-8111-111111111105', 'ما الخدمة التي تستحق التطوير أولًا في الضاحية؟', 'لجنة تطوير الحي', FALSE, 0, 'seed', '2026-09-28 16:30:00+00', 'seed', '2026-09-28 16:30:00+00'),
+    ('48484848-4848-4484-8484-484848480003', '35353535-3535-4535-8353-353535350001', '11111111-1111-4111-8111-111111111106', 'أي يوم يناسب سوق الأحد الأسبوعي في الهامة؟', 'لجنة تطوير الحي', FALSE, 0, 'seed', '2026-09-26 10:00:00+00', 'seed', '2026-09-26 10:00:00+00')
 ON CONFLICT (id) DO UPDATE SET location_id = EXCLUDED.location_id, question = EXCLUDED.question,
-    author_label = EXCLUDED.author_label, is_deleted = FALSE;
+    author_label = EXCLUDED.author_label, is_deleted = FALSE, author_id = EXCLUDED.author_id;
 
 -- 9 poll options (L52): each set in the author's own display order
 -- (position 0..n — the design's own rows measured verbatim for the

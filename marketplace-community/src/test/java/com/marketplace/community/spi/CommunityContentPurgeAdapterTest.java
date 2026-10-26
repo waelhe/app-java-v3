@@ -150,8 +150,8 @@ class CommunityContentPurgeAdapterTest {
         assertThat(purged).isEqualTo(36);
         org.mockito.Mockito.verify(jdbcTemplate, times(2)).update(
                 org.mockito.ArgumentMatchers.argThat((String sql) ->
-                        (sql.startsWith("UPDATE neighborhood_poll_options SET label = ?")
-                                || sql.startsWith("UPDATE neighborhood_poll_options_aud SET label = ?"))
+                        (sql.startsWith("UPDATE neighborhood_poll_options o SET label = ?")
+                                || sql.startsWith("UPDATE neighborhood_poll_options_aud o SET label = ?"))
                                 && sql.contains("FROM neighborhood_polls p")
                                 && sql.contains("p.id = o.poll_id")
                                 && sql.contains("p.author_id = ?")

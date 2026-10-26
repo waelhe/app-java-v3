@@ -232,7 +232,7 @@ public class NeighborhoodPollService {
                             + (optionLabels == null ? 0 : optionLabels.size()));
         }
         NeighborhoodPoll saved = pollRepository.save(
-                NeighborhoodPoll.authored(locationId, question, authorLabel));
+                NeighborhoodPoll.authored(authorId, locationId, question, authorLabel));
         List<NeighborhoodPollOption> options = new java.util.ArrayList<>(optionLabels.size());
         for (int position = 0; position < optionLabels.size(); position++) {
             options.add(optionRepository.save(NeighborhoodPollOption.optionOf(
