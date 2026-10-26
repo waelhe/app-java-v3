@@ -1,6 +1,7 @@
 package com.marketplace.community;
 
 import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.Currencies;
 import com.marketplace.shared.api.FeatureGatePort;
 import com.marketplace.shared.api.GeoLookupPort;
@@ -112,6 +113,14 @@ public class NeighborhoodMarketItemService {
                                                  MarketCondition condition,
                                                  Integer priceCents, String priceCurrency,
                                                  String locationLabel) {
+        // The kill-switch FIRST (agent findings 2026-10-26, row 13) — before
+        // the port resolve, before any membership read, before any write:
+        // the board read already consulted the lever, and listing creation
+        // is the submission channel it must silence too. The owner cleanup
+        // below (delete + mark-sold) stays available by design — the
+        // polls' own precedent (requirePollsEnabled): the lever pauses
+        // submission, never the owner's own exits.
+        requireMarketEnabled();
         GeoLookupPort.GeoNode node = geoLookupPort.getLocation(locationId);
         if (node.level() != NEIGHBORHOOD_LEVEL) {
             throw new BadRequestException(
@@ -345,5 +354,22 @@ public class NeighborhoodMarketItemService {
             throw new AccessDeniedException(wrongLocationMessage);
         }
         return membership;
+    }
+
+    /**
+     * The market kill-switch (agent findings 2026-10-26, row 13) — the
+     * polls' own {@code requirePollsEnabled} precedent verbatim. The board
+     * read already consulted the lever; listing creation now answers the
+     * honest 409 BEFORE the port resolve, the membership read, or any
+     * write. The owner cleanup (delete + mark-sold) stays available during
+     * shutdown by design — the lever silences the submission channel, not
+     * the owner's own exits over the items already published.
+     */
+    private void requireMarketEnabled() {
+        if (!featureGate.isEnabled("community.market.enabled", true)) {
+            throw new ConflictException(
+                    "The neighborhood market is currently switched off by the platform operator — "
+                            + "publishing new listings is paused");
+        }
     }
 }
