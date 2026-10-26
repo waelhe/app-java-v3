@@ -102,6 +102,32 @@ public class ProviderProfileContentPurgeAdapter implements AuthoredContentPurgeP
                 "UPDATE provider_profiles_aud SET agency_name = NULL, license_number = NULL "
                         + "WHERE user_id = ? AND (agency_name IS NOT NULL OR license_number IS NOT NULL)",
                 userId);
+        // Row 31 (agent findings 2026-10-26, CWE-212): the offered-service
+        // text joins the purge. The public page's services block is the
+        // provider's own display statement — the SAME authored-text class
+        // as the bio, attributed to the OWNING PROFILE (provider_profiles.
+        // user_id) exactly as the page renders it: the delegation seam
+        // (a team member typing on the owner's page) writes the owner's
+        // content, so the reliable authorship attribution is the profile,
+        // never the typist. The required title takes the tombstone marker
+        // (V96 NOT NULL); the nullable description clears to NULL (the
+        // bio's own storage convention) — the operational fields
+        // (duration, price, position) stay so the page's structure
+        // survives the erasure. Base table and Envers mirror both.
+        int serviceTitles = jdbcTemplate.update(
+                "UPDATE provider_services s SET title = ?, description = NULL "
+                        + "FROM provider_profiles p "
+                        + "WHERE s.provider_id = p.id AND p.user_id = ? "
+                        + "AND (s.title <> ? OR s.description IS NOT NULL)",
+                AuthoredContentPurgePort.PURGED_MARKER,
+                userId, AuthoredContentPurgePort.PURGED_MARKER);
+        int serviceTitleAudits = jdbcTemplate.update(
+                "UPDATE provider_services_aud s SET title = ?, description = NULL "
+                        + "FROM provider_profiles p "
+                        + "WHERE s.provider_id = p.id AND p.user_id = ? "
+                        + "AND (s.title <> ? OR s.description IS NOT NULL)",
+                AuthoredContentPurgePort.PURGED_MARKER,
+                userId, AuthoredContentPurgePort.PURGED_MARKER);
 
         // The targeted cache invalidation (see the class javadoc): every
         // profile id the subject owns gets its "providers" entry evicted
@@ -113,8 +139,10 @@ public class ProviderProfileContentPurgeAdapter implements AuthoredContentPurgeP
             eventPublisher.publishEvent(new CacheInvalidationRequested(PROVIDER_CACHE_NAMES, profileId));
         }
 
-        log.info("Provider profile content purge: userId={}, bios={}, names={}, personas={}, auditRows={}, cacheEvictions={}",
-                userId, bios, names, personas, auditRows + nameAudits + personaAudits, profileIds.size());
-        return bios + names + personas + auditRows + nameAudits + personaAudits;
+        log.info("Provider profile content purge: userId={}, bios={}, names={}, personas={}, serviceTitles={}, auditRows={}, cacheEvictions={}",
+                userId, bios, names, personas, serviceTitles,
+                auditRows + nameAudits + personaAudits + serviceTitleAudits, profileIds.size());
+        return bios + names + personas + auditRows + nameAudits + personaAudits
+                + serviceTitles + serviceTitleAudits;
     }
 }
