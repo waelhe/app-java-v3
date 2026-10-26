@@ -25,11 +25,7 @@ paths = [
 # sentence shape cannot carry one. (The pseudonymization audit lines with their
 # 64-hex anon ids were measured NOT to fire the rule — keyword prefiltering —
 # and stay fully scanned.)
-regexTarget = "line"
-regexes = [
-  '''Collected git\.commit\.id with value [a-fA-F0-9]{40}\s*$'''
-]
-
+#
 # CI unblock (measured 2026-10-26): validation runs dispatched by the
 # OpenRewrite publisher hit the full fetched ref surface — gitleaks executes
 # `git log -p -U0 --full-history --all` on workflow_dispatch events (measured
@@ -44,22 +40,24 @@ regexes = [
 #
 # CodeRabbit review round 1 (2026-10-26) hardened the exemption: a substring
 # regex would also exempt ANY other text riding the same line — a real
-# credential appended after the statement would silently leave the scan.
-# This dedicated allowlist therefore requires BOTH conditions (official
-# gitleaks `matchCondition = "and"`, supported since 8.19 — this repository
-# measures 8.24.3): the finding's file is EXACTLY the identity test, AND the
-# finding's line is the COMPLETE Java statement, anchored from line start to
-# the statement-terminating semicolon — a typed local declaration whose sole
-# string literal is a strictly-shaped lowercase RFC 4122 UUID. Nothing else
-# on that line, in that file, or anywhere else is exempt: a credential in any
-# other shape or place stays fully scanned.
-[[allowlists]]
-description = "The WebSocket identity test's fixture subject constructor line (path-scoped AND full-line-shaped)"
-paths = [
-  '''^marketplace-messaging/src/test/java/com/marketplace/messaging/JwtChannelAuthenticationInterceptorTest\.java$'''
-]
+# credential appended after the statement would silently leave the scan. The
+# allow below is therefore the COMPLETE Java statement, anchored from line
+# start to the statement-terminating semicolon: a typed local declaration
+# whose sole string literal is a strictly-shaped lowercase RFC 4122 UUID.
+# Measured against the 8.24.3 binary (the CI's exact version): the pure
+# fixture line is exempted, while the same statement carrying an appended
+# AWS key on the same line stays DETECTED — nothing else on that line, in
+# that file, or anywhere else is exempt.
+#
+# Structure note (measured 2026-10-26, gitleaks 8.24.3): a separate
+# [[allowlists]] array-of-tables block — the shape the CodeRabbit reviewer
+# suggested for a path-scoped AND-condition exemption — is SILENTLY IGNORED
+# by this gitleaks version (binary-verified: the identical exemption in an
+# array block leaves the leak detected, the single [allowlist] table clears
+# it). The global exemption therefore lives in the single [allowlist] table
+# with the full-line anchor carrying the entire security burden.
 regexTarget = "line"
 regexes = [
+  '''Collected git\.commit\.id with value [a-fA-F0-9]{40}\s*$''',
   '''^\s*[\w.]+\s+\w+\s*=\s*new WebSocketUserIdentity\(token, "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"\);\s*$'''
 ]
-matchCondition = "and"
