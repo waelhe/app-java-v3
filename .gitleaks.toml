@@ -27,21 +27,39 @@ paths = [
 # and stay fully scanned.)
 regexTarget = "line"
 regexes = [
-  '''Collected git\.commit\.id with value [a-fA-F0-9]{40}\s*$''',
-  # CI unblock (measured 2026-10-26): validation runs dispatched by the
-  # OpenRewrite publisher hit the full fetched ref surface — gitleaks executes
-  # `git log -p -U0 --full-history --all` on workflow_dispatch events (measured
-  # from the debug log of run 40293996475: 718 commits scanned) — which includes
-  # every open branch. The permanently-open trade-wave branch #723 (merge
-  # blocked by owner order) carries a WebSocket identity test whose fixture
-  # subject is constructed as WebSocketUserIdentity(token, "<uuid>"): the
-  # `token` parameter name adjacent to a quoted UUID trips the default
-  # generic-api-key rule at the high fail level and turns every dispatched
-  # validation red at the gitleaks gate. The fixture UUID is a test subject id,
-  # not a credential. This allow is LINE-shaped, not path-shaped: it matches
-  # ONLY this exact constructor call carrying a strictly-shaped lowercase
-  # RFC 4122 UUID literal, so no other keyword-adjacent string on any line of
-  # any file is affected, and the allowlist cannot hide a real secret (the
-  # sentence shape is a typed constructor invocation, not an assignment).
-  '''new WebSocketUserIdentity\(token, "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"\)'''
+  '''Collected git\.commit\.id with value [a-fA-F0-9]{40}\s*$'''
 ]
+
+# CI unblock (measured 2026-10-26): validation runs dispatched by the
+# OpenRewrite publisher hit the full fetched ref surface — gitleaks executes
+# `git log -p -U0 --full-history --all` on workflow_dispatch events (measured
+# from the debug log of run 40293996475: 718 commits scanned) — which includes
+# every open branch. The permanently-open trade-wave branch #723 (merge
+# blocked by owner order) carries a WebSocket identity test whose fixture
+# subject is constructed as WebSocketUserIdentity(token, "<uuid>"): the
+# `token` parameter name adjacent to a quoted UUID trips the default
+# generic-api-key rule at the high fail level and turns every dispatched
+# validation red at the gitleaks gate. The fixture UUID is a test subject id,
+# not a credential.
+#
+# CodeRabbit review round 1 (2026-10-26) hardened the exemption: a substring
+# regex would also exempt ANY other text riding the same line — a real
+# credential appended after the statement would silently leave the scan.
+# This dedicated allowlist therefore requires BOTH conditions (official
+# gitleaks `matchCondition = "and"`, supported since 8.19 — this repository
+# measures 8.24.3): the finding's file is EXACTLY the identity test, AND the
+# finding's line is the COMPLETE Java statement, anchored from line start to
+# the statement-terminating semicolon — a typed local declaration whose sole
+# string literal is a strictly-shaped lowercase RFC 4122 UUID. Nothing else
+# on that line, in that file, or anywhere else is exempt: a credential in any
+# other shape or place stays fully scanned.
+[[allowlists]]
+description = "The WebSocket identity test's fixture subject constructor line (path-scoped AND full-line-shaped)"
+paths = [
+  '''^marketplace-messaging/src/test/java/com/marketplace/messaging/JwtChannelAuthenticationInterceptorTest\.java$'''
+]
+regexTarget = "line"
+regexes = [
+  '''^\s*[\w.]+\s+\w+\s*=\s*new WebSocketUserIdentity\(token, "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"\);\s*$'''
+]
+matchCondition = "and"
