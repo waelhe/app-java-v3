@@ -30,6 +30,19 @@ import org.springframework.transaction.annotation.Transactional;
  * idempotent by the {@code IS NOT NULL AND <> marker} filter — exact
  * counts, zero matches on re-run; no Envers revision for the purge itself
  * (the orchestrator's structured log line is the audit record).
+ *
+ * <p><b>The optimistic-lock advance (agent findings 2026-10-26, row 3 /
+ * CWE-362):</b> the live row's UPDATE also advances {@code version} — the
+ * {@code @Version} column every audited entity carries. The pre-fix purge
+ * left the version untouched, so a resolution that had loaded the dispute
+ * BEFORE the purge could still flush its stale managed entity afterwards:
+ * the UPDATE-by-version predicate matched (nothing moved), the original
+ * {@code reason} was restored to the live row, and Envers recorded that
+ * restored text as a NEW revision — the erasure silently undone. With the
+ * version advanced atomically in the purge's own statement, the stale
+ * writer's flush matches zero rows and fails with the framework's
+ * optimistic-lock exception instead of committing erased text; the audit
+ * mirrors were already scrubbed, so no later revision can resurrect it.
  */
 @Component
 public class DisputesContentPurgeAdapter implements AuthoredContentPurgePort {
@@ -46,7 +59,8 @@ public class DisputesContentPurgeAdapter implements AuthoredContentPurgePort {
     @Transactional
     public int purgeAuthoredTexts(UUID userId) {
         int disputes = jdbcTemplate.update(
-                "UPDATE disputes SET reason = ? WHERE opened_by = ? AND reason IS NOT NULL AND reason <> ?",
+                "UPDATE disputes SET reason = ?, version = version + 1 "
+                        + "WHERE opened_by = ? AND reason IS NOT NULL AND reason <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
         int auditRows = jdbcTemplate.update(
                 "UPDATE disputes_aud SET reason = ? WHERE opened_by = ? AND reason IS NOT NULL AND reason <> ?",
