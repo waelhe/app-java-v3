@@ -66,8 +66,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       (L47 — the reactions layer's two commands, the ONE toggle's two
  *       directions; the feed's count/voice reads stay unobserved per
  *       the same policy)</li>
- *   <li>disputes — open, resolve</li>
- *   <li>identity — sync.oidc, role.update; follow.create, follow.delete
+ *   <li>disputes — open, resolve; orders' fulfillment reconciliation
+ *       (row 16's DeliveryLegTerminatedEvent edge — order.fulfill.delivery
+ *       + order.fulfill.delivery.reconcile, the aggregate's own two
+ *       completion commands)</li>
+ *   <li>identity — sync.oidc, role.update, role.primary-change (row 26's
+ *       atomic primary-role switch — the RoleAssignmentService seam);
+ *       follow.create, follow.delete
  *       (W4 — the provider-follow pair's two commands, the one toggle's
  *       two directions; the /me list read and the activation bridge's
  *       fan-out stay unobserved per policy — the bridge runs inside the
@@ -289,6 +294,7 @@ class ObservationCoverageFilesTest {
                     "identity.attestation.request",
                     "identity.attestation.revoke",
                     "identity.role.grant",
+                    "identity.role.primary-change",
                     "identity.role.revoke",
                     "password.reset.complete",
                     "password.reset.request",
@@ -373,6 +379,7 @@ class ObservationCoverageFilesTest {
                     "order.delivery.clear",
                     "order.fulfill",
                     "order.fulfill.delivery",
+                    "order.fulfill.delivery.reconcile",
                     "order.payment-intent",
                     "order.place",
                     "order.return.approve",
