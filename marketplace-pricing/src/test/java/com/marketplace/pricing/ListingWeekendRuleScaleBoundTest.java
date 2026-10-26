@@ -26,8 +26,12 @@ class ListingWeekendRuleScaleBoundTest {
     @Test
     void create_rejectsTheExponentAmplifiedScaleBeforeTheRescale() {
         // The finding's own payload shape: magnitude within (0, 10], scale 10^8.
+        // BigDecimal(String) official semantics: "1e-100000000" has unscaled
+        // value 1 and scale 100000000 (value = unscaledValue × 10^-scale) —
+        // the shift IS the scale, one digit per decimal place (measured on
+        // the JDK; the previous draft asserted 100000001 off-by-one).
         BigDecimal amplified = new BigDecimal("1e-100000000");
-        assertEquals(100000001, amplified.scale());
+        assertEquals(100000000, amplified.scale());
 
         IllegalArgumentException rejected = assertThrows(IllegalArgumentException.class,
                 () -> ListingWeekendRule.create(LISTING, amplified));
