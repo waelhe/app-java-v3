@@ -30,6 +30,17 @@
 كل المعالجات في كوميتات مرجعية على هذا الفرع، كل واحدة تحمل في رسالتها
 رقم النتيجة (row) وCWE والدليل والمخاطرة المغلقة وعدد الاختبارات.
 
+**سياسة الأدلة (استجابة مراجعة CodeRabbit 2026-10-26، تعليق السطور 26-27):**
+كل صف FIXED يحمل كوميت إغلاقه الكامل أعلاه/أدناه، وقناة دليل الجهاز هي
+تشغيلات GitHub Actions على رأس كل دفعة (JDK 25) — الروابط والمعرّفات
+والنتائج في «سجل الأدلة» أسفل الملف. التشغيلات المُلغاة (المُستبدَلة بدفعة
+لاحقة في نفس النافذة) لا تُسجَّل خضراء أبداً — تُسجَّل «مُستبدلة» ويُقرأ
+خليفها المكتمل. فشل سير CI على رؤوس الدفعات كان حارسَي التوثيق فقط
+(انجراف عدادات SYSTEM.md + مشاهدتان جديدتان بلا تثبيت) ورجعة STARTTLS
+في رحلة المنصة — الأربعة أُغلقت هذه الجلسة، وكلٌّ منها موثق بإصلاحه أدناه.
+الاختبارات الوحدية النطاقية لم تُشغَّل محلياً في هذه الجلسة على الرؤوس
+(لا بيئة JDK 25 محلية) — قناة الدليل الوحيدة هي تشغيلات CI المربوطة.
+
 ---
 
 ## FIXED — التفصيل (35)
@@ -58,20 +69,20 @@
 | 28 | low | NotificationService + DisputeChannelDelivery + NotificationRoutingEngine | محلل تفضيل فعّال واحد `isChannelEffectivelyEnabled` (نوع V40 ← موضوع V198 ← افتراضي، والموضوع من المصدر الأحادي topicFor) — المحرك يفوّض له نفسه فلا تنافس تطبيقين، وكل البوابات العادية الـ26 تتبدل إليه (24 بريد مباشر + WS + PUSH + ساقا النزاع المسجلّتان)؛ استثناءا البريد الأمنيان (إعادة التعيين/التحقق) يبقيان خارج البوابة بتصميم موثق؛ دبوس تكاملي حي على Flyway حقيقي بالمسار الحرفي للنتيجة (7791490c) |
 | 19 | low | UserService (LOCK_ACTIVE_ADMINS) | العدّ يقرأ عرض V188 الفعّالي — نفس مصدر الحقيقة الذي تقرأه المصادقة — تحت القفل الاستشاري نفسه: النسخة الأصلية الميتة التي يتركها إعادة تعيين كلمة المرور بعد سحب المنح لا تُحسب، والمنح الإضافية النشطة بلا صف أصلي تُحسب؛ سلسلة الهجوم كاملة (منح ← إعادة تعيين ← سحب ← تعطيل آخر أدمن فعلي = 409) على Flyway حقيقي في `UserRoleMigrationIntegrationTest` |
 | 5 | low | NeighborhoodPollService | حارس خدمة مشترك واحد `requirePollsEnabled` قبل كتابتي الإنشاء والتصويت — أول بوابة قبل أي منفذ جغرافي أو قراءة عضوية أو كتابة، والرفض 409 صادقة؛ درز السحب يبقى حياً بتصميم (سابقة قناة العاجل — رافعة الحادث تسكت قناة التقديم لا درز إزالة المالك)؛ 27/27 |
-| 2 | medium | IdentityProviderNameResolver | حذف ساق البريد من الإسقاط العام — التسمية المحايدة فقط؛ اختبار يثبت التسمية للفرعين |
-| 7 | medium | UserService.pseudonymizeAccount | حدث `AccountIdentityErased` (قناة R8 المنزلية) داخل معاملة المحو باسم الموضوع الأصلي + مستهلك AFTER_COMMIT يُبطل كل جلسات الحساب — يغطي المحو الإداري والحذف الذاتي معاً |
-| 9 | medium | DisputeService.resolve | رفض 400 لأي `refundAmountCents` على موضوع قرض قبل أي كتابة — عقد الاسترداد الكامل فقط |
-| 14 | medium | PasswordResetService.completeReset | حدث `AccountCredentialsRotated` داخل معاملة التدوير + إبطال كل الجلسات بعد الالتزام |
-| 16 | medium | OrdersService.cancel | (أ) حارس الطرود المسلَّمة: رفض الإلغاء الكامل إذا وُصلت أي حزمة (منفذ `deliveredLegs` الجديد)؛ (ب) المصالحة: حدث `DeliveryLegTerminatedEvent` (CANCELLED/FAILED) + `reconcileDeliveryTermination` يكمل الطلب عبر الحافة الموثقة نفسها عندما تكون كل السواقن نهائية وواحدة على الأقل مسلّمة |
-| 17 | medium | PaymentsService.createLoanIntent | فحص الارتباط الكامل عند إعادة استخدام المفتاح المشتق (origin + loanId + المبلغ + العملة) — نمط التحقق من المبلغ الدائن المعمول به في تسوية التوصيل |
-| 18 | medium | PaymentsService.createOrderIntent | نفس فحص الارتباط الكامل للطلبات + رفض البادئات المحجوزة (`order-`/`loan-`/`delivery-`/`ad-debit-`) في مفاتيح الحجوزات من المستدعي — عزلان بنيويان |
-| 20 | medium | application.yml + staging | `mail.smtp.starttls.required=true` + `mail.smtp.ssl.checkserveridentity=true` — النقل المحمي إلزامي وفاشل مغلق |
-| 26 | medium | UserService.updateUserRole | `RoleAssignmentService.onPrimaryRoleChanged`: تقاعد مرآة الدور السابق + ضمان مرآة الجديد، ذرّياً مع تبديل الدور — اتحاد V188 لا يُحيي دوراً مخفَّضاً؛ المنح الإضافية المستقلة تبقى |
-| 35 | medium | graphql-contract.yml | بوابة المصدر (push من هذا المستودع فقط، فشل مغلق بخطأ صريح) + سحب منطق النشر من الفرع الافتراضي الموثوق — مخطط التشغيل يبقى بيانات عبر الأرشيف |
-| 13 | low | ReviewsService.reply | بوابة PUBLISHED قبل الطفرة والاستجابة (409 صادق، صفر طفرة) |
-| 21 | low | ListingFavoritesService.save | بوابة الرؤية العامة (ACTIVE) قبل الإنشاء والاستجابة؛ سلوك الاحتفاظ للمفضلات القديمة كما هو |
-| 22 | low | ProviderBalance | `Math.addExact`/`subtractExact` — الالتفاف استثناء يُجهض معاملة القيد والرصيد |
-| 34 | low | CatalogService.toMinorUnits | بوابة النطاق (0..100,000,000 وحدة كبرى) بـ`compareTo` (لا يُجسّد أبداً) قبل `movePointRight` — القنبلة العلمية 400 صادقة |
+| 2 | medium | IdentityProviderNameResolver | حذف ساق البريد من الإسقاط العام — التسمية المحايدة فقط؛ اختبار يثبت التسمية للفرعين — **الإغلاق:** كوميت `5462dffc46cc971797a6469b8f9bc6a3c7ed0795` (اختبار: `IdentityProviderNameResolverTest` — التسمية للفرعين) |
+| 7 | medium | UserService.pseudonymizeAccount | حدث `AccountIdentityErased` (قناة R8 المنزلية) داخل معاملة المحو باسم الموضوع الأصلي + مستهلك AFTER_COMMIT يُبطل كل جلسات الحساب — يغطي المحو الإداري والحذف الذاتي معاً — **الإغلاق:** كوميت `5462dffc46cc971797a6469b8f9bc6a3c7ed0795` (اختبار: `UserServiceTest` + `AccountStatusSessionInvalidatorTest` — الإبطال بعد الالتزام) |
+| 9 | medium | DisputeService.resolve | رفض 400 لأي `refundAmountCents` على موضوع قرض قبل أي كتابة — عقد الاسترداد الكامل فقط — **الإغلاق:** كوميت `b36701acc82b866e5fc89cb36449fb027cffedb4` (اختبار: `DisputeServiceTest` — الرفض 400 قبل أي كتابة) |
+| 14 | medium | PasswordResetService.completeReset | حدث `AccountCredentialsRotated` داخل معاملة التدوير + إبطال كل الجلسات بعد الالتزام — **الإغلاق:** كوميت `5462dffc46cc971797a6469b8f9bc6a3c7ed0795` (اختبار: `PasswordResetServiceTest` — التدوير والإبطال معاً) |
+| 16 | medium | OrdersService.cancel | (أ) حارس الطرود المسلَّمة: رفض الإلغاء الكامل إذا وُصلت أي حزمة (منفذ `deliveredLegs` الجديد)؛ (ب) المصالحة: حدث `DeliveryLegTerminatedEvent` (CANCELLED/FAILED) + `reconcileDeliveryTermination` يكمل الطلب عبر الحافة الموثقة نفسها عندما تكون كل السواقن نهائية وواحدة على الأقل مسلّمة — **الإغلاق:** كوميت `b36701acc82b866e5fc89cb36449fb027cffedb4` (اختبار: `OrdersServiceTest` — حارس المسلَّم والمصالحة عبر `DeliveryLegTerminatedEvent`) |
+| 17 | medium | PaymentsService.createLoanIntent | فحص الارتباط الكامل عند إعادة استخدام المفتاح المشتق (origin + loanId + المبلغ + العملة) — نمط التحقق من المبلغ الدائن المعمول به في تسوية التوصيل — **الإغلاق:** كوميت `b36701acc82b866e5fc89cb36449fb027cffedb4` (اختبار: `OrderIntentContractTest` + `PaymentsServiceTest` — فحص الارتباط الكامل) |
+| 18 | medium | PaymentsService.createOrderIntent | نفس فحص الارتباط الكامل للطلبات + رفض البادئات المحجوزة (`order-`/`loan-`/`delivery-`/`ad-debit-`) في مفاتيح الحجوزات من المستدعي — عزلان بنيويان — **الإغلاق:** كوميت `b36701acc82b866e5fc89cb36449fb027cffedb4` (اختبار: `OrderIntentContractTest` — العزلان البنيويان للبادئات المحجوزة) |
+| 20 | medium | application.yml + staging | `mail.smtp.starttls.required=true` + `mail.smtp.ssl.checkserveridentity=true` — النقل المحمي إلزامي وفاشل مغلق — **الإغلاق:** كوميت `0d17ce5c8f532bffef9cf1f733b0a9ff8465bcb2` (تغيير إعدادات — الدليل: المفتاحان `mail.smtp.starttls.required` و`mail.smtp.ssl.checkserveridentity` في `application.yml` + `application-staging.yml`؛ لا كود اختبار لمفتاح إعدادات — بوابة السلوك هي رحلة البريد التكاملية) |
+| 26 | medium | UserService.updateUserRole | `RoleAssignmentService.onPrimaryRoleChanged`: تقاعد مرآة الدور السابق + ضمان مرآة الجديد، ذرّياً مع تبديل الدور — اتحاد V188 لا يُحيي دوراً مخفَّضاً؛ المنح الإضافية المستقلة تبقى — **الإغلاق:** كوميت `5462dffc46cc971797a6469b8f9bc6a3c7ed0795` (اختبار: `RoleAssignmentServiceTest` — التقاعد والضمان الذرّيان) |
+| 35 | medium | graphql-contract.yml | بوابة المصدر (push من هذا المستودع فقط، فشل مغلق بخطأ صريح) + سحب منطق النشر من الفرع الافتراضي الموثوق — مخطط التشغيل يبقى بيانات عبر الأرشيف — **الإغلاق:** كوميت `0d17ce5c8f532bffef9cf1f733b0a9ff8465bcb2` (تغيير سير عمل — الدليل: بوابة المصدر `push` من المستودع فقط مع الفشل المغلق في `.github/workflows/graphql-contract.yml`؛ التحقق: تشغيل البوابة نفسها على كل دفعة لاحقة) |
+| 13 | low | ReviewsService.reply | بوابة PUBLISHED قبل الطفرة والاستجابة (409 صادق، صفر طفرة) — **الإغلاق:** كوميت `e50f5f063d9dc8562973c70c15cc7f1ec2cdb158` (اختبار: `ReviewsServiceTest` — البوابة قبل الطفرة 409) |
+| 21 | low | ListingFavoritesService.save | بوابة الرؤية العامة (ACTIVE) قبل الإنشاء والاستجابة؛ سلوك الاحتفاظ للمفضلات القديمة كما هو — **الإغلاق:** كوميت `e50f5f063d9dc8562973c70c15cc7f1ec2cdb158` (اختبار: `ListingFavoritesServiceTest` — بوابة ACTIVE) |
+| 22 | low | ProviderBalance | `Math.addExact`/`subtractExact` — الالتفاف استثناء يُجهض معاملة القيد والرصيد — **الإغلاق:** كوميت `e50f5f063d9dc8562973c70c15cc7f1ec2cdb158` (اختبار: `LedgerArithmeticPropertyTest` — الالتفاف استثناء؛ وصقل الاختبار بالكوميت `fb323492808cb9ec139056c8eeddb61dd6dc0275` — الشكل الدقيق للرصيد السالب غير الممول) |
+| 34 | low | CatalogService.toMinorUnits | بوابة النطاق (0..100,000,000 وحدة كبرى) بـ`compareTo` (لا يُجسّد أبداً) قبل `movePointRight` — القنبلة العلمية 400 صادقة — **الإغلاق:** كوميت `e50f5f063d9dc8562973c70c15cc7f1ec2cdb158` (اختبار: `CatalogServiceTest` — بوابة النطاق بـcompareTo) |
 
 **اختبارات الدفعات الثلاث عشرة:** 94 (identity/infra) + 175 (commerce) + 118 (reviews/ledger/catalog)
 + 27 (community polls — حارس الإطفاء) + 330/25 (community/discovery — نطاق الحي في المتابَعين)
@@ -106,6 +117,55 @@ row 32 (ai، الكوميت 8a7c3cdf: البروتوكول العنقودي لك
 سير العمل. لا يبقى مفتوح ولا مرفوض.
 
 ---
+
+
+## سجل الأدلة — الكوميت والتشغيل لكل دفعة (قياس 2026-10-26)
+
+قاعدة القراءة: «رأس الدفعة» هو آخر كوميت دُفع في نافذتها — تشغيلات
+pull_request عليه هي دليل الجهاز. «مُستبدلة» = أُلغي التشغيل لأن دفعة
+لاحقة دُفعت في نفس النافذة؛ لا يُقرأ ملغًى كأخضر. فشل سير CI المذكور
+هنا كان حارسَي التوثيق (DocumentationNumbersGuardTest من الدفعة التاسعة
+فصاعداً — V285 هبطت بلا تحديث عدادات SYSTEM.md؛ وObservationCoverageFilesTest
+من الدفعة الأولى فصاعداً — أمرا @Observed الجديدان لإصلاحَي الصفين 26 و16
+دخلا بلا تثبيت) ورجعة STARTTLS في PlatformJourneyIntegrationTest (تسرب
+`mail.smtp.starttls.required` من البروفايل الرئيسي إلى سياق الاختبار) —
+الأربعة أُغلقت بالكوميتات `fix(community)` و`fix(ci)` لهذه الجلسة، وكل
+اختبارات الوحدات النطاقية كانت خضراء داخل تشغيل «Tests — modules» على
+كل رأس (قياس الدفعة العاشرة: 1098 اختباراً، عشرون منها بوابات، فشلان
+فقط — الحارسان التوثيقيان أنفسهما).
+
+| الدفعة | الصفوف | كوميتات الإغلاح (كاملة) | الرأس | Integration Test | CodeQL | Container Scan | Android | سير CI |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 2، 7، 9، 14، 16، 17، 18، 20، 26، 35، 13، 21، 22، 34 | `5462dffc…`، `b36701ac…`، `0d17ce5c…`، `e50f5f06…` (+`fb323492…` صقل اختبار 22) | `0c4bf738` | [نجاح 40178605681](https://github.com/waelhe/app-java-v3/actions/runs/40178605681) | [نجاح 40178605557](https://github.com/waelhe/app-java-v3/actions/runs/40178605557) | [نجاح 40178605565](https://github.com/waelhe/app-java-v3/actions/runs/40178605565) | [نجاح 40178605539](https://github.com/waelhe/app-java-v3/actions/runs/40178605539) | [فشل (حارسا التوثيق + STARTTLS) 40178605628](https://github.com/waelhe/app-java-v3/actions/runs/40178605628) |
+| 2 | 19، 5 | `4ed9125c…`، `e8d1edd9…` | `16f4c2da` | [نجاح 40181453054](https://github.com/waelhe/app-java-v3/actions/runs/40181453054) | [نجاح 40181453016](https://github.com/waelhe/app-java-v3/actions/runs/40181453016) | [نجاح 40181453070](https://github.com/waelhe/app-java-v3/actions/runs/40181453070) | [نجاح 40181453025](https://github.com/waelhe/app-java-v3/actions/runs/40181453025) | [فشل (نفس الأربعة) 40181453026](https://github.com/waelhe/app-java-v3/actions/runs/40181453026) |
+| 3 | 24، 28 | `46c6a7ae…`، `7791490c…` | `e230d7d1` | [نجاح 40189035006](https://github.com/waelhe/app-java-v3/actions/runs/40189035006) | [نجاح 40189034991](https://github.com/waelhe/app-java-v3/actions/runs/40189034991) | [نجاح 40189035048](https://github.com/waelhe/app-java-v3/actions/runs/40189035048) | [نجاح 40189035385](https://github.com/waelhe/app-java-v3/actions/runs/40189035385) | [فشل (نفس الأربعة) 40189035031](https://github.com/waelhe/app-java-v3/actions/runs/40189035031) |
+| 4 | 12، 23 | `4d72f64a…`، `e01f9be4…` | `643ba5df` | [نجاح 40194406992](https://github.com/waelhe/app-java-v3/actions/runs/40194406992) | [نجاح 40194407081](https://github.com/waelhe/app-java-v3/actions/runs/40194407081) | [نجاح 40194407098](https://github.com/waelhe/app-java-v3/actions/runs/40194407098) | [نجاح 40194407072](https://github.com/waelhe/app-java-v3/actions/runs/40194407072) | [فشل (نفس الأربعة) 40194407010](https://github.com/waelhe/app-java-v3/actions/runs/40194407010) |
+| 5 | 3، 27 | `2542248f…`، `f422789a…` | `53c18470` | [نجاح 40197815688](https://github.com/waelhe/app-java-v3/actions/runs/40197815688) | [نجاح 40197815586](https://github.com/waelhe/app-java-v3/actions/runs/40197815586) | [نجاح 40197815578](https://github.com/waelhe/app-java-v3/actions/runs/40197815578) | [نجاح 40197815620](https://github.com/waelhe/app-java-v3/actions/runs/40197815620) | [فشل (نفس الأربعة) 40197815626](https://github.com/waelhe/app-java-v3/actions/runs/40197815626) |
+| 6 | 1، 29 | `642e4b67…`، `04a156c2…` | `e029cbe5` | [نجاح 40202143610](https://github.com/waelhe/app-java-v3/actions/runs/40202143610) | [نجاح 40202143649](https://github.com/waelhe/app-java-v3/actions/runs/40202143649) | [نجاح 40202143598](https://github.com/waelhe/app-java-v3/actions/runs/40202143598) | [نجاح 40202143584](https://github.com/waelhe/app-java-v3/actions/runs/40202143584) | [مُستبدلة 40202143659](https://github.com/waelhe/app-java-v3/actions/runs/40202143659) |
+| 7 | 33، 31 | `57e7fc26…`، `31b38641…` | `5c15ecdc` | [نجاح 40204861644](https://github.com/waelhe/app-java-v3/actions/runs/40204861644) | [نجاح 40204861952](https://github.com/waelhe/app-java-v3/actions/runs/40204861952) | [نجاح 40204861743](https://github.com/waelhe/app-java-v3/actions/runs/40204861743) | [نجاح 40204861660](https://github.com/waelhe/app-java-v3/actions/runs/40204861660) | [فشل (نفس الأربعة) 40204861879](https://github.com/waelhe/app-java-v3/actions/runs/40204861879) |
+| 8 | 8، 6 | `39bd3ca0…`، `329a5494…` | `b1978fea` | [نجاح 40207329607](https://github.com/waelhe/app-java-v3/actions/runs/40207329607) | [نجاح 40207329550](https://github.com/waelhe/app-java-v3/actions/runs/40207329550) | [نجاح 40207329569](https://github.com/waelhe/app-java-v3/actions/runs/40207329569) | [نجاح 40207329536](https://github.com/waelhe/app-java-v3/actions/runs/40207329536) | [فشل (نفس الأربعة) 40207329543](https://github.com/waelhe/app-java-v3/actions/runs/40207329543) |
+| 9 | 25، 11 | `ea51f1e2…`، `1de72b22…` | `65e11133` | [نجاح 40222183737](https://github.com/waelhe/app-java-v3/actions/runs/40222183737) | [نجاح 40222183764](https://github.com/waelhe/app-java-v3/actions/runs/40222183764) | [نجاح 40222183791](https://github.com/waelhe/app-java-v3/actions/runs/40222183791) | [نجاح 40222183782](https://github.com/waelhe/app-java-v3/actions/runs/40222183782) | [فشل (نفس الأربعة) 40222183802](https://github.com/waelhe/app-java-v3/actions/runs/40222183802) |
+| 10 | 4، 15 | `54118f41…`، `0afa9790…` | `4cf6b022` | [نجاح 40227416167](https://github.com/waelhe/app-java-v3/actions/runs/40227416167) | [نجاح 40227416224](https://github.com/waelhe/app-java-v3/actions/runs/40227416224) | [نجاح 40227416255](https://github.com/waelhe/app-java-v3/actions/runs/40227416255) | [نجاح 40227416179](https://github.com/waelhe/app-java-v3/actions/runs/40227416179) | [فشل (نفس الأربعة) 40227416162](https://github.com/waelhe/app-java-v3/actions/runs/40227416162) |
+| 11 | 32 | `8a7c3cdf…` | `8a7c3cdf` | [نجاح 40245786251](https://github.com/waelhe/app-java-v3/actions/runs/40245786251) | [نجاح 40245786245](https://github.com/waelhe/app-java-v3/actions/runs/40245786245) | [نجاح 40245786263](https://github.com/waelhe/app-java-v3/actions/runs/40245786263) | [نجاح 40245786234](https://github.com/waelhe/app-java-v3/actions/runs/40245786234) | [مُستبدلة 40245786310](https://github.com/waelhe/app-java-v3/actions/runs/40245786310) |
+| 12 | 10 | `d7275a6d…` | `d7275a6d` | [نجاح 40247628943](https://github.com/waelhe/app-java-v3/actions/runs/40247628943) | [مُستبدلة 40247628955](https://github.com/waelhe/app-java-v3/actions/runs/40247628955) | [نجاح 40247628948](https://github.com/waelhe/app-java-v3/actions/runs/40247628948) | [نجاح 40247628933](https://github.com/waelhe/app-java-v3/actions/runs/40247628933) | [مُستبدلة 40247628952](https://github.com/waelhe/app-java-v3/actions/runs/40247628952) |
+| 13 | 30 | `a5d697db…` | `a5d697db` | [مُستبدلة 40248186585](https://github.com/waelhe/app-java-v3/actions/runs/40248186585) | [مُستبدلة 40248186592](https://github.com/waelhe/app-java-v3/actions/runs/40248186592) | [مُستبدلة 40248186590](https://github.com/waelhe/app-java-v3/actions/runs/40248186590) | [نجاح 40248186615](https://github.com/waelhe/app-java-v3/actions/runs/40248186615) | [مُستبدلة 40248186687](https://github.com/waelhe/app-java-v3/actions/runs/40248186687) |
+| — | (سجل إغلاق 35/35) | `95f1a025…` (وثائقي) | `95f1a025` | [نجاح 40248282748](https://github.com/waelhe/app-java-v3/actions/runs/40248282748) | [نجاح 40248282713](https://github.com/waelhe/app-java-v3/actions/runs/40248282713) | [نجاح 40248282724](https://github.com/waelhe/app-java-v3/actions/runs/40248282724) | [نجاح 40248282698](https://github.com/waelhe/app-java-v3/actions/runs/40248282698) | [مُستبدلة 40248282746](https://github.com/waelhe/app-java-v3/actions/runs/40248282746) |
+
+الدفعات 13 (الصف 30 — أندرويد) و«سجل الإغلاق» أعقبتها مباشرة دفعة الوثائق
+`ff241f4c` في نفس النافذة فاستُبدلت تشغيلاتها؛ الدليل المكتمل للصف 30
+هو بطارية أندرويد الخضراء على الرأسين معاً (`a5d697db` تشغيل 40248186615
+نجاح، ثم `95f1a025` تشغيل 40248282698 نجاح) — الكود لم يتغير بينهما
+(الفرق كوميت وثائقي واحد).
+
+**التصحيح الموثق لهذه الجلسة (قياس 2026-10-26):** فشل سير CI المتكرر على
+كل رؤوس الدفعات لم يكن يومًا فشل كود المعالجات — تشغيل «Tests — modules»
+على رأس الدفعة العاشرة قاس 1098 اختباراً بفشلين اثنين فقط، كلاهما من
+الحارسين التوثيقيين، وأغلقتهما (مع رجعة STARTTLS) دفعة `fix(ci)` هذه
+الجلسة: `application-test.yml` يحمل الآن `mail.smtp.starttls.required:
+false` (وضعية الاختبار ضد GreenMail)، والمثبّت يضم الأمرين الجديدين
+(`identity.role.primary-change` و`order.fulfill.delivery.reconcile`)،
+وSYSTEM.md يحمل العدادات المشتقة (205/`V1..V286`/208 و185 لانتقاء
+failsafe).
 
 ## قاعدة التحديث
 
