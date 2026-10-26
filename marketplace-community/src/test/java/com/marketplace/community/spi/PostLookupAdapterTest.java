@@ -124,6 +124,28 @@ class PostLookupAdapterTest {
     }
 
     @Test
+    void visiblePost_byAuthorWhoSwitchedNeighborhoods_carriesTheRefusedWriteRight() {
+        // Row 43 (agent findings 2026-10-26): the finding's own scenario —
+        // the author's CURRENT membership lives in ANOTHER neighborhood,
+        // so there is no community-write right in the POST's own
+        // neighborhood. The pre-fix computation consulted the membership
+        // wherever it lived and kept the old hood's posts attachable; the
+        // location equality is the fix (an APPROVED membership elsewhere
+        // is the strongest case: the right exists, just not HERE).
+        NeighborhoodPost post = post();
+        when(postRepository.findById(post.getId())).thenReturn(Optional.of(post));
+        NeighborhoodMembership elsewhere =
+                NeighborhoodMembership.join(authorId, UUID.randomUUID(),
+                        Clock.fixed(FIXED, ZoneOffset.UTC));
+        elsewhere.approveVerification();
+        when(membershipRepository.findByUserId(authorId)).thenReturn(Optional.of(elsewhere));
+
+        PostLookupPort.PostInfo info = adapter.getPostInfo(post.getId());
+
+        assertThat(info.authorMayWriteCommunity()).isFalse();
+    }
+
+    @Test
     void unknownPost_answersTheHonest404() {
         when(postRepository.findById(postId)).thenReturn(Optional.empty());
 
