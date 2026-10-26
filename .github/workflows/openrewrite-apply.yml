@@ -515,47 +515,7 @@ jobs:
           plan="${publication_dir}/batches.json"
           # The approved baseline recipe only removes unused import statements. The write-enabled
           # job revalidates the artifact independently and will refuse arbitrary Java edits.
-          python3 - <<'PY'
-          import json
-          import re
-          from pathlib import Path
-
-          # Only complete Java import declarations may be added or removed.
-          # Parse git-diff state explicitly so binary payloads and mode/rename headers
-          # cannot bypass this gate by failing to start with '+' or '-'.
-          IMPORT = re.compile(
-              r"\s*import\s+(?:static\s+)?[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*(?:\.\*)?\s*;\s*"
-          )
-          pub = Path("target/openrewrite/publication")
-          batches = json.loads((pub / "batches.json").read_text(encoding="utf-8"))
-          patches = [pub / "automatic-rewrite.patch"] + [pub / "patches" / f"batch-{b['number']}.patch" for b in batches]
-          for patch in patches:
-              if not patch.is_file() or patch.stat().st_size == 0:
-                  raise SystemExit(f"Missing or empty patch artifact: {patch}")
-              state = None
-              for number, line in enumerate(patch.read_text(encoding="utf-8", errors="strict").splitlines(), 1):
-                  if line.startswith("diff --git "):
-                      state = "header"
-                      continue
-                  if state == "header":
-                      if line.startswith(("index ", "--- a/", "+++ b/")):
-                          continue
-                      if line.startswith("@@ "):
-                          state = "hunk"
-                          continue
-                      raise SystemExit(f"Disallowed patch header in {patch}:{number}; refusing publication.")
-                  if state != "hunk":
-                      raise SystemExit(f"Content outside a diff in {patch}:{number}; refusing publication.")
-                  if line.startswith("@@ ") or line.startswith(" ") or line == "" or line.startswith("\\ No newline"):
-                      continue
-                  if line.startswith(("+", "-")):
-                      content = line[1:]
-                      if content.strip() and not IMPORT.fullmatch(content):
-                          raise SystemExit(f"Non-import source change in {patch}:{number}; refusing publication.")
-                      continue
-                  raise SystemExit(f"Unexpected patch line in {patch}:{number}; refusing publication.")
-          print(f"Validated import-only content for {len(patches)} patch artifact(s).")
-          PY
+          python3 scripts/openrewrite/validate-patches.py "${publication_dir}"
           git switch --detach "${TARGET_SHA}"
           for idx in $(seq 1 "${BATCH_COUNT}"); do
             patch_file="${publication_dir}/patches/batch-${idx}.patch"

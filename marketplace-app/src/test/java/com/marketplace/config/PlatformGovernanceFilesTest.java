@@ -7,6 +7,7 @@ import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Assumptions;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -14,6 +15,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -21,6 +23,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
@@ -705,11 +708,13 @@ class PlatformGovernanceFilesTest {
                 .contains("GH_TOKEN: " + "$" + "{{ github.token }}")
                 .contains("actions/download-artifact@v6")
                 .contains("Verify patch content and exact planned paths before publication")
-                .contains("Non-import source change in")
-                .contains("IMPORT.fullmatch(content)")
-                .contains("line.startswith(\"diff --git \")")
-                .contains("Disallowed patch header in")
-                .contains("Unexpected patch line in")
+                // The patch-content parser lives in scripts/openrewrite/validate-patches.py
+                // (behaviour-tested below); this workflow pin guards the WIRING only —
+                // a publish job that stops invoking the validator is the "config that lies"
+                // defect class this class exists to catch.
+                .contains("python3 scripts/openrewrite/validate-patches.py")
+                .doesNotContain("IMPORT.fullmatch")
+                .doesNotContain("splitlines")
                 .contains("git apply --check")
                 .contains("Publish generated transformations without running Maven")
                 .doesNotContain("git apply --binary")
@@ -720,6 +725,173 @@ class PlatformGovernanceFilesTest {
                 .contains("Read pinned OpenRewrite Maven plugin version for Spring discovery")
                 .contains("OPENREWRITE_MAVEN_PLUGIN_VERSION={version}");
     }
+
+    // -----------------------------------------------------------------------------------
+    // Behavioural gate for scripts/openrewrite/validate-patches.py — the import-only
+    // patch validator of the OpenRewrite publish job. CodeRabbit review on #732
+    // (Trivial, Security & Privacy): text-presence pins cannot detect a validator that
+    // stops REJECTING while keeping its strings, so the parser is extracted into a
+    // script and exercised here over crafted patch fixtures — the same testability
+    // contract as scripts/openrewrite/verify-bom-alignment.py (catalog pins above).
+    // -----------------------------------------------------------------------------------
+
+    private static final String IMPORT_ONLY_PATCH = """
+            diff --git a/m/Sample.java b/m/Sample.java
+            index 3a1b2c4..5d6e7f8 100644
+            --- a/m/Sample.java
+            +++ b/m/Sample.java
+            @@ -2,4 +2,3 @@
+             package m;
+            -import java.util.List;
+             class Sample {}
+            """;
+
+    @Test
+    void openRewritePatchValidatorAcceptsImportOnlyPublication() throws Exception {
+        assumePython3();
+        ValidatorResult result = runPatchValidator(writePublication(IMPORT_ONLY_PATCH.getBytes(StandardCharsets.UTF_8)));
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output()).contains("Validated import-only content for 2 patch artifact(s).");
+    }
+
+    @Test
+    void openRewritePatchValidatorRefusesSourceChangeBeyondImports() throws Exception {
+        assumePython3();
+        String patch = IMPORT_ONLY_PATCH.replace("-import java.util.List;", "-class Evil {}");
+        ValidatorResult result = runPatchValidator(writePublication(patch.getBytes(StandardCharsets.UTF_8)));
+        assertThat(result.exitCode()).isNotZero();
+        assertThat(result.output()).contains("Non-import source change");
+    }
+
+    @Test
+    void openRewritePatchValidatorRefusesGitApplyLineSplittingBypass() throws Exception {
+        assumePython3();
+        // One line for git apply (which splits on \n only) and for the Java compiler
+        // (\r is a line terminator, JLS 3.4): "+import a.B;\r static { ... }".
+        // Python's str.splitlines() would judge it as two benign lines — the exact
+        // bypass CodeRabbit reported; the validator must split on \n alone and match
+        // the import declaration over the WHOLE line.
+        byte[] patch = (
+                "diff --git a/m/Sample.java b/m/Sample.java\n"
+                + "index 3a1b2c4..5d6e7f8 100644\n"
+                + "--- a/m/Sample.java\n"
+                + "+++ b/m/Sample.java\n"
+                + "@@ -2,4 +2,3 @@\n"
+                + " package m;\n"
+                + "+import a.B;\r static { Runtime.getRuntime().exec(\"id\"); }\n"
+        ).getBytes(StandardCharsets.UTF_8);
+        ValidatorResult result = runPatchValidator(writePublication(patch));
+        assertThat(result.exitCode()).isNotZero();
+        assertThat(result.output()).contains("Non-import source change");
+    }
+
+    @Test
+    void openRewritePatchValidatorAcceptsCrlfImportLine() throws Exception {
+        assumePython3();
+        byte[] patch = (
+                "diff --git a/m/Sample.java b/m/Sample.java\n"
+                + "index 3a1b2c4..5d6e7f8 100644\n"
+                + "--- a/m/Sample.java\n"
+                + "+++ b/m/Sample.java\n"
+                + "@@ -2,4 +2,3 @@\n"
+                + " package m;\n"
+                + "+import a.B;\r\n"
+        ).getBytes(StandardCharsets.UTF_8);
+        ValidatorResult result = runPatchValidator(writePublication(patch));
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output()).contains("Validated import-only content for 2 patch artifact(s).");
+    }
+
+    @Test
+    void openRewritePatchValidatorRefusesBinaryPatchPayload() throws Exception {
+        assumePython3();
+        byte[] patch = (
+                "diff --git a/m/logo.png b/m/logo.png\n"
+                + "index 1111111..2222222 100644\n"
+                + "--- a/m/logo.png\n"
+                + "+++ b/m/logo.png\n"
+                + "GIT binary patch\n"
+                + "literal 10\n"
+                + "zcmZQzK+aMD3sMl\n"
+        ).getBytes(StandardCharsets.UTF_8);
+        ValidatorResult result = runPatchValidator(writePublication(patch));
+        assertThat(result.exitCode()).isNotZero();
+        assertThat(result.output()).contains("Disallowed patch header");
+    }
+
+    @Test
+    void openRewritePatchValidatorRefusesModeAndRenameHeaders() throws Exception {
+        assumePython3();
+        byte[] patch = (
+                "diff --git a/m/Sample.java b/m/Sample.java\n"
+                + "old mode 100644\n"
+                + "new mode 100755\n"
+        ).getBytes(StandardCharsets.UTF_8);
+        ValidatorResult result = runPatchValidator(writePublication(patch));
+        assertThat(result.exitCode()).isNotZero();
+        assertThat(result.output()).contains("Disallowed patch header");
+    }
+
+    @Test
+    void openRewritePatchValidatorRefusesContentOutsideAnyDiff() throws Exception {
+        assumePython3();
+        byte[] patch = "arbitrary line without any diff header\n".getBytes(StandardCharsets.UTF_8);
+        ValidatorResult result = runPatchValidator(writePublication(patch));
+        assertThat(result.exitCode()).isNotZero();
+        assertThat(result.output()).contains("Content outside a diff");
+    }
+
+    @Test
+    void openRewritePatchValidatorRefusesEmptyPatchArtifact() throws Exception {
+        assumePython3();
+        ValidatorResult result = runPatchValidator(writePublication(new byte[0]));
+        assertThat(result.exitCode()).isNotZero();
+        assertThat(result.output()).contains("Missing or empty patch artifact");
+    }
+
+    private static void assumePython3() {
+        Assumptions.assumeTrue(python3Available(),
+                "python3 is required to behaviour-test the OpenRewrite patch validator; CI runners always provide it");
+    }
+
+    private static boolean python3Available() {
+        try {
+            Process probe = new ProcessBuilder("python3", "--version").redirectErrorStream(true).start();
+            if (!probe.waitFor(15, TimeUnit.SECONDS)) {
+                probe.destroyForcibly();
+                return false;
+            }
+            return probe.exitValue() == 0;
+        } catch (IOException | InterruptedException unavailable) {
+            return false;
+        }
+    }
+
+    private static Path writePublication(byte[] patch) throws IOException {
+        Path dir = Files.createTempDirectory("openrewrite-publication");
+        Files.writeString(dir.resolve("batches.json"), "[{\"number\": 1, \"paths\": [\"m/Sample.java\"]}]");
+        Files.createDirectories(dir.resolve("patches"));
+        Files.write(dir.resolve("automatic-rewrite.patch"), patch);
+        Files.write(dir.resolve("patches").resolve("batch-1.patch"), patch);
+        return dir;
+    }
+
+    private static ValidatorResult runPatchValidator(Path publicationDir) throws IOException, InterruptedException {
+        Path script = repoRoot().resolve("scripts").resolve("openrewrite").resolve("validate-patches.py");
+        assertThat(script).as("scripts/openrewrite/validate-patches.py must exist").exists();
+        Process process = new ProcessBuilder("python3", script.toString(), publicationDir.toString())
+                .redirectErrorStream(true)
+                .start();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        if (!process.waitFor(60, TimeUnit.SECONDS)) {
+            process.destroyForcibly();
+            throw new IllegalStateException("OpenRewrite patch validator did not terminate within 60 seconds");
+        }
+        return new ValidatorResult(process.exitValue(), output);
+    }
+
+    private record ValidatorResult(int exitCode, String output) {}
+
 
     private static Path repoRoot() {
         Path cwd = Paths.get("").toAbsolutePath();
