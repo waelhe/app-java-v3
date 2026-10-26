@@ -50,7 +50,8 @@ public class OrderRefundAdapter implements OrderRefundPort {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Order " + orderId + " has no collected payment to refund"));
         PaymentsService.RefundedPayment refunded =
-                paymentsService.refundPayment(payment.getId(), amountMinor, returnId);
+                paymentsService.refundPayment(payment.getId(), amountMinor,
+                PaymentsService.StableRefundScope.forReturn(returnId));
         return new RefundOutcome(refunded.payment().getId(),
                 refunded.payment().getRefundedAmountCents());
     }

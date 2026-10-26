@@ -44,7 +44,7 @@ public class PaymentRefundAdapter implements PaymentRefundPort {
     }
 
     @Override
-    public RefundOutcome refundForBooking(UUID bookingId, Long amountCents) {
+    public RefundOutcome refundForBooking(UUID bookingId, Long amountCents, UUID disputeId) {
         // R4 (comprehensive-review-ar-fix plan §4/R4 — the deterministic
         // financial search): the booking's money-carrying intent — latest
         // by (createdAt, id) among the COLLECTED states (SUCCEEDED /
@@ -75,7 +75,17 @@ public class PaymentRefundAdapter implements PaymentRefundPort {
         if (amountCents == null && payment.getStatus() == PaymentStatus.REFUNDED) {
             return new RefundOutcome(payment.getId(), payment.getRefundedAmountCents());
         }
-        PaymentsService.RefundedPayment refunded = paymentsService.refundPayment(payment.getId(), amountCents);
+        // Row 35 (agent findings 2026-10-26): the dispute id rides as the
+        // STABLE operation scope — one dispute, one remote refund. The
+        // approved amount freezes at first execution; a rollback-then-retry
+        // (the finding's own window: the refund executed at the PSP inside
+        // a resolve transaction that rolled back, the charge.refunded
+        // webhook synced the local cumulative, and the state-derived key
+        // would have drifted with it) now replays the SAME remote refund
+        // under the SAME key instead of paying the same partial refund a
+        // second time.
+        PaymentsService.RefundedPayment refunded = paymentsService.refundPayment(
+                payment.getId(), amountCents, PaymentsService.StableRefundScope.forDispute(disputeId));
         return new RefundOutcome(refunded.payment().getId(), refunded.payment().getRefundedAmountCents());
     }
 }
