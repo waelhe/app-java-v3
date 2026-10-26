@@ -55,6 +55,15 @@ public class OrderReturnsService {
             OrderReturn.ReturnStatus.REQUESTED, OrderReturn.ReturnStatus.APPROVED,
             OrderReturn.ReturnStatus.RECEIVED, OrderReturn.ReturnStatus.COMPLETED);
 
+    /**
+     * Row 1's counted set — the statuses whose frozen share is already born
+     * (REQUESTED carries none yet; REJECTED/CANCELLED never froze one): the
+     * goods-and-tax budget sums exactly these.
+     */
+    private static final List<OrderReturn.ReturnStatus> SHARE_FROZEN_STATUSES = List.of(
+            OrderReturn.ReturnStatus.APPROVED, OrderReturn.ReturnStatus.RECEIVED,
+            OrderReturn.ReturnStatus.COMPLETED);
+
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final OrderReturnRepository returns;
@@ -157,6 +166,13 @@ public class OrderReturnsService {
     public OrderReturn approve(UUID returnId) {
         OrderReturn r = require(returnId);
         long share = frozenRefundShareOf(r);
+        // CodeRabbit agent findings (2026-10-26T11:43 export), row 1: the
+        // freeze's own money-safety gate — the cumulative frozen shares of
+        // the order (this one included) stay inside the goods-and-tax
+        // budget, so no combination of returns can ever reach the collected
+        // SHIPPING charge (a service rendered — the full-order refund stays
+        // the cancellation's own path).
+        requireWithinGoodsRefundBudget(r.getOrderId(), share);
         r.approve(share, Instant.now());
         return returns.save(r);
     }
@@ -213,7 +229,23 @@ public class OrderReturnsService {
                     + " — completion requires RECEIVED (the goods back first)");
         }
         if (r.getReturnType() == OrderReturn.ReturnType.RETURN) {
-            orderRefundPort.refundForOrder(r.getOrderId(), r.getId(), r.getRefundAmountMinor());
+            // CodeRabbit agent findings (2026-10-26T11:43 export), row 1:
+            // a ZERO frozen share is the honest completion of a fully-
+            // discounted goods basket — the return completes WITHOUT issuing
+            // a payment refund (the pre-fix forced Math.max(1, share), which
+            // minted one minor unit out of the collected, nonrefundable
+            // shipping charge). The budget gate re-reads the cumulative
+            // truth at the money edge — the same honest ceiling the freeze
+            // answered at approval, guarding the window where sibling
+            // returns froze after this one did.
+            if (r.getRefundAmountMinor() > 0) {
+                // prospectiveShare = 0: the completing return is RECEIVED — its
+                // frozen share is ALREADY inside the counted aggregate; this
+                // edge adds nothing, the gate just re-reads the cumulative
+                // truth at the money edge (sibling freezes since approval).
+                requireWithinGoodsRefundBudget(r.getOrderId(), 0);
+                orderRefundPort.refundForOrder(r.getOrderId(), r.getId(), r.getRefundAmountMinor());
+            }
             r.complete(null, Instant.now());
             return returns.save(r);
         }
@@ -347,7 +379,61 @@ public class OrderReturnsService {
             long goodsRatio = Math.round(exclusiveTax * (double) goodsValue / subtotal);
             share += goodsRatio;
         }
-        return Math.max(1, share);
+        // CodeRabbit agent findings (2026-10-26T11:43 export), row 1: the
+        // forced positive minimum is GONE. A zero goods share (fully
+        // discounted basket, no applicable tax) freezes an honest ZERO —
+        // the entity's own approve() contract (>= 0) and the zero-value
+        // completion path carry it; one minor unit never again leaves the
+        // collected shipping charge for goods that gave back nothing.
+        return share;
+    }
+
+    /**
+     * CodeRabbit agent findings (2026-10-26T11:43 export), row 1 — the
+     * cumulative goods-and-tax refund budget that EXCLUDES shipping. The
+     * order's own frozen breakdown carries the ceiling: {@code total −
+     * shipping} is exactly the discounted goods plus tax in BOTH tax modes
+     * (INCLUSIVE keeps its tax inside the goods; EXCLUSIVE added it on top),
+     * so returns — which refund the goods share plus the exclusive-tax share,
+     * never the shipping service — can never lawfully cross it. The guard
+     * reads the one fixed aggregate ({@link OrderReturnRepository#
+     * sumFrozenSharesByOrderIdAndStatusIn}: APPROVED/RECEIVED/COMPLETED —
+     * the shares that will execute or already did) and refuses the honest
+     * 409 BEFORE the freeze (approval) and BEFORE the money moves
+     * (completion). The rounding allowance admits exactly the drift the
+     * freeze protocol itself can produce: each return rounds its own share
+     * (Math.round, at most half a minor unit up), so k frozen shares drift
+     * less than k/2 above the exact total — a fully returned order still
+     * completes; only a real overshoot answers 409.
+     *
+     * @param prospectiveShare the APPROVAL edge's own share — the return is
+     *                         still REQUESTED there, OUTSIDE the counted
+     *                         aggregate, so it joins the sum and the drift
+     *                         count; ZERO at the completion edge, where the
+     *                         completing return is already RECEIVED and its
+     *                         frozen share already sits inside the aggregate
+     * @throws ConflictException when the cumulative shares would cross the
+     *                         order's goods-and-tax budget
+     */
+    private void requireWithinGoodsRefundBudget(UUID orderId, long prospectiveShare) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
+        Long total = order.getTotalAmountMinor();
+        Long shipping = order.getShippingAmountMinor();
+        if (total == null || shipping == null) {
+            return; // the legacy agreement — no frozen breakdown, no ceiling
+        }
+        long goodsAndTaxCeiling = total - shipping;
+        int frozenCount = (int) returns.countByOrderIdAndStatusIn(orderId, SHARE_FROZEN_STATUSES);
+        long cumulative = returns.sumFrozenSharesByOrderIdAndStatusIn(orderId, SHARE_FROZEN_STATUSES)
+                + prospectiveShare;
+        int shares = frozenCount + (prospectiveShare > 0 ? 1 : 0);
+        long roundingAllowance = shares / 2;
+        if (cumulative > goodsAndTaxCeiling + roundingAllowance) {
+            throw new ConflictException("Return refunds would cross the order's goods-and-tax budget "
+                    + goodsAndTaxCeiling + " (shipping never refunds on a return) — frozen "
+                    + (cumulative - prospectiveShare) + " already, this share " + prospectiveShare);
+        }
     }
 
     private void restockLines(OrderReturn r) {

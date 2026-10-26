@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -39,4 +40,27 @@ public interface OrderReturnRepository extends JpaRepository<OrderReturn, UUID> 
     Page<OrderReturn> findAllByOrderByCreatedAtDesc(Pageable pageable);
 
     long countByOrderId(UUID orderId);
+
+    /**
+     * CodeRabbit agent findings (2026-10-26T11:43 export), row 1 — the
+     * goods-and-tax refund budget's one fixed aggregate: the frozen shares
+     * of every return of the order whose share is already frozen and will
+     * execute (or already executed) — the SAME counted statuses the
+     * quantity-overlap guard reads (REQUESTED through COMPLETED consume
+     * units; REQUESTED carries no frozen share yet, so only APPROVED /
+     * RECEIVED / COMPLETED sum here). One statement, no per-return walk —
+     * the row 6 discipline on this repository.
+     */
+    @Query("select coalesce(sum(r.refundAmountMinor), 0) from OrderReturn r "
+            + "where r.orderId = :orderId and r.status in :statuses")
+    long sumFrozenSharesByOrderIdAndStatusIn(@Param("orderId") UUID orderId,
+                                             @Param("statuses") List<OrderReturn.ReturnStatus> statuses);
+
+    /**
+     * Row 1's drift count: how many frozen shares the budget's rounding
+     * allowance must cover (each return rounds its own share — at most half
+     * a minor unit up — so k shares drift less than k/2 above the exact
+     * total).
+     */
+    long countByOrderIdAndStatusIn(UUID orderId, List<OrderReturn.ReturnStatus> statuses);
 }

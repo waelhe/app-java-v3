@@ -117,8 +117,15 @@ public class OrderReturn extends BaseEntity {
 
     public void approve(long refundAmountMinor, Instant at) {
         require(ReturnStatus.REQUESTED);
-        if (refundAmountMinor <= 0) {
-            throw new IllegalStateException("A return's frozen refund share is positive");
+        // CodeRabbit agent findings (2026-10-26T11:43 export), row 1: a
+        // ZERO share is the honest freeze for a fully-discounted goods
+        // basket with no applicable tax — the goods gave back nothing, so
+        // the completion refunds nothing (it must never mint a minor unit
+        // out of the collected shipping charge). Only a NEGATIVE share is
+        // nonsense and refuses. The shape constraint lives in
+        // V287__order_returns_zero_value_refund.sql (>= 0).
+        if (refundAmountMinor < 0) {
+            throw new IllegalStateException("A return's frozen refund share is never negative");
         }
         this.refundAmountMinor = refundAmountMinor;
         this.approvedAt = at;
