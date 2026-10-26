@@ -59,17 +59,24 @@ class ProviderProfileContentPurgeAdapterTest {
 
     @Test
     void purgeAuthoredTexts_scrubsTheOfferedServiceTextThroughTheOwningProfile() {
-        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(0);
-        when(jdbcTemplate.update(
-                org.mockito.ArgumentMatchers.argThat((String sql) ->
-                        sql.startsWith("UPDATE provider_services s SET title = ?")),
-                any(Object[].class)))
-                .thenReturn(3);
-        when(jdbcTemplate.update(
-                org.mockito.ArgumentMatchers.argThat((String sql) ->
-                        sql.startsWith("UPDATE provider_services_aud s SET title = ?")),
-                any(Object[].class)))
-                .thenReturn(2);
+        // argThat-inside-when is the documented Mockito trap: registering the
+        // NEXT stubbing re-evaluates this stubbing's matchers against the
+        // registration invocation, whose argument is argThat's null
+        // placeholder — the lambda runs on null and NPEs deterministically
+        // (measured on CI: this test never ran before; the reactor unmasked
+        // it only after the catalog and pricing fixes landed). The house-safe
+        // shape answers from the REAL sql at invocation time — the sibling
+        // tests' contains() matchers are null-safe for the same reason.
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenAnswer(invocation -> {
+            String sql = invocation.getArgument(0);
+            if (sql.startsWith("UPDATE provider_services s SET title = ?")) {
+                return 3;
+            }
+            if (sql.startsWith("UPDATE provider_services_aud s SET title = ?")) {
+                return 2;
+            }
+            return 0;
+        });
         when(jdbcTemplate.queryForList(
                 anyString(), eq(UUID.class), eq(SUBJECT)))
                 .thenReturn(List.of());
