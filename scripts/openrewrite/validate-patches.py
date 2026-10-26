@@ -61,11 +61,45 @@ def validate_publication(pub: Path) -> int:
     if not isinstance(batches, list) or not batches:
         raise SystemExit("Publication batch plan is empty.")
     for number, batch in enumerate(batches, 1):
-        if not isinstance(batch, dict) or batch.get("number") != number:
+        if not isinstance(batch, dict):
             raise SystemExit(f"Malformed batch plan entry {number}.")
+        # Agent findings 2026-10-26T13:11 export, row 5 (CWE-20): the exact
+        # integer type. Python's numeric equality admits True == 1 and
+        # 1.0 == 1, but f"{True}" is "True" and f"{1.0}" is "1.0" — the
+        # validator would then validate batch-True.patch / batch-1.0.patch
+        # while the publisher applies batch-1.patch from its integer loop
+        # indexes: different files, different content. Only a value whose
+        # exact type is int (bool is an int subclass — excluded first) and
+        # that equals the sequential position admits an entry.
+        value = batch.get("number")
+        if isinstance(value, bool) or type(value) is not int or value != number:
+            raise SystemExit(
+                f"Malformed batch plan entry {number}: batch numbers must "
+                f"be exact integers 1..{len(batches)} in sequence; refusing publication."
+            )
+
+    # Row 5: the validation and publication filenames derive from the SAME
+    # canonical integers (the enumerate positions) — never from the JSON's
+    # original representation — and the patches directory holds EXACTLY the
+    # canonical files: a stray batch-True.patch / batch-1.0.patch beside the
+    # canonical batch-1.patch is a refusal, never an ignored extra (the
+    # artifact is untrusted output by contract; anything unconsumed by the
+    # plan is a publication the validator never judged).
+    expected_patch_names = {f"batch-{n}.patch" for n in range(1, len(batches) + 1)}
+    patches_dir = pub / "patches"
+    if not patches_dir.is_dir():
+        raise SystemExit(f"Missing patches directory: {patches_dir}")
+    actual_patch_names = {entry.name for entry in patches_dir.iterdir()}
+    if actual_patch_names != expected_patch_names:
+        unexpected = sorted(actual_patch_names - expected_patch_names)
+        missing = sorted(expected_patch_names - actual_patch_names)
+        raise SystemExit(
+            f"Unexpected publication files in {patches_dir}: "
+            f"unexpected={unexpected}, missing={missing}; refusing publication."
+        )
 
     patches = [pub / "automatic-rewrite.patch"] + [
-        pub / "patches" / f"batch-{b['number']}.patch" for b in batches
+        patches_dir / name for name in sorted(expected_patch_names)
     ]
     for patch in patches:
         if not patch.is_file() or patch.stat().st_size == 0:
