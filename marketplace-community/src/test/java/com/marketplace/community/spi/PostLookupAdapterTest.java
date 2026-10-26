@@ -137,6 +137,12 @@ class PostLookupAdapterTest {
         NeighborhoodMembership elsewhere =
                 NeighborhoodMembership.join(authorId, UUID.randomUUID(),
                         Clock.fixed(FIXED, ZoneOffset.UTC));
+        // The entity's own honest lifecycle to VERIFIED (the same path the
+        // membershipInState helper walks): the fresh row is born UNVERIFIED,
+        // the member's request moves it to PENDING, and only then can the
+        // approval land — approving a just-born UNVERIFIED row is the
+        // IllegalStateException the state machine throws by design.
+        elsewhere.requestVerification();
         elsewhere.approveVerification();
         when(membershipRepository.findByUserId(authorId)).thenReturn(Optional.of(elsewhere));
 
