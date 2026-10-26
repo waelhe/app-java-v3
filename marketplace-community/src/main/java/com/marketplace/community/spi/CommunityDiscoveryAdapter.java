@@ -148,6 +148,16 @@ public class CommunityDiscoveryAdapter implements CommunityDiscoveryPort {
 
     @Override
     public PagedResponse<DiscoveryEventCard> findUpcomingEvents(UUID locationId, PagedRequest page) {
+        // The operational kill-switch (agent findings 2026-10-26, row 5):
+        // the events capability's own lever — the SAME gate the events
+        // board read and the write paths consult. The pre-fix rail served
+        // event cards while the administrator had disabled the capability;
+        // the honest empty page rides the port's own documented shape (the
+        // empty-whitelist precedent below: an empty answer is never a
+        // query) until the switch is back.
+        if (!featureGate.isEnabled("community.events.enabled", true)) {
+            return PagedResponse.empty(page);
+        }
         Page<NeighborhoodEvent> result = eventRepository.findAll(
                 NeighborhoodEventSpecifications.hasLocation(locationId)
                         .and(NeighborhoodEventSpecifications.upcoming(clock.instant())),

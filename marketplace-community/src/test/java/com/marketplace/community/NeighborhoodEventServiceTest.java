@@ -124,6 +124,38 @@ class NeighborhoodEventServiceTest {
     }
 
     @Test
+    void createEvent_offByTheOperationalLever_is409BeforeAnyOtherGate() {
+        // Row 5 (agent findings 2026-10-26): the kill-switch FIRST — the
+        // capability itself is off, so the port resolve, the membership
+        // rule and every later gate answer nothing. No repository is
+        // stubbed: nothing else may run.
+        when(featureGate.isEnabled("community.events.enabled", true)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.createEvent(authorId, locationId,
+                EventCategory.VOLUNTEER, "Title", "Body",
+                FIXED.plusSeconds(3600), null, "Spot", "Committee", null, EventRegistration.OPEN))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("switched off");
+        org.mockito.Mockito.verifyNoInteractions(
+                geoLookupPort, membershipRepository, eventRepository, rsvpRepository);
+    }
+
+    @Test
+    void rsvp_offByTheOperationalLever_is409BeforeTheLockedEventRead() {
+        // Row 5 (agent findings 2026-10-26): accepting RSVPs is the
+        // submission channel the incident lever silences — the honest 409
+        // lands BEFORE the locked event read, so no seat is allocated
+        // while the capability is disabled.
+        when(featureGate.isEnabled("community.events.enabled", true)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.rsvp(memberId, eventId))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("switched off");
+        org.mockito.Mockito.verifyNoInteractions(
+                eventRepository, membershipRepository, rsvpRepository);
+    }
+
+    @Test
     void createEvent_nonLevel3Node_is400BeforeAnyWrite() {
         when(geoLookupPort.getLocation(locationId)).thenReturn(node(2));
 

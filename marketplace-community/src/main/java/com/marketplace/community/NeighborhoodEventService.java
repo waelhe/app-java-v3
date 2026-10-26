@@ -123,6 +123,14 @@ public class NeighborhoodEventService {
                                              Instant startsAt, Instant endsAt,
                                              String locationLabel, String organizerLabel,
                                              Integer capacity, EventRegistration registration) {
+        // The kill-switch FIRST (agent findings 2026-10-26, row 5) — before
+        // the port resolve, before any membership read, before any write:
+        // the capability itself is off, so every later gate answers
+        // nothing. The polls' own precedent (requirePollsEnabled): the
+        // incident lever silences the submission channel — the organizer's
+        // own delete below stays available by design (the owner cleanup
+        // the recommendation keeps alive during shutdown).
+        requireEventsEnabled();
         GeoLookupPort.GeoNode node = geoLookupPort.getLocation(locationId);
         if (node.level() != NEIGHBORHOOD_LEVEL) {
             throw new BadRequestException(
@@ -238,6 +246,13 @@ public class NeighborhoodEventService {
      */
     @Observed(name = "community.event.rsvp")
     public EventRsvpView rsvp(UUID memberId, UUID eventId) {
+        // The kill-switch FIRST (agent findings 2026-10-26, row 5) — before
+        // the locked event read, before any seat math: accepting RSVPs is
+        // the submission channel the incident lever silences. The un-RSVP
+        // below stays available by design (freeing one's own seat is
+        // personal-data management, not a community write — the b-3 seam's
+        // own spirit, the same line the window gate already draws).
+        requireEventsEnabled();
         NeighborhoodEvent event = eventRepository.findByIdForUpdate(eventId)
                 .orElseThrow(() -> new ResourceNotFoundException("Event", eventId));
         requireWritableMembershipIn(memberId, event.getLocationId(),
@@ -398,5 +413,23 @@ public class NeighborhoodEventService {
             throw new AccessDeniedException(wrongLocationMessage);
         }
         return membership;
+    }
+
+    /**
+     * The events kill-switch (agent findings 2026-10-26, row 5) — the
+     * polls' own {@code requirePollsEnabled} precedent verbatim. The
+     * board read already consulted the lever; the write paths (creation
+     * and RSVP) now answer the honest 409 BEFORE the port resolve, the
+     * membership read, or any write. The owner cleanup (the organizer's
+     * delete) and the personal-data seam (the un-RSVP) stay available
+     * during shutdown by design — the lever silences the submission
+     * channel, not the owner's or the seat-holder's own exits.
+     */
+    private void requireEventsEnabled() {
+        if (!featureGate.isEnabled("community.events.enabled", true)) {
+            throw new ConflictException(
+                    "Events are currently switched off by the platform operator — "
+                            + "organizing and RSVPing are paused");
+        }
     }
 }
