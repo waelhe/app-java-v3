@@ -166,6 +166,37 @@ class SearchCriteriaTest {
     }
 
     @Test
+    void constructor_rejectsExponentAmplifiedScalesBeforeAnyDecimalArithmetic() {
+        // Row 1 (agent findings 2026-10-26 — CWE-400): the finding's own
+        // payload shape — a SHORT exponent form whose magnitude passes
+        // every comparison while its scale would make setScale construct
+        // an enormous power of ten. The representation bound answers the
+        // honest 400 for every component of the triple, and a generous
+        // trailing-zero form stays legal (the vocabulary stores six).
+        BigDecimal amplified = new BigDecimal("1e-100000000");
+        assertThat(amplified.compareTo(BigDecimal.valueOf(90))).isLessThan(0);
+        assertRadiusRejected(amplified, BigDecimal.ZERO, BigDecimal.ONE,
+                "latitude carries more than 32 decimal places — the coordinate vocabulary stores six");
+        assertRadiusRejected(BigDecimal.ZERO, amplified, BigDecimal.ONE,
+                "longitude carries more than 32 decimal places — the coordinate vocabulary stores six");
+        assertRadiusRejected(BigDecimal.ZERO, BigDecimal.ZERO, amplified,
+                "radiusKm carries more than 32 decimal places — the coordinate vocabulary stores six");
+    }
+
+    @Test
+    void constructor_acceptsGenerousTrailingZeroCoordinates() {
+        // The bound's honest half: a coordinate padded well past the stored
+        // six decimals is a legal representation — the bound cuts the
+        // exponent-amplification axis, never the trailing-zero vocabulary.
+        SearchCriteria criteria = new SearchCriteria(null, null, null, null,
+                null, null, null, null, null, null, null, null, null,
+                new BigDecimal("24.713600000000000000"), new BigDecimal("46.675500000000000000"),
+                new BigDecimal("12.345"), null);
+        assertThat(criteria.hasRadius()).isTrue();
+        assertThat(criteria.latitude()).isEqualByComparingTo(new BigDecimal("24.7136"));
+    }
+
+    @Test
     void constructor_acceptsTheRadiusTripleAndNormalizesTheCenterToScaleSix() {
         SearchCriteria criteria = new SearchCriteria(null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
