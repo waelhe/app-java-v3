@@ -7,6 +7,7 @@ import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Assumptions;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -14,6 +15,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -21,6 +23,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
@@ -478,6 +481,426 @@ class PlatformGovernanceFilesTest {
                 .should(ownsServiceConnectedPostgres)
                 .check(imported);
     }
+
+    @Test
+    void openRewriteCatalogIsBomAlignedOptInAndAudited() throws IOException {
+        String pom = read("pom.xml");
+        String bomAuditPom = read(".ci", "openrewrite-bom-audit", "pom.xml");
+        String bomAuditScript = read("scripts", "openrewrite", "verify-bom-alignment.py");
+        assertThat(bomAuditPom)
+                .as("the audit POM must import the official BOM and leave the tested recipes versionless")
+                .contains("<artifactId>rewrite-recipe-bom</artifactId>")
+                .contains("<version>${openrewrite.recipe-bom.version}</version>")
+                .contains("<artifactId>rewrite-java-dependencies</artifactId>")
+                .contains("<artifactId>rewrite-jackson</artifactId>")
+                .contains("<artifactId>rewrite-netty</artifactId>")
+                .contains("<artifactId>rewrite-openapi</artifactId>")
+                .contains("<artifactId>rewrite-third-party</artifactId>")
+                .contains("<artifactId>rewrite-all</artifactId>")
+                .contains("<artifactId>rewrite-spring</artifactId>")
+                .contains("<pluginRepositories>");
+        assertThat(bomAuditScript)
+                .as("the validator must mechanically compare plugin pins against effective BOM versions")
+                .contains("openrewrite.java-dependencies.version")
+                .contains("openrewrite.jackson-recipes.version")
+                .contains("openrewrite.netty-recipes.version")
+                .contains("openrewrite.openapi-recipes.version")
+                .contains("openrewrite.third-party-recipes.version")
+                .contains("openrewrite.all-recipes.version")
+                .contains("openrewrite.spring-recipes.version")
+                .contains("effective_pom")
+                .contains("Version mismatch")
+                .doesNotContain("effective_bom_version")
+                .doesNotContain("effective audit POM");
+
+        assertThat(pom)
+                .as("OpenRewrite recipe and Maven plugin versions must follow the verified official catalog")
+                .contains("<openrewrite.recipe-bom.version>3.41.0</openrewrite.recipe-bom.version>")
+                .contains("<openrewrite.maven-plugin.version>6.50.0</openrewrite.maven-plugin.version>")
+                .contains("<openrewrite.java-dependencies.version>1.64.0</openrewrite.java-dependencies.version>")
+                .contains("<openrewrite.jackson-recipes.version>1.31.0</openrewrite.jackson-recipes.version>")
+                .contains("<openrewrite.netty-recipes.version>0.13.2</openrewrite.netty-recipes.version>")
+                .contains("<openrewrite.openapi-recipes.version>0.35.0</openrewrite.openapi-recipes.version>")
+                .contains("<id>openrewrite</id>")
+                .contains("<artifactId>rewrite-third-party</artifactId>")
+                .contains("<id>openrewrite-third-party-free-catalog</id>")
+                .contains("<artifactId>rewrite-migrate-java</artifactId>")
+                .contains("<artifactId>rewrite-github-actions</artifactId>")
+                .contains("<artifactId>rewrite-static-analysis</artifactId>")
+                .contains("<artifactId>rewrite-all</artifactId>")
+                .contains("<artifactId>rewrite-spring</artifactId>")
+                .contains("<failOnInvalidActiveRecipes>true</failOnInvalidActiveRecipes>");
+
+        int openRewriteProfileStart = pom.indexOf("<id>openrewrite</id>");
+        int openRewriteProfileEnd = pom.indexOf("</profile>", openRewriteProfileStart);
+        assertThat(openRewriteProfileStart).isGreaterThanOrEqualTo(0);
+        assertThat(openRewriteProfileEnd).isGreaterThan(openRewriteProfileStart);
+        String baselineProfile = pom.substring(openRewriteProfileStart, openRewriteProfileEnd);
+        assertThat(baselineProfile)
+                .as("the baseline no-subscription profile must not import the catalog whose transitive recipes returned HTTP 403")
+                .doesNotContain("<artifactId>rewrite-third-party</artifactId>");
+        assertThat(baselineProfile.indexOf("<artifactId>rewrite-maven-plugin</artifactId>"))
+                .as("external recipe packs must be loaded on the Rewrite Maven plugin classpath")
+                .isGreaterThanOrEqualTo(0)
+                .isLessThan(baselineProfile.indexOf("<artifactId>rewrite-java-dependencies</artifactId>"));
+        assertThat(baselineProfile)
+                .contains("<artifactId>rewrite-jackson</artifactId>")
+                .contains("<artifactId>rewrite-netty</artifactId>")
+                .contains("<artifactId>rewrite-openapi</artifactId>")
+                .contains("<style>com.marketplace.OpenRewriteBaselineStyle</style>")
+                .contains("<recipe>org.openrewrite.java.RemoveUnusedImports</recipe>")
+                .doesNotContain("<recipe>org.openrewrite.java.OrderImports</recipe>")
+                .doesNotContain("<recipe>org.openrewrite.maven.BestPractices</recipe>")
+                .doesNotContain("<recipe>org.openrewrite.maven.OrderPomElements</recipe>");
+
+        String rewriteStyle = read("rewrite.yml");
+        assertThat(rewriteStyle)
+                .as("OpenRewrite must use an explicit no-wildcard import threshold and preserve four-space indentation")
+                .contains("name: com.marketplace.OpenRewriteBaselineStyle")
+                .contains("classCountToUseStarImport: 999")
+                .contains("nameCountToUseStarImport: 999")
+                .contains("org.openrewrite.java.style.TabsAndIndentsStyle")
+                .contains("org.openrewrite.xml.style.TabsAndIndentsStyle")
+                .contains("indentSize: 4")
+                .contains("continuationIndentSize: 8");
+
+        int springProfileStart = pom.indexOf("<id>openrewrite-spring-source</id>");
+        int springProfileEnd = pom.indexOf("</profile>", springProfileStart);
+        assertThat(springProfileStart).isGreaterThanOrEqualTo(0);
+        assertThat(springProfileEnd).isGreaterThan(springProfileStart);
+        String springProfile = pom.substring(springProfileStart, springProfileEnd);
+        assertThat(springProfile)
+                .as("source-built Spring recipes must be loaded by the Rewrite Maven plugin, not merely added to the application classpath")
+                .contains("<artifactId>rewrite-maven-plugin</artifactId>")
+                .contains("<artifactId>rewrite-spring</artifactId>");
+        assertThat(springProfile.indexOf("<artifactId>rewrite-spring</artifactId>"))
+                .isGreaterThan(springProfile.indexOf("<artifactId>rewrite-maven-plugin</artifactId>"));
+
+        String catalog = read("docs", "governance", "openrewrite-catalog.md");
+        assertThat(catalog)
+                .as("catalog must record the version, licensing and execution boundary")
+                .contains("rewrite-all")
+                .contains("rewrite-third-party")
+                .contains("rewrite-spring")
+                .contains("complete recipe resolution and discovery still require a successful scheduled/manual run")
+                .contains("failOnDryRunResults");
+
+        String springBuildScript = read("scripts", "openrewrite", "build-spring-recipes.sh");
+        assertThat(springBuildScript)
+                .as("the source probe must report the actual published coordinate instead of assuming the tag version")
+                .contains("built_version")
+                .contains("rewrite-spring-${built_version}.pom")
+                .contains("Source tag ${tag} is publishing rewrite-spring:")
+                .contains("expected release coordinate: ${version}");
+
+        String workflow = read(".github", "workflows", "openrewrite-catalog.yml");
+        assertThat(workflow)
+                .as("OpenRewrite catalog audit must not silently skip credential or discovery checks")
+                .contains("CODEGENOME_USERNAME")
+                .contains("CODEGENOME_TOKEN")
+                .contains("server-username-env-var: CODEGENOME_USERNAME")
+                .contains("server-password-env-var: CODEGENOME_TOKEN")
+                .contains("Verify Code Genome artifact authentication")
+                .contains("--location")
+                .contains("A 302 redirect is normal")
+                .contains("rewrite-maven-plugin-${OPENREWRITE_MAVEN_PLUGIN_VERSION}.jar")
+                .contains("Write explicit Maven settings for Code Genome")
+                .contains("Read OpenRewrite version pins from root POM")
+                .contains("OPENREWRITE_MAVEN_PLUGIN_VERSION")
+                .contains("OPENREWRITE_RECIPE_BOM_VERSION")
+                .contains(".ci/openrewrite-bom-audit/**")
+                .contains("--settings \"${RUNNER_TEMP}/openrewrite-settings.xml\"")
+                .contains("rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:discover")
+                .contains("Install Maven reactor before Rewrite dry-run")
+                .contains("rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:dryRunNoFork")
+                .contains("-DskipTests -Popenrewrite install")
+                .contains("org.openrewrite.java.dependencies.UpgradeDependencyVersion")
+                .contains("The external recipe packs were not loaded on the Rewrite Maven plugin classpath.")
+                .contains("org.openrewrite.java.spring.boot3.UpgradeSpringBoot_3_5")
+                .contains("Spring source build completed but the expected community recipe")
+                .contains("run_spring_source_probe")
+                .contains("if: inputs.run_spring_source_probe == true")
+                .doesNotContain("if: github.event_name == 'schedule' ||")
+                // The pinned source tag can publish a coordinate different from the tag
+                // number; the probe must flow the measured coordinate into Maven rather
+                // than requesting the guessed release number (review 5638134031).
+                .contains("spring_recipes_built_version")
+                .contains("-Dopenrewrite.spring-recipes.version=\"${spring_recipes_built_version}\"")
+                .contains("Verify recipe versions against the official BOM")
+                .contains("maven-help-plugin:3.5.1:effective-pom")
+                .contains("-Dopenrewrite.recipe-bom.version=\"${OPENREWRITE_RECIPE_BOM_VERSION}\"")
+                .contains("verify-bom-alignment.py")
+                .contains("recipe-bom-effective-pom.xml");
+    }
+
+
+    @Test
+    void openRewriteAutoApplyConvergesAndFailsClosed() throws IOException {
+        String pom = read("pom.xml");
+        String workflow = read(".github", "workflows", "openrewrite-apply.yml");
+
+        assertThat(pom)
+                .as("module-scoped automatic application must fail closed unless the selected modules converge")
+                .contains("<openrewrite.dry-run.fail-on-results>true</openrewrite.dry-run.fail-on-results>")
+                .contains("<failOnDryRunResults>${openrewrite.dry-run.fail-on-results}</failOnDryRunResults>");
+
+        String catalogWorkflow = read(".github", "workflows", "openrewrite-catalog.yml");
+        assertThat(catalogWorkflow)
+                .as("the full-reactor catalog audit reports legacy changes without rewriting the application during setup")
+                .contains("-Dopenrewrite.dry-run.fail-on-results=false");
+
+        assertThat(workflow)
+                .as("the automatic path applies only activated recipes and fails closed unless the source reaches a fixed point")
+                .contains("org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:runNoFork")
+                .contains("'**/*.java'")
+                .contains("'!automation/openrewrite-**'")
+                .contains("  scope:")
+                .contains("full-project")
+                .contains("changed-modules")
+                .contains("limit=95")
+                .contains("One-time baseline: discover all reactor modules from the root POM; no hand-maintained module list.")
+                .contains("'!marketplace-app/src/test/java/com/marketplace/config/PlatformGovernanceFilesTest.java'")
+                .contains("git diff --name-only")
+                .contains("OPENREWRITE_MODULES")
+                .contains("Full-project baseline is permitted only as an explicit workflow dispatch targeting main.")
+                .contains("Planned batches:")
+                .contains("-pl \"${OPENREWRITE_MODULES}\"")
+                .contains("apply_required=false")
+                .contains("org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:dryRunNoFork")
+                .contains("for pass in $(seq 1 5); do")
+                .contains("cancel-in-progress: false")
+                .contains("openrewrite-auto-apply-${{ inputs.target_ref || github.ref_name }}")
+                .contains("queue: max")
+                .contains("timeout-minutes: 90")
+                .contains("timeout-minutes: 65")
+                .contains("for attempt in $(seq 1 180); do")
+                .contains("These recipes would make changes to ")
+                .contains("OpenRewrite baseline did not converge to zero diff after five attempts.")
+                .contains("Unexpected non-Java changes from the approved baseline recipe:")
+                .contains("gh workflow run")
+                .contains("if [[ \"${TARGET_REF}\" == \"main\" ]]; then")
+                .contains("MODE=\"pull-request\"")
+                .contains("MODE=\"direct-branch-update\"")
+                .contains("git diff --binary \"${TARGET_SHA}\" -- \"${batch_paths[@]}\" > \"${patch_file}\"")
+                .contains("OpenRewrite batch ${idx} has no patch although changed files were reported.")
+                .doesNotContain("  schedule:")
+                .contains("No eligible Java changes mapped to modules; skipping auto-apply.");
+
+        int batchPatchIndex = workflow.indexOf(
+                "git diff --binary \"${TARGET_SHA}\" -- \"${batch_paths[@]}\" > \"${patch_file}\"");
+        int resetToBaseIndex = workflow.indexOf("git reset --hard \"${TARGET_SHA}\"");
+        assertThat(batchPatchIndex).isGreaterThanOrEqualTo(0);
+        assertThat(resetToBaseIndex).isGreaterThan(batchPatchIndex);
+        int publishJobIndex = workflow.indexOf("\n  publish:");
+        assertThat(publishJobIndex).isGreaterThan(resetToBaseIndex);
+        String applyJob = workflow.substring(workflow.indexOf("  apply:"), publishJobIndex);
+        String publishJob = workflow.substring(publishJobIndex);
+        assertThat(applyJob)
+                .contains("permissions:\n      contents: read")
+                .contains("persist-credentials: false")
+                .contains("actions/upload-artifact@v6")
+                .contains("EXPECTED_REMOTE_SHA=\"\"")
+                .doesNotContain("git ls-remote origin")
+                .doesNotContain("GH_TOKEN:");
+        assertThat(publishJob)
+                .contains("needs: apply")
+                .contains("contents: write")
+                .contains("GH_TOKEN: " + "$" + "{{ github.token }}")
+                .contains("actions/download-artifact@v6")
+                .contains("Verify patch content and exact planned paths before publication")
+                // The patch-content parser lives in scripts/openrewrite/validate-patches.py
+                // (behaviour-tested below); this workflow pin guards the WIRING only —
+                // a publish job that stops invoking the validator is the "config that lies"
+                // defect class this class exists to catch.
+                .contains("python3 scripts/openrewrite/validate-patches.py")
+                .doesNotContain("IMPORT.fullmatch")
+                .doesNotContain("splitlines")
+                .contains("git apply --check")
+                .contains("Publish generated transformations without running Maven")
+                .doesNotContain("git apply --binary")
+                .doesNotContain("./mvnw")
+                .doesNotContain("mvn --settings");
+        assertThat(catalogWorkflow)
+                .contains("repositoryOrigins")
+                .contains("Read pinned OpenRewrite Maven plugin version for Spring discovery")
+                .contains("OPENREWRITE_MAVEN_PLUGIN_VERSION={version}");
+    }
+
+    // -----------------------------------------------------------------------------------
+    // Behavioural gate for scripts/openrewrite/validate-patches.py — the import-only
+    // patch validator of the OpenRewrite publish job. CodeRabbit review on #732
+    // (Trivial, Security & Privacy): text-presence pins cannot detect a validator that
+    // stops REJECTING while keeping its strings, so the parser is extracted into a
+    // script and exercised here over crafted patch fixtures — the same testability
+    // contract as scripts/openrewrite/verify-bom-alignment.py (catalog pins above).
+    // -----------------------------------------------------------------------------------
+
+    private static final String IMPORT_ONLY_PATCH = """
+            diff --git a/m/Sample.java b/m/Sample.java
+            index 3a1b2c4..5d6e7f8 100644
+            --- a/m/Sample.java
+            +++ b/m/Sample.java
+            @@ -2,4 +2,3 @@
+             package m;
+            -import java.util.List;
+             class Sample {}
+            """;
+
+    @Test
+    void openRewritePatchValidatorAcceptsImportOnlyPublication() throws Exception {
+        assumePython3();
+        ValidatorResult result = runPatchValidator(writePublication(IMPORT_ONLY_PATCH.getBytes(StandardCharsets.UTF_8)));
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output()).contains("Validated import-only content for 2 patch artifact(s).");
+    }
+
+    @Test
+    void openRewritePatchValidatorRefusesSourceChangeBeyondImports() throws Exception {
+        assumePython3();
+        String patch = IMPORT_ONLY_PATCH.replace("-import java.util.List;", "-class Evil {}");
+        ValidatorResult result = runPatchValidator(writePublication(patch.getBytes(StandardCharsets.UTF_8)));
+        assertThat(result.exitCode()).isNotZero();
+        assertThat(result.output()).contains("Non-import source change");
+    }
+
+    @Test
+    void openRewritePatchValidatorRefusesGitApplyLineSplittingBypass() throws Exception {
+        assumePython3();
+        // One line for git apply (which splits on \n only) and for the Java compiler
+        // (\r is a line terminator, JLS 3.4): "+import a.B;\r static { ... }".
+        // Python's str.splitlines() would judge it as two benign lines — the exact
+        // bypass CodeRabbit reported; the validator must split on \n alone and match
+        // the import declaration over the WHOLE line.
+        byte[] patch = (
+                "diff --git a/m/Sample.java b/m/Sample.java\n"
+                + "index 3a1b2c4..5d6e7f8 100644\n"
+                + "--- a/m/Sample.java\n"
+                + "+++ b/m/Sample.java\n"
+                + "@@ -2,4 +2,3 @@\n"
+                + " package m;\n"
+                + "+import a.B;\r static { Runtime.getRuntime().exec(\"id\"); }\n"
+        ).getBytes(StandardCharsets.UTF_8);
+        ValidatorResult result = runPatchValidator(writePublication(patch));
+        assertThat(result.exitCode()).isNotZero();
+        assertThat(result.output()).contains("Non-import source change");
+    }
+
+    @Test
+    void openRewritePatchValidatorAcceptsCrlfImportLine() throws Exception {
+        assumePython3();
+        byte[] patch = (
+                "diff --git a/m/Sample.java b/m/Sample.java\n"
+                + "index 3a1b2c4..5d6e7f8 100644\n"
+                + "--- a/m/Sample.java\n"
+                + "+++ b/m/Sample.java\n"
+                + "@@ -2,4 +2,3 @@\n"
+                + " package m;\n"
+                + "+import a.B;\r\n"
+        ).getBytes(StandardCharsets.UTF_8);
+        ValidatorResult result = runPatchValidator(writePublication(patch));
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output()).contains("Validated import-only content for 2 patch artifact(s).");
+    }
+
+    @Test
+    void openRewritePatchValidatorRefusesBinaryPatchPayload() throws Exception {
+        assumePython3();
+        byte[] patch = (
+                "diff --git a/m/logo.png b/m/logo.png\n"
+                + "index 1111111..2222222 100644\n"
+                + "--- a/m/logo.png\n"
+                + "+++ b/m/logo.png\n"
+                + "GIT binary patch\n"
+                + "literal 10\n"
+                + "zcmZQzK+aMD3sMl\n"
+        ).getBytes(StandardCharsets.UTF_8);
+        ValidatorResult result = runPatchValidator(writePublication(patch));
+        assertThat(result.exitCode()).isNotZero();
+        assertThat(result.output()).contains("Disallowed patch header");
+    }
+
+    @Test
+    void openRewritePatchValidatorRefusesModeAndRenameHeaders() throws Exception {
+        assumePython3();
+        byte[] patch = (
+                "diff --git a/m/Sample.java b/m/Sample.java\n"
+                + "old mode 100644\n"
+                + "new mode 100755\n"
+        ).getBytes(StandardCharsets.UTF_8);
+        ValidatorResult result = runPatchValidator(writePublication(patch));
+        assertThat(result.exitCode()).isNotZero();
+        assertThat(result.output()).contains("Disallowed patch header");
+    }
+
+    @Test
+    void openRewritePatchValidatorRefusesContentOutsideAnyDiff() throws Exception {
+        assumePython3();
+        byte[] patch = "arbitrary line without any diff header\n".getBytes(StandardCharsets.UTF_8);
+        ValidatorResult result = runPatchValidator(writePublication(patch));
+        assertThat(result.exitCode()).isNotZero();
+        assertThat(result.output()).contains("Content outside a diff");
+    }
+
+    @Test
+    void openRewritePatchValidatorRefusesEmptyPatchArtifact() throws Exception {
+        assumePython3();
+        ValidatorResult result = runPatchValidator(writePublication(new byte[0]));
+        assertThat(result.exitCode()).isNotZero();
+        assertThat(result.output()).contains("Missing or empty patch artifact");
+    }
+
+    private static void assumePython3() {
+        Assumptions.assumeTrue(python3Available(),
+                "python3 is required to behaviour-test the OpenRewrite patch validator; CI runners always provide it");
+    }
+
+    private static boolean python3Available() {
+        try {
+            Process probe = new ProcessBuilder("python3", "--version").redirectErrorStream(true).start();
+            if (!probe.waitFor(15, TimeUnit.SECONDS)) {
+                probe.destroyForcibly();
+                return false;
+            }
+            return probe.exitValue() == 0;
+        } catch (IOException | InterruptedException unavailable) {
+            return false;
+        }
+    }
+
+    private static Path writePublication(byte[] patch) throws IOException {
+        Path dir = Files.createTempDirectory("openrewrite-publication");
+        Files.writeString(dir.resolve("batches.json"), "[{\"number\": 1, \"paths\": [\"m/Sample.java\"]}]");
+        Files.createDirectories(dir.resolve("patches"));
+        Files.write(dir.resolve("automatic-rewrite.patch"), patch);
+        Files.write(dir.resolve("patches").resolve("batch-1.patch"), patch);
+        return dir;
+    }
+
+    private static ValidatorResult runPatchValidator(Path publicationDir) throws IOException, InterruptedException {
+        Path script = repoRoot().resolve("scripts").resolve("openrewrite").resolve("validate-patches.py");
+        assertThat(script).as("scripts/openrewrite/validate-patches.py must exist").exists();
+        // The validator output goes to a temp FILE, never the process pipe: reading
+        // the pipe directly blocks until the child closes it, so a hung validator
+        // would hang the test instead of tripping the 60-second deadline below
+        // (CodeRabbit review on #732, Minor - Stability).
+        Path outputFile = Files.createTempFile("openrewrite-validator-output", ".txt");
+        try {
+            Process process = new ProcessBuilder("python3", script.toString(), publicationDir.toString())
+                    .redirectErrorStream(true)
+                    .redirectOutput(outputFile.toFile())
+                    .start();
+            if (!process.waitFor(60, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                throw new IllegalStateException("OpenRewrite patch validator did not terminate within 60 seconds");
+            }
+            return new ValidatorResult(process.exitValue(), Files.readString(outputFile, StandardCharsets.UTF_8));
+        } finally {
+            Files.deleteIfExists(outputFile);
+        }
+    }
+
+    private record ValidatorResult(int exitCode, String output) {}
+
 
     private static Path repoRoot() {
         Path cwd = Paths.get("").toAbsolutePath();
