@@ -210,6 +210,15 @@ public class DeliveryService {
         }
         requests.save(request);
         record(request, requesterId, before, request.getStatus(), reason.trim());
+        // CodeRabbit agent findings, row 16 — the aggregate-fulfillment
+        // reconciliation fact: a cancelled leg is terminal WITHOUT physical
+        // delivery, and no DELIVERED event will ever fire for it. The orders
+        // module reconciles the order's aggregate delivery state on this
+        // fact (every leg terminal + at least one delivered fulfills through
+        // the verified edge); published in the transition's transaction —
+        // the DeliveryCompletedEvent house pattern.
+        publisher.publishEvent(new DeliveryLegTerminatedEvent(
+                request.getId(), "CANCELLED", request.getOrderId()));
         if (request.getPaymentIntentId() != null) {
             publisher.publishEvent(new DeliveryRefundRequestedEvent(
                     request.getId(), reason.trim(), request.getOrderId()));
@@ -256,8 +265,26 @@ public class DeliveryService {
             publisher.publishEvent(new DeliveryCompletedEvent(r.getId(), r.getPaymentIntentId(),
                     r.getAmountMinor(), r.getCurrency(), r.getCourierCompensationMinor(), now,
                     r.getCourierUserId(), r.getOrderId()));
-        } else if (target == DeliveryRequestStatus.FAILED && r.getPaymentIntentId() != null) {
-            publisher.publishEvent(new DeliveryRefundRequestedEvent(r.getId(), reason, r.getOrderId()));
+        } else if (target == DeliveryRequestStatus.FAILED) {
+            // CodeRabbit agent findings, row 16 — the terminal-without-delivery
+            // fact rides the FAILED edge too (the cancel path publishes its
+            // own): the orders module reconciles the aggregate delivery state
+            // so a completed-in-fact multi-leg order never waits forever.
+            publisher.publishEvent(new DeliveryLegTerminatedEvent(
+                    r.getId(), "FAILED", r.getOrderId()));
+            if (r.getPaymentIntentId() != null) {
+                publisher.publishEvent(new DeliveryRefundRequestedEvent(r.getId(), reason, r.getOrderId()));
+            } else if (r.getOrderId() != null) {
+                // The part-1 review note: the payment-less FAILED leg must cut
+                // the order link exactly like cancelForRequester — the sole
+                // leg a fromCheckout request ever creates carries no intent,
+                // the reconciliation never completes a leg-less aggregate,
+                // and the buyer's only honest exit (the order cancel) stays
+                // refused while the link survives. The refund event keeps
+                // its own path: an intent-bearing failure settles money,
+                // not links.
+                orders.clearDeliveryRequest(r.getOrderId(), r.getId());
+            }
         }
         return DeliveryRequestResponse.from(r, null);
     }

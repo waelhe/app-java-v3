@@ -32,6 +32,12 @@ import static org.mockito.Mockito.when;
  * against the real schema):
  *
  * <ul>
+ *   <li>the operational kill-switch (CodeRabbit agent findings, row 5 /
+ *       CWE-862): the shared service guard refuses the TWO ADDITIVE
+ *       writes (create, vote) with the honest 409 BEFORE every other
+ *       gate — nothing about the surface answers while the switch is
+ *       off; the withdraw seam deliberately stays live (the owner's own
+ *       removal, the Wave-4 urgent-channel precedent);</li>
  *   <li>the create gate order (the L41 publish order verbatim): the
  *       port's own 404 → the level-3 requirement 400 → the active
  *       writable membership in exactly that location (403 — absent, a
@@ -120,6 +126,26 @@ class NeighborhoodPollServiceTest {
     }
 
     // ---------- create: the gate order ----------
+
+    @Test
+    void create_whenTheConsoleSwitchIsOff_is409BeforeAnyOtherGate() {
+        // CodeRabbit agent findings, row 5 / CWE-862: the operational
+        // kill-switch guards the ADDITIVE write too — the FIRST gate by
+        // design, exactly like the board read's own first line. The 409
+        // is the honest refusal (the caller is authorized, the request is
+        // well-formed — it conflicts with the capability's administrative
+        // state). Nothing is stubbed and nothing may run: not the geo
+        // port, not a membership read, not a write — BOTH HTTP entries
+        // route through this one service guard.
+        when(featureGate.isEnabled("community.polls.enabled", true)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.create(callerId, locationId,
+                "س", "لجنة تطوير الحي", List.of("أ", "ب")))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("switched off by the platform operator");
+        org.mockito.Mockito.verifyNoInteractions(geoLookupPort, membershipRepository,
+                pollRepository, optionRepository, voteRepository);
+    }
 
     @Test
     void create_unknownLocation_isThePortsOwn404() {
@@ -245,6 +271,21 @@ class NeighborhoodPollServiceTest {
     }
 
     @Test
+    void vote_whenTheConsoleSwitchIsOff_is409BeforeAnyOtherGate() {
+        // Row 5's other half: the vote write carries the same shared
+        // guard, FIRST — before the poll's own existence gate (the board
+        // read's own posture: nothing about the surface answers while
+        // the switch is off). No repository is stubbed: nothing may run.
+        when(featureGate.isEnabled("community.polls.enabled", true)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.vote(callerId, pollId, optionId))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("switched off by the platform operator");
+        org.mockito.Mockito.verifyNoInteractions(membershipRepository, pollRepository,
+                optionRepository, voteRepository);
+    }
+
+    @Test
     void vote_unknownPoll_isTheHonest404() {
         when(pollRepository.findById(pollId)).thenReturn(Optional.empty());
 
@@ -351,6 +392,26 @@ class NeighborhoodPollServiceTest {
     }
 
     // ---------- withdraw: the owner-delete convention ----------
+
+    @Test
+    void withdraw_underTheConsoleSwitch_staysLive() {
+        // The deliberate boundary (row 5's own design, the Wave-4
+        // urgent-channel precedent): an operator's incident lever silences
+        // the DELIVERY channel — never the owner's own removal seam. A
+        // member takes his stale vote with him while the switch is off,
+        // exactly as he would with the board on. The lever is not even
+        // CONSULTED on this path (verifyNoInteractions) — the guard's
+        // absence is the design, not an accident of stubbing.
+        when(pollRepository.findById(pollId)).thenReturn(Optional.of(pollIn(locationId)));
+        NeighborhoodPollVote vote = NeighborhoodPollVote.cast(pollId, optionId, callerId);
+        when(voteRepository.findByPollIdAndMemberId(pollId, callerId))
+                .thenReturn(Optional.of(vote));
+
+        service.withdraw(callerId, pollId);
+
+        verify(voteRepository).delete(vote);
+        org.mockito.Mockito.verifyNoInteractions(featureGate);
+    }
 
     @Test
     void withdraw_unknownPoll_isTheHonest404() {

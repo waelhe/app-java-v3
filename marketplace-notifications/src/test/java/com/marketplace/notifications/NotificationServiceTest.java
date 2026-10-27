@@ -74,7 +74,7 @@ class NotificationServiceTest {
      */
     private NotificationPreferenceService defaultPreferences() {
         NotificationPreferenceService preferences = mock(NotificationPreferenceService.class);
-        when(preferences.isChannelEnabled(any(), any(), any())).thenReturn(true);
+        when(preferences.isChannelEffectivelyEnabled(any(), any(), any())).thenReturn(true);
         return preferences;
     }
 
@@ -223,7 +223,7 @@ class NotificationServiceTest {
         // of EMAIL for BOOKING_CONFIRMED => the in-app row still lands and
         // the WS push still goes, but no email call is made.
         NotificationPreferenceService preferences = defaultPreferences();
-        when(preferences.isChannelEnabled(CONSUMER_ID, NotificationType.BOOKING_CONFIRMED, NotificationChannel.EMAIL))
+        when(preferences.isChannelEffectivelyEnabled(CONSUMER_ID, NotificationType.BOOKING_CONFIRMED, NotificationChannel.EMAIL))
                 .thenReturn(false);
         NotificationRepository repository = mock(NotificationRepository.class);
         BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
@@ -296,7 +296,7 @@ class NotificationServiceTest {
         // pushed, and NO email call is made for the consumer — while the
         // provider's email still goes (interaction verified).
         NotificationPreferenceService preferences = defaultPreferences();
-        when(preferences.isChannelEnabled(CONSUMER_ID, NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL))
+        when(preferences.isChannelEffectivelyEnabled(CONSUMER_ID, NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL))
                 .thenReturn(false);
         NotificationRepository repository = mock(NotificationRepository.class);
         BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
@@ -334,7 +334,7 @@ class NotificationServiceTest {
         // recipients unsubscribed from WS for BOOKING_CREATED => no push at
         // all, while the in-app rows land and both emails still go.
         NotificationPreferenceService preferences = defaultPreferences();
-        when(preferences.isChannelEnabled(any(), eq(NotificationType.BOOKING_CREATED), eq(NotificationChannel.WS)))
+        when(preferences.isChannelEffectivelyEnabled(any(), eq(NotificationType.BOOKING_CREATED), eq(NotificationChannel.WS)))
                 .thenReturn(false);
         NotificationRepository repository = mock(NotificationRepository.class);
         BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
@@ -772,10 +772,10 @@ class NotificationServiceTest {
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
         NotificationPreferenceService preferences = mock(NotificationPreferenceService.class);
-        when(preferences.isChannelEnabled(any(), any(), any())).thenReturn(true);
-        when(preferences.isChannelEnabled(eq(CONSUMER_ID), eq(NotificationType.FOLLOWED_PROVIDER_NEW_LISTING),
+        when(preferences.isChannelEffectivelyEnabled(any(), any(), any())).thenReturn(true);
+        when(preferences.isChannelEffectivelyEnabled(eq(CONSUMER_ID), eq(NotificationType.FOLLOWED_PROVIDER_NEW_LISTING),
                 eq(NotificationChannel.EMAIL))).thenReturn(false);
-        when(preferences.isChannelEnabled(eq(CONSUMER_ID), eq(NotificationType.FOLLOWED_PROVIDER_NEW_LISTING),
+        when(preferences.isChannelEffectivelyEnabled(eq(CONSUMER_ID), eq(NotificationType.FOLLOWED_PROVIDER_NEW_LISTING),
                 eq(NotificationChannel.WS))).thenReturn(false);
         NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService),
@@ -921,10 +921,10 @@ class NotificationServiceTest {
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
         NotificationPreferenceService preferences = mock(NotificationPreferenceService.class);
-        when(preferences.isChannelEnabled(any(), any(), any())).thenReturn(true);
-        when(preferences.isChannelEnabled(eq(CONSUMER_ID), eq(NotificationType.MESSAGE_RECEIVED),
+        when(preferences.isChannelEffectivelyEnabled(any(), any(), any())).thenReturn(true);
+        when(preferences.isChannelEffectivelyEnabled(eq(CONSUMER_ID), eq(NotificationType.MESSAGE_RECEIVED),
                 eq(NotificationChannel.EMAIL))).thenReturn(false);
-        when(preferences.isChannelEnabled(eq(CONSUMER_ID), eq(NotificationType.MESSAGE_RECEIVED),
+        when(preferences.isChannelEffectivelyEnabled(eq(CONSUMER_ID), eq(NotificationType.MESSAGE_RECEIVED),
                 eq(NotificationChannel.WS))).thenReturn(false);
         NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService),
@@ -988,10 +988,10 @@ class NotificationServiceTest {
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
         NotificationPreferenceService preferences = mock(NotificationPreferenceService.class);
-        when(preferences.isChannelEnabled(any(), any(), any())).thenReturn(true);
-        when(preferences.isChannelEnabled(eq(CONSUMER_ID), eq(NotificationType.MEMBERSHIP_VERIFIED),
+        when(preferences.isChannelEffectivelyEnabled(any(), any(), any())).thenReturn(true);
+        when(preferences.isChannelEffectivelyEnabled(eq(CONSUMER_ID), eq(NotificationType.MEMBERSHIP_VERIFIED),
                 eq(NotificationChannel.EMAIL))).thenReturn(false);
-        when(preferences.isChannelEnabled(eq(CONSUMER_ID), eq(NotificationType.MEMBERSHIP_VERIFIED),
+        when(preferences.isChannelEffectivelyEnabled(eq(CONSUMER_ID), eq(NotificationType.MEMBERSHIP_VERIFIED),
                 eq(NotificationChannel.WS))).thenReturn(false);
         NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService),
@@ -1059,10 +1059,10 @@ class NotificationServiceTest {
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
         NotificationPreferenceService preferences = mock(NotificationPreferenceService.class);
-        when(preferences.isChannelEnabled(any(), any(), any())).thenReturn(true);
-        when(preferences.isChannelEnabled(eq(CONSUMER_ID), eq(NotificationType.REPORT_RESOLVED),
+        when(preferences.isChannelEffectivelyEnabled(any(), any(), any())).thenReturn(true);
+        when(preferences.isChannelEffectivelyEnabled(eq(CONSUMER_ID), eq(NotificationType.REPORT_RESOLVED),
                 eq(NotificationChannel.EMAIL))).thenReturn(false);
-        when(preferences.isChannelEnabled(eq(CONSUMER_ID), eq(NotificationType.REPORT_RESOLVED),
+        when(preferences.isChannelEffectivelyEnabled(eq(CONSUMER_ID), eq(NotificationType.REPORT_RESOLVED),
                 eq(NotificationChannel.WS))).thenReturn(false);
         NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService),

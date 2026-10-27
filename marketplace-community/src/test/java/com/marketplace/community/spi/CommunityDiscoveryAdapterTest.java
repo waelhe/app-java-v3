@@ -59,7 +59,8 @@ import static org.mockito.Mockito.when;
  *   <li>the events rail is status-honest — the upcoming floor carries the
  *       literal CANCELLED/POSTPONED exclusion;</li>
  *   <li>the followed-sources leg: the honest empty page, the loud cap,
- *       the IN on authors;</li>
+ *       the IN on authors, and the neighborhood scope (row 24 — the
+ *       follow never widens the geographic axis, by predicate);</li>
  *   <li>each rail pins its own deterministic complete sort key (D-N5);</li>
  *   <li><b>the console wave 4 gate:</b> the lost-and-found rail's
  *       operational kill-switch — OFF answers the honest empty page
@@ -312,7 +313,7 @@ class CommunityDiscoveryAdapterTest {
     @Test
     void findRecentByAuthors_emptySet_isTheHonestEmptyPage_neverAQuery() {
         PagedResponse<CommunityDiscoveryPort.DiscoveryPostCard> response =
-                adapter().findRecentByAuthors(Set.of(), PagedRequest.of(0, 20));
+                adapter().findRecentByAuthors(locationId, Set.of(), PagedRequest.of(0, 20));
 
         assertThat(response.isEmpty()).isTrue();
         assertThat(response.pageNumber()).isEqualTo(0);
@@ -326,7 +327,7 @@ class CommunityDiscoveryAdapterTest {
                 .mapToObj(i -> UUID.randomUUID())
                 .collect(java.util.stream.Collectors.toSet());
 
-        assertThatThrownBy(() -> adapter().findRecentByAuthors(tooMany, PagedRequest.of(0, 20)))
+        assertThatThrownBy(() -> adapter().findRecentByAuthors(locationId, tooMany, PagedRequest.of(0, 20)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("100");
         verifyNoInteractions(postRepository);
@@ -342,10 +343,12 @@ class CommunityDiscoveryAdapterTest {
         CriteriaBuilder cb = mock(CriteriaBuilder.class);
         Path<Object> statusPath = mock(Path.class);
         Path<Object> authorPath = mock(Path.class);
+        Path<Object> locationPath = mock(Path.class);
         when(root.get("status")).thenReturn(statusPath);
         when(root.get("authorId")).thenReturn(authorPath);
+        when(root.get("locationId")).thenReturn(locationPath);
 
-        adapter().findRecentByAuthors(authors, PagedRequest.of(0, 20));
+        adapter().findRecentByAuthors(locationId, authors, PagedRequest.of(0, 20));
 
         ArgumentCaptor<Specification<NeighborhoodPost>> spec =
                 ArgumentCaptor.forClass(Specification.class);
@@ -357,5 +360,44 @@ class CommunityDiscoveryAdapterTest {
         // and the IN carries exactly the followed authors.
         verify(cb).equal(statusPath, PostStatus.VISIBLE);
         verify(authorPath).in(authors);
+    }
+
+    /**
+     * Row 24 (CWE-862): the neighborhood scope is a PREDICATE, not a
+     * post-filter — the followed-authors query composes the SAME
+     * {@code hasLocation} equality every neighborhood-scoped rail rides.
+     * A unilateral follow widens the author axis only: a followed
+     * author's post from ANOTHER neighborhood is absent by construction,
+     * exactly as the normal post-read boundary (getFeed/getPost) denies
+     * it to the same caller.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void findRecentByAuthors_carriesTheNeighborhoodScope_theFollowNeverWidensGeography() {
+        Set<UUID> authors = Set.of(UUID.randomUUID());
+        UUID callerNeighborhood = UUID.randomUUID();
+        when(postRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+        Root<NeighborhoodPost> root = mock(Root.class);
+        CriteriaBuilder cb = mock(CriteriaBuilder.class);
+        Path<Object> statusPath = mock(Path.class);
+        Path<Object> authorPath = mock(Path.class);
+        Path<Object> locationPath = mock(Path.class);
+        when(root.get("status")).thenReturn(statusPath);
+        when(root.get("authorId")).thenReturn(authorPath);
+        when(root.get("locationId")).thenReturn(locationPath);
+
+        adapter().findRecentByAuthors(callerNeighborhood, authors, PagedRequest.of(0, 20));
+
+        ArgumentCaptor<Specification<NeighborhoodPost>> spec =
+                ArgumentCaptor.forClass(Specification.class);
+        verify(postRepository).findAll(spec.capture(), any(Pageable.class));
+
+        spec.getValue().toPredicate(root, null, cb);
+
+        // The geographic axis answers the CALLER'S active neighborhood —
+        // never the followed author's own: the security boundary rides
+        // the query itself.
+        verify(cb).equal(locationPath, callerNeighborhood);
     }
 }

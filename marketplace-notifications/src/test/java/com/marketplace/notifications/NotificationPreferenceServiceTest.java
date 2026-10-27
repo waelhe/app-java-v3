@@ -1,5 +1,7 @@
 package com.marketplace.notifications;
 
+import com.marketplace.notifications.routing.NotificationTopic;
+import com.marketplace.notifications.routing.NotificationTopicPreferenceService;
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
@@ -23,12 +25,21 @@ class NotificationPreferenceServiceTest {
 
     private NotificationPreferenceService createService(NotificationPreferenceRepository repository,
                                                         CurrentUserProvider currentUserProvider) {
+        return createService(repository, currentUserProvider,
+                mock(NotificationTopicPreferenceService.class));
+    }
+
+    private NotificationPreferenceService createService(NotificationPreferenceRepository repository,
+                                                        CurrentUserProvider currentUserProvider,
+                                                        NotificationTopicPreferenceService topicPreferences) {
         // The dedicated REQUIRES_NEW upsert transaction rides a mocked
         // manager in unit tests: the callback runs inline, commit/rollback
         // are no-ops, and exceptions still propagate — exactly what the
-        // race-retry test needs to exercise.
+        // race-retry test needs to exercise. The topic service rides the
+        // Mockito default (Optional.empty — no topic row) except where a
+        // test pins the hierarchy's second level.
         return new NotificationPreferenceService(repository, currentUserProvider,
-                mock(PlatformTransactionManager.class));
+                topicPreferences, mock(PlatformTransactionManager.class));
     }
 
     private CurrentUserProvider mockUser() {
@@ -63,6 +74,106 @@ class NotificationPreferenceServiceTest {
                 .isChannelEnabled(USER_ID, NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL);
 
         assertThat(enabled).as("an explicit override disables the channel").isFalse();
+    }
+
+    /**
+     * Row 28 (the ONE resolver's load-bearing fall-through): a recipient
+     * who muted the whole MESSAGING family at the topic level (no
+     * type-specific row) still received the family's ordinary email and
+     * WebSocket pushes before the fix — the type-only gate answered its
+     * sparse default (enabled) without ever reading the topic disable.
+     * The effective resolver answers the hierarchy: the topic row holds.
+     */
+    @Test
+    void theEffectiveResolverFallsThroughToTheTopicLevel_row28() {
+        NotificationPreferenceRepository repository = mock(NotificationPreferenceRepository.class);
+        when(repository.findByUserIdAndTypeAndChannel(USER_ID, NotificationType.MESSAGE_RECEIVED,
+                NotificationChannel.EMAIL)).thenReturn(Optional.empty());
+        when(repository.findByUserIdAndTypeAndChannel(USER_ID, NotificationType.MESSAGE_RECEIVED,
+                NotificationChannel.WS)).thenReturn(Optional.empty());
+        NotificationTopicPreferenceService topicPreferences =
+                mock(NotificationTopicPreferenceService.class);
+        when(topicPreferences.findChannelOverride(USER_ID, NotificationTopic.MESSAGING,
+                NotificationChannel.EMAIL)).thenReturn(Optional.of(false));
+        when(topicPreferences.findChannelOverride(USER_ID, NotificationTopic.MESSAGING,
+                NotificationChannel.WS)).thenReturn(Optional.of(false));
+
+        NotificationPreferenceService service =
+                createService(repository, mockUser(), topicPreferences);
+
+        assertThat(service.isChannelEffectivelyEnabled(USER_ID,
+                NotificationType.MESSAGE_RECEIVED, NotificationChannel.EMAIL))
+                .as("a topic-level MESSAGING mute holds the ordinary email leg")
+                .isFalse();
+        assertThat(service.isChannelEffectivelyEnabled(USER_ID,
+                NotificationType.MESSAGE_RECEIVED, NotificationChannel.WS))
+                .as("a topic-level MESSAGING mute holds the ordinary WS leg")
+                .isFalse();
+    }
+
+    /**
+     * The documented total order: an explicit type-level ENABLE overrides
+     * a topic-level disable — the override is a real state, never
+     * last-disabled-wins.
+     */
+    @Test
+    void theEffectiveResolverKeepsTheTotalOrder_typeEnableOverridesTopicDisable() {
+        NotificationPreference typeEnable = NotificationPreference.create(
+                USER_ID, NotificationType.MESSAGE_RECEIVED, NotificationChannel.EMAIL, true);
+        NotificationPreferenceRepository repository = mock(NotificationPreferenceRepository.class);
+        when(repository.findByUserIdAndTypeAndChannel(USER_ID, NotificationType.MESSAGE_RECEIVED,
+                NotificationChannel.EMAIL)).thenReturn(Optional.of(typeEnable));
+        NotificationTopicPreferenceService topicPreferences =
+                mock(NotificationTopicPreferenceService.class);
+        when(topicPreferences.findChannelOverride(USER_ID, NotificationTopic.MESSAGING,
+                NotificationChannel.EMAIL)).thenReturn(Optional.of(false));
+
+        boolean enabled = createService(repository, mockUser(), topicPreferences)
+                .isChannelEffectivelyEnabled(USER_ID,
+                        NotificationType.MESSAGE_RECEIVED, NotificationChannel.EMAIL);
+
+        assertThat(enabled).as("the type level's explicit enable wins over the topic disable")
+                .isTrue();
+        verify(topicPreferences, never()).findChannelOverride(any(), any(), any());
+    }
+
+    @Test
+    void theEffectiveResolverDefaultsToEnabledWhenNeitherLevelHasARow() {
+        NotificationPreferenceRepository repository = mock(NotificationPreferenceRepository.class);
+        when(repository.findByUserIdAndTypeAndChannel(USER_ID, NotificationType.MESSAGE_RECEIVED,
+                NotificationChannel.EMAIL)).thenReturn(Optional.empty());
+
+        boolean enabled = createService(repository, mockUser())
+                .isChannelEffectivelyEnabled(USER_ID,
+                        NotificationType.MESSAGE_RECEIVED, NotificationChannel.EMAIL);
+
+        assertThat(enabled).as("no type row and no topic row — the enabled default (L22 criterion 2)")
+                .isTrue();
+    }
+
+    /**
+     * The ordinary sends' overload derives the topic family through the
+     * single mapping source (NotificationTopic.topicFor) — the resolver
+     * can never consult a topic the type does not belong to.
+     */
+    @Test
+    void theThreeArgResolverMapsTheTypeToItsTopicFamily() {
+        NotificationPreferenceRepository repository = mock(NotificationPreferenceRepository.class);
+        when(repository.findByUserIdAndTypeAndChannel(USER_ID, NotificationType.MESSAGE_RECEIVED,
+                NotificationChannel.WS)).thenReturn(Optional.empty());
+        NotificationTopicPreferenceService topicPreferences =
+                mock(NotificationTopicPreferenceService.class);
+        when(topicPreferences.findChannelOverride(USER_ID, NotificationTopic.MESSAGING,
+                NotificationChannel.WS)).thenReturn(Optional.of(false));
+
+        boolean enabled = createService(repository, mockUser(), topicPreferences)
+                .isChannelEffectivelyEnabled(USER_ID,
+                        NotificationType.MESSAGE_RECEIVED, NotificationChannel.WS);
+
+        assertThat(enabled).isFalse();
+        verify(topicPreferences).findChannelOverride(USER_ID,
+                NotificationTopic.topicFor(NotificationType.MESSAGE_RECEIVED),
+                NotificationChannel.WS);
     }
 
     @Test

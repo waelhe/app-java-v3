@@ -2,6 +2,8 @@ package com.marketplace.shared.security;
 
 import java.util.List;
 
+import com.marketplace.shared.api.AccountCredentialsRotated;
+import com.marketplace.shared.api.AccountIdentityErased;
 import com.marketplace.shared.api.AccountStatusChanged;
 import com.marketplace.shared.api.UserRoleAssignmentRevoked;
 import com.marketplace.shared.api.UserRoleChanged;
@@ -153,6 +155,39 @@ public class AccountStatusSessionInvalidator {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onUserRoleAssignmentRevoked(UserRoleAssignmentRevoked event) {
         expireAllSessions(event.username(), "role assignment revoked: " + event.role());
+    }
+
+    /**
+     * Account erasure (CodeRabbit agent findings, row 7 / CWE-613): the
+     * pseudonymization command (which the self-service deletion also
+     * delegates to) deleted the login row, rewrote the subject and revoked
+     * the issued authorizations — but the sessions minted before the
+     * erasure hold their authenticated principal and its cached authorities
+     * inside the session store. A surviving session of an erased
+     * administrator keeps passing method authorization under a deleted
+     * identity, so every session indexed under the ORIGINAL subject expires
+     * with the commit (the same AFTER_COMMIT + REQUIRES_NEW durability as
+     * every leg above — the failure contract is the framework's).
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void onAccountIdentityErased(AccountIdentityErased event) {
+        expireAllSessions(event.username(), "account identity erased (pseudonymization/self-deletion)");
+    }
+
+    /**
+     * Credential rotation (CodeRabbit agent findings, row 14 / CWE-613):
+     * password recovery replaces the stored verifier and revokes the issued
+     * grants, but a live browser session authenticated under the OLD
+     * password keeps its cached principal and can mint fresh authorization
+     * codes — re-creating through the surviving session exactly the grants
+     * the recovery just revoked. Every session of the account expires with
+     * the commit; the owner re-authenticates with the new credential.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void onAccountCredentialsRotated(AccountCredentialsRotated event) {
+        expireAllSessions(event.username(), "credentials rotated (password reset)");
     }
 
     private void expireAllSessions(String username, String reason) {

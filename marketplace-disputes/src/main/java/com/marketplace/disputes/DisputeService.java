@@ -158,6 +158,19 @@ public class DisputeService {
             throw new BadRequestException("refundAmountCents is honored on REFUND_CONSUMER only, not: " + resolution);
         }
         Dispute dispute = repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Dispute not found: " + id));
+        // CodeRabbit agent findings, row 9: a loan subject's resolution
+        // chain executes the FULL-refund contract only — the lending
+        // listener's cancellation edge refunds the whole charge, so an
+        // administrator-supplied partial amount would be silently DROPPED
+        // and money could move beyond the approved partial amount. The
+        // honest refusal precedes every mutation (a 400 leaves zero
+        // writes); partial loan refunds need their own execution path
+        // before the field can be honored on this subject.
+        if (refundAmountCents != null && dispute.getSubjectType() == DisputeSubject.LOAN) {
+            throw new BadRequestException(
+                    "Loan disputes execute the full-refund contract only — refundAmountCents"
+                            + " is not supported for loan subjects");
+        }
         dispute.resolve(resolution);
         Long refundedAmountCents = null;
         if (resolution == DisputeResolution.REFUND_CONSUMER && dispute.getSubjectType() == DisputeSubject.BOOKING) {

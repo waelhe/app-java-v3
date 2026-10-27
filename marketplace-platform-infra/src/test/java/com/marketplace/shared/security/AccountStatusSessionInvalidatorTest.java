@@ -1,5 +1,7 @@
 package com.marketplace.shared.security;
 
+import com.marketplace.shared.api.AccountCredentialsRotated;
+import com.marketplace.shared.api.AccountIdentityErased;
 import com.marketplace.shared.api.AccountStatusChanged;
 import com.marketplace.shared.api.UserRoleAssignmentRevoked;
 import com.marketplace.shared.api.UserRoleChanged;
@@ -180,6 +182,57 @@ class AccountStatusSessionInvalidatorTest {
         invalidator.onAccountStatusChanged(new AccountStatusChanged(UUID.randomUUID(), PRINCIPAL, false));
 
         assertThat(registry.getAllSessions(PRINCIPAL, false)).isEmpty();
+    }
+
+    /**
+     * CodeRabbit agent findings, row 7 / CWE-613 — the account-erasure leg:
+     * the pseudonymization command (which the self-service deletion also
+     * delegates to) deletes the login row and the issued grants, but the
+     * sessions minted before the erasure hold their authenticated principal
+     * and its cached authorities. Every session indexed under the ORIGINAL
+     * subject expires with the commit; a bystander's session is untouched.
+     */
+    @Test
+    void identityErasureExpiresAllSessionsOfTheErasedAccount() {
+        MapSession first = sessionFor(PRINCIPAL);
+        MapSession second = sessionFor(PRINCIPAL);
+        MapSession bystander = sessionFor(OTHER_PRINCIPAL);
+
+        invalidator.onAccountIdentityErased(new AccountIdentityErased(UUID.randomUUID(), PRINCIPAL));
+
+        assertThat(registry.getSessionInformation(first.getId())).isNotNull()
+                .as("a session of the erased identity expires")
+                .extracting(info -> info.isExpired()).isEqualTo(true);
+        assertThat(registry.getSessionInformation(second.getId())).isNotNull()
+                .as("every session of the erased identity expires")
+                .extracting(info -> info.isExpired()).isEqualTo(true);
+        assertThat(registry.getAllSessions(PRINCIPAL, false)).isEmpty();
+        assertThat(registry.getSessionInformation(bystander.getId())).isNotNull()
+                .as("the bystander's session is untouched")
+                .extracting(info -> info.isExpired()).isEqualTo(false);
+    }
+
+    /**
+     * CodeRabbit agent findings, row 14 / CWE-613 — the credential-rotation
+     * leg: password recovery revokes the issued grants, but a live session
+     * authenticated under the OLD password keeps its cached principal and
+     * could re-mint the revoked grants through the authorization-server
+     * chain. Every session of the account expires with the commit.
+     */
+    @Test
+    void credentialRotationExpiresAllSessionsOfTheAccount() {
+        MapSession session = sessionFor(PRINCIPAL);
+        MapSession bystander = sessionFor(OTHER_PRINCIPAL);
+
+        invalidator.onAccountCredentialsRotated(new AccountCredentialsRotated(PRINCIPAL));
+
+        assertThat(registry.getSessionInformation(session.getId())).isNotNull()
+                .as("the pre-reset session expires with the recovery")
+                .extracting(info -> info.isExpired()).isEqualTo(true);
+        assertThat(registry.getAllSessions(PRINCIPAL, false)).isEmpty();
+        assertThat(registry.getSessionInformation(bystander.getId())).isNotNull()
+                .as("the bystander's session is untouched")
+                .extracting(info -> info.isExpired()).isEqualTo(false);
     }
 
     private MapSession sessionFor(String principal) {

@@ -7,6 +7,7 @@ import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ProviderSummary;
+import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ReviewMode;
 import com.marketplace.shared.api.ReviewUpdatedEvent;
 import com.marketplace.shared.api.SystemSettingKeys;
@@ -28,8 +29,17 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.instancio.Select.field;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class ReviewsServiceTest {
 
@@ -341,6 +351,48 @@ class ReviewsServiceTest {
 
         assertThrows(ConflictException.class, () -> service.reply(reviewId, "second", authentication));
         assertEquals("first", review.getReply());
+    }
+
+    @Test
+    void reply_answersTheHonest404ForAPendingReviewWithoutLeakingTheState() {
+        // The part-1 review note: the provider's reply surface must answer
+        // the read path's OWN 404 for a non-published review — the generic
+        // shape getById itself answers, never the moderation state in the
+        // message (the 409's "current status: PENDING_REVIEW" was the leak).
+        UUID reviewId = Instancio.create(UUID.class);
+        UUID providerUserId = Instancio.create(UUID.class);
+        Review review = reviewFor(providerUserId);
+        review.queueForReview();
+        when(reviewRepository.findById(reviewId)).thenReturn(Optional.of(review));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(providerUserId);
+
+        ResourceNotFoundException ex = assertThrows(ResourceNotFoundException.class,
+                () -> service.reply(reviewId, "attempted reply", authentication));
+
+        assertFalse(ex.getMessage().contains("PENDING_REVIEW"));
+        assertFalse(ex.getMessage().contains("HIDDEN"));
+        assertNull(review.getReply());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void reply_answersTheHonest404ForAHiddenReviewWithoutLeakingTheState() {
+        // The same note's second state: HIDDEN_BY_MODERATOR must be
+        // indistinguishable from an unknown id on this surface too.
+        UUID reviewId = Instancio.create(UUID.class);
+        UUID providerUserId = Instancio.create(UUID.class);
+        Review review = reviewFor(providerUserId);
+        review.hideByModerator();
+        when(reviewRepository.findById(reviewId)).thenReturn(Optional.of(review));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(providerUserId);
+
+        ResourceNotFoundException ex = assertThrows(ResourceNotFoundException.class,
+                () -> service.reply(reviewId, "attempted reply", authentication));
+
+        assertFalse(ex.getMessage().contains("HIDDEN_BY_MODERATOR"));
+        assertFalse(ex.getMessage().contains("PENDING"));
+        assertNull(review.getReply());
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test
@@ -767,5 +819,31 @@ class ReviewsServiceTest {
         assertThrows(ConflictException.class,
                 () -> service.voteHelpful(reviewId, authentication));
         verify(reviewVoteRepository, never()).save(any());
+    }
+
+    /**
+     * CodeRabbit agent findings, row 13 / CWE-862: the reply path assembles
+     * the review's protected contents into its response — a non-PUBLISHED
+     * review (hidden by moderation or pending) is restricted to its author
+     * and administrators, so the provider's write-and-read surface refuses
+     * it BEFORE any mutation. The part-1 review note closed the leak the
+     * 409's own message carried: the refusal is the read path's honest 404,
+     * indistinguishable from an unknown id (the twin tests above pin the
+     * no-leak shape for both states).
+     */
+    @Test
+    void reply_refusesANonPublishedReviewBeforeAnyMutation() {
+        UUID reviewId = Instancio.create(UUID.class);
+        UUID providerUserId = Instancio.create(UUID.class);
+        Review review = reviewFor(providerUserId);
+        review.hideByModerator();
+        when(reviewRepository.findById(reviewId)).thenReturn(Optional.of(review));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(providerUserId);
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> service.reply(reviewId, "Thanks", authentication));
+
+        assertNull(review.getReply());
+        verify(eventPublisher, never()).publishEvent(any());
     }
 }

@@ -189,7 +189,7 @@ public class DiscoveryService implements DiscoverySpi {
         PagedResponse<CommunityDiscoveryPort.DiscoveryPostCard> followedPosts =
                 followed.authorIds().isEmpty()
                         ? PagedResponse.empty(HOME_REQUEST)
-                        : communityPort.findRecentByAuthors(followed.authorIds(), HOME_REQUEST);
+                        : communityPort.findRecentByAuthors(locationId, followed.authorIds(), HOME_REQUEST);
         PagedResponse<ProviderListingSummary> followedListings =
                 followed.providerIds().isEmpty()
                         ? PagedResponse.empty(HOME_REQUEST)
@@ -256,7 +256,7 @@ public class DiscoveryService implements DiscoverySpi {
         UUID locationId = neighborhood.get();
         return switch (row) {
             case URGENT_ALERTS -> urgentAlertsPage(locationId, request);
-            case FOLLOWED_SOURCES -> followedSourcesPage(userId, request);
+            case FOLLOWED_SOURCES -> followedSourcesPage(locationId, userId, request);
             case LOST_FOUND -> communityPort.findActiveLostFound(locationId, request)
                     .map(post -> postCard(post, REASON_LOST_FOUND));
             case NEIGHBORHOOD_RECOMMENDATIONS -> communityPort.findRecommendations(locationId, request)
@@ -336,7 +336,7 @@ public class DiscoveryService implements DiscoverySpi {
                 request.page(), request.size(), cards.size(), 1, true);
     }
 
-    private PagedResponse<DiscoveryCardView> followedSourcesPage(UUID userId, PagedRequest request) {
+    private PagedResponse<DiscoveryCardView> followedSourcesPage(UUID locationId, UUID userId, PagedRequest request) {
         FollowedSources followed = followedSources(userId);
         if (followed.authorIds().isEmpty() && followed.providerIds().isEmpty()) {
             return PagedResponse.empty(request);
@@ -349,7 +349,7 @@ public class DiscoveryService implements DiscoverySpi {
         PagedRequest deep = new PagedRequest(0, deepWindowSize(request), request.sort());
         PagedResponse<CommunityDiscoveryPort.DiscoveryPostCard> posts = followed.authorIds().isEmpty()
                 ? PagedResponse.empty(deep)
-                : communityPort.findRecentByAuthors(followed.authorIds(), deep);
+                : communityPort.findRecentByAuthors(locationId, followed.authorIds(), deep);
         PagedResponse<ProviderListingSummary> listings = followed.providerIds().isEmpty()
                 ? PagedResponse.empty(deep)
                 : providerListingsPort.findActiveByProviders(followed.providerIds(), deep);

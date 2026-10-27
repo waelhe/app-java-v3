@@ -246,7 +246,7 @@ class DiscoveryServiceTest {
                 .thenReturn(emptyPage());
         when(jobsPort.findOpenJobs(NEIGHBORHOOD_ID, PagedRequest.of(0, 10)))
                 .thenReturn(emptyPage());
-        when(communityPort.findRecentByAuthors(Set.of(followedAuthor), PagedRequest.of(0, 10)))
+        when(communityPort.findRecentByAuthors(NEIGHBORHOOD_ID, Set.of(followedAuthor), PagedRequest.of(0, 10)))
                 .thenReturn(page(List.of(post(followedPostId, followedAuthor, now)), 1));
         // No PROVIDER follows — the listings leg is never queried.
 
@@ -281,7 +281,7 @@ class DiscoveryServiceTest {
         // community leg was never queried with an invented set, and the
         // listings leg never ran.
         assertThat(rows).isEmpty();
-        verify(communityPort, never()).findRecentByAuthors(any(), any());
+        verify(communityPort, never()).findRecentByAuthors(any(), any(), any());
         verifyNoInteractions(providerListingsPort);
     }
 
@@ -486,7 +486,7 @@ class DiscoveryServiceTest {
         UUID l2 = UUID.randomUUID();
         // The authors leg: 5 rows total, its deep page carries the first 3
         // (not last). Recency: P1(now) > P2(now-10) > P3(now-20).
-        when(communityPort.findRecentByAuthors(Set.of(followedAuthor), deep))
+        when(communityPort.findRecentByAuthors(NEIGHBORHOOD_ID, Set.of(followedAuthor), deep))
                 .thenReturn(new PagedResponse<>(List.of(
                         post(p1, followedAuthor, now),
                         post(p2, followedAuthor, now.minusSeconds(10)),
@@ -510,7 +510,7 @@ class DiscoveryServiceTest {
                 .containsExactly(p2, l2);
         assertThat(result.content()).extracting(DiscoveryCardView::sourceType)
                 .containsExactly("NEIGHBORHOOD_POST", "PROVIDER_LISTING");
-        verify(communityPort).findRecentByAuthors(Set.of(followedAuthor), deep);
+        verify(communityPort).findRecentByAuthors(NEIGHBORHOOD_ID, Set.of(followedAuthor), deep);
         verify(providerListingsPort).findActiveByProviders(Set.of(followedProvider), deep);
         assertThat(result.totalElements()).isEqualTo(7L);
         assertThat(result.last()).isFalse();

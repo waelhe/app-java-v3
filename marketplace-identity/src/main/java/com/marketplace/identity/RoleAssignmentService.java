@@ -84,6 +84,18 @@ public class RoleAssignmentService {
     static final String SOURCE_ADMIN = "ADMIN";
 
     /**
+     * The V290-widened vocabulary's choreography half: the mirror rows
+     * {@link #onPrimaryRoleChanged} itself creates. The retire-leg's filter
+     * (anything NOT an administrative grant) plus this marker are the
+     * mirror/grant distinction the part-1 review note requires — an
+     * independent ADMIN grant a promote-then-demote round trip leaves
+     * doubling as the target's mirror keeps its authority; only the
+     * choreography's own rows (BACKFILL from V187, PRIMARY_CHANGE from
+     * here) retire with the primary change.
+     */
+    static final String SOURCE_PRIMARY_CHANGE = "PRIMARY_CHANGE";
+
+    /**
      * The L23 refresh-resurrection kill — the exact statement
      * {@code UserService.updateUserRole} runs on the role change (the
      * documented SAS basis: the refresh grant deserializes the stored
@@ -182,6 +194,60 @@ public class RoleAssignmentService {
         log.info("Role assignment audit: userId={}, username={}, role={}, action=REVOKE, actor={}",
                 userId, user.getSubject(), role, actor);
         return RoleAssignmentView.of(active);
+    }
+
+    /**
+     * The primary-change choreography's assignment leg (CodeRabbit agent
+     * findings, row 26 / CWE-269): {@code UserService.updateUserRole}
+     * replaces the domain role and the login-side authority rows, but the
+     * V187 assignment mirroring the FORMER primary stays active — the V188
+     * effective-authorities view unions it back into the next login, so a
+     * demoted administrator keeps ADMIN through the stale mirror. This leg
+     * retires the former primary's mirrored assignment and ensures the new
+     * primary's mirror — the two-store choreography's third store,
+     * reconciled ATOMICALLY with the primary change (REQUIRED joins the
+     * owning command's transaction).
+     *
+     * <p><b>Genuinely independent additive grants stay untouched</b> (the
+     * recommendation's own constraint, both directions now): the retire
+     * targets exactly the former primary's (user, role) pair AND only the
+     * choreography's own rows — V290's PRIMARY_CHANGE marker (and V187's
+     * BACKFILL) distinguish the mirror from an independent ADMIN grant, so
+     * the promote-then-demote round trip leaves the grant the promotion
+     * kept as its mirror ACTIVELY HELD (the part-1 review note's own
+     * sequence); the ensure-leg's duplicate gate keeps an existing
+     * additive grant of the new primary as the mirror itself, and an
+     * account holding none gets the choreography's mirror (the V187
+     * invariant restored).
+     *
+     * <p>Package-private on purpose: the sole caller is the owning command
+     * ({@code UserService.updateUserRole}) — the ADMIN gate rides that
+     * command's own third layer (the A-07 pattern); this leg is its atomic
+     * continuation, never an independent surface. The audit line is the
+     * payments convention, mirroring the grant/revoke legs.
+     */
+    @Observed(name = "identity.role.primary-change")
+    void onPrimaryRoleChanged(UUID userId, UserRole former, UserRole target, String actor) {
+        // The part-1 review note: the retire-leg must tell the
+        // choreography's OWN mirror (V187's BACKFILL, V290's
+        // PRIMARY_CHANGE) from an independent administrative grant — the
+        // promote-then-demote round trip keeps the independent grant as
+        // the target's "mirror", and revoking it on the demotion would
+        // withdraw an authority nobody revoked. Only the choreography's
+        // rows retire; every ADMIN row stays exactly as granted.
+        repository.findByUserIdAndRoleAndRevokedAtIsNull(userId, former)
+                .filter(mirror -> !SOURCE_ADMIN.equals(mirror.getSource()))
+                .ifPresent(formerMirror -> {
+                    formerMirror.revoke(clock.instant());
+                    repository.save(formerMirror);
+                });
+        if (repository.findByUserIdAndRoleAndRevokedAtIsNull(userId, target).isEmpty()) {
+            repository.save(RoleAssignment.grant(UUID.randomUUID(), userId, target,
+                    clock.instant(), null, SOURCE_PRIMARY_CHANGE));
+        }
+        log.info("Role assignment audit: userId={}, primary role: {} -> {}, "
+                        + "former mirror retired, target mirror ensured, actor={}",
+                userId, former, target, actor);
     }
 
     /**

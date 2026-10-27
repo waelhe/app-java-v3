@@ -971,4 +971,41 @@ class CatalogServiceTest {
         verify(listingRepository).findIdsMatchingCriteria(
                 eq(ListingStatus.ACTIVE), eq("stay"), eq(1000L), eq(2000L), eq(4));
     }
+
+    /**
+     * CodeRabbit agent findings, row 34 / CWE-400: a compact
+     * scientific-notation price filter ("1e+100000000" — eleven characters)
+     * must answer the honest 400 BEFORE movePointRight(2) ever materializes
+     * the ~100-million-digit integer in shared heap; the boundary value
+     * itself maps exactly. The ceiling now lives in SearchCriteria's own
+     * constructor (the part-1 review note: the CONTRACT owns the bound,
+     * before any search path or early return), so the bomb's construction
+     * itself sits inside the asserted lambda — the 400 is the record's own.
+     */
+    @Test
+    void searchPriceFilters_areBoundedBeforeTheScaleExpandsAnything() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> {
+                    var bomb = new com.marketplace.shared.api.SearchCriteria(
+                            "gardn", "stay", new java.math.BigDecimal("1e+100000000"),
+                            null, null, null, 4);
+                    catalogService.searchFullTextRestricted(bomb, PROVIDER_IDS, PagedRequest.of(0, 10));
+                })
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class);
+
+        // (The negative case needs no service-level guard: SearchCriteria's
+        // own constructor already refuses it with compareTo — which never
+        // materializes, the same property the range gate below rides.)
+
+        // The boundary itself is the honest inclusive edge: exactly
+        // 100,000,000 major units maps to 10,000,000,000 minor units.
+        var edge = new com.marketplace.shared.api.SearchCriteria(
+                "gardn", "stay", new java.math.BigDecimal("100000000"),
+                new java.math.BigDecimal("100000000"), null, null, 4);
+        when(listingRepository.searchFullTextRestricted(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
+        catalogService.searchFullTextRestricted(edge, PROVIDER_IDS, PagedRequest.of(0, 10));
+        verify(listingRepository).searchFullTextRestricted(eq("gardn"), eq("stay"),
+                eq(10_000_000_000L), eq(10_000_000_000L), eq(4), eq(PROVIDER_IDS),
+                any(java.time.Instant.class), eq(PageRequest.of(0, 10)));
+    }
 }

@@ -2,6 +2,7 @@ package com.marketplace.identity;
 
 import com.marketplace.identity.spi.AuditHistoryPurgeResult;
 import com.marketplace.identity.spi.IdentitySpi;
+import com.marketplace.shared.api.AccountIdentityErased;
 import com.marketplace.shared.api.AccountStatusChanged;
 import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ConflictException;
@@ -94,11 +95,30 @@ public class UserService implements IdentitySpi {
      * deadlock) holds them for the rest of this transaction, so a concurrent
      * transaction re-reads the post-commit state. Row locks on an aggregate
      * are not allowed on PostgreSQL, hence the row select counted in Java.
+     *
+     * <p><b>The authority source is the EFFECTIVE one (CodeRabbit agent
+     * findings, row 19 / CWE-863):</b> the EXISTS reads the V188
+     * {@code auth_effective_authorities} view — the exact source
+     * {@code JdbcUserDetailsManager#loadUserByUsername} serves authentication
+     * from (SecurityConfig wires it as the one authorities query) — never the
+     * raw {@code auth_authorities} rows. The raw rows are a projection a
+     * password reset can leave STALE: {@code PasswordResetService.completeReset}
+     * replays the loaded effective authorities through
+     * {@code UserDetailsManager#updateUser}, so an account holding an additive
+     * ADMIN assignment at reset time gains a NATIVE {@code ROLE_ADMIN} row;
+     * when the assignment is later revoked, the view drops the authority (the
+     * revoked-pair filter — the account cannot act as an administrator) while
+     * the copied native row survives. A guard counting native rows would
+     * approve removing the last EFFECTIVE administrator because a dead copy
+     * still counts. Counting the view keeps the guard and authentication on
+     * one source of truth: an administrator is counted exactly when the next
+     * login could act as one — no more (stale copies excluded), no less
+     * (active additive grants with no native row included).
      */
     static final String LOCK_ACTIVE_ADMINS = """
             SELECT u.username FROM auth_users u
              WHERE u.enabled = true
-               AND EXISTS (SELECT 1 FROM auth_authorities a
+               AND EXISTS (SELECT 1 FROM auth_effective_authorities a
                             WHERE a.username = u.username AND a.authority = 'ROLE_ADMIN')
              ORDER BY u.username
              FOR UPDATE
@@ -497,6 +517,15 @@ public class UserService implements IdentitySpi {
         // kill — the L23 documented SAS basis, see the javadoc above).
         jdbcTemplate.update(DELETE_AUTHORIZATIONS_BY_PRINCIPAL, username);
 
+        // The V187/V188 third store (CodeRabbit agent findings, row 26 /
+        // CWE-269): the former primary's mirrored assignment dies with the
+        // primary it represented and the new primary's mirror is ensured —
+        // the V188 effective-authorities union must neither resurrect the
+        // demoted role at the next login nor lose the promoted one.
+        // ATOMIC with this command's writes (REQUIRED joins this
+        // transaction); genuinely independent additive grants stay.
+        roleAssignmentService.onPrimaryRoleChanged(userId, previous, target, actor);
+
         eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));
         // R8 Wave 1: username joins the payload so the session invalidator
         // consumes the fact without a query back into this module — the
@@ -594,9 +623,12 @@ public class UserService implements IdentitySpi {
      * of a 31-migration-old unused table exceeds the roadmap's effort=1 scope.
      *
      * <p><b>Counting constraint</b> (acceptance 2): disabling the last active
-     * ADMIN is rejected — the guard counts enabled users holding
-     * {@code ROLE_ADMIN} in {@code auth_authorities} (the login-side authority
-     * that the JWT {@code roles} claim is minted from).
+     * ADMIN is rejected — the guard counts enabled accounts whose EFFECTIVE
+     * authorities (the V188 {@code auth_effective_authorities} view — the
+     * same source authentication reads; see {@link #LOCK_ACTIVE_ADMINS},
+     * row 19) include {@code ROLE_ADMIN}, so a stale native copy left by a
+     * password reset under a since-revoked grant can never unblock the
+     * removal of the last administrator who can still act.
      * <p><b>A-07 (A.5) — the third layer made real:</b> the service-level
      * {@code hasRole('ADMIN')} gate joins the chain rule and the controller
      * class rule (the documented three-layer admin pattern). Single-contract
@@ -808,6 +840,17 @@ public class UserService implements IdentitySpi {
 
         // Step 6 — issued authorizations die immediately (no 7-day wait).
         jdbcTemplate.update(DELETE_AUTHORIZATIONS_BY_PRINCIPAL, originalSubject);
+
+        // Step 6-b — the surviving-session kill (CodeRabbit agent findings,
+        // row 7 / CWE-613): the login row and the grants die here, but a
+        // live browser session holds its authenticated principal (and its
+        // cached authorities) in the session store — a session minted
+        // before the erasure keeps authorizing as the erased identity.
+        // The house R8 channel: the domain fact published in THIS
+        // transaction, consumed AFTER_COMMIT by AccountStatusSessionInvalidator
+        // under the ORIGINAL subject (the name the session index is built
+        // on), with the framework's resubmission on failure.
+        eventPublisher.publishEvent(new AccountIdentityErased(userId, originalSubject));
 
         // Step 7 — the standing AFTER_COMMIT cache channel (I5-guarded).
         eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));

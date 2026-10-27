@@ -46,8 +46,10 @@ import java.util.UUID;
  *             never bows to an interaction preference; §6.2's "وتفضيلات
  *             المستخدم" governs the AMPLIFICATION channels below.</li>
  *         <li><b>email / WebSocket:</b> the hierarchical preference
- *             resolution — type-level row (V40) &gt; topic-level row
- *             (V198) &gt; the enabled default. The WebSocket is NOT the
+ *             resolution through the ONE effective resolver
+ *             ({@code NotificationPreferenceService#isChannelEffectivelyEnabled})
+ *             — type-level row (V40) &gt; topic-level row (V198) &gt; the
+ *             enabled default. The WebSocket is NOT the
  *             mobile push (§8.1 verbatim): it is the live broker topic.</li>
  *         <li><b>push:</b> the {@link PushNotificationChannel} seam —
  *             absent until the provider decision (D-10) lands; an absent
@@ -71,20 +73,17 @@ public class NotificationRoutingEngine {
     private static final Logger log = LoggerFactory.getLogger(NotificationRoutingEngine.class);
 
     private final NotificationPreferenceService typePreferences;
-    private final NotificationTopicPreferenceService topicPreferences;
     private final CommunityMembershipPort membershipPort;
     private final NotificationGeoSubscriptionRepository geoSubscriptions;
     private final Optional<PushNotificationChannel> pushChannel;
     private final Clock clock;
 
     public NotificationRoutingEngine(NotificationPreferenceService typePreferences,
-                                     NotificationTopicPreferenceService topicPreferences,
                                      CommunityMembershipPort membershipPort,
                                      NotificationGeoSubscriptionRepository geoSubscriptions,
                                      Optional<PushNotificationChannel> pushChannel,
                                      Clock clock) {
         this.typePreferences = typePreferences;
-        this.topicPreferences = topicPreferences;
         this.membershipPort = membershipPort;
         this.geoSubscriptions = geoSubscriptions;
         this.pushChannel = pushChannel;
@@ -148,18 +147,18 @@ public class NotificationRoutingEngine {
     }
 
     /**
-     * The hierarchical resolution, one order (the class javadoc): the
-     * type-level row (V40) answers first; an empty answer falls through
-     * to the topic-level row (V198); an empty topic answer falls through
-     * to the enabled default. An explicit {@code enabled = true} at any
-     * level overrides a lower level's disable — the order is total.
+     * The hierarchical resolution delegates to the ONE effective-preference
+     * resolver ({@link NotificationPreferenceService#isChannelEffectivelyEnabled}
+     * — row 28): the type-level row (V40) answers first; an empty answer
+     * falls through to the topic-level row (V198); an empty topic answer
+     * falls through to the enabled default. An explicit {@code enabled =
+     * true} at any level overrides a lower level's disable — the order is
+     * total. The engine and every ordinary channel send consult the same
+     * one implementation, so the hierarchy can never drift between them.
      */
     private boolean channelAllowed(NotificationRoutingPolicy policy, NotificationChannel channel) {
-        return typePreferences.findChannelOverride(policy.recipientId(), policy.eventType(),
-                channel)
-                .or(() -> topicPreferences.findChannelOverride(policy.recipientId(),
-                        policy.topic(), channel))
-                .orElse(true);
+        return typePreferences.isChannelEffectivelyEnabled(policy.recipientId(),
+                policy.eventType(), policy.topic(), channel);
     }
 
     /** Names the gate that actually suppressed the channel (explainability). */

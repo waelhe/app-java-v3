@@ -353,6 +353,21 @@ public class ReviewsService {
         if (!review.getProviderId().equals(currentUserId)) {
             throw new AccessDeniedException("Only the reviewed provider can reply");
         }
+        // CodeRabbit agent findings, row 13 / CWE-862: the reply path's
+        // response assembles the review's protected contents (comment,
+        // reply, moderation status) — the SAME visibility policy as
+        // ordinary reads applies BEFORE the mutation: a non-PUBLISHED
+        // review (PENDING_REVIEW or HIDDEN_BY_MODERATOR) is restricted to
+        // its author and administrators, so the provider's write-and-read
+        // surface refuses it — zero mutation on refusal. The part-1 review
+        // note closes the leak the 409 carried in its own message: the
+        // read path answers 404 to non-authors for BOTH states, and the
+        // write surface must be indistinguishable from it — the honest
+        // 404 with the SAME generic shape getById itself answers, never
+        // the moderation state in the message.
+        if (review.getModerationStatus() != ReviewModerationStatus.PUBLISHED) {
+            throw new ResourceNotFoundException("Review not found: " + id);
+        }
         review.reply(reply);
         eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("reviews"), id));
         return review;

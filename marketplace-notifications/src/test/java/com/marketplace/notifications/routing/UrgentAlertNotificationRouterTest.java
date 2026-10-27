@@ -76,9 +76,6 @@ class UrgentAlertNotificationRouterTest {
     private NotificationPreferenceService typePreferences;
 
     @Mock
-    private NotificationTopicPreferenceService topicPreferences;
-
-    @Mock
     private CommunityMembershipPort membershipPort;
 
     @Mock
@@ -107,7 +104,7 @@ class UrgentAlertNotificationRouterTest {
 
     private UrgentAlertNotificationRouter router() {
         NotificationRoutingEngine engine = new NotificationRoutingEngine(typePreferences,
-                topicPreferences, membershipPort, geoSubscriptions, Optional.empty(),
+                membershipPort, geoSubscriptions, Optional.empty(),
                 FIXED_CLOCK);
         UrgentAlertDelivery delivery = new UrgentAlertDelivery(repository, deliveryLedger,
                 emailNotificationService, webSocketPush, Optional.empty(),
@@ -222,6 +219,8 @@ class UrgentAlertNotificationRouterTest {
         admitMemberThroughMembership();
         when(repository.insertOnce(any(), eq(MEMBER), eq(NotificationType.URGENT_ALERT.name()),
                 anyString(), eq(ALERT_ID), any(), any())).thenReturn(0);
+        when(typePreferences.isChannelEffectivelyEnabled(any(), any(), any(), any()))
+                .thenReturn(true);
         when(deliveryLedger.recordDelivery(ALERT_ID, MEMBER, NotificationDeliveryChannel.EMAIL))
                 .thenReturn(false);
         when(deliveryLedger.recordDelivery(ALERT_ID, MEMBER, NotificationDeliveryChannel.WS))
@@ -245,6 +244,8 @@ class UrgentAlertNotificationRouterTest {
         admitMemberThroughMembership();
         when(repository.insertOnce(any(), eq(MEMBER), eq(NotificationType.URGENT_ALERT.name()),
                 anyString(), eq(ALERT_ID), any(), any())).thenReturn(0);
+        when(typePreferences.isChannelEffectivelyEnabled(any(), any(), any(), any()))
+                .thenReturn(true);
         when(deliveryLedger.recordDelivery(ALERT_ID, MEMBER, NotificationDeliveryChannel.EMAIL))
                 .thenReturn(false);
         when(deliveryLedger.recordDelivery(ALERT_ID, MEMBER, NotificationDeliveryChannel.WS))
@@ -272,6 +273,8 @@ class UrgentAlertNotificationRouterTest {
         admitMemberThroughMembership();
         when(repository.insertOnce(any(), eq(MEMBER), eq(NotificationType.URGENT_ALERT.name()),
                 anyString(), eq(ALERT_ID), any(), any())).thenReturn(0);
+        when(typePreferences.isChannelEffectivelyEnabled(any(), any(), any(), any()))
+                .thenReturn(true);
         when(deliveryLedger.recordDelivery(ALERT_ID, MEMBER, NotificationDeliveryChannel.EMAIL))
                 .thenReturn(true);
         when(deliveryLedger.recordDelivery(ALERT_ID, MEMBER, NotificationDeliveryChannel.WS))

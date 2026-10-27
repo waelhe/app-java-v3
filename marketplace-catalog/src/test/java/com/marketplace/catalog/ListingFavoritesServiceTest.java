@@ -155,4 +155,23 @@ class ListingFavoritesServiceTest {
 
         assertThat(service.isFavorite(userId, listingId)).isTrue();
     }
+
+    // CodeRabbit agent findings, row 21 / CWE-862 — the public-visibility
+    // gate on NEW favorites: a non-ACTIVE listing (the DRAFT the house
+    // factory produces before activate()) is not on the public surface, so
+    // the save may neither create the favorite nor return the listing's
+    // current unpublished fields — the honest 404, the same shape an
+    // unknown id answers, because to this caller the listing is not
+    // visible at all.
+    @Test
+    void save_refusesANonActiveListingWithTheHonest404() {
+        ProviderListing draft = ProviderListing.create(
+                UUID.randomUUID(), "شقة قدسيا", "وصف", "stay", 24000L, "SAR");
+        when(listingRepository.findById(listingId)).thenReturn(Optional.of(draft));
+
+        assertThatThrownBy(() -> service.save(userId, listingId))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(favoriteRepository, never()).existsByUserIdAndListingId(any(), any());
+        verify(favoriteRepository, never()).save(any());
+    }
 }

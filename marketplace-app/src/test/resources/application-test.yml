@@ -78,6 +78,17 @@ spring:
     properties:
       mail.smtp.auth: false
       mail.smtp.starttls.enable: false
+      # Row 20's mandatory-TLS hardening (agent findings 2026-10-25,
+      # starttls.required + checkserveridentity on the main profile) is the
+      # SAME leak class through two NEW keys this override did not carry:
+      # the required flag made every send against GreenMail throw
+      # "STARTTLS is required but host does not support STARTTLS"
+      # (measured — the app shards went red from the first findings batch
+      # onward). Both flags join the same test posture: off, like auth and
+      # enable (the part-1 review note carries the pair; the part-3 gate
+      # commit f8855a7a lands the required half on the full chain).
+      mail.smtp.starttls.required: false
+      mail.smtp.ssl.checkserveridentity: false
   security:
     oauth2:
       authorizationserver:

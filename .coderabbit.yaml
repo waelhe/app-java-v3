@@ -36,7 +36,7 @@ reviews:
     - "!**/package-lock.json"
   auto_review:
     enabled: true
-    drafts: false
+    drafts: true
     # Never pause automatic reviews after N reviewed commits — the merge gate
     # requires a review of every head (CodeRabbit review on PR #713, adopted).
     auto_pause_after_reviewed_commits: 0

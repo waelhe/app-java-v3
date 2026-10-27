@@ -75,6 +75,9 @@ import java.util.UUID;
 @Service
 public class OrdersService implements OrderDeliveryPort {
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(OrdersService.class);
+
     private final CartRepository cartRepository;
     private final CartItemRepository cartItemRepository;
     private final OrderRepository orderRepository;
@@ -510,6 +513,58 @@ public class OrdersService implements OrderDeliveryPort {
         eventPublisher.publishEvent(new OrderFulfilledEvent(order.getId(), order.getConsumerId()));
     }
 
+    /**
+     * CodeRabbit agent findings, row 16 — the aggregate-fulfillment
+     * reconciliation: a leg reached a terminal state WITHOUT physical
+     * delivery (CANCELLED or FAILED — {@code DeliveryLegTerminatedEvent}),
+     * and no DELIVERED event will ever fire for it. The multi-leg law's
+     * completion edge only rides DELIVERED, so an order whose LAST active
+     * leg terminates after another leg was already delivered would wait
+     * forever in CONFIRMED — the stuck state the delivered-goods
+     * cancellation guard now refuses to let the buyer escape. This
+     * reconciliation reads the aggregate truth and completes the order
+     * through the SAME verified edge when the delivery completed in fact:
+     * every leg terminal AND at least one delivered.
+     *
+     * <p>Every other aggregate state is an honest logged no-op (the
+     * event's redelivery must never surface as an error — the Modulith
+     * resubmission contract): a non-platform order, an order that is not
+     * CONFIRMED (already fulfilled/cancelled), legs still in flight, or
+     * nothing delivered at all (the all-cancelled aggregate stays
+     * cancellable through the existing surface).
+     */
+    @Transactional
+    @Observed(name = "order.fulfill.delivery.reconcile")
+    public void reconcileDeliveryTermination(UUID orderId, UUID deliveryRequestId) {
+        Order order = orderRepository.findById(orderId).orElse(null);
+        if (order == null) {
+            log.info("Delivery termination reconciliation no-op: unknown order {} (leg {})",
+                    orderId, deliveryRequestId);
+            return;
+        }
+        if (order.getStatus() != OrderStatus.CONFIRMED
+                || order.getFulfillmentMethod() != FulfillmentMethod.PLATFORM_DELIVERY) {
+            log.info("Delivery termination reconciliation no-op: order {} is {} via {} — "
+                            + "only a confirmed platform-delivery order reconciles (leg {})",
+                    orderId, order.getStatus(), order.getFulfillmentMethod(), deliveryRequestId);
+            return;
+        }
+        if (checkoutDeliveryPort.remainingActiveLegs(orderId) > 0) {
+            log.info("Delivery termination reconciliation no-op: order {} still has active "
+                            + "legs (leg {} terminated)", orderId, deliveryRequestId);
+            return;
+        }
+        if (checkoutDeliveryPort.deliveredLegs(orderId) == 0) {
+            log.info("Delivery termination reconciliation no-op: order {} has no delivered "
+                            + "legs — the aggregate stays cancellable (leg {})", orderId, deliveryRequestId);
+            return;
+        }
+        log.info("Delivery termination reconciliation: order {} completed in fact (leg {} "
+                        + "terminated, every leg terminal, at least one delivered) — fulfilling",
+                orderId, deliveryRequestId);
+        fulfillFromDelivery(orderId, deliveryRequestId);
+    }
+
     @Override
     @Transactional(readOnly = true)
     public OrderDeliveryDetails requireConfirmedOrderForDelivery(UUID orderId, UUID buyerId) {
@@ -629,6 +684,20 @@ public class OrdersService implements OrderDeliveryPort {
         if (order.getFulfillmentMethod() == FulfillmentMethod.PLATFORM_DELIVERY
                 && checkoutDeliveryPort.remainingActiveLegs(orderId) > 0) {
             throw new ConflictException("An order with an in-flight platform delivery cannot be cancelled — cancel its delivery legs first");
+        }
+        // CodeRabbit agent findings, row 13 (main export) — the delivered-goods
+        // guard: a full cancellation releases ALL reserved inventory and
+        // requests a FULL refund, so it must refuse whenever any package was
+        // already physically delivered (the multi-leg opening: cancel the
+        // uncollected primary AFTER a secondary package arrived, obtain the
+        // full refund, keep the delivered goods). Only a partial-cancellation
+        // operation — a separate future surface — may refund and release the
+        // undelivered rest.
+        if (order.getFulfillmentMethod() == FulfillmentMethod.PLATFORM_DELIVERY
+                && checkoutDeliveryPort.deliveredLegs(order.getId()) > 0) {
+            throw new ConflictException("An order with a delivered package cannot be fully cancelled"
+                    + " — the delivered goods are already in the buyer's hands; a partial"
+                    + " cancellation of the undelivered rest is required");
         }
         if (order.getStatus() != OrderStatus.PLACED && order.getStatus() != OrderStatus.CONFIRMED) {
             throw new ConflictException("Order " + orderId + " is " + order.getStatus()
