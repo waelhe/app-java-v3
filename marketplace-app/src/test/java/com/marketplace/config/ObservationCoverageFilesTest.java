@@ -66,8 +66,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       (L47 — the reactions layer's two commands, the ONE toggle's two
  *       directions; the feed's count/voice reads stay unobserved per
  *       the same policy)</li>
- *   <li>disputes — open, resolve</li>
- *   <li>identity — sync.oidc, role.update; follow.create, follow.delete
+ *   <li>disputes — open, resolve; orders' fulfillment reconciliation
+ *       (row 16's DeliveryLegTerminatedEvent edge — order.fulfill.delivery
+ *       + order.fulfill.delivery.reconcile, the aggregate's own two
+ *       completion commands)</li>
+ *   <li>identity — sync.oidc, role.update, role.primary-change (row 26's
+ *       atomic primary-role switch — the RoleAssignmentService seam);
+ *       follow.create, follow.delete
  *       (W4 — the provider-follow pair's two commands, the one toggle's
  *       two directions; the /me list read and the activation bridge's
  *       fan-out stay unobserved per policy — the bridge runs inside the
@@ -250,7 +255,7 @@ class ObservationCoverageFilesTest {
                     "follow.user.create", "follow.user.delete",
                     "identity.attestation.grant", "identity.attestation.reject",
                     "identity.attestation.request", "identity.attestation.revoke",
-                    "identity.role.grant", "identity.role.revoke",
+                    "identity.role.grant", "identity.role.primary-change", "identity.role.revoke",
                     "password.reset.complete", "password.reset.request",
                     "provider.follow.create", "provider.follow.delete",
                     "user.audit.purge", "user.content.purge", "user.pseudonymize",
@@ -324,7 +329,7 @@ class ObservationCoverageFilesTest {
                     // scan sorts and the pin must match it exactly.
                     "order.cancel", "order.confirm",
                     "order.delivery.attach", "order.delivery.clear",
-                    "order.fulfill", "order.fulfill.delivery",
+                    "order.fulfill", "order.fulfill.delivery", "order.fulfill.delivery.reconcile",
                     "order.payment-intent", "order.place",
                     // V230 (the RMA lifecycle): the return/exchange edges' six
                     // commands — the buyer's request/cancel, the operational
@@ -347,6 +352,7 @@ class ObservationCoverageFilesTest {
                     "notification.preferences.geo.withdraw",
                     "notification.preferences.topics.update",
                     "notification.preferences.update")),
+
             Map.entry("marketplace-payments", List.of(
                     "payment.cancel", "payment.confirm", "payment.delivery-intent.create", "payment.delivery.refund", "payment.fail", "payment.process",
                     "payment.psp.create", "payment.psp.refund", "payment.psp.webhook",
