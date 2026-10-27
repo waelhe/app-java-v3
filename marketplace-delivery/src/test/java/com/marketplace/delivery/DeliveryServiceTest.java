@@ -832,7 +832,8 @@ class DeliveryServiceTest {
                 "first package", "hash");
         when(requests.findByOrderIdOrderByCreatedAtAscIdAsc(orderId))
                 .thenReturn(java.util.List.of(primary));
-        when(orders.requireOrderFulfillment(orderId, buyer))
+        // part-2 review round 2: the split now rides the LOCKING selection read
+        when(orders.requireOrderFulfillmentForUpdate(orderId, buyer))
                 .thenReturn(new com.marketplace.shared.api.OrderFulfillmentSelection(
                         orderId, buyer, sellerUserId, "SAR", "PLATFORM_DELIVERY",
                         "Buyer address", 38.0, -121.0, 1500L, null));
@@ -865,7 +866,8 @@ class DeliveryServiceTest {
                 .thenReturn(java.util.List.of(primary));
         // the legacy #604 shape: no checkout selection — its legs are
         // quote-backed; an unpaid add-on leg must never go out for dispatch
-        when(orders.requireOrderFulfillment(orderId, buyer))
+        // part-2 review round 2: the split now rides the LOCKING selection read
+        when(orders.requireOrderFulfillmentForUpdate(orderId, buyer))
                 .thenReturn(new com.marketplace.shared.api.OrderFulfillmentSelection(
                         orderId, buyer, UUID.randomUUID(), "SAR", null,
                         null, null, null, 0, null));
@@ -886,7 +888,8 @@ class DeliveryServiceTest {
                 "first package", "hash");
         when(requests.findByOrderIdOrderByCreatedAtAscIdAsc(orderId))
                 .thenReturn(java.util.List.of(primary));
-        when(orders.requireOrderFulfillment(orderId, buyer))
+        // part-2 review round 2: the split now rides the LOCKING selection read
+        when(orders.requireOrderFulfillmentForUpdate(orderId, buyer))
                 .thenReturn(new com.marketplace.shared.api.OrderFulfillmentSelection(
                         orderId, buyer, sellerUserId, "SAR", "PLATFORM_DELIVERY",
                         "Buyer address", 38.0, -121.0, 1500L, null));

@@ -423,7 +423,10 @@ public class DeliveryService {
         }
         DeliveryRequest first = legs.get(0);
         com.marketplace.shared.api.OrderFulfillmentSelection selection =
-                orders.requireOrderFulfillment(orderId, first.getRequesterId());
+                // Part-2 review round 2: the split serializes with the fulfillment
+                // gate on the order row's own write lock — the leg can no longer
+                // land between the gate's active-legs count and its commit.
+                orders.requireOrderFulfillmentForUpdate(orderId, first.getRequesterId());
         if (!selection.platformDelivery()) {
             // the #604 legacy shape (no checkout selection): its legs are
             // quote-backed and paid on their own — an unpaid add-on leg

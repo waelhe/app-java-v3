@@ -2,9 +2,11 @@ package com.marketplace.reviews;
 
 import com.marketplace.shared.api.RatingDistribution;
 import com.marketplace.shared.api.ReviewStats;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.history.RevisionRepository;
 import org.springframework.data.repository.query.Param;
@@ -16,6 +18,22 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface ReviewRepository extends JpaRepository<Review, UUID>, RevisionRepository<Review, UUID, Integer> {
+
+    /**
+     * Part-2 review round 2 (the full review's measured Major): the review
+     * read under the row's own write lock — the moderation hide reads the
+     * state its PUBLISHED-only filter runs on INSIDE the lock, so the two
+     * concurrent report transactions that both crossed the rule threshold
+     * serialize here: the first hides and commits, the second waits, reads
+     * the committed HIDDEN truth and takes the documented skip (its own
+     * report creation COMMITS instead of dying on the inherited
+     * {@code @Version} optimistic conflict). PostgreSQL's
+     * {@code FOR UPDATE} semantics — the platform's serialization
+     * guarantee, not an application-level retry.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from Review r where r.id = :id")
+    Optional<Review> findByIdForUpdate(@Param("id") UUID id);
 
     /**
      * I8 + W1 (§4.5): the provider's public review surface keeps its
