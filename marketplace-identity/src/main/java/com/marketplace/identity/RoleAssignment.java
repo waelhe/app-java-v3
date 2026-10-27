@@ -83,7 +83,12 @@ public class RoleAssignment extends BaseEntity {
     @Column(name = "granted_by")
     private UUID grantedBy;
 
-    /** Why the row exists — the closed V187 vocabulary (BACKFILL | ADMIN). */
+    /**
+     * Why the row exists — the V290-widened vocabulary
+     * (BACKFILL | ADMIN | PRIMARY_CHANGE): the migration's mirror, the
+     * administrative grant surface, or the primary-change choreography's
+     * own mirror (the retire-leg's marker — see RoleAssignmentService).
+     */
     @Column(name = "source", nullable = false, length = 50)
     private String source;
 

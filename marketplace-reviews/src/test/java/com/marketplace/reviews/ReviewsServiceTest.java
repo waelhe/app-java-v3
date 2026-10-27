@@ -7,6 +7,7 @@ import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ProviderSummary;
+import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ReviewMode;
 import com.marketplace.shared.api.ReviewUpdatedEvent;
 import com.marketplace.shared.api.SystemSettingKeys;
@@ -341,6 +342,48 @@ class ReviewsServiceTest {
 
         assertThrows(ConflictException.class, () -> service.reply(reviewId, "second", authentication));
         assertEquals("first", review.getReply());
+    }
+
+    @Test
+    void reply_answersTheHonest404ForAPendingReviewWithoutLeakingTheState() {
+        // The part-1 review note: the provider's reply surface must answer
+        // the read path's OWN 404 for a non-published review — the generic
+        // shape getById itself answers, never the moderation state in the
+        // message (the 409's "current status: PENDING_REVIEW" was the leak).
+        UUID reviewId = Instancio.create(UUID.class);
+        UUID providerUserId = Instancio.create(UUID.class);
+        Review review = reviewFor(providerUserId);
+        review.queueForReview();
+        when(reviewRepository.findById(reviewId)).thenReturn(Optional.of(review));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(providerUserId);
+
+        ResourceNotFoundException ex = assertThrows(ResourceNotFoundException.class,
+                () -> service.reply(reviewId, "attempted reply", authentication));
+
+        assertFalse(ex.getMessage().contains("PENDING_REVIEW"));
+        assertFalse(ex.getMessage().contains("HIDDEN"));
+        assertNull(review.getReply());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void reply_answersTheHonest404ForAHiddenReviewWithoutLeakingTheState() {
+        // The same note's second state: HIDDEN_BY_MODERATOR must be
+        // indistinguishable from an unknown id on this surface too.
+        UUID reviewId = Instancio.create(UUID.class);
+        UUID providerUserId = Instancio.create(UUID.class);
+        Review review = reviewFor(providerUserId);
+        review.hideByModerator();
+        when(reviewRepository.findById(reviewId)).thenReturn(Optional.of(review));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(providerUserId);
+
+        ResourceNotFoundException ex = assertThrows(ResourceNotFoundException.class,
+                () -> service.reply(reviewId, "attempted reply", authentication));
+
+        assertFalse(ex.getMessage().contains("HIDDEN_BY_MODERATOR"));
+        assertFalse(ex.getMessage().contains("PENDING"));
+        assertNull(review.getReply());
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test
