@@ -15,7 +15,6 @@ import com.marketplace.orders.Order;
 import com.marketplace.orders.OrderRepository;
 import com.marketplace.orders.OrderStatus;
 import com.marketplace.orders.OrdersService;
-import com.marketplace.reviews.Review;
 import com.marketplace.reviews.ReviewModerationStatus;
 import com.marketplace.reviews.ReviewRepository;
 import com.marketplace.shared.api.ConflictException;
