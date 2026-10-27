@@ -14,7 +14,7 @@
 
 **Systematic vs local prevention:** local so far — each case got its own guard (checksum guard, env discipline, health probe, runbook). The *class* has no single guard because it is a class of environment dimensions; prevention is a mandatory pre-merge question, not one test.
 
-**Strongest prevention:** change-protocol pre-edit step 4 ("state the environment dimension this change exercises and where it was verified") + B6 for config-shaped changes + the S10-derived rule that every verdict point gets a consumer *in the target environment*.
+**Strongest prevention:** change-protocol Phase 0, step 5 — the P1 example ("state the environment dimension this change exercises and where it was verified") — + B6 for config-shaped changes + the S10-derived rule that every verdict point gets a consumer *in the target environment*.
 
 ## P2 · Framework default ≠ architecture decision; framework semantics ≠ generic judgment
 
@@ -104,7 +104,7 @@
 
 **Invariant protected:** applied `V__` files never change; numbering is a shared concurrent resource under forward-only discipline.
 
-**Demonstrating cases:** E-01 (the checksum outage — the founding incident), E-14 (the wave revert that *kept* migrations forward-only — the discipline holding under pressure), the measured numbering gaps (86 absent numbers in V1–V291 with zero deletions ever — numbers consumed by branches that never merged; **[VERIFIED-as-fact, HYPOTHESIS-as-problem]**: gaps are benign for Flyway but were never a *designed* policy — recorded so future agents neither "fix" the gaps nor assume renumbering is safe).
+**Demonstrating cases:** E-01 (the checksum outage — the founding incident), E-14 (the wave revert that *kept* migrations forward-only — the discipline holding under pressure), the measured numbering gaps (86 absent numbers in V1–V291 with zero deletions ever — numbers consumed by branches that never merged; **[VERIFIED]** as fact, **[HYPOTHESIS]** as problem: gaps are benign for Flyway but were never a *designed* policy — recorded so future agents neither "fix" the gaps nor assume renumbering is safe).
 
 **Same cause?** One invariant (immutability + forward-only) demonstrated under three conditions: violation (E-01), rollback pressure (E-14), concurrent numbering (gaps).
 
@@ -116,11 +116,11 @@
 
 **Invariant protected:** every point that aggregates or concludes (health verdicts, gate conclusions, inventory totals, watchdog state) has an automated consumer that would notice it lying or failing.
 
-**Demonstrating cases:** E-03 (the canonical case — the aggregate itself unwatched), E-13 (CodeRabbit Gate failing 102/264 while appearing "deployed" — nobody watched the gate's own health), E-12-adjacent (inventory totals that no derivation checks), Production Watchdog's own 112 failures (watched by whom? — the watchdog needed its own alarm on the postmortem path).
+**Demonstrating cases:** E-03 (the canonical case — the aggregate itself unwatched), E-13 (CodeRabbit Gate failing 102/264 while appearing "deployed" — nobody watched the gate's own health), E-12-adjacent (inventory totals that no derivation checks), Production Watchdog's own 112 failed runs — **[HYPOTHESIS, explicitly unverified]**: the count alone does not establish whether those failures had an automated consumer; whether any alert consumed the watchdog's own failures was not verified by this audit (it would require an alerting-configuration review; no in-repo record settles it either way). Kept as the open question B6-agg asks of every verdict point — not as a demonstrated defect instance.
 
 **Same cause?** Yes: monitoring/derivation built for *components* but not for the *aggregators of components*. An aggregation point without a consumer is a decision that silently rots.
 
-**Frequency/severity:** 3 verified instances; severity high (platform self-verdict, review-gate integrity).
+**Frequency/severity:** 3 verified instances (E-03, E-13, E-12-adjacent) + 1 open hypothesis (the watchdog's own failures); severity high (platform self-verdict, review-gate integrity).
 
 **Prevention status:** systematic for health (S10 fix: gauge+alert+probe); procedural for gate-health (E-13's lesson added to D6-adjacent monitoring rule).
 
@@ -131,5 +131,5 @@
 ## Candidate patterns examined and rejected (recorded to prevent re-litigation)
 
 - **"Module count growth as defect"** — rejected: 24-module Modulith growth is the designed architecture (SYSTEM.md §5), not a failure mechanism; the churn sentinels (E-22) record the cost honestly.
-- **"CI failure volume as defect signal"** — rejected as a *pattern*: 2,364 failures correlate with agent-era iteration speed (Sep–Oct escalation matches the wave cadence); the *actionable* signal is which failure *classes* produced incidents (all captured above), not the count. Kept as a monitoring metric, not a causal pattern.
+- **"CI failure volume as defect signal"** — rejected as a *pattern*: 2,569 failures correlate with agent-era iteration speed (Sep–Oct escalation matches the wave cadence); the *actionable* signal is which failure *classes* produced incidents (all captured above), not the count. Kept as a monitoring metric, not a causal pattern.
 - **"Arabic/English mixing as defect source"** — rejected: the language policy is binding and measured (AGENTS.md §1); no incident in the ledger traces to it.

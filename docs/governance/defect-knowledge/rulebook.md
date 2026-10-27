@@ -31,7 +31,7 @@
 - **Inspect before:** list callers, alternate entry points (other modules' access, admin surfaces, GraphQL+REST both, mirrors/indexes/caches, event listeners), data stores, permissions, external effects.
 - **Must satisfy:** for each business rule the change touches: either a single choke point enforces it, or every enumerated door has an explicit disposition.
 - **Evidence:** the enumeration table rides the PR description.
-- **History:** E-09 (11 adapters), CodeRabbit rows 5/13/20 (read rails vs write guards). **Enforcement:** review-protocol pass 2 (mandatory); CodeRabbit as detector.
+- **History:** E-09 (11 adapters), CodeRabbit rows 5/13/20 (read rails vs write guards). **Enforcement:** review-protocol pass 3 (mandatory); CodeRabbit as detector.
 - **Status:** verified-procedural.
 
 ### A4 — Diff-review against intent

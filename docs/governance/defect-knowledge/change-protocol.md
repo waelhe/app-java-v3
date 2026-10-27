@@ -19,7 +19,7 @@
    | decimal endpoints | B7 |
    | feature flags | B8 |
    | Saleor contracts / commerce money / content visibility / cross-module | C1–C4 |
-5. **Invariants and failure scenarios**: write down (in the PR draft) the invariants that must hold and the failure scenarios to verify — including the historical shapes from `pattern-catalog.md` that the triggers selected (e.g. B2 ⇒ "rollback-after-external-effect" scenario).
+5. **Invariants and failure scenarios**: write down (in the PR draft) the invariants that must hold and the failure scenarios to verify — including the historical shapes from `pattern-catalog.md` that the triggers selected (e.g. B2 ⇒ "rollback-after-external-effect" scenario; P1 ⇒ state the environment dimension this change exercises and where it was verified).
 6. **Acceptance evidence defined up front**: what test/gate/measurement will prove the change, named before implementation.
 
 ## Phase 1 — During implementation

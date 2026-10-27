@@ -7,12 +7,12 @@
 
 | Dimension | Measured value | Source |
 |---|---|---|
-| PRs inventoried | 715 total · 529 merged · 182 closed-unmerged · first 2026-04-16 | GitHub API pulls inventory |
-| Workflow runs classified | 14,567 total · 2,364 failures (CI 985 · Integration Test 815 · Container Scan 201 · CodeQL 152 · Production Watchdog 112 · CodeRabbit Gate 102 · Saleor inventory gate 71) | GitHub API actions runs |
-| Failure escalation | Apr 8 → May 132 → Jun 158 → Jul 8 → Aug 6 → Sep 482 → Oct 1,775 failures/month | same |
-| Commit history | main 706 commits (Apr 89, May 74, Jun 82, Jul 2, Aug 24, Sep 248, Oct 187) · integration line 785 | git log |
-| Authorship | 679 squash-merge commits authored `waelhe`, 22 direct `Z User` (agent), 4 dependabot | git log |
-| Migrations | 209 files on main tip, numbered range V1–V291, 86 numbers absent, **zero migration files ever deleted in main history** | git ls-tree + diff-filter=D |
+| PRs inventoried | 715 total = 529 merged + 182 closed-unmerged + 4 open at measurement time · first 2026-04-16 | GitHub API pulls inventory (2026-10-27; re-derive: `gh api repos/waelhe/app-java-v3/pulls?state=all&per_page=100` paginated) |
+| Workflow runs classified | 14,575 runs fetched (all workflows, full pagination, cut 2026-10-27T10:54Z) · **2,569 failures total** · seven guard workflows: CI 985 · Integration Test 815 · Container Scan 201 · CodeQL 152 · Production Watchdog 112 · CodeRabbit Gate 102 · Saleor inventory gate 71 (= 2,438) · remaining 131 failures in non-guard workflows (Android surfaces 75 · OpenRewrite family 41 · retired/deploy/experimental 15) · non-failure conclusions: 2,783 cancelled · 729 skipped · 10 action-required | GitHub API actions runs (2026-10-27; re-derive: `gh api repos/waelhe/app-java-v3/actions/runs --paginate`) |
+| Failure escalation | Apr 8 → May 132 → Jun 158 → Jul 8 → Aug 6 → Sep 482 → Oct 1,775 failures/month — sums to the 2,569 total | same |
+| Commit history | main 706 commits (Apr 89, May 74, Jun 82, Jul 2, Aug 24, Sep 248, Oct 187 — monthly sum = 706) · integration line 785 | git log @ `7836c157` |
+| Authorship | 706 = 679 squash-merge commits authored `waelhe` + 22 direct `Z User` (agent) + 4 `dependabot[bot]` + 1 `github-actions[bot]` | git log @ `7836c157` |
+| Migrations | 209 files under `db/migration/` on main tip — `marketplace-app` 208 (205 versioned in range V1–V291 with 86 numbers absent in-range + 3 `R__` repeatables) and `marketplace-edge` 1 (its own `V1`, a separate database/history), **zero migration files ever deleted in main history** | git ls-tree + diff-filter=D @ `7836c157` |
 | Test/production files | 663 test vs 1,151 production Java files on main tip | git ls-tree |
 | Max-churned files | SYSTEM.md ×232, PROJECT_MAP.md ×187, application.yml ×78, pom.xml ×63, migration-checksums.properties ×60, SecurityConfig.java ×59, ObservationCoverageFilesTest.java ×55 | git log --name-only |
 
@@ -55,7 +55,7 @@
 - **Correction:** PR #387 (mail out of platform health via the official key `management.health.mail.enabled: false` + `when-authorized` component visibility) then PR #406 (`AggregateHealthGauge` metric + `MarketplaceAggregateHealthDown` alert rule + sixth watchdog probe).
 - **Verification evidence:** postmortem §3 timeline with measurements; watchdog probes since run in production.
 - **Recurrence risk:** any new health contributor added by a dependency default; any aggregation point without a consumer.
-- **Prevention:** rules B6/P9; watchdog probe exists (D-map §3).
+- **Prevention:** rules B6/P9; watchdog probe exists (enforcement-map §3).
 
 ## E-04 · Rollback-only poisoning — retryable boundary inside carrier transaction **[VERIFIED]**
 
@@ -269,7 +269,7 @@
 - **Status:** **[OPEN]** — recorded here and in enforcement-map §5 as a gap: either implement the decisions registry or fix the message. Not silently patched by this mission (docs-only mandate).
 - **Prevention:** rule D8 (guard-message fidelity).
 
-## E-22 · High-churn sentinel: SYSTEM.md ×232 / PROJECT_MAP.md ×187 **[VERIFIED-Churn] / [HYPOTHESIS-Cause]**
+## E-22 · High-churn sentinel: SYSTEM.md ×232 / PROJECT_MAP.md ×187 — churn measured **[VERIFIED]** · causal reading **[HYPOTHESIS]**
 
 - **Observed fact:** the two truth files are the most-modified paths in history (232/187 changes) — truth-sync runs after every wave, as designed.
 - **Hypothesis (not promoted to a rule):** churn volume correlates with the truth-sync debt incidents documented in the regression list ("PROJECT_MAP/SYSTEM sections lagging merged waves"). The *measured* debt incidents are already covered by E-12's rule family; the churn itself is the *cost* of the design, not a defect.

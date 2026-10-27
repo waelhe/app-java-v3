@@ -15,7 +15,7 @@ The system exists because the measured history shows the *same causal mechanisms
 1. **Before any edit** — follow `AGENTS.md` §0 load order; when reaching the risk step, load [`change-protocol.md`](change-protocol.md) and apply the pattern families it triggers ([`pattern-catalog.md`](pattern-catalog.md)).
 2. **Before writing a fix** — check [`evidence-ledger.md`](evidence-ledger.md): a case with your symptom already exists, with its root cause and the correction that actually worked.
 3. **After implementing** — run the adversarial pass in [`review-protocol.md`](review-protocol.md) and the rule checklist in [`rulebook.md`](rulebook.md).
-4. **When a guard fails** — [`enforcement-map.md`](enforcement-map.md) states what each guard protects and which historical outage class it closes; never work around a guard — fix the root cause or register a governed divergence.
+4. **When a guard fails** — [`enforcement-map.md`](enforcement-map.md) states what each guard protects and which historical outage class it closes. Never work around a guard: fix the root cause, or use a divergence route that actually exists today — the Saleor root-contract gate's registered-divergence CSV (`saleor-contract-divergences.csv`, rules B4/C1) is the only implemented one. No general divergence register exists for the other guards (gap **G3**, enforcement-map §5, case E-21); until it is implemented, a guard without a registered route failing means the fix, not the bypass.
 
 ## Contents
 
@@ -34,6 +34,7 @@ This system **reuses and extends** — it does not compete with — the establis
 
 ## Verification status of the system itself
 
-- Derived from: 715 PRs inventoried via API; 14,567 workflow runs (2,364 failures) classified; full git history of `main` (706 commits) and the integration line (785 commits); in-repo postmortems, ADRs, campaign reports, CodeRabbit finding registries (2026-10-25/26); the round-13/14 PR #723 audit records.
-- Validation: representative historical cases replayed against the new rules in [`enforcement-map.md`](enforcement-map.md) §4 — each selected case from a different causal family.
+- Derived from: 715 PRs inventoried via API; 14,575 workflow runs (2,569 failures) classified; full git history of `main` (706 commits) and the integration line (785 commits); in-repo postmortems, ADRs, campaign reports, CodeRabbit finding registries (2026-10-25/26); the round-13/14 PR #723 audit records.
+- Validation: representative historical cases replayed against the new rules in [`enforcement-map.md`](enforcement-map.md) §3 — each selected case from a different causal family.
+- Self-consistency: this system's own enumerations (rule counts, case tags, pattern range, phase/section references) are derived and enforced by `DefectKnowledgeDocsGuardTest` — the system applies rule A6/D2 to itself.
 - Limitations and unresolved items are stated explicitly in [`enforcement-map.md`](enforcement-map.md) §5 — nothing is claimed complete that was not measured.
