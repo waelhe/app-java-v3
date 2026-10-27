@@ -90,6 +90,16 @@ jobs:
           REPO: ${{ github.repository }}
           REF: ${{ github.ref_name }}
         run: |
+          # The monitor rides a quoted heredoc into python3: GitHub runs
+          # `run:` blocks with bash regardless of any embedded shebang — the
+          # shebang below is preserved as the script's own header inside the
+          # heredoc. Measured on the first run (2240b750, job 122522276809):
+          # embedding the Python source directly made bash execute the
+          # module docstring as a command (exit 127). The quoted delimiter
+          # 'GATE_HEALTH_EOF' keeps every Python line byte-exact (no shell
+          # expansion), and the harness-first rule still holds: this is the
+          # same script, unchanged, that ran against the live API locally.
+          python3 - <<'GATE_HEALTH_EOF'
           #!/usr/bin/env python3
           # -*- coding: utf-8 -*-
           """Gate Health Monitor — G5 closure (defect-knowledge enforcement-map §5).
@@ -390,3 +400,4 @@ jobs:
 
           if __name__ == "__main__":
               main()
+          GATE_HEALTH_EOF
