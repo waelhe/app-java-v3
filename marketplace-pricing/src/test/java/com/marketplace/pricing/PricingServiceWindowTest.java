@@ -3,7 +3,6 @@ package com.marketplace.pricing;
 import org.instancio.Instancio;
 import org.junit.jupiter.api.Test;
 import org.springframework.cache.annotation.Cacheable;
-import org.springframework.cache.interceptor.CacheExpressionRootObject;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
@@ -324,8 +323,10 @@ class PricingServiceWindowTest {
         Method windowed = PricingService.class.getMethod("calculatePrice",
                 UUID.class, long.class, String.class, Instant.class, Instant.class);
         String expression = windowed.getAnnotation(Cacheable.class).key();
-        StandardEvaluationContext context = new StandardEvaluationContext(
-                new CacheExpressionRootObject(List.of(), windowed, target));
+        // The interceptor's SpEL root shape, reproduced locally (Spring's own
+        // CacheExpressionRootObject is package-private): #root.target resolves
+        // through getTarget() — the standard bean-property path SpEL walks.
+        StandardEvaluationContext context = new StandardEvaluationContext(new CacheKeyRoot(target));
         context.setVariable("listingId", LISTING);
         context.setVariable("basePriceCents", BASE);
         context.setVariable("category", "services");
@@ -333,5 +334,18 @@ class PricingServiceWindowTest {
         context.setVariable("checkOut", CHECK_OUT);
         return new SpelExpressionParser().parseExpression(expression)
                 .getValue(context, String.class);
+    }
+
+    /** The cache interceptor's SpEL root shape — target/method getters. */
+    private static final class CacheKeyRoot {
+        private final Object target;
+
+        CacheKeyRoot(Object target) {
+            this.target = target;
+        }
+
+        public Object getTarget() {
+            return target;
+        }
     }
 }
