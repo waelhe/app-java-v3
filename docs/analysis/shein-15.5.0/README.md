@@ -2,7 +2,7 @@
 
 Closed analytical archive for the SHEIN Android client (`com.zzkko`, version `15.5.0`, versionCode `2941`).
 
-> **Status:** draft PR opened and closed; not merged. This directory preserves the study, screenshots, and token measurements as a historical reference. It is not an approved design system or an implementation plan.
+> **Status:** draft PR [#745](https://github.com/waelhe/app-java-v3/pull/745) opened and closed; not merged. This directory preserves the study, screenshots, and token measurements as a historical reference. It is not an approved design system or an implementation plan.
 
 ## Contents
 
