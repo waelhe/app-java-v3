@@ -7,14 +7,30 @@ readonly version="6.41.0"
 readonly tag="v${version}"
 readonly expected_commit="bb5d5af152d1f92c3cc49f8a55ddbaf2b35247fc"
 readonly source_url="https://github.com/openrewrite/rewrite-spring.git"
-readonly work_root="${TMPDIR:-/tmp}/openrewrite-source-build"
+
+# Agent findings 2026-10-26T13:11 export, row 6 (CWE-367): the workspace is
+# a UNIQUE PRIVATE directory created ATOMICALLY under the trusted temporary
+# parent (mktemp -d: O_EXCL creation with 0700 permissions — no other local
+# user can pre-create it, own it, or replace the verified source directory
+# between the clone, the HEAD check and the two builds). The pre-fix shape
+# accepted a PREDICTABLE shared parent (${TMPDIR}/openrewrite-source-build)
+# that any local user could own and swap beneath the operator's identity —
+# the verified-commit check guarded a directory a different user could
+# replace after the check. A trap removes the private workspace on every
+# exit path; nothing persists under the trusted parent.
+work_root=""
+cleanup() {
+  if [[ -n "${work_root}" ]]; then
+    rm -rf "${work_root}"
+  fi
+}
+trap cleanup EXIT
+work_root="$(mktemp -d "${TMPDIR:-/tmp}/openrewrite-source-build.XXXXXXXX")"
 readonly source_dir="${work_root}/rewrite-spring-${version}"
 
 command -v git >/dev/null || { echo "git is required" >&2; exit 2; }
 command -v java >/dev/null || { echo "Java is required" >&2; exit 2; }
 
-mkdir -p "${work_root}"
-rm -rf "${source_dir}"
 git clone --depth 1 --branch "${tag}" "${source_url}" "${source_dir}"
 
 actual_commit="$(git -C "${source_dir}" rev-parse HEAD)"
