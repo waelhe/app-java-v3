@@ -2,7 +2,6 @@ package com.marketplace.config;
 
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
-import io.swagger.v3.oas.models.PathItem;
 import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springframework.http.HttpMethod;
 import org.springframework.util.AntPathMatcher;
