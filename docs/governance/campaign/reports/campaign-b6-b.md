@@ -18,7 +18,7 @@
 
 ## Where the Query surface now stands
 
-Every one of the 90 Saleor Query roots now has a live disposition: **37 INTEGRATED** (me/user/staffUsers/customers/permissionGroups/permissionGroup/attribute(s)/productType(s)/category(ies)/product(s)/productVariant(s)/voucher(s)/promotion(s)/order(s)), **50 BLOCKED_BY_DECISION** (57 blocked minus the 7 pre-existing b4-b/b4-d decision rows), and **11 NOT_STARTED — each with a real owning module** (collections over the catalog owner, payment(s)/transaction(s) over the payments/ledger owners, checkout(s)/checkoutLines over the cart owner, exportFile(s) over the jobs owner). Those 11 are the next implementation packets — never decision shortcuts.
+Every one of the 90 Saleor Query roots now has a live disposition: **22 INTEGRATED** (me/user/staffUsers/customers/permissionGroups/permissionGroup/attribute(s)/productType(s)/category(ies)/product(s)/productVariant(s)/voucher(s)/promotion(s)/order(s)), **57 BLOCKED_BY_DECISION** (every blocked row at this close is a Query root: 15 pre-existing blocked rows + b6-a's 27 + this packet's 15), and **11 NOT_STARTED — each with a real owning module** (collection(s) over the catalog owner, payment(s)/transaction(s) over the payments/ledger owners, checkout(s)/checkoutLines over the cart owner, exportFile(s) over the jobs owner). Those 11 are the next implementation packets — never decision shortcuts.
 
 ## Ledger
 

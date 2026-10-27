@@ -1,6 +1,6 @@
 # Campaign packet campaign-b6-a — completion report
 
-**Packet:** the no-owner decision packet — 28 Query roots across P5/P3/P4 moved from `NOT_STARTED` to `BLOCKED_BY_DECISION` with ten recorded OWNER_ADR_REQUIRED decision rows.
+**Packet:** the no-owner decision packet — 27 Query roots across P5/P3/P4 moved from `NOT_STARTED` to `BLOCKED_BY_DECISION` with ten recorded OWNER_ADR_REQUIRED decision rows.
 **Executed by:** A0 directly, in-branch, on the single candidate lane (the sequential single-writer flow; no agent branches, no PRs).
 **Base:** `fc394f998c` (the b5-b close). Docs-only packet — one commit.
 
