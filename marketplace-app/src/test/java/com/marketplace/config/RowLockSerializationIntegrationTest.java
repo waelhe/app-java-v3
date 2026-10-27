@@ -39,6 +39,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Part-2 review round 2 (the full review's CHANGES_REQUESTED on
@@ -260,11 +261,20 @@ class RowLockSerializationIntegrationTest {
     @Test
     void theEngineHideSerializesOnTheReviewRowAndTheSecondReportSurvives() throws Exception {
         // Part-2 review round 2's own follow-up (the incremental round's
-        // measured nitpick): the REAL end-to-end shape — two concurrent
-        // ContentReportService.createReport transactions crossing the rule
-        // threshold together, and the SECOND REPORT'S OWN ROW is the
-        // assertion: it survives (commits) instead of being taken down by
-        // the optimistic-version failure the un-locked hide used to cause.
+        // measured nitpick) + round 3's determinism adoption: the REAL
+        // end-to-end shape — two concurrent ContentReportService.createReport
+        // transactions crossing the rule threshold together, and the SECOND
+        // REPORT'S OWN ROW is the assertion: it survives (commits) instead
+        // of being taken down by the optimistic-version failure the
+        // un-locked hide used to cause. Round 3 measured the barrier's own
+        // insufficiency — "both threads started" does not order the gates —
+        // and closed it with the SAME holder pattern the two sibling seams
+        // use: while a holder transaction owns the review row's write lock,
+        // NO hide can commit, so BOTH units' visibility gates necessarily
+        // read the PUBLISHED truth (the gate runs strictly before the hide
+        // in each unit's program order). The reporter whose gate runs after
+        // a committed hide is a DIFFERENT, deterministic, separately-pinned
+        // case: aReportThatStartsAfterTheHideAnswersTheHonest404.
         UUID reviewer = UUID.randomUUID();
         UUID provider = UUID.randomUUID();
         seedUser(reviewer, "CONSUMER");
@@ -288,9 +298,33 @@ class RowLockSerializationIntegrationTest {
         contentReports.save(ContentReport.report(
                 reporterA, ReportTargetType.REVIEW, reviewId, ReportReason.SPAM));
 
+        // the deterministic gate-ordering holder — owns the review row's
+        // write lock BEFORE either reporter starts: no hide can commit
+        // while it holds, so both gates read the PUBLISHED truth whatever
+        // the scheduler does with the two reporter threads
+        CountDownLatch lockHeld = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicReference<Throwable> holderFailure = new AtomicReference<>();
+        Thread holder = new Thread(() -> {
+            try {
+                new TransactionTemplate(txm).execute(status -> {
+                    reviews.findByIdForUpdate(reviewId).orElseThrow();
+                    lockHeld.countDown();
+                    awaitQuietly(release);
+                    return null;
+                });
+            } catch (Throwable t) {
+                holderFailure.set(t);
+            }
+        });
+        holder.start();
+        assertThat(lockHeld.await(10, TimeUnit.SECONDS))
+                .as("the holder owns the review row's write lock")
+                .isTrue();
+
         // the two concurrent threshold-crossing report transactions — the
-        // engine rides each creation command's own unit of work, and the
-        // hides serialize on the review row's write lock
+        // engine rides each creation command's own unit of work, and both
+        // hides queue on the review row's write lock the holder owns
         CyclicBarrier start = new CyclicBarrier(2);
         CountDownLatch done = new CountDownLatch(2);
         AtomicReference<Throwable> bFailure = new AtomicReference<>();
@@ -318,6 +352,16 @@ class RowLockSerializationIntegrationTest {
         reporterBThread.start();
         reporterCThread.start();
 
+        // both gates have passed and both hides are queued on the row —
+        // neither report transaction can complete while the holder owns it
+        assertThat(done.await(2, TimeUnit.SECONDS))
+                .as("while the holder owns the review row, neither report transaction can complete")
+                .isFalse();
+
+        release.countDown();
+        holder.join(10_000);
+        assertThat(holderFailure.get()).isNull();
+
         assertThat(done.await(30, TimeUnit.SECONDS))
                 .as("both report transactions complete — no hang, no rollback")
                 .isTrue();
@@ -331,8 +375,45 @@ class RowLockSerializationIntegrationTest {
         assertThat(landed)
                 .as("A's seed report + BOTH concurrent reports landed — the second report survives")
                 .isEqualTo(3);
+        // round 3's own measured gap (the committable suggestion, adopted):
+        // the queue drains WITH the hide — the winner's drain resolves A's
+        // seed and its own report, the serialized loser's drain resolves
+        // its own, so no report on a hidden target stays OPEN
+        Integer open = jdbc.queryForObject(
+                "SELECT count(*) FROM content_reports WHERE target_id = ? AND status = 'OPEN'",
+                Integer.class, reviewId);
+        assertThat(open)
+                .as("all reports are resolved after the review is hidden")
+                .isZero();
         assertThat(reviews.findById(reviewId).orElseThrow().getModerationStatus())
                 .isEqualTo(ReviewModerationStatus.HIDDEN_BY_MODERATOR);
+    }
+
+    /**
+     * Round 3's own split (the measured race's other interleaving, made its
+     * own deterministic shape): a report that STARTS after the hide
+     * committed meets the visibility gate's honest 404 — a moderator-hidden
+     * review is not a reportable target (the PUBLISHED-only projection
+     * answers empty). The hidden row is planted directly: the moderation
+     * OUTCOME, not the engine's path, is the fact the gate answers.
+     */
+    @Test
+    void aReportThatStartsAfterTheHideAnswersTheHonest404() {
+        UUID reviewer = UUID.randomUUID();
+        UUID provider = UUID.randomUUID();
+        UUID reporter = UUID.randomUUID();
+        seedUser(reviewer, "CONSUMER");
+        seedUser(provider, "PROVIDER");
+        seedUser(reporter, "CONSUMER");
+        UUID hiddenReviewId = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO reviews (id, booking_id, reviewer_id, provider_id, rating, origin, moderation_status)
+                VALUES (?, NULL, ?, ?, 5, 'ORGANIC', 'HIDDEN_BY_MODERATOR')
+                """, hiddenReviewId, reviewer, provider);
+
+        assertThatThrownBy(() -> reports.createReport(
+                reporter, ReportTargetType.REVIEW, hiddenReviewId, ReportReason.SPAM))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 
     // ------------------------------------------------------------------

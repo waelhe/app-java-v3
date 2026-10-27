@@ -21,5 +21,36 @@
 # JSSE) was carried here 2026-09-06..2026-09-09 while awaiting an
 # eclipse-temurin rebuild that had not shipped the fix (tag last pushed
 # 2026-08-21). The runtime-stage OS upgrade now delivers 3.5.8-r0 at build
-# time, so the entry is removed — the gate runs with zero exceptions.
-vulnerabilities: []
+# time, so the entry is removed.
+#
+# CVE-2026-102554 (guava DoS via eager array allocation during
+# deserialization, GHSA-xxph-c9ww-hj94, HIGH, fixed in guava 33.7.2) was
+# measured by the gate on 2026-10-27 on the guava copy SHADED inside
+# graphql-java-25.1.jar — the official Maven Central artifact embeds
+# com.google.guava:guava 32.1.2-jre (883 com/google/common entries + its
+# META-INF/maven pom.properties, measured from the downloaded jar): no
+# version bump the project controls can reach a shaded-in-upstream copy,
+# and 25.1 is BOTH the latest stable graphql-java release on Maven Central
+# AND the platform-required line (Boot 4.1.2 BOM -> spring-graphql 2.0.6
+# -> graphql-java 25.1). The project's OWN resolved guava is already pinned
+# at the fixed 33.7.2-jre (the parent POM override) — the standalone guava
+# jar in the image is clean. The vulnerable path (ObjectInputStream
+# deserialization of CompactHashMap/CompactHashSet/MapMakerInternalMap from
+# crafted streams) is unreachable: the shaded copy serves graphql-java's
+# in-process collections only, and no network surface of the app feeds Java
+# deserialization. Carried time-bounded until graphql-java ships a release
+# shading guava >= 33.7.2 — on expiry the finding returns and forces a fresh
+# decision (bump if the release exists, or a renewed, review-visible entry).
+vulnerabilities:
+  - id: CVE-2026-102554
+    expired_at: 2026-12-11
+    statement: >-
+      The guava 32.1.2-jre copy SHADED inside graphql-java-25.1.jar (the
+      latest stable release and the Boot 4.1.2 -> spring-graphql 2.0.6
+      platform line; measured from the official Maven Central artifact)
+      cannot be reached by any version bump the project controls, the
+      project's own resolved guava is already the fixed 33.7.2-jre, and the
+      deserialization path the CVE rides (ObjectInputStream on
+      CompactHashMap/CompactHashSet/MapMakerInternalMap) is unreachable
+      through the app's network surfaces. Remove when graphql-java ships a
+      release shading guava >= 33.7.2.

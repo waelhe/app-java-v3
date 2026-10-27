@@ -315,21 +315,29 @@ class PlatformGovernanceFilesTest {
             assertThat(ignore).as("any ignore entry must carry a justification")
                     .contains("statement:");
         }
-        // Zero entries today. Counting "- id:" keeps the file honest: a
+        // One entry today. Counting "- id:" keeps the file honest: a
         // silently widened list (someone pasting more CVEs) trips this pin
         // and forces a deliberate, review-visible change.
         assertThat(entries)
-                .as("zero ignore entries — the runtime stage's OS package upgrade "
-                        + "(Dockerfile: RUN apk upgrade --no-cache against the v3.24 "
-                        + "stable branch) closes every fixable alpine finding at "
-                        + "image build time (2026-09-09: libexpat 2.8.4-r0 for "
-                        + "CVE-2026-76956/76957 and openssl 3.5.8-r0 for "
-                        + "CVE-2026-14456 — the entry this file carried while its "
-                        + "fix awaited an eclipse-temurin rebuild that never "
-                        + "shipped). An ignore entry is only for findings with no "
-                        + "fix published for the branch; adding one is a deliberate "
-                        + "act that must update this pin")
-                .isZero();
+                .as("exactly one ignore entry — CVE-2026-102554 (guava DoS via "
+                        + "deserialization, HIGH, fixed in guava 33.7.2) on the guava "
+                        + "copy SHADED inside graphql-java-25.1.jar: the official "
+                        + "Maven Central artifact embeds guava 32.1.2-jre (measured "
+                        + "from the downloaded jar), 25.1 is both the latest stable "
+                        + "graphql-java release and the Boot 4.1.2 -> spring-graphql "
+                        + "2.0.6 platform line, and the project's own resolved guava "
+                        + "is already the fixed 33.7.2-jre — no version bump the "
+                        + "project controls reaches a shaded-in-upstream copy. "
+                        + "Time-bounded (expired_at 2026-12-11, trivy-enforced): "
+                        + "on expiry the finding returns and forces a fresh decision. "
+                        + "The runtime stage's OS package upgrade (Dockerfile: RUN "
+                        + "apk upgrade --no-cache against the v3.24 stable branch) "
+                        + "still closes every fixable alpine finding at image build "
+                        + "time (2026-09-09: libexpat 2.8.4-r0 for CVE-2026-76956/"
+                        + "76957 and openssl 3.5.8-r0 for CVE-2026-14456). Widening "
+                        + "beyond this one entry is a deliberate act that must "
+                        + "update this pin")
+                .isOne();
     }
 
     @Test
