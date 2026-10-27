@@ -25,7 +25,42 @@ paths = [
 # sentence shape cannot carry one. (The pseudonymization audit lines with their
 # 64-hex anon ids were measured NOT to fire the rule — keyword prefiltering —
 # and stay fully scanned.)
+#
+# CI unblock (measured 2026-10-26): validation runs dispatched by the
+# OpenRewrite publisher hit the full fetched ref surface — gitleaks executes
+# `git log -p -U0 --full-history --all` on workflow_dispatch events (measured
+# from the debug log of run 40293996475: 718 commits scanned) — which includes
+# every open branch. The permanently-open trade-wave branch #723 (merge
+# blocked by owner order) carries a WebSocket identity test whose fixture
+# subject is constructed as WebSocketUserIdentity(token, "<uuid>"): the
+# `token` parameter name adjacent to a quoted UUID trips the default
+# generic-api-key rule at the high fail level and turns every dispatched
+# validation red at the gitleaks gate. The fixture UUID is a test subject id,
+# not a credential.
+#
+# CodeRabbit review round 1 (2026-10-26) hardened the exemption: a substring
+# regex would also exempt ANY other text riding the same line — a real
+# credential appended after the statement would silently leave the scan. The
+# allow below is therefore the COMPLETE Java statement, anchored from line
+# start to the statement-terminating semicolon: a typed local declaration
+# whose sole string literal is a strictly-shaped lowercase RFC 4122 UUID.
+# CodeRabbit review round 2 tightened the literal to the RFC's own alphabet:
+# the version nibble carries 1-5 and the variant nibble 8/9/a/b — a shape
+# no generic credential vocabulary shares.
+# Measured against the 8.24.3 binary (the CI's exact version): the pure
+# fixture line is exempted, while the same statement carrying an appended
+# AWS key on the same line stays DETECTED — nothing else on that line, in
+# that file, or anywhere else is exempt.
+#
+# Structure note (measured 2026-10-26, gitleaks 8.24.3): a separate
+# [[allowlists]] array-of-tables block — the shape the CodeRabbit reviewer
+# suggested for a path-scoped AND-condition exemption — is SILENTLY IGNORED
+# by this gitleaks version (binary-verified: the identical exemption in an
+# array block leaves the leak detected, the single [allowlist] table clears
+# it). The global exemption therefore lives in the single [allowlist] table
+# with the full-line anchor carrying the entire security burden.
 regexTarget = "line"
 regexes = [
-  '''Collected git\.commit\.id with value [a-fA-F0-9]{40}\s*$'''
+  '''Collected git\.commit\.id with value [a-fA-F0-9]{40}\s*$''',
+  '''^\s*[\w.]+\s+\w+\s*=\s*new WebSocketUserIdentity\(token, "[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"\);\s*$'''
 ]
