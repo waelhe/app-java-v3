@@ -14,7 +14,6 @@ import com.marketplace.app.graphql.generated.types.AddressUpdate;
 import com.marketplace.identity.spi.AddressFields;
 import com.marketplace.identity.spi.AddressManagementSpi;
 import com.marketplace.identity.spi.AddressView;
-import com.marketplace.identity.spi.UserAccountView;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;

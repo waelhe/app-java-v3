@@ -12,7 +12,6 @@ import com.marketplace.catalog.spi.CategoryReadSpi;
 import com.marketplace.catalog.spi.CategoryWriteSpi;
 import com.marketplace.catalog.spi.AttributeReadSpi;
 import com.marketplace.catalog.spi.ProductAdminSpi;
-import com.marketplace.catalog.spi.ProductPage;
 import com.marketplace.catalog.spi.ProductReadSpi;
 import com.marketplace.catalog.spi.ProductTypeReadSpi;
 import com.marketplace.catalog.spi.ProductVariantPage;

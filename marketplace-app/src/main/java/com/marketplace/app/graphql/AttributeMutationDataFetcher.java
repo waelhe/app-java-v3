@@ -21,7 +21,6 @@ import com.marketplace.app.graphql.generated.types.AttributeUpdate;
 import com.marketplace.app.graphql.generated.types.AttributeUpdateInput;
 import com.marketplace.app.graphql.generated.types.ErrorPolicyEnum;
 import com.marketplace.app.graphql.generated.types.ReorderInput;
-import com.marketplace.catalog.CatalogAttributeType;
 import com.marketplace.catalog.spi.AttributeBulkOutcome;
 import com.marketplace.catalog.spi.AttributeBulkUpdateItem;
 import com.marketplace.catalog.spi.AttributeCreateCommand;

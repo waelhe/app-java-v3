@@ -14,8 +14,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import tools.jackson.databind.json.JsonMapper;
 
-import java.util.Map;
-
 /**
  * Agent 1 (the Saleor 458-root campaign, assignment packet PR #696): the
  * GraphQL adapter for the Saleor Authentication-domain mutations —

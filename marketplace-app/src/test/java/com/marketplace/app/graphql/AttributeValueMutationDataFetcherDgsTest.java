@@ -3,7 +3,6 @@ package com.marketplace.app.graphql;
 import com.marketplace.catalog.CatalogAttributeType;
 import com.marketplace.catalog.spi.AttributeMutationError;
 import com.marketplace.catalog.spi.AttributeMutationErrorCode;
-import com.marketplace.catalog.spi.AttributeMutationResult;
 import com.marketplace.catalog.spi.AttributeValueMutationResult;
 import com.marketplace.catalog.spi.AttributeValueView;
 import com.marketplace.catalog.spi.AttributeValueWriteSpi;

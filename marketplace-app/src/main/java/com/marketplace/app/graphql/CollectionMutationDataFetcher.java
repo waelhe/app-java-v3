@@ -16,7 +16,6 @@ import com.marketplace.catalog.spi.CollectionMutationErrorCode;
 import com.marketplace.catalog.spi.CollectionMutationResult;
 import com.marketplace.catalog.spi.CollectionProductMove;
 import com.marketplace.catalog.spi.CollectionUpdateCommand;
-import com.marketplace.catalog.spi.CollectionView;
 import com.marketplace.catalog.spi.CollectionWriteSpi;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;

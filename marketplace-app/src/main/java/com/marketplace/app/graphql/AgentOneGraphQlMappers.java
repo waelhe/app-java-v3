@@ -3,7 +3,6 @@ package com.marketplace.app.graphql;
 import com.marketplace.app.graphql.generated.types.AccountError;
 import com.marketplace.app.graphql.generated.types.AccountErrorCode;
 import com.marketplace.app.graphql.generated.types.Address;
-import com.marketplace.app.graphql.generated.types.AddressTypeEnum;
 import com.marketplace.app.graphql.generated.types.CustomerType;
 import com.marketplace.app.graphql.generated.types.CustomerTypeCountableEdge;
 import com.marketplace.app.graphql.generated.types.CustomerTypeCountableConnection;

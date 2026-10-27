@@ -25,7 +25,6 @@ import com.marketplace.catalog.spi.AttributeMutationErrorCode;
 import com.marketplace.catalog.spi.AttributeMutationResult;
 import com.marketplace.catalog.spi.AttributeValueMutationResult;
 import com.marketplace.catalog.spi.CategoryMutationError;
-import com.marketplace.catalog.spi.CategoryMutationErrorCode;
 import com.marketplace.catalog.spi.CategoryMutationResult;
 import com.marketplace.catalog.spi.CollectionMutationError;
 import com.marketplace.catalog.spi.CollectionMutationResult;

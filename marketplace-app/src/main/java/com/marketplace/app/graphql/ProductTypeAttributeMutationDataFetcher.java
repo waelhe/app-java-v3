@@ -9,7 +9,6 @@ import com.marketplace.app.graphql.generated.types.ProductAttributeType;
 import com.marketplace.app.graphql.generated.types.ProductAttributeUnassign;
 import com.marketplace.app.graphql.generated.types.ProductError;
 import com.marketplace.app.graphql.generated.types.ProductErrorCode;
-import com.marketplace.app.graphql.generated.types.ProductType;
 import com.marketplace.app.graphql.generated.types.ProductTypeReorderAttributes;
 import com.marketplace.app.graphql.generated.types.ReorderInput;
 import com.marketplace.catalog.spi.AttributeReorderMove;

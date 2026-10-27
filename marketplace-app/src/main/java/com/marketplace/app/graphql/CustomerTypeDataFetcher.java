@@ -15,7 +15,6 @@ import com.marketplace.app.graphql.generated.types.CustomerTypeUpdateInput;
 import com.marketplace.app.graphql.generated.types.CustomerTypeWhereInput;
 import com.marketplace.app.graphql.generated.types.ReorderInput;
 import com.marketplace.identity.spi.CustomerTypeSpi;
-import com.marketplace.identity.spi.CustomerTypeView;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;

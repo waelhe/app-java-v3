@@ -2,7 +2,6 @@ package com.marketplace.app.graphql;
 
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
-import org.springframework.graphql.execution.ErrorType;
 import org.springframework.security.access.AccessDeniedException;
 
 /**

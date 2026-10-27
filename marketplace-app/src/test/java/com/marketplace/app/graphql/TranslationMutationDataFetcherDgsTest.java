@@ -17,8 +17,6 @@ import com.marketplace.catalog.spi.ProductAdminSpi;
 import com.marketplace.catalog.spi.ProductReadSpi;
 import com.marketplace.catalog.spi.ProductTypeReadSpi;
 import com.marketplace.catalog.spi.ProductVariantReadSpi;
-import com.marketplace.catalog.spi.ProductVariantView;
-import com.marketplace.catalog.spi.ProductView;
 import com.marketplace.catalog.spi.ProductWriteSpi;
 import com.marketplace.catalog.spi.AttributeReadSpi;
 import com.marketplace.catalog.spi.AttributeValueWriteSpi;
