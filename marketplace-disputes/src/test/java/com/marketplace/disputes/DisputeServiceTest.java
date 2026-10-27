@@ -153,7 +153,7 @@ class DisputeServiceTest {
         UUID paymentId = UUID.randomUUID();
         Dispute dispute = Dispute.openBooking(bookingId, UUID.randomUUID(), "damage");
         when(repository.findById(disputeId)).thenReturn(Optional.of(dispute));
-        when(paymentRefundPort.refundForBooking(bookingId, null))
+        when(paymentRefundPort.refundForBooking(bookingId, null, disputeId))
                 .thenReturn(new RefundOutcome(paymentId, 5000L));
 
         Dispute result = disputeService.resolve(disputeId, DisputeResolution.REFUND_CONSUMER, authentication);
@@ -162,7 +162,7 @@ class DisputeServiceTest {
         assertThat(result.getResolution()).isEqualTo(DisputeResolution.REFUND_CONSUMER);
         assertThat(result.getRefundPaymentId()).isEqualTo(paymentId);
         assertThat(result.getRefundedAmountCents()).isEqualTo(5000L);
-        verify(paymentRefundPort, times(1)).refundForBooking(bookingId, null);
+        verify(paymentRefundPort, times(1)).refundForBooking(bookingId, null, disputeId);
     }
 
     @Test
@@ -170,7 +170,7 @@ class DisputeServiceTest {
         UUID disputeId = UUID.randomUUID();
         Dispute dispute = Dispute.openBooking(UUID.randomUUID(), UUID.randomUUID(), "damage");
         when(repository.findById(disputeId)).thenReturn(Optional.of(dispute));
-        when(paymentRefundPort.refundForBooking(any(), any()))
+        when(paymentRefundPort.refundForBooking(any(), any(), any()))
                 .thenThrow(new ResourceNotFoundException("No payment intent for booking"));
 
         assertThrows(ResourceNotFoundException.class,
@@ -279,7 +279,7 @@ class DisputeServiceTest {
 
         assertThat(result.getResolution()).isEqualTo(DisputeResolution.REFUND_CONSUMER);
         assertThat(result.getRefundPaymentId()).isNull();
-        verify(paymentRefundPort, never()).refundForBooking(any(), any());
+        verify(paymentRefundPort, never()).refundForBooking(any(), any(), any());
         ArgumentCaptor<DisputeResolvedEvent> captor = ArgumentCaptor.forClass(DisputeResolvedEvent.class);
         verify(eventPublisher).publishEvent(captor.capture());
         assertThat(captor.getValue().subjectType()).isEqualTo(DisputeSubject.LOAN);
@@ -300,14 +300,14 @@ class DisputeServiceTest {
         UUID paymentId = UUID.randomUUID();
         Dispute dispute = Dispute.openBooking(bookingId, UUID.randomUUID(), "damage");
         when(repository.findById(disputeId)).thenReturn(Optional.of(dispute));
-        when(paymentRefundPort.refundForBooking(bookingId, 2500L))
+        when(paymentRefundPort.refundForBooking(bookingId, 2500L, disputeId))
                 .thenReturn(new RefundOutcome(paymentId, 2500L));
 
         Dispute result = disputeService.resolve(disputeId, DisputeResolution.REFUND_CONSUMER, 2500L, authentication);
 
         assertThat(result.getRefundPaymentId()).isEqualTo(paymentId);
         assertThat(result.getRefundedAmountCents()).isEqualTo(2500L);
-        verify(paymentRefundPort, times(1)).refundForBooking(bookingId, 2500L);
+        verify(paymentRefundPort, times(1)).refundForBooking(bookingId, 2500L, disputeId);
     }
 
     /**
@@ -344,7 +344,7 @@ class DisputeServiceTest {
         UUID paymentId = UUID.randomUUID();
         Dispute dispute = Dispute.openBooking(bookingId, UUID.randomUUID(), "damage");
         when(repository.findById(disputeId)).thenReturn(Optional.of(dispute));
-        when(paymentRefundPort.refundForBooking(bookingId, null))
+        when(paymentRefundPort.refundForBooking(bookingId, null, disputeId))
                 .thenReturn(new RefundOutcome(paymentId, 5000L));
 
         disputeService.resolve(disputeId, DisputeResolution.REFUND_CONSUMER, authentication);
@@ -406,7 +406,7 @@ class DisputeServiceTest {
         // The refusal precedes every mutation: the dispute is untouched,
         // no refund, no resolution event.
         assertThat(dispute.getResolution()).isNull();
-        verify(paymentRefundPort, never()).refundForBooking(any(), any());
+        verify(paymentRefundPort, never()).refundForBooking(any(), any(), any());
         verify(eventPublisher, never()).publishEvent(any());
     }
 }

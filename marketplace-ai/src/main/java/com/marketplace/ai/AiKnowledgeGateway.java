@@ -4,6 +4,8 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 import java.util.Map;
@@ -41,11 +43,33 @@ import java.util.concurrent.locks.ReentrantLock;
  * withdrawn source briefly stale in the index (cleared by the listener's
  * replay), never a withdrawn source re-exposable by a late publication.
  * {@link #replacePublicSource} refuses to index a source whose withdrawal
- * record exists. Every public source operation runs under a striped
- * per-source lock, so a concurrent publish/withdraw pair for one entry
- * serializes in submission order within this JVM. Public documents carry
- * the {@code sourceId} metadata key; retrieval paths filter
- * {@code visibility == 'PUBLIC'}.</p>
+ * record exists. Public documents carry the {@code sourceId} metadata key;
+ * retrieval paths filter {@code visibility == 'PUBLIC'}.</p>
+ *
+ * <p><b>The cross-instance protocol (row 32, agent findings 2026-10-25,
+ * CWE-367):</b> the per-source stripes above serialize operations only
+ * within one JVM — a publication on instance A and a withdrawal on
+ * instance B (Spring Modulith's asynchronous listeners each run in their
+ * own transaction) could interleave as check-then-insert against
+ * record-then-delete, re-exposing withdrawn content on A after B's
+ * withdrawal completed. Both operations now run inside ONE transaction per
+ * source that first takes the cluster-wide, transaction-scoped advisory
+ * lock {@code pg_advisory_xact_lock(hashtextextended('ai-knowledge-source:' || sourceId, 0))}
+ * (the store's {@link AiWithdrawnSourceStore#acquireSourceTransactionLock}):
+ * a racing same-source operation on ANY instance blocks until the holder's
+ * transaction commits, then reads the holder's committed state. If the
+ * withdrawal committed first, the publication's guard sees the record and
+ * skips; if the publication committed first, the withdrawal's delete
+ * removes the fresh vectors. The lock is held to commit, so it covers the
+ * withdrawal record, the vector writes, and their shared completion —
+ * exactly the shared per-source protocol the finding requires. The
+ * transaction template uses the default {@code REQUIRED} propagation: it
+ * joins the Modulith listener's surrounding transaction when present (the
+ * record, the vectors, and the event-publication completion then commit
+ * atomically) and starts its own otherwise. The retrieval boundary
+ * excludes withdrawn sources independently of this protocol (see
+ * {@link AiWithdrawalGuardedVectorStore}) — stale vectors can never
+ * disclose withdrawn content even if they predate the protocol.</p>
  *
  * <p><b>Why the withdrawal decision is not a vector search:</b> Spring
  * AI's {@code VectorStore} interface offers {@code similaritySearch} as
@@ -59,14 +83,42 @@ public final class AiKnowledgeGateway {
 
     private static final int SOURCE_LOCK_STRIPES = 64;
 
+    /**
+     * The metadata key every public knowledge document carries — the
+     * retrieval boundary's withdrawal guard reads the same key, so one
+     * definition serves both sides (the guarded view must never drift from
+     * the writer's key).
+     */
+    public static final String SOURCE_ID_METADATA_KEY = "sourceId";
+
     private final VectorStore vectorStore;
     private final AiWithdrawnSourceStore withdrawnSources;
+    private final TransactionTemplate sourceTransactions;
     private final TokenTextSplitter splitter;
     private final Lock[] sourceLocks;
 
-    public AiKnowledgeGateway(VectorStore vectorStore, AiWithdrawnSourceStore withdrawnSources) {
+    /**
+     * @param vectorStore the public vector index (writes only — this
+     *        gateway never reads it)
+     * @param withdrawnSources the relational boundary of the withdrawal
+     *        records and the per-source cluster lock
+     * @param transactionManager the application's transaction manager —
+     *        the per-source protocol REQUIRES a real transaction: the
+     *        advisory lock is transaction-scoped and must be held across
+     *        the record read/write, the vector writes, and their commit
+     */
+    public AiKnowledgeGateway(VectorStore vectorStore,
+                              AiWithdrawnSourceStore withdrawnSources,
+                              PlatformTransactionManager transactionManager) {
         this.vectorStore = Objects.requireNonNull(vectorStore, "vectorStore must not be null");
         this.withdrawnSources = Objects.requireNonNull(withdrawnSources, "withdrawnSources must not be null");
+        Objects.requireNonNull(transactionManager, "transactionManager must not be null");
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        // REQUIRED (the default): join the Modulith listener's surrounding
+        // transaction when present, begin one otherwise — either way the
+        // advisory lock is held to the commit that makes the record and
+        // the vector writes visible together.
+        this.sourceTransactions = template;
         this.splitter = TokenTextSplitter.builder().build();
         this.sourceLocks = new Lock[SOURCE_LOCK_STRIPES];
         for (int i = 0; i < SOURCE_LOCK_STRIPES; i++) {
@@ -81,7 +133,7 @@ public final class AiKnowledgeGateway {
      */
     public void replacePublicSource(AiKnowledgeSource source) {
         Objects.requireNonNull(source, "source must not be null");
-        runSerialized(source.sourceId(), () -> {
+        runSerialized(source.sourceId(), () -> inSourceTransaction(source.sourceId(), () -> {
             if (isWithdrawn(source.sourceId())) {
                 return;
             }
@@ -89,13 +141,13 @@ public final class AiKnowledgeGateway {
                     source.content(),
                     Map.of(
                             "visibility", "PUBLIC",
-                            "sourceId", source.sourceId(),
+                            SOURCE_ID_METADATA_KEY, source.sourceId(),
                             "sourceType", source.sourceType()
                     ));
             List<Document> replacement = splitter.apply(List.of(sourceDocument));
             vectorStore.delete(sourceFilter(source.sourceId()).build());
             vectorStore.add(replacement);
-        });
+        }));
     }
 
     /**
@@ -107,9 +159,23 @@ public final class AiKnowledgeGateway {
      */
     public void markWithdrawn(String sourceId) {
         Objects.requireNonNull(sourceId, "sourceId must not be null");
-        runSerialized(sourceId, () -> {
+        runSerialized(sourceId, () -> inSourceTransaction(sourceId, () -> {
             withdrawnSources.record(sourceId);
             vectorStore.delete(sourceFilter(sourceId).build());
+        }));
+    }
+
+    /**
+     * The per-source critical section: one transaction that takes the
+     * cluster-wide advisory lock FIRST, then runs the guarded operation.
+     * The lock is auto-released at the transaction's commit or rollback,
+     * so the operation's reads, writes, and their visibility serialize
+     * against every other instance's same-source operation.
+     */
+    private void inSourceTransaction(String sourceId, Runnable operation) {
+        sourceTransactions.executeWithoutResult(status -> {
+            withdrawnSources.acquireSourceTransactionLock(sourceId);
+            operation.run();
         });
     }
 

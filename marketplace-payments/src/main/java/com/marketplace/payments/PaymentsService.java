@@ -738,6 +738,51 @@ public class PaymentsService implements PaymentsSpi {
     public record RefundedPayment(Payment payment, PaymentIntent intent) {}
 
     /**
+     * A stable refund-operation scope — the idempotency key's operation
+     * identity when a domain's refund MUST replay identically across a
+     * rollback-then-retry window.
+     *
+     * <p><b>V230's return edge (amount-bound):</b> a completing RETURN
+     * passes its own id; its key carries the return's own fixed amount —
+     * one return, one remote refund, replayed safely on retry (the
+     * state-derived key drifts when a sibling return advances the
+     * cumulative total between a rollback and its retry).</p>
+     *
+     * <p><b>The dispute twin (agent findings 2026-10-26, row 35 —
+     * FROZEN):</b> a booking dispute's refund passes the DISPUTE id, and
+     * its key carries NO amount: one dispute is ONE refund operation, the
+     * approved amount freezes at first execution, and every retry
+     * reconciles against the operation itself — the PSP replays the
+     * already-executed refund instead of submitting a new one under a new
+     * key. The pre-fix path kept the state-derived key (payment +
+     * refunded-so-far + amount), so after a rollback the webhook's
+     * cumulative sync changed the refunded-so-far leg, the retry derived a
+     * NEW key, and the same partial refund was paid at the provider
+     * TWICE. The pre-channel over-refund guards stay exactly where they
+     * are — the honest money-safety ceiling the V230 return edge accepts
+     * verbatim.</p>
+     */
+    public record StableRefundScope(String kind, UUID operationId) {
+
+        /** V230's return edge: the key carries the return's own amount. */
+        public static StableRefundScope forReturn(UUID returnId) {
+            return new StableRefundScope("return", returnId);
+        }
+
+        /** Row 35's dispute twin: the key freezes the operation, amount-less. */
+        public static StableRefundScope forDispute(UUID disputeId) {
+            return new StableRefundScope("dispute", disputeId);
+        }
+
+        String idempotencyKey(UUID paymentId, Long amountCents) {
+            if ("return".equals(kind)) {
+                return returnScopedRefundIdempotencyKey(paymentId, operationId, amountCents);
+            }
+            return disputeScopedRefundIdempotencyKey(paymentId, operationId);
+        }
+    }
+
+    /**
      * The V230 return-scoped refund edge (the review's Major finding): a
      * completing RETURN passes its own id as the idempotency key's STABLE
      * scope. The state-derived key (payment + refunded-so-far + amount)
@@ -745,13 +790,13 @@ public class PaymentsService implements PaymentsSpi {
      * between a rollback and its retry — the retry then derives a NEW key
      * and the PSP refunds the same return twice. The return-scoped key is
      * stable across that window: one return, one remote refund, replayed
-     * safely on retry. The dispute twin and the full-refund path keep the
-     * state-derived key (null scope) — their own scopes are single-shot.
+     * safely on retry. The full-refund path keeps the state-derived key
+     * (null scope) — its own scope is single-shot.
      */
     @PreAuthorize("hasRole('ADMIN')")
     @Retry(name = "paymentProcessing")
     public RefundedPayment refundPayment(UUID paymentId, @Min(1) Long amountCents,
-                                         UUID idempotencyScope) {
+                                         StableRefundScope idempotencyScope) {
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found: " + paymentId));
         PaymentIntent intent = paymentIntentRepository.findById(payment.getPaymentIntentId())
@@ -849,6 +894,23 @@ public class PaymentsService implements PaymentsSpi {
     static String returnScopedRefundIdempotencyKey(UUID paymentId, UUID returnId, Long amountCents) {
         String amount = amountCents == null ? "full" : amountCents.toString();
         return "marketplace-refund-" + paymentId + "-return-" + returnId + "-" + amount;
+    }
+
+    /**
+     * Row 35 (agent findings 2026-10-26): the dispute refund's FROZEN
+     * operation key — one dispute, one remote refund, forever. The key
+     * carries NO amount and NO refunded-so-far state: the approved amount
+     * freezes at the first execution and every retry (the same decision
+     * or a re-approved one) replays the SAME remote refund through the
+     * PSP's idempotency contract — the executed refund is reused, never
+     * re-submitted under a new key. The rollback window that broke the
+     * state-derived key: refund X executes at the PSP inside a resolve
+     * transaction that rolls back, the charge.refunded webhook syncs the
+     * local books to X, and the retry's state-derived key would have
+     * carried the advanced cumulative leg and paid X a second time.
+     */
+    static String disputeScopedRefundIdempotencyKey(UUID paymentId, UUID disputeId) {
+        return "marketplace-refund-" + paymentId + "-dispute-" + disputeId;
     }
 
     /**
@@ -1067,13 +1129,13 @@ public class PaymentsService implements PaymentsSpi {
      * change (CodeRabbit #249 round 1).
      */
     private RemoteRefundOutcome refundThroughChannel(Payment payment, PaymentIntent intent, Long amountCents,
-                                                    UUID idempotencyScope) {
+                                                    StableRefundScope idempotencyScope) {
         PspChannel channel = pspChannel.getIfAvailable();
         if (channel == null || intent.getPspIntentId() == null) {
             return RemoteRefundOutcome.NO_CHANNEL;
         }
         String idempotencyKey = idempotencyScope != null
-                ? returnScopedRefundIdempotencyKey(payment.getId(), idempotencyScope, amountCents)
+                ? idempotencyScope.idempotencyKey(payment.getId(), amountCents)
                 : refundIdempotencyKey(
                         payment.getId(), payment.getRefundedAmountCents(), amountCents);
         PspChannel.RemoteRefund remote = channel.createRemoteRefund(

@@ -79,14 +79,15 @@ class DisputeServiceSecurityTest {
         UUID bookingId = UUID.randomUUID();
         UUID paymentId = UUID.randomUUID();
         Dispute dispute = Dispute.openBooking(bookingId, UUID.randomUUID(), "late delivery");
-        when(repository.findById(any(UUID.class))).thenReturn(Optional.of(dispute));
-        when(paymentRefundPort.refundForBooking(bookingId, null))
+        UUID disputeId = dispute.getId();
+        when(repository.findById(disputeId)).thenReturn(Optional.of(dispute));
+        when(paymentRefundPort.refundForBooking(bookingId, null, disputeId))
                 .thenReturn(new RefundOutcome(paymentId, 5000L));
 
         Dispute result = disputeService.resolve(dispute.getId(), DisputeResolution.REFUND_CONSUMER,
                 SecurityContextHolder.getContext().getAuthentication());
 
         assertThat(result.getRefundPaymentId()).isEqualTo(paymentId);
-        verify(paymentRefundPort).refundForBooking(bookingId, null);
+        verify(paymentRefundPort).refundForBooking(bookingId, null, disputeId);
     }
 }

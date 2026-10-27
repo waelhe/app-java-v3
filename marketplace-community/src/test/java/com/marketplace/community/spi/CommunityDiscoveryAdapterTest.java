@@ -88,8 +88,12 @@ class CommunityDiscoveryAdapterTest {
     private CommunityDiscoveryAdapter adapter() {
         // The honest fallback stub (the two-half contract's absent-row
         // half): an environment without the seed serves the built
-        // behavior — the existing rail tests ride the ON branch.
+        // behavior — the existing rail tests ride the ON branch. The
+        // events rail rides the same two-half contract (row 5's gate —
+        // the off-path has its own dedicated test below).
         lenient().when(featureGate.isEnabled("community.lost-found.enabled", true))
+                .thenReturn(true);
+        lenient().when(featureGate.isEnabled("community.events.enabled", true))
                 .thenReturn(true);
         return new CommunityDiscoveryAdapter(postRepository, eventRepository, featureGate, clock);
     }
@@ -241,6 +245,28 @@ class CommunityDiscoveryAdapterTest {
     }
 
     // ---------- findUpcomingEvents ----------
+
+    @Test
+    void findUpcomingEvents_offByTheOperationalLever_answersTheHonestEmptyPage_beforeAnyQuery() {
+        // Row 5 (agent findings 2026-10-26): the events rail consults the
+        // SAME capability lever the events board read and the write paths
+        // consult. The console's flip — a live OFF row overrides the built
+        // behavior: the rail answers the honest empty page and NO
+        // repository is touched (an empty answer is never a query). The
+        // OFF stub lands AFTER the factory's fallback stub — the last
+        // stubbing wins.
+        CommunityDiscoveryAdapter built = adapter();
+        when(featureGate.isEnabled("community.events.enabled", true))
+                .thenReturn(false);
+
+        PagedResponse<CommunityDiscoveryPort.DiscoveryEventCard> response =
+                built.findUpcomingEvents(locationId, PagedRequest.of(0, 20));
+
+        assertThat(response.isEmpty()).isTrue();
+        assertThat(response.pageNumber()).isEqualTo(0);
+        assertThat(response.last()).isTrue();
+        verifyNoInteractions(eventRepository);
+    }
 
     @Test
     @SuppressWarnings("unchecked")

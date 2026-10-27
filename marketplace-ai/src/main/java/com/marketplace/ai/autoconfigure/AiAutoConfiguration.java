@@ -2,6 +2,7 @@ package com.marketplace.ai.autoconfigure;
 
 import com.marketplace.ai.AiChatGateway;
 import com.marketplace.ai.AiKnowledgeGateway;
+import com.marketplace.ai.AiWithdrawalGuardedVectorStore;
 import com.marketplace.ai.AiWithdrawnSourceStore;
 import com.marketplace.ai.JevModelRouter;
 import com.marketplace.ai.AiSessionExpirationCleanup;
@@ -44,6 +45,8 @@ import org.springframework.ai.model.chat.client.autoconfigure.ChatClientAutoConf
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import org.springframework.transaction.PlatformTransactionManager;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -63,7 +66,15 @@ import java.util.stream.Collectors;
                 // first so @ConditionalOnBean(JdbcTemplate.class) below sees the
                 // bean it defines (the documented @ConditionalOnBean ordering
                 // contract — conditions only see beans registered so far).
-                "org.springframework.boot.jdbc.autoconfigure.JdbcTemplateAutoConfiguration"
+                // Row 32: the same contract now also requires the transaction
+                // manager BEFORE this configuration — the per-source advisory
+                // lock protocol is meaningless outside a transaction — so both
+                // transaction-manager-defining auto-configurations (the JPA one
+                // of a full app, the JDBC DataSource one of a JPA-less
+                // deployment) precede it too.
+                "org.springframework.boot.jdbc.autoconfigure.JdbcTemplateAutoConfiguration",
+                "org.springframework.boot.jdbc.autoconfigure.DataSourceTransactionManagerAutoConfiguration",
+                "org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration"
         })
 @EnableConfigurationProperties(TypeSafeModelRoutingProperties.class)
 @ConditionalOnClass(ChatClient.class)
@@ -80,7 +91,8 @@ public class AiAutoConfiguration {
             ObjectProvider<JevSelfRefineAdvisor> selfRefineAdvisors,
             ObjectProvider<JevGuardrailAdvisor> guardrailAdvisors,
             ObjectProvider<RetrievalAugmentationAdvisor> retrievalAugmentationAdvisors,
-            ObjectProvider<VectorStore> vectorStores) {
+            ObjectProvider<VectorStore> vectorStores,
+            ObjectProvider<AiWithdrawnSourceStore> withdrawnSources) {
 
         ChatClient.Builder configured = builder.clone().defaultAdvisors(
                 SessionMemoryAdvisor.builder(sessionService)
@@ -96,8 +108,13 @@ public class AiAutoConfiguration {
         }
         else {
             // Preserve Spring AI's stock retrieval path unless the TypeSafe RAG profile opts in.
+            // Row 32: the retrieval view is the withdrawal-guarded one — the
+            // stock advisor's similaritySearch passes through the exact-keyed
+            // withdrawn-source exclusion, so stale vectors can never disclose
+            // withdrawn content on the public answer path.
             vectorStores.ifAvailable(vectorStore -> configured.defaultAdvisors(
-                    QuestionAnswerAdvisor.builder(vectorStore)
+                    QuestionAnswerAdvisor.builder(
+                            publicRetrievalView(vectorStore, withdrawnSources.getIfAvailable()))
                             .searchRequest(SearchRequest.builder()
                                     .filterExpression("visibility == 'PUBLIC'")
                                     .build())
@@ -207,11 +224,16 @@ public class AiAutoConfiguration {
     @ConditionalOnProperty(prefix = "marketplace.ai.typesafe.rag", name = "enabled", havingValue = "true")
     @ConditionalOnMissingBean(RetrievalAugmentationAdvisor.class)
     RetrievalAugmentationAdvisor typeSafeRagAdvisor(
-            VectorStore vectorStore, TypeSafeClient typeSafeClient) {
+            VectorStore vectorStore,
+            TypeSafeClient typeSafeClient,
+            ObjectProvider<AiWithdrawnSourceStore> withdrawnSources) {
 
         return RetrievalAugmentationAdvisor.builder()
                 .documentRetriever(VectorStoreDocumentRetriever.builder()
-                        .vectorStore(vectorStore)
+                        // Row 32: the same withdrawal-guarded retrieval view as
+                        // the stock path — both public retrieval boundaries
+                        // exclude withdrawn sources through one mechanism.
+                        .vectorStore(publicRetrievalView(vectorStore, withdrawnSources.getIfAvailable()))
                         .filterExpression(new FilterExpressionBuilder()
                                 .eq("visibility", "PUBLIC")
                                 .build())
@@ -315,7 +337,9 @@ public class AiAutoConfiguration {
      * offers {@code similaritySearch} as its only read path, and pgvector
      * applies metadata filters after the approximate HNSW/IVFFlat index scan,
      * so a filtered {@code topK(1)} probe can return no row even though the
-     * withdrawn record exists.
+     * withdrawn record exists. Since row 32 the store also owns the per-source
+     * cluster-wide advisory lock and the batched withdrawal read the public
+     * retrieval boundary composes.
      */
     @Bean
     @ConditionalOnBean(JdbcTemplate.class)
@@ -324,10 +348,39 @@ public class AiAutoConfiguration {
         return new AiWithdrawnSourceStore(jdbcTemplate);
     }
 
+    /**
+     * Row 32 (agent findings 2026-10-25, CWE-367): the gateway now REQUIRES a
+     * transaction manager — its per-source publication/withdrawal protocol
+     * takes the transaction-scoped advisory lock first and holds it across
+     * the withdrawal record, the vector writes, and their shared commit.
+     * Without a transaction there is no protocol (the lock would be released
+     * at statement end), so the bean backs off rather than degrade silently
+     * — the same @ConditionalOnBean ordering contract as the JdbcTemplate
+     * condition above (the transaction-manager-defining auto-configurations
+     * are listed in this class's afterName).
+     */
     @Bean
-    @ConditionalOnBean({VectorStore.class, JdbcTemplate.class})
+    @ConditionalOnBean({VectorStore.class, JdbcTemplate.class, PlatformTransactionManager.class})
     @ConditionalOnMissingBean
-    AiKnowledgeGateway aiKnowledgeGateway(VectorStore vectorStore, AiWithdrawnSourceStore withdrawnSources) {
-        return new AiKnowledgeGateway(vectorStore, withdrawnSources);
+    AiKnowledgeGateway aiKnowledgeGateway(
+            VectorStore vectorStore,
+            AiWithdrawnSourceStore withdrawnSources,
+            PlatformTransactionManager transactionManager) {
+        return new AiKnowledgeGateway(vectorStore, withdrawnSources, transactionManager);
+    }
+
+    /**
+     * Row 32 (agent findings 2026-10-25): the public retrieval view over the
+     * raw vector store — withdrawal-guarded whenever the exact-keyed
+     * withdrawal records exist, byte-identical to the raw store otherwise
+     * (a context without the relational store has no withdrawal records to
+     * exclude). Not a bean on purpose: the raw store stays the single
+     * injectable {@link VectorStore} for writers; only the two public
+     * retrieval sites compose this view.
+     */
+    private static VectorStore publicRetrievalView(VectorStore vectorStore, AiWithdrawnSourceStore withdrawnSources) {
+        return withdrawnSources != null
+                ? new AiWithdrawalGuardedVectorStore(vectorStore, withdrawnSources)
+                : vectorStore;
     }
 }

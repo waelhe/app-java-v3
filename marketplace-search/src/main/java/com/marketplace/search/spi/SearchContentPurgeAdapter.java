@@ -32,6 +32,20 @@ import java.util.UUID;
  * reserves the bare {@code ?} for parameter placeholders (the driver's
  * documented escaping rule).
  *
+ * <p><b>The optimistic-lock advance (agent findings 2026-10-26, row 12 /
+ * CWE-362):</b> the live row's UPDATE also advances {@code version} — the
+ * {@code @Version} column every audited entity carries. The pre-fix purge
+ * left the version untouched, so an alert scan that had loaded the
+ * saved-search BEFORE the purge (a listing activation triggering the scan
+ * over the subject's criteria) could still flush its stale managed entity
+ * afterwards: the criteria the purge had just erased were restored to the
+ * live row AND recorded as a fresh audit revision — the erasure contract
+ * silently violated. With the version advanced atomically in the purge's
+ * own statement, the stale scan's flush matches zero rows and fails with
+ * the framework's optimistic-lock exception; the scan retries from fresh
+ * data through the event publication registry, and the already-scrubbed
+ * audit mirrors keep the erased query out of every later revision.
+ *
  * <p><b>The matches ledger is out of scope by design:</b> it carries
  * identifiers and timestamps only — no authored text, nothing to purge
  * (the accounting-row analogy in the b-3/b-5 discrimination).
@@ -51,7 +65,7 @@ public class SearchContentPurgeAdapter implements AuthoredContentPurgePort {
     @Transactional
     public int purgeAuthoredTexts(UUID userId) {
         int savedSearches = jdbcTemplate.update(
-                "UPDATE saved_searches SET criteria = criteria - 'query' "
+                "UPDATE saved_searches SET criteria = criteria - 'query', version = version + 1 "
                         + "WHERE user_id = ? AND jsonb_exists(criteria, 'query')",
                 userId);
         int auditRows = jdbcTemplate.update(

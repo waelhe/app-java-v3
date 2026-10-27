@@ -51,7 +51,8 @@ class OrderRefundAdapterTest {
         refunded.markPartiallyRefunded(1500L);
         when(paymentIntentRepository.findByOrderId(orderId)).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intent.getId())).thenReturn(Optional.of(payment));
-        when(paymentsService.refundPayment(payment.getId(), 1500L, returnId))
+        when(paymentsService.refundPayment(payment.getId(), 1500L,
+                PaymentsService.StableRefundScope.forReturn(returnId)))
                 .thenReturn(new PaymentsService.RefundedPayment(refunded, intent));
 
         RefundOutcome outcome = adapter.refundForOrder(orderId, returnId, 1500L);
@@ -62,7 +63,8 @@ class OrderRefundAdapterTest {
         // the return's id rides as the PSP idempotency scope — one return,
         // one remote refund, replayed safely on a retried completion; the
         // delegation itself rides the payment the lookup found
-        verify(paymentsService).refundPayment(payment.getId(), 1500L, returnId);
+        verify(paymentsService).refundPayment(payment.getId(), 1500L,
+                PaymentsService.StableRefundScope.forReturn(returnId));
     }
 
     @Test

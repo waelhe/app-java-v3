@@ -71,7 +71,14 @@ public class ProductQaService {
     @Observed(name = "catalog.product.question.ask")
     @Transactional
     public ProductQuestionWithAnswer ask(UUID productId, String body, Authentication authentication) {
-        productRepository.findById(productId)
+        // Row 20 (agent findings 2026-10-26): the ACTIVE-only lookup — the
+        // SAME gate the storefront's product detail reads. The javadoc's
+        // own "live set" claim is now the code's actual behavior: a
+        // suspended or archived product answers the honest 404 BEFORE any
+        // write, exactly as its detail does (the gate rule: the hidden/
+        // suspended disappears from the public surfaces — a dead product
+        // gains no new questions either).
+        storefrontRepository.findActiveProduct(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product", productId));
         UUID askerId = currentUserProvider.getCurrentUserId(authentication);
         ProductQuestion question = questionRepository.save(ProductQuestion.ask(productId, askerId, body));
@@ -123,13 +130,15 @@ public class ProductQaService {
      */
     @Transactional(readOnly = true)
     public Page<ProductQuestionWithAnswer> getQuestions(UUID productId, Pageable pageable) {
-        // The product gate FIRST (the CodeRabbit adoption): an unknown or
-        // soft-deleted product answers the honest 404 BEFORE any feed
-        // query — a dead product's questions are absent exactly as the
-        // product itself is (the community feed's posture, now actually
-        // delivered: the question rows may still be live, but the gate
-        // hides them with their product).
-        productRepository.findById(productId)
+        // The product gate FIRST (the CodeRabbit adoption) — now through
+        // the ACTIVE-only lookup (agent findings 2026-10-26, row 20): an
+        // unknown, soft-deleted, suspended OR archived product answers the
+        // honest 404 BEFORE any feed query — the SAME unavailable response
+        // the hidden product detail serves (the gate rule: the hidden/
+        // suspended disappears from the public surfaces). The pre-fix
+        // existence-only check kept a suspended product's questions and
+        // official answers readable through this public anonymous feed.
+        storefrontRepository.findActiveProduct(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product", productId));
         Page<ProductQuestion> questions =
                 questionRepository.findByProductIdOrderByCreatedAtDescIdDesc(productId, pageable);

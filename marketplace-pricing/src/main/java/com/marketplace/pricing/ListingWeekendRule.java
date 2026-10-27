@@ -87,6 +87,22 @@ public class ListingWeekendRule extends BaseEntity {
         if (multiplier.signum() <= 0 || multiplier.compareTo(MAX_MULTIPLIER) > 0) {
             throw new IllegalArgumentException("Weekend multiplier must be > 0 and <= 10");
         }
+        // CWE-400 (agent findings 2026-10-26, row 39): the representation
+        // bound — BEFORE the rescale. A compact payload like 1e-100000000
+        // passes both magnitude comparisons (compareTo never materializes
+        // the power of ten) while carrying a scale of 10^8, and
+        // setScale(3, UNNECESSARY) would construct that enormous divisor
+        // before rejecting the value — substantial shared CPU and heap from
+        // a short request. The bound is deliberately generous over the
+        // column's NUMERIC(6,3): trailing zeros stay legal well past the
+        // three significant decimals (1.2340 … 1.2340000000000000), and
+        // anything beyond 16 places is an amplification attempt, never a
+        // pricing multiplier.
+        if (multiplier.scale() > MAX_MULTIPLIER_SCALE) {
+            throw new IllegalArgumentException(
+                    "Weekend multiplier carries more than " + MAX_MULTIPLIER_SCALE
+                            + " decimal places (column NUMERIC(6,3))");
+        }
         try {
             // Scale honesty (CodeRabbit round 1): the column is NUMERIC(6,3) — a
             // value like 1.2349 would be SILENTLY rounded to 1.235 by the
@@ -101,6 +117,13 @@ public class ListingWeekendRule extends BaseEntity {
     }
 
     private static final BigDecimal MAX_MULTIPLIER = new BigDecimal("10");
+
+    /**
+     * Row 39's representation ceiling — the column's own vocabulary is
+     * NUMERIC(6,3); 16 decimal places admit every honest trailing-zero
+     * form and cut the exponent-amplification axis.
+     */
+    private static final int MAX_MULTIPLIER_SCALE = 16;
 
     @Override
     public UUID getId() {

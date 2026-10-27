@@ -12,7 +12,7 @@ import jakarta.validation.constraints.Positive;
  *
  * <p>B-06 (compliance plan 0.7): the optional {@code refundAmountCents}
  * ACTIVATES the partial refund on the existing payments path
- * ({@code PaymentRefundPort.refundForBooking(bookingId, amountCents)} —
+ * ({@code PaymentRefundPort.refundForBooking(bookingId, amountCents, disputeId)} —
  * the port has carried the capability since L24; the dispute decision
  * simply never used it). {@code null} keeps the full-refund decision
  * shape; a value is honored only on {@code REFUND_CONSUMER} (a 400

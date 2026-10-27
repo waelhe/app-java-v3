@@ -27,6 +27,12 @@ import static org.mockito.Mockito.when;
  * row alone exactly as its javadoc promised. The against-the-real-schema
  * round-trip (criterion 9) lives in the integration test; this pin
  * guards the SQL's own predicates.
+ *
+ * <p>Row 18 (agent findings 2026-10-26): the polls' authored text joins
+ * the purge — the question and the author label on the poll's base and
+ * mirror, and every option label THROUGH the subject's polls — keyed by
+ * the stable author id (V286's column + recovery), never by the label
+ * string itself.</p>
  */
 @ExtendWith(MockitoExtension.class)
 class CommunityContentPurgeAdapterTest {
@@ -43,12 +49,13 @@ class CommunityContentPurgeAdapterTest {
 
         int purged = adapter.purgeAuthoredTexts(userId);
 
-        // Eight statements since L50 (posts + posts_aud + comments +
-        // comments_aud + events + events_aud + market items + market
-        // items_aud), each counting its own purged rows.
-        assertThat(purged).isEqualTo(16);
+        // Twelve statements (posts + posts_aud + comments + comments_aud +
+        // events + events_aud + market items + market items_aud + polls +
+        // polls_aud + poll options + poll options_aud), each counting its
+        // own purged rows.
+        assertThat(purged).isEqualTo(24);
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
-        verify(jdbcTemplate, times(8)).update(sql.capture(), any(Object[].class));
+        verify(jdbcTemplate, times(12)).update(sql.capture(), any(Object[].class));
         assertThat(sql.getAllValues())
                 .anySatisfy(s -> assertThat(s)
                         .startsWith("UPDATE neighborhood_posts SET title = ?, body = ?"))
@@ -65,7 +72,7 @@ class CommunityContentPurgeAdapterTest {
         // The provenance scope: every statement carries the author filter,
         // and the membership table appears in NONE of them.
         assertThat(sql.getAllValues())
-                .allSatisfy(s -> assertThat(s).contains("WHERE author_id = ?"));
+                .allSatisfy(s -> assertThat(s).contains("author_id = ?"));
         assertThat(String.join(";", sql.getAllValues()))
                 .doesNotContain("neighborhood_memberships");
     }
@@ -85,11 +92,10 @@ class CommunityContentPurgeAdapterTest {
 
         int purged = new CommunityContentPurgeAdapter(jdbcTemplate).purgeAuthoredTexts(userId);
 
-        // The grand total carries every statement's count (eight statements
-        // at two rows each since L50 — the two event statements join the
-        // four post/comment ones, and the two market-item statements join
-        // those).
-        assertThat(purged).isEqualTo(16);
+        // The grand total carries every statement's count (twelve statements
+        // at two rows each — the two event statements join the post/comment
+        // and market-item ones, and the four poll statements join those).
+        assertThat(purged).isEqualTo(24);
         // The four authored columns ride both statements — base and mirror.
         org.mockito.Mockito.verify(jdbcTemplate).update(
                 org.mockito.ArgumentMatchers.argThat((String sql) ->
@@ -103,6 +109,53 @@ class CommunityContentPurgeAdapterTest {
         org.mockito.Mockito.verify(jdbcTemplate).update(
                 org.mockito.ArgumentMatchers.argThat((String sql) ->
                         sql.contains("UPDATE neighborhood_events_aud SET")),
+                any(Object[].class));
+    }
+
+    // ---------- Row 18: the polls' authored text joins the purge ----------
+
+    @Test
+    void purgeAuthoredTexts_updatesThePollsQuestionAndLabel_baseAndMirror() {
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(2);
+
+        new CommunityContentPurgeAdapter(jdbcTemplate).purgeAuthoredTexts(userId);
+
+        // The poll's two authored text columns ride both statements — base
+        // and mirror — keyed by the STABLE author id (V286), never by the
+        // display label.
+        org.mockito.Mockito.verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.contains("UPDATE neighborhood_polls SET question = ?, author_label = ?")
+                                && sql.contains("WHERE author_id = ?")
+                                && sql.contains("question <> ?")
+                                && sql.contains("author_label <> ?")),
+                any(Object[].class));
+        org.mockito.Mockito.verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.startsWith("UPDATE neighborhood_polls_aud SET question = ?, author_label = ?")),
+                any(Object[].class));
+    }
+
+    @Test
+    void purgeAuthoredTexts_purgesEveryOptionLabelThroughTheAuthorsPolls_baseAndMirror() {
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(3);
+
+        int purged = new CommunityContentPurgeAdapter(jdbcTemplate).purgeAuthoredTexts(userId);
+
+        // The options purge THROUGH their poll (the authored-unit
+        // discipline): the join carries the poll's stable author, so an
+        // option's label dies exactly when its poll's author is the
+        // subject — base and mirror both, and the summed count carries
+        // all twelve statements (3 rows each).
+        assertThat(purged).isEqualTo(36);
+        org.mockito.Mockito.verify(jdbcTemplate, times(2)).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        (sql.startsWith("UPDATE neighborhood_poll_options o SET label = ?")
+                                || sql.startsWith("UPDATE neighborhood_poll_options_aud o SET label = ?"))
+                                && sql.contains("FROM neighborhood_polls p")
+                                && sql.contains("p.id = o.poll_id")
+                                && sql.contains("p.author_id = ?")
+                                && sql.contains("o.label <> ?")),
                 any(Object[].class));
     }
 }
