@@ -31,7 +31,7 @@
 | D5 API surface | deterministic CI gates | OpenAPI diff gate + GraphQL contract publication (binding for B4) | **enforced** |
 | D6 independent review | CI workflow | CodeRabbit Gate with `drafts:true` (E-13's fix) | enforced |
 | D7 cursor contracts | deterministic test | `KeysetCursorGate` (binding for B4-cursor) | **enforced** |
-| D8 guard-message fidelity | **documented only** | no mechanism — **GAP G3 (E-21)** | documented-not-enforced |
+| D8 guard-message fidelity | **enacted once by governed repair** | root-signatures guard reads the divergence registry (`0edf0f6`, PR #723; E-21 closed); documented for the remaining guards | false promise repaired; rule stays documented |
 
 ## §2 · Existing guard inventory reused (not duplicated) by this system
 
@@ -72,8 +72,8 @@ Sampled successful classes: routine module feature waves (PROJECT_MAP L48–L52,
 **Open gaps (registered, not concealed):**
 - **G1** — campaign reports / PR bodies with load-bearing numbers have no deterministic guard; the defect-knowledge system's own structural enumerations (rule counts, case tags, pattern range, phase/section references) are now guarded by `DefectKnowledgeDocsGuardTest`; other new docs remain procedural (A6).
 - **G2** — no deterministic placeholder-vs-deployment-target resolution guard (E-02 class prevention is procedural).
-- **G3** — E-21: the failing guard's message promises a decisions mechanism the script does not implement. Fix requires code (registry or message correction) — **deliberately left to a governed code change, not silently patched by this docs-only mission**.
+- **G3** — CLOSED at `0edf0f6` on the integration branch (PR #723, owner-ordered governed code change, 2026-10-27): the root-signatures guard now reads the registered-divergence registry its failure message promised — an APPROVED row naming the failing surface is honored and reported, unapproved rows never excuse anything, and registry-integrity violations fail closed. The false promise itself (E-21) is repaired; the other guards still expose no register, and their honest handling remains fix-not-bypass.
 - **G4** — PR #723's 20 CodeRabbit documentation findings and the main-reconciliation (Maven 3.10 + OpenAPI JSON gate) remain open on the integration branch, pending owner decision — recorded in the round-13/14 reports on the PR.
 - **G5** — gate-health monitoring (E-13's generalization: watch the watchers) is a stated rule (B6) without a dedicated implementation.
 
-**Highest-value next action supported by the findings:** close G3 with a small governed code change (implement the exception registry the guard's message promises, or correct the message) — it is the only gap where the enforcement layer itself carries a known false promise; everything else in the map either works or is honestly procedural.
+**Highest-value next action supported by the findings:** G3 was closed exactly this way — the exception registry the guard's message promised is implemented at `0edf0f6` (PR #723), repairing the only gap where the enforcement layer itself carried a known false promise. Next by value: G5 (gate-health monitoring — watch the watchers) and extending G1's numeric guards to campaign reports; everything else in the map either works or is honestly procedural.

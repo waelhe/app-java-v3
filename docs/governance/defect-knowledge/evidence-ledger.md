@@ -266,7 +266,7 @@
 - **Original assumption:** the message describes a real escape path.
 - **Violated invariant:** a guard's failure message must describe an implementable remedy (or the guard must implement it).
 - **Root cause:** message/behavior drift inside the enforcement layer itself.
-- **Status:** **[OPEN]** — recorded here and in enforcement-map §5 as a gap: either implement the decisions registry or fix the message. Not silently patched by this mission (docs-only mandate).
+- **Status:** closed at `0edf0f6` on the integration branch (PR #723, 2026-10-27, owner-ordered governed code change): the Saleor root-signatures guard now reads the registered-divergence CSV — an APPROVED row naming the failing surface is honored and reported in the step summary, unapproved rows never excuse anything, and an APPROVED row with a PENDING decision record fails the gate (registry integrity, fail-closed). The failure messages now describe the real remedy. Other guards keep no general register; rule D8 stays documented for them.
 - **Prevention:** rule D8 (guard-message fidelity).
 
 ## E-22 · High-churn sentinel: SYSTEM.md ×232 / PROJECT_MAP.md ×187 — churn measured **[VERIFIED]** · causal reading **[HYPOTHESIS]**
