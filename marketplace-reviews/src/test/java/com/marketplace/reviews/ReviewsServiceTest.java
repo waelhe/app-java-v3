@@ -817,7 +817,10 @@ class ReviewsServiceTest {
      * the review's protected contents into its response — a non-PUBLISHED
      * review (hidden by moderation or pending) is restricted to its author
      * and administrators, so the provider's write-and-read surface refuses
-     * it BEFORE any mutation (the state machine's honest 409).
+     * it BEFORE any mutation. The part-1 review note closed the leak the
+     * 409's own message carried: the refusal is the read path's honest 404,
+     * indistinguishable from an unknown id (the twin tests above pin the
+     * no-leak shape for both states).
      */
     @Test
     void reply_refusesANonPublishedReviewBeforeAnyMutation() {
@@ -828,7 +831,7 @@ class ReviewsServiceTest {
         when(reviewRepository.findById(reviewId)).thenReturn(Optional.of(review));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(providerUserId);
 
-        assertThrows(com.marketplace.shared.api.ConflictException.class,
+        assertThrows(ResourceNotFoundException.class,
                 () -> service.reply(reviewId, "Thanks", authentication));
 
         assertNull(review.getReply());
