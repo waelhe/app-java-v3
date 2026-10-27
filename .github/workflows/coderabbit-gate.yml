@@ -15,10 +15,16 @@ name: CodeRabbit Gate
 #   gate RUN itself (Actions → Re-run). The re-run replays the original
 #   pull_request_target event context (original GITHUB_SHA/GITHUB_REF),
 #   while the script reads the PR's CURRENT head and its reviews at
-#   execution time, and issues a fresh check-run ON THE PR HEAD (measured
-#   2026-10-25 on #728: re-run attempt 2 created check-run 121135430521
-#   on head 6a35d581e2). If the head moved, synchronize fires a fresh
-#   gate run automatically. workflow_dispatch stays available for ad-hoc
+#   execution time for the VERDICT — but the emitted check-run binds to
+#   the run's ORIGINAL event head, not the moved head (measured 2026-10-27
+#   on #742: re-run attempt 2 at 08:13Z read the moved head 09dba78a and
+#   its fresh APPROVED review, yet check-run landed on a90e8e68 — the
+#   original event head; the #728 measurement held only because the head
+#   was unchanged between the event and its re-run). A moved head closes
+#   ONLY through a fresh synchronize: any new push fires a new gate run
+#   whose head_sha IS the current head. workflow_dispatch stays available
+#   for ad-hoc evaluation from main, but its verdict lands on main's head,
+#   not the PR head (measured on #727/#726). workflow_dispatch stays available for ad-hoc
 #   evaluation from main, but its verdict lands on main's head, not the
 #   PR head (measured on #727/#726).
 #
