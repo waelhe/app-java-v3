@@ -52,6 +52,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code [HYPOTHESIS-Cause]} pseudo-tags, and six ambiguous
  * {@code Phase X.Y} references — each of those exact shapes now fails this
  * build.
+ *
+ * <p>Round-19 hardening (second CodeRabbit review, 2026-10-27): the pattern
+ * enumeration now proves <b>contiguity</b> — the extracted numbers must be the
+ * full sequence {@code 1..N}, not merely N of anything (a catalog of
+ * {@code P1..P7, P9, P10} would have passed the count-only check with P8
+ * missing); and the §-reference matcher now captures markdown-linked forms
+ * ({@code "[`enforcement-map.md`](enforcement-map.md) §N"}), with a deliberate
+ * negative self-test proving a bogus linked reference (§6 against a §1..§5
+ * map) is extracted and would fail this guard — the check cannot pass vacuously.
  */
 class DefectKnowledgeDocsGuardTest {
 
@@ -118,6 +127,30 @@ class DefectKnowledgeDocsGuardTest {
             patterns.add(Integer.parseInt(m.group(1)));
         }
         return patterns;
+    }
+
+    /**
+     * §-references to the enforcement map in every written form — plain prose
+     * ({@code "enforcement-map.md §3"}), parenthesized prose
+     * ({@code "(enforcement-map §3)"}), and markdown-linked
+     * ({@code "[`enforcement-map.md`](enforcement-map.md) §3"}).
+     *
+     * <p>Round-19 review: the original pattern required the section sign
+     * immediately after the file name, so the linked form (backticks in the
+     * link text, a closing paren before the §) was never captured and a linked
+     * reference to a non-existent section could hide behind other plain
+     * references keeping {@code checked} positive. The tolerant gap of up to
+     * eight non-§ characters absorbs the link syntax without matching
+     * unrelated prose — a § further away than that is not a file reference.
+     */
+    private static List<Integer> enforcementMapSectionReferences(String doc) {
+        List<Integer> refs = new ArrayList<>();
+        Matcher ref = Pattern.compile("enforcement-map(?:\\.md)?[^\\u00a7\\n]{0,8}\\u00a7(\\d+)")
+                .matcher(doc);
+        while (ref.find()) {
+            refs.add(Integer.parseInt(ref.group(1)));
+        }
+        return refs;
     }
 
     // ---------- 1. rulebook enumeration is complete and sequential ----------
@@ -223,11 +256,21 @@ class DefectKnowledgeDocsGuardTest {
                 .isEqualTo(cases.size());
     }
 
-    // ---------- 6. pattern enumeration matches README and pointer ranges ----------
+    // ---------- 6. pattern enumeration is the contiguous sequence 1..N; ranges match ----------
 
     @Test
     void patternEnumerationMatchesReferences() throws IOException {
-        int count = patternEnumeration(dkRead("pattern-catalog.md")).size();
+        Set<Integer> patterns = patternEnumeration(dkRead("pattern-catalog.md"));
+        // Round-19 review: count alone would pass P1..P7, P9, P10 — nine headings,
+        // "P1–P9" range endpoint 9 — with P8 silently missing. The numbers must BE
+        // the full sequence 1..N, so a hole anywhere fails the build.
+        List<Integer> expected = new ArrayList<>();
+        for (int i = 1; i <= patterns.size(); i++) {
+            expected.add(i);
+        }
+        assertThat(patterns).as("pattern headings are the contiguous sequence P1..P%d",
+                patterns.size()).containsExactlyElementsOf(expected);
+        int count = patterns.size();
         for (String docName : new String[] {DK_DIR + "/README.md", "docs/agent-protocol.md"}) {
             Matcher range = Pattern.compile("P1[\\u2013-]P(\\d+)").matcher(read(docName));
             assertThat(range.find()).as("%s states the pattern range", docName).isTrue();
@@ -293,19 +336,15 @@ class DefectKnowledgeDocsGuardTest {
         }
         assertThat(sections).as("enforcement-map has sections §1..§5").containsExactly(1, 2, 3, 4, 5);
 
-        Pattern reference = Pattern.compile("enforcement-map(?:\\.md)? \\u00a7(\\d+)");
         StringBuilder combined = new StringBuilder();
         for (String doc : allDkDocs()) {
             combined.append(doc).append('\n');
         }
-        Matcher ref = reference.matcher(combined);
-        int checked = 0;
-        while (ref.find()) {
-            assertThat(sections).as("referenced section §%s exists", ref.group(1))
-                    .contains(Integer.parseInt(ref.group(1)));
-            checked++;
+        List<Integer> refs = enforcementMapSectionReferences(combined.toString());
+        assertThat(refs).as("the docs actually reference enforcement-map sections").isNotEmpty();
+        for (Integer section : refs) {
+            assertThat(sections).as("referenced section §%s exists", section).contains(section);
         }
-        assertThat(checked).as("the docs actually reference enforcement-map sections").isPositive();
     }
 
     // ---------- 9. review-protocol pass references resolve ----------
@@ -363,5 +402,45 @@ class DefectKnowledgeDocsGuardTest {
             assertThat(repoRoot().resolve(DK_DIR + "/" + name))
                     .as("artifact %s exists", name).exists();
         }
+    }
+
+    // ---------- 11. the §-reference matcher itself is proven non-vacuous ----------
+
+    /**
+     * Round-19 review: a matcher that captures nothing would let every section
+     * reference pass vacuously. This self-test feeds the extractor deliberately
+     * hostile and deliberately real inputs and asserts what it extracts — so a
+     * future edit that narrows the pattern fails here, not silently in CI.
+     */
+    @Test
+    void sectionReferenceMatcherCatchesLinkedAndBogusReferences() throws IOException {
+        Set<Integer> sections = new TreeSet<>();
+        Matcher m = Pattern.compile("^## \\u00a7(\\d+) \\u00b7", Pattern.MULTILINE)
+                .matcher(dkRead("enforcement-map.md"));
+        while (m.find()) {
+            sections.add(Integer.parseInt(m.group(1)));
+        }
+        assertThat(sections).as("the map defines §1..§5 — §6 must not exist")
+                .containsExactly(1, 2, 3, 4, 5);
+
+        // (a) the markdown-linked form as actually written in README.md — backticks
+        // in the link text, closing paren before the § — must be captured.
+        List<Integer> extracted = enforcementMapSectionReferences(
+                "stated explicitly in [`enforcement-map.md`](enforcement-map.md) §5 — nothing hidden");
+        assertThat(extracted).as("the real README linked form is captured").containsExactly(5);
+        assertThat(sections.containsAll(extracted)).as("the real §5 resolves").isTrue();
+
+        // (b) the reviewer's synthetic non-backticked link form must be captured too.
+        extracted = enforcementMapSectionReferences(
+                "see [enforcement-map.md](enforcement-map.md) §6 for the open gaps");
+        assertThat(extracted).as("the synthetic linked form is captured").containsExactly(6);
+        assertThat(sections.containsAll(extracted))
+                .as("the deliberately bogus §6 does not resolve — a document carrying it would fail this guard")
+                .isFalse();
+
+        // (c) the plain form still captured.
+        extracted = enforcementMapSectionReferences("recorded in enforcement-map.md §6 as a gap");
+        assertThat(extracted).as("the plain bogus form is likewise captured").containsExactly(6);
+        assertThat(sections.containsAll(extracted)).isFalse();
     }
 }
