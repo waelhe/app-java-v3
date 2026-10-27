@@ -18,6 +18,7 @@ import com.marketplace.orders.OrdersService;
 import com.marketplace.reviews.ReviewModerationStatus;
 import com.marketplace.reviews.ReviewRepository;
 import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.ResourceNotFoundException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
