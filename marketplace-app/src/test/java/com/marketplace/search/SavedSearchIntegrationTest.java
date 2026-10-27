@@ -191,6 +191,25 @@ class SavedSearchIntegrationTest {
                 .andExpect(status().isOk());
     }
 
+    private void pauseListing(UUID listingId) throws Exception {
+        // The domain state machine (ListingStatus.TRANSITIONS) has no
+        // ACTIVE→ACTIVE edge: a second activation of an already-ACTIVE
+        // listing answers 409 by contract (the machine measured on this
+        // tree). The honest replay path for the coalescing scenario is
+        // pause→activate — PAUSED→ACTIVE is a legal edge — which
+        // publishes the second ListingActivatedEvent (the amplified
+        // trigger under test) without violating the machine. pause
+        // itself publishes only the cache invalidation, never the
+        // activation event, so the scan counts stay attributable to the
+        // activations alone.
+        when(currentUserProvider.getCurrentUserId(any())).thenReturn(providerUserId);
+        mockMvc.perform(post("/api/v1/listings/{id}/pause", listingId)
+                        .with(jwt().jwt(j -> j.subject("l35-provider"))
+                                .authorities(new org.springframework.security.core.authority
+                                        .SimpleGrantedAuthority("ROLE_PROVIDER"))))
+                .andExpect(status().isOk());
+    }
+
     /**
      * Deterministic async wait: the activation's publication row is written
      * atomically with the listing's ACTIVATE commit (so it EXISTS once
@@ -397,8 +416,12 @@ class SavedSearchIntegrationTest {
                 java.sql.Timestamp.class, listingId);
         assertThat(firstScan).as("the running scan stamped its claim").isNotNull();
 
-        // the replay — pause is irrelevant to the gate; the activation
-        // event alone is the amplified trigger, and it is coalesced
+        // the replay — the machine has no ACTIVE→ACTIVE edge (a second
+        // activation of an ACTIVE listing answers 409 by the state
+        // contract), so the second ListingActivatedEvent rides the
+        // pause→activate path; the activation event alone is the
+        // amplified trigger, and it is coalesced
+        pauseListing(listingId);
         activateListing(listingId);
         awaitScanCompleted(listingId);
 
