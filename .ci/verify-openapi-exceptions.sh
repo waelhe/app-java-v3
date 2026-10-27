@@ -14,11 +14,17 @@
 # one and every add failed closed.
 #
 # Classification (grounded in the official model; measured on openapi-diff
-# 2.1.7 — org.openapitools.openapidiff.core.model.ChangedParameters):
+# 2.1.7 — org.openapitools.openapidiff.core.model.ChangedParameters and
+# .ChangedSecurityRequirements):
 #   ChangedParameters.isCoreChanged():
 #     missing (removed params)            -> INCOMPATIBLE (REQUEST_PARAMS_DECREASED)
 #     increased with required == true     -> INCOMPATIBLE (REQUEST_PARAMS_REQUIRED_INCREASED)
 #     increased with required != true     -> COMPATIBLE  (passes, no exception needed)
+#   ChangedSecurityRequirements.isCoreChanged():
+#     missing (removed security requirement) -> INCOMPATIBLE (SECURITY_REQUIREMENTS_DECREASED,
+#       enabled by default — the gate runs the pinned image with no config
+#       override, so the default verdict is the verdict that applies)
+#     increased                               -> COMPATIBLE  (passes, no exception needed)
 # Extracted records and their allowlist representation:
 #   missingEndpoints[]                                        -> (METHOD, path, deleted)
 #   apiResponses.missing keys (status removed)                -> (METHOD, path, code)
@@ -27,11 +33,18 @@
 #      response node — measured: a $ref'd schema type change flags
 #      apiResponses.changed["200"].incompatible — so they are representable)
 #   parameters.increased[] with required == true              -> (METHOD, path, parameter-add)
+#   securityRequirements.missing[] scheme keys                -> (METHOD, path, security-remove)
+#     (the removed requirement's scheme map rendered per key — measured on
+#      the real 2.1.7 report: [{"bearerAuth": []}] — one record per removed
+#      scheme; the class key covers the operation, the scheme is the detail)
 # Fail-closed classes (no allowlist representation, by design — the console
 # era contract kept literally):
 #   parameters.missing[] (REQUEST_PARAMS_DECREASED)           -> [UNREPRESENTABLE]
 #   parameters.changed[].incompatible (required/style flip)   -> [UNREPRESENTABLE]
 #   requestBody.incompatible (content/schema/required)        -> [UNREPRESENTABLE]
+#   securityRequirements.changed[] with incompatible == true (a surviving
+#     requirement's scope increase, SECURITY_REQUIREMENT_SCHEMES_INCREASED)
+#                                                            -> [UNREPRESENTABLE]
 #   changedOperation.incompatible with no classified record   -> [UNREPRESENTABLE]
 #   report.incompatible with zero extracted records           -> [UNREPRESENTABLE]
 # The umbrellas keep the gate fail-closed under model drift: if a future tool
@@ -58,6 +71,11 @@
 #     kind: parameter-add              # required-parameter-add entry
 #     required: true                   # must be exactly true
 #     parameters: "name, name"         # optional documentation
+#     ticket: ...
+#     reason: ...
+#     expiry: YYYY-MM-DD
+#   - path: METHOD /path
+#     kind: security-remove            # security-requirement-remove entry
 #     ticket: ...
 #     reason: ...
 #     expiry: YYYY-MM-DD
@@ -92,6 +110,11 @@ jq -r '
     (($op.parameters.increased // [])[]
       | select(.required == true)
       | emit("param-add"; $op.httpMethod; $op.pathUrl; .name)),
+    (($op.securityRequirements.missing // [])[] | to_entries[]
+      | emit("security-remove"; $op.httpMethod; $op.pathUrl; .key)),
+    (($op.securityRequirements.changed // [])[]
+      | select(.incompatible == true)
+      | emit("security-change"; $op.httpMethod; $op.pathUrl; "security requirement scope change")),
     (($op.parameters.missing // [])[]
       | emit("param-remove"; $op.httpMethod; $op.pathUrl; .name)),
     (($op.parameters.changed // [])[]
@@ -104,7 +127,7 @@ jq -r '
 
 ### 2. Documented exceptions -> (METHOD path KEY) + validity.
 # KEY is the status code (or "deleted") for response-class entries and
-# "parameter-add" for required-parameter-add entries.
+# "parameter-add" / "security-remove" for the kind-class entries.
 awk '
   function err(msg) { printf "  [ERROR] %s\n", msg > "/dev/stderr"; bad = 1 }
   function valid_date(s,  y, m, d, leap, md) {
@@ -149,8 +172,12 @@ awk '
       if (status != "") { err(sprintf("%s %s has both \047status:\047 and \047kind:\047 - ambiguous", method, path)); return }
       if (required != "true") { err(sprintf("%s %s kind parameter-add requires \047required: true\047", method, path)); return }
       print method "\t" path "\t" "parameter-add" "\t" expiry
+    } else if (kind == "security-remove") {
+      if (status != "") { err(sprintf("%s %s has both \047status:\047 and \047kind:\047 - ambiguous", method, path)); return }
+      if (required != "" || parameters != "") { err(sprintf("%s %s uses parameter keys on a security-remove entry", method, path)); return }
+      print method "\t" path "\t" "security-remove" "\t" expiry
     } else {
-      err(sprintf("%s %s unknown kind \047%s\047 (only parameter-add exists)", method, path, kind))
+      err(sprintf("%s %s unknown kind \047%s\047 (only parameter-add and security-remove exist)", method, path, kind))
     }
     if (expiry < TODAY) err(sprintf("%s %s expired on %s", method, path, expiry))
   }
@@ -179,6 +206,7 @@ awk -F '\t' '
   $1 == "deleted"  { print $2 "\t" $3 "\t" "deleted" }
   $1 == "response" { print $2 "\t" $3 "\t" $4 }
   $1 == "param-add" { print $2 "\t" $3 "\t" "parameter-add" }
+  $1 == "security-remove" { print $2 "\t" $3 "\t" "security-remove" }
 ' "$TMP/records.tsv" | sort -u > "$TMP/reported.txt"
 
 ### 4. Named errors: uncovered, stale, unrepresentable, unexplained, expired.
@@ -202,7 +230,7 @@ fi
 
 # Incompatible parameter/request-body changes the allowlist cannot represent
 # (fail closed rather than passing silently — the console-era contract).
-awk -F '\t' '$1 == "param-remove" || $1 == "param-change" || $1 == "request-body" { print }' "$TMP/records.tsv" > "$TMP/unrep.txt"
+awk -F '\t' '$1 == "param-remove" || $1 == "param-change" || $1 == "request-body" || $1 == "security-change" { print }' "$TMP/records.tsv" > "$TMP/unrep.txt"
 if [[ -s "$TMP/unrep.txt" ]]; then
   echo "Incompatible changes the allowlist cannot represent (resolve or revert them):"
   while IFS=$'\t' read -r c m p d; do printf '  [UNREPRESENTABLE] %s %s (%s: %s)\n' "$m" "$p" "$c" "$d"; done < "$TMP/unrep.txt"
@@ -211,7 +239,7 @@ fi
 
 # Umbrella: an operation the tool marked incompatible must yield at least one
 # classified record — otherwise its incompatibility source is unclassified
-# (security requirements, extensions, or model drift) and the gate fails closed.
+# (extensions or model drift) and the gate fails closed.
 jq -r '.changedOperations[]? | select(.incompatible == true) | [(.httpMethod // "?"), (.pathUrl // "?")] | @tsv' "$REPORT" \
   | sort -u > "$TMP/incompatible-ops.tsv"
 while IFS=$'\t' read -r m p; do

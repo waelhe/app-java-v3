@@ -1,6 +1,5 @@
 package com.marketplace.dev;
 
-import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.RSASSASigner;
@@ -96,9 +95,20 @@ public final class DevJwtGenerator {
                 .expirationTime(new Date(System.currentTimeMillis() + EXPIRY_MINUTES * 60_000))
                 .build();
 
+        // No `typ` header — byte-parity with the production mint channel, the
+        // same measured contract every other element of this tool mirrors
+        // (keystore, kid, iss, aud): SAS 7.1.2's JwtGenerator builds the
+        // access-token header with JwsHeader.with(jwsAlgorithm) alone and sets
+        // no typ, and this app's jwtTokenCustomizer touches claims only. The
+        // running app's decoder (SecurityConfig#jwtDecoder ->
+        // JwtValidators.createDefaultWithIssuer) always includes Spring
+        // Security 7.1.2's JwtTypeValidator.jwt(), which accepts "JWT"
+        // (case-insensitive) or an ABSENT header and rejects "at+jwt" — a typ
+        // the production mint never sets would make every tool-minted token
+        // fail the app's own validation (CodeRabbit thread on this PR,
+        // verified against the pinned sources before the fix).
         SignedJWT signedJWT = new SignedJWT(
                 new JWSHeader.Builder(JWSAlgorithm.RS256)
-                        .type(new JOSEObjectType("at+jwt"))
                         .keyID(channel.alias)
                         .build(),
                 claims

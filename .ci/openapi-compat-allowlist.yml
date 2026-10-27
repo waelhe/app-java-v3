@@ -21,4 +21,83 @@
 # 201 is documented as 200 — fixable per the springdoc README via
 # @ResponseStatus declarations) is tracked in its own issue with its own
 # gate-exception requirements.
-exceptions: []
+#
+# 2026-10-26 (PR #736): the security-alignment wave. The served contract's
+# root-level security: [{"bearerAuth": []}] advertised every operation as
+# JWT-required while the resource chain deliberately serves a public family
+# permitAll — the v0.1.0 baseline's own SecurityConfig (lines 135/136/137/141
+# at the tag) opened exactly these four families, so the misdeclaration is
+# as old as the baseline itself. PR #736's PublicApiSecurityCustomizer
+# documents that enforced reality per operation (security: []), which
+# openapi-diff 2.1.7 correctly reports as a SECURITY_REQUIREMENTS_DECREASED
+# break per the official model (BackwardIncompatibleProp enabled by default;
+# measured on the official JSON report: securityRequirements.missing
+# [{"bearerAuth": []}] on exactly the ten baseline-era public operations —
+# every operation added since v0.1.0 is a new addition the tool does not
+# security-diff, and every authenticated surface keeps the root requirement,
+# so the set below is exhaustive). The verifier classifies that break as a
+# kind: security-remove entry so it is representable here; scope increases
+# on a surviving requirement remain fail-closed ([UNREPRESENTABLE]). All
+# ten entries document a spec-vs-reality alignment with zero runtime
+# behavior change (SecurityConfig untouched by the byte; the bearerAuth
+# scheme itself stays defined and required on every non-public operation).
+# Delete all ten in the release re-baseline PR that follows the next tag.
+exceptions:
+  # GET /api/v1/listings/** — the public catalog browse family
+  # (v0.1.0 SecurityConfig line 135: requestMatchers(GET, ...).permitAll())
+  - path: GET /api/v1/listings
+    kind: security-remove
+    ticket: PR #736 (fix/openapi-public-security-alignment-20261026) — TestSprite group-C spec-accuracy gap, 2026-10-26 deep-dive
+    reason: Spec-alignment only — the public catalog browse collection has been served permitAll since the v0.1.0 baseline (SecurityConfig line 135 at the tag) while the baseline spec over-declared the root-level bearerAuth with no per-operation override, so every consumer trusting the advertised contract was misled (TestSprite's negative-auth tests expected 401 here and the honest 2xx answer read as a failure); PR #736's PublicApiSecurityCustomizer documents the enforced reality with security: [] — zero runtime behavior change, SecurityConfig untouched by the byte. Remove in the release re-baseline PR that follows the next tag.
+    expiry: 2027-01-31
+  - path: GET /api/v1/listings/{id}
+    kind: security-remove
+    ticket: PR #736 (fix/openapi-public-security-alignment-20261026) — TestSprite group-C spec-accuracy gap, 2026-10-26 deep-dive
+    reason: Spec-alignment only — the public listing detail has been served permitAll since the v0.1.0 baseline (SecurityConfig line 135 at the tag, GET /api/v1/listings/**) while the baseline spec over-declared the root-level bearerAuth with no per-operation override; PR #736's PublicApiSecurityCustomizer documents the enforced reality with security: [] — zero runtime behavior change, SecurityConfig untouched by the byte. Remove in the release re-baseline PR that follows the next tag.
+    expiry: 2027-01-31
+  - path: GET /api/v1/listings/provider/{providerId}
+    kind: security-remove
+    ticket: PR #736 (fix/openapi-public-security-alignment-20261026) — TestSprite group-C spec-accuracy gap, 2026-10-26 deep-dive
+    reason: Spec-alignment only — the provider's public listing feed has been served permitAll since the v0.1.0 baseline (SecurityConfig line 135 at the tag, GET /api/v1/listings/**) while the baseline spec over-declared the root-level bearerAuth with no per-operation override; PR #736's PublicApiSecurityCustomizer documents the enforced reality with security: [] — zero runtime behavior change, SecurityConfig untouched by the byte. Remove in the release re-baseline PR that follows the next tag.
+    expiry: 2027-01-31
+  - path: GET /api/v1/listings/category/{category}
+    kind: security-remove
+    ticket: PR #736 (fix/openapi-public-security-alignment-20261026) — TestSprite group-C spec-accuracy gap, 2026-10-26 deep-dive
+    reason: Spec-alignment only — the public category browse has been served permitAll since the v0.1.0 baseline (SecurityConfig line 135 at the tag, GET /api/v1/listings/**) while the baseline spec over-declared the root-level bearerAuth with no per-operation override; PR #736's PublicApiSecurityCustomizer documents the enforced reality with security: [] — zero runtime behavior change, SecurityConfig untouched by the byte. Remove in the release re-baseline PR that follows the next tag.
+    expiry: 2027-01-31
+  # GET /api/v1/reviews/** — the public review reads
+  # (v0.1.0 SecurityConfig line 136: requestMatchers(GET, ...).permitAll())
+  - path: GET /api/v1/reviews/{id}
+    kind: security-remove
+    ticket: PR #736 (fix/openapi-public-security-alignment-20261026) — TestSprite group-C spec-accuracy gap, 2026-10-26 deep-dive
+    reason: Spec-alignment only — the public review detail has been served permitAll since the v0.1.0 baseline (SecurityConfig line 136 at the tag, GET /api/v1/reviews/**) while the baseline spec over-declared the root-level bearerAuth with no per-operation override; PR #736's PublicApiSecurityCustomizer documents the enforced reality with security: [] — zero runtime behavior change, SecurityConfig untouched by the byte. Remove in the release re-baseline PR that follows the next tag.
+    expiry: 2027-01-31
+  - path: GET /api/v1/reviews/reviewer/{reviewerId}
+    kind: security-remove
+    ticket: PR #736 (fix/openapi-public-security-alignment-20261026) — TestSprite group-C spec-accuracy gap, 2026-10-26 deep-dive
+    reason: Spec-alignment only — the reviewer's public review page has been served permitAll since the v0.1.0 baseline (SecurityConfig line 136 at the tag, GET /api/v1/reviews/**) while the baseline spec over-declared the root-level bearerAuth with no per-operation override; PR #736's PublicApiSecurityCustomizer documents the enforced reality with security: [] — zero runtime behavior change, SecurityConfig untouched by the byte. Remove in the release re-baseline PR that follows the next tag.
+    expiry: 2027-01-31
+  - path: GET /api/v1/reviews/provider/{providerId}
+    kind: security-remove
+    ticket: PR #736 (fix/openapi-public-security-alignment-20261026) — TestSprite group-C spec-accuracy gap, 2026-10-26 deep-dive
+    reason: Spec-alignment only — the provider's public review aggregate has been served permitAll since the v0.1.0 baseline (SecurityConfig line 136 at the tag, GET /api/v1/reviews/**) while the baseline spec over-declared the root-level bearerAuth with no per-operation override; PR #736's PublicApiSecurityCustomizer documents the enforced reality with security: [] — zero runtime behavior change, SecurityConfig untouched by the byte. Remove in the release re-baseline PR that follows the next tag.
+    expiry: 2027-01-31
+  # GET /api/v1/search/** — the public search family
+  # (v0.1.0 SecurityConfig line 137: requestMatchers(GET, ...).permitAll())
+  - path: GET /api/v1/search
+    kind: security-remove
+    ticket: PR #736 (fix/openapi-public-security-alignment-20261026) — TestSprite group-C spec-accuracy gap, 2026-10-26 deep-dive
+    reason: Spec-alignment only — the public search surface has been served permitAll since the v0.1.0 baseline (SecurityConfig line 137 at the tag, GET /api/v1/search/**) while the baseline spec over-declared the root-level bearerAuth with no per-operation override; PR #736's PublicApiSecurityCustomizer documents the enforced reality with security: [] — zero runtime behavior change, SecurityConfig untouched by the byte. Remove in the release re-baseline PR that follows the next tag.
+    expiry: 2027-01-31
+  - path: GET /api/v1/search/category/{category}
+    kind: security-remove
+    ticket: PR #736 (fix/openapi-public-security-alignment-20261026) — TestSprite group-C spec-accuracy gap, 2026-10-26 deep-dive
+    reason: Spec-alignment only — the public category-scoped search has been served permitAll since the v0.1.0 baseline (SecurityConfig line 137 at the tag, GET /api/v1/search/**) while the baseline spec over-declared the root-level bearerAuth with no per-operation override; PR #736's PublicApiSecurityCustomizer documents the enforced reality with security: [] — zero runtime behavior change, SecurityConfig untouched by the byte. Remove in the release re-baseline PR that follows the next tag.
+    expiry: 2027-01-31
+  # POST /api/v1/payments/webhooks/** — the PSP webhook ingress
+  # (v0.1.0 SecurityConfig line 141: requestMatchers(...).permitAll(), any method)
+  - path: POST /api/v1/payments/webhooks/{provider}
+    kind: security-remove
+    ticket: PR #736 (fix/openapi-public-security-alignment-20261026) — TestSprite group-C spec-accuracy gap, 2026-10-26 deep-dive
+    reason: Spec-alignment only — the PSP webhook ingress has been served permitAll since the v0.1.0 baseline (SecurityConfig line 141 at the tag, any method on /api/v1/payments/webhooks/**) because the channel is authenticated by the per-provider webhook SIGNATURE at the application layer, never by a bearer, while the baseline spec over-declared the root-level bearerAuth with no per-operation override; PR #736's PublicApiSecurityCustomizer documents the enforced reality with security: [] — zero runtime behavior change, SecurityConfig untouched by the byte. Remove in the release re-baseline PR that follows the next tag.
+    expiry: 2027-01-31
