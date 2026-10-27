@@ -487,7 +487,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
-          import json,os,re
+          import json,os,re,subprocess
           from pathlib import Path
           pub=Path("target/openrewrite/publication"); meta=json.loads((pub/"metadata.json").read_text(encoding="utf-8"))
           expected={"target_ref":os.environ["EXPECTED_TARGET_REF"],"target_sha":os.environ["EXPECTED_TARGET_SHA"],"scope":os.environ["EXPECTED_SCOPE"],"write_mode":os.environ["EXPECTED_WRITE_MODE"]}
@@ -514,14 +514,25 @@ jobs:
           # serialization — a line break in any artifact-controlled value would
           # otherwise add environment assignments to the next privileged shell.
           # The expected equality above already pins the four context values; the
-          # patterns below make the no-line-break property explicit for anything
+          # checks below make the no-line-break property explicit for anything
           # that reaches the file. The unused expected_remote_sha transfer is
           # REMOVED (nothing downstream consumed it — its only role was carrying
           # an unvalidated artifact string into the privileged environment).
-          patterns={"TARGET_REF":r"[A-Za-z0-9._/-]+","TARGET_SHA":r"[0-9a-f]{40}","OPENREWRITE_SCOPE":r"[a-z0-9-]+","WRITE_MODE":r"(direct-branch-update|pull-request)","BATCH_COUNT":r"[0-9]+"}
+          # CodeRabbit CHANGES_REQUESTED 2026-10-26 (CWE-20/74): TARGET_REF is a
+          # git branch name and its validity belongs to the official tool — the
+          # same `git check-ref-format --branch` the apply job already runs at
+          # intake (git-scm.com/docs/git-check-ref-format); no regex can express
+          # git's refname rules (no '..', no leading/trailing '.', no '.lock'
+          # suffix, no '@{', no trailing '/'). Control characters are rejected
+          # explicitly BEFORE any value reaches GITHUB_ENV; the other fields keep
+          # their existing pattern checks unchanged.
+          patterns={"TARGET_SHA":r"[0-9a-f]{40}","OPENREWRITE_SCOPE":r"[a-z0-9-]+","WRITE_MODE":r"(direct-branch-update|pull-request)","BATCH_COUNT":r"[0-9]+"}
           values={"TARGET_REF":meta["target_ref"],"TARGET_SHA":meta["target_sha"],"OPENREWRITE_SCOPE":meta["scope"],"WRITE_MODE":meta["write_mode"],"BATCH_COUNT":str(len(batches))}
           for key,value in values.items():
-              if not re.fullmatch(patterns[key],value): raise SystemExit(f"Refusing to export {key}: value does not match its expected format; refusing publication.")
+              if any(ord(ch)<0x20 or ord(ch)==0x7f for ch in value): raise SystemExit(f"Refusing to export {key}: control characters are forbidden in GITHUB_ENV values; refusing publication.")
+              if key=="TARGET_REF":
+                  if subprocess.run(["git","check-ref-format","--branch",value],capture_output=True).returncode!=0: raise SystemExit("Refusing to export TARGET_REF: git check-ref-format --branch rejects this branch name; refusing publication.")
+              elif not re.fullmatch(patterns[key],value): raise SystemExit(f"Refusing to export {key}: value does not match its expected format; refusing publication.")
           # Row 53's inventory half — reject unexpected publication files: the
           # artifact directory holds EXACTLY the files the pipeline itself
           # produces (metadata.json, batches.json, automatic-rewrite.patch and
