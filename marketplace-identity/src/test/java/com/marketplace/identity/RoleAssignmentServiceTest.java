@@ -274,7 +274,12 @@ class RoleAssignmentServiceTest {
         verify(repository).save(adminMirror);
         ArgumentCaptor<RoleAssignment> granted = ArgumentCaptor.forClass(RoleAssignment.class);
         verify(repository, org.mockito.Mockito.times(2)).save(granted.capture());
+        // The part-1 review nitpick: the ensured mirror is verified by its
+        // identity fields, not row existence alone — a wrong user or role
+        // would pass a bare id assertion.
         assertThat(granted.getAllValues().get(1).getId()).isNotNull();
+        assertThat(granted.getAllValues().get(1).getUserId()).isEqualTo(userId);
+        assertThat(granted.getAllValues().get(1).getRole()).isEqualTo(UserRole.CONSUMER);
     }
 
     @Test
@@ -318,6 +323,74 @@ class RoleAssignmentServiceTest {
 
         ArgumentCaptor<RoleAssignment> granted = ArgumentCaptor.forClass(RoleAssignment.class);
         verify(repository, org.mockito.Mockito.times(1)).save(granted.capture());
+        // The same nitpick: the activity state alone would pass a wrong
+        // identity — the ensured mirror is asserted by its own fields.
         assertThat(granted.getValue().isActive()).isTrue();
+        assertThat(granted.getValue().getUserId()).isEqualTo(userId);
+        assertThat(granted.getValue().getRole()).isEqualTo(UserRole.PROVIDER);
+    }
+
+    @Test
+    void primaryChange_anIndependentGrantSurvivesThePromoteThenDemoteRoundTrip() {
+        // The part-1 review note's own sequence: an independent PROVIDER
+        // grant, promotion to primary PROVIDER (the grant becomes the
+        // mirror), then demotion back to CONSUMER — the retire-leg must
+        // recognize the ACTIVE PROVIDER row is the independent grant (not
+        // the choreography's mirror) and leave it ACTIVELY HELD.
+        UUID userId = UUID.randomUUID();
+        RoleAssignment consumerMirror = RoleAssignment.grant(
+                UUID.randomUUID(), userId, UserRole.CONSUMER, NOW.minusSeconds(7200), null, "BACKFILL");
+        RoleAssignment independentGrant = RoleAssignment.grant(
+                UUID.randomUUID(), userId, UserRole.PROVIDER, NOW.minusSeconds(3600), null, "ADMIN");
+
+        // the promotion: CONSUMER -> PROVIDER (the independent grant is kept
+        // as the target's mirror — no duplicate insert)
+        when(repository.findByUserIdAndRoleAndRevokedAtIsNull(userId, UserRole.CONSUMER))
+                .thenReturn(Optional.of(consumerMirror));
+        when(repository.findByUserIdAndRoleAndRevokedAtIsNull(userId, UserRole.PROVIDER))
+                .thenReturn(Optional.of(independentGrant));
+        service.onPrimaryRoleChanged(userId, UserRole.CONSUMER, UserRole.PROVIDER, "admin");
+
+        assertThat(independentGrant.isActive()).isTrue();
+        verify(repository).save(consumerMirror);
+
+        // the demotion: PROVIDER -> CONSUMER — the ACTIVE PROVIDER row IS the
+        // independent grant the promotion kept as its mirror
+        org.mockito.Mockito.clearInvocations(repository);
+        when(repository.findByUserIdAndRoleAndRevokedAtIsNull(userId, UserRole.CONSUMER))
+                .thenReturn(Optional.empty());
+        service.onPrimaryRoleChanged(userId, UserRole.PROVIDER, UserRole.CONSUMER, "admin");
+
+        assertThat(independentGrant.isActive())
+                .as("the independent grant keeps its PROVIDER authority after the round trip")
+                .isTrue();
+        verify(repository, org.mockito.Mockito.never()).save(independentGrant);
+        // and the CONSUMER mirror is re-ensured with the choreography's own source
+        ArgumentCaptor<RoleAssignment> ensured = ArgumentCaptor.forClass(RoleAssignment.class);
+        verify(repository, org.mockito.Mockito.times(1)).save(ensured.capture());
+        assertThat(ensured.getValue().getUserId()).isEqualTo(userId);
+        assertThat(ensured.getValue().getRole()).isEqualTo(UserRole.CONSUMER);
+        assertThat(ensured.getValue().getSource()).isEqualTo("PRIMARY_CHANGE");
+    }
+
+    @Test
+    void primaryChange_theEnsuredMirrorCarriesThePrimaryChangeSource() {
+        // V290's vocabulary half: mirrors the choreography itself creates are
+        // born PRIMARY_CHANGE — the marker the retire-leg's filter reads to
+        // tell them from independent ADMIN grants (the note's root cause).
+        UUID userId = UUID.randomUUID();
+        when(repository.findByUserIdAndRoleAndRevokedAtIsNull(userId, UserRole.CONSUMER))
+                .thenReturn(Optional.empty());
+        when(repository.findByUserIdAndRoleAndRevokedAtIsNull(userId, UserRole.PROVIDER))
+                .thenReturn(Optional.empty());
+        when(repository.save(any(RoleAssignment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.onPrimaryRoleChanged(userId, UserRole.CONSUMER, UserRole.PROVIDER, "admin");
+
+        ArgumentCaptor<RoleAssignment> granted = ArgumentCaptor.forClass(RoleAssignment.class);
+        verify(repository, org.mockito.Mockito.times(1)).save(granted.capture());
+        assertThat(granted.getValue().getSource()).isEqualTo("PRIMARY_CHANGE");
+        assertThat(granted.getValue().getUserId()).isEqualTo(userId);
+        assertThat(granted.getValue().getRole()).isEqualTo(UserRole.PROVIDER);
     }
 }

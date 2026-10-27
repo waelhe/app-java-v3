@@ -629,6 +629,39 @@ class DeliveryServiceTest {
         assertEquals("package damaged", eventCaptor.getValue().reason());
     }
 
+    @Test
+    void failureWithoutPaymentIntentClearsTheOrderLink() {
+        // The part-1 review note's own scenario: the sole leg a fromCheckout
+        // request creates carries no payment intent — its FAILED termination
+        // must cut the order link exactly like the cancel path (no refund
+        // event exists to request, and the buyer's order cancel stays
+        // refused while the link survives — the reconciliation never
+        // completes a leg-less aggregate either way).
+        UUID requesterId = UUID.randomUUID();
+        UUID courierId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        DeliveryQuote quote = liveQuote(requesterId, orderId);
+        DeliveryRequest request = new DeliveryRequest(UUID.randomUUID(), quote, "hash");
+        request.paymentSucceeded();
+        request.assignCourier(courierId);
+        when(requests.findByIdForUpdate(request.getId())).thenReturn(Optional.of(request));
+        when(requests.save(request)).thenReturn(request);
+        verifiedCourier(courierId);
+        DeliveryCourier courier = new DeliveryCourier(courierId);
+        courier.updateAvailability(37, -122, true, Instant.now());
+        courier.assign(request.getId(), Instant.now());
+        when(couriers.findByUserIdForUpdate(courierId)).thenReturn(Optional.of(courier));
+        when(couriers.save(courier)).thenReturn(courier);
+
+        var response = service(enabledProperties()).transition(request.getId(), courierId,
+                DeliveryRequestStatus.FAILED, "courier could not reach the pickup", null);
+
+        assertEquals(DeliveryRequestStatus.FAILED, response.status());
+        verify(orders).clearDeliveryRequest(orderId, request.getId());
+        verify(publisher, org.mockito.Mockito.never())
+                .publishEvent(org.mockito.ArgumentMatchers.any(DeliveryRefundRequestedEvent.class));
+    }
+
     // ---- payment-state settlement ----
 
     private PaymentIntentDetails deliveryIntent(UUID paymentIntentId, UUID requesterId,
