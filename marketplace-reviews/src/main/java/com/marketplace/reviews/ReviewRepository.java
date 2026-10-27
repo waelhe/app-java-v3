@@ -36,6 +36,33 @@ public interface ReviewRepository extends JpaRepository<Review, UUID>, RevisionR
     Optional<Review> findByIdForUpdate(@Param("id") UUID id);
 
     /**
+     * Part-2 review round 2's own follow-up (the report-survival
+     * integration test's measured root): the VISIBLE-author gate's own
+     * fact as a SCALAR projection — the reviewer id of the PUBLISHED row,
+     * never an entity materialization. The community report-creation
+     * transaction rides this gate BEFORE its engine hide reaches
+     * {@code findByIdForUpdate}: an {@code findById} here would inject the
+     * row's {@code @Version} snapshot into the persistence context, and
+     * the later locked read of the concurrently-committed post-hide
+     * version is Hibernate's own "Query result contains conflicting
+     * version of entity already held in persistence context" failure —
+     * taking the second concurrent reporter's own report creation down
+     * with it, exactly the shape the lock seam exists to close. The
+     * projection keeps the creation unit's ONLY Review materialization
+     * the locked read itself, so the serialized second transaction reads
+     * the committed truth and takes the documented skip. The official
+     * projections discipline (Spring Data JPA reference › Projections:
+     * "you're usually better off using a projection that only exposes the
+     * subset"), the {@code findIdsByStatus} house precedent verbatim —
+     * JPQL over the soft-deleted entity, with Hibernate's
+     * {@code @SoftDelete} live-row filter applied by the machinery
+     * exactly as the entity loads are.
+     */
+    @Query("select r.reviewerId from Review r where r.id = :id and r.moderationStatus = :status")
+    Optional<UUID> findReviewerIdByIdAndModerationStatus(@Param("id") UUID id,
+            @Param("status") ReviewModerationStatus moderationStatus);
+
+    /**
      * I8 + W1 (§4.5): the provider's public review surface keeps its
      * historical meaning — reviews ABOUT the provider (forward direction
      * only) — now PUBLISHED-gated: a pending or moderator-hidden review is
