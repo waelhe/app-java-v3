@@ -158,17 +158,18 @@
 
 ## E-12 · Documentation numbers drift from derived reality **[VERIFIED]**
 
-- **Observed failures (three independent instances):**
+- **Observed failures (three independent instances + four caught by the guard's own construction, round 21):**
   1. `SYSTEM.md` stated 183 integration-selected files while the derivation said 184 (new CMS contract tests raised the count) — `DocumentationNumbersGuardTest` failed the build (closed by commit `2a13d192`, 2026-10-25/26).
   2. PR #723 body claimed inventory 107/294/57 while every head since `2e997f3` measures **163 INTEGRATED / 238 NOT_STARTED / 57 BLOCKED** (round-13 audit).
   3. Campaign reports: `campaign-b6-b` counts 98 ≠ 90; completion-map 57 ≠ 56 (CodeRabbit 2026-10-26 Major findings).
+  4. Round 21 (G1 closure, guard construction at `c1ef867b`): four more campaign-report drifts proven against the ledger — completion-map P3 wave 55 vs the ledger's 59 (the row's own family cells sum to 59); the fb23ad4c family cell "type assignments 4" vs the ledger's 3 (5+8+5+3+5+6+15+3+2=52); `campaign-b6-a` packet line "28 Query roots" vs its own table's 27 and its ledger-line delta 27; `campaign-b6-b` split sentence 37/50/11 (sums to 98) vs the provable 22/57/11 (sums to 90; its own INTEGRATED list names 22 roots — verified against the historical ledger fetched at the b6-a close `edb4a725`: 22 INTEGRATED all Query, 42 blocked all Query).
 - **Original assumption:** hand-typed numbers beside evolving truth stay in sync.
 - **Triggering conditions:** every merge that changes a derived count without re-deriving the documented one.
 - **Causal chain:** derived truth moves; prose doesn't; readers act on the prose.
 - **Violated invariant:** load-bearing numbers are derived, never hand-maintained.
 - **Root cause:** missing guard coverage per document (guard exists for SYSTEM/ARCHITECTURE/README, not for campaign reports/PR bodies).
-- **Correction:** guard test (D2) covers the canonical files; rulebook extends the discipline; PR-body numbers carry measured date + re-derivation command.
-- **Verification evidence:** guard failure → fix measured in round-14 audit.
+- **Correction:** guard test (D2) covers the canonical files; rulebook extends the discipline; PR-body numbers carry measured date + re-derivation command. Round 21 closed the campaign-reports residual: `CampaignReportsGuardTest` (7 tests, `c1ef867b`) derives every campaign-report count from the 458-root ledger CSV at test time and verifies the four drifts' fixes.
+- **Verification evidence:** guard failure → fix measured in round-14 audit; round 21 — the same guard logic run against the pre-fix files fails on exactly the four drifts and passes on the fixed files (harness-first, before the commit).
 - **Recurrence risk:** every new document with counts.
 - **Prevention:** rules A6/D2; enforcement map records which documents remain unguarded (gap).
 
@@ -182,7 +183,7 @@
 - **Correction:** `d5b89acd` enabled `reviews.auto_review.drafts:true` (the round-13 recommendation); the first complete review then arrived — 20 actionable documentation-scope findings, zero on production Java code.
 - **Verification evidence:** round-14 audit (CodeRabbit CHANGES_REQUESTED with the 20 findings; CI green on subsequent heads).
 - **Recurrence risk:** medium — external-service gates depend on their provider.
-- **Prevention:** rule D6-adjacent: gate health itself is monitored (gate success rate is a watched number, not assumed).
+- **Prevention:** rule D6-adjacent: gate health itself is monitored. **Implemented and proven in CI (round 21, G5 closed)**: `gate-health.yml` on the integration branch — per-gate health over a 7-day window, every recent failing CodeRabbit Gate run classified provider-refusal vs content, RED at ≥3-of-5 provider refusals, watchdog treated as an alarm, independent-review freshness per open PR. First real run (`40599532660` on `6e111689`): RED on the live provider outage with the explicit "NOT a code failure" remedy — E-13's exact form, now visible instead of assumed away. The monitor's own embedding was hardened the same way this case teaches: its activation health was measured, not assumed (dispatch 404 without default-branch presence; pull_request runs impossible on the conflicted PR; the Python source rides a quoted heredoc after the first embedding made bash execute the docstring).
 
 ## E-14 · The wave revert — code rollback with forward-only migrations **[VERIFIED]**
 

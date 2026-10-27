@@ -102,8 +102,8 @@
 - **Prevents:** E-02 (boot collapse), E-03 (blind aggregate), E-13 (gate that cannot run), E-16 (quota walls).
 - **Must satisfy:** new `${...}` in prod profiles ⇒ value-or-fail-fast verified against the target env matrix; new health contributors ⇒ explicit `management.health.<key>.enabled` decision; new gates/aggregators ⇒ their own success/failure is watched (S10's lesson applied to gates: E-13); provider-limit failures documented in the deploy log with the distinction.
 - **Evidence:** deploy smoke includes aggregate health; placeholder matrix note in the PR.
-- **History:** E-02, E-03, E-13, E-16. **Enforcement:** watchdog probes for health (systematic); the rest procedural (gap: no deterministic placeholder-vs-target guard).
-- **Status:** verified-procedural + partial systematic.
+- **History:** E-02, E-03, E-13, E-16. **Enforcement:** watchdog probes for health (systematic); gate-health monitoring now systematic too — `gate-health.yml` (round 21, gap G5 closed): per-gate health over a 7-day window, CodeRabbit Gate failures classified provider-refusal vs content, RED at ≥3-of-5 provider refusals, review freshness per open PR — first real CI run RED on the live provider outage with the "NOT a code failure" remedy; the placeholder-vs-target matrix stays procedural (gap G2).
+- **Status:** verified-procedural + systematic (health probes and gate-health monitor).
 
 ### B7 — Numeric representation bounds *(trigger: decimal endpoints, coordinates, multipliers, exponents)*
 - **Invariant:** representation cost is bounded before computation.
