@@ -1,6 +1,5 @@
 package com.marketplace.catalog;
 
-import com.marketplace.ledger.LedgerEntryType;
 import com.marketplace.ledger.LedgerService;
 import com.marketplace.payments.PaymentIntent;
 import com.marketplace.payments.PaymentIntentRepository;
@@ -27,7 +26,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;

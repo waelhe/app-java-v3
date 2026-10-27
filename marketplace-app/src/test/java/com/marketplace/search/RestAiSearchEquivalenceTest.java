@@ -5,7 +5,6 @@ import com.marketplace.shared.api.AvailabilityLookupPort;
 import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.ListingSummary;
-import com.marketplace.shared.api.PagedRequest;
 import com.marketplace.shared.api.RealestatePropertyFilterPort;
 import com.marketplace.shared.api.SearchCriteria;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,7 +18,6 @@ import org.springframework.data.domain.Pageable;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
