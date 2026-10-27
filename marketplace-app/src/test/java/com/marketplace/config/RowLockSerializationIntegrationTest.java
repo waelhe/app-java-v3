@@ -1,5 +1,12 @@
 package com.marketplace.config;
 
+import com.marketplace.community.ContentReport;
+import com.marketplace.community.ContentReportRepository;
+import com.marketplace.community.ContentReportService;
+import com.marketplace.community.ModerationRule;
+import com.marketplace.community.ModerationRuleRepository;
+import com.marketplace.community.ReportReason;
+import com.marketplace.community.ReportTargetType;
 import com.marketplace.lending.Loan;
 import com.marketplace.lending.LoanRepository;
 import com.marketplace.lending.LoanStatus;
@@ -11,7 +18,6 @@ import com.marketplace.orders.OrdersService;
 import com.marketplace.reviews.Review;
 import com.marketplace.reviews.ReviewModerationStatus;
 import com.marketplace.reviews.ReviewRepository;
-import com.marketplace.reviews.ReviewsService;
 import com.marketplace.shared.api.ConflictException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,9 +33,9 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import test.config.IntegrationContainers;
 
 import java.time.Instant;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -105,7 +111,13 @@ class RowLockSerializationIntegrationTest {
     private ReviewRepository reviews;
 
     @Autowired
-    private ReviewsService reviewsService;
+    private ContentReportService reports;
+
+    @Autowired
+    private ContentReportRepository contentReports;
+
+    @Autowired
+    private ModerationRuleRepository moderationRules;
 
     private static final Instant T0 = Instant.parse("2026-11-01T10:00:00Z");
     private static final Instant T1 = Instant.parse("2026-11-04T10:00:00Z");
@@ -248,6 +260,12 @@ class RowLockSerializationIntegrationTest {
 
     @Test
     void theEngineHideSerializesOnTheReviewRowAndTheSecondReportSurvives() throws Exception {
+        // Part-2 review round 2's own follow-up (the incremental round's
+        // measured nitpick): the REAL end-to-end shape — two concurrent
+        // ContentReportService.createReport transactions crossing the rule
+        // threshold together, and the SECOND REPORT'S OWN ROW is the
+        // assertion: it survives (commits) instead of being taken down by
+        // the optimistic-version failure the un-locked hide used to cause.
         UUID reviewer = UUID.randomUUID();
         UUID provider = UUID.randomUUID();
         seedUser(reviewer, "CONSUMER");
@@ -258,64 +276,62 @@ class RowLockSerializationIntegrationTest {
                 VALUES (?, NULL, ?, ?, 5, 'ORGANIC', 'PUBLISHED')
                 """, reviewId, reviewer, provider);
 
-        CountDownLatch lockHeld = new CountDownLatch(1);
-        CountDownLatch release = new CountDownLatch(1);
-        AtomicReference<Throwable> holderFailure = new AtomicReference<>();
-        Thread holder = new Thread(() -> {
+        // the rule at the threshold the finding describes: ONE existing
+        // open report + TWO concurrent creators = both cross the bar
+        UUID reporterA = UUID.randomUUID();
+        UUID reporterB = UUID.randomUUID();
+        UUID reporterC = UUID.randomUUID();
+        seedUser(reporterA, "CONSUMER");
+        seedUser(reporterB, "CONSUMER");
+        seedUser(reporterC, "CONSUMER");
+        moderationRules.save(ModerationRule.register(
+                ReportTargetType.REVIEW, ReportReason.SPAM, 2));
+        contentReports.save(ContentReport.report(
+                reporterA, ReportTargetType.REVIEW, reviewId, ReportReason.SPAM));
+
+        // the two concurrent threshold-crossing report transactions — the
+        // engine rides each creation command's own unit of work, and the
+        // hides serialize on the review row's write lock
+        CyclicBarrier start = new CyclicBarrier(2);
+        CountDownLatch done = new CountDownLatch(2);
+        AtomicReference<Throwable> bFailure = new AtomicReference<>();
+        AtomicReference<Throwable> cFailure = new AtomicReference<>();
+        Thread reporterBThread = new Thread(() -> {
             try {
-                new TransactionTemplate(txm).execute(status -> {
-                    Review review = reviews.findByIdForUpdate(reviewId).orElseThrow();
-                    lockHeld.countDown();
-                    awaitQuietly(release);
-                    // the FIRST threshold-crossing report transaction's hide
-                    // — the exact write the second one raced
-                    review.hideByModerator();
-                    reviews.save(review);
-                    return null;
-                });
+                start.await(10, TimeUnit.SECONDS);
+                reports.createReport(reporterB, ReportTargetType.REVIEW, reviewId, ReportReason.SPAM);
             } catch (Throwable t) {
-                holderFailure.set(t);
+                bFailure.set(t);
+            } finally {
+                done.countDown();
             }
         });
-        holder.start();
-        assertThat(lockHeld.await(10, TimeUnit.SECONDS))
-                .as("the first report transaction owns the review row's write lock")
+        Thread reporterCThread = new Thread(() -> {
+            try {
+                start.await(10, TimeUnit.SECONDS);
+                reports.createReport(reporterC, ReportTargetType.REVIEW, reviewId, ReportReason.SPAM);
+            } catch (Throwable t) {
+                cFailure.set(t);
+            } finally {
+                done.countDown();
+            }
+        });
+        reporterBThread.start();
+        reporterCThread.start();
+
+        assertThat(done.await(30, TimeUnit.SECONDS))
+                .as("both report transactions complete — no hang, no rollback")
                 .isTrue();
 
-        CountDownLatch readerStarted = new CountDownLatch(1);
-        CountDownLatch readerDone = new CountDownLatch(1);
-        AtomicReference<Throwable> readerFailure = new AtomicReference<>();
-        AtomicReference<Optional<UUID>> readerResult = new AtomicReference<>(Optional.empty());
-        Thread reader = new Thread(() -> {
-            readerStarted.countDown();
-            try {
-                // the SECOND threshold-crossing report transaction's hide —
-                // the engine's own narrow path, inside that report's
-                // creation transaction
-                readerResult.set(reviewsService.hideByModerationEngine(reviewId));
-            } catch (Throwable t) {
-                readerFailure.set(t);
-            } finally {
-                readerDone.countDown();
-            }
-        });
-        reader.start();
-        assertThat(readerStarted.await(10, TimeUnit.SECONDS)).isTrue();
-
-        assertThat(readerDone.await(500, TimeUnit.MILLISECONDS))
-                .as("while the first hide owns the review row, the second report's hide cannot complete")
-                .isFalse();
-
-        release.countDown();
-        holder.join(10_000);
-        assertThat(holderFailure.get()).isNull();
-        assertThat(readerDone.await(10, TimeUnit.SECONDS)).isTrue();
-
-        // the serialized second hide read the committed HIDDEN truth and
-        // took the documented skip: empty answer, NO optimistic-version
-        // failure — the caller's report creation COMMITS
-        assertThat(readerFailure.get()).isNull();
-        assertThat(readerResult.get()).isEmpty();
+        // THE finding's assertion — the second report's own row survived:
+        // neither transaction was taken down by the hide's serialization
+        assertThat(bFailure.get()).isNull();
+        assertThat(cFailure.get()).isNull();
+        Integer landed = jdbc.queryForObject(
+                "SELECT count(*) FROM content_reports WHERE target_id = ?", Integer.class, reviewId);
+        assertThat(landed)
+                .as("A's seed report + BOTH concurrent reports landed — the second report survives")
+                .isEqualTo(3);
         assertThat(reviews.findById(reviewId).orElseThrow().getModerationStatus())
                 .isEqualTo(ReviewModerationStatus.HIDDEN_BY_MODERATOR);
     }
