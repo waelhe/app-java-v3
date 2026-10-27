@@ -28,15 +28,20 @@ name: Gate Health Monitor
 #          this monitor answers "are the watchers healthy"; the CI checks
 #          themselves answer "is the code healthy".
 #
-# Trigger semantics (GitHub's documented behavior, cached by the watchdog's
-# own evidence file): `schedule` fires ONLY on the default branch — this
-# monitor's nightly run activates when the integration line lands on main;
-# until then `workflow_dispatch` proves it on any ref that carries this file
-# (first live proof: dispatched on the integration branch immediately after
-# this commit). `pull_request` (targeting main) runs the PR head's own copy —
-# acceptable for a non-blocking informational monitor: the authoritative copy
-# is the default branch's, and a weakened PR-local copy can only affect the
-# PR's own informational check, never a merge verdict. Cron offset to :23
+# Trigger semantics (measured, not assumed — corrected 2026-10-27 after the
+# first landing attempt): `schedule` fires ONLY on the default branch — this
+# monitor's nightly run activates when the integration line lands on main.
+# `workflow_dispatch` requires the workflow file to exist on the DEFAULT
+# branch (measured: the API returns 404 for a workflow that never ran and
+# lives only on a non-default ref — the file must land on main first).
+# `pull_request` runs need the PR's merge commit — measured on this branch:
+# PR #723 is conflicted (mergeable: false), so pull_request-triggered runs
+# cannot fire at all while the conflict stands. `push` on the wave branch
+# is therefore the only trigger that runs this monitor DURING the campaign
+# — which is exactly when the gates are stressed and the health verdict
+# must stay live. The push trigger retires itself when the line lands on
+# main: the branch entry stops matching after the wave merges (the nightly
+# schedule takes over as the authoritative copy). Cron offset to :23
 # (never on an hour or quarter boundary) per the watchdog's documented
 # schedule-delay avoidance.
 #
@@ -52,6 +57,14 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '23 3 * * *'
+  push:
+    # The wave branch carries this monitor until the line lands on main.
+    # See the trigger-semantics note above: dispatch needs default-branch
+    # presence (404 until then) and pull_request needs a clean merge commit
+    # (PR #723 is conflicted) — push on this branch is the measured way the
+    # monitor runs during the campaign. Informational only, never a
+    # merge-required check.
+    branches: [ integration/saleor-full-commerce-20261021 ]
   pull_request:
     branches: [main]
 
