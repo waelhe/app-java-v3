@@ -1,7 +1,5 @@
 package com.marketplace.shared.api;
 
-import java.util.UUID;
-
 /**
  * W4 (yelp-level plan §5 — the reviewer identity wave, G28/G29): the
  * reviewer-profile statistics a public reviewer page renders — the

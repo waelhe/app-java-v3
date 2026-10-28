@@ -260,7 +260,7 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
 
 ## 9. Regression list (the failures that return — read this first)
 
-> **2026-10-27:** this list is now the quick view of the permanent **defect-knowledge system** (`docs/governance/defect-knowledge/`): the reconstructed evidence ledger (E-01…E-22), the causal pattern catalog (P1–P9), the rulebook (A/B/C/D rules), the mandatory change protocol, the independent review protocol, and the enforcement map. When any item below matches your change, load the corresponding pattern and rules before editing.
+> **2026-10-27:** this list is now the quick view of the permanent **defect-knowledge system** (`docs/governance/defect-knowledge/`): the reconstructed evidence ledger (E-01…E-23), the causal pattern catalog (P1–P10), the rulebook (A/B/C/D rules), the mandatory change protocol, the independent review protocol, and the enforcement map. When any item below matches your change, load the corresponding pattern and rules before editing.
 
 - Trusting training memory over the pinned-version official docs
   (Spring Boot 4.1.2 is not the Spring Boot you know; Modulith 2.1.2
