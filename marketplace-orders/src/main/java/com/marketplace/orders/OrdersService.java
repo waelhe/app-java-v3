@@ -809,7 +809,11 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
     findOrderFulfillmentByPaymentIntent(UUID paymentIntentId) {
         return orderRepository.findByPaymentIntentId(paymentIntentId)
                 .filter(order -> order.getStatus() == OrderStatus.CONFIRMED && order.getSellerId() != null)
-                .map(order -> requireOrderFulfillment(order.getId(), order.getConsumerId()));
+                // The selection is built from the row this read already carries
+                // (the shared builder @link #selectionOf): a second findById would
+                // re-query the row it just loaded and could throw the very
+                // exception this contract says it never throws.
+                .map(order -> selectionOf(order, order.getId(), order.getConsumerId()));
     }
 
     @Override
