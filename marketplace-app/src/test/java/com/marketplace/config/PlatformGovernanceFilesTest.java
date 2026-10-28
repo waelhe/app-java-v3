@@ -323,10 +323,10 @@ class PlatformGovernanceFilesTest {
                         + "deserialization, HIGH, fixed in guava 33.7.2) on the guava "
                         + "copy SHADED inside graphql-java-25.1.jar: the official "
                         + "Maven Central artifact embeds guava 32.1.2-jre (measured "
-                        + "from the downloaded jar), 25.1 is both the latest stable "
-                        + "graphql-java release and the Boot 4.1.2 -> spring-graphql "
-                        + "2.0.6 platform line, and the project's own resolved guava "
-                        + "is already the fixed 33.7.2-jre — no version bump the "
+                        + "from the downloaded jar) and so do 26.0/26.1, while 25.1 is "
+                        + "the line spring-boot-dependencies 4.1.2 pins "
+                        + "(graphql-java.version=25.1), and the project's own resolved "
+                        + "guava is already the fixed 33.7.2-jre — no version bump the "
                         + "project controls reaches a shaded-in-upstream copy. "
                         + "Time-bounded (expired_at 2026-12-11, trivy-enforced): "
                         + "on expiry the finding returns and forces a fresh decision. "
@@ -338,6 +338,18 @@ class PlatformGovernanceFilesTest {
                         + "beyond this one entry is a deliberate act that must "
                         + "update this pin")
                 .isOne();
+        // The entry's IDENTITY is pinned too (part-2 review, round 3): the
+        // count alone would let a different CVE take the single slot without
+        // tripping the guard.
+        assertThat(ignore)
+                .as("the single entry must be the measured graphql-java guava CVE")
+                .contains("id: CVE-2026-102554");
+        // And its SCOPE: the finding rides the guava copy shaded inside ONE
+        // jar, so the entry must name that path — an unscoped entry would
+        // silence the same CVE for every package in the image.
+        assertThat(ignore)
+                .as("the entry must stay scoped to the jar that embeds the shaded guava")
+                .contains("**/graphql-java-25.1.jar");
     }
 
     @Test
