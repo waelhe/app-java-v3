@@ -23,6 +23,7 @@ This file adds project-specific conventions.
      - Saleor Dashboard/full commerce schema → docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md
      - إصلاح أخر               → الملف المعني + CODING_STANDARDS.md
 4. ثم الشجرة المستهدفة من خريطة §10
+5. نظام معرفة العيوب `docs/governance/defect-knowledge/` — **إلزامي مع كل تعديل كود**: `change-protocol.md` (قبل/أثناء/بعد) + قواعد `rulebook.md` §B المُحمّلة اختيارياً بمحفزات الخطر + `pattern-catalog.md` عند أي شك في نمط متكرر
 ```
 قاعدة: «الملف الحاكم» = المستند الذي يملك قرارات المهمة. لا يقبَل إجراء بلا إسناد صريح إليه.
 
@@ -35,6 +36,7 @@ This file adds project-specific conventions.
 [البند من المصفوفة §14.2]: <11 بنود الاتساق أو بوابة A/B/C إن كانت مهمة>
 [أثر على الحدود]: <Modulith/SPI/أحداث أم لا>
 [دين: لا/نعم - موثق]
+[معرفة العيوب]: <قواعد §B/§C المحمّلة من rulebook.md حسب محفزات التغيير — أو «لا محفزات»>
 ```
 أي إجراء لا يحمل هذا الإعلان **يُتوقف تلقائياً** قبل التنفيذ.
 
