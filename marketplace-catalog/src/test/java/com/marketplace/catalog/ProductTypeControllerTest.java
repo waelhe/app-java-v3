@@ -9,7 +9,8 @@ import org.springframework.http.HttpStatus;
 import java.util.List;
 import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /** The configuration dictionary's own routes: every endpoint maps through
  *  the service and answers its documented status (the module's controller

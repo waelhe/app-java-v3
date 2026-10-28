@@ -2,7 +2,6 @@ package com.marketplace.community.spi;
 
 import com.marketplace.community.NeighborhoodMembership;
 import com.marketplace.community.NeighborhoodMembershipRepository;
-import com.marketplace.community.NeighborhoodPost;
 import com.marketplace.community.NeighborhoodPostRepository;
 import com.marketplace.community.PostStatus;
 import com.marketplace.shared.api.PostLookupPort;
