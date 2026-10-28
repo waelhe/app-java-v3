@@ -304,6 +304,21 @@ public class PaymentsService implements PaymentsSpi {
                     log.warn("Webhook payment_intent.payment_failed missing paymentIntentId: eventType={}", eventType);
                 }
             }
+            // Row 15 (agent findings 2026-10-26T11:43 export): the provider's
+            // own terminal resolution for an intent IT cancelled or let
+            // expire — no money moved, so a CANCELLATION_PENDING abandonment
+            // resolves to FAILED through the settlement's own edge. Every
+            // other state is the settlement's idempotent no-op read (the
+            // pre-fix dispatch ignored these types entirely — a logged
+            // default; the resolution only ever touches the abandonment).
+            case "payment_intent.canceled", "payment_intent.expired" -> {
+                if (paymentIntentId != null) {
+                    log.info("Webhook dispatch: {} for intent {}", eventType, paymentIntentId);
+                    paymentIntentSettlementService.resolveAbandonment(paymentIntentId, inboxRow);
+                } else {
+                    log.warn("Webhook {} missing paymentIntentId — nothing to resolve", eventType);
+                }
+            }
             case "charge.refunded" -> {
                 // L19 — the async safety net: refunds completed at the provider
                 // (including dashboard-created ones) sync the local books to
@@ -503,7 +518,30 @@ public class PaymentsService implements PaymentsSpi {
                 if (!existing.get().getConsumerId().equals(providerId)) {
                     throw new AccessDeniedException("Idempotency key belongs to another payer");
                 }
-                return existing.get();
+                // Agent findings 2026-10-26T13:11 export, row 39: the replay
+                // decision must return THE window's own payable — a
+                // same-payer intent from the caller-writable booking
+                // namespace that pre-occupied the key must never satisfy
+                // the ad bill's line (the billing event would be treated
+                // as handled while its AD intent was never created). The
+                // complete binding check (origin, campaign, amount,
+                // currency) mirrors the loan settlement's own
+                // authoritative-payable verification — the honest refusal
+                // on any mismatch, never a silent adoption of unrelated
+                // money. The booking surface's own prefix refusal
+                // (isServerPayableKey) is the structural isolation layer;
+                // this is the defense in depth on the reuse path.
+                PaymentIntent found = existing.get();
+                if (!PaymentIntent.ORIGIN_AD.equals(found.getOrigin())
+                        || !campaignId.equals(found.getAdCampaignId())
+                        || found.getAmountCents() == null || found.getAmountCents() != amountCents
+                        || found.getCurrency() == null || !found.getCurrency().equals(currency)) {
+                    throw new ConflictException("Idempotency key '" + idempotencyKey
+                            + "' is held by a non-matching payment intent (" + found.getId()
+                            + ", origin=" + found.getOrigin() + ") — the ad window's payable"
+                            + " cannot be satisfied by it");
+                }
+                return found;
             }
         }
         if (amountCents <= 0) {
@@ -777,9 +815,22 @@ public class PaymentsService implements PaymentsSpi {
             return new StableRefundScope("dispute", disputeId);
         }
 
+        /**
+         * Row 15's abandonment twin (agent findings 2026-10-26T11:43
+         * export): the operation is the ABANDONED INTENT itself, always a
+         * full-capture refund, amount-less — one abandonment, one remote
+         * refund, forever, across every registry resubmission.
+         */
+        public static StableRefundScope forAbandonment(UUID paymentIntentId) {
+            return new StableRefundScope("abandonment", paymentIntentId);
+        }
+
         String idempotencyKey(UUID paymentId, Long amountCents) {
             if ("return".equals(kind)) {
                 return returnScopedRefundIdempotencyKey(paymentId, operationId, amountCents);
+            }
+            if ("abandonment".equals(kind)) {
+                return abandonmentScopedRefundIdempotencyKey(paymentId, operationId);
             }
             return disputeScopedRefundIdempotencyKey(paymentId, operationId);
         }
@@ -1035,6 +1086,20 @@ public class PaymentsService implements PaymentsSpi {
      */
     static String disputeScopedRefundIdempotencyKey(UUID paymentId, UUID disputeId) {
         return "marketplace-refund-" + paymentId + "-dispute-" + disputeId;
+    }
+
+    /**
+     * Row 15 (agent findings 2026-10-26T11:43 export): the abandonment
+     * refund's FROZEN operation key — one abandoned intent, one remote
+     * refund, forever, always the full captured amount. The amount-less
+     * shape is the dispute twin's law: the operation freezes at first
+     * execution and every registry resubmission (worker crash, event
+     * redelivery, operator retry) replays the SAME remote refund through
+     * the PSP's idempotency contract — the buyer is paid back exactly once
+     * no matter how often the recovery re-runs.
+     */
+    static String abandonmentScopedRefundIdempotencyKey(UUID paymentId, UUID paymentIntentId) {
+        return "marketplace-refund-" + paymentId + "-abandonment-" + paymentIntentId;
     }
 
     /**
@@ -1294,6 +1359,19 @@ public class PaymentsService implements PaymentsSpi {
     }
 
     private void refundFully(PaymentIntent intent) {
+        // the auto-refund listeners' full refund: single-shot per listener
+        // delivery (the registry's resubmission carries the SAME event), the
+        // state-derived key is the documented shape for these edges
+        refundFully(intent, null);
+    }
+
+    /**
+     * Row 15's carrier: the same ONE full-refund contract with a STABLE
+     * operation scope when the refund is an OPERATION that must replay
+     * identically across every recovery resubmission (the abandonment's
+     * own refund — one abandoned intent, one remote refund, forever).
+     */
+    private void refundFully(PaymentIntent intent, StableRefundScope idempotencyScope) {
         Payment payment = paymentRepository.findByPaymentIntentId(intent.getId()).orElse(null);
         if (payment == null) {
             // Never charged through settlement — nothing remote to coordinate;
@@ -1306,7 +1384,7 @@ public class PaymentsService implements PaymentsSpi {
                     intent.getId());
             return;
         }
-        RemoteRefundOutcome outcome = refundThroughChannel(payment, intent, null, null);
+        RemoteRefundOutcome outcome = refundThroughChannel(payment, intent, null, idempotencyScope);
         switch (outcome) {
             case SYNCED -> {
                 paymentIntentRepository.save(intent);
@@ -1342,17 +1420,70 @@ public class PaymentsService implements PaymentsSpi {
                 intent.getId());
     }
 
+    /**
+     * Row 15 (agent findings 2026-10-26T11:43 export) — the abandonment's
+     * own record, NOT a terminal failure: a domain cancellation hit an
+     * in-flight payment and decided "this money returns to the buyer";
+     * the remote capture may still win the race. The intent lands
+     * CANCELLATION_PENDING (the payment row stays PENDING — the remote
+     * outcome owns its terminal state), a NEW attempt stays blocked until
+     * the race resolves, and the provider's own events close the loop:
+     * payment_intent.succeeded settles the books and pays the abandonment's
+     * ONE durable idempotent refund back ({@link #refundAbandonedCapture});
+     * payment_intent.payment_failed / canceled / expired resolve it to
+     * FAILED (no money moved — the settlement's fail edge and
+     * {@link #resolveAbandonment} respectively).
+     *
+     * <p>The pre-fix shape terminally FAILED the local pair with no remote
+     * coordination: a capture that won the race answered the settlement's
+     * state guard with ConflictException forever (the provider's own retry
+     * loop re-delivered the lost transition), and the buyer's captured
+     * money never settled locally nor returned — W7/G7's law stays intact
+     * for ORGANIC failures; the abandonment is a DIFFERENT fact with its
+     * own state and its own recovery.</p>
+     */
     private void failInFlight(PaymentIntent intent) {
-        intent.markFailed();
+        intent.markCancellationPending();
         paymentIntentRepository.save(intent);
-        paymentRepository.findByPaymentIntentId(intent.getId()).ifPresent(payment -> {
-            payment.markFailed();
-            paymentRepository.save(payment);
-        });
-        eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "FAILED"));
+        // the payment row keeps PENDING — its terminal state follows the
+        // remote truth (succeeded -> COMPLETED via the settlement; failed/
+        // canceled/expired -> FAILED via the same edges)
+        eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "CANCELLATION_PENDING"));
         eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), intent.getId()));
-        log.info("Auto-refund resolved intent {} as FAILED — the in-flight charge was abandoned at cancellation",
+        log.info("Auto-refund recorded intent {} as CANCELLATION_PENDING — the in-flight charge was"
+                + " abandoned at cancellation; the remote race (capture vs. its own failure) resolves it",
                 intent.getId());
+    }
+
+    /**
+     * Row 15 — the abandonment's recovery edge: a capture that WON the race
+     * settled the books through the settlement ({@code confirm} published
+     * {@link PaymentAbandonmentCapturedEvent} after committing SUCCEEDED),
+     * and the cancellation's own decision — "this money returns to the
+     * buyer" — executes here through the ONE refund contract. DURABLE (the
+     * Modulith Event Publication Registry resubmits after a crash) and
+     * IDEMPOTENT three ways: the REFUNDED no-op read, the
+     * abandonment-scoped PSP idempotency key (every resubmission replays
+     * the SAME remote refund), and the full-refund amount that never
+     * depends on refunded-so-far state.
+     */
+    @Observed(name = "payment.abandonment.refund")
+    @Retry(name = "paymentProcessing")
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void refundAbandonedCapture(UUID paymentIntentId) {
+        PaymentIntent intent = paymentIntentRepository.findById(paymentIntentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment intent not found: " + paymentIntentId));
+        if (intent.getStatus() == PaymentIntentStatus.REFUNDED
+                || intent.getStatus() == PaymentIntentStatus.PARTIALLY_REFUNDED) {
+            // the idempotent no-op read: the abandonment's refund already
+            // executed (a registry resubmission, an operator's manual
+            // refund, or the webhook sync raced ahead) — replaying is a
+            // read, never a second payment
+            log.info("Abandonment refund for intent {} is already {} — the resubmission is a no-op read",
+                    paymentIntentId, intent.getStatus());
+            return;
+        }
+        refundFully(intent, StableRefundScope.forAbandonment(intent.getId()));
     }
 
     private PaymentSummary toPaymentSummary(PaymentIntent paymentIntent) {

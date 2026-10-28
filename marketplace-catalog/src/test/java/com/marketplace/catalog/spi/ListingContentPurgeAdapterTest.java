@@ -129,4 +129,51 @@ class ListingContentPurgeAdapterTest {
         // (the expiry executor's !isEmpty() discipline).
         verify(eventPublisher, never()).publishEvent(any());
     }
+
+    @Test
+    void purgeAuthoredTexts_purgesTheAuthoredQaBodiesAndTheirAuditMirrors() {
+        // Agent findings 2026-10-26T13:11 export, row 48: the authored
+        // product-question and product-answer bodies join the purge — the
+        // author UUIDs are V170's own pairings (asker_id / provider_id),
+        // the NOT NULL bodies take the tombstone marker (the title
+        // treatment), the Envers mirrors purge with the same predicates,
+        // and NO is_deleted filter (the withdrawn text purges like the
+        // live).
+        stubCounts(0, 0, 0, 0);
+        when(jdbcTemplate.update(contains("UPDATE product_questions SET body"),
+                eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
+                eq(AuthoredContentPurgePort.PURGED_MARKER)))
+                .thenReturn(4);
+        when(jdbcTemplate.update(contains("UPDATE product_answers SET body"),
+                eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
+                eq(AuthoredContentPurgePort.PURGED_MARKER)))
+                .thenReturn(2);
+        when(jdbcTemplate.update(contains("UPDATE product_questions_aud SET body"),
+                eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
+                eq(AuthoredContentPurgePort.PURGED_MARKER)))
+                .thenReturn(5);
+        when(jdbcTemplate.update(contains("UPDATE product_answers_aud SET body"),
+                eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
+                eq(AuthoredContentPurgePort.PURGED_MARKER)))
+                .thenReturn(3);
+
+        assertEquals(14, adapter.purgeAuthoredTexts(SUBJECT));
+
+        verify(jdbcTemplate).update(
+                "UPDATE product_questions SET body = ? WHERE asker_id = ? "
+                        + "AND body IS NOT NULL AND body <> ?",
+                AuthoredContentPurgePort.PURGED_MARKER, SUBJECT, AuthoredContentPurgePort.PURGED_MARKER);
+        verify(jdbcTemplate).update(
+                "UPDATE product_answers SET body = ? WHERE provider_id = ? "
+                        + "AND body IS NOT NULL AND body <> ?",
+                AuthoredContentPurgePort.PURGED_MARKER, SUBJECT, AuthoredContentPurgePort.PURGED_MARKER);
+        verify(jdbcTemplate).update(
+                "UPDATE product_questions_aud SET body = ? WHERE asker_id = ? "
+                        + "AND body IS NOT NULL AND body <> ?",
+                AuthoredContentPurgePort.PURGED_MARKER, SUBJECT, AuthoredContentPurgePort.PURGED_MARKER);
+        verify(jdbcTemplate).update(
+                "UPDATE product_answers_aud SET body = ? WHERE provider_id = ? "
+                        + "AND body IS NOT NULL AND body <> ?",
+                AuthoredContentPurgePort.PURGED_MARKER, SUBJECT, AuthoredContentPurgePort.PURGED_MARKER);
+    }
 }

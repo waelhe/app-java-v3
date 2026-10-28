@@ -41,4 +41,11 @@ public class DisputeLookupAdapter implements DisputeLookupPort {
     public boolean hasOpenDisputeForLoan(UUID loanId, UUID excludingDisputeId) {
         return disputeRepository.existsByLoanIdAndStatusAndIdNot(loanId, DisputeStatus.OPEN, excludingDisputeId);
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean hasRefundResolutionForLoan(UUID loanId) {
+        return disputeRepository.existsByLoanIdAndResolution(
+                loanId, com.marketplace.shared.api.DisputeResolution.REFUND_CONSUMER);
+    }
 }

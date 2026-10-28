@@ -274,6 +274,19 @@ public class ReviewsService {
     @PreAuthorize("hasRole('PROVIDER')")
     public Review createReverse(UUID bookingId, Integer rating, String comment,
                                 Authentication authentication) {
+        // Agent findings 2026-10-26T13:11 export, row 3 (CWE-863): the
+        // SAME booking-origin creation policy the forward path applies
+        // (W1 4.3 — the mode gate reads BEFORE any write). OPEN is
+        // organic-only: the administrator's mode selection must refuse
+        // BOTH directions consistently — the reverse path used to save a
+        // published booking-origin review straight through the disabled
+        // type. The shared decision rides the same mode() read, the same
+        // explicit 400, never a silent conversion.
+        if (mode() == ReviewMode.OPEN) {
+            throw new BadRequestException(
+                    "Booking reviews are not enabled in the current reviews mode (OPEN)"
+                            + " - submit an organic review instead");
+        }
         UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
 
         BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(bookingId);
@@ -649,7 +662,15 @@ public class ReviewsService {
      * {@code ReviewMode.parse} (the W0 no-silent-fallback contract).
      */
     private ReviewMode mode() {
-        return ReviewMode.parse(systemSettingsPort.getStringOrDefault(
+        // Agent findings 2026-10-26T13:11 export, row 15: the admission
+        // read — every mode() caller (the forward gate, the reverse gate,
+        // the organic gate) DECIDES whether a write is admitted, so the
+        // policy comes from the committed row itself, never the cached
+        // reader (a pre-change read populating the cache after the
+        // admin's AFTER_COMMIT eviction would admit writes under an
+        // obsolete mode until the TTL). The FeatureGatePort precedent:
+        // a request-time decision gate is a cheap point read.
+        return ReviewMode.parse(systemSettingsPort.getStringAuthoritativeOrDefault(
                 SystemSettingKeys.REVIEWS_MODE, ReviewMode.VERIFIED_ONLY.name()));
     }
 

@@ -37,6 +37,7 @@ class AdCampaignServiceTest {
 
     private final AdCampaignRepository campaignRepository = mock(AdCampaignRepository.class);
     private final AdBillingChargeRepository chargeRepository = mock(AdBillingChargeRepository.class);
+    private final AdBillingBatchExecutor billingExecutor = mock(AdBillingBatchExecutor.class);
     private final ProviderListingRepository listingRepository = mock(ProviderListingRepository.class);
     private final CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
     private final ProviderLookupPort providerLookupPort = mock(ProviderLookupPort.class);
@@ -52,7 +53,7 @@ class AdCampaignServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AdCampaignService(campaignRepository, chargeRepository,
+        service = new AdCampaignService(campaignRepository, chargeRepository, billingExecutor,
                 listingRepository, currentUserProvider, providerLookupPort, eventPublisher, CLOCK);
     }
 
@@ -169,6 +170,34 @@ class AdCampaignServiceTest {
         service.resume(campaign.getId(), authentication);
         assertEquals(AdCampaignStatus.ACTIVE, campaign.getStatus());
         assertEquals(LocalDate.parse("2026-10-03"), campaign.getBilledThrough());
+    }
+
+    @Test
+    void pause_settlesTheAccruedCompleteActiveDaysBeforeTheHold() {
+        // Agent findings 2026-10-26T13:11 export, row 45: the owner's hold
+        // must not discard the unsettled window — the settlement runs on
+        // the campaign WHILE IT IS STILL ACTIVE (the billable state), with
+        // the pause's own UTC today as the EXCLUSIVE horizon (the pause
+        // day itself stays the one documented forfeit).
+        AdCampaign campaign = AdCampaign.start(ownerId, UUID.randomUUID(), 100000L, 10L, 1L, "SAR",
+                NOW.minus(Duration.ofDays(5)), null);
+        when(campaignRepository.findByIdAndProviderId(campaign.getId(), ownerId))
+                .thenReturn(Optional.of(campaign));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(ownerId);
+        java.util.List<AdCampaignStatus> statusAtSettlement = new java.util.ArrayList<>();
+        org.mockito.Mockito.doAnswer(inv -> {
+            statusAtSettlement.add(((AdCampaign) inv.getArgument(0)).getStatus());
+            return null;
+        }).when(billingExecutor).settleOpenWindow(any(AdCampaign.class), any(LocalDate.class));
+
+        service.pause(campaign.getId(), authentication);
+
+        // The settlement ran exactly once, on the caller's own campaign,
+        // at the service's UTC today — and the status it observed was
+        // ACTIVE (the window was still billable, not dark).
+        verify(billingExecutor).settleOpenWindow(campaign, LocalDate.parse("2026-10-03"));
+        assertEquals(java.util.List.of(AdCampaignStatus.ACTIVE), statusAtSettlement);
+        assertEquals(AdCampaignStatus.PAUSED, campaign.getStatus());
     }
 
     @Test

@@ -106,8 +106,17 @@ public class JobsContentPurgeAdapter implements AuthoredContentPurgePort {
         // The seeker's authored cover messages (job_applications + its
         // audit mirror) — soft-deleted rows included by the native UPDATE's
         // bypass of the soft-delete filter.
+        // Row 5 (agent findings 2026-10-26 14:33 export, CWE-362): the
+        // cover-message erasure ADVANCES the live row's optimistic-lock
+        // version in the SAME statement — an employer application-transition
+        // holding a pre-erasure JobApplication snapshot fails its flush on
+        // the version the erasure just advanced, instead of restoring the
+        // erased cover message through the passed check (the
+        // booking/disputes/search purge adapters' own family). The audit
+        // mirror carries no version column (Envers revisions).
         int coverMessages = jdbcTemplate.update(
-                "UPDATE job_applications SET cover_message = ? WHERE seeker_id = ? "
+                "UPDATE job_applications SET cover_message = ?, version = version + 1 "
+                        + "WHERE seeker_id = ? "
                         + "AND cover_message IS NOT NULL AND cover_message <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
         int coverMessageAudits = jdbcTemplate.update(

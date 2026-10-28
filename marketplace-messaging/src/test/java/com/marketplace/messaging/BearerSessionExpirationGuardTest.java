@@ -95,6 +95,29 @@ class BearerSessionExpirationGuardTest {
         assertThat(status.getValue().getReason()).isEqualTo("Access token expired");
     }
 
+    /**
+     * Row 23 (agent findings 2026-10-26 14:33 export, CWE-613): a session
+     * admitted under a token whose expiry deadline has ALREADY passed
+     * (the JWT validator's clock-skew tolerance admitted it) closes
+     * IMMEDIATELY — nothing is scheduled, and the quiet session never
+     * carries the retained principal past its deadline.
+     */
+    @Test
+    void anAdmittedSessionWithAnAlreadyPastExpiryClosesImmediately() throws Exception {
+        Instant pastDeadline = Instant.now().minusSeconds(30);
+        when(session.getPrincipal()).thenReturn(tokenOf(jwtExpiringAt(pastDeadline)));
+
+        guard.sessionOpened(session);
+
+        // Closed NOW with the auth-expiry close status — never scheduled.
+        org.mockito.ArgumentCaptor<CloseStatus> status =
+                org.mockito.ArgumentCaptor.forClass(CloseStatus.class);
+        verify(session).close(status.capture());
+        assertThat(status.getValue().getCode())
+                .isEqualTo(BearerSessionExpirationGuard.TOKEN_EXPIRED.getCode());
+        verify(taskScheduler, never()).schedule(any(Runnable.class), any(Instant.class));
+    }
+
     @Test
     void aConnectLiftedTokenArmsTheCloseForTheBrowserSession() throws Exception {
         // The browser path: no handshake principal at establish time — the

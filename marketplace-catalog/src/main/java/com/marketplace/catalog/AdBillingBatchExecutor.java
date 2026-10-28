@@ -81,8 +81,27 @@ public class AdBillingBatchExecutor {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void settleOneCampaign(UUID campaignId, LocalDate today) {
         AdCampaign campaign = campaignRepository.findById(campaignId).orElse(null);
-        if (campaign == null || campaign.getStatus() == AdCampaignStatus.PAUSED) {
-            return; // gone or dark — the dark gap never bills
+        if (campaign == null) {
+            return; // gone — the run's candidate list is advisory
+        }
+        settleOpenWindow(campaign, today);
+    }
+
+    /**
+     * Agent findings 2026-10-26T13:11 export, row 45: the settlement body
+     * as a transaction-JOINING operation — the pause path settles its
+     * accrued complete ACTIVE days and flips the hold in ONE atomic unit
+     * (the marker's advance, the charge row, the consume move and the
+     * PAUSED flip commit together or roll back together). The daily run
+     * keeps its own REQUIRES_NEW door ({@link #settleOneCampaign}); this
+     * door carries NO transaction boundary of its own, so the caller's
+     * unit owns the commit. The PAUSED guard stays at the top of the
+     * body: the dark gap never bills, whichever door the settlement
+     * walks through.
+     */
+    public void settleOpenWindow(AdCampaign campaign, LocalDate today) {
+        if (campaign.getStatus() == AdCampaignStatus.PAUSED) {
+            return; // dark — the dark gap never bills
         }
 
         // The duration's own end: a campaign past its ends_at settles its
@@ -138,8 +157,11 @@ public class AdBillingBatchExecutor {
         if (amount <= 0) {
             // The zero window: no charge row, no event, no ledger entry —
             // the marker advanced alone (the honest «مجاني» day).
+            // (The 82831117 extraction's carry-over: these two logs still
+            // named settleOneCampaign's campaignId parameter — out of scope
+            // here since the extraction — and broke the module's compile.)
             log.debug("Ad window [{}, {}) of campaign {} settled at zero consumption — marker advanced",
-                    windowStart, horizon, campaignId);
+                    windowStart, horizon, campaign.getId());
             return;
         }
 
@@ -167,7 +189,7 @@ public class AdBillingBatchExecutor {
         }
         log.info("Ad window [{}, {}) of campaign {} frozen: {} impressions x {} + {} clicks x {} "
                         + "= {} of {} computed, capped at {} remaining — {} {} billed",
-                windowStart, horizon, campaignId, impressions, campaign.getImpressionPriceCents(),
+                windowStart, horizon, campaign.getId(), impressions, campaign.getImpressionPriceCents(),
                 clicks, campaign.getClickPriceCents(), amount, uncapped, remaining,
                 amount, campaign.getCurrency());
     }

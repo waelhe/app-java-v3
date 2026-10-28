@@ -85,6 +85,16 @@ public class PasswordResetService {
     static final String UPDATE_PASSWORD_ONLY =
             "UPDATE auth_users SET password = ? WHERE username = ?";
 
+    /**
+     * Row 20 (agent findings 2026-10-26 14:33 export, CWE-521): the shared
+     * password policy the {@code register} flow pins — 8..72 characters
+     * (the bcrypt byte ceiling). A record of the owning service's own
+     * contract, so the redemption leg enforces it before consuming the
+     * single-use token regardless of which transport carried the request.
+     */
+    private static final java.util.regex.Pattern PASSWORD_SHAPE =
+            java.util.regex.Pattern.compile("^.{8,72}$");
+
     private final UserRepository userRepository;
     private final UserDetailsManager userDetailsManager;
     private final ApplicationEventPublisher eventPublisher;
@@ -154,20 +164,33 @@ public class PasswordResetService {
      * The redemption leg: consumes the token (the single-use wall —
      * {@link AuthActionTokenService#consume} answers the honest 400 for an
      * unknown, already-used, or expired token), re-encodes the new secret
-     * through the delegating encoder, writes it through the official
-     * {@code updateUser} with every other stored flag replayed verbatim,
+     * through the delegating encoder, writes the PASSWORD COLUMN alone
+     * (the {@code UPDATE_PASSWORD_ONLY} shape — never a flag replay),
      * and kills the account's issued authorizations. The consumption, the
      * password write, and the authorization purge commit atomically — a
      * failure rolls the token back to live (the honest retry contract:
      * nothing half-spent).
      *
+     * <p>Row 20 (agent findings 2026-10-26 14:33 export, CWE-521): the
+     * shared password policy is enforced HERE — inside the owning use
+     * case, before the token is consumed — not only at whichever transport
+     * happened to check it. The GraphQL {@code setPassword} transport
+     * checks for blank input alone, so a replacement shorter than the
+     * minimum every other account flow enforces could previously be
+     * written through this path; the policy is a fact about the credential,
+     * so the credential's owning service owns the check.</p>
+     *
      * @param token       the raw one-time token from the email's deep link
-     * @param newPassword the CLEAR replacement — validated by the request
-     *                    layer (8..72, the bcrypt byte ceiling, the same
-     *                    policy {@code register} pins) and encoded here
+     * @param newPassword the CLEAR replacement — policy-validated here
+     *                    (8..72, the bcrypt byte ceiling, the same shape
+     *                    {@code register} pins) and encoded after
      */
     @Observed(name = "password.reset.complete")
     public void completeReset(String token, String newPassword) {
+        if (newPassword == null || !PASSWORD_SHAPE.matcher(newPassword).matches()) {
+            throw new IllegalArgumentException(
+                    "The new password must be 8 to 72 characters long");
+        }
         AuthActionToken redeemed =
                 authActionTokenService.consume(token, AuthActionTokenPurpose.PASSWORD_RESET);
         String username = redeemed.getUsername();

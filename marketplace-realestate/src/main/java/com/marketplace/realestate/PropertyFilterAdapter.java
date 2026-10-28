@@ -41,6 +41,28 @@ public class PropertyFilterAdapter implements RealestatePropertyFilterPort {
         this.repository = repository;
     }
 
+    /**
+     * Row 2 (agent findings 2026-10-26 14:33 export, CWE-400): the
+     * ONE-LISTING membership forms — the alert matcher's own questions,
+     * answered at the storage layer instead of materializing the search's
+     * whole matching-property population. The facet form composes the
+     * SAME specification the set form uses with the single-listing
+     * equality (Spring Data JPA's {@code exists(Specification)} — the
+     * predicate pushes down, no entity hydration); the radius form is the
+     * native {@code ST_DWithin} existence twin.
+     */
+    @Override
+    public boolean listingMatchesCriteria(PropertyCriteria criteria, UUID listingId) {
+        return repository.exists(toSpecification(criteria, null)
+                .and((root, query, cb) -> cb.equal(root.get("listingId"), listingId)));
+    }
+
+    @Override
+    public boolean listingIsWithinRadius(BigDecimal latitude, BigDecimal longitude,
+                                         long radiusMeters, UUID listingId) {
+        return repository.existsListingIdWithinRadius(latitude, longitude, radiusMeters, listingId);
+    }
+
     @Override
     public Set<UUID> findListingIdsMatching(PropertyCriteria criteria) {
         return repository.findAll(toSpecification(criteria, null))

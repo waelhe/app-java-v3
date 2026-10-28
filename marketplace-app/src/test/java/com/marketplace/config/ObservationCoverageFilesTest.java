@@ -354,6 +354,15 @@ class ObservationCoverageFilesTest {
                     "notification.preferences.update")),
 
             Map.entry("marketplace-payments", List.of(
+                    // Row 15 (part 4, agent findings 2026-10-26T11:43): the
+                    // abandonment layer's two commands — the capture-refund
+                    // edge (`payment.abandonment.refund`, the intent's own
+                    // frozen-scope refund) and the terminal resolution
+                    // (`payment.abandonment.resolve`, the settlement's
+                    // canceled/expired answer). Both are business writes at
+                    // their own service seam; the recovery sweep's reads stay
+                    // unobserved per the commands-not-reads policy.
+                    "payment.abandonment.refund", "payment.abandonment.resolve",
                     "payment.cancel", "payment.confirm", "payment.delivery-intent.create", "payment.delivery.refund", "payment.fail", "payment.process",
                     "payment.psp.create", "payment.psp.refund", "payment.psp.webhook",
                     // W11 (the matrix's G5): the settlement-eligibility READ —

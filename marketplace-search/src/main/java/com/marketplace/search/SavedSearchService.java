@@ -255,7 +255,27 @@ public class SavedSearchService {
             for (SavedSearch saved : slice.getContent()) {
                 scanned++;
                 lastSeenId = saved.getId();
-                if (!matcher.matches(saved.getCriteria(), listingId, providerId)) {
+                // Row 3 (agent findings 2026-10-26 14:33 export, CWE-755):
+                // the per-search failure boundary. The pre-fix scan ran the
+                // whole population inside ONE transaction with no boundary —
+                // a single stored criterion the eventual query consumer
+                // rejects (however it slipped past the save-time gates)
+                // aborted matching before notifications for ANY user were
+                // published. The quarantine shape: ONE saved search's
+                // evaluation failure is THAT search's own condition — logged
+                // with its identity for the operator, skipped for this
+                // activation, never the population's abort. The scan's own
+                // transaction keeps its atomicity for everything that
+                // evaluates cleanly (the ledger, the markers, the
+                // notifications' structural aggregation).
+                try {
+                    if (!matcher.matches(saved.getCriteria(), listingId, providerId)) {
+                        continue;
+                    }
+                } catch (RuntimeException poisoned) {
+                    log.error("Saved search {} of user {} failed evaluation against listing {} — "
+                            + "quarantined for this activation (criterion rejected by a consumer): {}",
+                            saved.getId(), saved.getUserId(), listingId, poisoned.getMessage());
                     continue;
                 }
                 matched++;

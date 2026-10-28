@@ -48,6 +48,26 @@ final class Thumbnails {
      */
     private static final Set<String> PERMITTED_READER_FORMATS = Set.of("JPEG", "png");
 
+    /**
+     * Row 29 (agent findings 2026-10-26 14:33 export, CWE-400): the
+     * progressive-scan ceiling for JPEG decodes. The JDK's reader
+     * reconstructs and copies the raster for EVERY accepted scan, so a
+     * compact upload carrying an abnormal scan count burns CPU
+     * disproportionately to its byte size — the raster budget alone
+     * (header pixels) never sees it. The scan count is read from the
+     * stream's own marker structure — {@code getImageMetadata(0)}'s
+     * native JPEG tree exposes one {@code <sos>} node per scan, MEASURED
+     * on JDK 25 (a default-encoded progressive image carries 10) — before
+     * any raster work. The ceiling is deliberately conservative: 50 sits
+     * well above every legitimate encoder's output (the measured default
+     * is 10; real-world progressive files carry 2-15) and bounds the
+     * decode multiplier to a sane multiple of the baseline cost. Over the
+     * ceiling, the decode is refused with the raster-budget contract's
+     * own shape: {@code null} — the original serves as its own thumbnail,
+     * an honest refusal to spend the CPU, never a processing failure.
+     */
+    private static final int MAX_JPEG_PROGRESSIVE_SCANS = 50;
+
     private Thumbnails() {
     }
 
@@ -142,6 +162,14 @@ final class Thumbnails {
                     // Within the width bound — no scaling needed, no duplicate stored.
                     return null;
                 }
+                // Row 29: the progressive-scan ceiling — read from the
+                // MARKER structure (metadata tree, no raster work) before
+                // the decode; over the ceiling the decode is refused with
+                // the raster-budget contract's own shape.
+                if ("JPEG".equalsIgnoreCase(reader.getFormatName())
+                        && countJpegScans(reader) > MAX_JPEG_PROGRESSIVE_SCANS) {
+                    return null;
+                }
                 BufferedImage source = reader.read(0);
                 if (source == null) {
                     // Defensive: the permitted reader decoded no raster — a
@@ -227,6 +255,39 @@ final class Thumbnails {
      * while every other format (bmp, gif, tiff, wbmp, "jpeg 2000", …) fails
      * the equality outright.
      */
+    /**
+     * Row 29's scan counter: the JPEG stream's own {@code <sos>} (Start Of
+     * Scan) markers, counted through the reader's native metadata tree
+     * ("javax_imageio_jpeg_image_1.0" — the documented JPEG metadata
+     * format) — the marker walk costs bounded stream I/O (the upload byte
+     * cap), never raster reconstruction. MEASURED on JDK 25: a
+     * default-encoded progressive image exposes 10 scans this way.
+     */
+    private static int countJpegScans(ImageReader reader) throws IOException {
+        javax.imageio.metadata.IIOMetadata metadata = reader.getImageMetadata(0);
+        if (metadata == null) {
+            // No metadata leg for this stream: the decode itself will own
+            // the failure contract — treat as unbounded is wrong, treat as
+            // zero is honest (the marker walk found nothing to count).
+            return 0;
+        }
+        // getAsTree's own contract: the native tree for the reader's
+        // format, built from the stream's markers (no checked failure of
+        // its own — an unreadable stream already failed at reader selection).
+        org.w3c.dom.Node tree = metadata.getAsTree("javax_imageio_jpeg_image_1.0");
+        return countNamedNodes(tree, "sos");
+    }
+
+    /** Row 29's DOM walk: {@code <sos>} nodes appear only inside the tree's marker sequence. */
+    private static int countNamedNodes(org.w3c.dom.Node node, String name) {
+        int count = name.equals(node.getNodeName()) ? 1 : 0;
+        org.w3c.dom.NodeList children = node.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            count += countNamedNodes(children.item(i), name);
+        }
+        return count;
+    }
+
     private static ImageReader selectPermittedReader(ImageInputStream input) throws IOException {
         Iterator<ImageReader> readers = ImageIO.getImageReaders(input);
         if (!readers.hasNext()) {

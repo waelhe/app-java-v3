@@ -42,19 +42,50 @@ public class BookingService implements BookingSpi {
     private final ListingPriceProvider listingPriceProvider;
     private final AvailabilityPort availabilityPort;
     private final EffectivePricePort effectivePricePort;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    /**
+     * Row 14 (agent findings 2026-10-26 14:33 export, CWE-362): the
+     * per-WINDOW cancellation lock — the serialization point the legacy
+     * duplicate-claimant transfer needed. Cancellation, survivor
+     * selection, and the hold transfer run as ONE critical section per
+     * exact slot window: the advisory transaction lock (the house
+     * {@code saved-search-scan:}/{@code ai-knowledge-source:} pattern —
+     * domain-separated key string, {@code hashtextextended}, released
+     * automatically at the surrounding transaction's commit or rollback,
+     * no unlock path to forget). A concurrent cancellation of a sibling
+     * claimant of the SAME window waits here, then reads the first
+     * canceller's COMMITTED state (the cancelled status, the transferred
+     * hold) and re-derives its own survivor from the truth — the
+     * pre-fix race could mark the slot reserved by a booking whose own
+     * cancellation was already in flight. Every cancellation path (cancel
+     * and autoCancel) acquires the SAME key in the SAME order, before any
+     * survivor read.
+     */
+    static final String WINDOW_CANCEL_LOCK =
+            "SELECT pg_advisory_xact_lock(hashtextextended("
+                    + "'booking-window-cancel:' || ?::text || ':' || ?::text || ':' || ?::text, 0))";
 
     public BookingService(BookingRepository bookingRepository,
                           CurrentUserProvider currentUserProvider,
                           ApplicationEventPublisher eventPublisher,
                           ListingPriceProvider listingPriceProvider,
                           AvailabilityPort availabilityPort,
-                          EffectivePricePort effectivePricePort) {
+                          EffectivePricePort effectivePricePort,
+                          org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
         this.bookingRepository = bookingRepository;
         this.currentUserProvider = currentUserProvider;
         this.eventPublisher = eventPublisher;
         this.listingPriceProvider = listingPriceProvider;
         this.availabilityPort = availabilityPort;
         this.effectivePricePort = effectivePricePort;
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    /** Row 14: the window's cancel critical section begins — see {@link #WINDOW_CANCEL_LOCK}. */
+    private void lockWindowCancellation(UUID providerId, java.time.Instant startsAt, java.time.Instant endsAt) {
+        jdbcTemplate.queryForList(WINDOW_CANCEL_LOCK, Object.class,
+                providerId.toString(), startsAt.toString(), endsAt.toString());
     }
 
     @Transactional(readOnly = true)
@@ -214,6 +245,9 @@ public class BookingService implements BookingSpi {
         verifyParticipantOwnership(booking, authentication);
         booking.cancel();
         if (booking.getStartsAt() != null && booking.getEndsAt() != null) {
+            // Row 14: the window's critical section — cancellation, survivor
+            // selection, and transfer as one unit (see WINDOW_CANCEL_LOCK).
+            lockWindowCancellation(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt());
             // R2: the release carries this booking's id — only the hold this
             // booking placed can be freed (a PENDING sibling's cancel no longer
             // releases a CONFIRMED booking's window) — and the surviving active
@@ -237,6 +271,9 @@ public class BookingService implements BookingSpi {
         }
         booking.cancel();
         if (booking.getStartsAt() != null && booking.getEndsAt() != null) {
+            // Row 14: the SAME critical section on the SAME key in the SAME
+            // order — every cancellation path serializes per window.
+            lockWindowCancellation(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt());
             // R2: the release carries this booking's id — only the hold this
             // booking placed can be freed (a PENDING sibling's cancel no longer
             // releases a CONFIRMED booking's window) — and the surviving active

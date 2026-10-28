@@ -1,5 +1,7 @@
 package com.marketplace.disputes;
 
+import com.marketplace.shared.api.DisputeResolution;
+
 import org.springframework.data.repository.history.RevisionRepository;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
@@ -27,4 +29,16 @@ public interface DisputeRepository extends JpaRepository<Dispute, UUID>, JpaSpec
      * dispute's own id is discounted (dispute-identity idempotency).
      */
     boolean existsByLoanIdAndStatusAndIdNot(UUID loanId, DisputeStatus status, UUID id);
+
+    /**
+     * Row 8 (agent findings 2026-10-26 14:33 export): the release edge's
+     * refund-decision fact — whether ANY of the loan's disputes was
+     * resolved to the consumer's refund (applied OR still awaiting its
+     * event's consumption). The lending release path holds the freeze
+     * while such a decision exists: the refund branch is terminal-first,
+     * so releasing first would drop the approved refund on arrival (the
+     * loan no longer DISPUTED); holding lets the registry's resubmission
+     * deliver the termination the decision already carries.
+     */
+    boolean existsByLoanIdAndResolution(UUID loanId, DisputeResolution resolution);
 }

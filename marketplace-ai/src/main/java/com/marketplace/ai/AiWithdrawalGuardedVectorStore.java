@@ -44,10 +44,19 @@ public final class AiWithdrawalGuardedVectorStore implements VectorStore {
 
     private final VectorStore delegate;
     private final AiWithdrawnSourceStore withdrawnSources;
+    private final com.marketplace.shared.api.KnowledgeSourceStatePort knowledgeSourceState;
 
-    public AiWithdrawalGuardedVectorStore(VectorStore delegate, AiWithdrawnSourceStore withdrawnSources) {
+    /**
+     * Row 26 (agent findings 2026-10-26 14:33 export): the authoritative
+     * source-state port joins the guard — see {@code sourceTypeFilter}'s
+     * javadoc below.
+     */
+    public AiWithdrawalGuardedVectorStore(VectorStore delegate, AiWithdrawnSourceStore withdrawnSources,
+                                          com.marketplace.shared.api.KnowledgeSourceStatePort knowledgeSourceState) {
         this.delegate = Objects.requireNonNull(delegate, "delegate must not be null");
         this.withdrawnSources = Objects.requireNonNull(withdrawnSources, "withdrawnSources must not be null");
+        this.knowledgeSourceState = Objects.requireNonNull(
+                knowledgeSourceState, "knowledgeSourceState must not be null");
     }
 
     @Override
@@ -65,15 +74,53 @@ public final class AiWithdrawalGuardedVectorStore implements VectorStore {
             return retrieved;
         }
         Set<String> withdrawn = withdrawnSources.withdrawnAmong(sourceIds);
-        if (withdrawn.isEmpty()) {
-            return retrieved;
-        }
         return retrieved.stream()
                 .filter(document -> {
                     Object sourceId = document.getMetadata().get(AiKnowledgeGateway.SOURCE_ID_METADATA_KEY);
                     return sourceId == null || !withdrawn.contains(sourceId.toString());
                 })
+                // Row 26 (agent findings 2026-10-26 14:33 export): the
+                // AUTHORITATIVE source-state filter — the belt-and-braces
+                // half's asynchronous twin. The durable withdrawal record is
+                // written by an AFTER_COMMIT listener, so a window exists in
+                // which a withdrawn-or-purged source's passages answer with
+                // NO record (the record's absence was treated as
+                // permission). The knowledge module's own live fact — the
+                // entry exists and its authored text is not the purge
+                // tombstone — is read synchronously per knowledge source in
+                // the retrieval set (the DisputeLookupPort pattern: the data
+                // owner answers, the consumer asks; bounded point reads,
+                // never recall-wide), and a source that is not live is
+                // dropped exactly like a durably withdrawn one. The
+                // recommendation's own words: "check authoritative source
+                // state before returning indexed passages. Keep
+                // asynchronous vector deletion as cleanup."
+                .filter(this::knowledgeSourceIsLive)
                 .toList();
+    }
+
+    /**
+     * Row 26's per-document authoritative check: knowledge-entry sources
+     * (the {@code sourceType} the gateway stamps) must be live in the
+     * knowledge module's own table. Documents from any other source type
+     * — or without a resolvable entry id — are none of this guard's
+     * business and pass through.
+     */
+    private boolean knowledgeSourceIsLive(Document document) {
+        Object sourceType = document.getMetadata().get("sourceType");
+        if (!"knowledge-entry".equals(sourceType)) {
+            return true;
+        }
+        Object sourceId = document.getMetadata().get(AiKnowledgeGateway.SOURCE_ID_METADATA_KEY);
+        if (sourceId == null) {
+            return true;
+        }
+        try {
+            return knowledgeSourceState.isSourceContentLive(java.util.UUID.fromString(sourceId.toString()));
+        } catch (IllegalArgumentException unparseable) {
+            // Not an entry id at all — the metadata contract's own stranger.
+            return true;
+        }
     }
 
     @Override

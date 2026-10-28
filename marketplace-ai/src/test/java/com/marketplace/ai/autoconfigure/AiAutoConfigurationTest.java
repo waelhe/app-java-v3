@@ -109,9 +109,14 @@ class AiAutoConfigurationTest {
 
         ObjectProvider<AiWithdrawnSourceStore> withdrawnSources = mock(ObjectProvider.class);
         when(withdrawnSources.getIfAvailable()).thenReturn(mock(AiWithdrawnSourceStore.class));
+        // Row 26: the authoritative source-state port joins the wiring —
+        // absent by default (the autoconfiguration's honest fallback).
+        @SuppressWarnings("unchecked")
+        ObjectProvider<com.marketplace.shared.api.KnowledgeSourceStatePort> knowledgeSourceState =
+                mock(ObjectProvider.class);
 
         AiChatGateway gateway = new AiAutoConfiguration()
-                .aiChatGateway(builder, sessionService, searchTools, modelRouters, selfRefineAdvisors, guardrailAdvisors, retrievalAugmentationAdvisors, vectorStores, withdrawnSources);
+                .aiChatGateway(builder, sessionService, searchTools, modelRouters, selfRefineAdvisors, guardrailAdvisors, retrievalAugmentationAdvisors, vectorStores, withdrawnSources, knowledgeSourceState);
 
         assertThat(gateway).isNotNull();
         verify(searchTools).ifAvailable(any());

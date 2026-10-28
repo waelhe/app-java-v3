@@ -92,7 +92,8 @@ public class AiAutoConfiguration {
             ObjectProvider<JevGuardrailAdvisor> guardrailAdvisors,
             ObjectProvider<RetrievalAugmentationAdvisor> retrievalAugmentationAdvisors,
             ObjectProvider<VectorStore> vectorStores,
-            ObjectProvider<AiWithdrawnSourceStore> withdrawnSources) {
+            ObjectProvider<AiWithdrawnSourceStore> withdrawnSources,
+            ObjectProvider<com.marketplace.shared.api.KnowledgeSourceStatePort> knowledgeSourceState) {
 
         ChatClient.Builder configured = builder.clone().defaultAdvisors(
                 SessionMemoryAdvisor.builder(sessionService)
@@ -114,7 +115,8 @@ public class AiAutoConfiguration {
             // withdrawn content on the public answer path.
             vectorStores.ifAvailable(vectorStore -> configured.defaultAdvisors(
                     QuestionAnswerAdvisor.builder(
-                            publicRetrievalView(vectorStore, withdrawnSources.getIfAvailable()))
+                            publicRetrievalView(vectorStore, withdrawnSources.getIfAvailable(),
+                                    knowledgeSourceState.getIfAvailable()))
                             .searchRequest(SearchRequest.builder()
                                     .filterExpression("visibility == 'PUBLIC'")
                                     .build())
@@ -226,14 +228,16 @@ public class AiAutoConfiguration {
     RetrievalAugmentationAdvisor typeSafeRagAdvisor(
             VectorStore vectorStore,
             TypeSafeClient typeSafeClient,
-            ObjectProvider<AiWithdrawnSourceStore> withdrawnSources) {
+            ObjectProvider<AiWithdrawnSourceStore> withdrawnSources,
+            ObjectProvider<com.marketplace.shared.api.KnowledgeSourceStatePort> knowledgeSourceState) {
 
         return RetrievalAugmentationAdvisor.builder()
                 .documentRetriever(VectorStoreDocumentRetriever.builder()
                         // Row 32: the same withdrawal-guarded retrieval view as
                         // the stock path — both public retrieval boundaries
                         // exclude withdrawn sources through one mechanism.
-                        .vectorStore(publicRetrievalView(vectorStore, withdrawnSources.getIfAvailable()))
+                        .vectorStore(publicRetrievalView(vectorStore, withdrawnSources.getIfAvailable(),
+                                knowledgeSourceState.getIfAvailable()))
                         .filterExpression(new FilterExpressionBuilder()
                                 .eq("visibility", "PUBLIC")
                                 .build())
@@ -378,9 +382,19 @@ public class AiAutoConfiguration {
      * injectable {@link VectorStore} for writers; only the two public
      * retrieval sites compose this view.
      */
-    private static VectorStore publicRetrievalView(VectorStore vectorStore, AiWithdrawnSourceStore withdrawnSources) {
+    private static VectorStore publicRetrievalView(
+            VectorStore vectorStore, AiWithdrawnSourceStore withdrawnSources,
+            com.marketplace.shared.api.KnowledgeSourceStatePort knowledgeSourceState) {
+        // Row 26 (agent findings 2026-10-26 14:33 export): the authoritative
+        // source-state port joins the withdrawal guard — the guarded view
+        // exists whenever the exact-keyed withdrawal records do, and the
+        // live-state port rides the same wiring (both need the relational
+        // world; a context without it keeps the raw store, byte-identical).
         return withdrawnSources != null
-                ? new AiWithdrawalGuardedVectorStore(vectorStore, withdrawnSources)
+                ? new AiWithdrawalGuardedVectorStore(vectorStore, withdrawnSources,
+                        knowledgeSourceState != null
+                                ? knowledgeSourceState
+                                : entryId -> true)
                 : vectorStore;
     }
 }

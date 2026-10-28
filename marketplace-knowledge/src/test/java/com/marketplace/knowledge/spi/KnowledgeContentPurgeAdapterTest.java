@@ -111,6 +111,46 @@ class KnowledgeContentPurgeAdapterTest {
         assertThat(event.getValue().locationId()).isEqualTo(locationId);
     }
 
+    /**
+     * Row 28 (agent findings 2026-10-26 14:33 export): the withdrawal rides
+     * for EVERY entry the purged author owns — an entry whose text ALREADY
+     * matches the tombstone marker (an author-submittable value) receives
+     * its withdrawal too: the indexed or replayed publication of that
+     * entry must not stay retrievable through the AI vector store after
+     * the erasure. The ownership key alone decides the withdrawal; the
+     * text predicates belong to the UPDATE statements' row counting
+     * (zero rows erased here — the marker was already in place).
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void purgeAuthoredTexts_publishesTheWithdrawalForAMarkerCarryingEntryToo() {
+        UUID entryId = UUID.randomUUID();
+        UUID locationId = UUID.randomUUID();
+        java.sql.ResultSet row = mock(java.sql.ResultSet.class);
+        try {
+            when(row.getObject("id", UUID.class)).thenReturn(entryId);
+            when(row.getObject("location_id", UUID.class)).thenReturn(locationId);
+        } catch (java.sql.SQLException impossible) {
+            throw new IllegalStateException(impossible);
+        }
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class), any(Object[].class)))
+                .thenAnswer(invocation -> {
+                    RowMapper<?> mapper = invocation.getArgument(1);
+                    return List.of(mapper.mapRow(row, 0));
+                });
+        // Nothing left to erase — both columns already carry the marker.
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(0);
+
+        int purged = adapter.purgeAuthoredTexts(SUBJECT);
+
+        assertThat(purged).isZero();
+        ArgumentCaptor<KnowledgeEntryWithdrawnEvent> event =
+                ArgumentCaptor.forClass(KnowledgeEntryWithdrawnEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        assertThat(event.getValue().entryId()).isEqualTo(entryId);
+        assertThat(event.getValue().locationId()).isEqualTo(locationId);
+    }
+
     @Test
     @SuppressWarnings("unchecked")
     void purgeAuthoredTexts_publishesNothingWhenNothingCarriesContent() {

@@ -11,6 +11,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -73,5 +74,54 @@ class PaymentIntentLookupAdapterTest {
         assertEquals(first, result.get(0).paymentIntentId());
         assertEquals(second, result.get(1).paymentIntentId());
         verify(repository).findAllById(java.util.List.of(first, second, absent));
+    }
+
+    // ------------------------------------------------------------------
+    // Agent findings 2026-10-26T13:11 export, row 41 — the checkout leg's
+    // payment proof: the settled family is the collected-money family
+    // (SUCCEEDED + the refunded states that imply the money landed);
+    // every unsettled state and the absent intent answer false.
+    // ------------------------------------------------------------------
+
+    @Test
+    void isOrderPayableSettled_answersTrueForTheSettledFamily() {
+        UUID orderId = UUID.randomUUID();
+        PaymentIntent succeeded = new PaymentIntent(UUID.randomUUID(), null, UUID.randomUUID(), 5000L, null);
+        succeeded.markProcessing();
+        succeeded.markSucceeded();
+        when(repository.findByOrderId(orderId)).thenReturn(Optional.of(succeeded));
+        assertTrue(adapter.isOrderPayableSettled(orderId));
+
+        PaymentIntent refunded = new PaymentIntent(UUID.randomUUID(), null, UUID.randomUUID(), 5000L, null);
+        refunded.markProcessing();
+        refunded.markSucceeded();
+        refunded.markRefunded();
+        when(repository.findByOrderId(orderId)).thenReturn(Optional.of(refunded));
+        assertTrue(adapter.isOrderPayableSettled(orderId));
+    }
+
+    @Test
+    void isOrderPayableSettled_answersFalseForUnsettledStatesAndTheAbsentIntent() {
+        // CREATED and PROCESSING have not collected; FAILED and CANCELLED
+        // never will; CANCELLATION_PENDING is the documented race — the
+        // remote capture may still win or lose, it is not verified yet.
+        UUID orderId = UUID.randomUUID();
+        PaymentIntent created = new PaymentIntent(UUID.randomUUID(), null, UUID.randomUUID(), 5000L, null);
+        when(repository.findByOrderId(orderId)).thenReturn(Optional.of(created));
+        assertFalse(adapter.isOrderPayableSettled(orderId));
+
+        PaymentIntent processing = new PaymentIntent(UUID.randomUUID(), null, UUID.randomUUID(), 5000L, null);
+        processing.markProcessing();
+        when(repository.findByOrderId(orderId)).thenReturn(Optional.of(processing));
+        assertFalse(adapter.isOrderPayableSettled(orderId));
+
+        PaymentIntent pendingRace = new PaymentIntent(UUID.randomUUID(), null, UUID.randomUUID(), 5000L, null);
+        pendingRace.markProcessing();
+        pendingRace.markCancellationPending();
+        when(repository.findByOrderId(orderId)).thenReturn(Optional.of(pendingRace));
+        assertFalse(adapter.isOrderPayableSettled(orderId));
+
+        when(repository.findByOrderId(orderId)).thenReturn(Optional.empty());
+        assertFalse(adapter.isOrderPayableSettled(orderId));
     }
 }
