@@ -396,18 +396,29 @@ class ProductDataFetcherDgsTest {
         UUID typeId = UUID.randomUUID();
         when(productReadSpi.findProductById(eq(id), any(org.springframework.security.core.Authentication.class)))
                 .thenReturn(java.util.Optional.of(productView(id, "Widget", typeId, "ACTIVE")));
+        // Product.productType is the ProductType OBJECT (the G4 review — the
+        // same shape the products/scroll selections already assert): the field
+        // fetcher resolves the referenced type's bounded projection from the
+        // product-type owner when the subfields are selected, so the read-back
+        // document selects them and the owner answers the row.
+        when(productTypeReadSpi.findProductTypeById(eq(typeId), any())).thenReturn(
+                Optional.of(new ProductTypeView(typeId, "Widget Schema", "widget-schema")));
 
         String globalId = java.util.Base64.getEncoder()
                 .encodeToString(("Product:" + id).getBytes(java.nio.charset.StandardCharsets.UTF_8));
         Map<String, Object> product = dgsQueryExecutor.executeAndExtractJsonPath(
-                "query($id: ID!) { product(id: $id) { id name productType status } }",
+                "query($id: ID!) { product(id: $id) { id name productType { id name slug } status } }",
                 "data.product", Map.of("id", globalId));
 
         assertThat(product.get("id")).isEqualTo(globalId);
         assertThat(product.get("name")).isEqualTo("Widget");
         assertThat(product.get("status")).isEqualTo("ACTIVE");
-        assertThat(product.get("productType")).isEqualTo(java.util.Base64.getEncoder()
+        @SuppressWarnings("unchecked")
+        Map<String, Object> productType = (Map<String, Object>) product.get("productType");
+        assertThat(productType.get("id")).isEqualTo(java.util.Base64.getEncoder()
                 .encodeToString(("ProductType:" + typeId).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        assertThat(productType.get("name")).isEqualTo("Widget Schema");
+        assertThat(productType.get("slug")).isEqualTo("widget-schema");
     }
 
     /**
