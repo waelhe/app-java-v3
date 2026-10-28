@@ -22,6 +22,10 @@
 # product's own title column) executes as the real keyset sort,
 # deterministic with the id tiebreaker; the attributeId sort leg and
 # the other thirteen fields answer the explicit not-implemented error.
+# The read roots — valid GraphQL SDL requires root fields to live inside a
+# type Query block (the code-review fix; field signatures, arguments,
+# docstrings and ordering unchanged).
+type Query {
 products(
 """Filtering options for products."""
 filter: ProductFilterInput @deprecated(reason: "Use `where` filter instead.")
@@ -80,6 +84,8 @@ externalReference: String
 """Slug of a channel for which the data should be returned (no channel model — an explicit classified error)."""
 channel: String
 ): Product
+}
+
 
 # === Campaign packet campaign-b4-c: bounded type declarations (integrated in-branch by A0 — the sequential single-writer flow) ===
 # ---------------------------------------------------------------------

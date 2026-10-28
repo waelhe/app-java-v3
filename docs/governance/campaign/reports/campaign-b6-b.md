@@ -11,7 +11,7 @@
 | D-CHANNEL-001 | channel, channels | The commercial-channel owner decision the governing matrix ITSELF marks PENDING-ADR — no channel model exists; every channel-scoped argument on the implemented roots already answers its classified error citing this row. |
 | D-APPS-001 | app, apps, appsInstallations, appExtension, appExtensions | No extension-registry owner — the ledger's own owning_module field says "extension registry (to be decided)". |
 | D-FEDN-001 | _entities, _service | No federation gateway owner — the platform is not an Apollo federation subgraph; the playbook requires explicit federation exceptions. |
-| D-SHPZ-001 | shippingZone, shippingZones | No shipping-zone model — the delivery module owns courders/quotes/requests, not zone/postal-range pricing. |
+| D-SHPZ-001 | shippingZone, shippingZones | No shipping-zone model — the delivery module owns couriers/quotes/requests, not zone/postal-range pricing. |
 | D-OEVT-001 | homepageEvents | No persisted OrderEvent log to serve a homepage activity feed. |
 | D-RPT-001 | ordersTotal, reportProductSales | No reporting owner — a zero-shaped total would be a fabricated metric. |
 | D-OTKN-001 | orderByToken | No guest order-token capability — an absent capability is safer than a guessed-token leak surface. |

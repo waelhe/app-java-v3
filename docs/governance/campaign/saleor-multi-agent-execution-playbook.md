@@ -154,7 +154,7 @@ Parallel coding does not mean relaxing dependency gates. Agents may implement ag
 
 ### During coding
 
-- Each agent runs formatting/compile and targeted unit tests for their own slice.
+- Each agent runs formatting/compile and targeted unit tests for their own slice when a local Maven toolchain is available; when it is not, the agent writes the tests and records `TESTS NOT RUN + REASON` per the frozen testing contract (frozen-contracts.md §9, item 2) — A0-dispatched CI on the candidate branch is the compilation and full-suite authority.
 - GraphQL changes require DGS codegen plus real-SDL execution tests; do not rely on text search or schema signature checks alone.
 - Security work requires allow and deny paths: anonymous, wrong role, cross-provider/owner, guessed ID, malformed/mistyped global ID and unauthorized field/operation access as applicable.
 - Persistence work requires Flyway-migrated real PostgreSQL integration tests for constraints, transactions, idempotency, concurrency and read-back where applicable. Never substitute `ddl-auto` schema for the real migrated schema when migration behavior matters.
@@ -236,9 +236,9 @@ A0 resolves it in the contract ledger. Unaffected agents continue. If an owner/A
 
 ## 12. Owner dashboard for the campaign
 
-Maintain one shared campaign ledger with these columns:
+Maintain one shared campaign ledger with exactly the ledger CSV's own header columns (the authority: `saleor-458-root-inventory.csv`):
 
-`root_name | root_kind | source_category | wave | dashboard_operation(s) | disposition | owner_agent | owning_module/SPI | permission/scope | status | unit_test | integration_test | dashboard_E2E | divergence_id | candidate_commit | evidence_url`
+`root_name | root_kind | source_category | source_category_detail | wave | owner_agent | disposition | owning_module_spi | permission_scope | root_signature | target_policy | acceptance | status | evidence | dashboard_e2e | divergence_id | candidate_commit`
 
 Allowed statuses: `NOT_STARTED`, `IN_PROGRESS`, `INTEGRATED`, `TESTED`, `REVIEW_FINDING`, `FIXED_RETEST_PENDING`, `RELEASE_READY`, `BLOCKED_BY_DECISION`, `EXPLICITLY_EXCLUDED`. A root reaches `RELEASE_READY` only when its tests and owner/scope behavior have evidence. Track the overall state from the ledger, not optimistic prose.
 

@@ -17,7 +17,7 @@ are failure residue, not evidence.
 | `agent/saleor-p3-pricing-discounts-read` | behind candidate, 0 unique commits | DELETED — fully merged (sale(s)/voucher(s)/promotion(s) read roots) |
 | `agent/saleor-p3-pricing-vouchers-promotions-read` | behind candidate, 0 unique commits | DELETED — fully merged |
 | `feat/android-discovery-rails` | behind main, 0 unique commits | DELETED — long merged into main |
-| `feat/saleor-returns-refunds-graphql` | 83 unique commits, pre-contract | DELETED — superseded pre-campaign attempt; its 4 sibling chain branches (feat/saleor-catalog-categories-product-media, feat/saleor-cart-checkout-orders-graphql, feat/saleor-seller-fulfillment-graphql, feat/saleor-order-returns-refunds-graphql, docs/saleor-canonical-truth-sync) were already deleted by the owner; evidence preserved in closed PRs #679/#680/#681/#683/#688; P4 re-implements returns/refunds roots under the frozen contract pack |
+| `feat/saleor-returns-refunds-graphql` | 83 unique commits, pre-contract | DELETED — superseded pre-campaign attempt; its 5 sibling chain branches (feat/saleor-catalog-categories-product-media, feat/saleor-cart-checkout-orders-graphql, feat/saleor-seller-fulfillment-graphql, feat/saleor-order-returns-refunds-graphql, docs/saleor-canonical-truth-sync) were already deleted by the owner; evidence preserved in closed PRs #679/#680/#681/#683/#688; P4 re-implements returns/refunds roots under the frozen contract pack |
 
 ## Retained (deliberate)
 
@@ -32,9 +32,12 @@ are failure residue, not evidence.
 ## Failure-mode correction (owner-directed)
 
 Parallel subagent dispatch repeatedly failed (timeouts/deadlocks: "several agents
-launched, most fail"). The campaign now runs strictly sequentially: A0 (this
-session) implements packets directly on the candidate lane with packet-local
-commits, or dispatches ONE agent at a time only when a packet is fully specified.
+launched, most fail"). For the 2026-10-21 campaign the execution mode was therefore strictly
+sequential — an operational exception specific to that campaign, recorded here
+as history, not a change to the approved execution protocol (the playbook and
+the frozen contracts remain the binding reference): A0 (this session) implemented
+packets directly on the candidate lane with packet-local commits, or dispatched
+ONE agent at a time only when a packet was fully specified.
 No shared-file races are possible with a single writer; A0 stewardship invariants
 (SDL additivity, ledger CSV via csv module, divergence registry, Flyway allocation)
 are enforced per packet as before.

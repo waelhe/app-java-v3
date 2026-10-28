@@ -23,6 +23,10 @@
 # tiebreaker); PRODUCT_COUNT and SUBCATEGORY_COUNT (a products
 # connection and a category tree the flat registry does not own)
 # answer the explicit not-implemented error.
+# The read roots — valid GraphQL SDL requires root fields to live inside a
+# type Query block (the code-review fix; field signatures, arguments,
+# docstrings and ordering unchanged).
+type Query {
 categories(
 """Filtering options for categories."""
 filter: CategoryFilterInput @deprecated(reason: "Use `where` filter instead.")
@@ -75,6 +79,8 @@ slugLanguageCode: LanguageCodeEnum
 """External ID of the category (no external-ID column — an explicit classified error)."""
 externalReference: String
 ): Category
+}
+
 
 # === Campaign packet campaign-b4-a: bounded type declarations (integrated in-branch by A0 — the sequential single-writer flow) ===
 # ---------------------------------------------------------------------

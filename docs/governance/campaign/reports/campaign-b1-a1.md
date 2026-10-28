@@ -3,7 +3,7 @@
 ```
 WORKSTREAM: A1 / P1
 BASE SHA: 87bc07faf8faa9bdd47d3337b7766e84ce080677
-HEAD SHA: the commit that carries this report (commit 2 — the branch head; see COMMITS TO INTEGRATE)
+HEAD SHA: 731ef978ab20ebd08df2d32a4f6509a5bff94892 (commit 2 — the branch head at report time; the pre-consolidation lineage is preserved via the PR #712 head)
 ROOTS CLAIMED: permissionGroups, permissionGroup
 ROOTS IMPLEMENTED + EVIDENCE:
   permissionGroups — delegated to the identity owner through the new
@@ -147,8 +147,9 @@ KNOWN GAPS / BLOCKERS:
 COMMITS TO INTEGRATE:
   1) 81aca54b89a9cbc2a68dff9f7611a204b13f02b0 — feat(identity): expose
      permission-group read views over the role owner
-  2) this report's own commit — feat(graphql): Saleor
+  2) 731ef978ab20ebd08df2d32a4f6509a5bff94892 — feat(graphql): Saleor
      permissionGroup/permissionGroups read roots (P1) — the GraphQL
      adapter, the SDL fragment proposal, the two tests and this report
-     (the branch head; A0 reads the exact SHA from the branch tip)
+     (the branch head; recorded in full after the report's creation, per
+     the review)
 ```
