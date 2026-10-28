@@ -262,6 +262,20 @@ class SourceFormatGuardTest {
         assertThat(isPacked(charThenComment.strip("import a.b; class X {} */")))
                 .as("a quote inside a char literal must not open a phantom string — the block comment opened later stays comment state")
                 .isFalse();
+        // Round 4, outside-diff finding — a block comment between tokens
+        // keeps a separator in the stripped projection: without it,
+        // 'import/**/java.util.List; class Example {}' fused to
+        // 'importjava.util.List; …' and escaped the packed patterns.
+        CodeOnlyStripper inlineComment = new CodeOnlyStripper();
+        assertThat(isPacked(inlineComment.strip("import/**/java.util.List; class Example {}")))
+                .as("a block comment deleted between tokens keeps a separator — the packed shape survives")
+                .isTrue();
+        assertThat(isPacked(inlineComment.strip("import/**/java.util.List;")))
+                .as("an honest import with an inline block comment alone on its line stays honest")
+                .isFalse();
+        assertThat(isPacked(inlineComment.strip("import/*x*/java.util.List; class Example {}")))
+                .as("a carrying block comment between tokens keeps a separator too")
+                .isTrue();
         CodeOnlyStripper escapedChar = new CodeOnlyStripper();
         escapedChar.strip("char c = '\\'';");
         escapedChar.strip("/* \"");
@@ -295,7 +309,9 @@ class SourceFormatGuardTest {
      * string literal (an unterminated {@code "} carries to the next line —
      * a text block's content stays string state until its closing quotes).
      * Block-comment text and string-literal contents vanish; the code that
-     * remains is what the packed-statement patterns judge. A line comment
+     * remains is what the packed-statement patterns judge. A deleted block
+     * comment contributes one separator space (it separates the tokens
+     * around it — JLS 3.7). A line comment
      * ({@code //}) ends the line's code. Char literals are consumed
      * atomically (escape included) BEFORE the string branch: a quote
      * inside a char literal never opens the string state, and a single
@@ -352,7 +368,14 @@ class SourceFormatGuardTest {
                     code.append('"');
                     i++;
                 } else if (c == '/' && next == '*') {
+                    // Round 4, outside-diff finding (CodeRabbit, 2026-10-28):
+                    // a block comment separates the tokens around it (JLS
+                    // 3.7) — the stripped projection must keep that
+                    // separator, or 'import/**/java.util.List; class
+                    // Example {}' fuses to 'importjava.util.List; …' and
+                    // escapes the packed patterns.
                     inBlockComment = true;
+                    code.append(' ');
                     i += 2;
                 } else if (c == '/' && next == '/') {
                     break;
