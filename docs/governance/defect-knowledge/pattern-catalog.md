@@ -131,13 +131,13 @@
 
 **Invariant protected:** every Java source's physical layout stays processable by the repo's line-based automated machinery — recipes that patch imports, fail-closed publication guards that verify import-only diffs, and line-anchored review.
 
-**Demonstrating cases:** E-23 (twelve single-line sources — package, imports, and declarations packed onto one line — carried in with the security carries; the OpenRewrite publication guard refused the batch on three consecutive main pushes while the root persisted).
+**Demonstrating cases:** E-23 (thirteen single-line sources — package, imports, and declarations packed onto one line — carried in with the security carries; the OpenRewrite publication guard refused the batch on three consecutive main pushes while the root persisted).
 
 **Same cause?** Yes: carried/generated code bypassed the layout conventions while no guard owned the format dimension; every line-based consumer inherits the blindness together.
 
 **Frequency/severity:** 12 measured files across three modules; severity medium (red automation on main, unreviewable diffs); recurrence risk high while carriers paste generated sources.
 
-**Systematic vs local prevention:** systematic from E-23's fix — `SourceFormatGuardTest` (D9) rejects packed package/import lines repo-wide at test time; the twelve files were reformatted in the same commit.
+**Systematic vs local prevention:** systematic from E-23's fix — `SourceFormatGuardTest` (D9) rejects packed package/import lines repo-wide at test time; the first twelve files were reformatted in the same commit and the thirteenth (`DeliveryModule.java`, caught by the guard's first CI run) in the follow-up.
 
 **Strongest prevention:** D9 plus the carry rule implicit in it: sources land in standard layout (package line alone, one import per line, declaration on its own lines) — the guard makes the convention mechanical, not aspirational.
 

@@ -16,10 +16,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * D9 — source-format compatibility guard (closes E-23's class).
  *
- * <p>Defect: twelve carried-in sources (eight marketplace-delivery, two
+ * <p>Defect: thirteen carried-in sources (nine marketplace-delivery, two
  * marketplace-ledger main plus one ledger test, one marketplace-provider)
  * arrived with the package statement, imports, and type declarations packed
- * onto single lines. The approved OpenRewrite baseline recipe
+ * onto single lines — twelve found by the round-26 code search, the
+ * thirteenth ({@code DeliveryModule.java}, whose {@code "; import"} spacing
+ * escaped the search patterns) caught by this guard's own first CI run. The approved OpenRewrite baseline recipe
  * ({@code RemoveUnusedImports}) replaces partially-used wildcard imports
  * with explicit ones — and in a single-line source every such change
  * rewrites the declaration line too, so the publication patch carries
