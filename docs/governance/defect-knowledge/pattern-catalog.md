@@ -135,7 +135,7 @@
 
 **Same cause?** Yes: carried/generated code bypassed the layout conventions while no guard owned the format dimension; every line-based consumer inherits the blindness together.
 
-**Frequency/severity:** 12 measured files across three modules; severity medium (red automation on main, unreviewable diffs); recurrence risk high while carriers paste generated sources.
+**Frequency/severity:** 13 measured files across three modules (twelve by the round-26 code search, the thirteenth — `DeliveryModule.java` — by the guard's own first CI run); severity medium (red automation on main, unreviewable diffs); recurrence risk high while carriers paste generated sources.
 
 **Systematic vs local prevention:** systematic from E-23's fix — `SourceFormatGuardTest` (D9) rejects packed package/import lines repo-wide at test time; the first twelve files were reformatted in the same commit and the thirteenth (`DeliveryModule.java`, caught by the guard's first CI run) in the follow-up.
 
