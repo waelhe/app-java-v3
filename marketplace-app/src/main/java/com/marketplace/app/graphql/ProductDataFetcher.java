@@ -20,7 +20,7 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
-import com.netflix.graphql.dgs.context.DgsDataFetchingEnvironment;
+import graphql.schema.DataFetchingEnvironment;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import org.springframework.data.domain.KeysetScrollPosition;
 import org.springframework.data.domain.Limit;
@@ -259,7 +259,7 @@ public class ProductDataFetcher {
     // integration suites immediately, never silently.
     @DgsData(parentType = "Product", field = "productType")
     @RateLimiter(name = "graphqlCatalogRead")
-    public ProductType productType(DgsDataFetchingEnvironment environment) {
+    public ProductType productType(DataFetchingEnvironment environment) {
         Product source = environment.getSource();
         if (source.getProductType() == null) {
             return null;
