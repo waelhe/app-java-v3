@@ -38,8 +38,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class SourceFormatGuardTest {
 
-    private static final Pattern PACKED_PACKAGE = Pattern.compile("^package\s+[\w.]+;\s*\S");
-    private static final Pattern PACKED_IMPORT = Pattern.compile("^import\s+(?:static\s+)?[\w.*]+;\s*\S");
+    private static final Pattern PACKED_PACKAGE = Pattern.compile("^package\\s+[\\w.]+;\\s*\\S");
+    private static final Pattern PACKED_IMPORT = Pattern.compile("^import\\s+(?:static\\s+)?[\\w.*]+;\\s*\\S");
 
     @Test
     void packageAndImportStatementsAreAloneOnTheirLine() throws IOException {
@@ -47,7 +47,7 @@ class SourceFormatGuardTest {
         List<String> offenders = new ArrayList<>();
         try (Stream<Path> paths = Files.walk(root)) {
             paths.filter(p -> {
-                        String s = p.toString().replace('\', '/');
+                        String s = p.toString().replace('\\', '/');
                         return s.endsWith(".java")
                                 && !s.contains("/.git/")
                                 && (s.contains("/src/main/java/") || s.contains("/src/test/java/"));
