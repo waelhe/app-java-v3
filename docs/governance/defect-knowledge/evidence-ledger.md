@@ -42,7 +42,7 @@
 - **Correction:** emergency revert `809f6a94` (PR #419, 2026-09-27) restoring production/staging boot; the value became env-driven with explicit default in a later controlled pass.
 - **Verification evidence:** the revert commit message carries the measured timeline (geo/tree 200 at `dc10839b` 02:47Z pre-#415; 502 after).
 - **Recurrence risk:** every new `${...}` placeholder in prod profiles; every new deployment target.
-- **Prevention:** rule B6 (placeholder resolution matrix + fail-fast discipline) — procedural; no deterministic guard yet (recorded as a gap in enforcement-map §5).
+- **Prevention:** rule B6 (placeholder resolution matrix + fail-fast discipline) — the matrix is now deterministic: `PlaceholderTargetMatrixGuardTest` (D10) requires every no-default env placeholder in the deployed composition to be declared in the versioned target record `.railway/railway.ts` (gap G2 closed; enforcement-map §5). The guard's first matrix run (2026-10-28) measured three names the record lacked — ADMIN_SEED_PASSWORD, OAUTH_POST_LOGOUT_REDIRECT_URI, MAIL_FROM — each live on the target per its carrying PR's evidence (#389, #420, #685); all three declared in the closing commit.
 
 ## E-03 · S10 — aggregate health verdict blind in production **[VERIFIED]**
 

@@ -41,6 +41,19 @@ export default defineRailway(() => {
     healthcheck: "/actuator/health/liveness",
     healthcheckTimeout: 300,
     env: {
+      // G2 closure (2026-10-28): the placeholder-vs-target matrix
+      // (PlaceholderTargetMatrixGuardTest, D10) measured three names the
+      // prod composition requires that this declared record lacked. All
+      // three are live on the service per the PR evidence chain:
+      // ADMIN_SEED_PASSWORD since PR #389's pre-merge operational step (N1,
+      // 2026-09-26), OAUTH_POST_LOGOUT_REDIRECT_URI since PR #420's
+      // pre-merge set on both services (2026-09-27; reset to the live v5
+      // domain per the deployment reference's section 0.8, 2026-10-19),
+      // MAIL_FROM since PR #685's single variableUpsert with
+      // skipDeploys=true (2026-10-20 - measured 67 variables resolved, the
+      // key alive). Declaring them closes the record gap; preserve() keeps
+      // the values in Railway's secret store.
+      ADMIN_SEED_PASSWORD: preserve(),
       AUTH_SERVER_ISSUER: preserve(),
       CORS_ALLOWED_ORIGINS: preserve(),
       DB_PASSWORD: preserve(),
@@ -57,6 +70,7 @@ export default defineRailway(() => {
       JWT_KEYSTORE_PASSWORD: preserve(),
       JWT_KEY_ALIAS: preserve(),
       JWT_KEY_PASSWORD: preserve(),
+      MAIL_FROM: preserve(),
       MAIL_HOST: preserve(),
       MAIL_PASSWORD: preserve(),
       MAIL_PORT: preserve(),
@@ -79,6 +93,7 @@ export default defineRailway(() => {
       OAUTH_CLIENT_ID: preserve(),
       OAUTH_CLIENT_REDIRECT_URIS: preserve(),
       OAUTH_CLIENT_SECRET: preserve(),
+      OAUTH_POST_LOGOUT_REDIRECT_URI: preserve(),
       OAUTH_PUBLIC_CLIENT_ID: preserve(),
       OAUTH_PUBLIC_CLIENT_REDIRECT_URIS: preserve(),
       OTEL_METRICS_EXPORT_URL: preserve(),
