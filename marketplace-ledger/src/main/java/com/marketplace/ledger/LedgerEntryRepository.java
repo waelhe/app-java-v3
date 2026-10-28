@@ -1,6 +1,5 @@
 package com.marketplace.ledger;
 
-import com.marketplace.shared.api.LedgerStatsPort;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.repository.history.RevisionRepository;
