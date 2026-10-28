@@ -824,7 +824,13 @@ ON CONFLICT (id) DO NOTHING;
 -- mamsha-hours question with its three options); the other two are
 -- natural chapters of the design's own recurring committee-ballot
 -- concepts (the seed's authored-content mandate, the market items'
--- own spirit). The display layer's seeded vote counts (9/11/5) retire
+-- own spirit). Every poll's author is a member of that poll's OWN
+-- neighborhood — the posts' authorship law verbatim, and the ownership
+-- V286's author_id carries for the authored-text purge (a non-member
+-- owner would leave the ballot outside its true author's erasure;
+-- review round 2, the outside-diff finding — hood 105's ballot by its
+-- own member نور, hood 106's by its own member خالد). The display
+-- layer's seeded vote counts (9/11/5) retire
 -- with the served contract — the counts below are the REAL vote rows
 -- («بعددها الحقيقي»), and أحمد (the demo member) stays UNVOTED on his
 -- hood's poll so the vote button is live for the browser round.
@@ -832,8 +838,8 @@ ON CONFLICT (id) DO NOTHING;
 -- own edits.
 INSERT INTO neighborhood_polls (id, author_id, location_id, question, author_label, is_deleted, version, created_by, created_at, updated_by, updated_at) VALUES
     ('48484848-4848-4484-8484-484848480001', '35353535-3535-4535-8353-353535350001', '11111111-1111-4111-8111-111111111104', 'ما المواعيد الأنسب لفتح الممشى المظلل خلال الصيف؟', 'لجنة تطوير الحي', FALSE, 0, 'seed', '2026-09-27 18:00:00+00', 'seed', '2026-09-27 18:00:00+00'),
-    ('48484848-4848-4484-8484-484848480002', '35353535-3535-4535-8353-353535350001', '11111111-1111-4111-8111-111111111105', 'ما الخدمة التي تستحق التطوير أولًا في الضاحية؟', 'لجنة تطوير الحي', FALSE, 0, 'seed', '2026-09-28 16:30:00+00', 'seed', '2026-09-28 16:30:00+00'),
-    ('48484848-4848-4484-8484-484848480003', '35353535-3535-4535-8353-353535350001', '11111111-1111-4111-8111-111111111106', 'أي يوم يناسب سوق الأحد الأسبوعي في الهامة؟', 'لجنة تطوير الحي', FALSE, 0, 'seed', '2026-09-26 10:00:00+00', 'seed', '2026-09-26 10:00:00+00')
+    ('48484848-4848-4484-8484-484848480002', '35353535-3535-4535-8353-353535350002', '11111111-1111-4111-8111-111111111105', 'ما الخدمة التي تستحق التطوير أولًا في الضاحية؟', 'لجنة تطوير الحي', FALSE, 0, 'seed', '2026-09-28 16:30:00+00', 'seed', '2026-09-28 16:30:00+00'),
+    ('48484848-4848-4484-8484-484848480003', '35353535-3535-4535-8353-353535350003', '11111111-1111-4111-8111-111111111106', 'أي يوم يناسب سوق الأحد الأسبوعي في الهامة؟', 'لجنة تطوير الحي', FALSE, 0, 'seed', '2026-09-26 10:00:00+00', 'seed', '2026-09-26 10:00:00+00')
 ON CONFLICT (id) DO UPDATE SET location_id = EXCLUDED.location_id, question = EXCLUDED.question,
     author_label = EXCLUDED.author_label, is_deleted = FALSE, author_id = EXCLUDED.author_id;
 
