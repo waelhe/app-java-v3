@@ -53,7 +53,7 @@ class BoundedEmbeddingConnectionAutoConfigurationTest {
     @Test
     void aProvisionedKeyBuildsTheClientWithTheBoundedHttpLayer() {
         GoogleGenAiEmbeddingConnectionDetails details =
-                new BoundedEmbeddingConnectionAutoConfiguration()
+                BoundedEmbeddingConnectionAutoConfiguration
                         .googleGenAiEmbeddingConnectionDetails(
                                 properties("test-embedding-key", null, null));
 
@@ -84,7 +84,7 @@ class BoundedEmbeddingConnectionAutoConfigurationTest {
                 "the SDK's Vertex client build requires Application Default Credentials"
                         + " (the framework's own Vertex path has the same requirement)");
         GoogleGenAiEmbeddingConnectionDetails details =
-                new BoundedEmbeddingConnectionAutoConfiguration()
+                BoundedEmbeddingConnectionAutoConfiguration
                         .googleGenAiEmbeddingConnectionDetails(
                                 properties("", "house-project", "europe-west1"));
 
@@ -100,14 +100,17 @@ class BoundedEmbeddingConnectionAutoConfigurationTest {
         // assertion (fail-fast, the house's D6 key philosophy); the house
         // bean that pre-empts it must answer the SAME way, never with a
         // silent inert bean.
-        BoundedEmbeddingConnectionAutoConfiguration configuration =
-                new BoundedEmbeddingConnectionAutoConfiguration();
-        assertThatThrownBy(() -> configuration.googleGenAiEmbeddingConnectionDetails(
-                properties("", null, null)))
+        // Static invocation — the bean method's own shape (Spring Boot's
+        // auto-configuration convention; no enclosing configuration
+        // instance exists in the module-filtered slices it serves).
+        assertThatThrownBy(() -> BoundedEmbeddingConnectionAutoConfiguration
+                .googleGenAiEmbeddingConnectionDetails(
+                        properties("", null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("project-id");
-        assertThatThrownBy(() -> configuration.googleGenAiEmbeddingConnectionDetails(
-                properties(null, null, null)))
+        assertThatThrownBy(() -> BoundedEmbeddingConnectionAutoConfiguration
+                .googleGenAiEmbeddingConnectionDetails(
+                        properties(null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("project-id");
     }

@@ -113,6 +113,15 @@ class PaymentsServiceSecurityTest {
     @MockitoBean
     private LedgerReadPort ledgerReadPort;
 
+    /**
+     * W12 (row 8 — the refund decision capture): the widened PaymentsService
+     * constructor's newest collaborator, the same mock the sibling
+     * PaymentsServiceTest builds (916d155d1e) — the security slice boots the
+     * real service, so every constructor parameter needs a bean.
+     */
+    @MockitoBean
+    private PaymentRefundOperationJournal refundOperationJournal;
+
     @Test
     @WithMockUser(roles = "USER")
     void createIntent_whenNotConsumer_thenAccessDenied() {

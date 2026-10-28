@@ -64,9 +64,25 @@ public class BoundedEmbeddingConnectionAutoConfiguration {
      */
     static final int EMBEDDING_HTTP_TIMEOUT_MILLIS = 60_000;
 
+    /*
+     * STATIC — the Spring Boot auto-configuration convention (the
+     * framework's own contributing guide: make @Bean methods static
+     * where possible, so the bean never needs the enclosing
+     * configuration instance). Measured on the app shards (2026-10-28,
+     * carry-3 head 0f28c90c): Spring Modulith's @ApplicationModuleTest
+     * keeps this bean definition (its type is a framework class, outside
+     * the project packages the module filter removes) while dropping the
+     * configuration-class bean — a NON-static factory method then dies at
+     * "No bean named '...BoundedEmbeddingConnectionAutoConfiguration'
+     * available" in every non-AI module slice (payments, media,
+     * availability, provider, identity, ledger, reviews, search — the
+     * vector-store chain still needs the details there). Static removes
+     * the enclosing-instance dependency: the method is invoked without
+     * the configuration bean, exactly what the convention exists for.
+     */
     @Bean
     @ConditionalOnMissingBean(GoogleGenAiEmbeddingConnectionDetails.class)
-    GoogleGenAiEmbeddingConnectionDetails googleGenAiEmbeddingConnectionDetails(
+    static GoogleGenAiEmbeddingConnectionDetails googleGenAiEmbeddingConnectionDetails(
             GoogleGenAiEmbeddingConnectionProperties properties) {
         Client.Builder clientBuilder = Client.builder()
                 .httpOptions(boundedHttpOptions());
