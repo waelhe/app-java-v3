@@ -40,8 +40,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class SourceFormatGuardTest {
 
-    private static final Pattern PACKED_PACKAGE = Pattern.compile("^package\\s+[\\w.]+;\\s*\\S");
-    private static final Pattern PACKED_IMPORT = Pattern.compile("^import\\s+(?:static\\s+)?[\\w.*]+;\\s*\\S");
+    /**
+     * CodeRabbit round (2026-10-28): the patterns accept LEADING
+     * whitespace — a packed line indented by spaces or a tab (the shapes
+     * generated sources actually arrive in) escaped the anchored forms,
+     * and OpenRewrite would rewrite the line while the guard stayed
+     * silent. Measured repo-wide before adoption: zero offenders, so the
+     * widened shapes flag nothing the tree already carries.
+     */
+    private static final Pattern PACKED_PACKAGE = Pattern.compile("^\\s*package\\s+[\\w.]+;\\s*\\S");
+    private static final Pattern PACKED_IMPORT = Pattern.compile("^\\s*import\\s+(?:static\\s+)?[\\w.*]+;\\s*\\S");
 
     @Test
     void packageAndImportStatementsAreAloneOnTheirLine() throws IOException {
@@ -61,6 +69,35 @@ class SourceFormatGuardTest {
                         + "packed lines defeat the OpenRewrite publication guard. Reformat the file "
                         + "to standard layout: package line alone, one import per line.")
                 .isEmpty();
+    }
+
+    /**
+     * The shapes themselves, pinned (CodeRabbit round 2026-10-28): the
+     * indented packed line — the exact finding's example — must be FLAGGED,
+     * and the honest single-statement lines (bare or indented, including a
+     * javadoc-quoted import whose {@code ;} ends the line) must stay
+     * UNflagged.
+     */
+    @Test
+    void indentedPackedStatementsAreFlaggedAndHonestLinesAreNot() {
+        assertThat(PACKED_IMPORT.matcher("  import java.util.*; class Example { List<?> value; }").find())
+                .as("an import packed after leading spaces is the failure shape")
+                .isTrue();
+        assertThat(PACKED_IMPORT.matcher("\timport java.util.List; class Example {}").find())
+                .as("an import packed after a leading tab is the failure shape")
+                .isTrue();
+        assertThat(PACKED_PACKAGE.matcher("  package com.example; class Foo {}").find())
+                .as("a package statement packed after leading spaces is the failure shape")
+                .isTrue();
+        assertThat(PACKED_IMPORT.matcher("import java.util.List;").find())
+                .as("a bare import alone on its line is honest")
+                .isFalse();
+        assertThat(PACKED_PACKAGE.matcher("package com.example;").find())
+                .as("a bare package statement alone on its line is honest")
+                .isFalse();
+        assertThat(PACKED_IMPORT.matcher(" * import java.util.List;").find())
+                .as("a javadoc-quoted import whose statement ends the line is documentation, not a packed source")
+                .isFalse();
     }
 
     private static void scan(Path root, Path file, List<String> offenders) {
