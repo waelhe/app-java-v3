@@ -40,19 +40,45 @@
 
 -- (c) the already-pseudonymized: the ORIGINAL subject from the users
 -- creation revision (the b-4 residual the erasure deliberately keeps).
+-- Determinism (review round, CodeRabbit on the 4a split, 2026-10-28):
+-- a pseudonymized account frees its subject, so a LATER account may be
+-- born carrying the same subject — PostgreSQL's UPDATE ... FROM picks
+-- ARBITRARILY among matching rows, so the bare join could attribute the
+-- poll to the reuser. The original owner is picked deterministically:
+-- per subject, the EARLIEST-created account born with it (tie-break by
+-- id) — the polls this arm targets were authored BEFORE the original
+-- owner's pseudonymization, and any later same-subject account is a
+-- reuser by construction; V286's live-arm already attributed the
+-- reuser's own polls through users.subject.
+WITH first_poll_revision AS (
+    SELECT DISTINCT ON (a.id) a.id, a.created_by
+    FROM neighborhood_polls_aud a
+    WHERE a.created_by IS NOT NULL
+    ORDER BY a.id, a.rev
+),
+first_user_revision AS (
+    SELECT DISTINCT ON (id) id, subject
+    FROM users_aud
+    ORDER BY id, rev
+),
+born_subjects AS (
+    -- every account paired with the subject it was born with
+    SELECT fur.subject AS born_subject, u.id AS user_id, u.created_at
+    FROM first_user_revision fur
+    JOIN users u ON u.id = fur.id
+),
+original_owner AS (
+    -- per subject: the earliest-born account — the deterministic owner
+    SELECT DISTINCT ON (born_subject) born_subject, user_id
+    FROM born_subjects
+    ORDER BY born_subject, created_at, user_id
+)
 UPDATE neighborhood_polls p
-SET author_id = u.id
-FROM (SELECT DISTINCT ON (a.id) a.id, a.created_by
-      FROM neighborhood_polls_aud a
-      WHERE a.created_by IS NOT NULL
-      ORDER BY a.id, a.rev) first_poll_revision,
-     (SELECT DISTINCT ON (id) id, subject
-      FROM users_aud
-      ORDER BY id, rev) first_user_revision, users u
+SET author_id = original_owner.user_id
+FROM first_poll_revision, original_owner
 WHERE p.author_id IS NULL
   AND first_poll_revision.id = p.id
-  AND first_user_revision.id = u.id
-  AND first_poll_revision.created_by = first_user_revision.subject;
+  AND first_poll_revision.created_by = original_owner.born_subject;
 
 -- (d) the audit mirror's backfill through the base row's recovered author.
 UPDATE neighborhood_polls_aud a

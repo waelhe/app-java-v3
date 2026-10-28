@@ -14,6 +14,13 @@
 
 ALTER TABLE payment_intents DROP CONSTRAINT payment_intents_status_check;
 
+-- Review round (CodeRabbit on the 4a split, 2026-10-28): the bare ADD
+-- CONSTRAINT scans payment_intents under ACCESS EXCLUSIVE — payment
+-- processing stalls for the scan's duration. The repository's own
+-- convention (V57/V66, V110/V111, V166/V167): add NOT VALID here,
+-- VALIDATE in the paired migration (V294) under SHARE UPDATE EXCLUSIVE
+-- — PostgreSQL's documented pattern for existing tables.
+
 ALTER TABLE payment_intents ADD CONSTRAINT payment_intents_status_check
     check (status in ('CREATED','PROCESSING','SUCCEEDED','FAILED','CANCELLED',
-                      'REFUNDED','PARTIALLY_REFUNDED','CANCELLATION_PENDING'));
+                      'REFUNDED','PARTIALLY_REFUNDED','CANCELLATION_PENDING')) NOT VALID;
