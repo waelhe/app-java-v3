@@ -3,7 +3,6 @@ package com.marketplace.provider.spi;
 import java.util.List;
 import java.util.UUID;
 
-import com.marketplace.shared.api.AuthoredContentPurgePort;
 import com.marketplace.shared.api.CacheInvalidationRequested;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
