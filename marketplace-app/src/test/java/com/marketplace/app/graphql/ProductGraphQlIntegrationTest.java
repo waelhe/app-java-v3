@@ -308,7 +308,7 @@ class ProductGraphQlIntegrationTest {
                         .anySatisfy(type -> {
                             assertThat(type.get("id")).isEqualTo(expectedTypeGlobalId);
                             assertThat(type.get("name")).isEqualTo("b4c Widget Schema");
-                            assertThat(type.get("slug")).isNotBlank();
+                            assertThat(type.get("slug")).asString().isNotBlank();
                         }));
     }
 
