@@ -1,9 +1,5 @@
 package com.marketplace.catalog;
 
-import java.time.Instant;
-import java.time.LocalDate;
-import java.util.UUID;
-
 /**
  * W5 (yelp-level plan §5 — the ads & billing wave, G24): the paid
  * promotion's lifecycle — the plan's «حملات (ad_campaigns: ميزانية، تسعير
