@@ -22,10 +22,20 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
-import static org.instancio.Instancio.*;
+import static org.instancio.Instancio.create;
+import static org.instancio.Instancio.of;
 import static org.instancio.Select.field;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 class PaymentsServiceTest {
 
@@ -44,6 +54,9 @@ class PaymentsServiceTest {
             intentRepository, paymentRepository, eventPublisher, webhookEventRecorder);
     private final SettlementEligibilityService settlementEligibilityService = new SettlementEligibilityService(
             mock(com.marketplace.shared.api.LedgerReadPort.class), intentRepository, bookingParticipantProvider);
+    private final PaymentRefundOperationJournal refundOperationJournal =
+            mock(PaymentRefundOperationJournal.class);
+
     private final PaymentsService service = new PaymentsService(
             intentRepository,
             paymentRepository,
@@ -56,7 +69,8 @@ class PaymentsServiceTest {
             settlementService,
             settlementEligibilityService,
             pspChannel,
-            new CommissionProperties(java.math.BigDecimal.valueOf(0.10))
+            new CommissionProperties(java.math.BigDecimal.valueOf(0.10)),
+            refundOperationJournal
     );
 
     @Test
@@ -112,7 +126,8 @@ class PaymentsServiceTest {
                 settlementService,
                 settlementEligibilityService,
                 pspChannel,
-                new CommissionProperties(java.math.BigDecimal.valueOf(0.25)));
+                new CommissionProperties(java.math.BigDecimal.valueOf(0.25)),
+                refundOperationJournal);
 
         when(intentRepository.findByIdempotencyKey(null)).thenReturn(Optional.empty());
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);

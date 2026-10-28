@@ -315,21 +315,52 @@ class PlatformGovernanceFilesTest {
             assertThat(ignore).as("any ignore entry must carry a justification")
                     .contains("statement:");
         }
-        // Zero entries today. Counting "- id:" keeps the file honest: a
+        // One entry today. Counting "- id:" keeps the file honest: a
         // silently widened list (someone pasting more CVEs) trips this pin
         // and forces a deliberate, review-visible change.
         assertThat(entries)
-                .as("zero ignore entries — the runtime stage's OS package upgrade "
-                        + "(Dockerfile: RUN apk upgrade --no-cache against the v3.24 "
-                        + "stable branch) closes every fixable alpine finding at "
-                        + "image build time (2026-09-09: libexpat 2.8.4-r0 for "
-                        + "CVE-2026-76956/76957 and openssl 3.5.8-r0 for "
-                        + "CVE-2026-14456 — the entry this file carried while its "
-                        + "fix awaited an eclipse-temurin rebuild that never "
-                        + "shipped). An ignore entry is only for findings with no "
-                        + "fix published for the branch; adding one is a deliberate "
-                        + "act that must update this pin")
-                .isZero();
+                .as("exactly one ignore entry — CVE-2026-102554 (guava DoS via "
+                        + "deserialization, HIGH, fixed in guava 33.7.2) on the guava "
+                        + "copy SHADED inside graphql-java-25.1.jar: the official "
+                        + "Maven Central artifact embeds guava 32.1.2-jre (measured "
+                        + "from the downloaded jar) and so do 26.0/26.1, while 25.1 is "
+                        + "the line spring-boot-dependencies 4.1.2 pins "
+                        + "(graphql-java.version=25.1), and the project's own resolved "
+                        + "guava is already the fixed 33.7.2-jre — no version bump the "
+                        + "project controls reaches a shaded-in-upstream copy. "
+                        + "Time-bounded (expired_at 2026-12-11, trivy-enforced): "
+                        + "on expiry the finding returns and forces a fresh decision. "
+                        + "The runtime stage's OS package upgrade (Dockerfile: RUN "
+                        + "apk upgrade --no-cache against the v3.24 stable branch) "
+                        + "still closes every fixable alpine finding at image build "
+                        + "time (2026-09-09: libexpat 2.8.4-r0 for CVE-2026-76956/"
+                        + "76957 and openssl 3.5.8-r0 for CVE-2026-14456). Widening "
+                        + "beyond this one entry is a deliberate act that must "
+                        + "update this pin")
+                .isOne();
+        // The entry's IDENTITY is pinned too (part-2 review, round 3): the
+        // count alone would let a different CVE take the single slot without
+        // tripping the guard.
+        assertThat(ignore)
+                .as("the single entry must be the measured graphql-java guava CVE")
+                .contains("id: CVE-2026-102554");
+        // And its SCOPE, parsed as YAML — string containment alone would keep
+        // the test green even if another path (e.g. "**/*") were appended to
+        // 'paths', widening the entry to every package in the image and
+        // masking those findings at the gate (review round 4: a security test
+        // must assert the VALUES, not the presence of text).
+        Map<String, Object> trivyCfg = new Yaml().load(read(".trivyignore.yaml"));
+        assertThat(trivyCfg).as(".trivyignore.yaml must parse as a mapping").isNotNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> vulns = (List<Map<String, Object>>) trivyCfg.get("vulnerabilities");
+        assertThat(vulns).as("exactly one ignore entry — same pin as the count above").hasSize(1);
+        assertThat(vulns.get(0).get("id")).as("the entry's identity is the measured CVE")
+                .isEqualTo("CVE-2026-102554");
+        @SuppressWarnings("unchecked")
+        List<String> ignorePaths = (List<String>) vulns.get(0).get("paths");
+        assertThat(ignorePaths)
+                .as("the entry's scope is ONLY the one jar embedding the shaded guava")
+                .containsExactly("**/graphql-java-25.1.jar");
     }
 
     @Test

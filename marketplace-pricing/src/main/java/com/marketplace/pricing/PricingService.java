@@ -145,12 +145,21 @@ public class PricingService implements EffectivePricePort {
      * <p>Cache: the same {@code pricing-calculations} namespace, key
      * extended with the listing and the window (server-resolved values —
      * UUID/ISO instants contain no delimiter, the injectivity class the
-     * L27 lesson pinned). Calendar writes evict via
+     * L27 lesson pinned) <b>and the CURRENT stay bound</b> — the
+     * part-2 review round 1 adoption: a cache hit never executes
+     * {@code calculatePriceInternal}, so the row-11 window gate (the 400)
+     * lives inside the cached body only; a deploy that LOWERS
+     * {@code maxStayNights} would otherwise keep serving pre-lower quotes
+     * for their Redis TTL (the finding's measured shape). The key's
+     * limit segment ({@code #root.target.stayLimit()} — the SpEL root
+     * object the cache annotations document) makes every limit change a
+     * NEW key space: the stale entries of the old limit are unreachable
+     * by construction and age out via TTL alone. Calendar writes evict via
      * {@code PRICING_CACHE_NAMES} (roadmap criterion 4).
      */
     @Transactional(readOnly = true)
     @Cacheable(cacheNames = "pricing-calculations",
-            key = "#listingId + '|' + #basePriceCents + '|' + #category + '|' + #checkIn + '|' + #checkOut")
+            key = "#listingId + '|' + #basePriceCents + '|' + #category + '|' + #checkIn + '|' + #checkOut + '|' + #root.target.stayLimit()")
     @Observed(name = "pricing.calculate.window")
     public PriceBreakdown calculatePrice(UUID listingId, long basePriceCents, String category,
                                          Instant checkIn, Instant checkOut) {
@@ -185,6 +194,17 @@ public class PricingService implements EffectivePricePort {
     public long calculateBookingTotalCents(UUID listingId, long basePriceCents,
                                            Instant startsAt, Instant endsAt) {
         return effectiveTotalCents(listingId, basePriceCents, startsAt, endsAt);
+    }
+
+    /**
+     * The cache key's limit segment — the row-11 bound as the WINDOWED
+     * quote's cache key sees it (part-2 review round 1). Public on
+     * purpose: the {@code @Cacheable} key SpEL reads it through the
+     * documented root object ({@code #root.target}), which resolves
+     * against the target instance whatever proxy chain wraps it.
+     */
+    public long stayLimit() {
+        return pricingProperties.maxStayNights();
     }
 
     /**

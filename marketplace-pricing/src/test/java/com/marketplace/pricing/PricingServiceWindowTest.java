@@ -2,8 +2,12 @@ package com.marketplace.pricing;
 
 import org.instancio.Instancio;
 import org.junit.jupiter.api.Test;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.expression.spel.standard.SpelExpressionParser;
+import org.springframework.expression.spel.support.StandardEvaluationContext;
 
+import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -13,7 +17,9 @@ import java.util.UUID;
 
 import static org.instancio.Select.field;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -279,5 +285,67 @@ class PricingServiceWindowTest {
                 () -> tight.calculateBookingTotalCents(LISTING, BASE, fourNightsIn, fourNightsOut));
         verify(weekendRuleRepository, never()).findByListingId(any());
         verify(seasonalRateRepository, never()).findByListingIdOrderByFromDateAsc(any());
+    }
+
+    /**
+     * Part-2 review round 1 (the cache-key adoption): the windowed quote's
+     * {@code @Cacheable} key carries the CURRENT stay bound as its last
+     * segment. A deploy that lowers {@code marketplace.pricing.max-stay-nights}
+     * must not keep serving the old bound's cached quotes — the finding's
+     * shape: the row-11 400 gate lives INSIDE the cached body, so a cache
+     * hit bypasses it, and the old entries would answer for the Redis TTL.
+     * The limit segment makes every bound change a NEW key space (the old
+     * entries are unreachable by construction). The test evaluates the
+     * ACTUAL annotation expression — the same SpEL root object the cache
+     * interceptor builds ({@code #root.target} is the service instance) —
+     * never a copy of the key format.
+     */
+    @Test
+    void windowedQuoteCacheKey_carriesTheCurrentStayBound() throws Exception {
+        PricingService redeployedWithLowerBound = new PricingService(ruleRepository,
+                weekendRuleRepository, seasonalRateRepository, eventPublisher, null,
+                new PricingProperties(3));
+
+        String atDefaultBound = evalWindowedKey(service);
+        String atDefaultBoundAgain = evalWindowedKey(service);
+        String atLoweredBound = evalWindowedKey(redeployedWithLowerBound);
+
+        assertEquals(atDefaultBound, atDefaultBoundAgain, "the key is stable — caching still works");
+        assertTrue(atDefaultBound.endsWith("|" + PricingProperties.DEFAULT_MAX_STAY_NIGHTS),
+                "the current bound is the key's last segment: " + atDefaultBound);
+        assertNotEquals(atDefaultBound, atLoweredBound,
+                "a lowered deploy cannot read the old bound's entries");
+        assertTrue(atLoweredBound.endsWith("|3"), "the lowered bound owns its own key space: " + atLoweredBound);
+    }
+
+    /** Evaluates the windowed method's real @Cacheable key expression. */
+    private static String evalWindowedKey(PricingService target) throws Exception {
+        Method windowed = PricingService.class.getMethod("calculatePrice",
+                UUID.class, long.class, String.class, Instant.class, Instant.class);
+        String expression = windowed.getAnnotation(Cacheable.class).key();
+        // The interceptor's SpEL root shape, reproduced locally (Spring's own
+        // CacheExpressionRootObject is package-private): #root.target resolves
+        // through getTarget() — the standard bean-property path SpEL walks.
+        StandardEvaluationContext context = new StandardEvaluationContext(new CacheKeyRoot(target));
+        context.setVariable("listingId", LISTING);
+        context.setVariable("basePriceCents", BASE);
+        context.setVariable("category", "services");
+        context.setVariable("checkIn", CHECK_IN);
+        context.setVariable("checkOut", CHECK_OUT);
+        return new SpelExpressionParser().parseExpression(expression)
+                .getValue(context, String.class);
+    }
+
+    /** The cache interceptor's SpEL root shape — target/method getters. */
+    private static final class CacheKeyRoot {
+        private final Object target;
+
+        CacheKeyRoot(Object target) {
+            this.target = target;
+        }
+
+        public Object getTarget() {
+            return target;
+        }
     }
 }

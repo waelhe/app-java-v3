@@ -745,7 +745,39 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
     @Transactional(readOnly = true)
     public com.marketplace.shared.api.OrderFulfillmentSelection requireOrderFulfillment(
             UUID orderId, UUID buyerId) {
-        Order order = requireOrder(orderId);
+        return selectionOf(requireOrder(orderId), orderId, buyerId);
+    }
+
+    /**
+     * Part-2 review round 2 (the full review's measured Major): the SAME
+     * frozen selection, read under the order row's write lock — the
+     * leg-creation surfaces ({@code DeliveryService.addLegForOrder} and
+     * the {@code OrderFulfillmentListener}) serialize with the direct
+     * fulfillment gate on the order row itself. The finding's exact
+     * interleaving: {@code fulfill} locks the order, counts ZERO active
+     * legs and commits — while the split path, reading the order WITHOUT
+     * the lock, still saw CONFIRMED and created a live leg after the
+     * count and before the commit: an order FULFILLED with a package
+     * still in flight. Reading through this method, the leg-creation
+     * transaction BLOCKS on the same row lock {@code fulfill} holds,
+     * then reads the committed truth (a moved-past order answers the
+     * honest 409/404) — the legs and the fulfillment gate are one
+     * serialized surface now. The manual quoting path keeps the
+     * lock-free read above: a quote creates no leg, and the
+     * read-only transaction stays read-only.
+     */
+    @Override
+    @Transactional
+    public com.marketplace.shared.api.OrderFulfillmentSelection requireOrderFulfillmentForUpdate(
+            UUID orderId, UUID buyerId) {
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
+        return selectionOf(order, orderId, buyerId);
+    }
+
+    /** The frozen selection's one builder — both reads answer the same facts. */
+    private com.marketplace.shared.api.OrderFulfillmentSelection selectionOf(
+            Order order, UUID orderId, UUID buyerId) {
         if (!order.getConsumerId().equals(buyerId)) {
             throw new ResourceNotFoundException("Order", orderId);
         }

@@ -11,7 +11,6 @@ import com.marketplace.shared.api.LoanDisputeResolvedEvent;
 import com.marketplace.shared.api.LoanPaymentPort;
 import com.marketplace.shared.api.LoanRequestedEvent;
 import com.marketplace.shared.api.PaymentIntentDetails;
-import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.ProductPricingPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -307,10 +306,18 @@ public class LendingService {
      * can land after the resolution's own event has been consumed — must
      * not re-freeze a resumed loan: a freeze no future resolution would
      * ever release.
+     *
+     * <p><b>Part-2 review round 2 (the full review's measured Minor):</b>
+     * the loan is read under the row's write lock
+     * ({@code LoanRepository.findByIdForUpdate}) — the state the guards
+     * filter on is the row's committed truth, never a snapshot a
+     * concurrent writer's commit is about to invalidate (the documented
+     * resubmission machinery makes the interleaving real, not
+     * theoretical).
      */
     @Transactional
     public void markDisputedFromDispute(UUID disputeId, UUID loanId) {
-        loanRepository.findById(loanId)
+        loanRepository.findByIdForUpdate(loanId)
                 .filter(loan -> loan.getStatus() == LoanStatus.ACTIVE)
                 .filter(loan -> disputeLookupPort.isDisputeOpen(disputeId))
                 .ifPresent(loan -> {
@@ -345,6 +352,11 @@ public class LendingService {
      * regardless of other open disputes — the strongest decision wins, and
      * the remaining disputes' resolutions no-op on the terminal loan by
      * the state guard (nothing left to freeze or release).
+     *
+     * <p><b>Part-2 review round 2 (the full review's measured Minor):</b>
+     * same serialization as the freeze — the loan is read under the row's
+     * write lock, so the DISPUTED filter and the has-open-dispute read
+     * both run on the locked committed truth.
      */
     @Transactional
     public void resolveDisputeFromDisputes(UUID disputeId, UUID loanId, DisputeResolution resolution) {
@@ -360,7 +372,7 @@ public class LendingService {
         // independently of whether a freeze occurred". The non-refund
         // RELEASE stays DISPUTED-only by design: there is nothing to
         // release on a loan the freeze never froze.
-        loanRepository.findById(loanId)
+        loanRepository.findByIdForUpdate(loanId)
                 .filter(loan -> resolution == DisputeResolution.REFUND_CONSUMER
                         ? loan.getStatus() == LoanStatus.DISPUTED
                                 || loan.getStatus() == LoanStatus.ACTIVE

@@ -236,8 +236,11 @@ public class AuthActionTokenService {
      * unknown-token 400 the caller constructs.
      */
     public Optional<String> accountOf(String rawToken, AuthActionTokenPurpose purpose) {
-        return repository.findByTokenHashAndPurpose(sha256Hex(rawToken), purpose)
-                .map(AuthActionToken::getUsername);
+        // Part-2 review round 1: the username PROJECTION, not the entity —
+        // the pre-redemption identity read stays independent of the
+        // persistence context's entity state (the re-read inside the wall
+        // remains the single source of the verdict).
+        return repository.findUsernameByTokenHashAndPurpose(sha256Hex(rawToken), purpose);
     }
 
     private static String sha256Hex(String raw) {

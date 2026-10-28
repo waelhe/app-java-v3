@@ -561,9 +561,20 @@ public class ReviewsService {
      * the targeted {@code "reviews"} cache eviction and the author id for
      * the caller's alert. Unknown, soft-deleted, pending or already-hidden
      * rows answer empty — the documented skip.
+     *
+     * <p><b>Part-2 review round 2 (the full review's measured Major):</b>
+     * the row is read under its write lock
+     * ({@code ReviewRepository.findByIdForUpdate}) BEFORE the filter —
+     * the two concurrent report transactions that both crossed the rule
+     * threshold serialize here: the first hides and commits, the second
+     * waits, reads the committed HIDDEN truth and takes the skip — its
+     * own report creation COMMITS. Before the lock the second
+     * transaction read the stale PUBLISHED snapshot, flipped it, and
+     * died on the inherited {@code @Version} optimistic conflict —
+     * taking its report down with it, exactly the finding's shape.
      */
     private Optional<UUID> hidePublishedReview(UUID id) {
-        return reviewRepository.findById(id)
+        return reviewRepository.findByIdForUpdate(id)
                 .filter(review -> review.getModerationStatus() == ReviewModerationStatus.PUBLISHED)
                 .map(review -> {
                     review.hideByModerator();

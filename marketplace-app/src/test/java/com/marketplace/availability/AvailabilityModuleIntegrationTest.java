@@ -2,12 +2,15 @@ package com.marketplace.availability;
 
 import test.config.IntegrationContainers;
 import test.config.ModuleTestConfig;
+import com.marketplace.shared.api.ProviderLookupPort;
+import com.marketplace.shared.api.ProviderSummary;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -15,9 +18,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 
 @ApplicationModuleTest
 @ActiveProfiles("test")
@@ -36,6 +42,20 @@ class AvailabilityModuleIntegrationTest {
     @SuppressWarnings({"resource"}) // Lifecycle managed by @Testcontainers; connection details via RedisContainerConnectionDetailsFactory.
     static GenericContainer<?> redis = IntegrationContainers.redis();
 
+    /**
+     * Row 11's cross-module seam: the eligibility gate reads the provider
+     * module's {@link ProviderLookupPort}, whose adapter bean is not part of
+     * this module slice (Spring Modulith's {@code @ApplicationModuleTest}
+     * bootstraps the module under test and the modules it depends on — the
+     * port lives in {@code marketplace-shared}, its implementation in
+     * {@code marketplace-provider}). The slice therefore supplies the port at
+     * the boundary, the documented module-slice pattern this repository
+     * already applies to {@code CatalogSearchPort}/{@code AvailabilityLookupPort}
+     * (SearchModuleIntegrationTest).
+     */
+    @MockitoBean
+    ProviderLookupPort providerLookupPort;
+
     @Autowired
     private AvailabilityService availabilityService;
 
@@ -46,6 +66,9 @@ class AvailabilityModuleIntegrationTest {
     @Test
     void createSlot_persistsAndRetrieves() {
         var providerId = UUID.randomUUID();
+        when(providerLookupPort.findByUserId(any(UUID.class)))
+                .thenReturn(Optional.of(new ProviderSummary(
+                        UUID.randomUUID(), "Eligible Provider", "VERIFIED", providerId)));
         var startsAt = Instant.now();
         var endsAt = startsAt.plusSeconds(3600);
 

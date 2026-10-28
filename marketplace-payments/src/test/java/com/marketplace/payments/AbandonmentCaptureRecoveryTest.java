@@ -69,7 +69,8 @@ class AbandonmentCaptureRecoveryTest {
                 new PaymentIntentSettlementService(intentRepository, paymentRepository, eventPublisher, recorder),
                 new SettlementEligibilityService(mock(com.marketplace.shared.api.LedgerReadPort.class),
                         intentRepository, bookingParticipantProvider),
-                boundChannel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)));
+                boundChannel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)),
+                new PaymentRefundOperationJournal(mock(PaymentRefundOperationRepository.class)));
     }
 
     /** PROCESSING → the abandonment record (failInFlight's new law). */

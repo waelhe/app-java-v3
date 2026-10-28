@@ -3,6 +3,7 @@ package com.marketplace.messaging;
 import com.marketplace.shared.api.UserLookupPort;
 import com.marketplace.shared.config.MarketplaceProperties;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -67,6 +68,18 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                            ObjectProvider<JwtDecoder> jwtDecoder,
                            ObjectProvider<JwtAuthenticationConverter> jwtAuthenticationConverter,
                            ObjectProvider<UserLookupPort> userLookupPort,
+                           // Review round 1: qualified to the broker's own
+                           // scheduler (AbstractMessageBrokerConfiguration's
+                           // MESSAGE_BROKER_TASK_SCHEDULER_BEAN_NAME). The app
+                           // context combines @EnableScheduling with
+                           // @EnableWebSocketMessageBroker, so more than one
+                           // TaskScheduler bean can exist — an unqualified
+                           // ObjectProvider.getIfAvailable() would then throw
+                           // NoUniqueBeanDefinitionException and take the
+                           // bearer connection path down. The qualifier keeps
+                           // module-slice contexts (no broker scheduler bean)
+                           // inert exactly as before.
+                           @Qualifier("messageBrokerTaskScheduler")
                            ObjectProvider<TaskScheduler> taskScheduler) {
         this.properties = properties;
         this.jwtDecoder = jwtDecoder;

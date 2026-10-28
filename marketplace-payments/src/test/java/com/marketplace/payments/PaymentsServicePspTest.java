@@ -13,9 +13,23 @@ import org.springframework.security.core.Authentication;
 import java.util.Optional;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyLong;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.argThat;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 /**
  * Pins the channel-activation semantics of the PSP layer (roadmap B3):
@@ -48,6 +62,8 @@ class PaymentsServicePspTest {
     private final ObjectProvider<PspChannel> boundChannel = mock(ObjectProvider.class);
     @SuppressWarnings("unchecked")
     private final ObjectProvider<PspChannel> inertChannel = mock(ObjectProvider.class);
+    private final PaymentRefundOperationJournal refundOperationJournal =
+            mock(PaymentRefundOperationJournal.class);
     private final Authentication authentication = mock(Authentication.class);
 
     private PaymentsService service(ObjectProvider<PspChannel> channel) {
@@ -57,7 +73,7 @@ class PaymentsServicePspTest {
                 recorder,
                 new PaymentIntentSettlementService(intentRepository, paymentRepository, eventPublisher, recorder),
                 new SettlementEligibilityService(mock(com.marketplace.shared.api.LedgerReadPort.class), intentRepository, bookingParticipantProvider),
-                channel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)));
+                channel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)), refundOperationJournal);
     }
 
     private PaymentIntent ownedIntent() {
