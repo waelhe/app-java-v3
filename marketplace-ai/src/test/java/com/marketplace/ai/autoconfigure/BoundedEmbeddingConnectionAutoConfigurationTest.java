@@ -69,6 +69,20 @@ class BoundedEmbeddingConnectionAutoConfigurationTest {
         // Review round 2: an empty api-key is VERTEX mode, never an inert
         // state — a provisioned project honors it through the bounded
         // client instead of being silently dropped by a Gemini-only bean.
+        // The SDK's Vertex client build loads Application Default
+        // Credentials AT CONSTRUCTION (ApiClient.defaultCredentials — the
+        // same requirement the framework's own Builder.build() Vertex path
+        // carries), so this pin runs only where ADC exists and skips the
+        // same way the house's Docker-gated integration tests do
+        // (@Testcontainers disabledWithoutDocker — the environment-conditional
+        // enablement idiom).
+        boolean adcPresent = System.getenv("GOOGLE_APPLICATION_CREDENTIALS") != null
+                || java.nio.file.Files.exists(java.nio.file.Path.of(
+                        System.getProperty("user.home", ""), ".config", "gcloud",
+                        "application_default_credentials.json"));
+        org.junit.jupiter.api.Assumptions.assumeTrue(adcPresent,
+                "the SDK's Vertex client build requires Application Default Credentials"
+                        + " (the framework's own Vertex path has the same requirement)");
         GoogleGenAiEmbeddingConnectionDetails details =
                 new BoundedEmbeddingConnectionAutoConfiguration()
                         .googleGenAiEmbeddingConnectionDetails(
