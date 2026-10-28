@@ -54,6 +54,17 @@ class BookingServiceSecurityTest {
     @MockitoBean
     private EffectivePricePort effectivePricePort;
 
+    /**
+     * Row 14 (the part-3 security carry, merged with #744): the window's
+     * cancel critical section takes the PostgreSQL advisory transaction
+     * lock through {@code JdbcTemplate} before releasing the slot — the
+     * seventh constructor collaborator this slice must provide. The mock's
+     * default (an empty lock answer) is exactly the no-op the lock query
+     * needs: the section opens, {@code cancel} proceeds.
+     */
+    @MockitoBean
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
     @Test
     @WithMockUser(roles = "USER")
     void create_whenNotConsumer_thenAccessDenied() {
