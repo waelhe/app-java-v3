@@ -1,7 +1,6 @@
 package com.marketplace.pricing;
 
 import com.marketplace.shared.api.CacheInvalidationRequested;
-import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
