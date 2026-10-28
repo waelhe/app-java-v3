@@ -241,6 +241,27 @@ class JwtChannelAuthenticationInterceptorTest {
     }
 
     @Test
+    void anExpiredConnectTokenAbortsTheConnectBeforeTheConnectedFrame() {
+        // Review round (CodeRabbit on the 4a split, 2026-10-28): the guard's
+        // rejection verdict (an already-expired token closes the session at
+        // admission) must abort the CONNECT — preSend returns null, so no
+        // CONNECTED frame follows a closed socket and the broker never
+        // registers the dead session's subscriptions.
+        Jwt expired = jwt("subject-1");
+        when(jwtDecoder.decode("token-value")).thenReturn(expired);
+        when(jwtAuthenticationConverter.convert(expired))
+                .thenReturn(new JwtAuthenticationToken(expired, List.of(() -> "ROLE_CONSUMER")));
+        when(expirationGuard.bearerTokenAuthenticated("ws-18", expired)).thenReturn(false);
+
+        StompHeaderAccessor accessor = connectAccessor();
+        accessor.setSessionId("ws-18");
+        accessor.setNativeHeader("Authorization", "Bearer token-value");
+        Message<byte[]> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        assertThat(interceptor.preSend(message, null)).isNull();
+    }
+
+    @Test
     void anExpiredRetainedTokenRejectsTheNextInboundFrame() {
         Jwt expired = jwt("subject-1");
         JwtAuthenticationToken retained =

@@ -165,7 +165,15 @@ final class JwtChannelAuthenticationInterceptor implements ChannelInterceptor {
         // Row 10: arm the expiry close — this session's socket must not
         // outlive the token it authenticated with (the browser path: no
         // handshake principal armed the guard at connection establish).
-        expirationGuard.bearerTokenAuthenticated(accessor.getSessionId(), jwt);
+        // Review round (CodeRabbit on the 4a split, 2026-10-28): an
+        // already-expired token closes the session AT admission (row 23's
+        // immediate close) — the guard's false verdict means the CONNECT
+        // must not proceed: returning null aborts the message flow, so no
+        // CONNECTED frame follows a closed socket and the broker never
+        // registers the dead session's subscriptions.
+        if (!expirationGuard.bearerTokenAuthenticated(accessor.getSessionId(), jwt)) {
+            return null;
+        }
         return message;
     }
 
