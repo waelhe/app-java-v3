@@ -17,6 +17,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 /**
  * Gate test for the defect-knowledge system's <b>own</b> consistency — the
@@ -61,6 +62,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ({@code "[`enforcement-map.md`](enforcement-map.md) §N"}), with a deliberate
  * negative self-test proving a bogus linked reference (§6 against a §1..§5
  * map) is extracted and would fail this guard — the check cannot pass vacuously.
+ *
+ * <p>Round-22 hardening (third CodeRabbit review, 2026-10-27): the pattern
+ * enumeration retains <b>every</b> heading number in a {@code List} — the
+ * previous {@code TreeSet} silently dropped a duplicated {@code "## P8 ·"}
+ * heading, leaving the contiguity and count checks green with the catalog
+ * structurally inconsistent. Uniqueness is now proven <b>first</b>, before
+ * the sequence and range reasoning; a negative self-test proves the
+ * rejection.
  */
 class DefectKnowledgeDocsGuardTest {
 
@@ -120,13 +129,39 @@ class DefectKnowledgeDocsGuardTest {
         return ids;
     }
 
-    private static Set<Integer> patternEnumeration(String catalog) {
-        Set<Integer> patterns = new TreeSet<>();
+    private static List<Integer> patternEnumeration(String catalog) {
+        // Round-22 review: a List, not a TreeSet — a duplicated heading number
+        // must survive extraction so the uniqueness assertion can reject it
+        // instead of the deduplication silently normalizing it away.
+        List<Integer> patterns = new ArrayList<>();
         Matcher m = Pattern.compile("^## P(\\d+) \\u00b7", Pattern.MULTILINE).matcher(catalog);
         while (m.find()) {
             patterns.add(Integer.parseInt(m.group(1)));
         }
         return patterns;
+    }
+
+    /**
+     * The catalog's structural invariant: round-22 uniqueness FIRST (a
+     * duplicated {@code "## P8 ·"} heading is a defect even though the
+     * deduped numbers would still read 1..N), then round-19 contiguity (the
+     * numbers must BE the full sequence 1..N — a hole anywhere fails).
+     * Returns the distinct-pattern count for the range-endpoint checks; also
+     * the unit under the round-22 negative self-test.
+     */
+    private static int assertPatternCatalogConsistent(String catalog) {
+        List<Integer> patterns = patternEnumeration(catalog);
+        assertThat(patterns)
+                .as("pattern headings are unique — a duplicated P-number is a structural defect")
+                .doesNotHaveDuplicates();
+        Set<Integer> unique = new TreeSet<>(patterns);
+        List<Integer> expected = new ArrayList<>();
+        for (int i = 1; i <= unique.size(); i++) {
+            expected.add(i);
+        }
+        assertThat(unique).as("pattern headings are the contiguous sequence P1..P%d",
+                unique.size()).containsExactlyElementsOf(expected);
+        return unique.size();
     }
 
     /**
@@ -256,21 +291,17 @@ class DefectKnowledgeDocsGuardTest {
                 .isEqualTo(cases.size());
     }
 
-    // ---------- 6. pattern enumeration is the contiguous sequence 1..N; ranges match ----------
+    // ---------- 6. pattern enumeration: unique, contiguous 1..N; ranges match ----------
 
     @Test
     void patternEnumerationMatchesReferences() throws IOException {
-        Set<Integer> patterns = patternEnumeration(dkRead("pattern-catalog.md"));
         // Round-19 review: count alone would pass P1..P7, P9, P10 — nine headings,
         // "P1–P9" range endpoint 9 — with P8 silently missing. The numbers must BE
         // the full sequence 1..N, so a hole anywhere fails the build.
-        List<Integer> expected = new ArrayList<>();
-        for (int i = 1; i <= patterns.size(); i++) {
-            expected.add(i);
-        }
-        assertThat(patterns).as("pattern headings are the contiguous sequence P1..P%d",
-                patterns.size()).containsExactlyElementsOf(expected);
-        int count = patterns.size();
+        // Round-22 review: uniqueness is proven FIRST — a duplicated "## P8 ·"
+        // heading would previously vanish into the TreeSet and leave every
+        // check green (the negative self-test below proves the rejection).
+        int count = assertPatternCatalogConsistent(dkRead("pattern-catalog.md"));
         for (String docName : new String[] {DK_DIR + "/README.md", "docs/agent-protocol.md"}) {
             Matcher range = Pattern.compile("P1[\\u2013-]P(\\d+)").matcher(read(docName));
             assertThat(range.find()).as("%s states the pattern range", docName).isTrue();
@@ -442,5 +473,28 @@ class DefectKnowledgeDocsGuardTest {
         extracted = enforcementMapSectionReferences("recorded in enforcement-map.md §6 as a gap");
         assertThat(extracted).as("the plain bogus form is likewise captured").containsExactly(6);
         assertThat(sections.containsAll(extracted)).isFalse();
+    }
+
+    // ---------- 12. a duplicated pattern heading cannot pass (round-22 self-test) ----------
+
+    /**
+     * Round-22 review: extraction previously fed a {@code TreeSet}, which
+     * silently dropped a duplicated {@code "## P8 ·"} heading — the sequence,
+     * count, and range checks all stayed green while the catalog was
+     * structurally inconsistent. The negative witness: a synthetic catalog
+     * whose P8 heading appears twice must (a) retain BOTH numbers through
+     * extraction and (b) fail the invariant at the uniqueness assertion —
+     * the guard cannot pass vacuously.
+     */
+    @Test
+    void duplicatePatternHeadingIsRejected() {
+        String synthetic = "# Pattern catalog\n\n## P1 \u00b7 one\n\n## P8 \u00b7 eight\n\n"
+                + "## P8 \u00b7 eight (duplicated)\n\n## P9 \u00b7 nine\n";
+        assertThat(patternEnumeration(synthetic))
+                .as("extraction retains every heading number — the deduplication hole is closed")
+                .containsExactly(1, 8, 8, 9);
+        assertThatExceptionOfType(AssertionError.class)
+                .isThrownBy(() -> assertPatternCatalogConsistent(synthetic))
+                .withMessageContaining("duplicate");
     }
 }

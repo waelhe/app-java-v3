@@ -17,7 +17,7 @@
 | B3 ownership/doors | procedural + scans | review-protocol pass 3; CodeRabbit repository scans | enforced-procedural |
 | B4 contract shapes | deterministic CI gates | OpenAPI diff gate, GraphQL schema gate, Root Contract Gate, `KeysetCursorGate`; notice+battery procedural | **enforced (deterministic)** |
 | B5 derived data | scans + per-change tests | CodeRabbit deep scans (detector); adapter-family checklist (preventer) | detector enforced, preventer procedural |
-| B6 config/deploy/verdicts | partial systematic | watchdog probes (health); **placeholder-vs-target matrix and gate-health monitoring procedural — GAP G2** | partially enforced |
+| B6 config/deploy/verdicts | partial systematic | watchdog probes (health); `gate-health.yml` (gate-health monitor, G5 closed); **placeholder-vs-target matrix procedural — GAP G2** | partially enforced |
 | B7 numeric bounds | per-endpoint tests | bounded-scale gates precedent | enforced per change |
 | B8 flag seams | per-door tests | shared-guard consolidation precedent | enforced per change |
 | C1 Saleor contract | deterministic CI gate | Saleor Root Contract Gate + `saleor-contract-divergences.csv` + pins (`saleor-source-pins.json`, `saleor-canonical-governance.yml`) | **enforced** |

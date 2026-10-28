@@ -122,7 +122,7 @@
 
 **Frequency/severity:** 3 verified instances (E-03, E-13, E-12-adjacent) + 1 open hypothesis (the watchdog's own failures); severity high (platform self-verdict, review-gate integrity).
 
-**Prevention status:** systematic for health (S10 fix: gauge+alert+probe); procedural for gate-health (E-13's lesson added to D6-adjacent monitoring rule).
+**Prevention status:** systematic for health (S10 fix: gauge+alert+probe); systematic for gate-health (round 21, G5 closed: `gate-health.yml` — per-gate 7-day health, provider-refusal vs content classification, review freshness per open PR; E-13's lesson added to D6-adjacent monitoring rule).
 
 **Strongest prevention:** B6-agg clause: "new aggregator/verdict/gate ⇒ name its automated consumer in the same PR".
 
