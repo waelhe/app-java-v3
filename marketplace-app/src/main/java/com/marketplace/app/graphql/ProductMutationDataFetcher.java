@@ -64,13 +64,16 @@ public class ProductMutationDataFetcher {
     private final ProductWriteSpi productWriteSpi;
     private final ProductGraphQlMapper productMapper;
     private final SaleorGlobalIdCodec globalIdCodec;
+    private final GraphQlProperties properties;
 
     public ProductMutationDataFetcher(ProductWriteSpi productWriteSpi,
                                       ProductGraphQlMapper productMapper,
-                                      SaleorGlobalIdCodec globalIdCodec) {
+                                      SaleorGlobalIdCodec globalIdCodec,
+                                      GraphQlProperties properties) {
         this.productWriteSpi = productWriteSpi;
         this.productMapper = productMapper;
         this.globalIdCodec = globalIdCodec;
+        this.properties = properties;
     }
 
     /**
@@ -170,6 +173,7 @@ public class ProductMutationDataFetcher {
         if (ids == null || ids.isEmpty()) {
             throw new IllegalArgumentException("productBulkDelete requires a non-empty list of ids");
         }
+        requireBoundedList(ids, "productBulkDelete");
         List<UUID> nativeIds = new ArrayList<>(ids.size());
         for (String id : ids) {
             nativeIds.add(globalIdCodec.decode(id, ProductGraphQlMapper.PRODUCT_TYPE));
@@ -200,6 +204,7 @@ public class ProductMutationDataFetcher {
         if (products == null || products.isEmpty()) {
             throw new IllegalArgumentException("productBulkCreate requires a non-empty list of products");
         }
+        requireBoundedList(products, "productBulkCreate");
         List<ProductCreateCommand> commands = new ArrayList<>(products.size());
         for (ProductBulkCreateInput product : products) {
             if (product.getProductType() == null) {
@@ -232,6 +237,23 @@ public class ProductMutationDataFetcher {
                 .results(results)
                 .errors(List.of())
                 .build();
+    }
+
+    /**
+     * The bulk list bound (the G4 review;
+     * {@code marketplace.graphql.bulk.max-list-items}, default 200):
+     * a list longer than the bound is rejected BEFORE any command is
+     * built or any item is iterated — the classified validation family
+     * the other transport-level guards answer, never a silent
+     * truncation.
+     */
+    private void requireBoundedList(List<?> items, String rootName) {
+        int maxListItems = properties.bulk().maxListItems();
+        if (items.size() > maxListItems) {
+            throw new IllegalArgumentException(rootName + " rejects a list of " + items.size()
+                    + " items: the bulk list bound is " + maxListItems
+                    + " (marketplace.graphql.bulk.max-list-items)");
+        }
     }
 
     /**

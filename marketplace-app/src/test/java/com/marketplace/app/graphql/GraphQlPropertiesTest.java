@@ -46,6 +46,7 @@ class GraphQlPropertiesTest {
             assertThat(properties.pagination().maxPageSize()).isEqualTo(100);
             assertThat(properties.limits().maxQueryDepth()).isEqualTo(10);
             assertThat(properties.limits().maxQueryComplexity()).isEqualTo(200);
+            assertThat(properties.bulk().maxListItems()).isEqualTo(200);
         });
     }
 
@@ -61,7 +62,8 @@ class GraphQlPropertiesTest {
                         "marketplace.graphql.pagination.default-page-size=5",
                         "marketplace.graphql.pagination.max-page-size=25",
                         "marketplace.graphql.limits.max-query-depth=4",
-                        "marketplace.graphql.limits.max-query-complexity=40")
+                        "marketplace.graphql.limits.max-query-complexity=40",
+                        "marketplace.graphql.bulk.max-list-items=25")
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     GraphQlProperties properties = context.getBean(GraphQlProperties.class);
@@ -70,6 +72,7 @@ class GraphQlPropertiesTest {
                     assertThat(properties.pagination().maxPageSize()).isEqualTo(25);
                     assertThat(properties.limits().maxQueryDepth()).isEqualTo(4);
                     assertThat(properties.limits().maxQueryComplexity()).isEqualTo(40);
+                    assertThat(properties.bulk().maxListItems()).isEqualTo(25);
                 });
     }
 
@@ -111,6 +114,24 @@ class GraphQlPropertiesTest {
                     assertThat(failureChain(context).stream().map(Throwable::getMessage)
                             .filter(m -> m != null).toList())
                             .satisfies(__lst -> assertThat(__lst).anySatisfy(m -> assertThat(m).contains("maxQueryComplexity")));
+                });
+    }
+
+    /**
+     * The bulk list bound twin (the G4 review): a non-positive
+     * {@code max-list-items} fails startup at binding time with the
+     * validation exception naming the field — a disabled bound never
+     * surfaces as an unenforced limit at runtime.
+     */
+    @Test
+    void nonPositiveBulkListBoundFailsStartupAtBindingTime() {
+        runner.withPropertyValues("marketplace.graphql.bulk.max-list-items=0")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(failureChain(context)).anyMatch(BindValidationException.class::isInstance);
+                    assertThat(failureChain(context).stream().map(Throwable::getMessage)
+                            .filter(m -> m != null).toList())
+                            .satisfies(__lst -> assertThat(__lst).anySatisfy(m -> assertThat(m).contains("maxListItems")));
                 });
     }
 

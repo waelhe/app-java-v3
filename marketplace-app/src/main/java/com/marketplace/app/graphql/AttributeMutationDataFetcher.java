@@ -72,13 +72,16 @@ public class AttributeMutationDataFetcher {
     private final AttributeWriteSpi attributeWriteSpi;
     private final AttributeGraphQlMapper attributeMapper;
     private final SaleorGlobalIdCodec globalIdCodec;
+    private final GraphQlProperties properties;
 
     public AttributeMutationDataFetcher(AttributeWriteSpi attributeWriteSpi,
                                         AttributeGraphQlMapper attributeMapper,
-                                        SaleorGlobalIdCodec globalIdCodec) {
+                                        SaleorGlobalIdCodec globalIdCodec,
+                                        GraphQlProperties properties) {
         this.attributeWriteSpi = attributeWriteSpi;
         this.attributeMapper = attributeMapper;
         this.globalIdCodec = globalIdCodec;
+        this.properties = properties;
     }
 
     /**
@@ -180,6 +183,7 @@ public class AttributeMutationDataFetcher {
         if (ids == null || ids.isEmpty()) {
             throw new IllegalArgumentException("attributeBulkDelete requires a non-empty list of ids");
         }
+        requireBoundedList(ids, "attributeBulkDelete");
         List<UUID> nativeIds = new ArrayList<>(ids.size());
         for (String id : ids) {
             nativeIds.add(globalIdCodec.decode(id, AttributeGraphQlMapper.ATTRIBUTE_TYPE));
@@ -246,6 +250,7 @@ public class AttributeMutationDataFetcher {
         if (attributes == null || attributes.isEmpty()) {
             throw new IllegalArgumentException("attributeBulkCreate requires a non-empty list of attributes");
         }
+        requireBoundedList(attributes, "attributeBulkCreate");
         List<AttributeCreateCommand> commands = new ArrayList<>(attributes.size());
         for (AttributeCreateInput attribute : attributes) {
             commands.add(new AttributeCreateCommand(
@@ -290,6 +295,7 @@ public class AttributeMutationDataFetcher {
         if (attributes == null || attributes.isEmpty()) {
             throw new IllegalArgumentException("attributeBulkUpdate requires a non-empty list of attributes");
         }
+        requireBoundedList(attributes, "attributeBulkUpdate");
         List<AttributeBulkUpdateItem> items = new ArrayList<>(attributes.size());
         for (AttributeBulkUpdateInput attribute : attributes) {
             if (attribute.getId() == null) {
@@ -321,6 +327,23 @@ public class AttributeMutationDataFetcher {
                 .results(results)
                 .errors(List.of())
                 .build();
+    }
+
+    /**
+     * The bulk list bound (the G4 review;
+     * {@code marketplace.graphql.bulk.max-list-items}, default 200):
+     * a list longer than the bound is rejected BEFORE any command is
+     * built or any item is iterated — the classified validation family
+     * the other transport-level guards answer, never a silent
+     * truncation.
+     */
+    private void requireBoundedList(List<?> items, String rootName) {
+        int maxListItems = properties.bulk().maxListItems();
+        if (items.size() > maxListItems) {
+            throw new IllegalArgumentException(rootName + " rejects a list of " + items.size()
+                    + " items: the bulk list bound is " + maxListItems
+                    + " (marketplace.graphql.bulk.max-list-items)");
+        }
     }
 
     /**
