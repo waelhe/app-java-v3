@@ -183,6 +183,20 @@ public record SearchCriteria(
                     "latitude, longitude and radiusKm must be provided together");
         }
         if (radiusComponents == 3) {
+            // CWE-400 (agent findings 2026-10-26, row 1): the representation
+            // bound — BEFORE any decimal arithmetic. A short exponent form
+            // like 1e-100000000 passes every magnitude comparison (compareTo
+            // never materializes the power of ten) while carrying a scale of
+            // 10^8: the setScale(6) below would construct that enormous
+            // rounding divisor and consume disproportionate CPU and heap
+            // from a bounded request. The bound is deliberately generous —
+            // the coordinates store six decimals and the radius three, so a
+            // scale beyond 32 can only be an amplification attempt, never a
+            // coordinate. The same bound covers radiusKm's multiply below
+            // (its cost rides the same scale axis).
+            requireBoundedScale(latitude, "latitude");
+            requireBoundedScale(longitude, "longitude");
+            requireBoundedScale(radiusKm, "radiusKm");
             if (latitude.compareTo(BigDecimal.valueOf(-90)) < 0
                     || latitude.compareTo(BigDecimal.valueOf(90)) > 0) {
                 throw new BadRequestException("latitude must be within [-90, 90]");
@@ -308,6 +322,30 @@ public record SearchCriteria(
      */
     public long radiusMeters() {
         return radiusKm.multiply(BigDecimal.valueOf(1000)).longValueExact();
+    }
+
+    /**
+     * The coordinate vocabulary's representation ceiling (agent findings
+     * 2026-10-26, row 1 / CWE-400): the stored scale is six decimals and
+     * the radius's meter granularity is three — anything beyond 32
+     * decimal places is an amplification payload, never a coordinate. The
+     * check is O(1) ({@code scale()} is a field read) and lands BEFORE
+     * every decimal arithmetic the constructor performs, so no
+     * power-of-ten construction can ride an unbounded scale.
+     */
+    private static final int MAX_COORDINATE_SCALE = 32;
+
+    /**
+     * Row 1's representation gate — a value whose scale exceeds the
+     * vocabulary's ceiling answers the honest 400 BEFORE any arithmetic
+     * whose allocation cost depends on the exponent.
+     */
+    private static void requireBoundedScale(BigDecimal value, String name) {
+        if (value.scale() > MAX_COORDINATE_SCALE) {
+            throw new BadRequestException(
+                    name + " carries more than " + MAX_COORDINATE_SCALE
+                            + " decimal places — the coordinate vocabulary stores six");
+        }
     }
 
     /**

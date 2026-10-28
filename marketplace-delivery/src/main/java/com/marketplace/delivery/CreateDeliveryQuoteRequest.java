@@ -1,6 +1,9 @@
 package com.marketplace.delivery;
 
-import jakarta.validation.constraints.*;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 public record CreateDeliveryQuoteRequest(
         @NotBlank @Size(max = 250) String pickupAddress,

@@ -2,11 +2,13 @@ package com.marketplace.disputes;
 
 import test.config.IntegrationContainers;
 import test.config.ModuleTestConfig;
+import com.marketplace.disputes.spi.DisputesContentPurgeAdapter;
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.LoanPartyProvider;
 import com.marketplace.shared.api.PaymentRefundPort;
 import com.marketplace.shared.security.CurrentUserProvider;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
@@ -15,6 +17,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -25,6 +28,7 @@ import org.mockito.Mockito;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -72,6 +76,15 @@ class DisputesModuleIntegrationTest {
     @Autowired
     private DisputeService disputeService;
 
+    @Autowired
+    private DisputeRepository disputeRepository;
+
+    @Autowired
+    private DisputesContentPurgeAdapter disputesContentPurgeAdapter;
+
+    @Autowired
+    private EntityManager entityManager;
+
     @Test
     void contextLoads() {
     }
@@ -86,5 +99,52 @@ class DisputesModuleIntegrationTest {
                         1000L, "USD", java.time.Instant.now(), java.time.Instant.now()));
         var disputes = disputeService.listForBooking(UUID.randomUUID(), auth);
         assertThat(disputes).isEmpty();
+    }
+
+    /**
+     * Row 3 (agent findings 2026-10-26 — CWE-362, the finding's own
+     * scenario verbatim): a load-before-purge, flush-after-purge
+     * resolution must NOT be able to commit the original reason. The
+     * pre-fix purge left the optimistic-lock version untouched, so the
+     * stale managed entity's flush still matched its version predicate
+     * and restored the erased text (plus a new Envers revision). With the
+     * purge advancing {@code version} atomically, the stale flush matches
+     * zero rows and fails with the framework's optimistic-lock exception
+     * — the erasure cannot be undone by a concurrent writer.
+     */
+    @Test
+    @Transactional
+    void contentPurge_invalidatesAStaleManagedDisputeSoTheErasureCannotBeUndone() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consumerId = UUID.randomUUID();
+        Dispute seeded = disputeRepository.save(
+                Dispute.openBooking(bookingId, consumerId, "the consumer's authored damage report"));
+        assertThat(seeded.getReason()).isEqualTo("the consumer's authored damage report");
+
+        // The seed must reach the database before the purge runs: the
+        // entity's id is assigned in code (no identity insert), so
+        // persist() defers the INSERT, and the purge's native UPDATE
+        // rides JdbcTemplate — a channel Hibernate does not auto-flush
+        // for — so without this flush the UPDATE matches zero rows and
+        // the whole scenario is vacuous (measured: purged == 0 on CI).
+        entityManager.flush();
+
+        // The concurrent resolution's load: a managed entity holding the
+        // pre-purge version.
+        Dispute staleLoaded = entityManager.find(Dispute.class, seeded.getId());
+        assertThat(staleLoaded.getVersion()).isEqualTo(0L);
+
+        // The authorized content purge — native SQL on the same row, same
+        // transaction: the text dies AND the version advances behind the
+        // persistence context's back.
+        int purged = disputesContentPurgeAdapter.purgeAuthoredTexts(consumerId);
+        assertThat(purged).isGreaterThanOrEqualTo(1);
+
+        // The stale writer mutates and flushes: the pre-fix code committed
+        // the erased reason back into the live row (and Envers recorded a
+        // new revision carrying it). Now the flush must fail instead.
+        staleLoaded.resolve(com.marketplace.shared.api.DisputeResolution.REFUND_CONSUMER);
+        assertThatThrownBy(() -> entityManager.flush())
+                .isInstanceOf(jakarta.persistence.OptimisticLockException.class);
     }
 }

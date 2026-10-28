@@ -29,6 +29,20 @@ import org.springframework.transaction.annotation.Transactional;
  * idempotent by the {@code notes IS NOT NULL} filter — exact counts, zero
  * matches on re-run; no Envers revision for the purge itself (the
  * orchestrator's structured log line is the audit record).
+ *
+ * <p><b>The optimistic-lock advance (agent findings 2026-10-26, row 29 /
+ * CWE-362):</b> the live row's UPDATE also advances {@code version} — the
+ * {@code @Version} column every audited entity carries. The pre-fix purge
+ * left the version untouched, so a provider lifecycle transaction holding
+ * an earlier booking snapshot (loaded before the authorized purge) could
+ * still flush that stale managed entity afterwards: the erased notes were
+ * restored to the live row and Envers recorded them in a NEW audit
+ * revision. With the version advanced atomically in the purge's own
+ * statement, the stale writer's flush matches zero rows and fails with the
+ * framework's optimistic-lock exception instead of committing erased
+ * text; any retry reloads the erased state before changing status, and the
+ * already-scrubbed audit mirrors keep the notes out of every later
+ * revision.
  */
 @Component
 public class BookingContentPurgeAdapter implements AuthoredContentPurgePort {
@@ -45,7 +59,8 @@ public class BookingContentPurgeAdapter implements AuthoredContentPurgePort {
     @Transactional
     public int purgeAuthoredTexts(UUID userId) {
         int bookings = jdbcTemplate.update(
-                "UPDATE bookings SET notes = NULL WHERE consumer_id = ? AND notes IS NOT NULL",
+                "UPDATE bookings SET notes = NULL, version = version + 1 "
+                        + "WHERE consumer_id = ? AND notes IS NOT NULL",
                 userId);
         int auditRows = jdbcTemplate.update(
                 "UPDATE bookings_aud SET notes = NULL WHERE consumer_id = ? AND notes IS NOT NULL",

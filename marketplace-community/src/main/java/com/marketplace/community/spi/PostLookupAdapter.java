@@ -2,7 +2,6 @@ package com.marketplace.community.spi;
 
 import com.marketplace.community.NeighborhoodMembership;
 import com.marketplace.community.NeighborhoodMembershipRepository;
-import com.marketplace.community.NeighborhoodPost;
 import com.marketplace.community.NeighborhoodPostRepository;
 import com.marketplace.community.PostStatus;
 import com.marketplace.shared.api.PostLookupPort;
@@ -57,20 +56,27 @@ public class PostLookupAdapter implements PostLookupPort {
         return postRepository.findById(postId)
                 .filter(post -> post.getStatus() == PostStatus.VISIBLE)
                 .map(post -> new PostInfo(post.getId(), post.getAuthorId(),
-                        authorMayWriteCommunity(post.getAuthorId())))
+                        authorMayWriteCommunity(post.getAuthorId(), post.getLocationId())))
                 .orElseThrow(() -> new ResourceNotFoundException("Post", postId));
     }
 
     /**
-     * The author's CURRENT community-write right — the membership
-     * domain's own D-N3 gate, computed at resolution time so every media
+     * The author's CURRENT community-write right IN THE POST'S OWN
+     * NEIGHBORHOOD (agent findings 2026-10-26, row 43) — the membership
+     * domain's own D-N3 gate computed at resolution time, so every media
      * write step sees the same verdict the post service's own commands
-     * see. A REJECTED membership answers {@code false}; so does an absent
-     * membership (the author left, or the row never existed — either way
-     * there is no community-write right to attach photos with).
+     * see. The pre-fix computation consulted the author's membership
+     * wherever it lived: an author who switched neighborhoods kept
+     * attaching photos to the OLD neighborhood's posts. The location
+     * equality is the fix — a REJECTED membership answers {@code false};
+     * so does an absent membership AND a membership in a different
+     * neighborhood (the author left, the row never existed, or the author
+     * now writes for another hood — either way there is no community-write
+     * right in THIS post's neighborhood to attach photos with).
      */
-    private boolean authorMayWriteCommunity(UUID authorId) {
+    private boolean authorMayWriteCommunity(UUID authorId, UUID postLocationId) {
         return membershipRepository.findByUserId(authorId)
+                .filter(membership -> membership.getLocationId().equals(postLocationId))
                 .map(NeighborhoodMembership::mayUseCommunityWrites)
                 .orElse(false);
     }

@@ -40,6 +40,14 @@ import java.util.UUID;
  *       The creation write carries the label the author publishes under
  *       — the registered contract's own field, never a derived person
  *       identity (the pseudonymization discipline's honest mirror).</li>
+ *   <li>{@code authorId} is the STABLE author — the users.id space, a
+ *       plain UUID column with no JPA relation across module boundaries
+ *       (the V61 posts / V83 events / V90 market items discipline,
+ *       measured into the polls by V286 — row 18, agent findings
+ *       2026-10-26). The label is the display string and can be relabeled;
+ *       the id is the ownership key the authored-text purge (b-3) reads —
+ *       purging by the label would miss every relabeled row and falsely
+ *       hit every identically-labeled stranger.</li>
  *   <li>NO enumerated column rides here — and that is the measured
  *       shape (the V91 reasoning verbatim): the registered contract
  *       carries question/options/author with no category vocabulary,
@@ -73,6 +81,10 @@ public class NeighborhoodPoll extends BaseEntity {
     @Column(name = "question", nullable = false, length = 200)
     private String question;
 
+    /** The stable author — the users.id space (V286, row 18): the ownership key, never the display label. */
+    @Column(name = "author_id", nullable = false)
+    private UUID authorId;
+
     /** The committee/role label the poll publishes under — a display string, never a person identity. */
     @Column(name = "author_label", nullable = false, length = 200)
     private String authorLabel;
@@ -80,8 +92,9 @@ public class NeighborhoodPoll extends BaseEntity {
     protected NeighborhoodPoll() {
     }
 
-    private NeighborhoodPoll(UUID id, UUID locationId, String question, String authorLabel) {
+    private NeighborhoodPoll(UUID id, UUID authorId, UUID locationId, String question, String authorLabel) {
         this.id = id;
+        this.authorId = authorId;
         this.locationId = locationId;
         this.question = question;
         this.authorLabel = authorLabel;
@@ -99,13 +112,14 @@ public class NeighborhoodPoll extends BaseEntity {
      * stamp (BaseEntity's @CreatedDate) — the board's newest-first
      * order key.
      */
-    static NeighborhoodPoll authored(UUID locationId, String question, String authorLabel) {
-        return new NeighborhoodPoll(UUID.randomUUID(), locationId, question, authorLabel);
+    static NeighborhoodPoll authored(UUID authorId, UUID locationId, String question, String authorLabel) {
+        return new NeighborhoodPoll(UUID.randomUUID(), authorId, locationId, question, authorLabel);
     }
 
     @Override
     public UUID getId() { return id; }
     public UUID getLocationId() { return locationId; }
+    public UUID getAuthorId() { return authorId; }
     public String getQuestion() { return question; }
     public String getAuthorLabel() { return authorLabel; }
 }

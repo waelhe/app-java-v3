@@ -1,8 +1,6 @@
 package com.marketplace.catalog;
 
-import com.marketplace.shared.api.PropertyDetailsPort;
 import com.marketplace.shared.api.ProviderListingView;
-import java.math.BigDecimal;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 

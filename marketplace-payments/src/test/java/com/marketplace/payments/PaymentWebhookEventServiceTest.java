@@ -11,10 +11,20 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.instancio.Instancio.*;
-import static org.mockito.Mockito.*;
+import static org.instancio.Instancio.create;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class PaymentWebhookEventServiceTest {
+
+    private final PaymentRefundOperationJournal refundOperationJournal =
+            mock(PaymentRefundOperationJournal.class);
 
     @Test
     void duplicateWebhookEventIsIgnored() {
@@ -28,7 +38,7 @@ class PaymentWebhookEventServiceTest {
         @SuppressWarnings("unchecked")
         ObjectProvider<PspChannel> pspChannel = mock(ObjectProvider.class);
 
-        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher, new WebhookEventRecorder(webhookRepository)), new SettlementEligibilityService(mock(com.marketplace.shared.api.LedgerReadPort.class), intentRepository, bookingParticipantProvider), pspChannel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)));
+        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher, new WebhookEventRecorder(webhookRepository)), new SettlementEligibilityService(mock(com.marketplace.shared.api.LedgerReadPort.class), intentRepository, bookingParticipantProvider), pspChannel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)), refundOperationJournal);
         when(webhookRepository.findByProviderAndEventId("mock", "evt_1")).thenReturn(Optional.of(create(PaymentWebhookEvent.class)));
 
         boolean created = service.processWebhookEvent("mock", "evt_1", "payment_intent.succeeded", "sig");
@@ -54,7 +64,7 @@ class PaymentWebhookEventServiceTest {
         @SuppressWarnings("unchecked")
         ObjectProvider<PspChannel> pspChannel = mock(ObjectProvider.class);
 
-        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher, new WebhookEventRecorder(webhookRepository)), new SettlementEligibilityService(mock(com.marketplace.shared.api.LedgerReadPort.class), intentRepository, bookingParticipantProvider), pspChannel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)));
+        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher, new WebhookEventRecorder(webhookRepository)), new SettlementEligibilityService(mock(com.marketplace.shared.api.LedgerReadPort.class), intentRepository, bookingParticipantProvider), pspChannel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)), refundOperationJournal);
         // Pre-check: absent; post-DIVE re-check: the concurrent winner's row
         // now exists — that (and only that) is the already-processed case.
         when(webhookRepository.findByProviderAndEventId("mock", "evt_2"))
@@ -87,7 +97,7 @@ class PaymentWebhookEventServiceTest {
         @SuppressWarnings("unchecked")
         ObjectProvider<PspChannel> pspChannel = mock(ObjectProvider.class);
 
-        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher, new WebhookEventRecorder(webhookRepository)), new SettlementEligibilityService(mock(com.marketplace.shared.api.LedgerReadPort.class), intentRepository, bookingParticipantProvider), pspChannel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)));
+        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher, new WebhookEventRecorder(webhookRepository)), new SettlementEligibilityService(mock(com.marketplace.shared.api.LedgerReadPort.class), intentRepository, bookingParticipantProvider), pspChannel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)), refundOperationJournal);
         // Absent before AND after the failed insert — no concurrent winner.
         when(webhookRepository.findByProviderAndEventId("mock", "evt_4")).thenReturn(Optional.empty());
         when(webhookRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
@@ -114,7 +124,7 @@ class PaymentWebhookEventServiceTest {
         @SuppressWarnings("unchecked")
         ObjectProvider<PspChannel> pspChannel = mock(ObjectProvider.class);
 
-        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher, new WebhookEventRecorder(webhookRepository)), new SettlementEligibilityService(mock(com.marketplace.shared.api.LedgerReadPort.class), intentRepository, bookingParticipantProvider), pspChannel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)));
+        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher, new WebhookEventRecorder(webhookRepository)), new SettlementEligibilityService(mock(com.marketplace.shared.api.LedgerReadPort.class), intentRepository, bookingParticipantProvider), pspChannel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)), refundOperationJournal);
         when(webhookRepository.findByProviderAndEventId("mock", "evt_3")).thenReturn(Optional.empty());
         when(webhookRepository.saveAndFlush(any(PaymentWebhookEvent.class))).thenAnswer(inv -> inv.getArgument(0));
         // Dispatch fails: confirmIntent cannot find the local intent (an
@@ -143,7 +153,7 @@ class PaymentWebhookEventServiceTest {
         @SuppressWarnings("unchecked")
         ObjectProvider<PspChannel> pspChannel = mock(ObjectProvider.class);
 
-        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher, new WebhookEventRecorder(webhookRepository)), new SettlementEligibilityService(mock(com.marketplace.shared.api.LedgerReadPort.class), intentRepository, bookingParticipantProvider), pspChannel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)));
+        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher, new WebhookEventRecorder(webhookRepository)), new SettlementEligibilityService(mock(com.marketplace.shared.api.LedgerReadPort.class), intentRepository, bookingParticipantProvider), pspChannel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)), refundOperationJournal);
         when(webhookRepository.findByProviderAndEventId("mock", "evt_5")).thenReturn(Optional.empty());
         when(webhookRepository.saveAndFlush(any(PaymentWebhookEvent.class))).thenAnswer(inv -> inv.getArgument(0));
         doThrow(new IllegalStateException("delete failed too"))
@@ -172,7 +182,7 @@ class PaymentWebhookEventServiceTest {
         @SuppressWarnings("unchecked")
         ObjectProvider<PspChannel> pspChannel = mock(ObjectProvider.class);
 
-        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher, new WebhookEventRecorder(webhookRepository)), new SettlementEligibilityService(mock(com.marketplace.shared.api.LedgerReadPort.class), intentRepository, bookingParticipantProvider), pspChannel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)));
+        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher, new WebhookEventRecorder(webhookRepository)), new SettlementEligibilityService(mock(com.marketplace.shared.api.LedgerReadPort.class), intentRepository, bookingParticipantProvider), pspChannel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)), refundOperationJournal);
         String sharedEventId = "evt_shared_1";
         when(webhookRepository.findByProviderAndEventId("stripe", sharedEventId)).thenReturn(Optional.empty());
         when(webhookRepository.findByProviderAndEventId("adyen", sharedEventId)).thenReturn(Optional.empty());

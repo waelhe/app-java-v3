@@ -4,7 +4,12 @@ import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.DisputeResolution;
 import com.marketplace.shared.api.DisputeSubject;
 import com.marketplace.shared.jpa.BaseEntity;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import org.hibernate.envers.Audited;
 
 import java.util.UUID;
