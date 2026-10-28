@@ -91,9 +91,20 @@ public class PasswordResetService {
      * (the bcrypt byte ceiling). A record of the owning service's own
      * contract, so the redemption leg enforces it before consuming the
      * single-use token regardless of which transport carried the request.
+     *
+     * <p>Review round (CodeRabbit on the 4a split, 2026-10-28): the check
+     * measures the way the request DTO's {@code @Size} measures —
+     * {@link String#length()} (UTF-16 code units). The first shape walked a
+     * regex {@code ^.{8,72}$}, which rejects policy-valid values: the dot
+     * excludes line terminators ("abc\ndefg" is 8 characters by the
+     * request's measure yet failed the regex) and counts code points, so a
+     * four-emoji password (16 code units — 32 UTF-8 bytes, within the
+     * bcrypt byte ceiling) failed on count. The redemption leg now accepts
+     * exactly what {@code AuthController.ResetCompleteRequest} accepts.
      */
-    private static final java.util.regex.Pattern PASSWORD_SHAPE =
-            java.util.regex.Pattern.compile("^.{8,72}$");
+    private static boolean passwordWithinSharedPolicy(String password) {
+        return password != null && password.length() >= 8 && password.length() <= 72;
+    }
 
     private final UserRepository userRepository;
     private final UserDetailsManager userDetailsManager;
@@ -187,7 +198,7 @@ public class PasswordResetService {
      */
     @Observed(name = "password.reset.complete")
     public void completeReset(String token, String newPassword) {
-        if (newPassword == null || !PASSWORD_SHAPE.matcher(newPassword).matches()) {
+        if (!passwordWithinSharedPolicy(newPassword)) {
             throw new IllegalArgumentException(
                     "The new password must be 8 to 72 characters long");
         }

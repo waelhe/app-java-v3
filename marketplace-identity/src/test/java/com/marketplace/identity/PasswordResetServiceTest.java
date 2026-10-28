@@ -161,6 +161,35 @@ class PasswordResetServiceTest {
     }
 
     @Test
+    void completeReset_measuresThePolicysOwnLengthNotARegexShape() {
+        // Review round (CodeRabbit on the 4a split, 2026-10-28): the policy
+        // measures String.length() (UTF-16 code units) — the same count the
+        // request DTO's @Size applies. The first shape's regex rejected both
+        // values below (the dot excludes line terminators and counts code
+        // points); both are policy-valid and must complete the reset.
+        AuthActionToken token = AuthActionToken.issue(
+                EMAIL, AuthActionTokenPurpose.PASSWORD_RESET, "c".repeat(64), NOW.plus(TTL));
+        when(authActionTokenService.consume("raw-token", AuthActionTokenPurpose.PASSWORD_RESET))
+                .thenReturn(token);
+        when(userDetailsManager.loadUserByUsername(EMAIL)).thenReturn(
+                org.springframework.security.core.userdetails.User.withUsername(EMAIL)
+                        .password("{noop}old-secret").authorities("ROLE_CONSUMER")
+                        .build());
+
+        // 8 UTF-16 units including a line feed — policy-valid by the
+        // request's own measure.
+        service.completeReset("raw-token", "abc\ndefg");
+
+        // A four-emoji password: 16 UTF-16 units, 32 UTF-8 bytes — within
+        // both the @Size bounds and the bcrypt byte ceiling.
+        AuthActionToken secondToken = AuthActionToken.issue(
+                EMAIL, AuthActionTokenPurpose.PASSWORD_RESET, "d".repeat(64), NOW.plus(TTL));
+        when(authActionTokenService.consume("raw-two", AuthActionTokenPurpose.PASSWORD_RESET))
+                .thenReturn(secondToken);
+        service.completeReset("raw-two", "\uD83D\uDE00".repeat(4));
+    }
+
+    @Test
     void completeReset_writesThePasswordColumnOnlyAndKillsTheAuthorizations() {
         AuthActionToken token = AuthActionToken.issue(
                 EMAIL, AuthActionTokenPurpose.PASSWORD_RESET, "c".repeat(64), NOW.plus(TTL));
