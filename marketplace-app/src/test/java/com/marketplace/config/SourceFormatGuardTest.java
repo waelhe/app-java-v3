@@ -43,13 +43,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * identifiers (rounds 1-2), Java 25 module imports, pre-semicolon
  * whitespace, declarations preceded by same-line comments (round 3), and
  * — round 4 — spaces around the dots inside qualified names, full
- * annotation prefixes before the package keyword, and char literals
- * consumed atomically by the stripper so a quote inside them never opens
- * the string state. The scan judges the CODE-ONLY projection of each
- * line (comments and string-literal contents stripped by the
- * {@link CodeOnlyStripper} state machine), so statements inside comments
- * or strings are data, never declarations. Measured repo-wide before
- * each adoption: zero offenders.
+ * annotation prefixes before the package keyword, char literals consumed
+ * atomically by the stripper so a quote inside them never opens the
+ * string state, deleted block comments keeping a separator, and
+ * declarations SPLIT across lines (an embedded block comment is the
+ * measured shape) judged on their terminating line through the
+ * {@link DeclarationScan} state. The scan judges the CODE-ONLY
+ * projection of each line (comments and string-literal contents stripped
+ * by the {@link CodeOnlyStripper} state machine), so statements inside
+ * comments or strings are data, never declarations. Measured repo-wide
+ * before each adoption: zero offenders.
  */
 class SourceFormatGuardTest {
 
@@ -84,6 +87,20 @@ class SourceFormatGuardTest {
             Pattern.compile("^\\s*(?:@[^\\r\\n]*?\\s+)*package\\s+[^;\\s]+(?:\\s*\\.\\s*[^;\\s]+)*\\s*;\\s*\\S");
     private static final Pattern PACKED_IMPORT =
             Pattern.compile("^\\s*import\\s+(?:(?:static|module)\\s+)?[^;\\s]+(?:\\s*\\.\\s*[^;\\s]+)*\\s*;\\s*\\S");
+    // Round 4, outside-diff finding 2 (CodeRabbit on 55e876d6): a
+    // declaration SPLIT across lines — an embedded block comment is the
+    // measured shape ('import/*\\n*/java.util.List; class Example {}') —
+    // carries its packed tail on the SEMICOLON's line, where the anchored
+    // per-line patterns never see the keyword. OPENS_DECLARATION matches a
+    // semicolon-less line that begins one (the name part optional: the
+    // comment separator may have consumed it); QUALIFIED_TAIL matches a
+    // bare qualified-name continuation and nothing else — arbitrary code
+    // after a compact-form import (complete at line end) is a fresh
+    // statement, never a declaration tail, and stays unflagged.
+    private static final Pattern OPENS_DECLARATION =
+            Pattern.compile("^\\s*(?:@[^\\r\\n]*?\\s+)*(?:package|import)\\s+(?:(?:static|module)\\s+)?(?:[^;\\s]+(?:\\s*\\.\\s*[^;\\s]+)*\\s*)?$");
+    private static final Pattern QUALIFIED_TAIL =
+            Pattern.compile("^(?:[^;\\s]+(?:\\s*\\.\\s*[^;\\s]+)*)?\\s*$");
 
     @Test
     void packageAndImportStatementsAreAloneOnTheirLine() throws IOException {
@@ -284,6 +301,66 @@ class SourceFormatGuardTest {
                 .isFalse();
     }
 
+    /**
+     * Round 4, outside-diff finding 2 — a declaration SPLIT across lines
+     * (an embedded block comment is the measured shape) carries its packed
+     * tail on the semicolon's line; the {@link DeclarationScan} state
+     * judges that tail. A compact-form import (complete at line end,
+     * no semicolon) followed by ordinary code never flags: the guard's
+     * scope stays the package/import packing shape alone.
+     */
+    @Test
+    void multiLineDeclarationsAreJudgedOnTheTerminatingLine() {
+        // The measured failure shape: the comment opens on the import's
+        // line and CLOSES on the next ('*/' head) — the class shares the
+        // semicolon's line.
+        CodeOnlyStripper split = new CodeOnlyStripper();
+        DeclarationScan verdict = new DeclarationScan();
+        verdict.packed(split.strip("import/*"));
+        assertThat(verdict.packed(split.strip("*/java.util.List; class Example {}")))
+                .as("a multi-line import whose tail shares the semicolon's line is the failure shape")
+                .isTrue();
+        // The honest form: nothing follows the semicolon.
+        CodeOnlyStripper honest = new CodeOnlyStripper();
+        DeclarationScan honestVerdict = new DeclarationScan();
+        honestVerdict.packed(honest.strip("import/*"));
+        assertThat(honestVerdict.packed(honest.strip("*/java.util.List;")))
+                .as("a multi-line import completing alone on its line is honest")
+                .isFalse();
+        // A package split: same shape through the package keyword.
+        CodeOnlyStripper splitPackage = new CodeOnlyStripper();
+        DeclarationScan packageVerdict = new DeclarationScan();
+        packageVerdict.packed(splitPackage.strip("package/*"));
+        assertThat(packageVerdict.packed(splitPackage.strip("*/com.example; class X {}")))
+                .as("a multi-line package whose tail shares the semicolon's line is the failure shape")
+                .isTrue();
+        // A three-line split: the bare qualified-name continuation keeps
+        // the declaration open.
+        CodeOnlyStripper threeLines = new CodeOnlyStripper();
+        DeclarationScan threeVerdict = new DeclarationScan();
+        threeVerdict.packed(threeLines.strip("import/*"));
+        assertThat(threeVerdict.packed(threeLines.strip("*/java.util.")))
+                .as("a bare qualified-name continuation keeps the declaration open (no verdict yet)")
+                .isFalse();
+        assertThat(threeVerdict.packed(threeLines.strip("List; class Example {}")))
+                .as("the terminating line's tail shares the semicolon's line — flagged")
+                .isTrue();
+        // A compact-form import (complete at line end) followed by ordinary
+        // code: fresh statements, never a declaration tail.
+        CodeOnlyStripper compact = new CodeOnlyStripper();
+        DeclarationScan compactVerdict = new DeclarationScan();
+        compactVerdict.packed(compact.strip("import java.util.List"));
+        assertThat(compactVerdict.packed(compact.strip("class Foo {}")))
+                .as("a compact import completes at line end — the next class line is fresh code")
+                .isFalse();
+        CodeOnlyStripper compactStatements = new CodeOnlyStripper();
+        DeclarationScan statementsVerdict = new DeclarationScan();
+        statementsVerdict.packed(compactStatements.strip("import java.util.List"));
+        assertThat(statementsVerdict.packed(compactStatements.strip("List x; int y = 2;")))
+                .as("statements after a compact import are not a declaration tail (no bare qualified-name head)")
+                .isFalse();
+    }
+
     private static boolean isPacked(String codeOnlyLine) {
         return PACKED_PACKAGE.matcher(codeOnlyLine).find()
                 || PACKED_IMPORT.matcher(codeOnlyLine).find();
@@ -293,13 +370,48 @@ class SourceFormatGuardTest {
         try {
             List<String> lines = Files.readAllLines(file);
             CodeOnlyStripper stripper = new CodeOnlyStripper();
+            DeclarationScan declaration = new DeclarationScan();
             for (int i = 0; i < lines.size(); i++) {
-                if (isPacked(stripper.strip(lines.get(i)))) {
+                if (declaration.packed(stripper.strip(lines.get(i)))) {
                     offenders.add(root.relativize(file) + ":" + (i + 1));
                 }
             }
         } catch (IOException unreadable) {
             offenders.add(root.relativize(file) + ":unreadable");
+        }
+    }
+
+    /**
+     * Round 4, outside-diff finding 2 — the cross-line declaration state.
+     * A semicolon-less line that begins a package/import declaration
+     * opens it; the TERMINATING line is then judged by its tail (anything
+     * after the semicolon) — but only when the pre-semicolon text is a
+     * bare qualified-name continuation ({@link #QUALIFIED_TAIL}): ordinary
+     * code following a compact-form import (complete at line end) closes
+     * the state without a verdict, keeping the guard's narrow scope.
+     */
+    private static final class DeclarationScan {
+
+        private boolean open;
+
+        boolean packed(String codeOnlyLine) {
+            if (isPacked(codeOnlyLine)) {
+                open = false;
+                return true;
+            }
+            if (open) {
+                int semi = codeOnlyLine.indexOf(';');
+                if (semi < 0) {
+                    open = QUALIFIED_TAIL.matcher(codeOnlyLine).matches();
+                } else {
+                    open = false;
+                    return QUALIFIED_TAIL.matcher(codeOnlyLine.substring(0, semi)).matches()
+                            && !codeOnlyLine.substring(semi + 1).isBlank();
+                }
+                return false;
+            }
+            open = OPENS_DECLARATION.matcher(codeOnlyLine).matches();
+            return false;
         }
     }
 
