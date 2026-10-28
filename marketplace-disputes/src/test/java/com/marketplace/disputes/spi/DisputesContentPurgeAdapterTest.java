@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -100,7 +101,13 @@ class DisputesContentPurgeAdapterTest {
 
         assertEquals(2, adapter.purgeAuthoredTexts(SUBJECT));
 
-        verify(jdbcTemplate).update(
+        // CI round 4 (measured on b21470db): BOTH statements — the live row
+        // AND the audit mirror — carry the SAME authorship predicate and
+        // idempotence filter (the mirror purge joined the adapter with the
+        // round-1 purge family); the single-invocation verify of the
+        // pre-mirror era answered TooManyActualInvocations. The port's
+        // contract is asserted on EACH of the two statements.
+        verify(jdbcTemplate, times(2)).update(
                 contains("WHERE opened_by = ? AND reason IS NOT NULL AND reason <> ?"),
                 eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
                 eq(AuthoredContentPurgePort.PURGED_MARKER));
