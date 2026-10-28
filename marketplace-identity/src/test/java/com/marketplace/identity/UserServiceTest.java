@@ -776,6 +776,9 @@ class UserServiceTest {
     private static final String DERIVED_SUBJECT =
             "anon-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
+    // Review round (CodeRabbit on the 4a split, 2026-10-28): the @Test was
+    // missing — JUnit never ran this test, and the invalidateOutstanding →
+    // purgeHistory → deleteUser ordering verification below never executed.
     @Test
     void pseudonymizeAccount_transformsDeletesIdentityAndPublishesCacheInvalidation() {
         UUID id = UUID.randomUUID();
@@ -801,6 +804,19 @@ class UserServiceTest {
         // reference to auth_users, and the ban-vs-verification invariant
         // (a pseudonymized account holds no redemption right).
         verify(authActionTokenService).invalidateOutstanding("target-subject");
+        // Agent findings 2026-10-26T13:11 export, row 8: the FK leg — the
+        // token HISTORY physically leaves before the login row dies, in the
+        // documented order (consumption first for the audit revision, then
+        // the physical removal, then the identity's death).
+        verify(authActionTokenService).purgeHistory("target-subject");
+        // (The 82831117 carry-over: org.mockito.inOrder is not a valid
+        // package-level call — inOrder is Mockito's own static; the module's
+        // house imports resolve it.)
+        org.mockito.InOrder fkLegOrder = org.mockito.Mockito.inOrder(
+                authActionTokenService, userDetailsManager);
+        fkLegOrder.verify(authActionTokenService).invalidateOutstanding("target-subject");
+        fkLegOrder.verify(authActionTokenService).purgeHistory("target-subject");
+        fkLegOrder.verify(userDetailsManager).deleteUser("target-subject");
         // The L23 flip channel is never touched (pseudonymization deletes,
         // it does not disable).
         verify(userDetailsManager, never()).updateUser(any());

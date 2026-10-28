@@ -112,12 +112,21 @@ final class BearerSessionExpirationGuard {
      * browser path). Arms the expiry close for that session's id — the
      * STOMP session id is the WebSocket session id in Spring's STOMP
      * over WebSocket (the simpSessionId the accessor carries).
+     *
+     * <p>Review round (CodeRabbit on the 4a split, 2026-10-28): the
+     * return value is the ADMISSION verdict. {@code false} means the
+     * session was closed AT admission (an already-expired token — row 23's
+     * immediate close); the interceptor must then abort the CONNECT
+     * (return {@code null} from preSend) so no CONNECTED frame follows a
+     * closed socket. Every other shape — scheduled close, inert
+     * module-slice (no scheduler), absent arguments — is admission
+     * ({@code true}): the socket stays open under its armed deadline.
      */
-    void bearerTokenAuthenticated(String sessionId, Jwt jwt) {
+    boolean bearerTokenAuthenticated(String sessionId, Jwt jwt) {
         if (sessionId == null || jwt == null || jwt.getExpiresAt() == null) {
-            return;
+            return true;
         }
-        scheduleClose(sessionId, jwt.getExpiresAt());
+        return scheduleClose(sessionId, jwt.getExpiresAt());
     }
 
     /**
@@ -134,24 +143,35 @@ final class BearerSessionExpirationGuard {
         cancelPendingClose(session.getId());
     }
 
-    private void scheduleClose(String sessionId, Instant expiresAt) {
+    private boolean scheduleClose(String sessionId, Instant expiresAt) {
         if (expiresAt.isBefore(Instant.now())) {
-            // An already-expired token: nothing to schedule — its next
-            // inbound frame is rejected (and the socket closed) by the
-            // interceptor's re-validation, the same contract as a
-            // resource-server 401.
-            return;
+            // Row 23 (agent findings 2026-10-26 14:33 export, CWE-613): an
+            // already-past deadline on an ADMITTED session closes NOW. The
+            // pre-fix shape returned without scheduling anything and leaned
+            // on the interceptor's next inbound frame — but the JWT
+            // validator accepts recently expired tokens within its clock
+            // skew, so a session can be admitted holding a token whose
+            // expiry has already passed; a QUIET session then carries the
+            // retained principal and its private-message subscriptions
+            // indefinitely (no inbound frame to reject, no scheduled
+            // closure). The guard's own contract — "a closed socket is the
+            // honest contract" — closes it immediately at admission time;
+            // the clock-skew tolerance belongs to the validator's token
+            // decision, never to an open-ended session lifetime.
+            closeSession(sessionId);
+            return false;
         }
         TaskScheduler scheduler = taskScheduler.getIfAvailable();
         if (scheduler == null) {
             // Module-slice context: no scheduler bean. The inbound-frame
             // safeguard in the interceptor remains the active defense;
             // this guard stays inert rather than failing the context.
-            return;
+            return true;
         }
         cancelPendingClose(sessionId);
         ScheduledFuture<?> close = scheduler.schedule(() -> closeSession(sessionId), expiresAt);
         pendingCloses.put(sessionId, close);
+        return true;
     }
 
     private void closeSession(String sessionId) {

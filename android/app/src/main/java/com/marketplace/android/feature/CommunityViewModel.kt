@@ -246,6 +246,17 @@ class CommunityViewModel(
      * account.
      */
     private var sessionSubject: String? = null
+
+    /**
+     * Review round (CodeRabbit on the 4a split, 2026-10-28): a session
+     * GENERATION counter — the subject alone cannot distinguish a logout
+     * followed by a login to the SAME account (the subject returns to its
+     * old value; a stale in-flight completion would then be accepted over
+     * the fresh session's state). Every sessionSubject assignment advances
+     * the generation; request guards capture it alongside the subject and
+     * re-confirm BOTH before applying.
+     */
+    private var sessionGeneration: Long = 0
     private var stateBeforeSessionRecovery: SessionRecoverySnapshot? = null
     val uiState = _uiState.asStateFlow()
     private var locationSearchJob: Job? = null
@@ -273,6 +284,7 @@ class CommunityViewModel(
         silentReauthInFlight = false
         stateBeforeSessionRecovery = null
         sessionSubject = null
+        sessionGeneration++
         _uiState.update {
             it.copy(
                 authenticated = false,
@@ -325,6 +337,7 @@ class CommunityViewModel(
         val saved = stateBeforeSessionRecovery
         stateBeforeSessionRecovery = null
         sessionSubject = newSessionSubject
+        sessionGeneration++
         val savedState = if (canRestoreSessionRecoveryState(saved?.ownerSubject, newSessionSubject)) {
             saved?.uiState
         } else {
@@ -387,6 +400,7 @@ class CommunityViewModel(
         silentReauthInFlight = true
         stateBeforeSessionRecovery = null
         sessionSubject = null
+        sessionGeneration++
         val idToken = idTokenHint
         idTokenHint = null
         _uiState.value = AppUiState(sessionRestoreAttempted = true)
@@ -398,6 +412,7 @@ class CommunityViewModel(
         silentReauthInFlight = true
         stateBeforeSessionRecovery = null
         sessionSubject = null
+        sessionGeneration++
         _uiState.value = AppUiState(
             sessionRestoreAttempted = true,
             authSuccess = "تم تسجيل الخروج من هذا الجهاز. تنتهي صلاحية رمز الوصول تلقائيًا خلال 15 دقيقة."
@@ -409,6 +424,7 @@ class CommunityViewModel(
         silentReauthInFlight = true
         stateBeforeSessionRecovery = null
         sessionSubject = null
+        sessionGeneration++
         _uiState.update {
             it.copy(
                 authenticated = false,
@@ -422,6 +438,12 @@ class CommunityViewModel(
                 urgentAlertsScopeId = null,
                 urgentAlertsBusy = false,
                 urgentAlertsError = null,
+                // Row 19: the private-notification state dies with its
+                // session — no surface of the previous account survives
+                // into the next one's UI.
+                notifications = emptyList(),
+                notificationsBusy = false,
+                notificationsError = null,
                 reportingContentKeys = emptySet(),
                 reportedContentKeys = emptySet(),
                 discoveryRows = emptyList(),
@@ -1564,17 +1586,46 @@ class CommunityViewModel(
         }
     }
 
+    /**
+     * Row 19 (agent findings 2026-10-26 14:33 export, CWE-488): the
+     * notification request's SESSION guard. A request that outlives its
+     * account's session (sign-out or a different account signing in while
+     * the call is in flight) must never write its result into the UI
+     * state: the payload is private messaging, and clearing the state at
+     * sign-out alone does not stop a later asynchronous completion from
+     * repopulating it. The guard captures the session's OWNER (the
+     * subject) when the request starts and every state write re-confirms
+     * it — the loadUrgentAlerts scope-guard discipline applied to the
+     * session identity: a stale completion is discarded, never applied.
+     */
     fun loadNotifications() {
         if (!_uiState.value.authenticated) return
+        val requestSessionSubject = sessionSubject
+        val requestSessionGeneration = sessionGeneration
         viewModelScope.launch {
-            _uiState.update { it.copy(notificationsBusy = true, notificationsError = null) }
+            _uiState.update {
+                if (it.authenticated && sessionSubject == requestSessionSubject
+                    && sessionGeneration == requestSessionGeneration) {
+                    it.copy(notificationsBusy = true, notificationsError = null)
+                } else it
+            }
             try {
                 val page = repository.getNotifications()
-                _uiState.update { it.copy(notifications = page.content, notificationsBusy = false, notificationsError = null) }
+                _uiState.update {
+                    if (it.authenticated && sessionSubject == requestSessionSubject
+                        && sessionGeneration == requestSessionGeneration) {
+                        it.copy(notifications = page.content, notificationsBusy = false, notificationsError = null)
+                    } else it
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                _uiState.update { it.copy(notificationsBusy = false, notificationsError = failureMessage(error)) }
+                _uiState.update {
+                    if (it.authenticated && sessionSubject == requestSessionSubject
+                        && sessionGeneration == requestSessionGeneration) {
+                        it.copy(notificationsBusy = false, notificationsError = failureMessage(error))
+                    } else it
+                }
             }
         }
     }
@@ -1900,6 +1951,7 @@ class CommunityViewModel(
                         )
                     }
                     sessionSubject = null
+                    sessionGeneration++
                     if (!silentReauthInFlight) {
                         silentReauthInFlight = true
                         _uiState.value = AppUiState(

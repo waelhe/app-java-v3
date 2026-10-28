@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -138,6 +139,54 @@ class PasswordResetServiceTest {
         // The register flow's single-transaction impossibility — a drift
         // never becomes a 500 probe surface; nothing is issued.
         verifyNoInteractions(authActionTokenService, eventPublisher);
+    }
+
+    /**
+     * Row 20 (agent findings 2026-10-26 14:33 export, CWE-521): the shared
+     * password policy is enforced INSIDE completeReset — before the
+     * single-use token is consumed. The GraphQL setPassword transport
+     * checks for blank input alone, so a too-short replacement could
+     * previously be written through this path; the refusal leaves the
+     * token LIVE (the honest retry contract: nothing half-spent).
+     */
+    @Test
+    void completeReset_enforcesTheSharedPasswordPolicyBeforeConsumingTheToken() {
+        assertThatThrownBy(() -> service.completeReset("raw-token", "short"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("The new password must be 8 to 72 characters long");
+        assertThatThrownBy(() -> service.completeReset("raw-token", null))
+                .isInstanceOf(IllegalArgumentException.class);
+        org.mockito.Mockito.verify(authActionTokenService, org.mockito.Mockito.never())
+                .consume(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void completeReset_measuresThePolicysOwnLengthNotARegexShape() {
+        // Review round (CodeRabbit on the 4a split, 2026-10-28): the policy
+        // measures String.length() (UTF-16 code units) — the same count the
+        // request DTO's @Size applies. The first shape's regex rejected both
+        // values below (the dot excludes line terminators and counts code
+        // points); both are policy-valid and must complete the reset.
+        AuthActionToken token = AuthActionToken.issue(
+                EMAIL, AuthActionTokenPurpose.PASSWORD_RESET, "c".repeat(64), NOW.plus(TTL));
+        when(authActionTokenService.consume("raw-token", AuthActionTokenPurpose.PASSWORD_RESET))
+                .thenReturn(token);
+        when(userDetailsManager.loadUserByUsername(EMAIL)).thenReturn(
+                org.springframework.security.core.userdetails.User.withUsername(EMAIL)
+                        .password("{noop}old-secret").authorities("ROLE_CONSUMER")
+                        .build());
+
+        // 8 UTF-16 units including a line feed — policy-valid by the
+        // request's own measure.
+        service.completeReset("raw-token", "abc\ndefg");
+
+        // A four-emoji password: 16 UTF-16 units, 32 UTF-8 bytes — within
+        // both the @Size bounds and the bcrypt byte ceiling.
+        AuthActionToken secondToken = AuthActionToken.issue(
+                EMAIL, AuthActionTokenPurpose.PASSWORD_RESET, "d".repeat(64), NOW.plus(TTL));
+        when(authActionTokenService.consume("raw-two", AuthActionTokenPurpose.PASSWORD_RESET))
+                .thenReturn(secondToken);
+        service.completeReset("raw-two", "\uD83D\uDE00".repeat(4));
     }
 
     @Test
