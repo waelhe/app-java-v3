@@ -38,9 +38,19 @@ public class ReviewsLookupAdapter implements ReviewLookupPort {
 
     @Override
     public Optional<UUID> findVisibleAuthorId(UUID reviewId) {
-        return reviewRepository.findById(reviewId)
-                .filter(review -> review.getModerationStatus() == ReviewModerationStatus.PUBLISHED)
-                .map(Review::getReviewerId);
+        // Part-2 review round 2's follow-up (the report-survival root): the
+        // SCALAR projection, never findById — the community report-creation
+        // transaction rides this gate BEFORE its engine hide's
+        // findByIdForUpdate, and an entity materialized here holds the
+        // pre-hide @Version snapshot in the persistence context, so the
+        // serialized second reporter's own locked read of the committed
+        // post-hide version dies on Hibernate's "Query result contains
+        // conflicting version of entity already held in persistence
+        // context" — taking his report down with it. The projection keeps
+        // the locked read the unit's ONLY Review materialization; the
+        // PUBLISHED + soft-delete predicates stay the machinery's own.
+        return reviewRepository.findReviewerIdByIdAndModerationStatus(
+                reviewId, ReviewModerationStatus.PUBLISHED);
     }
 
     @Override

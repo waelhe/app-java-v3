@@ -291,6 +291,29 @@ class OrdersDeliveryPortTest {
     }
 
     @Test
+    void requireOrderFulfillmentForUpdateAnswersTheSameFrozenSelectionThroughTheRowLock() {
+        // Part-2 review round 2: the leg-creation read — the SAME selection
+        // facts, read through the order row's write lock (the serialized
+        // surface the split command and the confirmation listener ride).
+        // The lock's blocking physics itself is pinned by the app module's
+        // RowLockSerializationIntegrationTest on the real Flyway schema.
+        Order order = Order.placedWithFulfillment(buyerId, "SAR", sellerId,
+                3000L, 0, 0, true, FulfillmentMethod.PLATFORM_DELIVERY,
+                "Riyadh downtown", 24.7136, 46.6753, 1500L);
+        order.confirm(Instant.now());
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+
+        com.marketplace.shared.api.OrderFulfillmentSelection selection =
+                service().requireOrderFulfillmentForUpdate(order.getId(), buyerId);
+
+        assertThat(selection.platformDelivery()).isTrue();
+        assertThat(selection.shippingAmountMinor()).isEqualTo(1500L);
+        assertThat(selection.shipToAddress()).isEqualTo("Riyadh downtown");
+        assertThat(selection.currency()).isEqualTo("SAR");
+        verify(orderRepository).findByIdForUpdate(order.getId());
+    }
+
+    @Test
     void aCompletingNonFinalLegHoldsTheOrderOpen() {
         Order order = Order.placedWithFulfillment(buyerId, "SAR", sellerId,
                 3000L, 0, 0, true, FulfillmentMethod.PLATFORM_DELIVERY,

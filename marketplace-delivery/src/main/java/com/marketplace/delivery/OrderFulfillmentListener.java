@@ -39,7 +39,10 @@ public class OrderFulfillmentListener {
     public void onOrderConfirmed(OrderConfirmedEvent event) {
         com.marketplace.shared.api.OrderFulfillmentSelection selection;
         try {
-            selection = orders.requireOrderFulfillment(event.orderId(), event.consumerId());
+            // Part-2 review round 2: the PRIMARY leg creation serializes with
+            // the fulfillment gate on the order row's write lock — the same
+            // serialized surface the split command rides.
+            selection = orders.requireOrderFulfillmentForUpdate(event.orderId(), event.consumerId());
         } catch (com.marketplace.shared.api.ConflictException
                  | com.marketplace.shared.api.ResourceNotFoundException ex) {
             // The order moved past CONFIRMED (a redelivered event) or the

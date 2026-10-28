@@ -14,7 +14,6 @@ import com.marketplace.payments.PaymentIntent;
 import com.marketplace.payments.PaymentIntentRepository;
 import com.marketplace.payments.PaymentIntentStatus;
 import com.marketplace.payments.PaymentRepository;
-import com.marketplace.payments.PaymentStatus;
 import com.marketplace.payments.PaymentsService;
 import com.marketplace.shared.api.DisputeResolution;
 import com.marketplace.shared.security.CurrentUserProvider;

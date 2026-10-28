@@ -290,7 +290,8 @@ class LendingServiceTest {
         loan.markPaid(Instant.now());
         loan.activate(Instant.now());
         UUID disputeId = UUID.randomUUID();
-        when(loanRepository.findById(loan.getId())).thenReturn(Optional.of(loan));
+        // part-2 review round 2: the dispute paths read under the row's write lock
+        when(loanRepository.findByIdForUpdate(loan.getId())).thenReturn(Optional.of(loan));
         when(loanRepository.save(any(Loan.class))).thenAnswer(inv -> inv.getArgument(0));
         when(disputeLookupPort.isDisputeOpen(disputeId)).thenReturn(true);
 
@@ -394,7 +395,7 @@ class LendingServiceTest {
         loan.markPaid(Instant.now());
         loan.activate(Instant.now());
         loan.markDisputed();
-        when(loanRepository.findById(loan.getId())).thenReturn(Optional.of(loan));
+        when(loanRepository.findByIdForUpdate(loan.getId())).thenReturn(Optional.of(loan));
         when(loanRepository.save(any(Loan.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.resolveDisputeFromDisputes(UUID.randomUUID(), loan.getId(), DisputeResolution.REFUND_CONSUMER);
@@ -411,7 +412,7 @@ class LendingServiceTest {
         loan.activate(Instant.now());
         loan.markDisputed();
         UUID disputeId = UUID.randomUUID();
-        when(loanRepository.findById(loan.getId())).thenReturn(Optional.of(loan));
+        when(loanRepository.findByIdForUpdate(loan.getId())).thenReturn(Optional.of(loan));
         when(loanRepository.save(any(Loan.class))).thenAnswer(inv -> inv.getArgument(0));
         when(disputeLookupPort.hasOpenDisputeForLoan(loan.getId(), disputeId)).thenReturn(false);
 
@@ -455,7 +456,7 @@ class LendingServiceTest {
     @Test
     void theDisputeFreezeIsAStateGuardedNoOpForNonActiveLoans() {
         Loan loan = loan(); // REQUESTED
-        when(loanRepository.findById(loan.getId())).thenReturn(Optional.of(loan));
+        when(loanRepository.findByIdForUpdate(loan.getId())).thenReturn(Optional.of(loan));
 
         service.markDisputedFromDispute(UUID.randomUUID(), loan.getId());
 
@@ -473,7 +474,7 @@ class LendingServiceTest {
         loan.activate(Instant.now());
         loan.markDisputed();
         UUID disputeId = UUID.randomUUID();
-        when(loanRepository.findById(loan.getId())).thenReturn(Optional.of(loan));
+        when(loanRepository.findByIdForUpdate(loan.getId())).thenReturn(Optional.of(loan));
         when(loanRepository.save(any(Loan.class))).thenAnswer(inv -> inv.getArgument(0));
         when(disputeLookupPort.hasOpenDisputeForLoan(loan.getId(), disputeId)).thenReturn(false);
 
@@ -498,7 +499,7 @@ class LendingServiceTest {
         loan.markPaid(Instant.now());
         loan.activate(Instant.now());
         loan.markDisputed();
-        when(loanRepository.findById(loan.getId())).thenReturn(Optional.of(loan));
+        when(loanRepository.findByIdForUpdate(loan.getId())).thenReturn(Optional.of(loan));
         when(loanRepository.save(any(Loan.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.resolveDisputeFromDisputes(UUID.randomUUID(), loan.getId(), DisputeResolution.REFUND_CONSUMER);
@@ -526,7 +527,7 @@ class LendingServiceTest {
         loan.activate(Instant.now());
         loan.markDisputed();
         UUID disputeId = UUID.randomUUID();
-        when(loanRepository.findById(loan.getId())).thenReturn(Optional.of(loan));
+        when(loanRepository.findByIdForUpdate(loan.getId())).thenReturn(Optional.of(loan));
         when(disputeLookupPort.hasOpenDisputeForLoan(loan.getId(), disputeId)).thenReturn(true);
 
         service.resolveDisputeFromDisputes(disputeId, loan.getId(), DisputeResolution.NO_ACTION);
@@ -549,7 +550,7 @@ class LendingServiceTest {
         loan.markPaid(Instant.now());
         loan.activate(Instant.now());
         loan.markDisputed();
-        when(loanRepository.findById(loan.getId())).thenReturn(Optional.of(loan));
+        when(loanRepository.findByIdForUpdate(loan.getId())).thenReturn(Optional.of(loan));
         when(loanRepository.save(any(Loan.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.resolveDisputeFromDisputes(UUID.randomUUID(), loan.getId(), DisputeResolution.REFUND_CONSUMER);
@@ -573,7 +574,7 @@ class LendingServiceTest {
         loan.markPaid(Instant.now());
         loan.activate(Instant.now());
         UUID staleDisputeId = UUID.randomUUID();
-        when(loanRepository.findById(loan.getId())).thenReturn(Optional.of(loan));
+        when(loanRepository.findByIdForUpdate(loan.getId())).thenReturn(Optional.of(loan));
         when(disputeLookupPort.isDisputeOpen(staleDisputeId)).thenReturn(false);
 
         service.markDisputedFromDispute(staleDisputeId, loan.getId());

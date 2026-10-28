@@ -756,7 +756,8 @@ class ReviewsServiceTest {
         UUID authorId = Instancio.create(UUID.class);
         Review published = Review.create(Instancio.create(UUID.class), authorId,
                 Instancio.create(UUID.class), 5, "reported");
-        when(reviewRepository.findById(reviewId)).thenReturn(Optional.of(published));
+        // part-2 review round 2: the hide reads the row under its write lock
+        when(reviewRepository.findByIdForUpdate(reviewId)).thenReturn(Optional.of(published));
 
         java.util.Optional<UUID> author = service.hideByModerator(reviewId);
 
@@ -773,7 +774,8 @@ class ReviewsServiceTest {
         Review queued = Review.createOrganic(Instancio.create(UUID.class),
                 Instancio.create(UUID.class), null, 5, "queued");
         queued.queueForReview();
-        when(reviewRepository.findById(reviewId)).thenReturn(Optional.of(queued));
+        // part-2 review round 2: the skip reads the LOCKED row's truth too
+        when(reviewRepository.findByIdForUpdate(reviewId)).thenReturn(Optional.of(queued));
 
         assertTrue(service.hideByModerator(reviewId).isEmpty());
         verify(eventPublisher, never()).publishEvent(
@@ -789,7 +791,8 @@ class ReviewsServiceTest {
         UUID authorId = Instancio.create(UUID.class);
         Review published = Review.create(Instancio.create(UUID.class), authorId,
                 Instancio.create(UUID.class), 5, "reported");
-        when(reviewRepository.findById(reviewId)).thenReturn(Optional.of(published));
+        // part-2 review round 2: the hide reads the row under its write lock
+        when(reviewRepository.findByIdForUpdate(reviewId)).thenReturn(Optional.of(published));
 
         // Row 3 — the engine path: the SAME physics as the manual hide,
         // with no ADMIN gate — the ordinary reporter's qualifying report
@@ -822,7 +825,8 @@ class ReviewsServiceTest {
         Review queued = Review.createOrganic(Instancio.create(UUID.class),
                 Instancio.create(UUID.class), null, 5, "queued");
         queued.queueForReview();
-        when(reviewRepository.findById(reviewId)).thenReturn(Optional.of(queued));
+        // part-2 review round 2: the skip reads the LOCKED row's truth too
+        when(reviewRepository.findByIdForUpdate(reviewId)).thenReturn(Optional.of(queued));
 
         assertTrue(service.hideByModerationEngine(reviewId).isEmpty());
         verify(eventPublisher, never()).publishEvent(

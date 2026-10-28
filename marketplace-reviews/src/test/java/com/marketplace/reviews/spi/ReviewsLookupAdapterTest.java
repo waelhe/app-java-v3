@@ -1,6 +1,7 @@
 package com.marketplace.reviews.spi;
 
 import com.marketplace.reviews.Review;
+import com.marketplace.reviews.ReviewModerationStatus;
 import com.marketplace.reviews.ReviewRepository;
 import com.marketplace.reviews.ReviewsService;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,27 +39,29 @@ class ReviewsLookupAdapterTest {
     void findVisibleAuthorId_resolvesAPublishedReview() {
         UUID reviewId = UUID.randomUUID();
         UUID reviewerId = UUID.randomUUID();
-        Review review = Review.create(UUID.randomUUID(), reviewerId, UUID.randomUUID(), 5, "ok");
-        when(reviewRepository.findById(reviewId)).thenReturn(Optional.of(review));
+        // The SCALAR projection — the adapter passes the PUBLISHED policy
+        // itself, and never materializes the entity (the report-survival
+        // root: an entity here would hold the pre-hide @Version snapshot
+        // in the creation transaction's persistence context).
+        when(reviewRepository.findReviewerIdByIdAndModerationStatus(
+                reviewId, ReviewModerationStatus.PUBLISHED))
+                .thenReturn(Optional.of(reviewerId));
 
         assertEquals(Optional.of(reviewerId), adapter.findVisibleAuthorId(reviewId));
+        verify(reviewRepository).findReviewerIdByIdAndModerationStatus(
+                reviewId, ReviewModerationStatus.PUBLISHED);
     }
 
     @Test
-    void findVisibleAuthorId_hidesANonPublishedRow() {
+    void findVisibleAuthorId_answersEmptyForEverythingElse() {
         UUID reviewId = UUID.randomUUID();
-        Review review = Review.createOrganic(UUID.randomUUID(), UUID.randomUUID(),
-                UUID.randomUUID(), 5, "pending");
-        review.queueForReview();
-        when(reviewRepository.findById(reviewId)).thenReturn(Optional.of(review));
-
-        assertTrue(adapter.findVisibleAuthorId(reviewId).isEmpty());
-    }
-
-    @Test
-    void findVisibleAuthorId_emptyForAnUnknownReview() {
-        UUID reviewId = UUID.randomUUID();
-        when(reviewRepository.findById(reviewId)).thenReturn(Optional.empty());
+        // Unknown, soft-deleted, pending or moderator-hidden — the
+        // PUBLISHED-scoped projection answers empty; the real-DB pins are
+        // ReviewReportIntegrationTest's honest 404s and the report-survival
+        // serialization test (RowLockSerializationIntegrationTest).
+        when(reviewRepository.findReviewerIdByIdAndModerationStatus(
+                reviewId, ReviewModerationStatus.PUBLISHED))
+                .thenReturn(Optional.empty());
 
         assertTrue(adapter.findVisibleAuthorId(reviewId).isEmpty());
     }
