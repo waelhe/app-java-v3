@@ -85,9 +85,6 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
 
     private static final int MAX_LINE_QUANTITY = 1000;
 
-    private static final org.slf4j.Logger log =
-            org.slf4j.LoggerFactory.getLogger(OrdersService.class);
-
     private final CartRepository cartRepository;
     private final CartItemRepository cartItemRepository;
     private final OrderRepository orderRepository;
