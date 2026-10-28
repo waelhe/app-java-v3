@@ -31,11 +31,12 @@
 | D5 API surface | deterministic CI gates | OpenAPI diff gate + GraphQL contract publication (binding for B4) | **enforced** |
 | D6 independent review | CI workflow | CodeRabbit Gate with `drafts:true` (E-13's fix) | enforced |
 | D7 cursor contracts | deterministic test | `KeysetCursorGate` (binding for B4-cursor) | **enforced** |
+| D9 source-format compatibility | deterministic test | `SourceFormatGuardTest` — package/import statements packed with other content rejected repo-wide (E-23's fix) | **enforced** |
 | D8 guard-message fidelity | **enacted once by governed repair** | root-signatures guard reads the divergence registry (`0edf0f6`, PR #723; E-21 closed); documented for the remaining guards | false promise repaired; rule stays documented |
 
 ## §2 · Existing guard inventory reused (not duplicated) by this system
 
-`MigrationChecksumGuardTest` · `DocumentationNumbersGuardTest` · `ModulithVerificationTest` · `PlatformGovernanceFilesTest` · Saleor Root Contract Gate · Saleor Canonical Plan and Schema Inventory gate · OpenAPI diff gate · GraphQL contract publication · `KeysetCursorGate` · CodeRabbit Gate · CodeQL · Container Scan · Production Watchdog (6 probes post-S10) · Retired Saleor Plan and PR Guard (supersession markers) · three merge gates of SYSTEM.md §14.3.
+`MigrationChecksumGuardTest` · `DocumentationNumbersGuardTest` · `ModulithVerificationTest` · `PlatformGovernanceFilesTest` · `SourceFormatGuardTest` · Saleor Root Contract Gate · Saleor Canonical Plan and Schema Inventory gate · OpenAPI diff gate · GraphQL contract publication · `KeysetCursorGate` · CodeRabbit Gate · CodeQL · Container Scan · Production Watchdog (6 probes post-S10) · Retired Saleor Plan and PR Guard (supersession markers) · three merge gates of SYSTEM.md §14.3.
 
 ## §3 · Validation against representative historical cases
 
@@ -56,7 +57,7 @@ Per the mission: cases selected across causal families; for each, the claim is t
 
 ## §4 · Proportionality against successful changes
 
-Sampled successful classes: routine module feature waves (PROJECT_MAP L48–L52, W3–W5 era; squash-merged with three gates, zero rollback), the keyset pagination P0 (#677→#678 — CodeRabbit root notes adopted, gate generalized), the DGS adoption phases 0–5 (each merged → deployed → smoked → truth-synced). For these, the protocol's cost is the declaration + enumeration table + existing gates — the repo's own recorded workflow already pays these costs; the rulebook adds the *selective* B-rules only on trigger, keeping the burden proportional. The regression list's warning against defensive bloat is honored: 9 patterns and 18 A/B/C rules plus 8 automated D bindings — 26 enumerated items, counts derived from the enumerations themselves and enforced by `DefectKnowledgeDocsGuardTest` — not a catalog of 100.
+Sampled successful classes: routine module feature waves (PROJECT_MAP L48–L52, W3–W5 era; squash-merged with three gates, zero rollback), the keyset pagination P0 (#677→#678 — CodeRabbit root notes adopted, gate generalized), the DGS adoption phases 0–5 (each merged → deployed → smoked → truth-synced). For these, the protocol's cost is the declaration + enumeration table + existing gates — the repo's own recorded workflow already pays these costs; the rulebook adds the *selective* B-rules only on trigger, keeping the burden proportional. The regression list's warning against defensive bloat is honored: 10 patterns and 18 A/B/C rules plus 9 automated D bindings — 27 enumerated items, counts derived from the enumerations themselves and enforced by `DefectKnowledgeDocsGuardTest` — not a catalog of 100.
 
 ## §5 · Audit coverage, limitations, open gaps
 
