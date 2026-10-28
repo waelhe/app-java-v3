@@ -75,9 +75,13 @@ class SourceFormatGuardTest {
     // argument parens included) before the keyword. Both widenings keep
     // the packed tail as the sole verdict: the name's internal spacing and
     // its annotations hide nothing. Measured repo-wide before adoption:
-    // zero offenders.
+    // zero offenders. (Correction on the first round-4 push: the
+    // annotation-prefix group originally copied from the review's
+    // suggested diff was an UNCLOSED group — PatternSyntaxException at
+    // class init, three red shard runs; this form compiles and every
+    // pinned shape verified.)
     private static final Pattern PACKED_PACKAGE =
-            Pattern.compile("^\\s*(?:@[^\\r\\n]*?(?:\\s+|(?<=\\)))*package\\s+[^;\\s]+(?:\\s*\\.\\s*[^;\\s]+)*\\s*;\\s*\\S");
+            Pattern.compile("^\\s*(?:@[^\\r\\n]*?\\s+)*package\\s+[^;\\s]+(?:\\s*\\.\\s*[^;\\s]+)*\\s*;\\s*\\S");
     private static final Pattern PACKED_IMPORT =
             Pattern.compile("^\\s*import\\s+(?:(?:static|module)\\s+)?[^;\\s]+(?:\\s*\\.\\s*[^;\\s]+)*\\s*;\\s*\\S");
 
