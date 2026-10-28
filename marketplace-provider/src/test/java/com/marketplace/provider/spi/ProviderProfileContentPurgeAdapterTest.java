@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -59,15 +60,20 @@ class ProviderProfileContentPurgeAdapterTest {
 
     @Test
     void purgeAuthoredTexts_scrubsTheOfferedServiceTextThroughTheOwningProfile() {
+        // CI round 3 (measured on 916d155): the stubs use Mockito's built-in
+        // startsWith matcher — a null-safe TypeSafeMatcher — instead of
+        // custom argThat lambdas. Stacked when() stubbings on the same
+        // method make findAnswerFor evaluate the most recent stub against
+        // the NEXT stubbing's placeholder invocation, and a custom lambda
+        // dereferences that null placeholder (the NPE at line 65, twice
+        // measured). Built-in matchers answer false on null by contract.
         when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(0);
         when(jdbcTemplate.update(
-                org.mockito.ArgumentMatchers.argThat((String sql) ->
-                        sql.startsWith("UPDATE provider_services s SET title = ?")),
+                startsWith("UPDATE provider_services s SET title = ?"),
                 any(Object[].class)))
                 .thenReturn(3);
         when(jdbcTemplate.update(
-                org.mockito.ArgumentMatchers.argThat((String sql) ->
-                        sql.startsWith("UPDATE provider_services_aud s SET title = ?")),
+                startsWith("UPDATE provider_services_aud s SET title = ?"),
                 any(Object[].class)))
                 .thenReturn(2);
         when(jdbcTemplate.queryForList(
