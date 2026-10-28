@@ -1,6 +1,7 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.app.graphql.generated.types.Product;
+import com.marketplace.app.graphql.generated.types.ProductType;
 import com.marketplace.catalog.spi.ProductView;
 import org.springframework.stereotype.Component;
 
@@ -16,10 +17,17 @@ import org.springframework.stereotype.Component;
  * <p>The {@code id} is the typed Relay-style global ID the
  * {@link SaleorGlobalIdCodec} emits (type tag {@code Product} — opaque
  * on the wire, the owner's native {@code products} key behind it). The
- * {@code productType} field renders the optional reusable-goods-schema
- * reference as the typed global ID of the EXISTING ProductType root's
- * type (the campaign-b2-a2 slice's own wire type — one codec, one ID
- * vocabulary across the surface); null stays the honest null of a
+ * {@code productType} field carries the optional reusable-goods-schema
+ * reference as the ProductType OBJECT it names (the G4 review: the
+ * field used to render the bare typed global ID — subfield selections
+ * like {@code id} and {@code name} could not work; upstream Saleor's
+ * own {@code Product.productType} is the object). This mapper stays
+ * transport-pure: it emits the reference STUB carrying exactly the
+ * typed global ID it rendered before (the campaign-b2-a2 slice's own
+ * wire type — one codec, one ID vocabulary across the surface), and
+ * {@code ProductDataFetcher}'s {@code productType} field fetcher
+ * resolves the full bounded ProductType from the product-type owner
+ * ONLY when the field is selected; null stays the honest null of a
  * schema-less legacy product. The declared closure is exactly the
  * bounded projection's own facts: {@code name} the display title, and
  * {@code status} the display lifecycle state name — a PLATFORM
@@ -56,7 +64,14 @@ public class ProductGraphQlMapper {
                 .name(view.name())
                 .status(view.status());
         if (view.productTypeId() != null) {
-            builder.productType(globalIdCodec.encode(PRODUCT_TYPE_REFERENCE, view.productTypeId()));
+            // The G4 review: the field is the ProductType OBJECT now, not the
+            // bare typed global ID. The reference stub carries exactly the ID
+            // this mapper rendered before (same codec, same type tag) — the
+            // Product.productType field fetcher resolves the full object and
+            // is the only path that renders it.
+            builder.productType(ProductType.newBuilder()
+                    .id(globalIdCodec.encode(PRODUCT_TYPE_REFERENCE, view.productTypeId()))
+                    .build());
         }
         return builder.build();
     }

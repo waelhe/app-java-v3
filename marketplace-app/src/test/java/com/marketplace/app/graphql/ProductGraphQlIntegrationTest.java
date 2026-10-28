@@ -243,7 +243,7 @@ class ProductGraphQlIntegrationTest {
 
         tester.document("""
                         query { products(first: 10, sortBy: { direction: ASC, field: NAME }) {
-                            edges { node { id name productType status } }
+                            edges { node { id name productType { id name } status } }
                             totalCount
                         } }
                         """)
@@ -274,6 +274,42 @@ class ProductGraphQlIntegrationTest {
                 .path("products.edges[*].node.name").entityList(String.class)
                 .satisfies(names -> assertThat(names)
                         .anySatisfy(name -> assertThat(name).isEqualTo("b4c Unpublished Draft Widget")));
+    }
+
+    /**
+     * The G4 review's own case over the REAL stack (real Flyway-migrated
+     * schema, real product-type owner seam): the typed DRAFT product's
+     * {@code productType} resolves as the ProductType OBJECT — the id is
+     * the same typed global ID the field carried before the review, and
+     * the name/slug subfields now work through the owner the
+     * {@code productType} read root itself uses. ADMIN sees the
+     * unpublished population, so the typed draft row is reachable here.
+     */
+    @Test
+    void typedProductResolvesTheProductTypeObjectThroughTheRealOwner() {
+        HttpGraphQlTester tester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        String expectedTypeGlobalId = java.util.Base64.getEncoder()
+                .encodeToString(("ProductType:" + seededTypeId)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        tester.document("""
+                        query { products(first: 50, sortBy: { direction: ASC, field: NAME }) {
+                            edges { node { name productType { id name slug } } }
+                        } }
+                        """)
+                .execute()
+                .errors().verify()
+                .path("products.edges[*].node.name").entityList(String.class)
+                .satisfies(names -> assertThat(names)
+                        .anySatisfy(name -> assertThat(name).isEqualTo("b4c Unpublished Draft Widget")))
+                .path("products.edges[*].node.productType").entityList(java.util.Map.class)
+                .satisfies(types -> assertThat(
+                        types.stream().filter(java.util.Objects::nonNull).toList())
+                        .anySatisfy(type -> {
+                            assertThat(type.get("id")).isEqualTo(expectedTypeGlobalId);
+                            assertThat(type.get("name")).isEqualTo("b4c Widget Schema");
+                            assertThat(type.get("slug")).isNotBlank();
+                        }));
     }
 
     @Test
@@ -319,7 +355,7 @@ class ProductGraphQlIntegrationTest {
 
         tester.document("""
                         query { products(first: 1, sortBy: { direction: ASC, field: NAME }) {
-                            edges { node { name productType } }
+                            edges { node { name productType { id } } }
                         } }
                         """)
                 .execute()

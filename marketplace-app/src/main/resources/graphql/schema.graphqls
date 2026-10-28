@@ -1929,8 +1929,8 @@ type Product {
     """Name of the product (the entity's own display title)."""
     name: String!
 
-    """The product's reusable goods schema, as the typed global ID of the ProductType root's type (null keeps pre-C1 and zero-variant products compatible)."""
-    productType: ID
+    """The product's reusable goods schema as the ProductType object it references (id/name/slug resolve through the product-type owner when selected; null keeps pre-C1 and zero-variant products compatible)."""
+    productType: ProductType
 
     """The product's display lifecycle state (a platform extension fact: ACTIVE/SUSPENDED/ARCHIVED/DRAFT)."""
     status: String!

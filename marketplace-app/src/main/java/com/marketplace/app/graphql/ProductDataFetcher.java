@@ -9,14 +9,18 @@ import com.marketplace.app.graphql.generated.types.ProductFilterInput;
 import com.marketplace.app.graphql.generated.types.ProductOrder;
 import com.marketplace.app.graphql.generated.types.ProductOrderField;
 import com.marketplace.app.graphql.generated.types.ProductWhereInput;
+import com.marketplace.app.graphql.generated.types.ProductType;
 import com.marketplace.app.graphql.generated.types.OrderDirection;
 import com.marketplace.catalog.spi.ProductPage;
 import com.marketplace.catalog.spi.ProductReadSpi;
 import com.marketplace.catalog.spi.ProductSort;
+import com.marketplace.catalog.spi.ProductTypeReadSpi;
 import com.marketplace.catalog.spi.ProductView;
 import com.netflix.graphql.dgs.DgsComponent;
+import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
+import com.netflix.graphql.dgs.context.DgsDataFetchingEnvironment;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import org.springframework.data.domain.KeysetScrollPosition;
 import org.springframework.data.domain.Limit;
@@ -79,17 +83,23 @@ public class ProductDataFetcher {
 
     private final ProductReadSpi productReadSpi;
     private final ProductGraphQlMapper mapper;
+    private final ProductTypeReadSpi productTypeReadSpi;
+    private final ProductTypeGraphQlMapper productTypeMapper;
     private final GraphQlProperties properties;
     private final EncodingCursorStrategy<ScrollPosition> cursorStrategy;
     private final SaleorGlobalIdCodec globalIdCodec;
 
     public ProductDataFetcher(ProductReadSpi productReadSpi,
                               ProductGraphQlMapper mapper,
+                              ProductTypeReadSpi productTypeReadSpi,
+                              ProductTypeGraphQlMapper productTypeMapper,
                               GraphQlProperties properties,
                               EncodingCursorStrategy<ScrollPosition> cursorStrategy,
                               SaleorGlobalIdCodec globalIdCodec) {
         this.productReadSpi = productReadSpi;
         this.mapper = mapper;
+        this.productTypeReadSpi = productTypeReadSpi;
+        this.productTypeMapper = productTypeMapper;
         this.properties = properties;
         this.cursorStrategy = cursorStrategy;
         this.globalIdCodec = globalIdCodec;
@@ -217,6 +227,50 @@ public class ProductDataFetcher {
         UUID nativeId = globalIdCodec.decode(id, ProductGraphQlMapper.PRODUCT_TYPE);
         return productReadSpi.findProductById(nativeId, authentication)
                 .map(mapper::toGraphQlProduct)
+                .orElse(null);
+    }
+
+    /**
+     * Saleor {@code Product.productType: ProductType} — the object-typed
+     * reference (the G4 review on PR #723: the field used to render the
+     * bare typed global ID, so subfield selections like {@code id} and
+     * {@code name} could not work; upstream Saleor's own
+     * {@code Product.productType} is the object). The mapper's Product
+     * carries the reference stub — the same encoded product-type global
+     * ID the field rendered before — and this fetcher resolves the FULL
+     * bounded ProductType projection from the product-type owner through
+     * the declared {@code ProductTypeReadSpi} seam (the productType read
+     * root's own mapper and authorization boundary).
+     *
+     * <p>The fetcher runs ONLY when the field is selected (the engine's
+     * own execution semantics), so the per-object owner lookup rides
+     * every product that actually asks for its type — bounded by the
+     * pagination hard maximum on list fields and single-object on the
+     * {@code product} root. The nulls stay honest: no reference on the
+     * product (pre-C1/zero-variant legacy rows) answers null WITHOUT an
+     * owner call, and a referenced type the caller cannot see answers
+     * the owner's own safe absence (null object, never a fabricated
+     * one).</p>
+     */
+    // parentType/field carry the SDL's own names as literals: the codegen's
+    // DgsConstants cover the root operation fields (@DgsQuery/@DgsMutation),
+    // and an entity-field fetcher binds by the schema's own strings — a
+    // rename here fails the real-SDL productType selections in the DGS and
+    // integration suites immediately, never silently.
+    @DgsData(parentType = "Product", field = "productType")
+    @RateLimiter(name = "graphqlCatalogRead")
+    public ProductType productType(DgsDataFetchingEnvironment environment) {
+        Product source = environment.getSource();
+        if (source.getProductType() == null) {
+            return null;
+        }
+        String reference = source.getProductType().getId();
+        if (reference == null) {
+            return null;
+        }
+        UUID nativeId = globalIdCodec.decode(reference, ProductTypeGraphQlMapper.PRODUCT_TYPE_TYPE);
+        return productTypeReadSpi.findProductTypeById(nativeId, currentAuthentication())
+                .map(productTypeMapper::toGraphQlProductType)
                 .orElse(null);
     }
 

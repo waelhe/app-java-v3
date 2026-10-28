@@ -17,6 +17,7 @@ import com.marketplace.catalog.spi.ProductPage;
 import com.marketplace.catalog.spi.ProductReadSpi;
 import com.marketplace.catalog.spi.ProductSort;
 import com.marketplace.catalog.spi.ProductTypeReadSpi;
+import com.marketplace.catalog.spi.ProductTypeView;
 import com.marketplace.catalog.spi.ProductView;
 import com.marketplace.community.spi.NeighborhoodFeedPort;
 import com.marketplace.community.spi.NeighborhoodPostDetailPort;
@@ -46,6 +47,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.Map;
 import java.util.UUID;
 
@@ -290,11 +292,16 @@ class ProductDataFetcherDgsTest {
                         any(ProductSort.class), any(), any(Limit.class)))
                 .thenAnswer(invocation -> new ProductPage(
                         windowAt.apply(ScrollPosition.keyset()), 9));
+        // The productType field is the ProductType OBJECT (the G4 review): the
+        // field fetcher resolves the referenced type's bounded projection from
+        // the product-type owner when the subfields are selected.
+        when(productTypeReadSpi.findProductTypeById(eq(typeId), any())).thenReturn(
+                Optional.of(new ProductTypeView(typeId, "Widget Schema", "widget-schema")));
 
         Map<String, Object> connection = dgsQueryExecutor.executeAndExtractJsonPath(
                 """
                 query { products(first: 1) {
-                    edges { node { id name productType status } cursor }
+                    edges { node { id name productType { id name slug } status } cursor }
                     pageInfo { hasNextPage hasPreviousPage startCursor endCursor }
                     totalCount
                 } }
@@ -314,8 +321,12 @@ class ProductDataFetcherDgsTest {
         assertThat(node.get("status")).isEqualTo("ACTIVE");
         assertThat(node.get("id")).isEqualTo(java.util.Base64.getEncoder()
                 .encodeToString(("Product:" + widgetId).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        assertThat(node.get("productType")).isEqualTo(java.util.Base64.getEncoder()
+        @SuppressWarnings("unchecked")
+        Map<String, Object> productType = (Map<String, Object>) node.get("productType");
+        assertThat(productType.get("id")).isEqualTo(java.util.Base64.getEncoder()
                 .encodeToString(("ProductType:" + typeId).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        assertThat(productType.get("name")).isEqualTo("Widget Schema");
+        assertThat(productType.get("slug")).isEqualTo("widget-schema");
     }
 
     /**
@@ -335,7 +346,37 @@ class ProductDataFetcherDgsTest {
                                 false), 1));
 
         Map<String, Object> connection = dgsQueryExecutor.executeAndExtractJsonPath(
-                "query { products(first: 1) { edges { node { productType } } } }", "data.products");
+                "query { products(first: 1) { edges { node { productType { id } } } } }", "data.products");
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> edges = (List<Map<String, Object>>) connection.get("edges");
+        assertThat(edges.get(0).get("productType")).isNull();
+    }
+
+    /**
+     * The G4 review's own case: a product that CARRIES a reference to a
+     * product type the owner cannot resolve for this caller answers the
+     * object null — the same safe absence the {@code productType} read
+     * root itself gives (never a fabricated object, never the stub's
+     * bare ID leaking through).
+     */
+    @Test
+    void productTypeOfAnUnresolvableReferenceAnswersTheSafeAbsenceNull() {
+        authenticateAs("dgs-consumer-subject", "CONSUMER");
+        UUID id = UUID.randomUUID();
+        UUID typeId = UUID.randomUUID();
+        when(productReadSpi.scrollProducts(any(org.springframework.security.core.Authentication.class),
+                        any(ProductSort.class), any(), any(Limit.class)))
+                .thenAnswer(invocation -> new ProductPage(
+                        Window.from(List.of(productView(id, "Typed Widget", typeId, "ACTIVE")), index ->
+                                        ScrollPosition.forward(Map.of("name", "Typed Widget", "id", id)),
+                                false), 1));
+        // The owner's honest empty: a stranger's or missing type row.
+        when(productTypeReadSpi.findProductTypeById(eq(typeId), any())).thenReturn(Optional.empty());
+
+        Map<String, Object> connection = dgsQueryExecutor.executeAndExtractJsonPath(
+                "query { products(first: 1) { edges { node { productType { id name } } } } }",
+                "data.products");
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> edges = (List<Map<String, Object>>) connection.get("edges");

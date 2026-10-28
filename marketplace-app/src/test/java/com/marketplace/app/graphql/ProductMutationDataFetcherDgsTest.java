@@ -11,6 +11,7 @@ import com.marketplace.catalog.spi.ProductMutationErrorCode;
 import com.marketplace.catalog.spi.ProductMutationResult;
 import com.marketplace.catalog.spi.ProductReadSpi;
 import com.marketplace.catalog.spi.ProductTypeReadSpi;
+import com.marketplace.catalog.spi.ProductTypeView;
 import com.marketplace.catalog.spi.ProductTypeWriteSpi;
 import com.marketplace.catalog.spi.ProductUpdateCommand;
 import com.marketplace.catalog.spi.ProductView;
@@ -42,6 +43,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.Map;
 import java.util.UUID;
 
@@ -293,13 +295,18 @@ class ProductMutationDataFetcherDgsTest {
         UUID typeId = UUID.randomUUID();
         when(productWriteSpi.createProduct(any(), any())).thenReturn(
                 ProductMutationResult.success(productView(createdId, "Fresh Widget", typeId, "DRAFT")));
+        // The productType field is the ProductType OBJECT (the G4 review): the
+        // field fetcher resolves the referenced type's bounded projection from
+        // the product-type owner when the subfields are selected.
+        when(productTypeReadSpi.findProductTypeById(eq(typeId), any())).thenReturn(
+                Optional.of(new ProductTypeView(typeId, "DGS Widget Schema", "dgs-widget-schema")));
 
         Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
                 mutation { productCreate(input: {name: "Fresh Widget", description: "Fresh",
                         storeCategoryCode: "fresh-cat", priceMinor: 1250, currency: "SAR",
                         productType: "%s"}) {
                     errors { field message code }
-                    product { id name productType status }
+                    product { id name productType { id name } status }
                 } }
                 """.formatted(productTypeGlobalId(typeId)), "data.productCreate");
 
@@ -314,7 +321,10 @@ class ProductMutationDataFetcherDgsTest {
         Map<String, Object> product = (Map<String, Object>) payload.get("product");
         assertThat(product.get("id")).isEqualTo(productGlobalId(createdId));
         assertThat(product.get("name")).isEqualTo("Fresh Widget");
-        assertThat(product.get("productType")).isEqualTo(productTypeGlobalId(typeId));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> productType = (Map<String, Object>) product.get("productType");
+        assertThat(productType.get("id")).isEqualTo(productTypeGlobalId(typeId));
+        assertThat(productType.get("name")).isEqualTo("DGS Widget Schema");
         assertThat(product.get("status")).isEqualTo("DRAFT");
     }
 
