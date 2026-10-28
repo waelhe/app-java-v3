@@ -68,7 +68,13 @@ object AccessTokenSubject {
                 reader.beginObject()
                 while (reader.hasNext()) {
                     if (reader.nextName() == "sub") {
-                        return reader.nextString()
+                        // An absent identity and a blank one are the same
+                        // unknown principal: `{"sub":""}` must answer null
+                        // (the file's own contract — the fail-closed basis
+                        // for session-recovery scoping), never "", or two
+                        // different accounts with blank subs would share a
+                        // recovery draft (review round 1, CWE-488 seam).
+                        return reader.nextString().takeIf { it.isNotBlank() }
                     }
                     reader.skipValue()
                 }

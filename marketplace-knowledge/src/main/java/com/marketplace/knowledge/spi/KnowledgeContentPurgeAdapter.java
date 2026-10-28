@@ -75,7 +75,13 @@ public class KnowledgeContentPurgeAdapter implements AuthoredContentPurgePort {
                         rs.getObject("location_id", UUID.class)),
                 userId, AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER);
         int entries = jdbcTemplate.update(
-                "UPDATE knowledge_entries SET title = ?, body = ? "
+                // version = version + 1 (review round 1): KnowledgeEntry
+                // inherits @Version from BaseEntity, so a JDBC update that
+                // leaves the version untouched can be silently reverted by
+                // a stale managed entity's flush (the optimistic-lock check
+                // never sees the purge). The audit table carries no version
+                // column and stays as-is.
+                "UPDATE knowledge_entries SET title = ?, body = ?, version = version + 1 "
                         + "WHERE author_id = ? AND (title <> ? OR body <> ?)",
                 AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
                 userId, AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER);

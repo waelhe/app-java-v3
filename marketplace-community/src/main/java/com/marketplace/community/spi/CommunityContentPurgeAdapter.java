@@ -122,9 +122,19 @@ public class CommunityContentPurgeAdapter implements AuthoredContentPurgePort {
                         + "WHERE author_id = ? AND (question <> ? OR author_label <> ?)",
                 AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
                 userId, AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER);
+        // Review round 1: the audit mirror's rows are bound THROUGH the
+        // base table, exactly like the option-audit statement below —
+        // V286 fills neighborhood_polls.author_id for the history (arm b
+        // resolves the ownership from the first revision), but the _aud
+        // twin's author_id column stays NULL for every pre-V286 revision,
+        // so a direct `author_id = ?` filter would leave exactly those
+        // rows' original question/author_label alive behind the purge.
+        // The join reads the RECOVERED base-table ownership instead.
         int pollAuditRows = jdbcTemplate.update(
-                "UPDATE neighborhood_polls_aud SET question = ?, author_label = ? "
-                        + "WHERE author_id = ? AND (question <> ? OR author_label <> ?)",
+                "UPDATE neighborhood_polls_aud a SET question = ?, author_label = ? "
+                        + "FROM neighborhood_polls p "
+                        + "WHERE p.id = a.id AND p.author_id = ? "
+                        + "AND (a.question <> ? OR a.author_label <> ?)",
                 AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
                 userId, AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER);
         // The options die with their poll (the authored-unit rule — the

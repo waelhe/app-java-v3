@@ -137,6 +137,13 @@ class PostLookupAdapterTest {
         NeighborhoodMembership elsewhere =
                 NeighborhoodMembership.join(authorId, UUID.randomUUID(),
                         Clock.fixed(FIXED, ZoneOffset.UTC));
+        // Review round 1: the membership state machine is
+        // UNVERIFIED -> (member-controlled) PENDING -> (admin) VERIFIED —
+        // approveVerification() rejects the freshly-joined UNVERIFIED row
+        // with IllegalStateException, so the re-application step must run
+        // first (the same sequence the primary fixture at the top of this
+        // file uses).
+        elsewhere.requestVerification();
         elsewhere.approveVerification();
         when(membershipRepository.findByUserId(authorId)).thenReturn(Optional.of(elsewhere));
 

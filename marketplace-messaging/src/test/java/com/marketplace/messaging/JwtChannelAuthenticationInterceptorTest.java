@@ -280,6 +280,27 @@ class JwtChannelAuthenticationInterceptorTest {
     }
 
     @Test
+    void aDisconnectFrameWithAnExpiredRetainedTokenStillReachesTheBroker() {
+        // Review round 1: DISCONNECT grants no authority — it only tears
+        // the session's state down. Routing it through the retained-token
+        // re-validation would reject the frame exactly when the socket
+        // outlived exp, and the broker would never see the DISCONNECT:
+        // the session's subscriptions stay in its registry with no clean
+        // teardown. The frame must pass untouched, without a decode.
+        Jwt expired = jwt("subject-1");
+        JwtAuthenticationToken retained =
+                new JwtAuthenticationToken(expired, List.of(() -> "ROLE_CONSUMER"));
+
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.DISCONNECT);
+        accessor.setLeaveMutable(true);
+        accessor.setUser(retained);
+        Message<byte[]> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        assertThat(interceptor.preSend(message, null)).isSameAs(message);
+        verify(jwtDecoder, never()).decode(any());
+    }
+
+    @Test
     void anInboundFrameUnderTheTranslatedIdentityRevalidatesTheWrappedToken() {
         // After the identity translator, the session's user is
         // WebSocketUserIdentity wrapping the token authentication — the

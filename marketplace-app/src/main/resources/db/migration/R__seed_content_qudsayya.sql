@@ -58,7 +58,13 @@ INSERT INTO users (id, subject, email, display_name, role, is_deleted, version, 
     ('35353535-3535-4535-8353-353535350004', 'rana.shahin.demo@gmail.com', 'rana.shahin.demo@gmail.com', 'رنا شاهين', 'CONSUMER', FALSE, 0, 'seed', '2026-07-27 21:00:46+00', 'seed', '2026-07-27 21:00:46+00'),
     ('35353535-3535-4535-8353-353535350005', 'yousef.baidar.demo@gmail.com', 'yousef.baidar.demo@gmail.com', 'يوسف بيدر', 'CONSUMER', FALSE, 0, 'seed', '2026-08-08 21:00:46+00', 'seed', '2026-08-08 21:00:46+00')
 ON CONFLICT (id) DO UPDATE SET subject = EXCLUDED.subject, email = EXCLUDED.email,
-    display_name = EXCLUDED.display_name, role = EXCLUDED.role, is_deleted = FALSE;
+    display_name = EXCLUDED.display_name, role = EXCLUDED.role, is_deleted = FALSE
+    -- Review round 1: a pseudonymized account must NEVER be converged back
+    -- to its seed identity. R__ re-runs on every checksum change, and this
+    -- PR's author_id additions change the seed's checksum — without the
+    -- guard, the re-run would restore subject/email/display_name while
+    -- pseudonymized_at stays set: the erasure undone by the seeder itself.
+    WHERE users.pseudonymized_at IS NULL;
 
 -- Provider profiles: 5 VERIFIED (public pages + listings) + 1 PENDING (freshly
 -- registered, honestly empty). rating_average = the exact mean of each

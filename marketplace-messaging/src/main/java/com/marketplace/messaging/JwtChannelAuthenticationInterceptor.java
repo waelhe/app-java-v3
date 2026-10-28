@@ -109,6 +109,19 @@ final class JwtChannelAuthenticationInterceptor implements ChannelInterceptor {
         if (accessor == null) {
             return message;
         }
+        if (StompCommand.DISCONNECT.equals(accessor.getCommand())) {
+            // Review round 1: DISCONNECT grants no authority — it only
+            // tears the session's state down. Sending it through the
+            // retained-token re-validation means an expired token (the
+            // socket outliving exp — exactly the state
+            // BearerSessionExpirationGuard exists for) rejects the frame
+            // before the broker ever sees the DISCONNECT, so the session's
+            // subscriptions are never removed from the broker's registry
+            // by the clean teardown path. The row-10 safeguard keeps
+            // guarding every authority-carrying frame (SEND, SUBSCRIBE,
+            // UNSUBSCRIBE, MESSAGE acknowledgments) — unchanged.
+            return message;
+        }
         if (!StompCommand.CONNECT.equals(accessor.getCommand())) {
             // Row 10: the retained principal must still carry a valid token
             // — re-validate on every subsequent inbound frame.

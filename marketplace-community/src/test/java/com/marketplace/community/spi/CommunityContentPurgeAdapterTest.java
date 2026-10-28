@@ -122,7 +122,11 @@ class CommunityContentPurgeAdapterTest {
 
         // The poll's two authored text columns ride both statements — base
         // and mirror — keyed by the STABLE author id (V286), never by the
-        // display label.
+        // display label. Review round 1: the audit mirror binds THROUGH
+        // the base table (p.id = a.id, filtered by p.author_id) because
+        // the _aud twin's own author_id stays NULL for every pre-V286
+        // revision — the same through-the-owner shape the option mirrors
+        // use.
         org.mockito.Mockito.verify(jdbcTemplate).update(
                 org.mockito.ArgumentMatchers.argThat((String sql) ->
                         sql.contains("UPDATE neighborhood_polls SET question = ?, author_label = ?")
@@ -132,7 +136,11 @@ class CommunityContentPurgeAdapterTest {
                 any(Object[].class));
         org.mockito.Mockito.verify(jdbcTemplate).update(
                 org.mockito.ArgumentMatchers.argThat((String sql) ->
-                        sql.startsWith("UPDATE neighborhood_polls_aud SET question = ?, author_label = ?")),
+                        sql.startsWith("UPDATE neighborhood_polls_aud a SET question = ?, author_label = ?")
+                                && sql.contains("FROM neighborhood_polls p")
+                                && sql.contains("p.id = a.id")
+                                && sql.contains("p.author_id = ?")
+                                && sql.contains("a.question <> ?")),
                 any(Object[].class));
     }
 

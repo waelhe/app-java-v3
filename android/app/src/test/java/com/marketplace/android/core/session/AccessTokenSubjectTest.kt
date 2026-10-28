@@ -81,6 +81,20 @@ class AccessTokenSubjectTest {
     }
 
     @Test
+    fun aBlankSubjectIsAnUnknownPrincipalToo() {
+        // Review round 1: `{"sub":""}` (and a whitespace-only sub) must
+        // answer null, never "" — otherwise two DIFFERENT accounts with
+        // blank subs would share one session-recovery draft. The file's
+        // own contract: null means unknown principal (fail-closed,
+        // CWE-488). The `!= null` guard in
+        // canRestoreSessionRecoveryState is only sound if blank reads
+        // collapse to null here.
+        assertNull(AccessTokenSubject.subjectOf(jwt("{\"sub\":\"\"}")))
+        assertNull(AccessTokenSubject.subjectOf(jwt("{\"sub\":\"   \"}")))
+        assertNull(AccessTokenSubject.subjectOf(jwt("{\"iss\":\"a\",\"sub\":\"\",\"exp\":1}")))
+    }
+
+    @Test
     fun aNonObjectPayloadYieldsNoPrincipal() {
         assertNull(AccessTokenSubject.subjectOf(jwt("[1,2,3]")))
         assertNull(AccessTokenSubject.subjectOf(jwt("\"just a string\"")))

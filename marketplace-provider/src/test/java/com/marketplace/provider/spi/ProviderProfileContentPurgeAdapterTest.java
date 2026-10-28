@@ -78,9 +78,15 @@ class ProviderProfileContentPurgeAdapterTest {
 
         // The services' five rows join the grand total.
         assertThat(purged).isEqualTo(5);
+        // Review round 1: the BASE-table statements must bump the
+        // optimistic-lock version (OfferedService inherits @Version) — a
+        // purge a stale managed entity can silently revert is not a
+        // purge. The Envers mirror carries no version column and must
+        // stay untouched by the bump.
         verify(jdbcTemplate).update(
                 org.mockito.ArgumentMatchers.argThat((String sql) ->
                         sql.startsWith("UPDATE provider_services s SET title = ?, description = NULL")
+                                && sql.contains("version = version + 1")
                                 && sql.contains("FROM provider_profiles p")
                                 && sql.contains("s.provider_id = p.id")
                                 && sql.contains("p.user_id = ?")
@@ -90,6 +96,7 @@ class ProviderProfileContentPurgeAdapterTest {
         verify(jdbcTemplate).update(
                 org.mockito.ArgumentMatchers.argThat((String sql) ->
                         sql.startsWith("UPDATE provider_services_aud s SET title = ?, description = NULL")
+                                && !sql.contains("version")
                                 && sql.contains("FROM provider_profiles p")),
                 any(Object[].class));
     }
@@ -111,5 +118,40 @@ class ProviderProfileContentPurgeAdapterTest {
                 .update(anyString(), any(Object[].class));
         verify(eventPublisher).publishEvent(
                 org.mockito.ArgumentMatchers.any(CacheInvalidationRequested.class));
+    }
+
+    @Test
+    void purgeAuthoredTexts_bumpsTheOptimisticLockVersionOnEveryBaseTableStatement() {
+        // Review round 1: ProviderProfile inherits @Version as well, and
+        // provider_profiles.version is NULL-able (V14) — every base-table
+        // statement must carry COALESCE(version, 0) + 1 so a stale managed
+        // entity cannot flush the persona back over the purge, while the
+        // three _aud mirrors stay version-free.
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+        when(jdbcTemplate.queryForList(anyString(), eq(UUID.class), eq(SUBJECT)))
+                .thenReturn(List.of());
+
+        adapter.purgeAuthoredTexts(SUBJECT);
+
+        verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.startsWith("UPDATE provider_profiles SET bio = NULL")
+                                && sql.contains("version = COALESCE(version, 0) + 1")),
+                any(Object[].class));
+        verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.startsWith("UPDATE provider_profiles SET display_name = ?")
+                                && sql.contains("version = COALESCE(version, 0) + 1")),
+                any(Object[].class));
+        verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.startsWith("UPDATE provider_profiles SET agency_name = NULL")
+                                && sql.contains("version = COALESCE(version, 0) + 1")),
+                any(Object[].class));
+        verify(jdbcTemplate, org.mockito.Mockito.times(3)).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.startsWith("UPDATE provider_profiles_aud")
+                                && !sql.contains("version")),
+                any(Object[].class));
     }
 }

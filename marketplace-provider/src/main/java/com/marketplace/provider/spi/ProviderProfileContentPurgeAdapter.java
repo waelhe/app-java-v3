@@ -76,11 +76,20 @@ public class ProviderProfileContentPurgeAdapter implements AuthoredContentPurgeP
     @Override
     @Transactional
     public int purgeAuthoredTexts(UUID userId) {
+        // Review round 1 (both profile tables' updates): ProviderProfile
+        // and OfferedService inherit @Version from BaseEntity — a JDBC
+        // purge that leaves the version untouched can be reverted by a
+        // stale managed entity's flush. provider_profiles.version is
+        // NULL-able (V14), so COALESCE seeds the first bump; the NOT NULL
+        // provider_services.version bumps directly. The _aud mirrors
+        // carry no version column and stay untouched.
         int bios = jdbcTemplate.update(
-                "UPDATE provider_profiles SET bio = NULL WHERE user_id = ? AND bio IS NOT NULL",
+                "UPDATE provider_profiles SET bio = NULL, version = COALESCE(version, 0) + 1 "
+                        + "WHERE user_id = ? AND bio IS NOT NULL",
                 userId);
         int names = jdbcTemplate.update(
-                "UPDATE provider_profiles SET display_name = ? WHERE user_id = ? "
+                "UPDATE provider_profiles SET display_name = ?, version = COALESCE(version, 0) + 1 "
+                        + "WHERE user_id = ? "
                         + "AND display_name IS NOT NULL AND display_name <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
         // L36: the persona display fields are the same authored-text class
@@ -88,7 +97,8 @@ public class ProviderProfileContentPurgeAdapter implements AuthoredContentPurgeP
         // applies to them verbatim (the plan's acceptance criterion 3:
         // "التمويه القائم يسري"). NULL writes, the bio storage convention.
         int personas = jdbcTemplate.update(
-                "UPDATE provider_profiles SET agency_name = NULL, license_number = NULL "
+                "UPDATE provider_profiles SET agency_name = NULL, license_number = NULL, "
+                        + "version = COALESCE(version, 0) + 1 "
                         + "WHERE user_id = ? AND (agency_name IS NOT NULL OR license_number IS NOT NULL)",
                 userId);
         int auditRows = jdbcTemplate.update(
@@ -115,7 +125,7 @@ public class ProviderProfileContentPurgeAdapter implements AuthoredContentPurgeP
         // (duration, price, position) stay so the page's structure
         // survives the erasure. Base table and Envers mirror both.
         int serviceTitles = jdbcTemplate.update(
-                "UPDATE provider_services s SET title = ?, description = NULL "
+                "UPDATE provider_services s SET title = ?, description = NULL, version = version + 1 "
                         + "FROM provider_profiles p "
                         + "WHERE s.provider_id = p.id AND p.user_id = ? "
                         + "AND (s.title <> ? OR s.description IS NOT NULL)",
