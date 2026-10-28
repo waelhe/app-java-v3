@@ -81,7 +81,9 @@ class PlaceholderTargetMatrixGuardTest {
                         + "declared in .railway/railway.ts (the versioned target record). An undeclared "
                         + "name is E-02 armed: CI stays green while the deployment target lacks the "
                         + "value, and the next boot collapses on 'Could not resolve placeholder'. "
-                        + "Declare the name in the service's env block (preserve()) — or give the "
+                        + "Declare the name in the service's env block with preserve() — preserve() "
+                        + "keeps an existing value and never creates one, so set the variable's "
+                        + "value on the Railway service BEFORE the next deploy — or give the "
                         + "placeholder an explicit default when fail-fast is not the intent.")
                 .containsAll(required);
     }
