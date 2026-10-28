@@ -1,5 +1,6 @@
 package com.marketplace.shared.api;
 
+import java.util.Optional;
 import java.util.UUID;
 
 /** Order lifecycle seam used by delivery without importing marketplace-orders. */
@@ -22,6 +23,22 @@ public interface OrderDeliveryPort {
      *         is not CONFIRMED or carries no seller
      */
     OrderFulfillmentSelection requireOrderFulfillment(UUID orderId, UUID buyerId);
+
+    /**
+     * Agent findings 2026-10-26T13:11 export, row 41 — the settlement
+     * edge's resolution: the frozen fulfillment selection of the order a
+     * settled payment intent pays for. Present only when that order is
+     * CONFIRMED with a known seller (the leg's own creation
+     * preconditions) — the absent answer covers every other shape: a
+     * non-order intent (the empty findByPaymentIntentId), an order that
+     * has not confirmed yet (the seller-first flow — this edge is NOT
+     * the leg's creator while the confirmation edge still owes it), and
+     * an order that moved past CONFIRMED (its legs are the cancellation
+     * edges' concern, never a fresh creation). The absent row is the
+     * honest no-op, never an exception — the events contract's
+     * recoverable consumer.
+     */
+    Optional<OrderFulfillmentSelection> findOrderFulfillmentByPaymentIntent(UUID paymentIntentId);
 
     /**
      * Part-2 review round 2 — the SAME frozen selection read under the
