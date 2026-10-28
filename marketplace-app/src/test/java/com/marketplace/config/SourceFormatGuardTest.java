@@ -48,8 +48,15 @@ class SourceFormatGuardTest {
      * silent. Measured repo-wide before adoption: zero offenders, so the
      * widened shapes flag nothing the tree already carries.
      */
-    private static final Pattern PACKED_PACKAGE = Pattern.compile("^\\s*package\\s+[\\w.]+;\\s*\\S");
-    private static final Pattern PACKED_IMPORT = Pattern.compile("^\\s*import\\s+(?:static\\s+)?[\\w.*]+;\\s*\\S");
+    // The name token is [^;\s]+ — anchored on what actually terminates a
+    // package/import statement (the semicolon) and what separates tokens
+    // (whitespace). A \w class would miss legal Java identifiers carrying
+    // '$' or Unicode letters (JLS 3.8): 'package com.$generated; class
+    // Example {}' is packed and must be flagged (CodeRabbit round 2,
+    // 2026-10-28). The static-import keyword group is unaffected: 'static'
+    // cannot appear in the package form and the group stays optional.
+    private static final Pattern PACKED_PACKAGE = Pattern.compile("^\\s*package\\s+[^;\\s]+;\\s*\\S");
+    private static final Pattern PACKED_IMPORT = Pattern.compile("^\\s*import\\s+(?:static\\s+)?[^;\\s]+;\\s*\\S");
 
     @Test
     void packageAndImportStatementsAreAloneOnTheirLine() throws IOException {
@@ -97,6 +104,24 @@ class SourceFormatGuardTest {
                 .isFalse();
         assertThat(PACKED_IMPORT.matcher(" * import java.util.List;").find())
                 .as("a javadoc-quoted import whose statement ends the line is documentation, not a packed source")
+                .isFalse();
+        // JLS 3.8 identifiers: '$' and Unicode letters are legal — the shapes
+        // must be flagged exactly like their ASCII peers, and their honest
+        // single-statement forms must stay unflagged (round 2's finding).
+        assertThat(PACKED_PACKAGE.matcher("package com.$generated; class Example {}").find())
+                .as("a '$' identifier packed with a declaration is the failure shape")
+                .isTrue();
+        assertThat(PACKED_IMPORT.matcher("import com.$generated.Inner; class Example {}").find())
+                .as("a '$' import packed with a declaration is the failure shape")
+                .isTrue();
+        assertThat(PACKED_PACKAGE.matcher("package com.пример; class Example {}").find())
+                .as("a Unicode identifier packed with a declaration is the failure shape")
+                .isTrue();
+        assertThat(PACKED_IMPORT.matcher("import com.пример.Класс;").find())
+                .as("a bare Unicode import alone on its line is honest")
+                .isFalse();
+        assertThat(PACKED_IMPORT.matcher("import static com.$generated.Constants.NAME;").find())
+                .as("a bare static '$' import alone on its line is honest")
                 .isFalse();
     }
 
