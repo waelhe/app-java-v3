@@ -61,16 +61,24 @@ public class BoundedEmbeddingConnectionAutoConfiguration {
             // configuration would build — the plain details, no client.
             return builder.apiKey(apiKey).build();
         }
-        HttpOptions boundedHttp = HttpOptions.builder()
-                .timeout(EMBEDDING_HTTP_TIMEOUT_SECONDS)
-                .build();
         Client boundedClient = Client.builder()
                 .apiKey(apiKey)
-                .httpOptions(boundedHttp)
+                .httpOptions(boundedHttpOptions())
                 .build();
         return builder
                 .apiKey(apiKey)
                 .genAiClient(boundedClient)
+                .build();
+    }
+
+    /**
+     * The bounded HTTP layer itself — package-visible for the pin test: the
+     * SDK's own request ceiling, in seconds (ApiClient's timeoutInSeconds
+     * and X-Server-Timeout header carry the unit).
+     */
+    static HttpOptions boundedHttpOptions() {
+        return HttpOptions.builder()
+                .timeout(EMBEDDING_HTTP_TIMEOUT_SECONDS)
                 .build();
     }
 }

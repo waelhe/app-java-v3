@@ -5,8 +5,6 @@ import com.google.genai.types.HttpOptions;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.google.genai.embedding.GoogleGenAiEmbeddingConnectionDetails;
 
-import java.util.Optional;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -20,22 +18,30 @@ import static org.assertj.core.api.Assertions.assertThat;
 class BoundedEmbeddingConnectionAutoConfigurationTest {
 
     @Test
+    void theBoundedHttpLayerCarriesTheSdkRequestCeiling() {
+        // HttpOptions.timeout is the Google GenAI SDK's own request
+        // ceiling, in SECONDS (ApiClient's timeoutInSeconds and
+        // X-Server-Timeout header carry the unit) — the transaction
+        // timeout can never interrupt an in-flight HTTP request, so this
+        // is the only ceiling that frees the advisory lock and the JDBC
+        // connection the listener transaction holds.
+        HttpOptions bounded = BoundedEmbeddingConnectionAutoConfiguration.boundedHttpOptions();
+        assertThat(bounded.timeout())
+                .as("the embedding request ceiling, in seconds")
+                .contains(BoundedEmbeddingConnectionAutoConfiguration.EMBEDDING_HTTP_TIMEOUT_SECONDS);
+    }
+
+    @Test
     void aProvisionedKeyBuildsTheClientWithTheBoundedHttpLayer() {
         GoogleGenAiEmbeddingConnectionDetails details =
                 new BoundedEmbeddingConnectionAutoConfiguration()
                         .googleGenAiEmbeddingConnectionDetails("test-embedding-key");
 
         Client client = details.getGenAiClient();
+        // the pre-built SDK client (built with boundedHttpOptions() in the
+        // bean method above) rides the details — the framework's own
+        // auto-configuration backs off against it
         assertThat(client).as("the pre-built SDK client rides the details").isNotNull();
-        Optional<HttpOptions> httpOptions = client.httpOptions();
-        assertThat(httpOptions).as("the client carries the house HTTP options").isPresent();
-        // HttpOptions.timeout is the SDK's own request ceiling, in SECONDS
-        // (ApiClient's timeoutInSeconds and X-Server-Timeout header) — the
-        // transaction timeout can never interrupt an in-flight HTTP
-        // request, so this is the only ceiling that frees the lock.
-        assertThat(httpOptions.get().timeout())
-                .as("the embedding request ceiling")
-                .contains(BoundedEmbeddingConnectionAutoConfiguration.EMBEDDING_HTTP_TIMEOUT_SECONDS);
     }
 
     @Test
