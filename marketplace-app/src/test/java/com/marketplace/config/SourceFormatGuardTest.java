@@ -38,14 +38,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  * not flagged — only the measured failure shape (package/import packing)
  * is rejected.
  *
- * <p>Review rounds 1-3 (CodeRabbit, 2026-10-28) widened the measured
+ * <p>Review rounds 1-4 (CodeRabbit, 2026-10-28) widened the measured
  * shape to what Java actually admits: leading whitespace and JLS 3.8
- * identifiers (round 1-2), Java 25 module imports, pre-semicolon
- * whitespace, and declarations preceded by same-line comments — the scan
- * judges the CODE-ONLY projection of each line (comments and
- * string-literal contents stripped by the {@link CodeOnlyStripper} state
- * machine), so statements inside comments or strings are data, never
- * declarations. Measured repo-wide before each adoption: zero offenders.
+ * identifiers (rounds 1-2), Java 25 module imports, pre-semicolon
+ * whitespace, declarations preceded by same-line comments (round 3), and
+ * — round 4 — spaces around the dots inside qualified names, full
+ * annotation prefixes before the package keyword, and char literals
+ * consumed atomically by the stripper so a quote inside them never opens
+ * the string state. The scan judges the CODE-ONLY projection of each
+ * line (comments and string-literal contents stripped by the
+ * {@link CodeOnlyStripper} state machine), so statements inside comments
+ * or strings are data, never declarations. Measured repo-wide before
+ * each adoption: zero offenders.
  */
 class SourceFormatGuardTest {
 
@@ -64,9 +68,18 @@ class SourceFormatGuardTest {
     // Example {}' is packed and must be flagged (CodeRabbit round 2,
     // 2026-10-28). The static-import keyword group is unaffected: 'static'
     // cannot appear in the package form and the group stays optional.
-    private static final Pattern PACKED_PACKAGE = Pattern.compile("^\\s*package\\s+[^;\\s]+\\s*;\\s*\\S");
+    // Round 4 (CodeRabbit, 2026-10-28): the qualified name admits spaces
+    // around its dots (JLS 7.7/8.3 — 'com . example' is legal spelling),
+    // and the package form admits full ANNOTATION prefixes (JLS 9.7 —
+    // package-info shapes: stacked '@Anno(...)' declarations, nested
+    // argument parens included) before the keyword. Both widenings keep
+    // the packed tail as the sole verdict: the name's internal spacing and
+    // its annotations hide nothing. Measured repo-wide before adoption:
+    // zero offenders.
+    private static final Pattern PACKED_PACKAGE =
+            Pattern.compile("^\\s*(?:@[^\\r\\n]*?(?:\\s+|(?<=\\)))*package\\s+[^;\\s]+(?:\\s*\\.\\s*[^;\\s]+)*\\s*;\\s*\\S");
     private static final Pattern PACKED_IMPORT =
-            Pattern.compile("^\\s*import\\s+(?:(?:static|module)\\s+)?[^;\\s]+\\s*;\\s*\\S");
+            Pattern.compile("^\\s*import\\s+(?:(?:static|module)\\s+)?[^;\\s]+(?:\\s*\\.\\s*[^;\\s]+)*\\s*;\\s*\\S");
 
     @Test
     void packageAndImportStatementsAreAloneOnTheirLine() throws IOException {
@@ -153,6 +166,29 @@ class SourceFormatGuardTest {
         assertThat(PACKED_IMPORT.matcher("import java.util.List ;").find())
                 .as("a bare import with pre-semicolon whitespace alone on its line is honest")
                 .isFalse();
+        // Round 4, finding 1 — spaces around the dots inside a qualified
+        // name are legal Java spelling (JLS 7.7/8.3): the packed tail
+        // decides, not the name's internal spacing.
+        assertThat(PACKED_PACKAGE.matcher("package com . example; class Example {}").find())
+                .as("a package statement with spaced dots packed with a declaration is the failure shape")
+                .isTrue();
+        assertThat(PACKED_IMPORT.matcher("import java . util . List; class Example {}").find())
+                .as("an import with spaced dots packed with a declaration is the failure shape")
+                .isTrue();
+        assertThat(PACKED_IMPORT.matcher("import java . util . List;").find())
+                .as("a bare import with spaced dots alone on its line is honest")
+                .isFalse();
+        // Round 4, finding 2 — annotation prefixes (package-info shapes,
+        // JLS 9.7): the stripper keeps annotations as code, and a packed
+        // package behind them — nested argument parens included — is still
+        // the failure shape.
+        CodeOnlyStripper annotations = new CodeOnlyStripper();
+        assertThat(isPacked(annotations.strip("@A(@B()) package example; import java.util.List;")))
+                .as("nested annotation prefixes must not hide a packed package statement")
+                .isTrue();
+        assertThat(isPacked(annotations.strip("@Deprecated package example;")))
+                .as("an annotated package statement alone on its line is honest")
+                .isFalse();
     }
 
     /**
@@ -198,6 +234,36 @@ class SourceFormatGuardTest {
         assertThat(isPacked(textBlock.strip("import a.b;")))
                 .as("after the text block closes, an honest statement is not flagged")
                 .isFalse();
+        // Round 4, finding 3 — a quote inside a char literal must never
+        // open the string state: with the char consumed atomically, the
+        // text block opened later on the same line keeps its own state,
+        // and the next line's packed-looking shape stays data, not code.
+        CodeOnlyStripper charThenTextBlock = new CodeOnlyStripper();
+        charThenTextBlock.strip("char quote = '\"'; String s = \"\"\"");
+        assertThat(isPacked(charThenTextBlock.strip("import a.b; class X {}")))
+                .as("a quote-carrying char literal must not open a phantom string — the text block after it stays string state")
+                .isFalse();
+        assertThat(isPacked(charThenTextBlock.strip("\"\"\"; import a.b;")))
+                .as("after the text block closes, an honest statement is not flagged")
+                .isFalse();
+        // Round 4, finding 3 — the false-positive shape the char fix
+        // closes: with the OLD stripper, the quote inside the char literal
+        // opened a phantom string that swallowed the next line's block-
+        // comment opener, and the comment's packed-looking content leaked
+        // as code. With the char consumed atomically, the comment opens
+        // properly and its content stays data.
+        CodeOnlyStripper charThenComment = new CodeOnlyStripper();
+        charThenComment.strip("char quote = '\"';");
+        charThenComment.strip("/* \"");
+        assertThat(isPacked(charThenComment.strip("import a.b; class X {} */")))
+                .as("a quote inside a char literal must not open a phantom string — the block comment opened later stays comment state")
+                .isFalse();
+        CodeOnlyStripper escapedChar = new CodeOnlyStripper();
+        escapedChar.strip("char c = '\\'';");
+        escapedChar.strip("/* \"");
+        assertThat(isPacked(escapedChar.strip("import a.b; class X {} */")))
+                .as("an escaped-quote char literal is consumed atomically — no phantom string, the comment stays comment state")
+                .isFalse();
     }
 
     private static boolean isPacked(String codeOnlyLine) {
@@ -226,8 +292,10 @@ class SourceFormatGuardTest {
      * a text block's content stays string state until its closing quotes).
      * Block-comment text and string-literal contents vanish; the code that
      * remains is what the packed-statement patterns judge. A line comment
-     * ({@code //}) ends the line's code. Char literals are left as-is: a
-     * single character can never carry a statement.
+     * ({@code //}) ends the line's code. Char literals are consumed
+     * atomically (escape included) BEFORE the string branch: a quote
+     * inside a char literal never opens the string state, and a single
+     * character can never carry a statement.
      */
     private static final class CodeOnlyStripper {
 
@@ -256,6 +324,24 @@ class SourceFormatGuardTest {
                         i++;
                     } else {
                         i++;
+                    }
+                } else if (c == '\'') {
+                    // Round 4 (CodeRabbit, 2026-10-28): a char literal is
+                    // consumed atomically BEFORE the string branch — a quote
+                    // inside it ('"' or '\'') must never open the string
+                    // state, or a later quote-bearing comment could close
+                    // the phantom string and re-parse comment text as code.
+                    code.append(c);
+                    i++;
+                    while (i < line.length()) {
+                        char ch = line.charAt(i);
+                        code.append(ch);
+                        i++;
+                        if (ch == '\\' && i < line.length()) {
+                            code.append(line.charAt(i++));
+                        } else if (ch == '\'') {
+                            break;
+                        }
                     }
                 } else if (c == '"') {
                     inString = true;
