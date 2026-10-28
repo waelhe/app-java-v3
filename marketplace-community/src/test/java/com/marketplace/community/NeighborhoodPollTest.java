@@ -20,13 +20,15 @@ class NeighborhoodPollTest {
     void authored_carriesTheThreeAuthoredFactsAndAFreshId() {
         UUID locationId = UUID.randomUUID();
 
-        NeighborhoodPoll poll = NeighborhoodPoll.authored(locationId,
+        UUID authorId = UUID.randomUUID();
+        NeighborhoodPoll poll = NeighborhoodPoll.authored(authorId, locationId,
                 "ما المواعيد الأنسب لفتح الممشى المظلل خلال الصيف؟", "لجنة تطوير الحي");
 
         assertThat(poll.getId()).isNotNull();
         assertThat(poll.getLocationId()).isEqualTo(locationId);
         assertThat(poll.getQuestion()).isEqualTo("ما المواعيد الأنسب لفتح الممشى المظلل خلال الصيف؟");
         assertThat(poll.getAuthorLabel()).isEqualTo("لجنة تطوير الحي");
+        assertThat(poll.getAuthorId()).isEqualTo(authorId);
     }
 
     @Test
@@ -60,8 +62,8 @@ class NeighborhoodPollTest {
     void authored_twiceInOneNeighborhood_yieldsTwoDistinctRows() {
         UUID locationId = UUID.randomUUID();
 
-        NeighborhoodPoll first = NeighborhoodPoll.authored(locationId, "س", "لجنة تطوير الحي");
-        NeighborhoodPoll second = NeighborhoodPoll.authored(locationId, "س", "لجنة تطوير الحي");
+        NeighborhoodPoll first = NeighborhoodPoll.authored(UUID.randomUUID(), locationId, "س", "لجنة تطوير الحي");
+        NeighborhoodPoll second = NeighborhoodPoll.authored(UUID.randomUUID(), locationId, "س", "لجنة تطوير الحي");
 
         // Two same-questioned polls of one hood are two rows — the house
         // has no title uniqueness anywhere (posts, events, market items,

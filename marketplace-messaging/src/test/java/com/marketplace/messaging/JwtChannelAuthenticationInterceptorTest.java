@@ -54,6 +54,9 @@ class JwtChannelAuthenticationInterceptorTest {
     @Mock
     private ObjectProvider<JwtAuthenticationConverter> converterProvider;
 
+    @Mock
+    private BearerSessionExpirationGuard expirationGuard;
+
     private JwtChannelAuthenticationInterceptor interceptor;
 
     @BeforeEach
@@ -61,7 +64,7 @@ class JwtChannelAuthenticationInterceptorTest {
         // The full-application wiring: the providers always resolve.
         lenient().when(jwtDecoderProvider.getIfAvailable()).thenReturn(jwtDecoder);
         lenient().when(converterProvider.getIfAvailable()).thenReturn(jwtAuthenticationConverter);
-        interceptor = new JwtChannelAuthenticationInterceptor(jwtDecoderProvider, converterProvider);
+        interceptor = new JwtChannelAuthenticationInterceptor(jwtDecoderProvider, converterProvider, expirationGuard);
     }
 
     private static Jwt jwt(String subject) {
@@ -201,7 +204,7 @@ class JwtChannelAuthenticationInterceptorTest {
         ObjectProvider<JwtDecoder> emptyDecoder = providerOf(null);
         ObjectProvider<JwtAuthenticationConverter> emptyConverter = providerOf(null);
         JwtChannelAuthenticationInterceptor sliceInterceptor =
-                new JwtChannelAuthenticationInterceptor(emptyDecoder, emptyConverter);
+                new JwtChannelAuthenticationInterceptor(emptyDecoder, emptyConverter, expirationGuard);
 
         StompHeaderAccessor accessor = connectAccessor();
         accessor.setNativeHeader("Authorization", "Bearer token-value");
@@ -210,6 +213,143 @@ class JwtChannelAuthenticationInterceptorTest {
         sliceInterceptor.preSend(message, null);
 
         assertThat(accessor.getUser()).isNull();
+    }
+
+    // ------------------------------------------------------------------
+    // Row 10 (agent findings 2026-10-25, CWE-613): the retained principal
+    // must not outlive its token — the CONNECT arms the expiration guard,
+    // and every subsequent inbound frame re-validates the retained token.
+    // ------------------------------------------------------------------
+
+    @Test
+    void connectWithBearerHeaderArmsTheBearerSessionExpirationGuard() {
+        Jwt jwt = jwt("subject-1");
+        when(jwtDecoder.decode("token-value")).thenReturn(jwt);
+        when(jwtAuthenticationConverter.convert(jwt))
+                .thenReturn(new JwtAuthenticationToken(jwt, List.of(() -> "ROLE_CONSUMER")));
+
+        StompHeaderAccessor accessor = connectAccessor();
+        accessor.setSessionId("ws-17");
+        accessor.setNativeHeader("Authorization", "Bearer token-value");
+        Message<byte[]> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        interceptor.preSend(message, null);
+
+        // The lifted token's expiry is what schedules the session's close —
+        // the browser path's only arming point (no handshake principal).
+        verify(expirationGuard).bearerTokenAuthenticated("ws-17", jwt);
+    }
+
+    @Test
+    void anExpiredRetainedTokenRejectsTheNextInboundFrame() {
+        Jwt expired = jwt("subject-1");
+        JwtAuthenticationToken retained =
+                new JwtAuthenticationToken(expired, List.of(() -> "ROLE_CONSUMER"));
+        when(jwtDecoder.decode("token-value")).thenThrow(new JwtException("expired"));
+
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
+        accessor.setLeaveMutable(true);
+        accessor.setDestination("/app/chat.sendMessage/42");
+        accessor.setUser(retained);
+        Message<byte[]> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        // The finding's core scenario: the token expired after CONNECT, and
+        // the socket kept its authority. The frame is now rejected — and the
+        // framework's ERROR path closes the socket with its subscriptions
+        // (verified against StompSubProtocolHandler 7.0.10).
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(InvalidBearerTokenException.class)
+                .hasMessageContaining("no longer valid");
+    }
+
+    @Test
+    void aValidRetainedTokenPassesTheInboundFrame() {
+        Jwt valid = jwt("subject-1");
+        JwtAuthenticationToken retained =
+                new JwtAuthenticationToken(valid, List.of(() -> "ROLE_CONSUMER"));
+        when(jwtDecoder.decode("token-value")).thenReturn(valid);
+
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
+        accessor.setLeaveMutable(true);
+        accessor.setDestination("/app/chat.sendMessage/42");
+        accessor.setUser(retained);
+        Message<byte[]> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        assertThat(interceptor.preSend(message, null)).isSameAs(message);
+        verify(jwtDecoder).decode("token-value");
+    }
+
+    @Test
+    void aDisconnectFrameWithAnExpiredRetainedTokenStillReachesTheBroker() {
+        // Review round 1: DISCONNECT grants no authority — it only tears
+        // the session's state down. Routing it through the retained-token
+        // re-validation would reject the frame exactly when the socket
+        // outlived exp, and the broker would never see the DISCONNECT:
+        // the session's subscriptions stay in its registry with no clean
+        // teardown. The frame must pass untouched, without a decode.
+        Jwt expired = jwt("subject-1");
+        JwtAuthenticationToken retained =
+                new JwtAuthenticationToken(expired, List.of(() -> "ROLE_CONSUMER"));
+
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.DISCONNECT);
+        accessor.setLeaveMutable(true);
+        accessor.setUser(retained);
+        Message<byte[]> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        assertThat(interceptor.preSend(message, null)).isSameAs(message);
+        verify(jwtDecoder, never()).decode(any());
+    }
+
+    @Test
+    void anInboundFrameUnderTheTranslatedIdentityRevalidatesTheWrappedToken() {
+        // After the identity translator, the session's user is
+        // WebSocketUserIdentity wrapping the token authentication — the
+        // re-validation must reach the WRAPPED token.
+        Jwt wrapped = jwt("subject-1");
+        JwtAuthenticationToken token =
+                new JwtAuthenticationToken(wrapped, List.of(() -> "ROLE_CONSUMER"));
+        WebSocketUserIdentity translated = new WebSocketUserIdentity(token, "0e0b1e6d-6b1e-4f44-b3a3-c4f00d31d220");
+        when(jwtDecoder.decode("token-value")).thenThrow(new JwtException("expired"));
+
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        accessor.setLeaveMutable(true);
+        accessor.setDestination("/topic/notifications/0e0b1e6d-6b1e-4f44-b3a3-c4f00d31d220");
+        accessor.setUser(translated);
+        Message<byte[]> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(InvalidBearerTokenException.class);
+        verify(jwtDecoder).decode("token-value");
+    }
+
+    @Test
+    void anInboundFrameUnderASessionPrincipalPassesThroughUntouched() {
+        // The cookie/session flow (chain 3) — a non-token principal has no
+        // bearer token to re-validate; session expiry governs that flow.
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
+        accessor.setLeaveMutable(true);
+        accessor.setDestination("/app/chat.sendMessage/42");
+        accessor.setUser(new TestingAuthenticationToken("session-user", "password", "ROLE_USER"));
+        Message<byte[]> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        assertThat(interceptor.preSend(message, null)).isSameAs(message);
+        verifyNoInteractionsDecoding();
+    }
+
+    @Test
+    void anInboundFrameIsInertWhenTheSecurityInfrastructureIsAbsent() {
+        ObjectProvider<JwtDecoder> emptyDecoder = providerOf(null);
+        ObjectProvider<JwtAuthenticationConverter> emptyConverter = providerOf(null);
+        JwtChannelAuthenticationInterceptor sliceInterceptor =
+                new JwtChannelAuthenticationInterceptor(emptyDecoder, emptyConverter, expirationGuard);
+
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
+        accessor.setLeaveMutable(true);
+        accessor.setDestination("/app/chat.sendMessage/42");
+        accessor.setUser(new JwtAuthenticationToken(jwt("subject-1"), List.of(() -> "ROLE_CONSUMER")));
+        Message<byte[]> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        assertThat(sliceInterceptor.preSend(message, null)).isSameAs(message);
     }
 
     @SuppressWarnings("unchecked")

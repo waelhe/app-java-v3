@@ -8,13 +8,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.Instant;
 
 /**
  * A-04 (official-compliance plan §6, wave A — A.1, the password-reset
@@ -67,6 +64,26 @@ public class PasswordResetService {
      * owns its leg of the same invariant). */
     static final String DELETE_AUTHORIZATIONS_BY_PRINCIPAL =
             "DELETE FROM oauth2_authorization WHERE principal_name = ?";
+
+    /**
+     * Row 46 (agent findings 2026-10-26 — CWE-362): the credential write
+     * is the PASSWORD COLUMN ONLY. The pre-fix flow replayed a full
+     * {@code JdbcUserDetailsManager.updateUser} from a snapshot loaded
+     * before the encoding — the framework's own order deletes the
+     * CURRENT {@code auth_authorities} rows and re-inserts the snapshot's,
+     * so an administrator's role removal landing in that window was
+     * silently restored and the removed authority kept answering at the
+     * next login. The password-only UPDATE leaves the authority rows and
+     * the status flags exactly as their own admin surfaces wrote them
+     * (each under the account row lock — row 8's serialization), so reset
+     * rotates the credential and nothing else. The official
+     * {@code UserDetailsPasswordService.updatePassword} is measured (7.1.2
+     * bytecode) to delegate to the SAME full {@code updateUser} replace,
+     * so the framework offers no password-only path — the explicit column
+     * write on the SAME configured table is the surgical form.
+     */
+    static final String UPDATE_PASSWORD_ONLY =
+            "UPDATE auth_users SET password = ? WHERE username = ?";
 
     private final UserRepository userRepository;
     private final UserDetailsManager userDetailsManager;
@@ -154,16 +171,18 @@ public class PasswordResetService {
         AuthActionToken redeemed =
                 authActionTokenService.consume(token, AuthActionTokenPurpose.PASSWORD_RESET);
         String username = redeemed.getUsername();
-        UserDetails stored = userDetailsManager.loadUserByUsername(username);
-        userDetailsManager.updateUser(org.springframework.security.core.userdetails.User
-                .withUsername(username)
-                .password(passwordEncoder.getObject().encode(newPassword))
-                .authorities(stored.getAuthorities())
-                .accountExpired(!stored.isAccountNonExpired())
-                .accountLocked(!stored.isAccountNonLocked())
-                .credentialsExpired(!stored.isCredentialsNonExpired())
-                .disabled(!stored.isEnabled())
-                .build());
+        // The account's existence gate — the honest 404-shape failure when
+        // the token's account is gone (the consumption rolls back with the
+        // transaction: nothing half-spent, the honest retry contract).
+        userDetailsManager.loadUserByUsername(username);
+        // Row 46 (agent findings 2026-10-26): the PASSWORD COLUMN ONLY — the
+        // authority and status snapshot loaded above is read for the
+        // existence gate and DISCARDED, never replayed: an admin's role
+        // removal or status change landing anywhere around the encoding
+        // stays exactly as its own surface wrote it (the pre-fix
+        // updateUser replay could restore a removed authority).
+        jdbcTemplate.update(UPDATE_PASSWORD_ONLY,
+                passwordEncoder.getObject().encode(newPassword), username);
         // Issued authorizations die with the change — the same measured SAS
         // kill the role/status/pseudonymize surfaces run: a refresh token
         // minted under the OLD password must not survive the owner rotating

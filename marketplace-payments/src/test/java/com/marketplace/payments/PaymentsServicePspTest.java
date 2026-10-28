@@ -13,9 +13,23 @@ import org.springframework.security.core.Authentication;
 import java.util.Optional;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyLong;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.argThat;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 /**
  * Pins the channel-activation semantics of the PSP layer (roadmap B3):
@@ -48,6 +62,8 @@ class PaymentsServicePspTest {
     private final ObjectProvider<PspChannel> boundChannel = mock(ObjectProvider.class);
     @SuppressWarnings("unchecked")
     private final ObjectProvider<PspChannel> inertChannel = mock(ObjectProvider.class);
+    private final PaymentRefundOperationJournal refundOperationJournal =
+            mock(PaymentRefundOperationJournal.class);
     private final Authentication authentication = mock(Authentication.class);
 
     private PaymentsService service(ObjectProvider<PspChannel> channel) {
@@ -57,7 +73,7 @@ class PaymentsServicePspTest {
                 recorder,
                 new PaymentIntentSettlementService(intentRepository, paymentRepository, eventPublisher, recorder),
                 new SettlementEligibilityService(mock(com.marketplace.shared.api.LedgerReadPort.class), intentRepository, bookingParticipantProvider),
-                channel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)));
+                channel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)), refundOperationJournal);
     }
 
     private PaymentIntent ownedIntent() {
@@ -374,7 +390,8 @@ class PaymentsServicePspTest {
                 .thenReturn(new PspChannel.RemoteRefund("re_r3", "succeeded", 2500L));
 
         Payment result = service(boundChannel)
-                .refundPayment(payment.getId(), 1500L, returnId).payment();
+                .refundPayment(payment.getId(), 1500L,
+                        PaymentsService.StableRefundScope.forReturn(returnId)).payment();
 
         // the remote cumulative actual (2500 = the sibling's 1000 + this 1500) wins
         verify(pspChannel, times(1)).createRemoteRefund(eq("pi_remote_r3"), eq(1500L),
@@ -406,6 +423,40 @@ class PaymentsServicePspTest {
         assertEquals("marketplace-refund-" + paymentId + "-return-" + returnId + "-full", full);
         assertNotEquals(first, sibling, "a sibling return's key differs");
         assertNotEquals(first, otherAmount, "a different frozen amount differs");
+    }
+
+    /**
+     * Row 35 (agent findings 2026-10-26): the dispute refund's FROZEN
+     * operation key, pinned pure — the finding's own rollback window. A
+     * partial refund X executes at the PSP inside a resolve transaction
+     * that rolls back; the charge.refunded webhook then syncs the local
+     * books to X, so the state-derived key's refunded-so-far leg drifts
+     * and the retry would pay X a SECOND time. The dispute-scoped key
+     * carries neither the amount nor the refunded-so-far state: the same
+     * dispute re-derives the SAME key across the whole window — and a
+     * re-approved amount reconciles against the SAME operation instead of
+     * opening a second refund.
+     */
+    @Test
+    void disputeScopedRefundIdempotencyKey_freezesTheOperationAcrossTheRollbackWindow() {
+        UUID paymentId = UUID.randomUUID();
+        UUID disputeId = UUID.randomUUID();
+        UUID otherDispute = UUID.randomUUID();
+
+        String firstAttempt = PaymentsService.disputeScopedRefundIdempotencyKey(paymentId, disputeId);
+        String retryAfterWebhookSync = PaymentsService.disputeScopedRefundIdempotencyKey(paymentId, disputeId);
+        String reApprovedAmount = PaymentsService.disputeScopedRefundIdempotencyKey(paymentId, disputeId);
+        String sibling = PaymentsService.disputeScopedRefundIdempotencyKey(paymentId, otherDispute);
+
+        assertEquals("marketplace-refund-" + paymentId + "-dispute-" + disputeId, firstAttempt);
+        assertEquals(firstAttempt, retryAfterWebhookSync,
+                "the retry after the webhook's cumulative sync re-derives the SAME key");
+        assertEquals(firstAttempt, reApprovedAmount,
+                "a re-approved amount reconciles against the SAME operation");
+        assertNotEquals(firstAttempt, sibling, "a sibling dispute's key differs");
+        assertNotEquals(firstAttempt,
+                PaymentsService.refundIdempotencyKey(paymentId, 1000L, 1500L),
+                "the frozen operation key is never the state-derived one");
     }
 
     /** Acceptance 3: the remote cumulative wins over the local sum (divergence case). */

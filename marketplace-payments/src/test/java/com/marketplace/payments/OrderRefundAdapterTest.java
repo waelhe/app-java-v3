@@ -12,8 +12,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.Optional;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 /**
  * The V230 return-scoped refund port implementation (the RMA lifecycle's
@@ -51,7 +55,8 @@ class OrderRefundAdapterTest {
         refunded.markPartiallyRefunded(1500L);
         when(paymentIntentRepository.findByOrderId(orderId)).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intent.getId())).thenReturn(Optional.of(payment));
-        when(paymentsService.refundPayment(payment.getId(), 1500L, returnId))
+        when(paymentsService.refundPayment(payment.getId(), 1500L,
+                PaymentsService.StableRefundScope.forReturn(returnId)))
                 .thenReturn(new PaymentsService.RefundedPayment(refunded, intent));
 
         RefundOutcome outcome = adapter.refundForOrder(orderId, returnId, 1500L);
@@ -62,7 +67,8 @@ class OrderRefundAdapterTest {
         // the return's id rides as the PSP idempotency scope — one return,
         // one remote refund, replayed safely on a retried completion; the
         // delegation itself rides the payment the lookup found
-        verify(paymentsService).refundPayment(payment.getId(), 1500L, returnId);
+        verify(paymentsService).refundPayment(payment.getId(), 1500L,
+                PaymentsService.StableRefundScope.forReturn(returnId));
     }
 
     @Test

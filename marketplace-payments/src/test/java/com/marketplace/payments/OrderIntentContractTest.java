@@ -46,11 +46,13 @@ class OrderIntentContractTest {
             intentRepository, paymentRepository, eventPublisher, webhookEventRecorder);
     private final SettlementEligibilityService settlementEligibilityService = new SettlementEligibilityService(
             mock(com.marketplace.shared.api.LedgerReadPort.class), intentRepository, bookingParticipantProvider);
+    private final PaymentRefundOperationJournal refundOperationJournal =
+            mock(PaymentRefundOperationJournal.class);
     private final PaymentsService service = new PaymentsService(
             intentRepository, paymentRepository, webhookEventRepository, eventPublisher,
             currentUserProvider, bookingParticipantProvider, webhookSecurity,
             webhookEventRecorder, settlementService, settlementEligibilityService, pspChannel,
-            new CommissionProperties(java.math.BigDecimal.valueOf(0.10)));
+            new CommissionProperties(java.math.BigDecimal.valueOf(0.10)), refundOperationJournal);
 
     @Test
     void createOrderIntent_savesTheOrderOriginIntentWithTheDeterministicKey() {

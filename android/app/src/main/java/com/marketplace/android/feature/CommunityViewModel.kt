@@ -21,6 +21,7 @@ import com.marketplace.android.core.network.NotificationDto
 import com.marketplace.android.core.network.UrgentAlertDto
 import com.marketplace.android.core.network.PostDto
 import com.marketplace.android.core.network.ListingSummaryDto
+import com.marketplace.android.core.session.AccessTokenSubject
 import com.marketplace.android.data.MarketplaceRepository
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -192,6 +193,32 @@ internal fun canChangeEventRsvp(event: EventDto): Boolean =
     event.status.equals("ACTIVE", ignoreCase = true) || event.rsvpedByMe
 
 /**
+ * Row 30 (agent findings 2026-10-25, CWE-488): a session-recovery snapshot
+ * is OWNED by the principal whose session expired. The snapshot (post draft,
+ * selected photos, pending upload) belongs to that account — not to whoever
+ * signs in next — so it travels with its owner's principal handle
+ * ([AccessTokenSubject.subjectOf] of the token that was live when the
+ * session broke).
+ */
+internal data class SessionRecoverySnapshot(
+    val ownerSubject: String?,
+    val uiState: AppUiState
+)
+
+/**
+ * Row 30: the restore decision — fail-closed. A snapshot may be restored
+ * ONLY when the authenticating session's principal is CONFIRMED to be the
+ * same principal that owned the snapshot. An unknown owner (the expired
+ * token's principal could not be read) or an unconfirmable new principal
+ * (the fresh token carries no readable sub) discards the snapshot: the
+ * next account must never see the previous account's draft or photos,
+ * and a same-account re-login that cannot be confirmed loses its draft
+ * rather than risk disclosing someone else's.
+ */
+internal fun canRestoreSessionRecoveryState(ownerSubject: String?, newSessionSubject: String?): Boolean =
+    ownerSubject != null && newSessionSubject != null && ownerSubject == newSessionSubject
+
+/**
  * Merge only the lifecycle field returned by the command endpoint.
  * Its write projection intentionally does not contain the feed's grouped
  * media/reaction aggregates, so replacing a feed row with it would lose
@@ -210,7 +237,16 @@ class CommunityViewModel(
     private val _uiState = MutableStateFlow(AppUiState())
     private var idTokenHint: String? = null
     private var silentReauthInFlight: Boolean = false
-    private var stateBeforeSessionRecovery: AppUiState? = null
+
+    /**
+     * Row 30: the live session's principal (the access token's `sub`),
+     * captured at every successful authentication. It is the owner tag a
+     * recovery snapshot saves when the session breaks, and it is cleared
+     * with the session — snapshots never inherit it from a previous
+     * account.
+     */
+    private var sessionSubject: String? = null
+    private var stateBeforeSessionRecovery: SessionRecoverySnapshot? = null
     val uiState = _uiState.asStateFlow()
     private var locationSearchJob: Job? = null
     private var urgentAlertsJob: Job? = null
@@ -236,6 +272,7 @@ class CommunityViewModel(
         repository.clearAccessToken()
         silentReauthInFlight = false
         stateBeforeSessionRecovery = null
+        sessionSubject = null
         _uiState.update {
             it.copy(
                 authenticated = false,
@@ -276,8 +313,23 @@ class CommunityViewModel(
         silentReauthInFlight = false
         idTokenHint = idToken
         repository.setAccessToken(accessToken)
-        val savedState = stateBeforeSessionRecovery
+        // Row 30 (agent findings 2026-10-25, CWE-488): confirm the principal
+        // BEFORE restoring anything. The expired session's snapshot belongs
+        // to ITS principal — a different person signing in during session
+        // recovery (the browser kept another account's session, or an
+        // interactive fallback landed on another account) must never see the
+        // previous account's draft or selected photos. Fail-closed: an
+        // unreadable principal on either side restores nothing.
+        val newSessionSubject = AccessTokenSubject.subjectOf(accessToken)
+            ?: idToken?.let { AccessTokenSubject.subjectOf(it) }
+        val saved = stateBeforeSessionRecovery
         stateBeforeSessionRecovery = null
+        sessionSubject = newSessionSubject
+        val savedState = if (canRestoreSessionRecoveryState(saved?.ownerSubject, newSessionSubject)) {
+            saved?.uiState
+        } else {
+            null
+        }
         _uiState.value = (savedState ?: AppUiState()).copy(
             authenticated = true,
             sessionRestoring = false,
@@ -334,6 +386,7 @@ class CommunityViewModel(
         repository.clearAccessToken()
         silentReauthInFlight = true
         stateBeforeSessionRecovery = null
+        sessionSubject = null
         val idToken = idTokenHint
         idTokenHint = null
         _uiState.value = AppUiState(sessionRestoreAttempted = true)
@@ -344,6 +397,7 @@ class CommunityViewModel(
         idTokenHint = null
         silentReauthInFlight = true
         stateBeforeSessionRecovery = null
+        sessionSubject = null
         _uiState.value = AppUiState(
             sessionRestoreAttempted = true,
             authSuccess = "تم تسجيل الخروج من هذا الجهاز. تنتهي صلاحية رمز الوصول تلقائيًا خلال 15 دقيقة."
@@ -354,6 +408,7 @@ class CommunityViewModel(
         idTokenHint = null
         silentReauthInFlight = true
         stateBeforeSessionRecovery = null
+        sessionSubject = null
         _uiState.update {
             it.copy(
                 authenticated = false,
@@ -1822,19 +1877,29 @@ class CommunityViewModel(
                         (current.composer == ComposerKind.POST ||
                             current.pendingPhotoPostId != null ||
                             current.postPhotoUris.isNotEmpty())) {
-                        stateBeforeSessionRecovery = current.copy(
-                            submitBusy = false,
-                            uploadProgress = null,
-                            sessionRestoring = false,
-                            silentReauthRequired = false,
-                            authError = null,
-                            notice = if (current.pendingPhotoPostId != null) {
-                                "انتهت الجلسة أثناء رفع الصور. بعد تسجيل الدخول، أعد محاولة الصور المتبقية دون إنشاء منشور جديد."
-                            } else {
-                                current.notice
-                            }
+                        // Row 30 (agent findings 2026-10-25, CWE-488): the
+                        // snapshot travels with its OWNER — the principal of
+                        // the session that just expired. authenticated()
+                        // restores it only when the NEXT session's principal
+                        // is confirmed to be the same account; any other
+                        // account signing in on this device starts clean.
+                        stateBeforeSessionRecovery = SessionRecoverySnapshot(
+                            ownerSubject = sessionSubject,
+                            uiState = current.copy(
+                                submitBusy = false,
+                                uploadProgress = null,
+                                sessionRestoring = false,
+                                silentReauthRequired = false,
+                                authError = null,
+                                notice = if (current.pendingPhotoPostId != null) {
+                                    "انتهت الجلسة أثناء رفع الصور. بعد تسجيل الدخول، أعد محاولة الصور المتبقية دون إنشاء منشور جديد."
+                                } else {
+                                    current.notice
+                                }
+                            )
                         )
                     }
+                    sessionSubject = null
                     if (!silentReauthInFlight) {
                         silentReauthInFlight = true
                         _uiState.value = AppUiState(

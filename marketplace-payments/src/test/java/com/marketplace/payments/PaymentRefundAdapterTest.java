@@ -12,8 +12,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.Optional;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 /**
  * L24 (roadmap §5): the dispute-driven refund port implementation — the
@@ -36,6 +39,9 @@ class PaymentRefundAdapterTest {
     @InjectMocks
     private PaymentRefundAdapter adapter;
 
+    /** Row 35: the refund operation's stable scope — the dispute being resolved. */
+    private final UUID disputeId = UUID.randomUUID();
+
     @Test
     void refundForBooking_delegatesToTheProductionRefundPath() {
         UUID bookingId = UUID.randomUUID();
@@ -49,14 +55,16 @@ class PaymentRefundAdapterTest {
         when(paymentIntentRepository.findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(
                 bookingId, PaymentIntentStatus.COLLECTED)).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(payment));
-        when(paymentsService.refundPayment(paymentId, null))
+        when(paymentsService.refundPayment(paymentId, null,
+                PaymentsService.StableRefundScope.forDispute(disputeId)))
                 .thenReturn(new PaymentsService.RefundedPayment(refunded, intent));
 
-        RefundOutcome outcome = adapter.refundForBooking(bookingId, null);
+        RefundOutcome outcome = adapter.refundForBooking(bookingId, null, disputeId);
 
         assertEquals(paymentId, outcome.paymentId());
         assertEquals(5000L, outcome.refundedAmountCents());
-        verify(paymentsService).refundPayment(paymentId, null);
+        verify(paymentsService).refundPayment(paymentId, null,
+                PaymentsService.StableRefundScope.forDispute(disputeId));
     }
 
     @Test
@@ -78,7 +86,7 @@ class PaymentRefundAdapterTest {
                 bookingId, PaymentIntentStatus.COLLECTED)).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(refunded));
 
-        RefundOutcome outcome = adapter.refundForBooking(bookingId, null);
+        RefundOutcome outcome = adapter.refundForBooking(bookingId, null, disputeId);
 
         assertEquals(paymentId, outcome.paymentId());
         assertEquals(5000L, outcome.refundedAmountCents());
@@ -104,13 +112,15 @@ class PaymentRefundAdapterTest {
         when(paymentIntentRepository.findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(
                 bookingId, PaymentIntentStatus.COLLECTED)).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(partial));
-        when(paymentsService.refundPayment(paymentId, null))
+        when(paymentsService.refundPayment(paymentId, null,
+                PaymentsService.StableRefundScope.forDispute(disputeId)))
                 .thenReturn(new PaymentsService.RefundedPayment(full, intent));
 
-        RefundOutcome outcome = adapter.refundForBooking(bookingId, null);
+        RefundOutcome outcome = adapter.refundForBooking(bookingId, null, disputeId);
 
         assertEquals(5000L, outcome.refundedAmountCents());
-        verify(paymentsService).refundPayment(paymentId, null);
+        verify(paymentsService).refundPayment(paymentId, null,
+                PaymentsService.StableRefundScope.forDispute(disputeId));
     }
 
     @Test
@@ -119,7 +129,7 @@ class PaymentRefundAdapterTest {
         when(paymentIntentRepository.findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(
                 bookingId, PaymentIntentStatus.COLLECTED)).thenReturn(Optional.empty());
 
-        assertThrows(ResourceNotFoundException.class, () -> adapter.refundForBooking(bookingId, null));
+        assertThrows(ResourceNotFoundException.class, () -> adapter.refundForBooking(bookingId, null, disputeId));
         verifyNoInteractions(paymentsService);
     }
 
@@ -132,7 +142,7 @@ class PaymentRefundAdapterTest {
                 bookingId, PaymentIntentStatus.COLLECTED)).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.empty());
 
-        assertThrows(ResourceNotFoundException.class, () -> adapter.refundForBooking(bookingId, null));
+        assertThrows(ResourceNotFoundException.class, () -> adapter.refundForBooking(bookingId, null, disputeId));
         verifyNoInteractions(paymentsService);
     }
 }

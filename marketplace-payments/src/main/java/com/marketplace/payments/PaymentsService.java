@@ -61,6 +61,7 @@ public class PaymentsService implements PaymentsSpi {
     private final SettlementEligibilityService settlementEligibilityService;
     private final ObjectProvider<PspChannel> pspChannel;
     private final CommissionProperties commissionProperties;
+    private final PaymentRefundOperationJournal refundOperationJournal;
 
     public PaymentsService(PaymentIntentRepository paymentIntentRepository,
                            PaymentRepository paymentRepository,
@@ -73,7 +74,8 @@ public class PaymentsService implements PaymentsSpi {
                            PaymentIntentSettlementService paymentIntentSettlementService,
                            SettlementEligibilityService settlementEligibilityService,
                            ObjectProvider<PspChannel> pspChannel,
-                           CommissionProperties commissionProperties) {
+                           CommissionProperties commissionProperties,
+                           PaymentRefundOperationJournal refundOperationJournal) {
         this.paymentIntentRepository = paymentIntentRepository;
         this.paymentRepository = paymentRepository;
         this.webhookEventRepository = webhookEventRepository;
@@ -86,6 +88,7 @@ public class PaymentsService implements PaymentsSpi {
         this.settlementEligibilityService = settlementEligibilityService;
         this.pspChannel = pspChannel;
         this.commissionProperties = commissionProperties;
+        this.refundOperationJournal = refundOperationJournal;
     }
 
     public boolean processWebhookEvent(String provider, String eventId, String eventType, String signature) {
@@ -738,6 +741,51 @@ public class PaymentsService implements PaymentsSpi {
     public record RefundedPayment(Payment payment, PaymentIntent intent) {}
 
     /**
+     * A stable refund-operation scope — the idempotency key's operation
+     * identity when a domain's refund MUST replay identically across a
+     * rollback-then-retry window.
+     *
+     * <p><b>V230's return edge (amount-bound):</b> a completing RETURN
+     * passes its own id; its key carries the return's own fixed amount —
+     * one return, one remote refund, replayed safely on retry (the
+     * state-derived key drifts when a sibling return advances the
+     * cumulative total between a rollback and its retry).</p>
+     *
+     * <p><b>The dispute twin (agent findings 2026-10-26, row 35 —
+     * FROZEN):</b> a booking dispute's refund passes the DISPUTE id, and
+     * its key carries NO amount: one dispute is ONE refund operation, the
+     * approved amount freezes at first execution, and every retry
+     * reconciles against the operation itself — the PSP replays the
+     * already-executed refund instead of submitting a new one under a new
+     * key. The pre-fix path kept the state-derived key (payment +
+     * refunded-so-far + amount), so after a rollback the webhook's
+     * cumulative sync changed the refunded-so-far leg, the retry derived a
+     * NEW key, and the same partial refund was paid at the provider
+     * TWICE. The pre-channel over-refund guards stay exactly where they
+     * are — the honest money-safety ceiling the V230 return edge accepts
+     * verbatim.</p>
+     */
+    public record StableRefundScope(String kind, UUID operationId) {
+
+        /** V230's return edge: the key carries the return's own amount. */
+        public static StableRefundScope forReturn(UUID returnId) {
+            return new StableRefundScope("return", returnId);
+        }
+
+        /** Row 35's dispute twin: the key freezes the operation, amount-less. */
+        public static StableRefundScope forDispute(UUID disputeId) {
+            return new StableRefundScope("dispute", disputeId);
+        }
+
+        String idempotencyKey(UUID paymentId, Long amountCents) {
+            if ("return".equals(kind)) {
+                return returnScopedRefundIdempotencyKey(paymentId, operationId, amountCents);
+            }
+            return disputeScopedRefundIdempotencyKey(paymentId, operationId);
+        }
+    }
+
+    /**
      * The V230 return-scoped refund edge (the review's Major finding): a
      * completing RETURN passes its own id as the idempotency key's STABLE
      * scope. The state-derived key (payment + refunded-so-far + amount)
@@ -745,17 +793,138 @@ public class PaymentsService implements PaymentsSpi {
      * between a rollback and its retry — the retry then derives a NEW key
      * and the PSP refunds the same return twice. The return-scoped key is
      * stable across that window: one return, one remote refund, replayed
-     * safely on retry. The dispute twin and the full-refund path keep the
-     * state-derived key (null scope) — their own scopes are single-shot.
+     * safely on retry. The full-refund path keeps the state-derived key
+     * (null scope) — its own scope is single-shot.
      */
     @PreAuthorize("hasRole('ADMIN')")
     @Retry(name = "paymentProcessing")
     public RefundedPayment refundPayment(UUID paymentId, @Min(1) Long amountCents,
-                                         UUID idempotencyScope) {
+                                         StableRefundScope idempotencyScope) {
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found: " + paymentId));
         PaymentIntent intent = paymentIntentRepository.findById(payment.getPaymentIntentId())
                 .orElseThrow(() -> new ResourceNotFoundException("Payment intent not found: " + payment.getPaymentIntentId()));
+
+        // Review round 1 (the payments trio): a dispute-scoped refund rides
+        // the durable operation journal — born in its own REQUIRES_NEW
+        // transaction at the FIRST submission, so it survives the resolve
+        // transaction's rollback window that is exactly where the remote
+        // refund executed. Three guards, one record:
+        //   * the amount freeze — the operation's amount is the FIRST
+        //     VALID submission's amount forever (review round 2: the cap
+        //     validates the request BEFORE the record is created, so an
+        //     over-cap first submission poisons nothing); a re-approval
+        //     carrying a different amount is rejected BEFORE the provider
+        //     call (the amount-less dispute key plus different params is
+        //     a request Stripe's idempotency contract rejects outright,
+        //     leaving the retry forever unable to complete);
+        //   * the executed-match — the operation's own EXECUTED record
+        //     (the provider's success answer for THIS operation, with the
+        //     remote refund's identity) is the ONLY execution proof
+        //     (review round 2: the books' cumulative arithmetic can be
+        //     satisfied by an INDEPENDENT refund while this operation
+        //     never sent): the retry returns the reconciled state instead
+        //     of re-applying a cap that would reject the very refund that
+        //     executed (the dispute-stuck-open window) or re-submitting
+        //     an executed operation after the provider's 24-hour
+        //     idempotency-record expiry (the double-refund window);
+        //   * the freeze-reuse — an unexecuted retry re-submits with the
+        //     frozen amount, so the key's params never drift.
+        if (idempotencyScope != null && "dispute".equals(idempotencyScope.kind())) {
+            String operationKey = idempotencyScope.idempotencyKey(payment.getId(), amountCents);
+            // Review round 2, the freeze-order finding: read WITHOUT
+            // creating. The round-1 order ran the find-or-create FIRST, so
+            // an over-cap first request froze its INVALID amount in its own
+            // REQUIRES_NEW transaction (a transaction no caller rollback
+            // could undo); the cap check then rejected the request, and the
+            // admin's corrected amount hit the frozen-amount rejection —
+            // the dispute could never refund without manual record repair.
+            // The record is now created only AFTER the cap validates the
+            // request below.
+            PaymentRefundOperation operation = refundOperationJournal.findSubmitted(operationKey);
+            if (operation != null) {
+                if (!java.util.Objects.equals(operation.getAmountCents(), amountCents)) {
+                    throw new ConflictException("The dispute's refund operation froze its amount at the first"
+                            + " submission: " + operation.getAmountCents() + " cents (this request carries "
+                            + amountCents + "). The operation's idempotency key replays the SAME remote refund"
+                            + " — a different amount is a new decision to reject explicitly, never a"
+                            + " re-submission under the same key");
+                }
+                // Review round 2, the executed-proof finding: the operation's
+                // own EXECUTED record — written when the provider answered
+                // success for THIS operation's refund — is the only
+                // execution fact. The round-1 arithmetic (the books advanced
+                // past the submission baseline) can be satisfied by an
+                // INDEPENDENT refund of the same or a larger amount while
+                // this operation never sent; inferring execution from the
+                // cumulative total alone would close the dispute unexecuted.
+                if ("EXECUTED".equals(operation.getStatus())) {
+                    // CodeRabbit (2026-10-28, the c62bdab9 review round): the
+                    // books-sync gate before the reconciled answer. The
+                    // EXECUTED record survives the resolve rollback by
+                    // construction (REQUIRES_NEW), but the BOOKS do not — a
+                    // retry that lands in the window between the rollback and
+                    // the charge.refunded webhook would return the payment
+                    // with its pre-refund amounts, and the dispute would
+                    // resolve against numbers the provider already moved
+                    // past. The gate holds the answer until the cumulative
+                    // books reach the submission baseline plus the frozen
+                    // amount (the full-refund shape reads its terminal
+                    // REFUNDED state) — the same retryable ConflictException
+                    // every other guard in this file throws.
+                    boolean booksSynced = operation.getAmountCents() == null
+                            ? payment.getStatus() == PaymentStatus.REFUNDED
+                            : payment.getRefundedAmountCents()
+                                    >= operation.getBooksAtSubmitCents() + operation.getAmountCents();
+                    if (!booksSynced) {
+                        throw new ConflictException("The dispute's refund operation already EXECUTED at the"
+                                + " provider (remote refund " + operation.getRemoteRefundId() + " recorded)"
+                                + " but the local books await the charge.refunded sync — retry after the"
+                                + " webhook lands");
+                    }
+                    log.info("Dispute refund operation {} already EXECUTED (remote refund {} recorded)"
+                                    + " — returning the reconciled state without re-applying the cap or"
+                                    + " re-submitting",
+                            operationKey, operation.getRemoteRefundId());
+                    return new RefundedPayment(payment, intent);
+                }
+                // The freeze-reuse: an unexecuted retry re-submits with the
+                // frozen amount, so the key's params never drift.
+                amountCents = operation.getAmountCents();
+            }
+            // The cap validation runs BEFORE the freeze (review round 2):
+            // the effective amount — the frozen one on a retry, the
+            // request's own on a first submission — must be refundable
+            // before any record is created.
+            if (amountCents != null) {
+                if (payment.getRefundedAmountCents() + amountCents > payment.getAmountCents()) {
+                    throw new ConflictException("Refund amount exceeds payment amount");
+                }
+                if (intent.getRefundedAmountCents() + amountCents > intent.getAmountCents()) {
+                    throw new ConflictException("Refund amount exceeds intent amount");
+                }
+            }
+            if (operation == null) {
+                // The first VALID submission freezes NOW — after the cap, in
+                // its own REQUIRES_NEW transaction (the freeze survives the
+                // caller's rollback window by construction).
+                PaymentRefundOperation persisted = refundOperationJournal.ensureSubmitted(
+                        operationKey, payment.getId(), amountCents, payment.getRefundedAmountCents());
+                // A concurrent different-amount submission may have won the
+                // INSERT between the read and the create: the persisted row
+                // is the winner's truth, and a mismatch is the same explicit
+                // freeze rejection (the REQUIRES_NEW find-or-create is the
+                // atomicity point; this re-check closes the race's drift).
+                if (!java.util.Objects.equals(persisted.getAmountCents(), amountCents)) {
+                    throw new ConflictException("The dispute's refund operation froze its amount at the first"
+                            + " submission: " + persisted.getAmountCents() + " cents (this request carries "
+                            + amountCents + "). The operation's idempotency key replays the SAME remote refund"
+                            + " — a different amount is a new decision to reject explicitly, never a"
+                            + " re-submission under the same key");
+                }
+                amountCents = persisted.getAmountCents();
+            }
+        }
 
         long alreadyRefunded = payment.getRefundedAmountCents();
         if (amountCents != null) {
@@ -849,6 +1018,23 @@ public class PaymentsService implements PaymentsSpi {
     static String returnScopedRefundIdempotencyKey(UUID paymentId, UUID returnId, Long amountCents) {
         String amount = amountCents == null ? "full" : amountCents.toString();
         return "marketplace-refund-" + paymentId + "-return-" + returnId + "-" + amount;
+    }
+
+    /**
+     * Row 35 (agent findings 2026-10-26): the dispute refund's FROZEN
+     * operation key — one dispute, one remote refund, forever. The key
+     * carries NO amount and NO refunded-so-far state: the approved amount
+     * freezes at the first execution and every retry (the same decision
+     * or a re-approved one) replays the SAME remote refund through the
+     * PSP's idempotency contract — the executed refund is reused, never
+     * re-submitted under a new key. The rollback window that broke the
+     * state-derived key: refund X executes at the PSP inside a resolve
+     * transaction that rolls back, the charge.refunded webhook syncs the
+     * local books to X, and the retry's state-derived key would have
+     * carried the advanced cumulative leg and paid X a second time.
+     */
+    static String disputeScopedRefundIdempotencyKey(UUID paymentId, UUID disputeId) {
+        return "marketplace-refund-" + paymentId + "-dispute-" + disputeId;
     }
 
     /**
@@ -1067,13 +1253,13 @@ public class PaymentsService implements PaymentsSpi {
      * change (CodeRabbit #249 round 1).
      */
     private RemoteRefundOutcome refundThroughChannel(Payment payment, PaymentIntent intent, Long amountCents,
-                                                    UUID idempotencyScope) {
+                                                    StableRefundScope idempotencyScope) {
         PspChannel channel = pspChannel.getIfAvailable();
         if (channel == null || intent.getPspIntentId() == null) {
             return RemoteRefundOutcome.NO_CHANNEL;
         }
         String idempotencyKey = idempotencyScope != null
-                ? returnScopedRefundIdempotencyKey(payment.getId(), idempotencyScope, amountCents)
+                ? idempotencyScope.idempotencyKey(payment.getId(), amountCents)
                 : refundIdempotencyKey(
                         payment.getId(), payment.getRefundedAmountCents(), amountCents);
         PspChannel.RemoteRefund remote = channel.createRemoteRefund(
@@ -1090,6 +1276,13 @@ public class PaymentsService implements PaymentsSpi {
                     + "' — no local refund state changed");
         }
         applyRemoteRefund(payment, intent, remote.refundedTotalCents());
+        if (idempotencyScope != null && "dispute".equals(idempotencyScope.kind())) {
+            // The journal's EXECUTED record — the durable local identity of
+            // the remote refund, outliving the provider's 24-hour
+            // idempotency-record retention (its own transaction commits it
+            // even if this caller's transaction rolls back afterwards).
+            refundOperationJournal.markExecuted(idempotencyKey, remote.refundId());
+        }
         return RemoteRefundOutcome.SYNCED;
     }
 

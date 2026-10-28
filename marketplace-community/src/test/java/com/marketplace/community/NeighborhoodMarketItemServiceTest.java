@@ -1,6 +1,7 @@
 package com.marketplace.community;
 
 import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
@@ -123,6 +124,23 @@ class NeighborhoodMarketItemServiceTest {
                 MarketCategory.FURNITURE, "Title", MarketCondition.GOOD, 48000, "SAR", "Spot"))
                 .isInstanceOf(ResourceNotFoundException.class);
         verify(itemRepository, never()).save(any());
+    }
+
+    @Test
+    void createItem_offByTheOperationalLever_is409BeforeAnyOtherGate() {
+        // Row 13 (agent findings 2026-10-26): the market kill-switch guards
+        // listing creation — the board read already consulted the lever.
+        // The capability itself is off, so the port resolve, the membership
+        // rule and every later gate answer nothing. No repository is
+        // stubbed: nothing else may run.
+        when(featureGate.isEnabled("community.market.enabled", true)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.createItem(authorId, locationId,
+                MarketCategory.FURNITURE, "Title", MarketCondition.GOOD, 48000, "SAR", "Spot"))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("switched off");
+        org.mockito.Mockito.verifyNoInteractions(
+                geoLookupPort, membershipRepository, itemRepository);
     }
 
     @Test
