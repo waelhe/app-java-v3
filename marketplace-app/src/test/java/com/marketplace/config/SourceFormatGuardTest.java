@@ -99,8 +99,13 @@ class SourceFormatGuardTest {
     // statement, never a declaration tail, and stays unflagged.
     private static final Pattern OPENS_DECLARATION =
             Pattern.compile("^\\s*(?:@[^\\r\\n]*?\\s+)*(?:package|import)\\s+(?:(?:static|module)\\s+)?(?:[^;\\s]+(?:\\s*\\.\\s*[^;\\s]+)*\\s*)?$");
+    // The continuation accepts the import's optional keyword (static/module
+    // — Java 25 spelling, JLS 7.7) landing on the CONTINUATION line before
+    // the qualified name (CodeRabbit round on c531872e76): a bare
+    // two-token name ('List x') still never matches — the keyword slot is
+    // exactly one word and only before the name.
     private static final Pattern QUALIFIED_TAIL =
-            Pattern.compile("^(?:[^;\\s]+(?:\\s*\\.\\s*[^;\\s]+)*)?\\s*$");
+            Pattern.compile("^(?:(?:static|module)\\s+)?(?:[^;\\s]+(?:\\s*\\.\\s*[^;\\s]+)*)?\\s*$");
 
     @Test
     void packageAndImportStatementsAreAloneOnTheirLine() throws IOException {
@@ -344,6 +349,24 @@ class SourceFormatGuardTest {
                 .isFalse();
         assertThat(threeVerdict.packed(threeLines.strip("List; class Example {}")))
                 .as("the terminating line's tail shares the semicolon's line — flagged")
+                .isTrue();
+        // Round on c531872e76 — the import's optional keyword (static or
+        // module, Java 25 spelling) may land on the CONTINUATION line
+        // before the qualified name; both packed shapes must flag.
+        CodeOnlyStripper staticSplit = new CodeOnlyStripper();
+        DeclarationScan staticVerdict = new DeclarationScan();
+        staticVerdict.packed(staticSplit.strip("import/*"));
+        assertThat(staticVerdict.packed(staticSplit.strip("*/static java.util.Collections.emptyList; class Example {}")))
+                .as("a multi-line static import whose keyword lands on the continuation line is the failure shape")
+                .isTrue();
+        assertThat(staticVerdict.packed(staticSplit.strip("*/static java.util.Collections.emptyList;")))
+                .as("the honest multi-line static import completing alone on its line stays honest")
+                .isFalse();
+        CodeOnlyStripper moduleSplit = new CodeOnlyStripper();
+        DeclarationScan moduleVerdict = new DeclarationScan();
+        moduleVerdict.packed(moduleSplit.strip("import/*"));
+        assertThat(moduleVerdict.packed(moduleSplit.strip("*/module java.base; class Example {}")))
+                .as("a multi-line module import whose keyword lands on the continuation line is the failure shape")
                 .isTrue();
         // A compact-form import (complete at line end) followed by ordinary
         // code: fresh statements, never a declaration tail.
