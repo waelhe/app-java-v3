@@ -61,6 +61,7 @@ public class PaymentsService implements PaymentsSpi {
     private final SettlementEligibilityService settlementEligibilityService;
     private final ObjectProvider<PspChannel> pspChannel;
     private final CommissionProperties commissionProperties;
+    private final PaymentRefundOperationJournal refundOperationJournal;
 
     public PaymentsService(PaymentIntentRepository paymentIntentRepository,
                            PaymentRepository paymentRepository,
@@ -73,7 +74,8 @@ public class PaymentsService implements PaymentsSpi {
                            PaymentIntentSettlementService paymentIntentSettlementService,
                            SettlementEligibilityService settlementEligibilityService,
                            ObjectProvider<PspChannel> pspChannel,
-                           CommissionProperties commissionProperties) {
+                           CommissionProperties commissionProperties,
+                           PaymentRefundOperationJournal refundOperationJournal) {
         this.paymentIntentRepository = paymentIntentRepository;
         this.paymentRepository = paymentRepository;
         this.webhookEventRepository = webhookEventRepository;
@@ -86,6 +88,7 @@ public class PaymentsService implements PaymentsSpi {
         this.settlementEligibilityService = settlementEligibilityService;
         this.pspChannel = pspChannel;
         this.commissionProperties = commissionProperties;
+        this.refundOperationJournal = refundOperationJournal;
     }
 
     public boolean processWebhookEvent(String provider, String eventId, String eventType, String signature) {
@@ -802,6 +805,52 @@ public class PaymentsService implements PaymentsSpi {
         PaymentIntent intent = paymentIntentRepository.findById(payment.getPaymentIntentId())
                 .orElseThrow(() -> new ResourceNotFoundException("Payment intent not found: " + payment.getPaymentIntentId()));
 
+        // Review round 1 (the payments trio): a dispute-scoped refund rides
+        // the durable operation journal — born in its own REQUIRES_NEW
+        // transaction at the FIRST submission, so it survives the resolve
+        // transaction's rollback window that is exactly where the remote
+        // refund executed. Three guards, one record:
+        //   * the amount freeze — the operation's amount is the FIRST
+        //     submission's amount forever; a re-approval carrying a
+        //     different amount is rejected BEFORE the provider call (the
+        //     amount-less dispute key plus different params is a request
+        //     Stripe's idempotency contract rejects outright, leaving the
+        //     retry forever unable to complete);
+        //   * the executed-match — the webhook-synced books already
+        //     advanced past the operation's submission baseline by at
+        //     least its frozen amount: the refund IS in the remote
+        //     actual, so the retry returns the reconciled state instead
+        //     of re-applying a cap that would reject the very refund that
+        //     executed (the dispute-stuck-open window) or re-submitting
+        //     an executed operation after the provider's 24-hour
+        //     idempotency-record expiry (the double-refund window);
+        //   * the freeze-reuse — an unexecuted retry re-submits with the
+        //     frozen amount, so the key's params never drift.
+        if (idempotencyScope != null && "dispute".equals(idempotencyScope.kind())) {
+            String operationKey = idempotencyScope.idempotencyKey(payment.getId(), amountCents);
+            PaymentRefundOperation operation = refundOperationJournal.ensureSubmitted(
+                    operationKey, payment.getId(), amountCents, payment.getRefundedAmountCents());
+            if (operation.getAmountCents() != null && amountCents != null
+                    && !operation.getAmountCents().equals(amountCents)) {
+                throw new ConflictException("The dispute's refund operation froze its amount at the first"
+                        + " submission: " + operation.getAmountCents() + " cents (this request carries "
+                        + amountCents + "). The operation's idempotency key replays the SAME remote refund"
+                        + " — a different amount is a new decision to reject explicitly, never a"
+                        + " re-submission under the same key");
+            }
+            if (operation.getAmountCents() != null
+                    && payment.getRefundedAmountCents()
+                            >= operation.getBooksAtSubmitCents() + operation.getAmountCents()) {
+                log.info("Dispute refund operation {} already executed — the webhook-synced books ({})"
+                                + " advanced past its submission baseline ({} + {}); returning the"
+                                + " reconciled state without re-applying the cap or re-submitting",
+                        operationKey, payment.getRefundedAmountCents(),
+                        operation.getBooksAtSubmitCents(), operation.getAmountCents());
+                return new RefundedPayment(payment, intent);
+            }
+            amountCents = operation.getAmountCents();
+        }
+
         long alreadyRefunded = payment.getRefundedAmountCents();
         if (amountCents != null) {
             if (alreadyRefunded + amountCents > payment.getAmountCents()) {
@@ -1152,6 +1201,13 @@ public class PaymentsService implements PaymentsSpi {
                     + "' — no local refund state changed");
         }
         applyRemoteRefund(payment, intent, remote.refundedTotalCents());
+        if (idempotencyScope != null && "dispute".equals(idempotencyScope.kind())) {
+            // The journal's EXECUTED record — the durable local identity of
+            // the remote refund, outliving the provider's 24-hour
+            // idempotency-record retention (its own transaction commits it
+            // even if this caller's transaction rolls back afterwards).
+            refundOperationJournal.markExecuted(idempotencyKey, remote.refundId());
+        }
         return RemoteRefundOutcome.SYNCED;
     }
 

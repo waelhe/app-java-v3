@@ -48,6 +48,8 @@ class PaymentsServicePspTest {
     private final ObjectProvider<PspChannel> boundChannel = mock(ObjectProvider.class);
     @SuppressWarnings("unchecked")
     private final ObjectProvider<PspChannel> inertChannel = mock(ObjectProvider.class);
+    private final PaymentRefundOperationJournal refundOperationJournal =
+            mock(PaymentRefundOperationJournal.class);
     private final Authentication authentication = mock(Authentication.class);
 
     private PaymentsService service(ObjectProvider<PspChannel> channel) {
@@ -57,7 +59,7 @@ class PaymentsServicePspTest {
                 recorder,
                 new PaymentIntentSettlementService(intentRepository, paymentRepository, eventPublisher, recorder),
                 new SettlementEligibilityService(mock(com.marketplace.shared.api.LedgerReadPort.class), intentRepository, bookingParticipantProvider),
-                channel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)));
+                channel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)), refundOperationJournal);
     }
 
     private PaymentIntent ownedIntent() {

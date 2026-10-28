@@ -44,6 +44,9 @@ class PaymentsServiceTest {
             intentRepository, paymentRepository, eventPublisher, webhookEventRecorder);
     private final SettlementEligibilityService settlementEligibilityService = new SettlementEligibilityService(
             mock(com.marketplace.shared.api.LedgerReadPort.class), intentRepository, bookingParticipantProvider);
+    private final PaymentRefundOperationJournal refundOperationJournal =
+            mock(PaymentRefundOperationJournal.class);
+
     private final PaymentsService service = new PaymentsService(
             intentRepository,
             paymentRepository,
@@ -56,7 +59,8 @@ class PaymentsServiceTest {
             settlementService,
             settlementEligibilityService,
             pspChannel,
-            new CommissionProperties(java.math.BigDecimal.valueOf(0.10))
+            new CommissionProperties(java.math.BigDecimal.valueOf(0.10)),
+            refundOperationJournal
     );
 
     @Test
@@ -112,7 +116,8 @@ class PaymentsServiceTest {
                 settlementService,
                 settlementEligibilityService,
                 pspChannel,
-                new CommissionProperties(java.math.BigDecimal.valueOf(0.25)));
+                new CommissionProperties(java.math.BigDecimal.valueOf(0.25)),
+                refundOperationJournal);
 
         when(intentRepository.findByIdempotencyKey(null)).thenReturn(Optional.empty());
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
