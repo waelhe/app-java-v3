@@ -4,38 +4,58 @@ import com.google.genai.Client;
 import com.google.genai.types.HttpOptions;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.google.genai.embedding.GoogleGenAiEmbeddingConnectionDetails;
+import org.springframework.ai.model.google.genai.autoconfigure.embedding.GoogleGenAiEmbeddingConnectionProperties;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Review round 1 (the embedding call's HTTP ceiling): the house's own
  * connection details pin — a provisioned API key builds the Google GenAI
  * SDK client WITH the bounded HTTP layer (the delayed-endpoint ceiling
  * that releases the listener transaction's advisory lock and JDBC
- * connection), while the unprovisioned shape stays byte-equivalent to the
- * framework's own inert details.
+ * connection); a Vertex provision builds the bounded client for THAT
+ * mode; and the unprovisioned shape fails fast with the framework's own
+ * assertion, exactly as the framework auto-configuration it replaces
+ * would (review round 2: the empty-key "inert" path of round 1 called
+ * {@code builder.apiKey("").build()}, which the framework's Builder
+ * answers with the Vertex-mode project assertion — never a null-client
+ * details bean).
  */
 class BoundedEmbeddingConnectionAutoConfigurationTest {
 
+    private static GoogleGenAiEmbeddingConnectionProperties properties(String apiKey,
+                                                                       String projectId,
+                                                                       String location) {
+        GoogleGenAiEmbeddingConnectionProperties properties =
+                new GoogleGenAiEmbeddingConnectionProperties();
+        properties.setApiKey(apiKey);
+        properties.setProjectId(projectId);
+        properties.setLocation(location);
+        return properties;
+    }
+
     @Test
-    void theBoundedHttpLayerCarriesTheSdkRequestCeiling() {
+    void theBoundedHttpLayerCarriesTheSdkRequestCeilingInMillis() {
         // HttpOptions.timeout is the Google GenAI SDK's own request
-        // ceiling, in SECONDS (ApiClient's timeoutInSeconds and
-        // X-Server-Timeout header carry the unit) — the transaction
-        // timeout can never interrupt an in-flight HTTP request, so this
-        // is the only ceiling that frees the advisory lock and the JDBC
-        // connection the listener transaction holds.
+        // ceiling, in MILLISECONDS — ApiClient maps it to OkHttp's
+        // whole-call callTimeout(Duration.ofMillis(...)); the seconds
+        // conversion exists only for the X-Server-Timeout request header.
+        // The transaction timeout can never interrupt an in-flight HTTP
+        // request, so this is the only ceiling that frees the advisory
+        // lock and the JDBC connection the listener transaction holds.
         HttpOptions bounded = BoundedEmbeddingConnectionAutoConfiguration.boundedHttpOptions();
         assertThat(bounded.timeout())
-                .as("the embedding request ceiling, in seconds")
-                .contains(BoundedEmbeddingConnectionAutoConfiguration.EMBEDDING_HTTP_TIMEOUT_SECONDS);
+                .as("the embedding request ceiling, in milliseconds (60s as a whole-call bound)")
+                .contains(BoundedEmbeddingConnectionAutoConfiguration.EMBEDDING_HTTP_TIMEOUT_MILLIS);
     }
 
     @Test
     void aProvisionedKeyBuildsTheClientWithTheBoundedHttpLayer() {
         GoogleGenAiEmbeddingConnectionDetails details =
                 new BoundedEmbeddingConnectionAutoConfiguration()
-                        .googleGenAiEmbeddingConnectionDetails("test-embedding-key");
+                        .googleGenAiEmbeddingConnectionDetails(
+                                properties("test-embedding-key", null, null));
 
         Client client = details.getGenAiClient();
         // the pre-built SDK client (built with boundedHttpOptions() in the
@@ -45,17 +65,36 @@ class BoundedEmbeddingConnectionAutoConfigurationTest {
     }
 
     @Test
-    void anUnprovisionedKeyBuildsThePlainInertDetails() {
-        GoogleGenAiEmbeddingConnectionDetails blank =
+    void aVertexProvisionBuildsTheBoundedClientForThatMode() {
+        // Review round 2: an empty api-key is VERTEX mode, never an inert
+        // state — a provisioned project honors it through the bounded
+        // client instead of being silently dropped by a Gemini-only bean.
+        GoogleGenAiEmbeddingConnectionDetails details =
                 new BoundedEmbeddingConnectionAutoConfiguration()
-                        .googleGenAiEmbeddingConnectionDetails("");
-        assertThat(blank.getGenAiClient())
-                .as("no key provisioned: no client is built (the framework's own inert shape)")
-                .isNull();
+                        .googleGenAiEmbeddingConnectionDetails(
+                                properties("", "house-project", "europe-west1"));
 
-        GoogleGenAiEmbeddingConnectionDetails nullKey =
-                new BoundedEmbeddingConnectionAutoConfiguration()
-                        .googleGenAiEmbeddingConnectionDetails(null);
-        assertThat(nullKey.getGenAiClient()).isNull();
+        assertThat(details.getGenAiClient())
+                .as("a Vertex provision builds the bounded SDK client for that mode")
+                .isNotNull();
+    }
+
+    @Test
+    void anUnprovisionedContextFailsFastExactlyLikeTheFrameworkItself() {
+        // Review round 2: neither key nor project — the framework's own
+        // auto-configuration answers this shape with the project-id
+        // assertion (fail-fast, the house's D6 key philosophy); the house
+        // bean that pre-empts it must answer the SAME way, never with a
+        // silent inert bean.
+        BoundedEmbeddingConnectionAutoConfiguration configuration =
+                new BoundedEmbeddingConnectionAutoConfiguration();
+        assertThatThrownBy(() -> configuration.googleGenAiEmbeddingConnectionDetails(
+                properties("", null, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("project-id");
+        assertThatThrownBy(() -> configuration.googleGenAiEmbeddingConnectionDetails(
+                properties(null, null, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("project-id");
     }
 }

@@ -33,12 +33,16 @@ import static org.mockito.Mockito.when;
  *       same key, which the provider's idempotency contract rejects
  *       outright, leaving the retry forever unable to complete.</li>
  *   <li><b>The executed-match</b> — after the rollback-then-webhook window
- *       (the remote refund executed; the charge.refunded event synced the
- *       local books past the operation's submission baseline), the retry
- *       returns the reconciled state: no cap re-application (the very cap
- *       that would reject the executed refund as an over-refund), no
- *       re-submission (the double-refund window after the provider's
- *       24-hour idempotency-record expiry).</li>
+ *       (the remote refund executed; the resolve transaction rolled
+ *       back), the retry returns the reconciled state: no cap re-application
+ *       (the very cap that would reject the executed refund as an
+ *       over-refund), no re-submission (the double-refund window after the
+ *       provider's 24-hour idempotency-record expiry). Review round 2: the
+ *       ONLY execution proof is the operation's own EXECUTED record (the
+ *       provider's success answer for THIS operation, with the remote
+ *       refund's identity) — never the books' cumulative arithmetic, which
+ *       an INDEPENDENT refund of the same or a larger amount satisfies
+ *       just as well while this operation never sent.</li>
  *   <li><b>The first submission</b> — the journal row is born with the
  *       amount and the books baseline, and the provider's success answer
  *       records the remote refund's identity (EXECUTED) — the durable
@@ -132,13 +136,15 @@ class PaymentsServiceDisputeRefundJournalTest {
     @Test
     void theExecutedOperationReturnsTheReconciledState_NoCapReApplication_NoResubmission() {
         UUID disputeId = UUID.randomUUID();
-        // the rollback-then-webhook window: the refund executed remotely,
+        // the rollback-then-webhook window: the refund executed remotely
+        // (the journal's EXECUTED record is the proof — review round 2),
         // the charge.refunded webhook synced the books to 3000, the dispute
         // is still OPEN — the pre-fix cap check (3000 + 3000 > 5000) would
         // reject the very refund that already executed
         Payment payment = collectedPayment(3000L);
         PaymentRefundOperation executed =
                 new PaymentRefundOperation(disputeKey(payment.getId(), disputeId), payment.getId(), 3000L, 0L);
+        executed.markExecuted("re_dispute_prior");
         when(journalRepository.findById(disputeKey(payment.getId(), disputeId)))
                 .thenReturn(Optional.of(executed));
 
@@ -149,8 +155,76 @@ class PaymentsServiceDisputeRefundJournalTest {
         assertThat(refunded.payment().getRefundedAmountCents()).isEqualTo(3000L);
         verify(pspChannel, never()).createRemoteRefund(anyString(), any(), anyString());
         // and the journal is not re-marked either — the operation is already
-        // answered by the books
+        // answered by its EXECUTED record
         verify(journalRepository, never()).save(any(PaymentRefundOperation.class));
+    }
+
+    @Test
+    void aSubmittedOperationIsNotExecutedByTheBooksAlone() {
+        // Review round 2, the executed-proof finding: a SUBMITTED operation
+        // (its submission never reached a provider success) whose books
+        // baseline was passed by an INDEPENDENT refund of the same amount
+        // must NOT be treated as executed — the round-1 arithmetic would
+        // return a successful outcome here and close the dispute without
+        // its refund ever executing. The honest answer is the loud cap
+        // conflict: the frozen 3000 against books already at 3000 cannot
+        // be re-applied, and no re-submission happens.
+        UUID disputeId = UUID.randomUUID();
+        Payment payment = collectedPayment(3000L);
+        PaymentRefundOperation submitted =
+                new PaymentRefundOperation(disputeKey(payment.getId(), disputeId), payment.getId(), 3000L, 0L);
+        when(journalRepository.findById(disputeKey(payment.getId(), disputeId)))
+                .thenReturn(Optional.of(submitted));
+
+        assertThatThrownBy(() -> service().refundPayment(payment.getId(), 3000L,
+                PaymentsService.StableRefundScope.forDispute(disputeId)))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("exceeds");
+        verify(pspChannel, never()).createRemoteRefund(anyString(), any(), anyString());
+    }
+
+    @Test
+    void anOverCapFirstRequestFreezesNothing_TheCorrectedAmountStillCan() {
+        // Review round 2, the freeze-order finding: the round-1 order froze
+        // whatever the FIRST request carried — including an over-cap amount
+        // — in its own REQUIRES_NEW transaction before the cap check
+        // rejected it; the admin's corrected amount then hit the frozen-
+        // amount rejection and the dispute could never refund. The freeze
+        // now lands only on the first VALID submission.
+        UUID disputeId = UUID.randomUUID();
+        Payment payment = collectedPayment(0L);
+        String key = disputeKey(payment.getId(), disputeId);
+        java.util.Map<String, PaymentRefundOperation> store = new java.util.HashMap<>();
+        when(journalRepository.findById(anyString()))
+                .thenAnswer(inv -> Optional.ofNullable(store.get(inv.getArgument(0, String.class))));
+        when(journalRepository.save(any(PaymentRefundOperation.class)))
+                .thenAnswer(inv -> {
+                    PaymentRefundOperation operation = inv.getArgument(0);
+                    store.put(operation.getIdempotencyKey(), operation);
+                    return operation;
+                });
+
+        // the over-cap first submission: rejected by the cap, and NOTHING
+        // is journaled — the record stays clean for the corrected decision
+        assertThatThrownBy(() -> service().refundPayment(payment.getId(), 6000L,
+                PaymentsService.StableRefundScope.forDispute(disputeId)))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("exceeds");
+        assertThat(store).as("the over-cap request froze nothing").isEmpty();
+
+        // the corrected amount proceeds on the SAME dispute: the first
+        // VALID submission freezes, the provider answers, the operation is
+        // recorded EXECUTED with the remote identity
+        when(pspChannel.createRemoteRefund(eq("pi_remote_dispute"), eq(3000L), eq(key)))
+                .thenReturn(new PspChannel.RemoteRefund("re_dispute_fix", "succeeded", 3000L));
+        PaymentsService.RefundedPayment refunded = service().refundPayment(payment.getId(), 3000L,
+                PaymentsService.StableRefundScope.forDispute(disputeId));
+        assertThat(refunded.payment().getRefundedAmountCents()).isEqualTo(3000L);
+        PaymentRefundOperation operation = store.get(key);
+        assertThat(operation).isNotNull();
+        assertThat(operation.getAmountCents()).isEqualTo(3000L);
+        assertThat(operation.getStatus()).isEqualTo("EXECUTED");
+        assertThat(operation.getRemoteRefundId()).isEqualTo("re_dispute_fix");
     }
 
     @Test

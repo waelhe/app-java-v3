@@ -125,7 +125,7 @@ public class ProviderProfileContentPurgeAdapter implements AuthoredContentPurgeP
         // (duration, price, position) stay so the page's structure
         // survives the erasure. Base table and Envers mirror both.
         int serviceTitles = jdbcTemplate.update(
-                "UPDATE provider_services s SET title = ?, description = NULL, version = version + 1 "
+                "UPDATE provider_services s SET title = ?, description = NULL, version = s.version + 1 "
                         + "FROM provider_profiles p "
                         + "WHERE s.provider_id = p.id AND p.user_id = ? "
                         + "AND (s.title <> ? OR s.description IS NOT NULL)",

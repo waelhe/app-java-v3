@@ -92,7 +92,11 @@ class ProviderProfileContentPurgeAdapterTest {
         verify(jdbcTemplate).update(
                 org.mockito.ArgumentMatchers.argThat((String sql) ->
                         sql.startsWith("UPDATE provider_services s SET title = ?, description = NULL")
-                                && sql.contains("version = version + 1")
+                                // Review round 2: the increment is qualified s.version — BOTH
+                                // joined tables carry a version column, so the unqualified
+                                // reference is ambiguous in PostgreSQL and the statement errors
+                                // at runtime (column "version" does not exist / is ambiguous).
+                                && sql.contains("version = s.version + 1")
                                 && sql.contains("FROM provider_profiles p")
                                 && sql.contains("s.provider_id = p.id")
                                 && sql.contains("p.user_id = ?")

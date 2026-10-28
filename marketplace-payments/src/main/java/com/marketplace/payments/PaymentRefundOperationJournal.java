@@ -33,6 +33,17 @@ public class PaymentRefundOperationJournal {
     }
 
     /**
+     * The read-only lookup of an already-submitted operation — no creation,
+     * no independent transaction (review round 2, the freeze-order finding):
+     * the caller validates the refund request (the cap) BEFORE the first
+     * VALID submission freezes anything, so an over-cap first request must
+     * never reach the find-or-create path and poison the record.
+     */
+    public PaymentRefundOperation findSubmitted(String idempotencyKey) {
+        return repository.findById(idempotencyKey).orElse(null);
+    }
+
+    /**
      * The submission freeze: returns the operation's PERSISTED record —
      * the first submission's row, whatever later submissions carry. The
      * first caller's amount and books-snapshot are the frozen truth every

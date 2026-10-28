@@ -95,6 +95,20 @@ class AccessTokenSubjectTest {
     }
 
     @Test
+    fun aNonStringSubjectClaimIsAnUnknownPrincipal() {
+        // Review round 2: Moshi's nextString() coerces a JSON NUMBER to
+        // text, so `{"sub":123}` would answer "123" — a matchable identity
+        // the token never carried. The claim must be a STRING; anything
+        // else is an unknown principal (fail-closed, the same CWE-488
+        // seam as the blank-sub rule above).
+        assertNull(AccessTokenSubject.subjectOf(jwt("{\"sub\":123}")))
+        assertNull(AccessTokenSubject.subjectOf(jwt("{\"sub\":123.45}")))
+        assertNull(AccessTokenSubject.subjectOf(jwt("{\"sub\":true}")))
+        assertNull(AccessTokenSubject.subjectOf(jwt("{\"sub\":{\"id\":7}}")))
+        assertNull(AccessTokenSubject.subjectOf(jwt("{\"sub\":[\"a\",\"b\"]}")))
+    }
+
+    @Test
     fun aNonObjectPayloadYieldsNoPrincipal() {
         assertNull(AccessTokenSubject.subjectOf(jwt("[1,2,3]")))
         assertNull(AccessTokenSubject.subjectOf(jwt("\"just a string\"")))

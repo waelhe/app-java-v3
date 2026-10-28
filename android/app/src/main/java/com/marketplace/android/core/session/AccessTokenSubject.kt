@@ -68,6 +68,15 @@ object AccessTokenSubject {
                 reader.beginObject()
                 while (reader.hasNext()) {
                     if (reader.nextName() == "sub") {
+                        // Review round 2 (Minor — Security & Privacy):
+                        // Moshi's nextString() happily coerces a JSON
+                        // NUMBER to text ({"sub":123} would answer "123"),
+                        // but the contract reads a STRING `sub` claim —
+                        // anything else is an unknown principal, never an
+                        // identity a snapshot could match against.
+                        if (reader.peek() != JsonReader.Token.STRING) {
+                            return null
+                        }
                         // An absent identity and a blank one are the same
                         // unknown principal: `{"sub":""}` must answer null
                         // (the file's own contract — the fail-closed basis
