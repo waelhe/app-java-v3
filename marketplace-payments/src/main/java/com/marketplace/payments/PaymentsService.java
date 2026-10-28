@@ -7,6 +7,7 @@ import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.CacheInvalidationRequested;
+import com.marketplace.shared.api.Currencies;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.PaymentSummary;
 import com.marketplace.shared.api.ConflictException;
@@ -563,6 +564,12 @@ public class PaymentsService implements PaymentsSpi {
     public PaymentIntent createOrderIntent(UUID orderId, UUID consumerId,
                                            long amountCents, String currency) {
         String idempotencyKey = "order-" + orderId;
+        // The part-1 review note: normalize ONCE, before the lookup — a
+        // retry arriving as "sar" (or null) must meet the stored "SAR" as
+        // the SAME payable, never a 409; the entity factory's own
+        // normalization/default is the authority, applied here so the
+        // replay comparison and the creation both see the one form.
+        String normalizedCurrency = Currencies.normalizeOrDefault(currency, Currencies.DEFAULT_CODE);
         var existing = paymentIntentRepository.findByIdempotencyKey(idempotencyKey);
         if (existing.isPresent()) {
             PaymentIntent found = existing.get();
@@ -580,7 +587,7 @@ public class PaymentsService implements PaymentsSpi {
             if (!PaymentIntent.ORIGIN_ORDER.equals(found.getOrigin())
                     || !orderId.equals(found.getOrderId())
                     || found.getAmountCents() == null || found.getAmountCents() != amountCents
-                    || found.getCurrency() == null || !found.getCurrency().equals(currency)) {
+                    || found.getCurrency() == null || !found.getCurrency().equals(normalizedCurrency)) {
                 throw new ConflictException("Idempotency key '" + idempotencyKey
                         + "' is held by a non-matching payment intent (" + found.getId()
                         + ", origin=" + found.getOrigin() + ") — the order's payable"
@@ -592,7 +599,7 @@ public class PaymentsService implements PaymentsSpi {
             throw new ConflictException("An order intent requires a positive amount: " + amountCents + " cents");
         }
         PaymentIntent intent = PaymentIntent.createForOrder(orderId, consumerId,
-                amountCents, currency, idempotencyKey, commissionProperties.rate());
+                amountCents, normalizedCurrency, idempotencyKey, commissionProperties.rate());
         PaymentIntent saved = paymentIntentRepository.save(intent);
         eventPublisher.publishEvent(new PaymentStateChangedEvent(saved.getId(), "INITIATED"));
         return saved;
@@ -631,6 +638,13 @@ public class PaymentsService implements PaymentsSpi {
     public PaymentIntent createLoanIntent(UUID loanId, UUID borrowerId,
                                           long amountCents, String currency) {
         String idempotencyKey = "loan-" + loanId;
+        // The part-1 review note (the order path's twin): normalize ONCE,
+        // before the lookup — a retry arriving as "sar" (or null) must meet
+        // the stored "SAR" as the SAME payable, never a 409; the entity
+        // factory's own normalization/default is the authority, applied
+        // here so the replay comparison and the creation both see the one
+        // form.
+        String normalizedCurrency = Currencies.normalizeOrDefault(currency, Currencies.DEFAULT_CODE);
         var existing = paymentIntentRepository.findByIdempotencyKey(idempotencyKey);
         if (existing.isPresent()) {
             PaymentIntent found = existing.get();
@@ -647,7 +661,7 @@ public class PaymentsService implements PaymentsSpi {
             if (!PaymentIntent.ORIGIN_LOAN.equals(found.getOrigin())
                     || !loanId.equals(found.getLoanId())
                     || found.getAmountCents() == null || found.getAmountCents() != amountCents
-                    || found.getCurrency() == null || !found.getCurrency().equals(currency)) {
+                    || found.getCurrency() == null || !found.getCurrency().equals(normalizedCurrency)) {
                 throw new ConflictException("Idempotency key '" + idempotencyKey
                         + "' is held by a non-matching payment intent (" + found.getId()
                         + ", origin=" + found.getOrigin() + ") — the loan's payable"
@@ -659,7 +673,7 @@ public class PaymentsService implements PaymentsSpi {
             throw new ConflictException("A loan intent requires a positive amount: " + amountCents + " cents");
         }
         PaymentIntent intent = PaymentIntent.createForLoan(loanId, borrowerId,
-                amountCents, currency, idempotencyKey, commissionProperties.rate());
+                amountCents, normalizedCurrency, idempotencyKey, commissionProperties.rate());
         PaymentIntent saved = paymentIntentRepository.save(intent);
         eventPublisher.publishEvent(new PaymentStateChangedEvent(saved.getId(), "INITIATED"));
         return saved;

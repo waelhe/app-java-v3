@@ -372,11 +372,14 @@ public class ReviewsService {
         // ordinary reads applies BEFORE the mutation: a non-PUBLISHED
         // review (PENDING_REVIEW or HIDDEN_BY_MODERATOR) is restricted to
         // its author and administrators, so the provider's write-and-read
-        // surface refuses it (the state machine's honest 409, the
-        // queueForReview/approve house shape — zero mutation on refusal).
+        // surface refuses it — zero mutation on refusal. The part-1 review
+        // note closes the leak the 409 carried in its own message: the
+        // read path answers 404 to non-authors for BOTH states, and the
+        // write surface must be indistinguishable from it — the honest
+        // 404 with the SAME generic shape getById itself answers, never
+        // the moderation state in the message.
         if (review.getModerationStatus() != ReviewModerationStatus.PUBLISHED) {
-            throw new ConflictException("Only a published review accepts a provider reply — current status: "
-                    + review.getModerationStatus());
+            throw new ResourceNotFoundException("Review not found: " + id);
         }
         review.reply(reply);
         eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("reviews"), id));

@@ -3,9 +3,7 @@ package com.marketplace.reviews.spi;
 import com.marketplace.reviews.ReviewResponse;
 import com.marketplace.reviews.ReviewsViewService;
 import com.marketplace.shared.api.PagedRequest;
-import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.PublishedReviewView;
-import com.marketplace.shared.api.PublishedReviewsPort;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -16,7 +14,6 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;

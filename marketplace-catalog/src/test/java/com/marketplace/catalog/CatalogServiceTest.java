@@ -977,15 +977,19 @@ class CatalogServiceTest {
      * scientific-notation price filter ("1e+100000000" — eleven characters)
      * must answer the honest 400 BEFORE movePointRight(2) ever materializes
      * the ~100-million-digit integer in shared heap; the boundary value
-     * itself maps exactly.
+     * itself maps exactly. The ceiling now lives in SearchCriteria's own
+     * constructor (the part-1 review note: the CONTRACT owns the bound,
+     * before any search path or early return), so the bomb's construction
+     * itself sits inside the asserted lambda — the 400 is the record's own.
      */
     @Test
     void searchPriceFilters_areBoundedBeforeTheScaleExpandsAnything() {
-        var bomb = new com.marketplace.shared.api.SearchCriteria(
-                "gardn", "stay", new java.math.BigDecimal("1e+100000000"),
-                null, null, null, 4);
-        org.assertj.core.api.Assertions.assertThatThrownBy(
-                        () -> catalogService.searchFullTextRestricted(bomb, PROVIDER_IDS, PagedRequest.of(0, 10)))
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> {
+                    var bomb = new com.marketplace.shared.api.SearchCriteria(
+                            "gardn", "stay", new java.math.BigDecimal("1e+100000000"),
+                            null, null, null, 4);
+                    catalogService.searchFullTextRestricted(bomb, PROVIDER_IDS, PagedRequest.of(0, 10));
+                })
                 .isInstanceOf(com.marketplace.shared.api.BadRequestException.class);
 
         // (The negative case needs no service-level guard: SearchCriteria's

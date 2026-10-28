@@ -107,6 +107,42 @@ class OrderIntentContractTest {
     }
 
     @Test
+    void createOrderIntent_normalizesTheCurrencyBeforeTheReplayComparison() {
+        // The part-1 review note: the stored intent carries the factory's own
+        // normalized "SAR" — a retry arriving as "sar" (or null, the house
+        // default) must meet it as the SAME payable, never a 409.
+        UUID orderId = UUID.randomUUID();
+        UUID buyer = UUID.randomUUID();
+        PaymentIntent existing = PaymentIntent.createForOrder(orderId, buyer, 17400L, "SAR", "order-" + orderId, null);
+        when(intentRepository.findByIdempotencyKey("order-" + orderId)).thenReturn(Optional.of(existing));
+
+        PaymentIntent replayedLowercase = service.createOrderIntent(orderId, buyer, 17400L, "sar");
+        PaymentIntent replayedNull = service.createOrderIntent(orderId, buyer, 17400L, null);
+
+        assertThat(replayedLowercase).isSameAs(existing);
+        assertThat(replayedNull).isSameAs(existing);
+        verify(intentRepository, never()).save(any());
+    }
+
+    @Test
+    void createLoanIntent_normalizesTheCurrencyBeforeTheReplayComparison() {
+        // The order path's twin (the same review note): the deterministic
+        // loan key replays the SAME intent for the normalized form of the
+        // same currency — "sar" and null both meet the stored "SAR".
+        UUID loanId = UUID.randomUUID();
+        UUID borrower = UUID.randomUUID();
+        PaymentIntent existing = PaymentIntent.createForLoan(loanId, borrower, 17400L, "SAR", "loan-" + loanId, null);
+        when(intentRepository.findByIdempotencyKey("loan-" + loanId)).thenReturn(Optional.of(existing));
+
+        PaymentIntent replayedLowercase = service.createLoanIntent(loanId, borrower, 17400L, "sar");
+        PaymentIntent replayedNull = service.createLoanIntent(loanId, borrower, 17400L, null);
+
+        assertThat(replayedLowercase).isSameAs(existing);
+        assertThat(replayedNull).isSameAs(existing);
+        verify(intentRepository, never()).save(any());
+    }
+
+    @Test
     void autoRefundByOrder_cancelsTheUnpaidIntent() {
         UUID orderId = UUID.randomUUID();
         PaymentIntent unpaid = PaymentIntent.createForOrder(orderId, UUID.randomUUID(),
