@@ -70,9 +70,11 @@ class PaymentsServiceDisputeRefundJournalTest {
     @Mock
     private PspChannel pspChannel;
 
-    private final PaymentRefundOperationJournal journal = new PaymentRefundOperationJournal(journalRepository);
-
     private PaymentsService service() {
+        // The journal is built HERE, never in a field initializer: Mockito
+        // injects @Mock fields only after field initializers ran, so a
+        // field-built journal captured a null repository (CI round 2,
+        // measured 2026-10-28 — the NPE at ensureSubmitted line 45).
         WebhookEventRecorder recorder = new WebhookEventRecorder(webhookEventRepository);
         return new PaymentsService(
                 intentRepository, paymentRepository, webhookEventRepository, eventPublisher,
@@ -80,7 +82,8 @@ class PaymentsServiceDisputeRefundJournalTest {
                 new PaymentIntentSettlementService(intentRepository, paymentRepository, eventPublisher, recorder),
                 new SettlementEligibilityService(mock(com.marketplace.shared.api.LedgerReadPort.class),
                         intentRepository, bookingParticipantProvider),
-                boundChannel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)), journal);
+                boundChannel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)),
+                new PaymentRefundOperationJournal(journalRepository));
     }
 
     /** A collected payment of 5000 with the given cumulative refunded total. */
