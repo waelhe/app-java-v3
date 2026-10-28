@@ -859,6 +859,29 @@ public class PaymentsService implements PaymentsSpi {
                 // this operation never sent; inferring execution from the
                 // cumulative total alone would close the dispute unexecuted.
                 if ("EXECUTED".equals(operation.getStatus())) {
+                    // CodeRabbit (2026-10-28, the c62bdab9 review round): the
+                    // books-sync gate before the reconciled answer. The
+                    // EXECUTED record survives the resolve rollback by
+                    // construction (REQUIRES_NEW), but the BOOKS do not — a
+                    // retry that lands in the window between the rollback and
+                    // the charge.refunded webhook would return the payment
+                    // with its pre-refund amounts, and the dispute would
+                    // resolve against numbers the provider already moved
+                    // past. The gate holds the answer until the cumulative
+                    // books reach the submission baseline plus the frozen
+                    // amount (the full-refund shape reads its terminal
+                    // REFUNDED state) — the same retryable ConflictException
+                    // every other guard in this file throws.
+                    boolean booksSynced = operation.getAmountCents() == null
+                            ? payment.getStatus() == PaymentStatus.REFUNDED
+                            : payment.getRefundedAmountCents()
+                                    >= operation.getBooksAtSubmitCents() + operation.getAmountCents();
+                    if (!booksSynced) {
+                        throw new ConflictException("The dispute's refund operation already EXECUTED at the"
+                                + " provider (remote refund " + operation.getRemoteRefundId() + " recorded)"
+                                + " but the local books await the charge.refunded sync — retry after the"
+                                + " webhook lands");
+                    }
                     log.info("Dispute refund operation {} already EXECUTED (remote refund {} recorded)"
                                     + " — returning the reconciled state without re-applying the cap or"
                                     + " re-submitting",

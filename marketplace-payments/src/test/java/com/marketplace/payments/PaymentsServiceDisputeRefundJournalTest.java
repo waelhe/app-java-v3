@@ -134,6 +134,35 @@ class PaymentsServiceDisputeRefundJournalTest {
     }
 
     @Test
+    void theExecutedOperationRejectsThePreSyncRetry_TheBooksStillCarryTheRolledBackState() {
+        // CodeRabbit (2026-10-28, the c62bdab9 review round): the rollback-
+        // then-retry window BEFORE the webhook. The EXECUTED record survived
+        // the resolve rollback (REQUIRES_NEW by construction), the books did
+        // not — returning them would hand the caller the pre-refund amounts
+        // and the dispute would resolve against numbers the provider already
+        // moved past. The books-sync gate holds the answer with the same
+        // retryable ConflictException every other guard throws.
+        UUID disputeId = UUID.randomUUID();
+        Payment payment = collectedPayment(0L);
+        PaymentRefundOperation executed =
+                new PaymentRefundOperation(disputeKey(payment.getId(), disputeId), payment.getId(), 3000L, 0L);
+        executed.markExecuted("re_dispute_prior");
+        when(journalRepository.findById(disputeKey(payment.getId(), disputeId)))
+                .thenReturn(Optional.of(executed));
+
+        assertThatThrownBy(() -> service().refundPayment(payment.getId(), 3000L,
+                PaymentsService.StableRefundScope.forDispute(disputeId)))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("charge.refunded")
+                .hasMessageContaining("re_dispute_prior");
+
+        // nothing is re-submitted and the journal is untouched — the
+        // operation is already answered by its EXECUTED record
+        verify(pspChannel, never()).createRemoteRefund(anyString(), any(), anyString());
+        verify(journalRepository, never()).save(any(PaymentRefundOperation.class));
+    }
+
+    @Test
     void theExecutedOperationReturnsTheReconciledState_NoCapReApplication_NoResubmission() {
         UUID disputeId = UUID.randomUUID();
         // the rollback-then-webhook window: the refund executed remotely

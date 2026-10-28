@@ -255,7 +255,16 @@ INSERT INTO neighborhood_posts (id, author_id, location_id, category, title, bod
     ('3e3e3e3e-3e3e-43e3-83e3-3e3e3e3e0012', '33333333-3333-4333-8333-333333330003', '11111111-1111-4111-8111-111111111106', 'GENERAL', 'افتتاح مقرنا الجديد في الهامة — أهلاً بكم', 'يسر مكتب قدسيا للعقارات إعلان انتقاله إلى مقره الجديد في الهامة قرب التقاطع الرئيسي. الخدمات كما هي: إيجار مفروش، إدارة أملاك، ووساطة البيع. أهلاً بزواركم.', 'VISIBLE', FALSE, 0, 'seed', '2026-09-26 21:00:46+00', 'seed', '2026-09-26 21:00:46+00'),
     ('3e3e3e3e-3e3e-43e3-83e3-3e3e3e3e0013', '35353535-3535-4535-8353-353535350003', '11111111-1111-4111-8111-111111111106', 'LOST_FOUND', 'عثرت على محفظة قرب حديقة الهامة', 'وجدت محفظة جلدية بنية قرب حديقة الهامة فيها بطاقات باسم صاحبها. عند صاحبها: صف المحتوى بدقة والتواصل معي لاستلامها من مكان آمن.', 'VISIBLE', FALSE, 0, 'seed', '2026-09-28 20:00:46+00', 'seed', '2026-09-28 20:00:46+00')
 ON CONFLICT (id) DO UPDATE SET category = EXCLUDED.category, title = EXCLUDED.title,
-    body = EXCLUDED.body, status = 'VISIBLE', is_deleted = FALSE, location_id = EXCLUDED.location_id;
+    body = EXCLUDED.body, status = 'VISIBLE', is_deleted = FALSE, location_id = EXCLUDED.location_id
+    -- CodeRabbit (2026-10-28, the c62bdab9 review round): the posts leg of
+    -- the same erasure guard the users upsert carries above — a
+    -- pseudonymized author's seeded text must NEVER converge back to its
+    -- original wording on a seed re-run (R__ re-runs on every checksum
+    -- change, and this PR's author_id additions change it). The purge
+    -- adapter (CommunityContentPurgeAdapter) replaces title/body with the
+    -- marker through author_id; the seed honors the same ownership.
+    WHERE NOT EXISTS (SELECT 1 FROM users u
+                      WHERE u.id = EXCLUDED.author_id AND u.pseudonymized_at IS NOT NULL);
 
 INSERT INTO post_comments (id, post_id, author_id, body, is_deleted, version, created_by, created_at, updated_by, updated_at) VALUES
     ('3f3f3f3f-3f3f-43f3-83f3-3f3f3f3f0001', '3e3e3e3e-3e3e-43e3-83e3-3e3e3e3e0001', '35353535-3535-4535-8353-353535350004', 'جربته الأسبوع الماضي، فعلاً مناقيشه من الأفضل بالبلد.', FALSE, 0, 'seed', '2026-09-24 18:00:46+00', 'seed', '2026-09-24 18:00:46+00'),
@@ -841,7 +850,14 @@ INSERT INTO neighborhood_polls (id, author_id, location_id, question, author_lab
     ('48484848-4848-4484-8484-484848480002', '35353535-3535-4535-8353-353535350002', '11111111-1111-4111-8111-111111111105', 'ما الخدمة التي تستحق التطوير أولًا في الضاحية؟', 'لجنة تطوير الحي', FALSE, 0, 'seed', '2026-09-28 16:30:00+00', 'seed', '2026-09-28 16:30:00+00'),
     ('48484848-4848-4484-8484-484848480003', '35353535-3535-4535-8353-353535350003', '11111111-1111-4111-8111-111111111106', 'أي يوم يناسب سوق الأحد الأسبوعي في الهامة؟', 'لجنة تطوير الحي', FALSE, 0, 'seed', '2026-09-26 10:00:00+00', 'seed', '2026-09-26 10:00:00+00')
 ON CONFLICT (id) DO UPDATE SET location_id = EXCLUDED.location_id, question = EXCLUDED.question,
-    author_label = EXCLUDED.author_label, is_deleted = FALSE, author_id = EXCLUDED.author_id;
+    author_label = EXCLUDED.author_label, is_deleted = FALSE, author_id = EXCLUDED.author_id
+    -- CodeRabbit (2026-10-28, the c62bdab9 review round): the polls leg of
+    -- the erasure guard — a pseudonymized author's ballot text must never
+    -- converge back to its original wording on a seed re-run. The purge
+    -- adapter replaces question/author_label through author_id; the seed
+    -- honors the same ownership.
+    WHERE NOT EXISTS (SELECT 1 FROM users u
+                      WHERE u.id = EXCLUDED.author_id AND u.pseudonymized_at IS NOT NULL);
 
 -- 9 poll options (L52): each set in the author's own display order
 -- (position 0..n — the design's own rows measured verbatim for the
@@ -857,7 +873,15 @@ INSERT INTO neighborhood_poll_options (id, poll_id, label, position, is_deleted,
     ('49494949-4949-4494-9494-494949490008', '48484848-4848-4484-8484-484848480003', 'صباح السبت', 1, FALSE, 0, 'seed', '2026-09-26 10:00:00+00', 'seed', '2026-09-26 10:00:00+00'),
     ('49494949-4949-4494-9494-494949490009', '48484848-4848-4484-8484-484848480003', 'كلا اليومين', 2, FALSE, 0, 'seed', '2026-09-26 10:00:00+00', 'seed', '2026-09-26 10:00:00+00')
 ON CONFLICT (id) DO UPDATE SET poll_id = EXCLUDED.poll_id, label = EXCLUDED.label,
-    position = EXCLUDED.position, is_deleted = FALSE;
+    position = EXCLUDED.position, is_deleted = FALSE
+    -- CodeRabbit (2026-10-28, the c62bdab9 review round): the options leg
+    -- of the erasure guard — an option's label is its poll author's own
+    -- seeded text (the purge adapter reaches it through the poll's
+    -- author_id); a pseudonymized author's options never converge back on
+    -- a seed re-run.
+    WHERE NOT EXISTS (SELECT 1 FROM neighborhood_polls p
+                      JOIN users u ON u.id = p.author_id
+                      WHERE p.id = EXCLUDED.poll_id AND u.pseudonymized_at IS NOT NULL);
 
 -- 8 poll votes (L52): every voter is a member of the poll's OWN
 -- neighborhood (the vote gate's own law), one live vote per member per
