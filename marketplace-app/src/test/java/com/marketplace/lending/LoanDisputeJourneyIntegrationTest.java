@@ -50,6 +50,13 @@ import static org.mockito.Mockito.when;
  * refund debit mirroring the loan-origin credit), a NO_ACTION decision
  * releases the freeze back to ACTIVE.
  *
+ * <p>Row 15 (agent findings 2026-10-25) adds the concurrent-disputes
+ * journey: two OPEN disputes share one freeze; resolving the first
+ * non-refund holds the freeze for the second (the real
+ * {@code DisputeLookupAdapter} answers), and the second's approved refund
+ * still finds the loan DISPUTED — the cancellation edge stays legal and
+ * the money moves (the discarded-refund failure the finding measured).
+ *
  * <p>Schema honesty: the {@code DisputeFinancialResolutionIntegrationTest}
  * pattern verbatim — Flyway enabled, {@code ddl-auto=none}, a dedicated
  * container, so V200 + V203 + V205 are the schema the cycle runs on. The
@@ -261,6 +268,64 @@ class LoanDisputeJourneyIntegrationTest {
     }
 
     /**
+     * Row 15 (agent findings 2026-10-25) — the finding's exact sequence,
+     * end-to-end over the real modules: two parties hold OPEN disputes on
+     * the same loan; the administration resolves the borrower's NO_ACTION
+     * first (the freeze MUST hold for the owner's still-open case), then
+     * the owner's REFUND_CONSUMER — the approved refund finds the loan
+     * still DISPUTED, its cancellation edge is legal, and the ONE refund
+     * contract fires. Before the fix, the first non-refund decision
+     * resumed the loan and the DISPUTED-only filter silently discarded the
+     * later approved refund.
+     */
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void concurrentDisputesHoldTheFreezeAndTheApprovedRefundNeverDiesSilently() {
+        UUID ownerId = UUID.randomUUID();
+        UUID borrowerId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        seedFkParents(ownerId, borrowerId, productId);
+        PaidLoan planted = plantPaidActiveLoan(ownerId, borrowerId, productId);
+        Loan loan = planted.loan();
+
+        // Two OPEN disputes on the same loan — the borrower's and the
+        // owner's (both parties may dispute concurrently; the freeze is one
+        // shared fact).
+        when(currentUserProvider.getCurrentUserId(SecurityContextHolder.getContext().getAuthentication()))
+                .thenReturn(borrowerId);
+        Dispute borrowers = disputeService.openForLoan(loan.getId(), "the item came back damaged",
+                SecurityContextHolder.getContext().getAuthentication());
+        when(currentUserProvider.getCurrentUserId(SecurityContextHolder.getContext().getAuthentication()))
+                .thenReturn(ownerId);
+        Dispute owners = disputeService.openForLoan(loan.getId(), "the borrower keeps missing the window",
+                SecurityContextHolder.getContext().getAuthentication());
+        awaitLoanStatus(loan.getId(), LoanStatus.DISPUTED);
+
+        // The borrower's dispute resolves NO_ACTION while the owner's is
+        // still OPEN — the freeze MUST hold (the real DisputeLookupAdapter
+        // answers the release edge's question).
+        disputeService.resolve(borrowers.getId(), DisputeResolution.NO_ACTION,
+                SecurityContextHolder.getContext().getAuthentication());
+        awaitDisputeStatus(borrowers.getId(), DisputeStatus.RESOLVED);
+        awaitLoanStatusUnchanged(loan.getId(), LoanStatus.DISPUTED);
+
+        // The owner's dispute resolves REFUND_CONSUMER — the approved
+        // refund still finds the loan DISPUTED, so its cancellation edge is
+        // legal and the ONE refund contract fires exactly once, in full.
+        disputeService.resolve(owners.getId(), DisputeResolution.REFUND_CONSUMER,
+                SecurityContextHolder.getContext().getAuthentication());
+        awaitLoanStatus(loan.getId(), LoanStatus.CANCELLED);
+        assertThat(loanRepository.findById(loan.getId()).orElseThrow().getCancelReason())
+                .contains("dispute");
+        awaitPaymentStatus(planted.intent().getId(), PaymentIntentStatus.REFUNDED);
+        assertThat(ledgerEntryRepository.findBySourceId(
+                        UUID.nameUUIDFromBytes(("refund-" + planted.intent().getId()).getBytes()))
+                .map(LedgerEntry::getEntryType))
+                .as("the ledger's refund debit mirrors the loan-origin credit — the refund was not discarded")
+                .contains(LedgerEntryType.REFUND_DEBIT);
+    }
+
+    /**
      * Plain poll loop (30s / 200ms) — the DisputeFinancialResolution pattern
      * verbatim: the module listeners run AFTER_COMMIT in their own units.
      */
@@ -281,6 +346,50 @@ class LoanDisputeJourneyIntegrationTest {
         }
         throw new AssertionError("Loan " + loanId + " never reached " + expected
                 + " after 30s (last seen: " + last + ") — the dispute listener did not land.");
+    }
+
+    /**
+     * Row 15's negative wait — the awaitIntentNotRefunded pattern on the
+     * loan row: give the resolution listener a fixed window to (wrongly)
+     * resume the loan, then assert the freeze held for the still-open
+     * dispute.
+     */
+    private void awaitLoanStatusUnchanged(UUID loanId, LoanStatus expected) {
+        long deadline = System.nanoTime() + 3_000_000_000L;
+        LoanStatus last = null;
+        while (System.nanoTime() < deadline) {
+            last = loanRepository.findById(loanId).map(Loan::getStatus).orElse(null);
+            if (last != expected) {
+                throw new AssertionError("Loan " + loanId + " left " + expected + " (now: " + last
+                        + ") — the freeze was released while an open dispute still required it.");
+            }
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+    }
+
+    /** The dispute row's own poll loop — the publish commits before the listener runs. */
+    private void awaitDisputeStatus(UUID disputeId, DisputeStatus expected) {
+        long deadline = System.nanoTime() + 30_000_000_000L;
+        DisputeStatus last = null;
+        while (System.nanoTime() < deadline) {
+            last = disputeRepository.findById(disputeId).map(Dispute::getStatus).orElse(null);
+            if (last == expected) {
+                return;
+            }
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        throw new AssertionError("Dispute " + disputeId + " never reached " + expected
+                + " after 30s (last seen: " + last + ")");
     }
 
     private void awaitPaymentStatus(UUID intentId, PaymentIntentStatus expected) {

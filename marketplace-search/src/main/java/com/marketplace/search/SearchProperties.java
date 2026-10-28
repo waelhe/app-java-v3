@@ -6,6 +6,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.validation.annotation.Validated;
 
+import java.time.Duration;
+
 /**
  * L35 (realestate systems plan §5 — saved searches, CodeRabbit round-1
  * adoption): the search module's type-safe configuration (constructor
@@ -46,6 +48,42 @@ public record SearchProperties(
              * non-positive value fails STARTUP at binding time (the
              * misconfigured deploy never comes up serving 409s).
              */
-            @Min(1) @DefaultValue("20") int maxPerUser
-    ) {}
+            @Min(1) @DefaultValue("20") int maxPerUser,
+
+            /**
+             * Row 25 (agent findings 2026-10-25 — CWE-400): the per-listing
+             * activation budget for the alert scan — a listing whose last
+             * scan is still inside this window COALESCES its next activation
+             * (the listener consumes the event without re-walking the global
+             * alert-enabled population), bounding the pause/reactivate
+             * replay the finding describes to one population scan per
+             * window per listing. Calibratable through the environment
+             * ({@code MARKETPLACE_SEARCH_SAVEDSEARCHES_ALERT_SCAN_COOLDOWN})
+             * through Spring Boot's official {@link Duration} binding (the
+             * simple {@code 1h} style or ISO-8601 {@code PT1H} — Externalized
+             * Configuration › Durations). {@code ZERO} disables the time
+             * budget on purpose (every activation scans again — the
+             * pre-row-25 behaviour; the in-flight coalescing still holds);
+             * a NEGATIVE value fails STARTUP at binding time — a negative
+             * budget would silently coalesce every scan forever, the
+             * "cap satisfied by zero" trap in its worst form, and this
+             * record refuses to construct it (the {@code @Min(1)}
+             * fail-fast spirit applied to a Duration, which jakarta
+             * {@code @Min} cannot express).
+             */
+            @DefaultValue("1h") Duration alertScanCooldown
+    ) {
+
+        public SavedSearches {
+            if (alertScanCooldown == null) {
+                // Defensive only: @DefaultValue primes the binding; direct
+                // constructions (tests) get the documented default too.
+                alertScanCooldown = Duration.ofHours(1);
+            }
+            if (alertScanCooldown.isNegative()) {
+                throw new IllegalArgumentException(
+                        "alertScanCooldown must not be negative — use 0s to disable the time budget");
+            }
+        }
+    }
 }

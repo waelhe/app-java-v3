@@ -37,6 +37,23 @@ public interface AuthActionTokenRepository extends JpaRepository<AuthActionToken
             String username, AuthActionTokenPurpose purpose);
 
     /**
+     * The pre-redemption identity read as a PROJECTION — the part-2
+     * review round 1 adoption (row 8's own "the re-read inside the wall
+     * stays the single source of the verdict" rule, hardened): loading
+     * the ENTITY here lets the persistence context return the same
+     * managed instance to {@code consume}'s re-read, so {@code isConsumed()}
+     * could read a first-level-cache state instead of the committed row
+     * (the {@code @Version} floor already turns the unsafe WRITE into a
+     * 400 — this read just stops depending on that interplay). The
+     * username-only select touches no entity state at all.
+     */
+    @Query("select t.username from AuthActionToken t "
+            + "where t.tokenHash = :hash and t.purpose = :purpose")
+    Optional<String> findUsernameByTokenHashAndPurpose(
+            @Param("hash") String tokenHash,
+            @Param("purpose") AuthActionTokenPurpose purpose);
+
+    /**
      * Every live token for an account, any purpose — the administrative
      * invalidation scan (disable/pseudonymize consume them all: a banned
      * account must hold no redemption right, and the pseudonymization's

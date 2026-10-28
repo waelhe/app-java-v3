@@ -192,4 +192,64 @@ class AdBillingBatchExecutorTest {
         executor.settleOneCampaign(UUID.randomUUID(), TODAY);
         verify(chargeRepository, never()).saveAndFlush(any());
     }
+
+    /**
+     * CodeRabbit agent findings row 31 (CWE-190): accepted campaign prices
+     * carry no upper bound, so the OLD checked arithmetic
+     * ({@code Math.multiplyExact}) threw {@code ArithmeticException} BEFORE
+     * {@code Math.min} could cap the charge at the remaining budget — the
+     * settlement aborted and the daily loop died on the same campaign
+     * forever. The literal reproduction: prices near Long.MAX_VALUE make
+     * even THREE impressions overflow the product, yet the honest settle
+     * answer is simply the remaining budget (the campaign's own «حملة
+     * بميزانية تنتهي بنفادها» law) — no exception, the capped charge
+     * freezes, the campaign ends by exhaustion.
+     */
+    @Test
+    void settle_overflowingPricesCapAtTheRemainingBudgetNotAnException() {
+        // 3 impressions x (Long.MAX_VALUE/2 + 1) overflows long; so would
+        // 2 clicks x Long.MAX_VALUE. The accepted-but-huge prices are the
+        // finding's own source (a provider may settle with them).
+        AdCampaign campaign = campaignStartingDaysAgo(10000L, Long.MAX_VALUE, Long.MAX_VALUE / 2 + 1, 2);
+        when(campaignRepository.findById(campaign.getId())).thenReturn(Optional.of(campaign));
+        windowTraffic(3L, 2L);
+
+        executor.settleOneCampaign(campaign.getId(), TODAY);
+
+        ArgumentCaptor<AdBillingCharge> charge = ArgumentCaptor.forClass(AdBillingCharge.class);
+        verify(chargeRepository).saveAndFlush(charge.capture());
+        // The cap answered BEFORE any long conversion: the whole remaining
+        // budget is the frozen amount, the event carries the same capped
+        // truth, and the campaign ends by exhaustion.
+        assertEquals(10000L, charge.getValue().getAmountCents());
+        assertEquals(10000L, campaign.getConsumedCents());
+        assertEquals(AdCampaignStatus.ENDED, campaign.getStatus());
+        assertEquals(TODAY, campaign.getBilledThrough());
+        ArgumentCaptor<AdWindowBilledEvent> event = ArgumentCaptor.forClass(AdWindowBilledEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        assertEquals(10000L, event.getValue().amountCents());
+        verify(eventPublisher).publishEvent(any(CacheInvalidationRequested.class));
+    }
+
+    /**
+     * Row 31's boundary: a sum that fits long arithmetic must keep its
+     * EXACT value through the BigInteger path — overflow safety is never
+     * a rounding excuse. The uncapped computation (10000) sits exactly AT
+     * the remaining budget: min(10000, 10000) = 10000, no cap bites, and
+     * the campaign still ends by exhaustion.
+     */
+    @Test
+    void settle_exactSumAtTheBudgetBoundaryStaysExact() {
+        AdCampaign campaign = campaignStartingDaysAgo(10000L, 100L, 50L, 2);
+        when(campaignRepository.findById(campaign.getId())).thenReturn(Optional.of(campaign));
+        windowTraffic(100L, 50L); // 100x50 + 50x100 = 5000 + 5000 = 10000 == remaining
+
+        executor.settleOneCampaign(campaign.getId(), TODAY);
+
+        ArgumentCaptor<AdBillingCharge> charge = ArgumentCaptor.forClass(AdBillingCharge.class);
+        verify(chargeRepository).saveAndFlush(charge.capture());
+        assertEquals(10000L, charge.getValue().getAmountCents());
+        assertEquals(10000L, campaign.getConsumedCents());
+        assertEquals(AdCampaignStatus.ENDED, campaign.getStatus());
+    }
 }

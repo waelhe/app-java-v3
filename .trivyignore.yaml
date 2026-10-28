@@ -21,5 +21,54 @@
 # JSSE) was carried here 2026-09-06..2026-09-09 while awaiting an
 # eclipse-temurin rebuild that had not shipped the fix (tag last pushed
 # 2026-08-21). The runtime-stage OS upgrade now delivers 3.5.8-r0 at build
-# time, so the entry is removed — the gate runs with zero exceptions.
-vulnerabilities: []
+# time, so the entry is removed.
+#
+# CVE-2026-102554 (guava DoS via unthrottled memory allocation during
+# deserialization, GHSA-xxph-c9ww-hj94, HIGH, fixed in guava 33.7.2) was
+# measured by the gate on 2026-10-27 on the guava copy SHADED inside
+# graphql-java-25.1.jar. Measured 2026-10-28 from the official Maven Central
+# artifacts (META-INF/maven/com.google.guava/guava/pom.properties inside
+# each downloaded jar): 25.1, 26.0 AND 26.1 all embed guava 32.1.2-jre — no
+# published graphql-java release carries the fix, and 25.1 is NOT upstream's
+# newest release (26.0/26.1 exist). 25.1 is the line the PLATFORM pins:
+# spring-boot-dependencies 4.1.2 declares graphql-java.version=25.1 (and
+# spring-graphql.version=2.0.6), read from the BOM itself. Whether 26.x is
+# compatible with that platform line is NOT verified here and is not
+# assumed. The project's OWN resolved guava is already pinned at the fixed
+# 33.7.2-jre (the parent POM override) — the standalone guava jar in the
+# image is clean, which is why this entry is scoped by `paths` to the ONE
+# jar that embeds the vulnerable copy: a finding on any other package stays
+# reportable. The vulnerable path (Java deserialization of
+# CompactHashMap/CompactHashSet/MapMakerInternalMap from crafted
+# ObjectInputStream streams) is unreachable: the shaded copy serves
+# graphql-java's in-process collections only, and no network surface of the
+# app feeds Java deserialization. Carried time-bounded until a graphql-java
+# release shades guava >= 33.7.2 — on expiry the finding returns and forces
+# a fresh decision (bump if such a release exists, or a renewed,
+# review-visible entry).
+vulnerabilities:
+  - id: CVE-2026-102554
+    # The trivy Java (jar) analyzer matches `paths` against the finding's
+    # filePath/pkgPath with doublestar globbing (measured in trivy 0.74.0,
+    # pkg/result/ignore.go: doublestar.Match per pattern; `paths` and
+    # `purls` are ANDed when both are present). The image layout is
+    # app/lib/<jar> (the gate's own target table, 2026-10-27); the leading
+    # `**/` keeps the order-independent of the image's root prefix while
+    # still pinning the ONE jar that embeds the vulnerable copy — a finding
+    # on any other package stays reportable.
+    paths:
+      - "**/graphql-java-25.1.jar"
+    expired_at: 2026-12-11
+    statement: >-
+      The guava 32.1.2-jre copy SHADED inside graphql-java-25.1.jar (the
+      version spring-boot-dependencies 4.1.2 pins via
+      graphql-java.version=25.1; upstream 26.0/26.1 still embed the same
+      guava 32.1.2-jre, measured from the official Maven Central artifacts)
+      cannot be reached by any version bump the project controls, the
+      project's own resolved guava is already the fixed 33.7.2-jre, and the
+      deserialization path the CVE rides (ObjectInputStream on
+      CompactHashMap/CompactHashSet/MapMakerInternalMap) is unreachable
+      through the app's network surfaces. Scoped to this jar's path so no
+      other package's finding is masked. Remove when a graphql-java release
+      shades guava >= 33.7.2.
+

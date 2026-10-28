@@ -183,4 +183,23 @@ class AuthActionTokenServiceTest {
         assertThat(reset.getConsumedAt()).isEqualTo(NOW);
         assertThat(verification.getConsumedAt()).isEqualTo(NOW);
     }
+
+    /**
+     * Part-2 review round 1 (the projection adoption): the pre-redemption
+     * identity read goes through the username PROJECTION — never the
+     * managed entity — so the read stays independent of the persistence
+     * context's entity state (the re-read inside the lock wall remains
+     * the single source of the verdict).
+     */
+    @Test
+    void accountOf_readsTheUsernameProjection_neverTheEntity() {
+        when(repository.findUsernameByTokenHashAndPurpose(anyString(), eq(AuthActionTokenPurpose.PASSWORD_RESET)))
+                .thenReturn(Optional.of(USERNAME));
+
+        Optional<String> username = service.accountOf("the-raw-token", AuthActionTokenPurpose.PASSWORD_RESET);
+
+        assertThat(username).contains(USERNAME);
+        verify(repository).findUsernameByTokenHashAndPurpose(anyString(), eq(AuthActionTokenPurpose.PASSWORD_RESET));
+        verify(repository, never()).findByTokenHashAndPurpose(anyString(), any());
+    }
 }

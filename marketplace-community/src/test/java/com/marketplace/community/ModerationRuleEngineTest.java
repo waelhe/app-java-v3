@@ -243,20 +243,26 @@ class ModerationRuleEngineTest {
     }
 
     @Test
-    void theReviewCase_ridesThePortInsideTheTransaction() {
+    void theReviewCase_ridesTheEnginesOwnPathInsideTheTransaction_ordinaryReporter() {
         ModerationRule rule = ModerationRule.register(ReportTargetType.REVIEW, ReportReason.INAPPROPRIATE, 2);
         when(ruleRepository.findByTargetTypeAndReasonAndEnabledTrue(ReportTargetType.REVIEW, ReportReason.INAPPROPRIATE))
                 .thenReturn(Optional.of(rule));
         theOpenCountIs(2);
-        when(reviewLookupPort.hideAsModerator(commentId)).thenReturn(Optional.of(authorId));
+        // Row 3 — the engine's OWN narrow internal path: the ordinary
+        // (non-admin) reporter's qualifying report hides the review and
+        // commits with the report's creation. The stub answers the ENGINE
+        // method; the admin-gated manual method is never reached.
+        when(reviewLookupPort.hideAsModerationEngine(commentId)).thenReturn(Optional.of(authorId));
         ContentReport trigger = reportOn(reporterA, ReportTargetType.REVIEW, commentId, ReportReason.INAPPROPRIATE);
         when(reportRepository.findAll(any(Specification.class))).thenReturn(List.of(trigger));
 
         engine().evaluate(trigger);
 
         // The review's hide runs through the reviews module's port INSIDE
-        // the caller's transaction (the one-unit-of-work rule).
-        verify(reviewLookupPort).hideAsModerator(commentId);
+        // the caller's transaction (the one-unit-of-work rule) — on the
+        // engine's own path, never on the admin-gated manual one.
+        verify(reviewLookupPort).hideAsModerationEngine(commentId);
+        verify(reviewLookupPort, never()).hideAsModerator(any());
         ArgumentCaptor<Object> events = ArgumentCaptor.forClass(Object.class);
         verify(eventPublisher, times(2)).publishEvent(events.capture());
         assertThat(events.getAllValues().stream()
@@ -264,6 +270,28 @@ class ModerationRuleEngineTest {
                 .map(v -> ((ContentModeratedEvent) v).targetType()))
                 .containsExactly("REVIEW");
         assertThat(trigger.getStatus()).isEqualTo(ReportStatus.RESOLVED);
+    }
+
+    @Test
+    void theReviewCase_theDocumentedSkipOnTheEnginePathStillDrainsTheQueue() {
+        ModerationRule rule = ModerationRule.register(ReportTargetType.REVIEW, ReportReason.INAPPROPRIATE, 2);
+        when(ruleRepository.findByTargetTypeAndReasonAndEnabledTrue(ReportTargetType.REVIEW, ReportReason.INAPPROPRIATE))
+                .thenReturn(Optional.of(rule));
+        theOpenCountIs(2);
+        // Already-hidden/unknown review: the port's documented skip answers
+        // empty on the engine path exactly as on the manual one — no author
+        // alert, while the queue drains honestly either way.
+        when(reviewLookupPort.hideAsModerationEngine(commentId)).thenReturn(Optional.empty());
+        ContentReport trigger = reportOn(reporterA, ReportTargetType.REVIEW, commentId, ReportReason.INAPPROPRIATE);
+        when(reportRepository.findAll(any(Specification.class))).thenReturn(List.of(trigger));
+
+        engine().evaluate(trigger);
+
+        verify(reviewLookupPort).hideAsModerationEngine(commentId);
+        verify(reviewLookupPort, never()).hideAsModerator(any());
+        verify(eventPublisher, times(1)).publishEvent(any(Object.class));
+        assertThat(trigger.getStatus()).isEqualTo(ReportStatus.RESOLVED);
+        assertThat(trigger.getResolutionNote()).contains("الإشراف الآلي");
     }
 
     @Test

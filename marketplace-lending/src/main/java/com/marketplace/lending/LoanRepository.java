@@ -1,8 +1,10 @@
 package com.marketplace.lending;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -47,6 +49,21 @@ public interface LoanRepository extends JpaRepository<Loan, UUID> {
                           @Param("startAt") Instant startAt, @Param("endAt") Instant endAt);
 
     Optional<Loan> findByPaymentIntentId(UUID paymentIntentId);
+
+    /**
+     * Part-2 review round 2 (the full review's measured Minor): the loan
+     * read under the row's own write lock — the dispute cycle's two write
+     * paths (the freeze and the release) read the state their guards filter
+     * on INSIDE the lock, so a concurrent writer's commit can no longer
+     * invalidate the snapshot between the read and the save. The same
+     * {@code findByIdForUpdate} idiom the orders aggregate's serialized
+     * handoff uses (Spring Data JPA's {@code @Lock} with PostgreSQL's
+     * {@code FOR UPDATE} semantics — the platform's own serialization
+     * guarantee, not an application-level retry).
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select l from Loan l where l.id = :id")
+    Optional<Loan> findByIdForUpdate(@Param("id") UUID id);
 
     Page<Loan> findByBorrowerIdOrderByCreatedAtDescIdDesc(UUID borrowerId, Pageable pageable);
 

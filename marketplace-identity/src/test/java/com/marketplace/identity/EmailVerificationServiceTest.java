@@ -1,13 +1,16 @@
 package com.marketplace.identity;
 
+import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.EmailVerificationRequestedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.provisioning.UserDetailsManager;
 
@@ -16,7 +19,11 @@ import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -28,6 +35,10 @@ import static org.mockito.Mockito.when;
  * grandfathered; live = pending; consumed = finished — owner-completed or
  * administratively invalidated), the resend guard that re-arms ONLY a
  * pending account, and the redemption leg's hold-lifting write shape.
+ * row 8 (agent findings 2026-10-25, CWE-367): both anonymous surfaces take
+ * the account's row lock BEFORE their state decisions — the eligibility
+ * read on resend, the consumption stamp on redemption — so no
+ * administrative disable can interleave with them.
  */
 @ExtendWith(MockitoExtension.class)
 class EmailVerificationServiceTest {
@@ -44,13 +55,15 @@ class EmailVerificationServiceTest {
     private ApplicationEventPublisher eventPublisher;
     @Mock
     private AuthActionTokenService authActionTokenService;
+    @Mock
+    private JdbcTemplate jdbcTemplate;
 
     private EmailVerificationService service;
 
     @BeforeEach
     void setUp() {
         service = new EmailVerificationService(userRepository, userDetailsManager, eventPublisher,
-                authActionTokenService,
+                authActionTokenService, jdbcTemplate,
                 new IdentityMailProperties("http://localhost:3000", Duration.ofMinutes(30), TTL,
                         Duration.ofSeconds(60)));
     }
@@ -147,12 +160,35 @@ class EmailVerificationServiceTest {
 
         service.resend(EMAIL);
 
-        verifyNoInteractions(authActionTokenService, eventPublisher);
+        verifyNoInteractions(authActionTokenService, eventPublisher, jdbcTemplate);
+    }
+
+    @Test
+    void resend_serializesOnTheAccountRowBeforeTheEligibilityRead() {
+        // row 8 (CWE-367): the lock precedes the pending read — the decision
+        // and the issuance both happen under the account's serialization
+        // point, so a concurrent administrative disable can never commit
+        // between the eligibility check and the token INSERT
+        when(userDetailsManager.userExists(EMAIL)).thenReturn(true);
+        when(authActionTokenService.latest(EMAIL, AuthActionTokenPurpose.EMAIL_VERIFICATION))
+                .thenReturn(Optional.of(verificationToken(true)));
+
+        service.resend(EMAIL);
+
+        ArgumentCaptor<String> lockSql = ArgumentCaptor.forClass(String.class);
+        InOrder order = inOrder(jdbcTemplate, authActionTokenService);
+        order.verify(jdbcTemplate).queryForList(lockSql.capture(), eq(String.class), eq(EMAIL));
+        order.verify(authActionTokenService).latest(EMAIL, AuthActionTokenPurpose.EMAIL_VERIFICATION);
+        assertThat(lockSql.getValue())
+                .contains("auth_users")
+                .contains("for update");
     }
 
     @Test
     void completeVerification_liftsTheHoldAndReplaysEveryOtherStoredFlag() {
         AuthActionToken token = verificationToken(false);
+        when(authActionTokenService.accountOf("raw-token", AuthActionTokenPurpose.EMAIL_VERIFICATION))
+                .thenReturn(Optional.of(EMAIL));
         when(authActionTokenService.consume("raw-token", AuthActionTokenPurpose.EMAIL_VERIFICATION))
                 .thenReturn(token);
         when(userDetailsManager.loadUserByUsername(EMAIL)).thenReturn(
@@ -171,5 +207,69 @@ class EmailVerificationServiceTest {
         assertThat(updated.getValue().getPassword()).isEqualTo("{bcrypt}$2a$stored-verifier");
         assertThat(updated.getValue().getAuthorities())
                 .anyMatch(a -> a.getAuthority().equals("ROLE_CONSUMER"));
+    }
+
+    @Test
+    void completeVerification_locksTheAccountRowBeforeTheConsumptionStamp() {
+        // row 8 (CWE-367): the lock order is account pre-read → row lock →
+        // consumption stamp → hold-lifting write. A disable that committed
+        // before the lock consumed the token (the wall below answers 400);
+        // a disable that tries during the redemption WAITS on this lock and
+        // applies its ban on top — the honest last-writer order. No
+        // interleaving lets the redemption lift a committed ban.
+        when(authActionTokenService.accountOf("raw-token", AuthActionTokenPurpose.EMAIL_VERIFICATION))
+                .thenReturn(Optional.of(EMAIL));
+        when(authActionTokenService.consume("raw-token", AuthActionTokenPurpose.EMAIL_VERIFICATION))
+                .thenReturn(verificationToken(false));
+        when(userDetailsManager.loadUserByUsername(EMAIL)).thenReturn(
+                org.springframework.security.core.userdetails.User.withUsername(EMAIL)
+                        .password("{bcrypt}$2a$stored-verifier").authorities("ROLE_CONSUMER")
+                        .disabled(true).build());
+
+        service.completeVerification("raw-token");
+
+        InOrder order = inOrder(authActionTokenService, jdbcTemplate, userDetailsManager);
+        order.verify(authActionTokenService).accountOf("raw-token", AuthActionTokenPurpose.EMAIL_VERIFICATION);
+        order.verify(jdbcTemplate).queryForList(anyString(), eq(String.class), eq(EMAIL));
+        order.verify(authActionTokenService).consume("raw-token", AuthActionTokenPurpose.EMAIL_VERIFICATION);
+        order.verify(userDetailsManager).updateUser(any(UserDetails.class));
+    }
+
+    @Test
+    void completeVerification_anUnknownTokenAnswersTheHonest400BeforeAnyAccountTouch() {
+        // row 8: the pre-read routes an unknown token straight to the same
+        // unknown-token 400 the single-use wall itself would answer — no
+        // lock is taken, nothing is consumed, no account is touched
+        when(authActionTokenService.accountOf("raw-token", AuthActionTokenPurpose.EMAIL_VERIFICATION))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.completeVerification("raw-token"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("link is invalid or has already been used");
+
+        verify(authActionTokenService, never()).consume(any(), any());
+        verify(userDetailsManager, never()).updateUser(any(UserDetails.class));
+        verifyNoInteractions(jdbcTemplate);
+    }
+
+    @Test
+    void completeVerification_whenTheBanConsumedTheTokenTheHoldLiftNeverHappens() {
+        // row 8 — the finding's own end state: the administrative disable
+        // committed FIRST (its invalidateOutstanding consumed the
+        // outstanding right). The redemption's consume — running under the
+        // account row lock, after the disable's commit — answers the honest
+        // 400, and the hold-lifting write is NEVER reached: the ban cannot
+        // be lifted through this surface
+        when(authActionTokenService.accountOf("raw-token", AuthActionTokenPurpose.EMAIL_VERIFICATION))
+                .thenReturn(Optional.of(EMAIL));
+        when(authActionTokenService.consume("raw-token", AuthActionTokenPurpose.EMAIL_VERIFICATION))
+                .thenThrow(new BadRequestException(
+                        "This email verification link has already been used"));
+
+        assertThatThrownBy(() -> service.completeVerification("raw-token"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("already been used");
+
+        verify(userDetailsManager, never()).updateUser(any(UserDetails.class));
     }
 }

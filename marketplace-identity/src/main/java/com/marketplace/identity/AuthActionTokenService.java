@@ -198,6 +198,27 @@ public class AuthActionTokenService {
         return repository.findFirstByUsernameAndPurposeOrderByCreatedAtDesc(username, purpose);
     }
 
+    /**
+     * row 8 (agent findings 2026-10-25, CWE-367): the PRE-redemption
+     * account read — which login row a raw token belongs to, WITHOUT
+     * consuming it. The redemption leg needs the account's identity to
+     * take its serialization lock BEFORE the consumption stamp: a disable
+     * that commits between an unlocked consume and the hold-lifting write
+     * would find the token already consumed (its invalidateOutstanding is
+     * a no-op) and the redemption would then re-enable what the
+     * administrator shut. This is the same hash lookup {@link #consume}
+     * performs — the re-read inside the wall stays the single source of
+     * the verdict, so an empty result here is answered with the same
+     * unknown-token 400 the caller constructs.
+     */
+    public Optional<String> accountOf(String rawToken, AuthActionTokenPurpose purpose) {
+        // Part-2 review round 1: the username PROJECTION, not the entity —
+        // the pre-redemption identity read stays independent of the
+        // persistence context's entity state (the re-read inside the wall
+        // remains the single source of the verdict).
+        return repository.findUsernameByTokenHashAndPurpose(sha256Hex(rawToken), purpose);
+    }
+
     private static String sha256Hex(String raw) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");

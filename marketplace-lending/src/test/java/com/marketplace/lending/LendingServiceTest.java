@@ -1,6 +1,7 @@
 package com.marketplace.lending;
 
 import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.DisputeLookupPort;
 import com.marketplace.shared.api.DisputeResolution;
 import com.marketplace.shared.api.LoanApprovedEvent;
 import com.marketplace.shared.api.LoanCancelledEvent;
@@ -54,6 +55,8 @@ class LendingServiceTest {
     @Mock
     private LoanPaymentPort loanPaymentPort;
     @Mock
+    private DisputeLookupPort disputeLookupPort;
+    @Mock
     private CurrentUserProvider currentUserProvider;
     @Mock
     private ApplicationEventPublisher eventPublisher;
@@ -69,7 +72,7 @@ class LendingServiceTest {
     @BeforeEach
     void setUp() {
         service = new LendingService(offerRepository, loanRepository, productPricingPort,
-                loanPaymentPort, currentUserProvider, eventPublisher);
+                loanPaymentPort, disputeLookupPort, currentUserProvider, eventPublisher);
     }
 
     private void priceActive() {
@@ -286,10 +289,13 @@ class LendingServiceTest {
         loan.approve();
         loan.markPaid(Instant.now());
         loan.activate(Instant.now());
-        when(loanRepository.findById(loan.getId())).thenReturn(Optional.of(loan));
+        UUID disputeId = UUID.randomUUID();
+        // part-2 review round 2: the dispute paths read under the row's write lock
+        when(loanRepository.findByIdForUpdate(loan.getId())).thenReturn(Optional.of(loan));
         when(loanRepository.save(any(Loan.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(disputeLookupPort.isDisputeOpen(disputeId)).thenReturn(true);
 
-        service.markDisputedFromDispute(loan.getId());
+        service.markDisputedFromDispute(disputeId, loan.getId());
 
         assertThat(loan.getStatus()).isEqualTo(LoanStatus.DISPUTED);
         assertThat(loan.isLive()).as("the DISPUTED loan stays in the live set — the period stays held").isTrue();
@@ -389,10 +395,10 @@ class LendingServiceTest {
         loan.markPaid(Instant.now());
         loan.activate(Instant.now());
         loan.markDisputed();
-        when(loanRepository.findById(loan.getId())).thenReturn(Optional.of(loan));
+        when(loanRepository.findByIdForUpdate(loan.getId())).thenReturn(Optional.of(loan));
         when(loanRepository.save(any(Loan.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        service.resolveDisputeFromDisputes(loan.getId(), DisputeResolution.REFUND_CONSUMER);
+        service.resolveDisputeFromDisputes(UUID.randomUUID(), loan.getId(), DisputeResolution.REFUND_CONSUMER);
 
         assertThat(loan.getStatus()).isEqualTo(LoanStatus.CANCELLED);
         verify(eventPublisher).publishEvent(any(LoanCancelledEvent.class));
@@ -405,10 +411,12 @@ class LendingServiceTest {
         loan.markPaid(Instant.now());
         loan.activate(Instant.now());
         loan.markDisputed();
-        when(loanRepository.findById(loan.getId())).thenReturn(Optional.of(loan));
+        UUID disputeId = UUID.randomUUID();
+        when(loanRepository.findByIdForUpdate(loan.getId())).thenReturn(Optional.of(loan));
         when(loanRepository.save(any(Loan.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(disputeLookupPort.hasOpenDisputeForLoan(loan.getId(), disputeId)).thenReturn(false);
 
-        service.resolveDisputeFromDisputes(loan.getId(), DisputeResolution.RELEASE_PROVIDER);
+        service.resolveDisputeFromDisputes(disputeId, loan.getId(), DisputeResolution.RELEASE_PROVIDER);
 
         assertThat(loan.getStatus()).isEqualTo(LoanStatus.ACTIVE);
         verify(eventPublisher).publishEvent(any(LoanDisputeResolvedEvent.class));
@@ -448,9 +456,9 @@ class LendingServiceTest {
     @Test
     void theDisputeFreezeIsAStateGuardedNoOpForNonActiveLoans() {
         Loan loan = loan(); // REQUESTED
-        when(loanRepository.findById(loan.getId())).thenReturn(Optional.of(loan));
+        when(loanRepository.findByIdForUpdate(loan.getId())).thenReturn(Optional.of(loan));
 
-        service.markDisputedFromDispute(loan.getId());
+        service.markDisputedFromDispute(UUID.randomUUID(), loan.getId());
 
         assertThat(loan.getStatus()).isEqualTo(LoanStatus.REQUESTED);
         verify(loanRepository, never()).save(any());
@@ -465,10 +473,12 @@ class LendingServiceTest {
         loan.markPaid(Instant.now());
         loan.activate(Instant.now());
         loan.markDisputed();
-        when(loanRepository.findById(loan.getId())).thenReturn(Optional.of(loan));
+        UUID disputeId = UUID.randomUUID();
+        when(loanRepository.findByIdForUpdate(loan.getId())).thenReturn(Optional.of(loan));
         when(loanRepository.save(any(Loan.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(disputeLookupPort.hasOpenDisputeForLoan(loan.getId(), disputeId)).thenReturn(false);
 
-        service.resolveDisputeFromDisputes(loan.getId(), DisputeResolution.NO_ACTION);
+        service.resolveDisputeFromDisputes(disputeId, loan.getId(), DisputeResolution.NO_ACTION);
 
         assertThat(loan.getStatus()).isEqualTo(LoanStatus.ACTIVE);
         ArgumentCaptor<LoanDisputeResolvedEvent> event = ArgumentCaptor.forClass(LoanDisputeResolvedEvent.class);
@@ -489,16 +499,89 @@ class LendingServiceTest {
         loan.markPaid(Instant.now());
         loan.activate(Instant.now());
         loan.markDisputed();
-        when(loanRepository.findById(loan.getId())).thenReturn(Optional.of(loan));
+        when(loanRepository.findByIdForUpdate(loan.getId())).thenReturn(Optional.of(loan));
         when(loanRepository.save(any(Loan.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        service.resolveDisputeFromDisputes(loan.getId(), DisputeResolution.REFUND_CONSUMER);
+        service.resolveDisputeFromDisputes(UUID.randomUUID(), loan.getId(), DisputeResolution.REFUND_CONSUMER);
 
         assertThat(loan.getStatus()).isEqualTo(LoanStatus.CANCELLED);
         assertThat(loan.getCancelReason()).contains("dispute");
         ArgumentCaptor<LoanCancelledEvent> event = ArgumentCaptor.forClass(LoanCancelledEvent.class);
         verify(eventPublisher).publishEvent(event.capture());
         assertThat(event.getValue().loanId()).isEqualTo(loan.getId());
+    }
+
+    // ---- row 15 (agent findings 2026-10-25) — identity-aware freeze/release ----
+
+    /**
+     * The finding's core sequence: resolving ONE of two concurrent
+     * disputes must NOT resume the loan — the freeze belongs to every open
+     * dispute, and releasing it early is what used to make a later approved
+     * refund silently unenforceable.
+     */
+    @Test
+    void aNonRefundResolutionHoldsTheFreezeWhileAnotherDisputeIsOpen() {
+        Loan loan = loan();
+        loan.approve();
+        loan.markPaid(Instant.now());
+        loan.activate(Instant.now());
+        loan.markDisputed();
+        UUID disputeId = UUID.randomUUID();
+        when(loanRepository.findByIdForUpdate(loan.getId())).thenReturn(Optional.of(loan));
+        when(disputeLookupPort.hasOpenDisputeForLoan(loan.getId(), disputeId)).thenReturn(true);
+
+        service.resolveDisputeFromDisputes(disputeId, loan.getId(), DisputeResolution.NO_ACTION);
+
+        assertThat(loan.getStatus()).as("another open dispute still requires the freeze").isEqualTo(LoanStatus.DISPUTED);
+        verify(loanRepository, never()).save(any());
+        verifyNoInteractions(eventPublisher);
+    }
+
+    /**
+     * The refund stays terminal-first: an approved refund terminates the
+     * loan even while another dispute is open — the strongest decision
+     * wins, and the remaining dispute's resolution no-ops on the terminal
+     * loan by the state guard.
+     */
+    @Test
+    void aRefundResolutionStillTerminatesWhileAnotherDisputeIsOpen() {
+        Loan loan = loan();
+        loan.approve();
+        loan.markPaid(Instant.now());
+        loan.activate(Instant.now());
+        loan.markDisputed();
+        when(loanRepository.findByIdForUpdate(loan.getId())).thenReturn(Optional.of(loan));
+        when(loanRepository.save(any(Loan.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.resolveDisputeFromDisputes(UUID.randomUUID(), loan.getId(), DisputeResolution.REFUND_CONSUMER);
+
+        assertThat(loan.getStatus()).isEqualTo(LoanStatus.CANCELLED);
+        verify(eventPublisher).publishEvent(any(LoanCancelledEvent.class));
+        // The refund branch never consults the open-dispute fact — the
+        // terminal decision does not compete with the freeze.
+        verifyNoInteractions(disputeLookupPort);
+    }
+
+    /**
+     * The freeze tracks OPEN disputes by identity: a redelivered open event
+     * for a dispute the administration already resolved must not re-freeze
+     * a resumed loan — a freeze no future resolution would ever release.
+     */
+    @Test
+    void theFreezeTracksOnlyStillOpenDisputes() {
+        Loan loan = loan();
+        loan.approve();
+        loan.markPaid(Instant.now());
+        loan.activate(Instant.now());
+        UUID staleDisputeId = UUID.randomUUID();
+        when(loanRepository.findByIdForUpdate(loan.getId())).thenReturn(Optional.of(loan));
+        when(disputeLookupPort.isDisputeOpen(staleDisputeId)).thenReturn(false);
+
+        service.markDisputedFromDispute(staleDisputeId, loan.getId());
+
+        assertThat(loan.getStatus()).as("the already-resolved dispute requires no freeze").isEqualTo(LoanStatus.ACTIVE);
+        verify(loanRepository, never()).save(any());
+        verifyNoInteractions(eventPublisher);
     }
 
     /** The machine's edges stay paired: a direct cancel from DISPUTED stays illegal; the dedicated edges are the only paths. */

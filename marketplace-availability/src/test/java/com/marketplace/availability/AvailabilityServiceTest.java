@@ -42,7 +42,7 @@ class AvailabilityServiceTest {
     @BeforeEach
     void setUp() {
         service = new AvailabilityService(repository, ruleRepository, timeOffRepository, eventPublisher,
-                slotGenerator);
+                slotGenerator, new AvailabilityProperties(AvailabilityProperties.DEFAULT_MAX_SLOT_DAYS));
     }
 
     @Test
@@ -60,6 +60,74 @@ class AvailabilityServiceTest {
         assertThat(slot.endsAt()).isEqualTo(endsAt);
         assertThat(slot.booked()).isFalse();
         verify(repository).save(any(AvailabilitySlot.class));
+    }
+
+    // ------------------------------------------------------------------
+    // Row 11 (agent findings 2026-10-25 — CWE-834): the publication bound
+    // ------------------------------------------------------------------
+
+    @Test
+    void createSlot_longerThanTheBound_answers400AndWritesNothing() {
+        // The finding's own entry point: an owned open slot without a
+        // duration limit is the oversized window a compact booking
+        // request later replays through the pricing loop. It dies at
+        // publication now — before any write and before any event.
+        UUID providerId = create(UUID.class);
+        Instant startsAt = Instant.parse("2026-06-01T09:00:00Z");
+        Instant endsAt = Instant.parse("2027-06-02T09:00:00Z"); // 366 days
+
+        assertThatThrownBy(() -> service.createSlot(providerId, startsAt, endsAt))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class)
+                .hasMessageContaining("Slots longer than");
+        verify(repository, never()).save(any(AvailabilitySlot.class));
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void createSlot_atTheExactBound_isAccepted() {
+        // 365 days == the default bound (and the pricing stay bound): a
+        // slot at the bound is priceable end-to-end — the compatibility
+        // contract between the two bounds.
+        UUID providerId = create(UUID.class);
+        Instant startsAt = Instant.parse("2026-06-01T09:00:00Z");
+        Instant endsAt = Instant.parse("2027-06-01T09:00:00Z"); // exactly 365 days
+
+        when(repository.save(any(AvailabilitySlot.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        AvailabilitySlotResponse slot = service.createSlot(providerId, startsAt, endsAt);
+
+        assertThat(slot.endsAt()).isEqualTo(endsAt);
+        verify(repository).save(any(AvailabilitySlot.class));
+    }
+
+    @Test
+    void createSlot_reversedWindow_answers400LikeEveryWindowGateInTheHouse() {
+        UUID providerId = create(UUID.class);
+        Instant startsAt = Instant.parse("2026-06-01T10:00:00Z");
+        Instant endsAt = Instant.parse("2026-06-01T09:00:00Z");
+
+        assertThatThrownBy(() -> service.createSlot(providerId, startsAt, endsAt))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class)
+                .hasMessageContaining("Slot end must not be before slot start");
+        verify(repository, never()).save(any(AvailabilitySlot.class));
+    }
+
+    @Test
+    void createSlot_configuredBound_isEnforcedFromConfiguration() {
+        // The bound is a business knob, not a hardcode: a 7-day
+        // deployment rejects the 8-day slot and accepts the 7-day one.
+        AvailabilityService tight = new AvailabilityService(repository, ruleRepository,
+                timeOffRepository, eventPublisher, slotGenerator, new AvailabilityProperties(7));
+        UUID providerId = create(UUID.class);
+
+        assertThatThrownBy(() -> tight.createSlot(providerId,
+                Instant.parse("2026-06-01T09:00:00Z"), Instant.parse("2026-06-09T09:00:00Z")))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class);
+
+        when(repository.save(any(AvailabilitySlot.class))).thenAnswer(inv -> inv.getArgument(0));
+        assertThat(tight.createSlot(providerId,
+                Instant.parse("2026-06-01T09:00:00Z"), Instant.parse("2026-06-08T09:00:00Z")).startsAt())
+                .isNotNull();
     }
 
     @Test

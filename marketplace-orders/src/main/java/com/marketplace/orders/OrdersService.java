@@ -590,7 +590,39 @@ public class OrdersService implements OrderDeliveryPort {
     @Transactional(readOnly = true)
     public com.marketplace.shared.api.OrderFulfillmentSelection requireOrderFulfillment(
             UUID orderId, UUID buyerId) {
-        Order order = requireOrder(orderId);
+        return selectionOf(requireOrder(orderId), orderId, buyerId);
+    }
+
+    /**
+     * Part-2 review round 2 (the full review's measured Major): the SAME
+     * frozen selection, read under the order row's write lock — the
+     * leg-creation surfaces ({@code DeliveryService.addLegForOrder} and
+     * the {@code OrderFulfillmentListener}) serialize with the direct
+     * fulfillment gate on the order row itself. The finding's exact
+     * interleaving: {@code fulfill} locks the order, counts ZERO active
+     * legs and commits — while the split path, reading the order WITHOUT
+     * the lock, still saw CONFIRMED and created a live leg after the
+     * count and before the commit: an order FULFILLED with a package
+     * still in flight. Reading through this method, the leg-creation
+     * transaction BLOCKS on the same row lock {@code fulfill} holds,
+     * then reads the committed truth (a moved-past order answers the
+     * honest 409/404) — the legs and the fulfillment gate are one
+     * serialized surface now. The manual quoting path keeps the
+     * lock-free read above: a quote creates no leg, and the
+     * read-only transaction stays read-only.
+     */
+    @Override
+    @Transactional
+    public com.marketplace.shared.api.OrderFulfillmentSelection requireOrderFulfillmentForUpdate(
+            UUID orderId, UUID buyerId) {
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
+        return selectionOf(order, orderId, buyerId);
+    }
+
+    /** The frozen selection's one builder — both reads answer the same facts. */
+    private com.marketplace.shared.api.OrderFulfillmentSelection selectionOf(
+            Order order, UUID orderId, UUID buyerId) {
         if (!order.getConsumerId().equals(buyerId)) {
             throw new ResourceNotFoundException("Order", orderId);
         }
@@ -635,6 +667,24 @@ public class OrdersService implements OrderDeliveryPort {
         orderRepository.save(order);
     }
 
+    /**
+     * CONFIRMED → FULFILLED (terminal) — the direct fulfillment surface
+     * (the merchant console's completion lever rides it through
+     * {@link #fulfillForSeller}).
+     *
+     * <p><b>The delivery gates, in law order:</b> (1) a manually linked
+     * delivery owns its order's completion while the link stands — the
+     * primary-link refusal below; (2) CodeRabbit agent findings, row 12 —
+     * a checkout-selected platform delivery owns completion through its
+     * VERIFIED lifecycle regardless of the primary link, because the
+     * buyer's own cancellation clears that link
+     * ({@code DeliveryService.cancelForRequester} →
+     * {@link #clearDeliveryRequest}) while the split aggregate keeps
+     * flying: {@link #requireDirectFulfillableAggregate} reads the same
+     * aggregate truth the cancellation guard and the multi-leg law read,
+     * BEFORE any supported direct fulfillment changes the order or
+     * commits inventory.
+     */
     @Transactional
     @Observed(name = "order.fulfill")
     public Order fulfill(UUID orderId) {
@@ -644,6 +694,7 @@ public class OrdersService implements OrderDeliveryPort {
             throw new ConflictException("An order linked to an active delivery must be fulfilled through its delivery lifecycle");
         }
         requireStatus(order, OrderStatus.CONFIRMED, "fulfill");
+        requireDirectFulfillableAggregate(order);
         order.fulfill(Instant.now());
         if (order.isStockReserved()) {
             productStockPort.commit(productStockMapOf(order.getId()));
@@ -713,6 +764,52 @@ public class OrdersService implements OrderDeliveryPort {
         eventPublisher.publishEvent(new OrderCancelledEvent(
                 order.getId(), order.getConsumerId(), reason));
         return saved;
+    }
+
+    /**
+     * CodeRabbit agent findings, row 12 — the direct-fulfillment
+     * aggregate gate. The only delivery guard {@link #fulfill} carried
+     * was the order's PRIMARY delivery link — a link the buyer's own
+     * cancellation clears ({@code DeliveryService.cancelForRequester} →
+     * {@link #clearDeliveryRequest}) — so after cancelling the primary
+     * leg the owning seller could fulfill a split platform-delivery
+     * order while its SECONDARY legs were still in flight, bypassing
+     * the delivery completion and its proof requirements. The aggregate
+     * state is the same truth the cancellation guard and the multi-leg
+     * law read ({@code CheckoutDeliveryPort} — "the count the
+     * fulfillment and cancellation gates read"):
+     *
+     * <ul>
+     *   <li>any leg still active → the verified delivery lifecycle owns
+     *   completion (409 — no direct fulfillment changes the order or
+     *   commits stock);</li>
+     *   <li>every leg terminal and at least one delivered → the
+     *   aggregate completed IN FACT — the exact condition the terminal
+     *   reconciliation fulfills under, so the direct fulfillment is
+     *   SUPPORTED (the row lock and the state machine make the seller's
+     *   edge and the reconciliation edge one);</li>
+     *   <li>every leg terminal and nothing delivered → no delivery
+     *   ever completed: no direct fulfillment may write terminal state
+     *   over undelivered goods (409) — the aggregate stays cancellable
+     *   through the existing surface.</li>
+     * </ul>
+     *
+     * <p>Non-platform orders (pickup, legacy, or a manually linked
+     * delivery) keep the primary-link guard alone — their one delivery
+     * IS the link.
+     */
+    private void requireDirectFulfillableAggregate(Order order) {
+        if (order.getFulfillmentMethod() != FulfillmentMethod.PLATFORM_DELIVERY) {
+            return;
+        }
+        if (checkoutDeliveryPort.remainingActiveLegs(order.getId()) > 0) {
+            throw new ConflictException("An order with an in-flight platform delivery cannot be"
+                    + " fulfilled directly — it completes through its delivery lifecycle");
+        }
+        if (checkoutDeliveryPort.deliveredLegs(order.getId()) == 0) {
+            throw new ConflictException("A platform-delivery order with no delivered package cannot"
+                    + " be fulfilled directly — nothing was delivered; the order stays cancellable");
+        }
     }
 
     /**
@@ -1004,8 +1101,11 @@ public class OrdersService implements OrderDeliveryPort {
     /**
      * The merchant's completion edge: CONFIRMED → FULFILLED (terminal) —
      * the stock's commit edge (ADR-0002) rides the machine's own
-     * {@link #fulfill}; the guard is the seller scope and the read-back is
-     * the command's own body.
+     * {@link #fulfill}; the guards are the seller scope and the
+     * direct-fulfillment aggregate gate (CodeRabbit agent findings,
+     * row 12 — a platform-delivery order completes through its verified
+     * delivery lifecycle, never over in-flight or undelivered legs),
+     * and the read-back is the command's own body.
      */
     @Transactional
     @Observed(name = "order.seller.fulfill")
