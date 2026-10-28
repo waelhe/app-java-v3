@@ -344,12 +344,24 @@ class PlatformGovernanceFilesTest {
         assertThat(ignore)
                 .as("the single entry must be the measured graphql-java guava CVE")
                 .contains("id: CVE-2026-102554");
-        // And its SCOPE: the finding rides the guava copy shaded inside ONE
-        // jar, so the entry must name that path — an unscoped entry would
-        // silence the same CVE for every package in the image.
-        assertThat(ignore)
-                .as("the entry must stay scoped to the jar that embeds the shaded guava")
-                .contains("**/graphql-java-25.1.jar");
+        // And its SCOPE, parsed rather than substring-matched (part-2 review,
+        // round 4): `contains` would still pass if a second pattern were added
+        // beside the measured one, and `**/*` makes trivy's ignore match every
+        // file (trivy 0.74.0 pkg/result/ignore.go: doublestar.Match is applied
+        // to each pattern in turn), which would mask the whole image again.
+        // The yaml is therefore read structurally and the list pinned to the
+        // single measured path.
+        @SuppressWarnings("unchecked")
+        Map<String, Object> policy = new Yaml().load(ignore);
+        List<?> vulnerabilities = (List<?>) policy.get("vulnerabilities");
+        assertThat(vulnerabilities)
+                .as("the yaml must carry the vulnerabilities list this guard reads")
+                .hasSize(1);
+        assertThat(((Map<?, ?>) vulnerabilities.get(0)).get("paths"))
+                .as("the entry must stay scoped to the ONE jar that embeds the "
+                        + "shaded guava — a second pattern would silence findings "
+                        + "on other packages")
+                .isEqualTo(List.of("**/graphql-java-25.1.jar"));
     }
 
     @Test
