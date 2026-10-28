@@ -53,4 +53,31 @@ public interface ReviewLookupPort {
      * authorization — the reviews side re-checks it (defense in depth).
      */
     Optional<UUID> hideAsModerator(UUID reviewId);
+
+    /**
+     * The AUTOMATIC engine's hide (B-19/C.11 — row 3, the narrow internal
+     * path): the SAME measured semantics {@link #hideAsModerator(UUID)}
+     * carries (the same {@code PUBLISHED}-only flip, the same update event,
+     * the same {@code "reviews"} cache eviction, the same documented skip
+     * and the same return contract), invoked by the community rule engine
+     * AFTER it has validated the enabled rule and the distinct-reporter
+     * threshold.
+     *
+     * <p><b>The authority split (the CodeRabbit-measured gap):</b> this
+     * path carries the machine's own authority, NOT the reporter's
+     * privileges — the ordinary (non-admin) reporter's qualifying report
+     * rides the reviews side WITHOUT the manual path's ADMIN gate, so the
+     * hide commits together with the report's creation inside the engine's
+     * one unit of work. Before this seam the engine rode the admin-gated
+     * manual path, so a non-admin reporter's qualifying report failed
+     * authorization INSIDE the creation transaction and rolled the whole
+     * unit back — every report, even the qualifying one itself.
+     *
+     * <p><b>Deliberately narrow:</b> the manual moderation keeps its ADMIN
+     * authorization untouched ({@code hideAsModerator} above — defense in
+     * depth retained on the manual path only); this method exists for the
+     * engine's automatic action and no other caller — the engine has
+     * already measured the rule and the threshold before reaching it.
+     */
+    Optional<UUID> hideAsModerationEngine(UUID reviewId);
 }

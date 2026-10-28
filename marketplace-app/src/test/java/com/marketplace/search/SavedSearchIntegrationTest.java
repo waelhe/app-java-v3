@@ -123,6 +123,7 @@ class SavedSearchIntegrationTest {
         // Envers revisions, so the deletes are order-free and audit-silent.
         jdbc.update("DELETE FROM saved_search_matches");
         jdbc.update("DELETE FROM saved_searches");
+        jdbc.update("DELETE FROM saved_search_scan_claims");
         jdbc.update("DELETE FROM notifications WHERE type = 'SAVED_SEARCH_MATCH'");
 
         consumerUserId = UUID.randomUUID();
@@ -184,6 +185,25 @@ class SavedSearchIntegrationTest {
         // pattern): activate() is @PreAuthorize("hasRole('PROVIDER')") and
         // the bare jwt() token carries no authorities — a plain 403.
         mockMvc.perform(post("/api/v1/listings/{id}/activate", listingId)
+                        .with(jwt().jwt(j -> j.subject("l35-provider"))
+                                .authorities(new org.springframework.security.core.authority
+                                        .SimpleGrantedAuthority("ROLE_PROVIDER"))))
+                .andExpect(status().isOk());
+    }
+
+    private void pauseListing(UUID listingId) throws Exception {
+        // The domain state machine (ListingStatus.TRANSITIONS) has no
+        // ACTIVE→ACTIVE edge: a second activation of an already-ACTIVE
+        // listing answers 409 by contract (the machine measured on this
+        // tree). The honest replay path for the coalescing scenario is
+        // pause→activate — PAUSED→ACTIVE is a legal edge — which
+        // publishes the second ListingActivatedEvent (the amplified
+        // trigger under test) without violating the machine. pause
+        // itself publishes only the cache invalidation, never the
+        // activation event, so the scan counts stay attributable to the
+        // activations alone.
+        when(currentUserProvider.getCurrentUserId(any())).thenReturn(providerUserId);
+        mockMvc.perform(post("/api/v1/listings/{id}/pause", listingId)
                         .with(jwt().jwt(j -> j.subject("l35-provider"))
                                 .authorities(new org.springframework.security.core.authority
                                         .SimpleGrantedAuthority("ROLE_PROVIDER"))))
@@ -358,11 +378,59 @@ class SavedSearchIntegrationTest {
         activateListing(listingId);
         awaitNotification(consumerUserId, 1);
 
+        // Row 25 (CWE-400): the claim's activation budget would coalesce
+        // the re-run for free — but criterion 3-b is the LEDGER's contract,
+        // so the claim row is cleared first: the re-run really walks the
+        // population again and the ON CONFLICT skip must absorb it alone.
+        jdbc.update("DELETE FROM saved_search_scan_claims WHERE listing_id = ?", listingId);
         // second delivery of the same (listing, provider) pair — the
         // listener body re-run (the registry's at-least-once contract)
         savedSearchService.processListingActivated(listingId, providerUserId);
 
         awaitScanCompleted(listingId);
+        Integer notifications = jdbc.queryForObject(
+                "SELECT count(*) FROM notifications WHERE recipient_id = ? AND type = 'SAVED_SEARCH_MATCH'",
+                Integer.class, consumerUserId);
+        assertThat(notifications).isEqualTo(1);
+        Integer matches = jdbc.queryForObject(
+                "SELECT count(*) FROM saved_search_matches WHERE listing_id = ?", Integer.class, listingId);
+        assertThat(matches).isEqualTo(1);
+    }
+
+    @Test
+    void repeatedActivationWithinTheBudgetIsCoalesced() throws Exception {
+        // Row 25 (agent findings 2026-10-25 — CWE-400): the per-listing
+        // activation budget — the finding's exact shape. The second
+        // activation inside the cooldown window performs NO new population
+        // work: the claim's stamp stays at the FIRST scan's instant (a
+        // re-stamp would mean the scan ran again), and the single
+        // notification of the first scan is the final state.
+        UUID listingId = seedDraftListingWithProperty();
+        saveSearch("{\"minRooms\": 2, \"locationId\": \"" + QUDSAYYA_CITY + "\"}");
+
+        activateListing(listingId);
+        awaitNotification(consumerUserId, 1);
+        awaitScanCompleted(listingId);
+        java.sql.Timestamp firstScan = jdbc.queryForObject(
+                "SELECT last_scan_at FROM saved_search_scan_claims WHERE listing_id = ?",
+                java.sql.Timestamp.class, listingId);
+        assertThat(firstScan).as("the running scan stamped its claim").isNotNull();
+
+        // the replay — the machine has no ACTIVE→ACTIVE edge (a second
+        // activation of an ACTIVE listing answers 409 by the state
+        // contract), so the second ListingActivatedEvent rides the
+        // pause→activate path; the activation event alone is the
+        // amplified trigger, and it is coalesced
+        pauseListing(listingId);
+        activateListing(listingId);
+        awaitScanCompleted(listingId);
+
+        java.sql.Timestamp secondScan = jdbc.queryForObject(
+                "SELECT last_scan_at FROM saved_search_scan_claims WHERE listing_id = ?",
+                java.sql.Timestamp.class, listingId);
+        assertThat(secondScan)
+                .as("the coalesced activation re-stamped nothing — zero population work")
+                .isEqualTo(firstScan);
         Integer notifications = jdbc.queryForObject(
                 "SELECT count(*) FROM notifications WHERE recipient_id = ? AND type = 'SAVED_SEARCH_MATCH'",
                 Integer.class, consumerUserId);

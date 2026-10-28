@@ -5,6 +5,7 @@ import org.springframework.boot.context.annotation.UserConfigurations;
 import org.springframework.boot.context.properties.bind.validation.BindValidationException;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -76,6 +77,58 @@ class SearchPropertiesValidationTest {
     @Test
     void negativeCapFailsStartupAtBindingTime() {
         runner.withPropertyValues("marketplace.search.savedsearches.max-per-user=-3")
+                .run(context -> assertThat(context).hasFailed());
+    }
+
+    // ------------------------------------------------------------------
+    // Row 25 (CWE-400): the activation budget — Duration binding
+    // ------------------------------------------------------------------
+
+    @Test
+    void absentCooldownBindsToTheConservativeDefaultBudget() {
+        runner.run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getBean(SearchProperties.class)
+                    .savedSearches().alertScanCooldown()).isEqualTo(Duration.ofHours(1));
+        });
+    }
+
+    @Test
+    void explicitCooldownBindsThroughTheOfficialDurationStyle() {
+        // The simple style ("30m") Spring Boot documents for Duration
+        // properties (Externalized Configuration › Durations); the ISO-8601
+        // form ("PT30M") binds the same value through the same converter.
+        runner.withPropertyValues("marketplace.search.savedsearches.alert-scan-cooldown=30m")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context.getBean(SearchProperties.class)
+                            .savedSearches().alertScanCooldown()).isEqualTo(Duration.ofMinutes(30));
+                });
+        runner.withPropertyValues("marketplace.search.savedsearches.alert-scan-cooldown=PT45M")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context.getBean(SearchProperties.class)
+                            .savedSearches().alertScanCooldown()).isEqualTo(Duration.ofMinutes(45));
+                });
+    }
+
+    @Test
+    void zeroCooldownIsTheDocumentedOffSwitchAndBinds() {
+        runner.withPropertyValues("marketplace.search.savedsearches.alert-scan-cooldown=0s")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context.getBean(SearchProperties.class)
+                            .savedSearches().alertScanCooldown()).isEqualTo(Duration.ZERO);
+                });
+    }
+
+    @Test
+    void negativeCooldownFailsStartupAtBindingTime() {
+        // A negative budget would coalesce EVERY scan forever — the
+        // "cap satisfied by zero" trap in its worst form. The record's
+        // compact constructor refuses to construct it, so the deploy
+        // fails at binding time instead of silently disabling alerts.
+        runner.withPropertyValues("marketplace.search.savedsearches.alert-scan-cooldown=-30m")
                 .run(context -> assertThat(context).hasFailed());
     }
 }

@@ -2,8 +2,12 @@ package com.marketplace.pricing;
 
 import org.instancio.Instancio;
 import org.junit.jupiter.api.Test;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.expression.spel.standard.SpelExpressionParser;
+import org.springframework.expression.spel.support.StandardEvaluationContext;
 
+import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -13,7 +17,9 @@ import java.util.UUID;
 
 import static org.instancio.Select.field;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -49,7 +55,8 @@ class PricingServiceWindowTest {
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
 
     private final PricingService service = new PricingService(
-            ruleRepository, weekendRuleRepository, seasonalRateRepository, eventPublisher, null);
+            ruleRepository, weekendRuleRepository, seasonalRateRepository, eventPublisher, null,
+            new PricingProperties(PricingProperties.DEFAULT_MAX_STAY_NIGHTS));
 
     private void givenNoActiveRule() {
         when(ruleRepository.findByCategoryAndActiveTrue(any())).thenReturn(Optional.empty());
@@ -217,5 +224,128 @@ class PricingServiceWindowTest {
         verify(weekendRuleRepository, never()).findByListingId(any());
         verify(seasonalRateRepository, never()).findByListingIdOrderByFromDateAsc(any());
         verify(ruleRepository, never()).findByCategoryAndActiveTrue(any());
+    }
+
+    // ------------------------------------------------------------------
+    // Row 11 (agent findings 2026-10-25 — CWE-834): the business bound
+    // ------------------------------------------------------------------
+
+    /**
+     * Row 11 — the finding's exact shape: a window spanning far beyond any
+     * supported stay (the finding's measured exploit carries a
+     * +200000-year endpoint) is 400 on BOTH surfaces BEFORE any repository
+     * read. The per-date loop is finite by construction now; the reversed
+     * window's own never() triple above is the same proof shape.
+     */
+    @Test
+    void oversizedWindow_isRejectedBeforeAnyRead_onBothSurfaces() {
+        Instant farEnd = Instant.parse("9999-01-01T10:00:00Z"); // ~7,900 years of priced dates
+
+        assertThrows(com.marketplace.shared.api.BadRequestException.class,
+                () -> service.calculateBookingTotalCents(LISTING, BASE, CHECK_IN, farEnd));
+        assertThrows(com.marketplace.shared.api.BadRequestException.class,
+                () -> service.calculatePrice(LISTING, BASE, "services", CHECK_IN, farEnd));
+
+        verify(weekendRuleRepository, never()).findByListingId(any());
+        verify(seasonalRateRepository, never()).findByListingIdOrderByFromDateAsc(any());
+        verify(ruleRepository, never()).findByCategoryAndActiveTrue(any());
+    }
+
+    /**
+     * Row 11 — the boundary is inclusive: a window of EXACTLY the
+     * configured nights (365 by default) is priced, not rejected. A
+     * covering seasonal range makes the total deterministic:
+     * 365 nights x 5 000 cents.
+     */
+    @Test
+    void windowAtTheExactBound_isPricedNotRejected() {
+        Instant in = Instant.parse("2026-01-01T00:00:00Z");
+        Instant out = Instant.parse("2027-01-01T00:00:00Z"); // 365 nights (2026 is not a leap year)
+        givenSeasonalRanges(range("2025-12-01", "2027-03-01", 5_000L));
+
+        long total = service.calculateBookingTotalCents(LISTING, BASE, in, out);
+
+        assertEquals(365L * 5_000L, total);
+    }
+
+    /**
+     * Row 11 — the bound is a business knob, not a hardcode: a deployment
+     * configured for 3-night stays rejects the 4-night window before any
+     * read, on the same gate the default bound rides.
+     */
+    @Test
+    void configuredBound_isEnforcedFromConfiguration() {
+        PricingService tight = new PricingService(ruleRepository, weekendRuleRepository,
+                seasonalRateRepository, eventPublisher, null, new PricingProperties(3));
+
+        Instant fourNightsIn = Instant.parse("2026-01-15T14:00:00Z");
+        Instant fourNightsOut = Instant.parse("2026-01-19T11:00:00Z");
+
+        assertThrows(com.marketplace.shared.api.BadRequestException.class,
+                () -> tight.calculateBookingTotalCents(LISTING, BASE, fourNightsIn, fourNightsOut));
+        verify(weekendRuleRepository, never()).findByListingId(any());
+        verify(seasonalRateRepository, never()).findByListingIdOrderByFromDateAsc(any());
+    }
+
+    /**
+     * Part-2 review round 1 (the cache-key adoption): the windowed quote's
+     * {@code @Cacheable} key carries the CURRENT stay bound as its last
+     * segment. A deploy that lowers {@code marketplace.pricing.max-stay-nights}
+     * must not keep serving the old bound's cached quotes — the finding's
+     * shape: the row-11 400 gate lives INSIDE the cached body, so a cache
+     * hit bypasses it, and the old entries would answer for the Redis TTL.
+     * The limit segment makes every bound change a NEW key space (the old
+     * entries are unreachable by construction). The test evaluates the
+     * ACTUAL annotation expression — the same SpEL root object the cache
+     * interceptor builds ({@code #root.target} is the service instance) —
+     * never a copy of the key format.
+     */
+    @Test
+    void windowedQuoteCacheKey_carriesTheCurrentStayBound() throws Exception {
+        PricingService redeployedWithLowerBound = new PricingService(ruleRepository,
+                weekendRuleRepository, seasonalRateRepository, eventPublisher, null,
+                new PricingProperties(3));
+
+        String atDefaultBound = evalWindowedKey(service);
+        String atDefaultBoundAgain = evalWindowedKey(service);
+        String atLoweredBound = evalWindowedKey(redeployedWithLowerBound);
+
+        assertEquals(atDefaultBound, atDefaultBoundAgain, "the key is stable — caching still works");
+        assertTrue(atDefaultBound.endsWith("|" + PricingProperties.DEFAULT_MAX_STAY_NIGHTS),
+                "the current bound is the key's last segment: " + atDefaultBound);
+        assertNotEquals(atDefaultBound, atLoweredBound,
+                "a lowered deploy cannot read the old bound's entries");
+        assertTrue(atLoweredBound.endsWith("|3"), "the lowered bound owns its own key space: " + atLoweredBound);
+    }
+
+    /** Evaluates the windowed method's real @Cacheable key expression. */
+    private static String evalWindowedKey(PricingService target) throws Exception {
+        Method windowed = PricingService.class.getMethod("calculatePrice",
+                UUID.class, long.class, String.class, Instant.class, Instant.class);
+        String expression = windowed.getAnnotation(Cacheable.class).key();
+        // The interceptor's SpEL root shape, reproduced locally (Spring's own
+        // CacheExpressionRootObject is package-private): #root.target resolves
+        // through getTarget() — the standard bean-property path SpEL walks.
+        StandardEvaluationContext context = new StandardEvaluationContext(new CacheKeyRoot(target));
+        context.setVariable("listingId", LISTING);
+        context.setVariable("basePriceCents", BASE);
+        context.setVariable("category", "services");
+        context.setVariable("checkIn", CHECK_IN);
+        context.setVariable("checkOut", CHECK_OUT);
+        return new SpelExpressionParser().parseExpression(expression)
+                .getValue(context, String.class);
+    }
+
+    /** The cache interceptor's SpEL root shape — target/method getters. */
+    private static final class CacheKeyRoot {
+        private final Object target;
+
+        CacheKeyRoot(Object target) {
+            this.target = target;
+        }
+
+        public Object getTarget() {
+            return target;
+        }
     }
 }

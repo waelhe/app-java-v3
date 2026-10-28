@@ -494,7 +494,13 @@ public class MediaService {
      *       duplicate object);</li>
      *   <li>any other allowlisted MIME (webp has no JDK ImageIO writer, gif
      *       would collapse to a static frame) — thumb = original, by design
-     *       (roadmap acceptance 4).</li>
+     *       (roadmap acceptance 4);</li>
+     *   <li>bytes whose ACTUAL encoded format sits outside JPEG/PNG under a
+     *       processable declaration (row 4, agent findings 2026-10-25 — the
+     *       decoder permit lives in {@link Thumbnails}) — a DECODE-stage
+     *       processing failure, counted and retried like unreadable bytes;
+     *       never a silent fallback, never a mislabeled original served as
+     *       its own thumbnail.</li>
      * </ul>
      * A processing failure (unreadable bytes, storage error) propagates — the
      * Modulith publication goes FAILED and the documented resubmission

@@ -22,4 +22,21 @@ public interface OrderDeliveryPort {
      *         is not CONFIRMED or carries no seller
      */
     OrderFulfillmentSelection requireOrderFulfillment(UUID orderId, UUID buyerId);
+
+    /**
+     * Part-2 review round 2 — the SAME frozen selection read under the
+     * order row's write lock: the LEG-CREATION surfaces (the split
+     * command and the confirmation listener) serialize with the direct
+     * fulfillment gate on the order row itself, so a leg can no longer
+     * appear between the gate's active-legs count and its commit. The
+     * manual quoting path keeps the lock-free read — a quote creates
+     * no leg.
+     *
+     * @throws com.marketplace.shared.api.ResourceNotFoundException when the
+     *         order is absent or not the buyer's (the privacy contract)
+     * @throws com.marketplace.shared.api.ConflictException when the order
+     *         is not CONFIRMED or carries no seller (the moved-past truth
+     *         a serialized reader now sees)
+     */
+    OrderFulfillmentSelection requireOrderFulfillmentForUpdate(UUID orderId, UUID buyerId);
 }

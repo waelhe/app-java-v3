@@ -24,6 +24,12 @@ import org.springframework.stereotype.Component;
  *       edge.</li>
  * </ul>
  *
+ * <p>Row 15 (agent findings 2026-10-25): both dispatches forward the
+ * event's {@code disputeId} — the freeze/release writes are identity-aware
+ * (a freeze only for a still-open dispute; a release only when no other
+ * open dispute still requires it), so the listener no longer discards the
+ * dispute's identity at the seam.
+ *
  * <p>The AFTER_COMMIT/REQUIRES_NEW module-listener semantics (the Modulith
  * events contract) keep the machine's writes in their own transaction — a
  * consumer failure never rolls the dispute row back (the same discipline
@@ -45,8 +51,8 @@ public class LoanDisputeListener {
         if (event.subjectType() != DisputeSubject.LOAN) {
             return;
         }
-        lendingService.markDisputedFromDispute(event.loanId());
-        log.info("Loan dispute freeze applied: loan {}", event.loanId());
+        lendingService.markDisputedFromDispute(event.disputeId(), event.loanId());
+        log.info("Loan dispute freeze applied: loan {} dispute {}", event.loanId(), event.disputeId());
     }
 
     @ApplicationModuleListener
@@ -54,7 +60,8 @@ public class LoanDisputeListener {
         if (event.subjectType() != DisputeSubject.LOAN) {
             return;
         }
-        lendingService.resolveDisputeFromDisputes(event.loanId(), event.resolution());
-        log.info("Loan dispute resolution applied: loan {} -> {}", event.loanId(), event.resolution());
+        lendingService.resolveDisputeFromDisputes(event.disputeId(), event.loanId(), event.resolution());
+        log.info("Loan dispute resolution applied: loan {} dispute {} -> {}",
+                event.loanId(), event.disputeId(), event.resolution());
     }
 }

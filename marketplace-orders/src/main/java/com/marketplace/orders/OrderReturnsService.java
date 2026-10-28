@@ -46,6 +46,15 @@ import java.util.UUID;
 @Service
 public class OrderReturnsService {
 
+    /**
+     * The overlap guard's counted set (row 6): the return statuses whose
+     * units stay consumed against the frozen lines — REQUESTED through
+     * COMPLETED. Only REJECTED/CANCELLED give the units back.
+     */
+    private static final List<OrderReturn.ReturnStatus> QUANTITY_CONSUMING_STATUSES = List.of(
+            OrderReturn.ReturnStatus.REQUESTED, OrderReturn.ReturnStatus.APPROVED,
+            OrderReturn.ReturnStatus.RECEIVED, OrderReturn.ReturnStatus.COMPLETED);
+
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final OrderReturnRepository returns;
@@ -85,6 +94,16 @@ public class OrderReturnsService {
      * PESSIMISTIC_WRITE for the whole guard+insert: two concurrent requests
      * serialize on the row instead of both reading the same open-return
      * total before either inserts its lines (the review's finding).
+     *
+     * <p><b>row 6 (agent findings 2026-10-25, CWE-400): the overlap history
+     * reads through ONE fixed aggregate.</b> The prior shape loaded every
+     * counted return of the order and walked its lines one query per return
+     * — inside the locked transaction — before the quantity guard could
+     * answer; a buyer could prepare many small returns and replay that
+     * database work with every rejected request. The guard now reads
+     * {@code sumConsumedByOrderItemId} — one statement, restricted to the
+     * requested order-item IDs, grouped per item — and rejects excess
+     * quantities without ever issuing a query per historical return.</p>
      */
     @Transactional
     @Observed(name = "order.return.request")
@@ -101,14 +120,13 @@ public class OrderReturnsService {
             throw new BadRequestException("A return requires at least one line");
         }
         List<OrderItem> frozenLines = orderItemRepository.findByOrderId(orderId);
-        List<OrderReturn> open = returns.findByOrderIdAndStatusIn(orderId, List.of(
-                OrderReturn.ReturnStatus.REQUESTED, OrderReturn.ReturnStatus.APPROVED,
-                OrderReturn.ReturnStatus.RECEIVED, OrderReturn.ReturnStatus.COMPLETED));
-        Map<UUID, Integer> alreadyRequested = new HashMap<>();
-        for (OrderReturn openReturn : open) {
-            for (OrderReturnLine line : returnLines.findByOrderReturnId(openReturn.getId())) {
-                alreadyRequested.merge(line.getOrderItemId(), line.getQuantity(), Integer::sum);
-            }
+        // row 6: the counted set is the overlap guard's own vocabulary —
+        // REQUESTED through COMPLETED keep their units consumed; only
+        // REJECTED/CANCELLED give the units back.
+        Map<UUID, Long> alreadyRequested = new HashMap<>();
+        for (ConsumedReturnQuantity consumed : returnLines.sumConsumedByOrderItemId(
+                orderId, lineRequests.keySet(), QUANTITY_CONSUMING_STATUSES)) {
+            alreadyRequested.put(consumed.getOrderItemId(), consumed.getConsumedQuantity());
         }
         OrderReturn requested = returns.save(OrderReturn.requested(
                 orderId, buyerId, type, reason, order.getCurrency(), Instant.now()));
@@ -118,7 +136,7 @@ public class OrderReturnsService {
                     .findFirst()
                     .orElseThrow(() -> new BadRequestException(
                             "Order item " + entry.getKey() + " is not a line of order " + orderId));
-            int already = alreadyRequested.getOrDefault(item.getId(), 0);
+            long already = alreadyRequested.getOrDefault(item.getId(), 0L);
             if (entry.getValue() + already > item.getQuantity()) {
                 throw new ConflictException("Order item " + item.getId() + " covers "
                         + item.getQuantity() + " units — " + already + " already in open returns, "

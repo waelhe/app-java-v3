@@ -1,6 +1,7 @@
 package com.marketplace.availability;
 
 import com.marketplace.shared.api.AvailabilityPort;
+import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ConflictException;
 import org.slf4j.Logger;
@@ -18,6 +19,8 @@ import io.micrometer.observation.annotation.Observed;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -32,6 +35,13 @@ public class AvailabilityService implements AvailabilityPort {
     private final ProviderAvailabilityRuleRepository ruleRepository;
     private final ProviderTimeOffRepository timeOffRepository;
     private final ApplicationEventPublisher eventPublisher;
+    /**
+     * Row 11 (agent findings 2026-10-25 — CWE-834): the compatible
+     * publication bound — the slot-span cap that keeps oversized windows
+     * out of the stored slot set (and therefore out of the exact-match
+     * booking path) from the first write.
+     */
+    private final AvailabilityProperties properties;
     /**
      * CodeRabbit round 1 on PR #471 (adopted from the root): the per-rule
      * generation unit lives in its own bean behind a proxied
@@ -62,19 +72,55 @@ public class AvailabilityService implements AvailabilityPort {
                                ProviderAvailabilityRuleRepository ruleRepository,
                                ProviderTimeOffRepository timeOffRepository,
                                ApplicationEventPublisher eventPublisher,
-                               AvailabilitySlotGenerator slotGenerator) {
+                               AvailabilitySlotGenerator slotGenerator,
+                               AvailabilityProperties properties) {
         this.repository = repository;
         this.ruleRepository = ruleRepository;
         this.timeOffRepository = timeOffRepository;
         this.eventPublisher = eventPublisher;
         this.slotGenerator = slotGenerator;
+        this.properties = properties;
     }
 
     @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
     public AvailabilitySlotResponse createSlot(UUID providerId, Instant startsAt, Instant endsAt) {
+        // Row 11: the window gate precedes the write — an oversized or
+        // reversed window never reaches the stored slot set.
+        requireSupportedSlotWindow(startsAt, endsAt);
         AvailabilitySlot saved = repository.save(AvailabilitySlot.open(providerId, startsAt, endsAt));
         eventPublisher.publishEvent(new CacheInvalidationRequested(AVAILABILITY_DEPENDENT_CACHE_NAMES));
         return AvailabilitySlotResponse.from(saved);
+    }
+
+    /**
+     * Row 11 (agent findings 2026-10-25 — CWE-834): the compatible
+     * publication bound — the finding's recommendation verbatim ("apply
+     * compatible limits when publishing availability slots"). The attack
+     * chain starts HERE: a provider publishes an owned open slot without
+     * a duration limit, and a compact consumer booking window matching
+     * it rides the pricing module's per-date loop into tens of millions
+     * of iterations. The UTC-day span of a published slot is capped at
+     * the configured bound ({@code marketplace.availability.max-slot-days},
+     * default 365 — compatible by construction with
+     * {@code marketplace.pricing.max-stay-nights}: a booking must EXACTLY
+     * match a slot, so a slot within this bound is always priceable
+     * end-to-end). The reversed-window rejection is the same gate family
+     * the pricing seam and the SearchCriteria record already enforce ("a
+     * reversed window is never a window") — a reversed slot can never
+     * match a bookable window and is pure junk state.
+     */
+    private void requireSupportedSlotWindow(Instant startsAt, Instant endsAt) {
+        if (endsAt.isBefore(startsAt)) {
+            throw new BadRequestException("Slot end must not be before slot start");
+        }
+        LocalDate from = LocalDate.ofInstant(startsAt, ZoneOffset.UTC);
+        LocalDate to = LocalDate.ofInstant(endsAt, ZoneOffset.UTC);
+        long spanDays = from.isBefore(to) ? ChronoUnit.DAYS.between(from, to) : 0L;
+        long maxDays = properties.maxSlotDays();
+        if (spanDays > maxDays) {
+            throw new BadRequestException(
+                    "Slots longer than " + maxDays + " days are not supported");
+        }
     }
 
     @Transactional(readOnly = true)

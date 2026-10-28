@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -23,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -83,13 +85,29 @@ class OrderReturnsServiceTest {
                 quantity);
     }
 
+    /** row 6: one aggregate row of the overlap guard's consumed quantities. */
+    private ConsumedReturnQuantity consumed(UUID itemId, long quantity) {
+        return new ConsumedReturnQuantity() {
+            @Override
+            public UUID getOrderItemId() {
+                return itemId;
+            }
+
+            @Override
+            public long getConsumedQuantity() {
+                return quantity;
+            }
+        };
+    }
+
     @Test
     void aBuyerOpensAReturnAgainstTheirFulfilledOrder() {
         Order order = fulfilledOrder();
         OrderItem item = itemOf(order, UUID.randomUUID(), 2, 3_000L);
         when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
         when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
-        when(returns.findByOrderIdAndStatusIn(org.mockito.ArgumentMatchers.eq(order.getId()), any())).thenReturn(List.of());
+        when(returnLines.sumConsumedByOrderItemId(eq(order.getId()), any(), any()))
+                .thenReturn(List.of());
 
         OrderReturn opened = service.request(order.getId(), buyer,
                 OrderReturn.ReturnType.RETURN, "wrong size", Map.of(item.getId(), 1));
@@ -126,16 +144,47 @@ class OrderReturnsServiceTest {
         OrderItem item = itemOf(order, UUID.randomUUID(), 2, 3_000L);
         when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
         when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
-        OrderReturn open = OrderReturn.requested(order.getId(), buyer,
-                OrderReturn.ReturnType.RETURN, "first", "SAR", Instant.now());
-        when(returns.findByOrderIdAndStatusIn(org.mockito.ArgumentMatchers.eq(order.getId()), any())).thenReturn(List.of(open));
-        when(returnLines.findByOrderReturnId(open.getId())).thenReturn(List.of(
-                OrderReturnLine.of(open.getId(), item, 1)));
+        when(returnLines.sumConsumedByOrderItemId(eq(order.getId()), any(), any()))
+                .thenReturn(List.of(consumed(item.getId(), 1L)));
 
         assertThatThrownBy(() -> service.request(order.getId(), buyer,
                 OrderReturn.ReturnType.RETURN, "second", Map.of(item.getId(), 2)))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("already in open returns");
+    }
+
+    @Test
+    void theOverlapGuardReadsOneFixedAggregate_noPerReturnWalk() {
+        // row 6 (agent findings 2026-10-25, CWE-400): however many counted
+        // returns the order carries, the guard reads its consumed quantities
+        // through ONE aggregate statement — restricted to the requested
+        // order-item IDs and the counted statuses — and the per-return
+        // findByOrderReturnId walk (one query per historical return, inside
+        // the locked transaction) never runs
+        Order order = fulfilledOrder();
+        OrderItem item = itemOf(order, UUID.randomUUID(), 5, 3_000L);
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
+        when(returnLines.sumConsumedByOrderItemId(eq(order.getId()), any(), any()))
+                .thenReturn(List.of(consumed(item.getId(), 4L)));
+
+        service.request(order.getId(), buyer,
+                OrderReturn.ReturnType.RETURN, "one more", Map.of(item.getId(), 1));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Collection<UUID>> itemIds =
+                ArgumentCaptor.forClass(Collection.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Collection<OrderReturn.ReturnStatus>> statuses =
+                ArgumentCaptor.forClass(Collection.class);
+        verify(returnLines).sumConsumedByOrderItemId(eq(order.getId()),
+                itemIds.capture(), statuses.capture());
+        assertThat(itemIds.getValue()).containsExactly(item.getId());
+        assertThat(statuses.getValue()).containsExactly(
+                OrderReturn.ReturnStatus.REQUESTED, OrderReturn.ReturnStatus.APPROVED,
+                OrderReturn.ReturnStatus.RECEIVED, OrderReturn.ReturnStatus.COMPLETED);
+        verify(returnLines, never()).findByOrderReturnId(any());
+        verify(returnLines).save(any(OrderReturnLine.class));
     }
 
     @Test
@@ -162,20 +211,15 @@ class OrderReturnsServiceTest {
         // the PR objective's limit (the review's Major finding): a COMPLETED
         // return's units are already refunded — its quantity stays consumed,
         // so a second return for the same units cannot pass the guard and
-        // double-refund the same goods
+        // double-refund the same goods. The counted set (captured in the
+        // fixed-aggregate test below) carries COMPLETED alongside the open
+        // statuses — the aggregate's verdict is the same refusal
         Order order = fulfilledOrder();
         OrderItem item = itemOf(order, UUID.randomUUID(), 2, 3_000L);
         when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
         when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
-        OrderReturn completed = OrderReturn.requested(order.getId(), buyer,
-                OrderReturn.ReturnType.RETURN, "first", "SAR", Instant.now());
-        completed.approve(2_700L, Instant.now());
-        completed.receive(Instant.now());
-        completed.complete(null, Instant.now());
-        when(returns.findByOrderIdAndStatusIn(org.mockito.ArgumentMatchers.eq(order.getId()), any()))
-                .thenReturn(List.of(completed));
-        when(returnLines.findByOrderReturnId(completed.getId())).thenReturn(List.of(
-                OrderReturnLine.of(completed.getId(), item, 2)));
+        when(returnLines.sumConsumedByOrderItemId(eq(order.getId()), any(), any()))
+                .thenReturn(List.of(consumed(item.getId(), 2L)));
 
         assertThatThrownBy(() -> service.request(order.getId(), buyer,
                 OrderReturn.ReturnType.RETURN, "second", Map.of(item.getId(), 2)))

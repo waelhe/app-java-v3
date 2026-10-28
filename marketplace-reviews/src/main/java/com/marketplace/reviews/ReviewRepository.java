@@ -2,9 +2,11 @@ package com.marketplace.reviews;
 
 import com.marketplace.shared.api.RatingDistribution;
 import com.marketplace.shared.api.ReviewStats;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.history.RevisionRepository;
 import org.springframework.data.repository.query.Param;
@@ -16,6 +18,49 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface ReviewRepository extends JpaRepository<Review, UUID>, RevisionRepository<Review, UUID, Integer> {
+
+    /**
+     * Part-2 review round 2 (the full review's measured Major): the review
+     * read under the row's own write lock — the moderation hide reads the
+     * state its PUBLISHED-only filter runs on INSIDE the lock, so the two
+     * concurrent report transactions that both crossed the rule threshold
+     * serialize here: the first hides and commits, the second waits, reads
+     * the committed HIDDEN truth and takes the documented skip (its own
+     * report creation COMMITS instead of dying on the inherited
+     * {@code @Version} optimistic conflict). PostgreSQL's
+     * {@code FOR UPDATE} semantics — the platform's serialization
+     * guarantee, not an application-level retry.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from Review r where r.id = :id")
+    Optional<Review> findByIdForUpdate(@Param("id") UUID id);
+
+    /**
+     * Part-2 review round 2's own follow-up (the report-survival
+     * integration test's measured root): the VISIBLE-author gate's own
+     * fact as a SCALAR projection — the reviewer id of the PUBLISHED row,
+     * never an entity materialization. The community report-creation
+     * transaction rides this gate BEFORE its engine hide reaches
+     * {@code findByIdForUpdate}: an {@code findById} here would inject the
+     * row's {@code @Version} snapshot into the persistence context, and
+     * the later locked read of the concurrently-committed post-hide
+     * version is Hibernate's own "Query result contains conflicting
+     * version of entity already held in persistence context" failure —
+     * taking the second concurrent reporter's own report creation down
+     * with it, exactly the shape the lock seam exists to close. The
+     * projection keeps the creation unit's ONLY Review materialization
+     * the locked read itself, so the serialized second transaction reads
+     * the committed truth and takes the documented skip. The official
+     * projections discipline (Spring Data JPA reference › Projections:
+     * "you're usually better off using a projection that only exposes the
+     * subset"), the {@code findIdsByStatus} house precedent verbatim —
+     * JPQL over the soft-deleted entity, with Hibernate's
+     * {@code @SoftDelete} live-row filter applied by the machinery
+     * exactly as the entity loads are.
+     */
+    @Query("select r.reviewerId from Review r where r.id = :id and r.moderationStatus = :status")
+    Optional<UUID> findReviewerIdByIdAndModerationStatus(@Param("id") UUID id,
+            @Param("status") ReviewModerationStatus moderationStatus);
 
     /**
      * I8 + W1 (§4.5): the provider's public review surface keeps its

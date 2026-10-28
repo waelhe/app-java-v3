@@ -24,6 +24,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -43,6 +44,23 @@ import java.util.UUID;
  * like the search surface ("never a silently-empty page") — the geo port
  * is consulted at save time so a stored search can never reference a
  * dead node.
+ *
+ * <p><b>Row 25 (agent findings 2026-10-25 — CWE-400): the coalescing
+ * gate.</b> Before any population work, {@link #processListingActivated}
+ * claims the scan for the listing: a non-blocking transactional advisory
+ * lock (the TRY variant — a duplicate activation whose scan is already
+ * in flight is consumed IMMEDIATELY, never parked on the shared event
+ * listener thread) and the per-listing claim row — a listing whose last
+ * scan is still inside the configured cooldown
+ * ({@code marketplace.search.saved-searches.alert-scan-cooldown},
+ * default 1h) coalesces the activation the same way. The pause-and-
+ * reactivate replay the finding describes is thereby bounded to one
+ * population scan per window per listing, while the scan itself — when
+ * it runs — is byte-identical to the pre-row-25 walk (the faithfulness
+ * rule is untouched: every scan evaluates the whole alert-enabled
+ * population through the dispatch-faithful matcher). The claim stamp
+ * commits atomically with the scan: a failed scan rolls the stamp back
+ * and the registry's retry re-claims cleanly.
  *
  * <p><b>The matcher (criteria 1-4):</b> {@link #processListingActivated}
  * scans every alert-enabled saved search in deterministic KEYSET id batches,
@@ -69,6 +87,43 @@ public class SavedSearchService {
 
     /** The scan's page size — bounded memory over an unbounded alert set. */
     private static final int SCAN_PAGE_SIZE = 200;
+
+    /**
+     * Row 25 (agent findings 2026-10-25 — CWE-400): the per-listing
+     * in-flight gate — the TRY variant of the create path's advisory
+     * TRANSACTION lock family ({@code lockPerUserCreate}). A waiting
+     * {@code pg_advisory_xact_lock} would park the shared event listener
+     * thread for the whole population scan (the thread-pool exhaustion
+     * the finding's replay could then cause on its own); the try form
+     * coalesces the duplicate IMMEDIATELY — the in-flight scan's
+     * transaction already covers this activation's alerting purpose. The
+     * {@code 'saved-search-scan:'} prefix namespaces the key away from the
+     * create lock's raw user-id space, so the two advisory families can
+     * never collide (domain separation by string, not by hash luck).
+     * Auto-released at the surrounding transaction's commit or rollback.
+     */
+    static final String TRY_SCAN_LOCK =
+            "SELECT pg_try_advisory_xact_lock(hashtextextended('saved-search-scan:' || ?::text, 0))";
+
+    /**
+     * Row 25: the claim read — the last ACTUAL scan's instant for the
+     * listing (an empty list = never scanned). A PLAIN read, no
+     * {@code FOR UPDATE}: the advisory lock above already serializes
+     * scans per listing, so the row is uncontended while it is read.
+     */
+    static final String READ_SCAN_CLAIM =
+            "SELECT last_scan_at FROM saved_search_scan_claims WHERE listing_id = ?";
+
+    /**
+     * Row 25: the claim stamp — unconditional for the same reason (the
+     * advisory lock serializes; the row lock is never contended). Commits
+     * WITH the scan: a failed scan rolls the stamp back and the event
+     * registry's at-least-once retry re-claims from the pre-scan state —
+     * the claim can never strand an activation behind a phantom stamp.
+     */
+    static final String STAMP_SCAN_CLAIM =
+            "INSERT INTO saved_search_scan_claims (listing_id, last_scan_at) VALUES (?, ?) "
+                    + "ON CONFLICT (listing_id) DO UPDATE SET last_scan_at = EXCLUDED.last_scan_at";
 
     private final SavedSearchRepository repository;
     private final SavedSearchMatcher matcher;
@@ -162,9 +217,25 @@ public class SavedSearchService {
      * {@code last_matched_at} stamps and the published events commit
      * atomically — a crash rolls the whole unit back and the registry
      * retries the event cleanly.
+     *
+     * <p><b>Row 25 (CWE-400): the coalescing gate runs FIRST.</b> A
+     * listing whose scan is already in flight, or whose last scan is
+     * still inside the activation budget
+     * ({@code marketplace.search.saved-searches.alert-scan-cooldown}),
+     * consumes the activation without any population work: ONE info
+     * line, no batches, no matcher calls, no ledger writes. The claim
+     * stamp that a RUNNING scan writes commits atomically with it (see
+     * {@link #STAMP_SCAN_CLAIM}).
      */
     @Transactional
     public void processListingActivated(UUID listingId, UUID providerId) {
+        // Row 25: the budget claim precedes the population work — the
+        // pause/reactivate replay dies here, before a single batch.
+        if (!beginScanWindow(listingId)) {
+            log.info("Saved-search scan coalesced for listing {}: the last scan is still inside the activation budget",
+                    listingId);
+            return;
+        }
         Map<UUID, List<UUID>> newMatchesPerUser = new HashMap<>();
         int scanned = 0;
         int matched = 0;
@@ -208,6 +279,47 @@ public class SavedSearchService {
         // non-match (criterion 2).
         log.info("Saved-search scan: listingId={}, scanned={}, matched={}, notifiedUsers={}",
                 listingId, scanned, matched, newMatchesPerUser.size());
+    }
+
+    /**
+     * Row 25 (CWE-400): the per-listing scan claim — the coalescing and
+     * activation budget the finding asked for, in one gate.
+     *
+     * <p><b>In-flight coalescing (non-blocking):</b> the transactional
+     * advisory TRY lock — a scan already running for THIS listing makes
+     * the claim fail fast (the listener thread is never parked on a row
+     * lock held for a whole population scan; the waiting variant of the
+     * same lock is exactly that trap).
+     *
+     * <p><b>The time budget:</b> the claim row's {@code last_scan_at} —
+     * a last scan inside the configured cooldown coalesces the
+     * activation (the budget anchors to the last ACTUAL scan; a
+     * coalesced activation never re-stamps it). {@code ZERO} cooldown
+     * disables the time budget on purpose (only the in-flight gate
+     * remains).
+     *
+     * <p>The stamp is written INSIDE this transaction, so it commits or
+     * rolls back WITH the scan it gates — the at-least-once registry
+     * contract survives a failed scan unchanged.
+     *
+     * @return {@code true} when the scan may run (the claim is taken);
+     *         {@code false} when the activation is coalesced.
+     */
+    private boolean beginScanWindow(UUID listingId) {
+        List<Boolean> inFlight = jdbcTemplate.queryForList(TRY_SCAN_LOCK, Boolean.class, listingId.toString());
+        if (inFlight.isEmpty() || !Boolean.TRUE.equals(inFlight.get(0))) {
+            return false; // a scan for this listing is already in flight
+        }
+        Instant now = clock.instant();
+        List<java.sql.Timestamp> lastScan =
+                jdbcTemplate.queryForList(READ_SCAN_CLAIM, java.sql.Timestamp.class, listingId);
+        Duration cooldown = properties.savedSearches().alertScanCooldown();
+        if (!lastScan.isEmpty()
+                && lastScan.get(0).toInstant().plus(cooldown).isAfter(now)) {
+            return false; // still inside the activation budget
+        }
+        jdbcTemplate.update(STAMP_SCAN_CLAIM, listingId, java.sql.Timestamp.from(now));
+        return true;
     }
 
     /**
