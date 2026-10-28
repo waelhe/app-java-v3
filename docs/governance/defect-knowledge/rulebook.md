@@ -150,4 +150,5 @@
 - **D5** API surface — OpenAPI diff + GraphQL schema gates (E-05/E-19 family).
 - **D6** Independent review — CodeRabbit (repository scans + PR reviews, drafts:true — E-13's fix).
 - **D7** Cursor contracts — `KeysetCursorGate` (E-19).
+- **D9** Source-format compatibility — `SourceFormatGuardTest` rejects package/import statements packed with other content, repo-wide (closes E-23's class; see enforcement-map §1/§2).
 - **D8** Guard-message fidelity — *documented; repaired once by governed code*: a guard's remedy message must describe a real mechanism. E-21's false promise was closed at `0edf0f6` (PR #723): the root-signatures guard now implements the registry its message promised; the rule stays documented for the remaining guards (see enforcement-map §5).

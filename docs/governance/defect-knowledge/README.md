@@ -22,7 +22,7 @@ The system exists because the measured history shows the *same causal mechanisms
 | Artifact | Role | Feeds |
 |---|---|---|
 | [`evidence-ledger.md`](evidence-ledger.md) | Historical incidents reconstructed as causal cases with citations (SHA / PR / test / run) | pattern catalog, rulebook |
-| [`pattern-catalog.md`](pattern-catalog.md) | The recurring causal mechanisms (P1–P9), verified vs hypothesis | change protocol, review protocol |
+| [`pattern-catalog.md`](pattern-catalog.md) | The recurring causal mechanisms (P1–P10), verified vs hypothesis | change protocol, review protocol |
 | [`rulebook.md`](rulebook.md) | Permanent rules: A universal · B conditional · C domain · D automated | every change |
 | [`change-protocol.md`](change-protocol.md) | Mandatory pre-edit / during / post-edit procedure for AI coding tasks | agent sessions |
 | [`review-protocol.md`](review-protocol.md) | Independent adversarial review standard, complementing CodeRabbit | reviews |
