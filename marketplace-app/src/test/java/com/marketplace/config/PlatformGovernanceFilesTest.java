@@ -344,24 +344,23 @@ class PlatformGovernanceFilesTest {
         assertThat(ignore)
                 .as("the single entry must be the measured graphql-java guava CVE")
                 .contains("id: CVE-2026-102554");
-        // And its SCOPE, parsed rather than substring-matched (part-2 review,
-        // round 4): `contains` would still pass if a second pattern were added
-        // beside the measured one, and `**/*` makes trivy's ignore match every
-        // file (trivy 0.74.0 pkg/result/ignore.go: doublestar.Match is applied
-        // to each pattern in turn), which would mask the whole image again.
-        // The yaml is therefore read structurally and the list pinned to the
-        // single measured path.
+        // And its SCOPE, parsed as YAML — string containment alone would keep
+        // the test green even if another path (e.g. "**/*") were appended to
+        // 'paths', widening the entry to every package in the image and
+        // masking those findings at the gate (review round 4: a security test
+        // must assert the VALUES, not the presence of text).
+        Map<String, Object> trivyCfg = new Yaml().load(read(".trivyignore.yaml"));
+        assertThat(trivyCfg).as(".trivyignore.yaml must parse as a mapping").isNotNull();
         @SuppressWarnings("unchecked")
-        Map<String, Object> policy = new Yaml().load(ignore);
-        List<?> vulnerabilities = (List<?>) policy.get("vulnerabilities");
-        assertThat(vulnerabilities)
-                .as("the yaml must carry the vulnerabilities list this guard reads")
-                .hasSize(1);
-        assertThat(((Map<?, ?>) vulnerabilities.get(0)).get("paths"))
-                .as("the entry must stay scoped to the ONE jar that embeds the "
-                        + "shaded guava — a second pattern would silence findings "
-                        + "on other packages")
-                .isEqualTo(List.of("**/graphql-java-25.1.jar"));
+        List<Map<String, Object>> vulns = (List<Map<String, Object>>) trivyCfg.get("vulnerabilities");
+        assertThat(vulns).as("exactly one ignore entry — same pin as the count above").hasSize(1);
+        assertThat(vulns.get(0).get("id")).as("the entry's identity is the measured CVE")
+                .isEqualTo("CVE-2026-102554");
+        @SuppressWarnings("unchecked")
+        List<String> ignorePaths = (List<String>) vulns.get(0).get("paths");
+        assertThat(ignorePaths)
+                .as("the entry's scope is ONLY the one jar embedding the shaded guava")
+                .containsExactly("**/graphql-java-25.1.jar");
     }
 
     @Test
