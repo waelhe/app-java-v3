@@ -155,6 +155,43 @@ class ThumbnailsTest {
     }
 
     @Test
+    @DisplayName("A padded stream whose true SOS count exceeds the scan ceiling is refused (the counter sees the real markers)")
+    void paddedStreamOverTheScanCeilingIsRefused() throws Exception {
+        // The #758 review round's Minor follow-up: the healthy-file test above
+        // proves the walk does not break good files, but it would also pass
+        // with the pre-fix walk — a single misread FF consumed the next byte
+        // as a 0xFFFF-length segment, skipped ~65 KB past every SOS marker,
+        // and answered "1 scan" (under the 50 ceiling), so the file scaled.
+        // This regression pins the UNDERCOUNT itself: a real baseline JPEG
+        // (one scan) carries 52 spec-padded synthetic SOS segments before
+        // its EOI — 53 true scans, over MAX_JPEG_PROGRESSIVE_SCANS(50).
+        // The fixed walk skips the padding, counts every real SOS, and
+        // scaleToMaxWidth answers the ceiling's own refusal: null.
+        byte[] real = render(2000, 1000, "image/jpeg");
+        // The ImageIO-written stream ends with EOI (FF D9): insert the
+        // synthetic segments before it so the walk sees them.
+        org.assertj.core.api.Assertions.assertThat(real.length).isGreaterThan(2);
+        org.assertj.core.api.Assertions.assertThat(real[real.length - 2]).isEqualTo((byte) 0xFF);
+        org.assertj.core.api.Assertions.assertThat(real[real.length - 1]).isEqualTo((byte) 0xD9);
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        out.write(real, 0, real.length - 2); // the real stream, EOI stripped
+        for (int i = 0; i < 52; i++) {
+            // Three spec-allowed fill bytes, then the true SOS marker, then a
+            // minimal valid segment: length 12 -> 10 payload bytes.
+            out.write(0xFF); out.write(0xFF); out.write(0xFF);
+            out.write(0xDA);
+            out.write(0x00); out.write(0x0C);
+            out.write(new byte[10], 0, 10);
+        }
+        out.write(0xFF); out.write(0xD9); // the real EOI back in place
+        byte[] overCeiling = out.toByteArray();
+
+        byte[] scaled = Thumbnails.scaleToMaxWidth(overCeiling, 640, "image/jpeg", UNLIMITED);
+
+        assertThat(scaled).isNull();
+    }
+
+    @Test
     @DisplayName("Non-round aspect still lands inside the bound with aspect preserved")
     void nonRoundAspectScales() throws Exception {
         byte[] scaled = Thumbnails.scaleToMaxWidth(render(3000, 900, "image/jpeg"), 640, "image/jpeg", UNLIMITED);
