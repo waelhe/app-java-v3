@@ -90,8 +90,15 @@ class KnowledgePurgeLockAdvanceIntegrationTest {
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers; the raw type matches IntegrationContainers' own return type (the established container pattern).
     static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
+    // The concrete adapter, not the port type: thirteen modules implement
+    // AuthoredContentPurgePort (booking, catalog, community, disputes,
+    // jobs, knowledge, messaging, notifications, provider, reviews,
+    // search...) — by-type injection of the port would be ambiguous
+    // (NoUniqueBeanDefinitionException); the adapter under guard is this
+    // one, and it IS the port (the contract the guard exercises through
+    // purgeAuthoredTexts).
     @Autowired
-    private AuthoredContentPurgePort purgePort;
+    private KnowledgeContentPurgeAdapter purgeAdapter;
 
     @Autowired
     private KnowledgeEntryRepository entries;
@@ -139,7 +146,7 @@ class KnowledgePurgeLockAdvanceIntegrationTest {
                 .isZero();
 
         // ---- First pass, on the real database, through the real adapter.
-        assertThat(purgePort.purgeAuthoredTexts(markerAuthor))
+        assertThat(purgeAdapter.purgeAuthoredTexts(markerAuthor))
                 .as("a marker-carrying row text-purges nothing — the text "
                         + "filter's exact complement already matches; the port's "
                         + "count is text rows only")
@@ -169,7 +176,7 @@ class KnowledgePurgeLockAdvanceIntegrationTest {
         // The live-text author's first pass: the text dies on the real
         // database (base only — the raw seed leaves the Envers mirror
         // empty for this id, so the count is exactly the base row).
-        assertThat(purgePort.purgeAuthoredTexts(textAuthor))
+        assertThat(purgeAdapter.purgeAuthoredTexts(textAuthor))
                 .as("the live-text row text-purges exactly one row on the first pass")
                 .isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject(
@@ -185,11 +192,11 @@ class KnowledgePurgeLockAdvanceIntegrationTest {
 
         // Leg 3 — the re-run: zero text rows (the port's idempotence
         // contract), the lock still advancing on both tombstones.
-        assertThat(purgePort.purgeAuthoredTexts(textAuthor))
+        assertThat(purgeAdapter.purgeAuthoredTexts(textAuthor))
                 .as("the re-run purges exactly zero text rows (the port contract: "
                         + "a re-run matches zero rows)")
                 .isZero();
-        assertThat(purgePort.purgeAuthoredTexts(markerAuthor))
+        assertThat(purgeAdapter.purgeAuthoredTexts(markerAuthor))
                 .as("the marker author's re-run also returns zero")
                 .isZero();
         assertThat(jdbcTemplate.queryForObject(
