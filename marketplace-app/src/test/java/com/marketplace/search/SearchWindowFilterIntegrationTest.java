@@ -142,21 +142,6 @@ class SearchWindowFilterIntegrationTest {
                     """,
                     userId, "l27-" + userId + "@example.com",
                     "l27-" + userId + "@example.com", "L27 Provider " + userId);
-            // Row 11's eligibility gate: the windowed search's available
-            // provider ids carry only VERIFIED profiles (the provider module's
-            // own fact, resolved through ProviderLookupPort.findAllByUserIds).
-            // The fixture therefore gives every seeded provider its VERIFIED
-            // profile — without it the predicate is right and the dataset is
-            // empty, which is exactly what this guard must not conflate.
-            jdbcTemplate.update(
-                    """
-                    INSERT INTO provider_profiles (id, display_name, status, user_id,
-                                                   created_at, updated_at, version)
-                    VALUES (?, ?, 'VERIFIED', ?, now(), now(), 0)
-                    ON CONFLICT (id) DO UPDATE SET status = 'VERIFIED'
-                    """,
-                    UUID.nameUUIDFromBytes(("l27-provider-" + userId).getBytes(java.nio.charset.StandardCharsets.UTF_8)),
-                    "L27 Provider " + userId, userId);
         }
 
         // The carried row-11 window gate: available provider ids carry only

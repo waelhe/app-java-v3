@@ -70,9 +70,6 @@ class AvailabilitySlotOwnershipSchemaIntegrationTest {
     @Autowired
     private AvailabilityService availabilityService;
 
-    @Autowired
-    private com.marketplace.provider.ProviderRepository providerRepository;
-
     // ---------- schema guards (V79 / V80) ----------
 
     @Test
@@ -111,13 +108,7 @@ class AvailabilitySlotOwnershipSchemaIntegrationTest {
 
     @Test
     void r2_nonOwnerCancelKeepsTheHeldSlot_ownerCancelFreesIt() {
-        // Row 11's eligibility gate (the availability owner's own law): only a
-        // VERIFIED provider profile publishes and receives bookable
-        // availability, so the booking path below runs for an eligible
-        // provider — the profile is created through the provider module's own
-        // aggregate (never a hand-written row) and verified through its
-        // documented transition.
-        UUID providerId = eligibleProviderId();
+        UUID providerId = UUID.randomUUID();
         Instant startsAt = Instant.parse("2026-08-03T09:00:00Z");
         Instant endsAt = Instant.parse("2026-08-03T10:00:00Z");
         UUID holderBooking = UUID.randomUUID();   // booking A — confirmed, holds the slot
@@ -197,11 +188,7 @@ class AvailabilitySlotOwnershipSchemaIntegrationTest {
 
     @Test
     void r3_generationSkipsABookedWindow_noOpenDuplicate() {
-        // Row 11's eligibility gate also precedes GENERATION (ineligible rules
-        // are skipped with a log line). An ineligible fixture would make this
-        // guard pass for the wrong reason — the skip under test is the BOOKED
-        // window, so the provider must be eligible for generation to run.
-        UUID providerId = eligibleProviderId();
+        UUID providerId = UUID.randomUUID();
         // A Monday whose 09:00-17:00 UTC window the rule below will regenerate.
         LocalDate monday = LocalDate.of(2026, 8, 10);
         Instant startsAt = monday.atTime(LocalTime.of(9, 0)).toInstant(ZoneOffset.UTC);

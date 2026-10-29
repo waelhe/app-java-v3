@@ -123,19 +123,6 @@ public class AdCampaignService {
     @Transactional
     public AdCampaignView pause(UUID campaignId, Authentication authentication) {
         AdCampaign campaign = ownedCampaign(campaignId, authentication);
-        // Agent findings 2026-10-26T13:11 export, row 45: the hold settles
-        // its accrued complete ACTIVE days FIRST — the window
-        // [billedThrough, today) freezes its charge row and advances the
-        // marker in THIS transaction, then the flip goes dark. The pre-fix
-        // pause discarded the unsettled window: the resume's marker jump
-        // past the dark gap turned the owner's accrued traffic into a
-        // silent free ride beyond the one documented forfeit day. The
-        // settlement JOINS the pause's own transaction (settleOpenWindow
-        // carries no boundary of its own): the charge row, the consume
-        // move, the marker advance and the PAUSED flip are ONE atomic
-        // unit — and today stays the settlement's EXCLUSIVE horizon, so
-        // the pause day itself remains the documented forfeit.
-        billingExecutor.settleOpenWindow(campaign, AdBillingBatchExecutor.todayUtc(clock));
         // CodeRabbit review round on #741's part 4 (2026-10-28, Major —
         // Functional Correctness): the status check moves BEFORE the
         // settlement. When the settlement consumes the rest of the budget

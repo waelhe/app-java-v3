@@ -41,20 +41,6 @@ class AvailabilityModuleIntegrationTest {
     @SuppressWarnings({"resource"}) // Lifecycle managed by @Testcontainers; connection details via RedisContainerConnectionDetailsFactory.
     static GenericContainer<?> redis = IntegrationContainers.redis();
 
-    /**
-     * Row 11's cross-module seam: the eligibility gate reads the provider
-     * module's {@link ProviderLookupPort}, whose adapter bean is not part of
-     * this module slice (Spring Modulith's {@code @ApplicationModuleTest}
-     * bootstraps the module under test and the modules it depends on — the
-     * port lives in {@code marketplace-shared}, its implementation in
-     * {@code marketplace-provider}). The slice therefore supplies the port at
-     * the boundary, the documented module-slice pattern this repository
-     * already applies to {@code CatalogSearchPort}/{@code AvailabilityLookupPort}
-     * (SearchModuleIntegrationTest).
-     */
-    @MockitoBean
-    ProviderLookupPort providerLookupPort;
-
     @Autowired
     private AvailabilityService availabilityService;
 
