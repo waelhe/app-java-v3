@@ -1,7 +1,6 @@
 package com.marketplace.notifications.routing;
 
 import com.marketplace.notifications.NotificationChannel;
-import com.marketplace.notifications.NotificationPreferenceService;
 import com.marketplace.notifications.NotificationTopicPreferenceView;
 import com.marketplace.notifications.NotificationTopicPreferencesUpdateRequest;
 import com.marketplace.notifications.NotificationTopicPreferenceUpdate;
