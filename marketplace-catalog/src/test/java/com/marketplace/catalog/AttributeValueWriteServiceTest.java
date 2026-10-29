@@ -5,9 +5,7 @@ import com.marketplace.catalog.spi.AttributeMutationErrorCode;
 import com.marketplace.catalog.spi.AttributeValueCreateCommand;
 import com.marketplace.catalog.spi.AttributeValueMutationResult;
 import com.marketplace.catalog.spi.AttributeValueUpdateCommand;
-import com.marketplace.catalog.spi.AttributeValueView;
 import com.marketplace.catalog.spi.AttributeValueWriteSpi;
-import com.marketplace.catalog.spi.AttributeView;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

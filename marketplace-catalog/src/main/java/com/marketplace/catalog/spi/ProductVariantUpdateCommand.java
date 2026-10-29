@@ -1,7 +1,5 @@
 package com.marketplace.catalog.spi;
 
-import java.util.UUID;
-
 /**
  * P2 (the canonical Saleor plan §5-P2 — the Saleor
  * {@code productVariantUpdate} mutation root, the agent-2 packet): the

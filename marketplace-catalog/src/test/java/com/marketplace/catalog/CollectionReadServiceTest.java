@@ -5,7 +5,6 @@ import com.marketplace.catalog.spi.CollectionProductsPage;
 import com.marketplace.catalog.spi.CollectionReadSpi;
 import com.marketplace.catalog.spi.CollectionSort;
 import com.marketplace.catalog.spi.CollectionView;
-import com.marketplace.catalog.spi.ProductView;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.KeysetScrollPosition;
