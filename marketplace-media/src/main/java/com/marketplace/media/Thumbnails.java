@@ -325,6 +325,18 @@ final class Thumbnails {
                 continue;
             }
             int marker = input.read();
+            while (marker == 0xFF) {
+                // Fill bytes (ITU T.81 B.1.1.2): any number of FF bytes may
+                // pad the stream before a marker — padding, not a segment,
+                // carrying no length prefix. Reading FF as the marker itself
+                // would consume the REAL marker plus the next byte as a
+                // phantom 0xDA00-length segment (a ~55 KB jump that loses
+                // the true SOS and lets a padded stream undercount its
+                // scans past the ceiling — the #757 sync review round's
+                // Major finding). Skip the padding; the marker underneath
+                // is the real one.
+                marker = input.read();
+            }
             if (marker == -1) {
                 break;
             }

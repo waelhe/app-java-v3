@@ -190,6 +190,21 @@ class PasswordResetServiceTest {
     }
 
     @Test
+    void completeReset_refusesAnUnhashableByteLengthBeforeConsumingTheToken() {
+        // Review round (CodeRabbit on the #757 sync, 2026-10-29): 71 UTF-16
+        // units built from surrogate pairs carry 142 UTF-8 bytes — inside the
+        // @Size count, past Spring Security's bcrypt 72-byte working buffer.
+        // The honest 400 precedes the single-use token's consumption, so the
+        // token stays live for an honest retry.
+        String unhashable = "\uD83D\uDE00".repeat(35) + "x";
+        org.assertj.core.api.Assertions.assertThat(unhashable).hasSize(71);
+        assertThatThrownBy(() -> service.completeReset("raw-token", unhashable))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("The new password must be 8 to 72 characters long and at most 72 UTF-8 bytes");
+        verify(authActionTokenService, never()).consume(any(), any());
+    }
+
+    @Test
     void completeReset_writesThePasswordColumnOnlyAndKillsTheAuthorizations() {
         AuthActionToken token = AuthActionToken.issue(
                 EMAIL, AuthActionTokenPurpose.PASSWORD_RESET, "c".repeat(64), NOW.plus(TTL));

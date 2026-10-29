@@ -118,6 +118,40 @@ class ThumbnailsTest {
     }
 
     @Test
+    @DisplayName("Spec-allowed FF fill bytes before markers keep a healthy JPEG scaling (ITU T.81 B.1.1.2)")
+    void fillBytesBeforeMarkersKeepTheWalkHonest() throws Exception {
+        // Review round (CodeRabbit on the #757 sync, 2026-10-29): the JPEG
+        // standard allows any number of FF padding bytes before a marker.
+        // The pre-fix walk read the padding FF as the marker itself, then
+        // consumed the REAL marker plus the next byte as a phantom segment
+        // length — a ~55 KB jump that loses the true SOS and either
+        // undercounts scans past the ceiling or falsely breaches the
+        // segment cap on a perfectly healthy file. This regression pads
+        // every marker of a real JPEG and expects the normal thumbnail.
+        byte[] original = render(2000, 1000, "image/jpeg");
+        java.io.ByteArrayOutputStream padded = new java.io.ByteArrayOutputStream();
+        for (int i = 0; i < original.length; i++) {
+            int b = original[i] & 0xFF;
+            int next = (i + 1 < original.length) ? (original[i + 1] & 0xFF) : -1;
+            boolean markerFollows = b == 0xFF && next != 0x00 && next != 0xFF
+                    && !(next >= 0xD0 && next <= 0xD7) && next != -1;
+            if (markerFollows) {
+                // Three spec-allowed fill bytes in front of the real marker.
+                padded.write(0xFF);
+                padded.write(0xFF);
+                padded.write(0xFF);
+            }
+            padded.write(b);
+        }
+        byte[] paddedBytes = padded.toByteArray();
+
+        byte[] scaled = Thumbnails.scaleToMaxWidth(paddedBytes, 640, "image/jpeg", UNLIMITED);
+
+        assertThat(scaled).isNotNull();
+        assertThat(dims(scaled)).containsExactly(640, 320);
+    }
+
+    @Test
     @DisplayName("Non-round aspect still lands inside the bound with aspect preserved")
     void nonRoundAspectScales() throws Exception {
         byte[] scaled = Thumbnails.scaleToMaxWidth(render(3000, 900, "image/jpeg"), 640, "image/jpeg", UNLIMITED);
