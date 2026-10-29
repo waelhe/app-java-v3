@@ -153,7 +153,7 @@ class PasswordResetServiceTest {
     void completeReset_enforcesTheSharedPasswordPolicyBeforeConsumingTheToken() {
         assertThatThrownBy(() -> service.completeReset("raw-token", "short"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("The new password must be 8 to 72 characters long");
+                .hasMessage("The new password must be 8 to 72 characters long and at most 72 UTF-8 bytes");
         assertThatThrownBy(() -> service.completeReset("raw-token", null))
                 .isInstanceOf(IllegalArgumentException.class);
         org.mockito.Mockito.verify(authActionTokenService, org.mockito.Mockito.never())
