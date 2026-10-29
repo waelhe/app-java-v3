@@ -921,23 +921,33 @@ public class PaymentsService implements PaymentsSpi {
                     // past. The gate holds the answer until the cumulative
                     // books reach the submission baseline plus the frozen
                     // amount (the full-refund shape reads its terminal
-                    // REFUNDED state). The review round on #741's part 4
-                    // (2026-10-28) then measured the type hole: this wait
-                    // rode ConflictException, which the paymentProcessing
-                    // retry instance IGNORES — the gate's own message said
-                    // "retry after the webhook lands" while the annotated
-                    // edge never retried it. The wait now carries its own
-                    // RefundBooksSyncPendingException (absent from the
-                    // ignore list, so the retry absorbs the webhook-latency
-                    // window); the wire answer stays the same 409, and the
-                    // amount-freeze/cap refusals below keep the deliberately
-                    // non-retryable ConflictException.
+                    // REFUNDED state). Review round 2 on #741's part 4
+                    // (2026-10-29) then measured the WAIT's true contract:
+                    // this gate fires only on the dispute-resolve path,
+                    // where the refund runs SYNCHRONOUSLY inside the
+                    // caller's (DisputeService) transaction — an in-process
+                    // @Retry is architecturally void there: the first
+                    // throw marks the SHARED transaction rollback-only
+                    // (official participating-@Transactional semantics)
+                    // and every retried attempt re-enters the caller's
+                    // persistence context, re-reading the same first-level
+                    // cache — no webhook-synced books can appear INSIDE
+                    // one transaction. The wait therefore rides the
+                    // deliberately NON-retryable ConflictException, and
+                    // its message prescribes the retry vehicle that
+                    // actually exists: the CALLER's fresh re-invocation
+                    // (the admin's new resolve/refund request — a fresh
+                    // transaction with a fresh persistence context reading
+                    // the synced books), exactly like every other
+                    // caller-controlled refusal below. The earlier
+                    // RefundBooksSyncPendingException experiment was
+                    // reverted for this measured reason.
                     boolean booksSynced = operation.getAmountCents() == null
                             ? payment.getStatus() == PaymentStatus.REFUNDED
                             : payment.getRefundedAmountCents()
                                     >= operation.getBooksAtSubmitCents() + operation.getAmountCents();
                     if (!booksSynced) {
-                        throw new RefundBooksSyncPendingException("The dispute's refund operation already EXECUTED at the"
+                        throw new ConflictException("The dispute's refund operation already EXECUTED at the"
                                 + " provider (remote refund " + operation.getRemoteRefundId() + " recorded)"
                                 + " but the local books await the charge.refunded sync — retry after the"
                                 + " webhook lands");
