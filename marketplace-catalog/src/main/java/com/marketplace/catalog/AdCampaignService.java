@@ -123,6 +123,19 @@ public class AdCampaignService {
     @Transactional
     public AdCampaignView pause(UUID campaignId, Authentication authentication) {
         AdCampaign campaign = ownedCampaign(campaignId, authentication);
+        // CodeRabbit review round on #741's part 4 (2026-10-28, Major —
+        // Functional Correctness): the status check moves BEFORE the
+        // settlement. When the settlement consumes the rest of the budget
+        // the campaign flips to ENDED inside campaign.consume(...), and
+        // the post-settlement pause() then failed its own transition guard
+        // and surfaced as a 409 for a hold requested while the campaign
+        // was still ACTIVE. The pre-settlement rejection keeps the honest
+        // 409 for every non-ACTIVE campaign; after the settlement the
+        // hold only fires when the campaign is STILL ACTIVE — an ended
+        // campaign already bills nothing, the hold's own goal.
+        if (campaign.getStatus() != AdCampaignStatus.ACTIVE) {
+            throw new ConflictException("Only an ACTIVE campaign can pause: " + campaign.getStatus());
+        }
         // Agent findings 2026-10-26T13:11 export, row 45: the hold settles
         // its accrued complete ACTIVE days FIRST — the window
         // [billedThrough, today) freezes its charge row and advances the
@@ -136,10 +149,8 @@ public class AdCampaignService {
         // unit — and today stays the settlement's EXCLUSIVE horizon, so
         // the pause day itself remains the documented forfeit.
         billingExecutor.settleOpenWindow(campaign, AdBillingBatchExecutor.todayUtc(clock));
-        try {
+        if (campaign.getStatus() == AdCampaignStatus.ACTIVE) {
             campaign.pause();
-        } catch (IllegalStateException e) {
-            throw new ConflictException(e.getMessage());
         }
         // The boost's truth changed — the dark campaign's listing loses the
         // paid tier NOW, not at the next cache TTL (the eviction law above).

@@ -142,21 +142,26 @@ class SearchWindowFilterIntegrationTest {
                     """,
                     userId, "l27-" + userId + "@example.com",
                     "l27-" + userId + "@example.com", "L27 Provider " + userId);
-            // Row 11's eligibility gate: the windowed search's available
-            // provider ids carry only VERIFIED profiles (the provider module's
-            // own fact, resolved through ProviderLookupPort.findAllByUserIds).
-            // The fixture therefore gives every seeded provider its VERIFIED
-            // profile — without it the predicate is right and the dataset is
-            // empty, which is exactly what this guard must not conflate.
+        }
+
+        // The carried row-11 window gate: available provider ids carry only
+        // ELIGIBLE providers (AvailabilityLookupAdapter filters by VERIFIED
+        // through the batch provider-lookup seam). The known dataset's
+        // seven providers are seeded as VERIFIED profiles so the window
+        // predicate's OWN facts — booked, time-off, the boundary shapes —
+        // stay what this test pins, under the new security contract.
+        // Deterministic profile ids (the user id with a flipped high word)
+        // keep the seed idempotent across @BeforeEach invocations.
+        for (UUID userId : List.of(USER_A, USER_B, USER_C, USER_D, USER_E, USER_F, USER_G)) {
+            UUID profileId = UUID.fromString(
+                    "10000000" + userId.toString().substring(8));
             jdbcTemplate.update(
                     """
-                    INSERT INTO provider_profiles (id, display_name, status, user_id,
-                                                   created_at, updated_at, version)
-                    VALUES (?, ?, 'VERIFIED', ?, now(), now(), 0)
-                    ON CONFLICT (id) DO UPDATE SET status = 'VERIFIED'
+                    INSERT INTO provider_profiles (id, display_name, bio, status, user_id, created_at, updated_at, version, is_deleted)
+                    VALUES (?, ?, 'bio', 'VERIFIED', ?, now(), now(), 0, false)
+                    ON CONFLICT (id) DO NOTHING
                     """,
-                    UUID.nameUUIDFromBytes(("l27-provider-" + userId).getBytes(java.nio.charset.StandardCharsets.UTF_8)),
-                    "L27 Provider " + userId, userId);
+                    profileId, "L27 Provider " + userId, userId);
         }
 
         listingRepository.saveAll(List.of(

@@ -102,8 +102,8 @@
 - **Prevents:** E-02 (boot collapse), E-03 (blind aggregate), E-13 (gate that cannot run), E-16 (quota walls).
 - **Must satisfy:** new `${...}` in prod profiles ⇒ value-or-fail-fast verified against the target env matrix; new health contributors ⇒ explicit `management.health.<key>.enabled` decision; new gates/aggregators ⇒ their own success/failure is watched (S10's lesson applied to gates: E-13); provider-limit failures documented in the deploy log with the distinction.
 - **Evidence:** deploy smoke includes aggregate health; placeholder matrix note in the PR.
-- **History:** E-02, E-03, E-13, E-16. **Enforcement:** watchdog probes for health (systematic); gate-health monitoring now systematic too — `gate-health.yml` (round 21, gap G5 closed): per-gate health over a 7-day window, CodeRabbit Gate failures classified provider-refusal vs content, RED at ≥3-of-5 provider refusals, review freshness per open PR — first real CI run RED on the live provider outage with the "NOT a code failure" remedy; the placeholder-vs-target matrix stays procedural (gap G2).
-- **Status:** verified-procedural + systematic (health probes and gate-health monitor).
+- **History:** E-02, E-03, E-13, E-16. **Enforcement:** watchdog probes for health (systematic); gate-health monitoring now systematic too — `gate-health.yml` (round 21, gap G5 closed): per-gate health over a 7-day window, CodeRabbit Gate failures classified provider-refusal vs content, RED at ≥3-of-5 provider refusals, review freshness per open PR — first real CI run RED on the live provider outage with the "NOT a code failure" remedy; the placeholder-vs-target matrix is now deterministic too — `PlaceholderTargetMatrixGuardTest` (D10, gap G2 closed, 2026-10-28): every no-default env placeholder in the deployed composition must be declared in the versioned target record `.railway/railway.ts`; the first matrix run measured and closed three record gaps (ADMIN_SEED_PASSWORD, OAUTH_POST_LOGOUT_REDIRECT_URI, MAIL_FROM — each live on the target per its carrying PR's evidence: #389, #420, #685).
+- **Status:** verified-systematic (health probes, gate-health monitor, placeholder-target matrix); staging's unversioned record stays honestly procedural.
 
 ### B7 — Numeric representation bounds *(trigger: decimal endpoints, coordinates, multipliers, exponents)*
 - **Invariant:** representation cost is bounded before computation.
@@ -151,3 +151,5 @@
 - **D6** Independent review — CodeRabbit (repository scans + PR reviews, drafts:true — E-13's fix).
 - **D7** Cursor contracts — `KeysetCursorGate` (E-19).
 - **D8** Guard-message fidelity — *documented; repaired once by governed code*: a guard's remedy message must describe a real mechanism. E-21's false promise was closed at `0edf0f6` (PR #723): the root-signatures guard now implements the registry its message promised; the rule stays documented for the remaining guards (see enforcement-map §5).
+- **D9** Source-format compatibility — `SourceFormatGuardTest` rejects package/import statements packed with other content, repo-wide (closes E-23's class; see enforcement-map §1/§2).
+- **D10** Placeholder-target matrix — `PlaceholderTargetMatrixGuardTest` requires every no-default env placeholder in the deployed composition to be declared in the versioned target record `.railway/railway.ts` (closes gap G2 — E-02's class; see enforcement-map §1/§5).

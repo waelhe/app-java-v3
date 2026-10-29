@@ -22,7 +22,6 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 @ApplicationModuleTest
@@ -42,22 +41,16 @@ class AvailabilityModuleIntegrationTest {
     @SuppressWarnings({"resource"}) // Lifecycle managed by @Testcontainers; connection details via RedisContainerConnectionDetailsFactory.
     static GenericContainer<?> redis = IntegrationContainers.redis();
 
-    /**
-     * Row 11's cross-module seam: the eligibility gate reads the provider
-     * module's {@link ProviderLookupPort}, whose adapter bean is not part of
-     * this module slice (Spring Modulith's {@code @ApplicationModuleTest}
-     * bootstraps the module under test and the modules it depends on — the
-     * port lives in {@code marketplace-shared}, its implementation in
-     * {@code marketplace-provider}). The slice therefore supplies the port at
-     * the boundary, the documented module-slice pattern this repository
-     * already applies to {@code CatalogSearchPort}/{@code AvailabilityLookupPort}
-     * (SearchModuleIntegrationTest).
-     */
-    @MockitoBean
-    ProviderLookupPort providerLookupPort;
-
     @Autowired
     private AvailabilityService availabilityService;
+
+    // Row 11's carried eligibility gate resolves the provider through the
+    // cross-module ProviderLookupPort seam — the real adapter lives in
+    // marketplace-provider and joins in the full-context integration
+    // tests; at this slice boundary the house @MockitoBean convention
+    // applies (the CatalogModuleIntegrationTest pattern).
+    @MockitoBean
+    ProviderLookupPort providerLookupPort;
 
     @Test
     void contextLoads() {
@@ -66,9 +59,12 @@ class AvailabilityModuleIntegrationTest {
     @Test
     void createSlot_persistsAndRetrieves() {
         var providerId = UUID.randomUUID();
-        when(providerLookupPort.findByUserId(any(UUID.class)))
-                .thenReturn(Optional.of(new ProviderSummary(
-                        UUID.randomUUID(), "Eligible Provider", "VERIFIED", providerId)));
+        // The carried row-11 contract: a VERIFIED profile alone publishes
+        // bookable slots — the slice's stand-in answers the eligibility
+        // fact for the seeded provider (the real adapter's statuses are the
+        // full-context tests' own ground).
+        when(providerLookupPort.findByUserId(providerId)).thenReturn(Optional.of(
+                new ProviderSummary(UUID.randomUUID(), "Eligible Provider", "VERIFIED", providerId)));
         var startsAt = Instant.now();
         var endsAt = startsAt.plusSeconds(3600);
 

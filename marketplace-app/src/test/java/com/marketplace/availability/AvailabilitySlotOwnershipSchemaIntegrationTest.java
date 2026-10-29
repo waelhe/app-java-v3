@@ -70,9 +70,6 @@ class AvailabilitySlotOwnershipSchemaIntegrationTest {
     @Autowired
     private AvailabilityService availabilityService;
 
-    @Autowired
-    private com.marketplace.provider.ProviderRepository providerRepository;
-
     // ---------- schema guards (V79 / V80) ----------
 
     @Test
@@ -111,18 +108,17 @@ class AvailabilitySlotOwnershipSchemaIntegrationTest {
 
     @Test
     void r2_nonOwnerCancelKeepsTheHeldSlot_ownerCancelFreesIt() {
-        // Row 11's eligibility gate (the availability owner's own law): only a
-        // VERIFIED provider profile publishes and receives bookable
-        // availability, so the booking path below runs for an eligible
-        // provider — the profile is created through the provider module's own
-        // aggregate (never a hand-written row) and verified through its
-        // documented transition.
-        UUID providerId = eligibleProviderId();
+        UUID providerId = UUID.randomUUID();
         Instant startsAt = Instant.parse("2026-08-03T09:00:00Z");
         Instant endsAt = Instant.parse("2026-08-03T10:00:00Z");
         UUID holderBooking = UUID.randomUUID();   // booking A — confirmed, holds the slot
         UUID siblingBooking = UUID.randomUUID();  // booking B — PENDING sibling
 
+        // The carried row-11 contract: a VERIFIED profile alone receives
+        // bookable availability — bookSlot resolves eligibility through the
+        // real adapter (full context here), so the journey's provider is
+        // seeded as one.
+        seedEligibleProvider(providerId);
         insertSlot(providerId, startsAt, endsAt, false, null);
 
         // A confirms: the slot is booked IN A's name (the ownership claim).
@@ -192,15 +188,17 @@ class AvailabilitySlotOwnershipSchemaIntegrationTest {
 
     @Test
     void r3_generationSkipsABookedWindow_noOpenDuplicate() {
-        // Row 11's eligibility gate also precedes GENERATION (ineligible rules
-        // are skipped with a log line). An ineligible fixture would make this
-        // guard pass for the wrong reason — the skip under test is the BOOKED
-        // window, so the provider must be eligible for generation to run.
-        UUID providerId = eligibleProviderId();
+        UUID providerId = UUID.randomUUID();
         // A Monday whose 09:00-17:00 UTC window the rule below will regenerate.
         LocalDate monday = LocalDate.of(2026, 8, 10);
         Instant startsAt = monday.atTime(LocalTime.of(9, 0)).toInstant(ZoneOffset.UTC);
         Instant endsAt = monday.atTime(LocalTime.of(17, 0)).toInstant(ZoneOffset.UTC);
+
+        // The same row-11 contract: the generator's rule reads only run for
+        // ELIGIBLE providers — without the VERIFIED profile the skip this
+        // test pins would ride the eligibility edge, not the booked-window
+        // edge it exists to prove.
+        seedEligibleProvider(providerId);
 
         // The rule that daily generation reads.
         jdbcTemplate.update(
@@ -227,16 +225,24 @@ class AvailabilitySlotOwnershipSchemaIntegrationTest {
     // ---------- seeding / probing helpers ----------
 
     /**
-     * A provider whose profile is VERIFIED — the eligibility gate's own
-     * precondition (Row 11). The profile is created by the aggregate factory
-     * and moved through the domain's verification transition, so the fixture
-     * exercises the same state machine the production surface writes.
+     * The carried row-11 contract's seeding half: a VERIFIED profile alone
+     * publishes and receives bookable availability — the guarded paths
+     * (createSlot, bookSlot, the generator's rule reads) resolve eligibility
+     * through the real adapter here (the full context), so the journey's
+     * provider ids are seeded with the users row the profile's space rides
+     * on and a VERIFIED provider_profiles row (the house seeding shape).
      */
-    private UUID eligibleProviderId() {
-        com.marketplace.provider.ProviderProfile profile =
-                com.marketplace.provider.ProviderProfile.create("Eligible Provider", null, UUID.randomUUID());
-        profile.verify();
-        return providerRepository.save(profile).getUserId();
+    private void seedEligibleProvider(UUID providerId) {
+        jdbcTemplate.update(
+                "INSERT INTO users (id, subject, email, display_name, role)"
+                        + " VALUES (?, ?, ?, ?, 'PROVIDER') ON CONFLICT (id) DO NOTHING",
+                providerId, "r2-" + providerId + "@example.com",
+                "r2-" + providerId + "@example.com", "Availability Owner " + providerId);
+        jdbcTemplate.update(
+                "INSERT INTO provider_profiles (id, display_name, bio, status, user_id,"
+                        + " created_at, updated_at, version, is_deleted)"
+                        + " VALUES (?, ?, 'bio', 'VERIFIED', ?, now(), now(), 0, false)",
+                UUID.randomUUID(), "Availability Owner " + providerId, providerId);
     }
 
     private void insertSlot(UUID providerId, Instant startsAt, Instant endsAt, boolean booked, UUID holder) {

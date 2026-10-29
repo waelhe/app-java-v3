@@ -115,12 +115,22 @@ public final class AiWithdrawalGuardedVectorStore implements VectorStore {
         if (sourceId == null) {
             return true;
         }
+        // CodeRabbit review round on #741's part 4 (2026-10-28, Minor —
+        // Security & Privacy): the try block wrapped the executor call
+        // too, so an IllegalArgumentException thrown BY the authoritative
+        // state read answered "live" and let a withdrawn source's
+        // document pass — an open failure inside a security guard. The
+        // parse stays inside the try (its unparseable stranger keeps the
+        // documented pass-through); the executor now speaks for itself,
+        // fail-closed at the caller on any error of its own.
+        java.util.UUID entryId;
         try {
-            return knowledgeSourceState.isSourceContentLive(java.util.UUID.fromString(sourceId.toString()));
+            entryId = java.util.UUID.fromString(sourceId.toString());
         } catch (IllegalArgumentException unparseable) {
             // Not an entry id at all — the metadata contract's own stranger.
             return true;
         }
+        return knowledgeSourceState.isSourceContentLive(entryId);
     }
 
     @Override

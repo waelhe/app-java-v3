@@ -133,8 +133,19 @@ public class ProviderProfileContentPurgeAdapter implements AuthoredContentPurgeP
         // booking/disputes/search purge adapters' own "version = version +
         // 1" family). The audit mirror carries no version column (Envers
         // revisions) — the Envers twin below stays as-is.
+        //
+        // The part-4 gate fix (measured on the full chain): the bare
+        // right-hand "version" is AMBIGUOUS under UPDATE ... FROM — both
+        // provider_services and provider_profiles carry the optimistic-lock
+        // column, so PostgreSQL refused the whole statement ("column
+        // reference "version" is ambiguous") and the purge endpoint
+        // answered 500 INT-001 (PrivacyAccountJourneyIntegrationTest and
+        // AuthoredContentPurgeIntegrationTest both measured it). The
+        // target's alias qualifies the reference — the version advanced is
+        // and stays the service row's own.
         int serviceTitles = jdbcTemplate.update(
-                "UPDATE provider_services s SET title = ?, description = NULL, version = s.version + 1 "
+                "UPDATE provider_services s SET title = ?, description = NULL, "
+                        + "version = s.version + 1 "
                         + "FROM provider_profiles p "
                         + "WHERE s.provider_id = p.id AND p.user_id = ? "
                         + "AND (s.title <> ? OR s.description IS NOT NULL)",

@@ -71,7 +71,15 @@ public class AvailabilityService implements AvailabilityPort {
      */
     private static final String PROVIDER_STATUS_VERIFIED = "VERIFIED";
 
-    private void requireEligibleProvider(UUID providerId) {
+    /**
+     * The eligibility policy's ONE gate — public through
+     * {@link com.marketplace.shared.api.AvailabilityPort} since the CodeRabbit
+     * review round on #741's part 4 (2026-10-28): the booking CREATE path now
+     * holds the same authority the claim edge always applied (see
+     * {@link #bookSlot}'s row-11 comment for the policy itself).
+     */
+    @Override
+    public void requireEligibleProvider(UUID providerId) {
         boolean eligible = providerLookupPort.findByUserId(providerId)
                 .map(summary -> PROVIDER_STATUS_VERIFIED.equals(summary.status()))
                 .orElse(false);

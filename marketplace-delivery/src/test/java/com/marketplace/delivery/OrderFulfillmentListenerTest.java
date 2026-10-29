@@ -51,7 +51,7 @@ class OrderFulfillmentListenerTest {
         UUID orderId = UUID.randomUUID();
         UUID buyerId = UUID.randomUUID();
         OrderFulfillmentSelection selection = platformDeliverySelection(orderId, buyerId);
-        when(orders.requireOrderFulfillment(orderId, buyerId)).thenReturn(selection);
+        when(orders.requireOrderFulfillmentForUpdate(orderId, buyerId)).thenReturn(selection);
         when(payments.isOrderPayableSettled(orderId)).thenReturn(true);
 
         listener.onOrderConfirmed(new OrderConfirmedEvent(orderId, buyerId));
@@ -67,7 +67,7 @@ class OrderFulfillmentListenerTest {
         UUID orderId = UUID.randomUUID();
         UUID buyerId = UUID.randomUUID();
         OrderFulfillmentSelection selection = platformDeliverySelection(orderId, buyerId);
-        when(orders.requireOrderFulfillment(orderId, buyerId)).thenReturn(selection);
+        when(orders.requireOrderFulfillmentForUpdate(orderId, buyerId)).thenReturn(selection);
         when(payments.isOrderPayableSettled(orderId)).thenReturn(false);
 
         listener.onOrderConfirmed(new OrderConfirmedEvent(orderId, buyerId));
@@ -79,7 +79,7 @@ class OrderFulfillmentListenerTest {
     void aNonPlatformDeliverySelectionIsAnHonestNoOp() {
         UUID orderId = UUID.randomUUID();
         UUID buyerId = UUID.randomUUID();
-        when(orders.requireOrderFulfillment(orderId, buyerId)).thenReturn(
+        when(orders.requireOrderFulfillmentForUpdate(orderId, buyerId)).thenReturn(
                 new OrderFulfillmentSelection(orderId, buyerId, UUID.randomUUID(), "SAR",
                         "PICKUP", null, null, null, 0L, null));
 
@@ -92,7 +92,7 @@ class OrderFulfillmentListenerTest {
     void aRedeliveredEventPastConfirmedIsTheRecoverableNoOp() {
         UUID orderId = UUID.randomUUID();
         UUID buyerId = UUID.randomUUID();
-        when(orders.requireOrderFulfillment(orderId, buyerId))
+        when(orders.requireOrderFulfillmentForUpdate(orderId, buyerId))
                 .thenThrow(new ConflictException("Only a confirmed order with a known seller can be delivered"));
 
         listener.onOrderConfirmed(new OrderConfirmedEvent(orderId, buyerId));
@@ -104,7 +104,7 @@ class OrderFulfillmentListenerTest {
     void aVanishedOrderIsTheRecoverableNoOp() {
         UUID orderId = UUID.randomUUID();
         UUID buyerId = UUID.randomUUID();
-        when(orders.requireOrderFulfillment(orderId, buyerId))
+        when(orders.requireOrderFulfillmentForUpdate(orderId, buyerId))
                 .thenThrow(new ResourceNotFoundException("Order", orderId));
 
         listener.onOrderConfirmed(new OrderConfirmedEvent(orderId, buyerId));

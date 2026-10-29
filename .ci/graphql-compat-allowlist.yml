@@ -20,10 +20,12 @@
 # values (double-quoted style, embedded double quotes escaped as \"), the
 # same quoting the OpenAPI twin applies to its own values.
 exceptions:
-  - target: field Product.productType
-    ticket: "G4 — the PR #723 twenty-findings review (CodeRabbit 2026-10-24, finding 20): Product.productType rendered the reusable goods-schema reference as the bare typed global ID (productType: ID), so subfield selections like id/name could not work; upstream Saleor's own Product.productType is the ProductType object."
-    reason: "The field's wire type changes ID -> ProductType (nullability unchanged): the same typed global ID now resolves as the referenced ProductType object's own id, with name/slug resolving through the product-type owner's declared ProductTypeReadSpi seam (the productType read root's own mapper and authorization boundary; the object is resolved only when the field is selected). Zero contracted consumers measured: the Android client has zero productType references (grep-measured) and the repository's own tests are the only selectors — updated in the same commit; no client migration exists to perform."
-    expiry: 2027-03-31
+  # (2026-10-29, the main->commerce re-baseline sync PR #757) the
+  # 'field Product.productType' entry was removed as STALE by the gate's
+  # own instruction — the v0.1.0 baseline tag carries no Product type at
+  # all, so the field's object-typed shape is additive against it and the
+  # entry matched no breaking change ("the gate fails until the list is
+  # honest").
   - target: field Query.services
     ticket: "GraphQL target design Phase 1 (docs/api/graphql-target-architecture.md §6 \"Do not leave an unbounded legacy field indefinitely\", PR feat/graphql-p0-bounded-foundation)"
     reason: "The demo-era unbounded field services: [Service!]! (Pageable.unpaged() under it, no arguments, no page metadata) is REPLACED by the bounded relay connection services(first: Int, after: String): ServiceConnection! — the consumer inventory measured zero contracted consumers (the repository's own tests are the only callers; the Android client is REST-only, grep-measured), which the design plan §6 names as the condition for direct replacement rather than parallel-field migration. No client migration exists to perform."

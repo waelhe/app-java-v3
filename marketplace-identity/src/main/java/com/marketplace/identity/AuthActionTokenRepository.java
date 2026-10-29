@@ -64,25 +64,42 @@ public interface AuthActionTokenRepository extends JpaRepository<AuthActionToken
     List<AuthActionToken> findOutstanding(@Param("username") String username);
 
     /**
-     * Agent 1 (the CodeRabbit integrity round — the login-identity move's
-     * FK leg): EVERY row for the account, outstanding AND consumed — the
-     * read shape the purge decision and the audit story ride.
+     * The login-identity move's FK leg (agent findings 2026-10-26T13:11
+     * export, row 8): the PHYSICAL bulk removal of every token row for the
+     * account, outstanding AND consumed. BaseEntity's Hibernate
+     * {@code @SoftDelete} would turn {@code repository.delete(...)} and the
+     * bulk JPQL delete into an {@code is_deleted} UPDATE — the row survives
+     * and V112's plain FK to {@code auth_users} keeps rejecting the login
+     * row's death. The native statement bypasses the soft-delete
+     * translation; the lifecycle revisions (issue + consumption) stay in
+     * {@code auth_action_tokens_aud}.
+     *
+     * <p><b>{@code flushAutomatically = true} (part-4 review, the
+     * pseudonymize ordering wall):</b> {@code pseudonymizeAccount} calls
+     * {@code invalidateOutstanding} on the SAME persistence context
+     * immediately before this statement — every outstanding row is a
+     * <em>managed, dirty</em> entity carrying a pending
+     * {@code consumed_at}/{@code version} UPDATE, and the {@code users} row
+     * itself is dirty with the pseudonymization transform. Hibernate does
+     * not auto-flush around a {@code @Modifying} bulk statement, so without
+     * this flag the native DELETE can run first and the deferred flush then
+     * writes an UPDATE against rows this statement already removed: the
+     * versioned write matches zero rows and Hibernate raises
+     * {@code StaleObjectStateException} at commit — the whole erasure (the
+     * privacy action itself) rolls back. Flushing first pins the documented
+     * order (in-memory changes, then the bulk statement), which is exactly
+     * what the Spring Data JPA reference prescribes for
+     * {@code @Modifying}: {@code flushAutomatically = true} "the
+     * {@link jakarta.persistence.EntityManager} is flushed before the
+     * modifying query runs".
+     *
+     * <p>{@code clearAutomatically} stays FALSE on purpose: clearing would
+     * detach the {@code User} entity whose pseudonymization transform was
+     * applied but not yet flushed — the erasure would silently commit
+     * without the transform. The two flags are independent, and this
+     * statement needs precisely one of them.</p>
      */
-    List<AuthActionToken> findAllByUsername(String username);
-
-    /**
-     * Agent 1 (the CodeRabbit integrity round, take 2): the PHYSICAL
-     * delete the login-identity move's FK leg requires. BaseEntity's
-     * Hibernate {@code @SoftDelete} translates both {@code delete(entity)}
-     * and bulk JPQL deletes into {@code is_deleted} updates — the row
-     * survives and V112's plain FK to {@code auth_users} keeps rejecting
-     * the login row's death. The native statement bypasses the
-     * soft-delete translation (and the entity listeners): the token
-     * rows' lifecycle revisions stay in {@code auth_action_tokens_aud}
-     * (the issue + consumption audit), the base rows physically leave so
-     * the FK releases the login row.
-     */
-    @Modifying
+    @Modifying(flushAutomatically = true)
     @Query(value = "DELETE FROM auth_action_tokens WHERE username = :username", nativeQuery = true)
     int physicallyDeleteByUsername(@Param("username") String username);
 }

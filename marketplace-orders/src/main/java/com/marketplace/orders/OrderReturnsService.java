@@ -400,10 +400,13 @@ public class OrderReturnsService {
      * the shares that will execute or already did) and refuses the honest
      * 409 BEFORE the freeze (approval) and BEFORE the money moves
      * (completion). The rounding allowance admits exactly the drift the
-     * freeze protocol itself can produce: each return rounds its own share
-     * (Math.round, at most half a minor unit up), so k frozen shares drift
-     * less than k/2 above the exact total — a fully returned order still
-     * completes; only a real overshoot answers 409.
+     * freeze protocol itself can produce: in an EXCLUSIVE-tax order each
+     * return's frozen share rounds TWICE on its own (Math.round for the
+     * goods share AND Math.round for the exclusive-tax share — up to one
+     * full minor unit per share, the CodeRabbit review round on #741's
+     * part 4, 2026-10-28), so k frozen shares drift less than k above
+     * the exact total — a fully returned order still completes; only a
+     * real overshoot answers 409.
      *
      * @param prospectiveShare the APPROVAL edge's own share — the return is
      *                         still REQUESTED there, OUTSIDE the counted
@@ -415,7 +418,17 @@ public class OrderReturnsService {
      *                         order's goods-and-tax budget
      */
     private void requireWithinGoodsRefundBudget(UUID orderId, long prospectiveShare) {
-        Order order = orderRepository.findById(orderId)
+        // CodeRabbit review round on #741's part 4 (2026-10-28, Minor —
+        // Stability & Availability): the APPROVAL edge reads the order
+        // under the row's write lock — the same findByIdForUpdate the
+        // request edge already takes. Two operators approving different
+        // returns for the same order under READ_COMMITTED both read the
+        // frozen sum before either commits, both pass, and the pair then
+        // strands itself in RECEIVED with no exit (the completion edge
+        // re-checks the budget and 409s forever). The lock serializes the
+        // approvals against the same order row; the ordering stays safe
+        // (request: order only; complete: the return, then the order).
+        Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
         Long total = order.getTotalAmountMinor();
         Long shipping = order.getShippingAmountMinor();
@@ -427,7 +440,16 @@ public class OrderReturnsService {
         long cumulative = returns.sumFrozenSharesByOrderIdAndStatusIn(orderId, SHARE_FROZEN_STATUSES)
                 + prospectiveShare;
         int shares = frozenCount + (prospectiveShare > 0 ? 1 : 0);
-        long roundingAllowance = shares / 2;
+        // CodeRabbit review round on #741's part 4 (2026-10-28, Minor —
+        // Functional Correctness): an EXCLUSIVE-tax order's frozen share
+        // rounds TWICE per return (goods + tax), so the drift bound is one
+        // unit per share, not half — two returns covering the full order
+        // with .5 fractions each deviate +2 while shares/2 admits only 1,
+        // and the operator got a spurious 409 on a fully legitimate final
+        // approval. The INCLUSIVE shape never drifts more than the old
+        // half-unit bound; the full-unit allowance stays the honest upper
+        // bound for both (an overshoot beyond it is still a real 409).
+        long roundingAllowance = shares;
         if (cumulative > goodsAndTaxCeiling + roundingAllowance) {
             throw new ConflictException("Return refunds would cross the order's goods-and-tax budget "
                     + goodsAndTaxCeiling + " (shipping never refunds on a return) — frozen "

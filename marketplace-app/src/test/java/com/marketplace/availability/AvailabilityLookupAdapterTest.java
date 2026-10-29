@@ -23,7 +23,10 @@ import static org.mockito.Mockito.when;
  * to the bulk predicate — this pins the wiring and the pass-through
  * contract. The predicate semantics themselves (strict overlap, booked
  * exclusion, time-off exclusion) run against real PostgreSQL in
- * {@code SearchWindowFilterIntegrationTest}.
+ * {@code SearchWindowFilterIntegrationTest}. Since the part-3 carry
+ * (#744) the slot answer rides through the row-11 eligibility gate
+ * (only VERIFIED profiles surface) — the delegation stubs the gate so
+ * every provider qualifies and the pass-through stays the pinned shape.
  */
 @ExtendWith(SpringExtension.class)
 @ContextConfiguration(classes = { AvailabilityLookupAdapter.class })
@@ -35,12 +38,31 @@ class AvailabilityLookupAdapterTest {
     @MockitoBean
     private AvailabilitySlotRepository slotRepository;
 
+    /**
+     * Row 11 (the part-3 security carry, merged with #744): the search
+     * window's consumption gate — the slot answer is filtered through the
+     * provider module's eligibility facts (only VERIFIED profiles surface
+     * as available). The second constructor collaborator this slice must
+     * provide; the delegation pin stubs it so every provider in the slot
+     * answer qualifies, keeping the pass-through assertion honest.
+     */
+    @MockitoBean
+    private com.marketplace.shared.api.ProviderLookupPort providerLookupPort;
+
     @Test
     void delegatesToTheBulkPredicate_verbatim() {
         Instant startsAt = Instant.parse("2026-09-25T10:00:00Z");
         Instant endsAt = Instant.parse("2026-09-28T10:00:00Z");
         Set<UUID> answer = Set.of(UUID.randomUUID());
         when(slotRepository.findAvailableProviderIds(startsAt, endsAt)).thenReturn(answer);
+        // Row 11: the eligibility batch resolution — every provider in the
+        // slot answer carries a VERIFIED profile, so the window's answer
+        // rides through unchanged.
+        when(providerLookupPort.findAllByUserIds(answer)).thenReturn(
+                answer.stream().collect(java.util.stream.Collectors.toMap(
+                        providerId -> providerId,
+                        providerId -> new com.marketplace.shared.api.ProviderSummary(
+                                providerId, "Provider", "VERIFIED", providerId))));
 
         Set<UUID> result = availabilityLookupPort.findAvailableProviderIds(startsAt, endsAt);
 

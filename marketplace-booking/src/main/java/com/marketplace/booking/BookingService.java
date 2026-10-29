@@ -173,6 +173,15 @@ public class BookingService implements BookingSpi {
     @PreAuthorize("hasRole('CONSUMER')")
     public Booking create(UUID consumerId, UUID listingId, Instant startsAt, Instant endsAt, String notes) {
         ListingInfo info = listingPriceProvider.getListingInfo(listingId);
+        // CodeRabbit review round on #741's part 4 (2026-10-28, Major —
+        // Functional Correctness): the create path's own eligibility gate.
+        // The claim edge (bookSlot) guarded only the confirm surface — a
+        // suspended provider with a previously-open slot accepted a PENDING
+        // booking that confirm could then only answer with a 409. The
+        // port's requireEligibleProvider is the SAME authority the claim
+        // edge applies (row 11's policy: only a VERIFIED profile receives
+        // bookable demand); the slot facts below stay pure slot facts.
+        availabilityPort.requireEligibleProvider(info.providerId());
         if (!availabilityPort.isAvailable(info.providerId(), startsAt, endsAt)) {
             throw new BadRequestException("The provider is not available at the requested time");
         }
@@ -309,7 +318,17 @@ public class BookingService implements BookingSpi {
 
     public void autoConfirm(UUID id) {
         Booking booking = getById(id);
-        if (booking.getStatus() == BookingStatus.CONFIRMED) {
+        // CodeRabbit review round on #741's part 4 (2026-10-28, Minor —
+        // Stability & Availability): the guard admits PENDING bookings
+        // only. The pre-fix shape ignored CONFIRMED alone, so a COMPLETED
+        // payment event arriving for a CANCELLED booking reached
+        // booking.confirm() and answered ConflictException — the event
+        // publication registry then resubmitted the undeliverable
+        // transition forever. Every non-PENDING state (CANCELLED,
+        // CONFIRMED, COMPLETED, ...) is none of the payment's business
+        // anymore; the sibling settlement paths (orders, lending) apply
+        // the same non-settleable-state silence.
+        if (booking.getStatus() != BookingStatus.PENDING) {
             return;
         }
         booking.confirm();

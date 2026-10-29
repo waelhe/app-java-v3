@@ -638,6 +638,16 @@ resilience4j:
           - com.marketplace.shared.api.ResourceNotFoundException
           - org.springframework.security.access.AccessDeniedException
           - com.marketplace.shared.api.ConflictException
+        # Review round 2 on #741's part 4 (2026-10-29): the dispute
+        # refund's books-sync WAIT deliberately rides ConflictException
+        # (non-retryable) — the gate fires only on the synchronous
+        # dispute-resolve path, where an in-process @Retry is void (the
+        # first throw marks the shared transaction rollback-only and the
+        # attempts re-read the caller's first-level cache; official
+        # participating-@Transactional semantics). The wait's retry
+        # vehicle is the CALLER's fresh re-invocation, which the gate's
+        # 409 message prescribes; transient PSP errors keep the retry
+        # below on the paths where the method owns the transaction.
       booking:
         base-config: default
         max-attempts: 2

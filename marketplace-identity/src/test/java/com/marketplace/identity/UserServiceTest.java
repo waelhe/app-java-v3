@@ -796,6 +796,10 @@ class UserServiceTest {
                 new com.marketplace.shared.api.AccountLoginIdentityMoved("retired-subject@example.com"));
     }
 
+    // Review round (CodeRabbit on the 4a split, 2026-10-28): the @Test was
+    // missing — JUnit never ran this test, and the invalidateOutstanding →
+    // purgeHistory → deleteUser ordering verification below never executed.
+    @Test
     void pseudonymizeAccount_transformsDeletesIdentityAndPublishesCacheInvalidation() {
         UUID id = UUID.randomUUID();
         User user = User.create("target-subject", "t@b.com", "Target", UserRole.CONSUMER);

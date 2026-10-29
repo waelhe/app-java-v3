@@ -921,8 +921,27 @@ public class PaymentsService implements PaymentsSpi {
                     // past. The gate holds the answer until the cumulative
                     // books reach the submission baseline plus the frozen
                     // amount (the full-refund shape reads its terminal
-                    // REFUNDED state) — the same retryable ConflictException
-                    // every other guard in this file throws.
+                    // REFUNDED state). Review round 2 on #741's part 4
+                    // (2026-10-29) then measured the WAIT's true contract:
+                    // this gate fires only on the dispute-resolve path,
+                    // where the refund runs SYNCHRONOUSLY inside the
+                    // caller's (DisputeService) transaction — an in-process
+                    // @Retry is architecturally void there: the first
+                    // throw marks the SHARED transaction rollback-only
+                    // (official participating-@Transactional semantics)
+                    // and every retried attempt re-enters the caller's
+                    // persistence context, re-reading the same first-level
+                    // cache — no webhook-synced books can appear INSIDE
+                    // one transaction. The wait therefore rides the
+                    // deliberately NON-retryable ConflictException, and
+                    // its message prescribes the retry vehicle that
+                    // actually exists: the CALLER's fresh re-invocation
+                    // (the admin's new resolve/refund request — a fresh
+                    // transaction with a fresh persistence context reading
+                    // the synced books), exactly like every other
+                    // caller-controlled refusal below. The earlier
+                    // RefundBooksSyncPendingException experiment was
+                    // reverted for this measured reason.
                     boolean booksSynced = operation.getAmountCents() == null
                             ? payment.getStatus() == PaymentStatus.REFUNDED
                             : payment.getRefundedAmountCents()
@@ -1473,12 +1492,21 @@ public class PaymentsService implements PaymentsSpi {
     public void refundAbandonedCapture(UUID paymentIntentId) {
         PaymentIntent intent = paymentIntentRepository.findById(paymentIntentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment intent not found: " + paymentIntentId));
-        if (intent.getStatus() == PaymentIntentStatus.REFUNDED
-                || intent.getStatus() == PaymentIntentStatus.PARTIALLY_REFUNDED) {
+        if (intent.getStatus() == PaymentIntentStatus.REFUNDED) {
             // the idempotent no-op read: the abandonment's refund already
-            // executed (a registry resubmission, an operator's manual
-            // refund, or the webhook sync raced ahead) — replaying is a
-            // read, never a second payment
+            // executed in FULL (a registry resubmission, an operator's
+            // manual refund, or the webhook sync raced ahead) — replaying
+            // is a read, never a second payment. PARTIALLY_REFUNDED is
+            // deliberately NOT part of this read (the review round's
+            // outside-diff Major, 2026-10-29): a partial refund from any
+            // other path leaves captured money with the house, and the
+            // sibling cancellation edges (SUCCEEDED, PARTIALLY_REFUNDED
+            // -> refundFully) complete the buyer's recovery — the
+            // abandonment's own decision ("this money returns to the
+            // buyer") now completes it too: refundFully's null amount
+            // returns exactly the REMAINDER under the same
+            // abandonment-scoped key, and the remote cumulative owns the
+            // terminal state.
             log.info("Abandonment refund for intent {} is already {} — the resubmission is a no-op read",
                     paymentIntentId, intent.getStatus());
             return;

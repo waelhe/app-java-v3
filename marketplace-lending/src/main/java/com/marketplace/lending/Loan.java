@@ -259,13 +259,22 @@ public class Loan extends BaseEntity {
         // every paid state (CANCELLED is terminal from multiple states,
         // exactly like the pre-money cancel()); the money rides the same
         // ONE refund contract, and nothing resumes from a terminal edge.
+        // APPROVED joins the legal set in the CodeRabbit review round on
+        // #741's part 4 (2026-10-28): markPaid settles the money while the
+        // loan still awaits handover, so a paid-awaiting-activation loan
+        // is a paid state the dispute API accepts — its refund decision
+        // must terminate it like every other paid shape (an UNPAID
+        // APPROVED loan terminates through the same edge with nothing for
+        // the refund contract to move; REQUESTED stays excluded — it is
+        // not a paid state).
         if (status != LoanStatus.DISPUTED
                 && status != LoanStatus.ACTIVE
                 && status != LoanStatus.RETURN_REQUESTED
-                && status != LoanStatus.RETURNED) {
+                && status != LoanStatus.RETURNED
+                && status != LoanStatus.APPROVED) {
             throw new IllegalStateException("Loan " + id + " is " + status
                     + " — dispute refund-cancel is legal from a paid state only"
-                    + " (ACTIVE/RETURN_REQUESTED/RETURNED/DISPUTED)");
+                    + " (ACTIVE/RETURN_REQUESTED/RETURNED/DISPUTED/APPROVED)");
         }
         status = LoanStatus.CANCELLED;
         cancelReason = reason;

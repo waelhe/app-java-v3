@@ -63,6 +63,9 @@ class AbandonmentCaptureRecoveryTest {
 
     private PaymentsService service() {
         WebhookEventRecorder recorder = new WebhookEventRecorder(webhookEventRepository);
+        // Row 8's refund decision capture rides along — the thirteenth
+        // collaborator the widened constructor requires (the same journal
+        // mock the sibling PaymentsServiceTest builds).
         return new PaymentsService(intentRepository, paymentRepository, webhookEventRepository,
                 eventPublisher, currentUserProvider, bookingParticipantProvider, webhookSecurity,
                 recorder,
@@ -70,7 +73,7 @@ class AbandonmentCaptureRecoveryTest {
                 new SettlementEligibilityService(mock(com.marketplace.shared.api.LedgerReadPort.class),
                         intentRepository, bookingParticipantProvider),
                 boundChannel, new CommissionProperties(java.math.BigDecimal.valueOf(0.10)),
-                new PaymentRefundOperationJournal(mock(PaymentRefundOperationRepository.class)));
+                mock(PaymentRefundOperationJournal.class));
     }
 
     /** PROCESSING → the abandonment record (failInFlight's new law). */
@@ -179,6 +182,39 @@ class AbandonmentCaptureRecoveryTest {
         verify(paymentRepository, never()).findByPaymentIntentId(any());
         verify(eventPublisher, never()).publishEvent(any(PaymentStateChangedEvent.class));
         verify(eventPublisher, never()).publishEvent(any(CacheInvalidationRequested.class));
+    }
+
+    @Test
+    void theAbandonmentRefund_completesTheRemainderWhenAPartialRefundPrecededIt() {
+        // The review round's outside-diff Major (2026-10-29): a partial
+        // refund that preceded the abandonment's recovery must NOT read
+        // as completion — the captured REMAINDER still belongs to the
+        // buyer. The sibling cancellation edges complete partial states
+        // through refundFully; the abandonment's own full-refund decision
+        // now does the same, under the same abandonment-scoped key.
+        PaymentIntent intent = abandonedIntent();
+        intent.markSucceeded();
+        intent.markPartiallyRefundedTotal(2000L); // another path refunded part
+        UUID intentId = intent.getId();
+        Payment payment = Payment.create(intentId, 5000L);
+        payment.markCompleted("ch_abandoned");
+        when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
+        when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
+        when(pspChannel.createRemoteRefund(eq("pi_abandoned"), eq(null),
+                eq("marketplace-refund-" + payment.getId() + "-abandonment-" + intentId)))
+                .thenReturn(new PspChannel.RemoteRefund("re_abandoned_rest", "succeeded", 5000L));
+
+        service().refundAbandonedCapture(intentId);
+
+        // the REMAINDER refund fired once, under the stable key; the remote
+        // cumulative (5000 — the full capture) owns the terminal state
+        verify(pspChannel, times(1)).createRemoteRefund(eq("pi_abandoned"), eq(null),
+                eq("marketplace-refund-" + payment.getId() + "-abandonment-" + intentId));
+        assertEquals(PaymentStatus.REFUNDED, payment.getStatus());
+        assertEquals(PaymentIntentStatus.REFUNDED, intent.getStatus());
     }
 
     @Test

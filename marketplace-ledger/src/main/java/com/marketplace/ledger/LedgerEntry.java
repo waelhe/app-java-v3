@@ -2,7 +2,12 @@ package com.marketplace.ledger;
 
 import com.marketplace.shared.api.Currencies;
 import com.marketplace.shared.jpa.BaseEntity;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import org.hibernate.envers.Audited;
 
 import java.util.UUID;
