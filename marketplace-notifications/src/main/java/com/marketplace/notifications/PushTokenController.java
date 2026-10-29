@@ -1,7 +1,6 @@
 package com.marketplace.notifications;
 
 import com.marketplace.shared.api.ApiConstants;
-import com.marketplace.shared.security.CurrentUserProvider;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
