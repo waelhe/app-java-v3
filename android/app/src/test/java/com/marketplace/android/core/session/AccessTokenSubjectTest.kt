@@ -81,6 +81,34 @@ class AccessTokenSubjectTest {
     }
 
     @Test
+    fun aBlankSubjectIsAnUnknownPrincipalToo() {
+        // Review round 1: `{"sub":""}` (and a whitespace-only sub) must
+        // answer null, never "" — otherwise two DIFFERENT accounts with
+        // blank subs would share one session-recovery draft. The file's
+        // own contract: null means unknown principal (fail-closed,
+        // CWE-488). The `!= null` guard in
+        // canRestoreSessionRecoveryState is only sound if blank reads
+        // collapse to null here.
+        assertNull(AccessTokenSubject.subjectOf(jwt("{\"sub\":\"\"}")))
+        assertNull(AccessTokenSubject.subjectOf(jwt("{\"sub\":\"   \"}")))
+        assertNull(AccessTokenSubject.subjectOf(jwt("{\"iss\":\"a\",\"sub\":\"\",\"exp\":1}")))
+    }
+
+    @Test
+    fun aNonStringSubjectClaimIsAnUnknownPrincipal() {
+        // Review round 2: Moshi's nextString() coerces a JSON NUMBER to
+        // text, so `{"sub":123}` would answer "123" — a matchable identity
+        // the token never carried. The claim must be a STRING; anything
+        // else is an unknown principal (fail-closed, the same CWE-488
+        // seam as the blank-sub rule above).
+        assertNull(AccessTokenSubject.subjectOf(jwt("{\"sub\":123}")))
+        assertNull(AccessTokenSubject.subjectOf(jwt("{\"sub\":123.45}")))
+        assertNull(AccessTokenSubject.subjectOf(jwt("{\"sub\":true}")))
+        assertNull(AccessTokenSubject.subjectOf(jwt("{\"sub\":{\"id\":7}}")))
+        assertNull(AccessTokenSubject.subjectOf(jwt("{\"sub\":[\"a\",\"b\"]}")))
+    }
+
+    @Test
     fun aNonObjectPayloadYieldsNoPrincipal() {
         assertNull(AccessTokenSubject.subjectOf(jwt("[1,2,3]")))
         assertNull(AccessTokenSubject.subjectOf(jwt("\"just a string\"")))

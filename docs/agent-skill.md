@@ -64,12 +64,18 @@ this skill is patched to match.
    evidence), `PROJECT_MAP.md` (state — newest wave sections first),
    `docs/METHODOLOGY.md` (the master 6-stage method),
    `CONTRIBUTING.md` (channels, contract rules, secrets policy).
-4. Check in-flight work: `git log --oneline -15` + open PRs/issues via
+4. Defect-knowledge system (`docs/governance/defect-knowledge/` —
+   protocol §9's regression list is its quick view): when any item
+   there matches your change, load the matching evidence-ledger entry
+   (E-01…E-23), causal pattern (P1–P10), and rulebook rules (A/B/C/D)
+   before editing — the system is permanent; the quick view only points
+   into it.
+5. Check in-flight work: `git log --oneline -15` + open PRs/issues via
    the API. Open PRs are forward-contract risk (OpenAPI changes ripple
    to waelhe/web-marketplace).
-5. Toolchain: Temurin JDK 25 + `./mvnw` (Maven distribution 3.10.0, wrapper tool 3.3.4). No Docker
+6. Toolchain: Temurin JDK 25 + `./mvnw` (Maven distribution 3.10.0, wrapper tool 3.3.4). No Docker
    locally — integration tests judge on CI.
-6. Measure before building: live `/v3/api-docs` on staging, success
+7. Measure before building: live `/v3/api-docs` on staging, success
    AND failure shapes of the target endpoints. Every fact carries its
    measurement date.
 
