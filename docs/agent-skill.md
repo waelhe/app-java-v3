@@ -65,11 +65,15 @@ this skill is patched to match.
    `docs/METHODOLOGY.md` (the master 6-stage method),
    `CONTRIBUTING.md` (channels, contract rules, secrets policy).
 4. Defect-knowledge system (`docs/governance/defect-knowledge/` —
-   protocol §9's regression list is its quick view): when any item
-   there matches your change, load the matching evidence-ledger entry
-   (E-01…E-23), causal pattern (P1–P10), and rulebook rules (A/B/C/D)
-   before editing — the system is permanent; the quick view only points
-   into it.
+   protocol §9's regression list is its quick view; protocol §3's
+   step 4 is the binding ritual step this item mirrors): before
+   editing, load `change-protocol.md` and apply the pattern families
+   it triggers (`pattern-catalog.md`, P1–P10); before writing a fix,
+   check `evidence-ledger.md` (E-01…E-23) and the rulebook rules
+   (A/B/C/D) the change binds; after implementing, run the adversarial
+   pass in `review-protocol.md`; when a guard fails, `enforcement-map.md`
+   states the rule → enforcement binding. The system is permanent; the
+   quick view only points into it.
 5. Check in-flight work: `git log --oneline -15` + open PRs/issues via
    the API. Open PRs are forward-contract risk (OpenAPI changes ripple
    to waelhe/web-marketplace).

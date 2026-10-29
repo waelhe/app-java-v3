@@ -107,7 +107,16 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
    redesign, client bootstrap, feature expansion, …; default
    `docs/CODING_STANDARDS.md`). `AGENTS.md` itself is read first by
    agent frameworks and re-read here.
-4. **Read the in-flight work**: `git log --oneline -15` + open PRs and
+4. **Load the defect-knowledge system** (`docs/governance/defect-knowledge/`
+   — §9's regression list is its quick view): before editing, load
+   `change-protocol.md` and apply the pattern families it triggers
+   (`pattern-catalog.md`, P1–P10); before writing a fix, check
+   `evidence-ledger.md` for a case matching the symptom (E-01…E-23)
+   and the rulebook rules (A/B/C/D) it binds; after implementing, run
+   the adversarial pass in `review-protocol.md`; when a guard fails,
+   `enforcement-map.md` states the rule → enforcement binding. The
+   system is permanent; the quick view only points into it.
+5. **Read the in-flight work**: `git log --oneline -15` + open PRs and
    issues via the API, **with full pagination** — a capped page silently
    truncates the list (measured 2026-09-28: `per_page=10` showed 10 of
    28 open PRs — the retro review campaign `review/retro-*` #431-#457
@@ -117,20 +126,20 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
    its newest section recorded merge #383 while main sat at #458 — the
    repo's own recorded truth-sync-gap pattern) — `git log` + the PR
    list are the fresher truth; the map is a dated snapshot.
-5. **Rebuild the toolchain** (it never survives): Temurin JDK 25
+6. **Rebuild the toolchain** (it never survives): Temurin JDK 25
    (25.0.4.1 is the team's recorded build), then `./mvnw` (wrapper
    3.10.0, self-contained). No Docker locally is the standing reality —
    see §7.
-6. **Measure before building** (METHODOLOGY.md Stage 2 is not optional):
+7. **Measure before building** (METHODOLOGY.md Stage 2 is not optional):
    live `/v3/api-docs` on staging, the target endpoints' success AND
    failure shapes, the repo's own evidence at `ملف:سطر`. Every parity
    claim carries its measurement date.
-7. **Emit the §0.2 declaration before any mutating action** (AGENTS.md —
+8. **Emit the §0.2 declaration before any mutating action** (AGENTS.md —
    enforced): `[الملف الحاكم]` (governing file) / `[النواة المعمارية]`
    (architecture core) / `[البند من المصفوفة §14.2]` / `[أثر على
    الحدود]` (boundary impact) / `[دين]` (debt). An action without the
    declaration is stopped before it executes.
-8. **The word gates stand**: gates B and C (AGENTS.md §0.4) open only on
+9. **The word gates stand**: gates B and C (AGENTS.md §0.4) open only on
    the owner's explicit word; no assumed answers.
 
 ## 4. The five operating rules (mapped to the repo's own governance)

@@ -66,9 +66,17 @@ class KnowledgeContentPurgeAdapterTest {
         int purged = adapter.purgeAuthoredTexts(SUBJECT);
 
         assertThat(purged).isEqualTo(4);
+        // The base-table statement must bump the optimistic-lock version
+        // (KnowledgeEntry inherits @Version from BaseEntity — the adapter's
+        // own review-round-1 law): a JDBC purge that leaves the version
+        // untouched can be silently reverted by a stale managed entity's
+        // flush, and the optimistic-lock check never sees the purge. The
+        // Envers mirror carries no version column and must stay untouched
+        // by the bump.
         verify(jdbcTemplate).update(
                 org.mockito.ArgumentMatchers.argThat((String sql) ->
                         sql.startsWith("UPDATE knowledge_entries SET title = ?, body = ?")
+                                && sql.contains("version = version + 1")
                                 && sql.contains("WHERE author_id = ?")
                                 && sql.contains("title <> ?")
                                 && sql.contains("body <> ?")
@@ -76,7 +84,8 @@ class KnowledgeContentPurgeAdapterTest {
                 any(Object[].class));
         verify(jdbcTemplate).update(
                 org.mockito.ArgumentMatchers.argThat((String sql) ->
-                        sql.startsWith("UPDATE knowledge_entries_aud SET title = ?, body = ?")),
+                        sql.startsWith("UPDATE knowledge_entries_aud SET title = ?, body = ?")
+                                && !sql.contains("version")),
                 any(Object[].class));
     }
 
@@ -160,5 +169,36 @@ class KnowledgeContentPurgeAdapterTest {
 
         assertThat(purged).isZero();
         verify(eventPublisher, never()).publishEvent(any(KnowledgeEntryWithdrawnEvent.class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void purgeAuthoredTexts_advancesTheOptimisticLockForMarkerCarryingRowsToo() {
+        // The re-run seam (CodeRabbit round on the #760 carry): a row that
+        // ALREADY carries the tombstone marker is excluded by the text
+        // update's filter, so without a lock advance a revise save loaded
+        // against a pre-pass snapshot passes its version check and
+        // resurrects content on a tombstoned row. The advance runs BEFORE
+        // the text update, targets the filter's exact complement
+        // (title = marker AND body = marker), and its count stays out of
+        // the returned total — the port's zero-row re-run idempotence
+        // contract is a TEXT-erasure contract, not a lock-movement one.
+        // The Envers mirror carries no version column and stays as-is.
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class), any(Object[].class)))
+                .thenReturn(List.of());
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(0);
+
+        int purged = adapter.purgeAuthoredTexts(SUBJECT);
+
+        assertThat(purged).isZero();
+        verify(eventPublisher, never()).publishEvent(any(KnowledgeEntryWithdrawnEvent.class));
+        verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.startsWith("UPDATE knowledge_entries SET version = version + 1")
+                                && sql.contains("WHERE author_id = ?")
+                                && sql.contains("title = ?")
+                                && sql.contains("body = ?")
+                                && !sql.contains("knowledge_entries_aud")),
+                any(Object[].class));
     }
 }
