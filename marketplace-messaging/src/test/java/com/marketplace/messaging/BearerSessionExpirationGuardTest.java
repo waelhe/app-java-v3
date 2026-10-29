@@ -172,6 +172,32 @@ class BearerSessionExpirationGuardTest {
     }
 
     @Test
+    void anAlreadyExpiredConnectTokenReportsRejectionForTheInterceptor() {
+        // Review round (CodeRabbit on the 4a split, 2026-10-28): the
+        // admission verdict — an already-expired token closes the session
+        // AT admission, and the guard's false return is the interceptor's
+        // signal to abort the CONNECT (no CONNECTED frame after the close).
+        guard.sessionOpened(session);
+        boolean admitted = guard.bearerTokenAuthenticated("ws-1",
+                jwtExpiringAt(Instant.now().minusSeconds(30)));
+
+        assertThat(admitted).isFalse();
+        verifyNoInteractions(taskScheduler);
+    }
+
+    @Test
+    void aFutureExpiryReportsAdmissionWithTheCloseArmed() {
+        // The verdict's other half: a future expiry is admission — the
+        // socket stays open under its armed deadline.
+        guard.sessionOpened(session);
+        boolean admitted = guard.bearerTokenAuthenticated("ws-1",
+                jwtExpiringAt(Instant.now().plusSeconds(900)));
+
+        assertThat(admitted).isTrue();
+        verify(taskScheduler).schedule(any(Runnable.class), any(Instant.class));
+    }
+
+    @Test
     void anAlreadyExpiredTokenIsNotScheduled() {
         // Overdue tokens are not scheduled — the interceptor's inbound
         // re-validation rejects (and closes) them on their next frame,

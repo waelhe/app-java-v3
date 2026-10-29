@@ -59,6 +59,43 @@ class ProviderServiceTest {
         assertThat(suspended.getStatus()).isEqualTo(ProviderStatus.SUSPENDED);
     }
 
+    /**
+     * CodeRabbit review round on #741's part 4 (2026-10-28, Major —
+     * Security & Privacy): a provider STATUS change also evicts the
+     * criteria-keyed search-results-v6 pages (up to one hour TTL) — the
+     * cache resolves provider eligibility INSIDE the cached method, so a
+     * stored page kept serving the suspended provider's results long
+     * after the hold. The keyed providers eviction stays alongside it.
+     */
+    @Test
+    void suspendEvictsTheSearchResultPages_BesideTheKeyedProvidersEntry() {
+        ProviderRepository repository = mock(ProviderRepository.class);
+        ProviderProfile profile = Instancio.of(ProviderProfile.class)
+                .set(field(ProviderProfile::getDisplayName), "Provider B")
+                .set(field(ProviderProfile::getBio), "bio")
+                .set(field(ProviderProfile::getStatus), ProviderStatus.VERIFIED)
+                .create();
+        when(repository.findById(profile.getId())).thenReturn(java.util.Optional.of(profile));
+
+        ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class), eventPublisher,
+                mock(com.marketplace.shared.api.ReviewStatsPort.class), mock(ProviderTeamService.class));
+        service.suspend(profile.getId());
+
+        // Two evictions: the keyed providers entry AND the clear-all
+        // search-results-v6 pages (the GeoService freshness precedent for
+        // the same cache).
+        org.mockito.ArgumentCaptor<com.marketplace.shared.api.CacheInvalidationRequested> captor =
+                org.mockito.ArgumentCaptor.forClass(com.marketplace.shared.api.CacheInvalidationRequested.class);
+        verify(eventPublisher, org.mockito.Mockito.times(2))
+                .publishEvent(captor.capture());
+        assertThat(captor.getAllValues().stream()
+                .anyMatch(e -> e.cacheNames().contains("providers") && !e.clearAll()))
+                .as("the keyed providers eviction").isTrue();
+        assertThat(captor.getAllValues().stream()
+                .anyMatch(e -> e.cacheNames().contains("search-results-v6") && e.clearAll()))
+                .as("the clear-all search-results eviction").isTrue();
+    }
+
     @Test
     void getByIdThrowsWhenMissing() {
         ProviderRepository repository = mock(ProviderRepository.class);

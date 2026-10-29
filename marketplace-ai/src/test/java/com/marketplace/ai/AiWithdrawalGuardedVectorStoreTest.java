@@ -90,6 +90,36 @@ class AiWithdrawalGuardedVectorStoreTest {
         assertThat(guarded).extracting(Document::getId).containsExactly("d-other");
     }
 
+    /**
+     * CodeRabbit review round on #741's part 4 (2026-10-28, Minor —
+     * Security & Privacy): an IllegalArgumentException thrown BY the
+     * authoritative state read must PROPAGATE — the pre-fix catch also
+     * swallowed the executor's own error and answered "live", an open
+     * failure inside a security guard (a withdrawn source's document
+     * passed). The parse's own unparseable stranger keeps its documented
+     * pass-through; the executor now speaks for itself, fail-closed.
+     */
+    @Test
+    void similaritySearchPropagatesAnExecutorError_NeverAnswersLiveThroughIt() {
+        VectorStore delegate = mock(VectorStore.class);
+        AiWithdrawnSourceStore withdrawnSources = mock(AiWithdrawnSourceStore.class);
+        com.marketplace.shared.api.KnowledgeSourceStatePort broken = entryId -> {
+            throw new IllegalArgumentException("the state read itself is broken");
+        };
+        SearchRequest request = SearchRequest.builder().query("q").build();
+        String entryId = java.util.UUID.randomUUID().toString();
+        Map<String, Object> knowledgeMetadata = Map.of(
+                AiKnowledgeGateway.SOURCE_ID_METADATA_KEY, entryId,
+                "sourceType", "knowledge-entry");
+        Document knowledgeDoc = new Document("d-knowledge", "withdrawn text", knowledgeMetadata);
+        when(delegate.similaritySearch(request)).thenReturn(List.of(knowledgeDoc));
+        when(withdrawnSources.withdrawnAmong(anyCollection())).thenReturn(Set.of());
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> new AiWithdrawalGuardedVectorStore(delegate, withdrawnSources, broken)
+                        .similaritySearch(request));
+    }
+
     @Test
     void similaritySearchPassesEverythingThroughWhenNothingIsWithdrawn() {
         VectorStore delegate = mock(VectorStore.class);

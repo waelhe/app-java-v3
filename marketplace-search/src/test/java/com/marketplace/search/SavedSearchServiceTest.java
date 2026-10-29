@@ -256,6 +256,39 @@ class SavedSearchServiceTest {
         assertThat(healthy.getLastMatchedAt()).isNotNull();
     }
 
+    /**
+     * CodeRabbit review round on #741's part 4 (2026-10-28, Major —
+     * Stability & Availability): a DATABASE error during one search's
+     * evaluation is the WHOLE scan's condition — PostgreSQL aborts the
+     * transaction (the official transaction model: an aborted transaction
+     * stays failed until rollback), so continuing the loop inside it
+     * would fail the next healthy search or its save, defeating the
+     * quarantine's own isolation goal. The data-access family propagates;
+     * the scan retries on its next activation, exactly like the webhook
+     * inbox's transient failures.
+     */
+    @Test
+    void scan_aDataAccessErrorFailsTheWholeScan_TheCriterionPoisoningStaysQuarantined() {
+        givenTheScanClaimIsAvailable();
+        SavedSearch poisonedByTheDatabase = searchOf(USER, true);
+        SavedSearch healthy = searchOf(OTHER_USER, true);
+        when(repository.findFirstAlertEnabledBatch(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(poisonedByTheDatabase, healthy)));
+        when(matcher.matches(same(poisonedByTheDatabase.getCriteria()), eq(LISTING), eq(PROVIDER)))
+                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException(
+                        "the evaluation query died on the connection"));
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                org.springframework.dao.DataAccessResourceFailureException.class,
+                () -> service.processListingActivated(LISTING, PROVIDER));
+
+        // Nothing was stamped, nothing was published — the aborted
+        // transaction never reached the healthy search.
+        verify(eventPublisher, org.mockito.Mockito.never())
+                .publishEvent(any(SavedSearchMatchedEvent.class));
+        assertThat(healthy.getLastMatchedAt()).isNull();
+    }
+
     @Test
     void scan_noMatch_publishesNothing() {
         givenTheScanClaimIsAvailable();

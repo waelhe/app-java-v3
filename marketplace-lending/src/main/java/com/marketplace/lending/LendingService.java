@@ -360,24 +360,36 @@ public class LendingService {
      */
     @Transactional
     public void resolveDisputeFromDisputes(UUID disputeId, UUID loanId, DisputeResolution resolution) {
-        // Row 15 (agent findings 2026-10-26 14:33 export): the REFUND branch
-        // applies to the loan's CURRENT paid state — DISPUTED (the frozen
-        // shape), ACTIVE, RETURN_REQUESTED, RETURNED (the dispute-opened-
-        // after-return-begin shapes the ACTIVE-only freeze never froze; the
-        // dispute API accepts them because its gate carries no state
-        // filter). The pre-fix filter answered only DISPUTED, so a full
-        // refund approved for a returning loan was recorded but never
-        // executed — the recommendation's own words: "Execute approved
-        // refunds for every paid loan state on which disputes are accepted,
-        // independently of whether a freeze occurred". The non-refund
-        // RELEASE stays DISPUTED-only by design: there is nothing to
-        // release on a loan the freeze never froze.
+        // Row 15 (agent findings 2026-10-26 14:33 export, riding the
+        // part-2 review round 2 lock): the REFUND branch applies to the
+        // loan's CURRENT paid state — DISPUTED (the frozen shape), ACTIVE,
+        // RETURN_REQUESTED, RETURNED (the dispute-opened-after-return-begin
+        // shapes the ACTIVE-only freeze never froze; the dispute API
+        // accepts them because its gate carries no state filter) and
+        // APPROVED (the CodeRabbit review round on #741's part 4,
+        // 2026-10-28: markPaid settles the money while the loan still
+        // awaits handover — a paid-awaiting-activation loan is exactly
+        // the paid state the dispute API accepts, and dropping it here
+        // recorded the decision without executing it, after which
+        // hasRefundResolutionForLoan held any later freeze's release
+        // forever — the loan could die in DISPUTED). The pre-fix filter
+        // answered only DISPUTED, so a full refund approved for a
+        // returning loan was recorded but never executed — the
+        // recommendation's own words: "Execute approved refunds for every
+        // paid loan state on which disputes are accepted, independently of
+        // whether a freeze occurred". The non-refund RELEASE stays
+        // DISPUTED-only by design: there is nothing to release on a loan
+        // the freeze never froze. The row's write lock (part-2 review
+        // round 2 — the same serialization as the freeze) keeps the
+        // filter and the has-open-dispute read on the locked committed
+        // truth.
         loanRepository.findByIdForUpdate(loanId)
                 .filter(loan -> resolution == DisputeResolution.REFUND_CONSUMER
                         ? loan.getStatus() == LoanStatus.DISPUTED
                                 || loan.getStatus() == LoanStatus.ACTIVE
                                 || loan.getStatus() == LoanStatus.RETURN_REQUESTED
                                 || loan.getStatus() == LoanStatus.RETURNED
+                                || loan.getStatus() == LoanStatus.APPROVED
                         : loan.getStatus() == LoanStatus.DISPUTED)
                 .ifPresent(loan -> {
                     if (resolution == DisputeResolution.REFUND_CONSUMER) {

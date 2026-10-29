@@ -68,6 +68,19 @@ final class Thumbnails {
      */
     private static final int MAX_JPEG_PROGRESSIVE_SCANS = 50;
 
+    /**
+     * Review round (CodeRabbit on the 4a split, 2026-10-28, Major): the
+     * streaming JPEG marker walk's segment ceiling. ImageIO's JPEG metadata
+     * parser allocates a tree node for EVERY stream segment BEFORE any
+     * caller-side limit applies — a small file carrying hundreds of
+     * thousands of empty COM segments stays under the upload byte cap yet
+     * exhausts memory. This walk bounds the segment count BEFORE any
+     * metadata tree is built (none is built at all — the walk replaces
+     * the tree entirely). A legitimate JPEG carries tens of segments;
+     * 1024 is an order-of-magnitude headroom.
+     */
+    private static final int JPEG_SEGMENT_CAP = 1024;
+
     private Thumbnails() {
     }
 
@@ -148,6 +161,19 @@ final class Thumbnails {
             // decode through the SAME validated plugin.
             ImageReader reader = selectPermittedReader(input);
             try {
+                // Row 29 + the review round's bounded-segment gate (Major):
+                // for JPEG streams the scan count comes from the STREAMING
+                // marker walk — bounded memory by construction, no metadata
+                // tree — run BEFORE any reader work. Over either ceiling
+                // (segments, scans) the decode is refused with the
+                // raster-budget contract's own shape. The walk restores the
+                // stream position for the reader's setInput below.
+                if ("JPEG".equalsIgnoreCase(reader.getFormatName())) {
+                    int scans = countJpegScansBounded(input);
+                    if (scans < 0 || scans > MAX_JPEG_PROGRESSIVE_SCANS) {
+                        return null;
+                    }
+                }
                 reader.setInput(input, true, true);
                 int width = reader.getWidth(0);
                 int height = reader.getHeight(0);
@@ -228,6 +254,19 @@ final class Thumbnails {
             }
             ImageReader reader = selectPermittedReader(input);
             try {
+                // Row 29 + the review round's bounded-segment gate (Major):
+                // for JPEG streams the scan count comes from the STREAMING
+                // marker walk — bounded memory by construction, no metadata
+                // tree — run BEFORE any reader work. Over either ceiling
+                // (segments, scans) the decode is refused with the
+                // raster-budget contract's own shape. The walk restores the
+                // stream position for the reader's setInput below.
+                if ("JPEG".equalsIgnoreCase(reader.getFormatName())) {
+                    int scans = countJpegScansBounded(input);
+                    if (scans < 0 || scans > MAX_JPEG_PROGRESSIVE_SCANS) {
+                        return null;
+                    }
+                }
                 reader.setInput(input, true, true);
                 int width = reader.getWidth(0);
                 int height = reader.getHeight(0);
@@ -256,36 +295,95 @@ final class Thumbnails {
      * the equality outright.
      */
     /**
-     * Row 29's scan counter: the JPEG stream's own {@code <sos>} (Start Of
-     * Scan) markers, counted through the reader's native metadata tree
-     * ("javax_imageio_jpeg_image_1.0" — the documented JPEG metadata
-     * format) — the marker walk costs bounded stream I/O (the upload byte
-     * cap), never raster reconstruction. MEASURED on JDK 25: a
-     * default-encoded progressive image exposes 10 scans this way.
+     * Row 29's scan counter + the review round's bounded-segment gate —
+     * ONE streaming walk over the JPEG marker structure, replacing the
+     * metadata-tree walk entirely (the round's two findings: the tree is
+     * built with a node per segment BEFORE any limit — a
+     * million-COM-segment file under the upload cap exhausts memory — and
+     * the DOM child walk was quadratic in JDK 25's NodeList
+     * implementation). The walk: SOI, then marker-by-marker —
+     * length-prefixed segments are skipped by their declared length,
+     * entropy-coded data (after SOS, un-lengthed) is walked byte-wise
+     * honouring byte stuffing (FF 00) and RST markers — counting SOS
+     * occurrences (each is one scan) and every real marker (the segment
+     * ceiling). Memory is O(1) — the input bytes are already bounded by
+     * the upload cap; the walk adds no allocations at all. Returns the
+     * scan count, or {@code -1} when the segment ceiling is breached (the
+     * caller refuses the decode with the raster-budget contract's own
+     * shape). The stream position is restored to 0 for the reader.
      */
-    private static int countJpegScans(ImageReader reader) throws IOException {
-        javax.imageio.metadata.IIOMetadata metadata = reader.getImageMetadata(0);
-        if (metadata == null) {
-            // No metadata leg for this stream: the decode itself will own
-            // the failure contract — treat as unbounded is wrong, treat as
-            // zero is honest (the marker walk found nothing to count).
+    private static int countJpegScansBounded(javax.imageio.stream.ImageInputStream input) throws IOException {
+        input.seek(0);
+        if (input.read() != 0xFF || input.read() != 0xD8) {
+            // Not a JPEG stream shape — the reader will own that failure
+            // honestly; nothing to count here.
+            input.seek(0);
             return 0;
         }
-        // getAsTree's own contract: the native tree for the reader's
-        // format, built from the stream's markers (no checked failure of
-        // its own — an unreadable stream already failed at reader selection).
-        org.w3c.dom.Node tree = metadata.getAsTree("javax_imageio_jpeg_image_1.0");
-        return countNamedNodes(tree, "sos");
-    }
-
-    /** Row 29's DOM walk: {@code <sos>} nodes appear only inside the tree's marker sequence. */
-    private static int countNamedNodes(org.w3c.dom.Node node, String name) {
-        int count = name.equals(node.getNodeName()) ? 1 : 0;
-        org.w3c.dom.NodeList children = node.getChildNodes();
-        for (int i = 0; i < children.getLength(); i++) {
-            count += countNamedNodes(children.item(i), name);
+        int segments = 0;
+        int scans = 0;
+        while (true) {
+            int b = input.read();
+            if (b == -1) {
+                break;
+            }
+            if (b != 0xFF) {
+                // Entropy-coded data between markers (post-SOS) — walked
+                // byte-wise; the upload cap bounds the total walk.
+                continue;
+            }
+            int marker = input.read();
+            if (marker == -1) {
+                break;
+            }
+            if (marker == 0x00 || (marker >= 0xD0 && marker <= 0xD7)) {
+                // Byte stuffing (FF 00) or a restart marker — still inside
+                // the entropy stream, not a segment boundary.
+                continue;
+            }
+            if (marker == 0xD9) {
+                // EOI — the stream is complete.
+                break;
+            }
+            if (marker == 0x01 || marker == 0xD8) {
+                // Standalone markers (TEM, SOI) — no length prefix.
+                continue;
+            }
+            if (++segments > JPEG_SEGMENT_CAP) {
+                input.seek(0);
+                return -1;
+            }
+            if (marker == 0xDA) {
+                scans++;
+            }
+            int lenHi = input.read();
+            int lenLo = input.read();
+            if (lenHi == -1 || lenLo == -1) {
+                break;
+            }
+            int length = (lenHi << 8) | lenLo;
+            if (length < 2) {
+                // Malformed length — the reader will fail this stream
+                // honestly; nothing more to count.
+                break;
+            }
+            long toSkip = length - 2;
+            while (toSkip > 0) {
+                long skipped = input.skipBytes(toSkip);
+                if (skipped > 0) {
+                    toSkip -= skipped;
+                } else {
+                    // skipBytes stalled — force a byte of progress.
+                    if (input.read() == -1) {
+                        toSkip = 0;
+                    } else {
+                        toSkip--;
+                    }
+                }
+            }
         }
-        return count;
+        input.seek(0);
+        return scans;
     }
 
     private static ImageReader selectPermittedReader(ImageInputStream input) throws IOException {

@@ -44,6 +44,19 @@ public class ProviderService {
 
     private static final Set<String> PROVIDER_CACHE_NAMES = Set.of("providers");
 
+    /**
+     * The search pages a provider STATUS change invalidates: the
+     * criteria-keyed {@code search-results-v6} cache (the live name
+     * SearchService's own {@code @Cacheable} sites cache under — the
+     * GeoService B-02 precedent: a dead cache name evicts nothing, the
+     * literal is pinned on purpose) resolves provider eligibility INSIDE
+     * the cached method, so a suspended provider's stored page kept
+     * serving its results for the full TTL (CodeRabbit review round on
+     * #741's part 4, 2026-10-28) — the status change evicts the pages
+     * NOW, the same freshness law geo amendments already follow.
+     */
+    private static final Set<String> SEARCH_DEPENDENT_CACHE_NAMES = Set.of("search-results-v6");
+
     public ProviderService(ProviderRepository providerRepository,
                            CurrentUserProvider currentUserProvider,
                            ApplicationEventPublisher eventPublisher,
@@ -150,6 +163,11 @@ public class ProviderService {
         ProviderProfile provider = getById(id);
         provider.verify();
         eventPublisher.publishEvent(new CacheInvalidationRequested(PROVIDER_CACHE_NAMES, id));
+        // CodeRabbit review round on #741's part 4 (2026-10-28): the
+        // eligibility flip ALSO evicts the criteria-keyed search pages —
+        // a newly verified provider's results must surface before the
+        // cache's own TTL, exactly like a suspended provider's must go.
+        eventPublisher.publishEvent(new CacheInvalidationRequested(SEARCH_DEPENDENT_CACHE_NAMES));
         return provider;
     }
 
@@ -159,6 +177,17 @@ public class ProviderService {
         ProviderProfile provider = getById(id);
         provider.suspend();
         eventPublisher.publishEvent(new CacheInvalidationRequested(PROVIDER_CACHE_NAMES, id));
+        // CodeRabbit review round on #741's part 4 (2026-10-28, Major —
+        // Security & Privacy): the hold's own freshness edge. The keyed
+        // providers eviction above answers the profile read; the
+        // criteria-keyed search-results-v6 pages (up to one hour TTL)
+        // resolve provider eligibility INSIDE the cached method, so a
+        // stored page kept serving the suspended provider's results long
+        // after the hold — SearchService.search returned the cached
+        // window without re-running the filter. The clear-all eviction is
+        // the same law GeoService's amendments already follow for the
+        // same cache.
+        eventPublisher.publishEvent(new CacheInvalidationRequested(SEARCH_DEPENDENT_CACHE_NAMES));
         return provider;
     }
 

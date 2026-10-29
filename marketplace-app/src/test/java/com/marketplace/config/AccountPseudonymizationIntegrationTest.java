@@ -464,6 +464,99 @@ class AccountPseudonymizationIntegrationTest {
                         + "the shared Redis cache.", last));
     }
 
+    /**
+     * Part-4 review guard (the flush-ordering wall measured in
+     * {@code AuthActionTokenRepository#physicallyDeleteByUsername}): the
+     * erasure must survive an account that actually HOLDS auth action token
+     * rows — one live (which {@code invalidateOutstanding} loads as a
+     * managed entity and dirties in this same persistence context) and one
+     * consumed (the redemption history whose plain V112 FK still holds the
+     * {@code auth_users} row's death).
+     *
+     * <p>The pre-fix shape is the failure this method pins: the native
+     * {@code DELETE} without {@code flushAutomatically} let the bulk
+     * statement run while the tokens were still dirty in the context; the
+     * deferred flush then updated rows that no longer existed, and the
+     * versioned write's zero-row result became
+     * {@code StaleObjectStateException} at commit — the erasure rolled back
+     * and the login identity survived. The proofs below are therefore
+     * threefold: the administrative call returns normally (no stale-state
+     * commit), every token row is PHYSICALLY gone (not soft-deleted — the
+     * V112 FK is plain), and the consumption revision the erasure itself
+     * wrote stays in {@code auth_action_tokens_aud} (the audit trail the
+     * migration promises).</p>
+     */
+    @Test
+    void pseudonymize_withLiveAndConsumedTokenHistory_erasesLoginIdentityAndEveryTokenRow() {
+        String historyUser = "it-pseud-history-user";
+        registerUser(historyUser, "USER");
+        UUID historyUserId = UUID.randomUUID();
+        jdbcTemplate.update(
+                """
+                INSERT INTO users (id, subject, email, display_name, role)
+                VALUES (?, ?, ?, ?, 'CONSUMER')
+                ON CONFLICT (id) DO NOTHING
+                """,
+                historyUserId, historyUser, "history@example.com", "History User");
+
+        // The live right: the row invalidateOutstanding loads as a managed
+        // entity and stamps consumed_at on — a pending UPDATE inside the
+        // erasure's own persistence context (the seed is SQL because the
+        // A-04 enum is module-internal on purpose).
+        jdbcTemplate.update(
+                """
+                INSERT INTO auth_action_tokens (id, username, purpose, token_hash, expires_at)
+                VALUES (?, ?, 'PASSWORD_RESET', ?, now() + interval '30 minutes')
+                """,
+                UUID.randomUUID(), historyUser, "a".repeat(64));
+
+        // The history row: a completed verification redemption — consumed, so
+        // invalidateOutstanding skips it, yet its plain V112 FK still holds
+        // the auth_users row's death.
+        jdbcTemplate.update(
+                """
+                INSERT INTO auth_action_tokens (id, username, purpose, token_hash, expires_at, consumed_at)
+                VALUES (?, ?, 'EMAIL_VERIFICATION', ?, now() + interval '30 minutes', now() - interval '5 minutes')
+                """,
+                UUID.randomUUID(), historyUser, "b".repeat(64));
+
+        assertThat(countTokenRows(historyUser))
+                .as("both token rows are committed before the erasure").isEqualTo(2);
+
+        // The action — the administrative erasure must commit as a whole.
+        runAsAdmin(() -> userServiceA.pseudonymizeAccount(
+                historyUserId, "token-history erasure proof", "admin-actor"));
+
+        // 1) The login identity is dead.
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM auth_users WHERE username = ?", Integer.class, historyUser)).isZero();
+        // 2) Every token row left PHYSICALLY — a soft delete would leave the
+        //    row (is_deleted = true) and keep the FK alive.
+        assertThat(countTokenRows(historyUser))
+                .as("the physical purge must remove live AND consumed rows").isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM auth_action_tokens WHERE username = ? AND is_deleted = TRUE",
+                Integer.class, historyUser))
+                .as("no soft-deleted remainder may survive the purge").isZero();
+        // 3) The audit trail the migration promises survives the purge: the
+        //    erasure's own consumption of the live token is a revision.
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM auth_action_tokens_aud WHERE username = ? AND consumed_at IS NOT NULL",
+                Integer.class, historyUser))
+                .as("the erasure's consumption revision stays in the Envers mirror").isPositive();
+        // 4) The projection row is pseudonymized, not deleted (reference
+        //    integrity — the same contract the acceptance sequence asserts).
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT pseudonymized_at IS NOT NULL FROM users WHERE id = ?",
+                Boolean.class, historyUserId)).isTrue();
+    }
+
+    private int countTokenRows(String username) {
+        Integer rows = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM auth_action_tokens WHERE username = ?", Integer.class, username);
+        return rows == null ? 0 : rows;
+    }
+
     // -- fixtures & helpers (the L23 gate shapes) --------------------------
 
     /**

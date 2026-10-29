@@ -11,6 +11,22 @@ public interface AvailabilityPort {
     boolean isAvailable(UUID providerId, Instant startsAt, Instant endsAt);
 
     /**
+     * The provider eligibility gate for the demand path — the SAME authority
+     * the claim edge ({@code bookSlot}) applies: only a VERIFIED profile
+     * receives bookable demand (row 11's policy; a SUSPENDED or
+     * pre-verification profile neither publishes nor claims). Added by the
+     * CodeRabbit review round on #741's part 4 (2026-10-28): the booking
+     * CREATE path called the pure slot facts alone, so a suspended provider
+     * with a previously-open slot accepted a PENDING booking that confirm
+     * could then only refuse — creation now refuses the honest 409 itself,
+     * exactly like the claim edge does.
+     *
+     * @throws com.marketplace.shared.api.ConflictException when the provider
+     *         is not currently VERIFIED
+     */
+    void requireEligibleProvider(UUID providerId);
+
+    /**
      * Read-only, exact availability check: does a single open slot span the
      * window exactly (the {@code bookSlot} contract)? Lets {@code BookingService.create}
      * fail a sub-window request early instead of surfacing it only at confirm

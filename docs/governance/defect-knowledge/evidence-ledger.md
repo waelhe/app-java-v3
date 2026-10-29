@@ -42,7 +42,7 @@
 - **Correction:** emergency revert `809f6a94` (PR #419, 2026-09-27) restoring production/staging boot; the value became env-driven with explicit default in a later controlled pass.
 - **Verification evidence:** the revert commit message carries the measured timeline (geo/tree 200 at `dc10839b` 02:47Z pre-#415; 502 after).
 - **Recurrence risk:** every new `${...}` placeholder in prod profiles; every new deployment target.
-- **Prevention:** rule B6 (placeholder resolution matrix + fail-fast discipline) — procedural; no deterministic guard yet (recorded as a gap in enforcement-map §5).
+- **Prevention:** rule B6 (placeholder resolution matrix + fail-fast discipline) — the matrix is now deterministic: `PlaceholderTargetMatrixGuardTest` (D10) requires every no-default env placeholder in the deployed composition to be declared in the versioned target record `.railway/railway.ts` (gap G2 closed; enforcement-map §5). The guard's first matrix run (2026-10-28) measured three names the record lacked — ADMIN_SEED_PASSWORD, OAUTH_POST_LOGOUT_REDIRECT_URI, MAIL_FROM — each live on the target per its carrying PR's evidence (#389, #420, #685); all three declared in the closing commit.
 
 ## E-03 · S10 — aggregate health verdict blind in production **[VERIFIED]**
 
@@ -275,3 +275,15 @@
 - **Observed fact:** the two truth files are the most-modified paths in history (232/187 changes) — truth-sync runs after every wave, as designed.
 - **Hypothesis (not promoted to a rule):** churn volume correlates with the truth-sync debt incidents documented in the regression list ("PROJECT_MAP/SYSTEM sections lagging merged waves"). The *measured* debt incidents are already covered by E-12's rule family; the churn itself is the *cost* of the design, not a defect.
 - **Status:** recorded to prevent misreading churn as pathology.
+
+## E-23 · Single-line sources defeat the fail-closed recipe publication guard **[VERIFIED]**
+
+- **Observed failure:** OpenRewrite Auto Apply red on three consecutive main pushes — runs `40285298597` (`dfd011bc`, 2026-10-26), `40479098312` (`7836c157`, 2026-10-27), `40626928859` (`a908e114`, 2026-10-28) — each failing at the "Verify patch content and exact planned paths before publication" step with `Non-import source change in …automatic-rewrite.patch; refusing publication.`
+- **Original assumption:** carried-in sources (the security carries at `7836c157` and `a908e114`) are ordinary Java — compile gates cover them.
+- **Triggering conditions:** thirteen files arrived with package, imports, and declarations packed onto single lines (nine in `marketplace-delivery`, two in `marketplace-ledger` main plus one ledger test, one in `marketplace-provider`; twelve measured by code search and confirmed file-by-file, the thirteenth — `DeliveryModule.java`, whose `; import` spacing escaped the search patterns — caught by `SourceFormatGuardTest`'s own first CI run). `RemoveUnusedImports` — the approved baseline recipe — replaces partially-used wildcard imports with explicit ones; in a single-line source every such change rewrites the declaration line too, so the patch carries non-import source changes and the publication guard refuses the whole batch.
+- **Causal chain:** carried/generated code bypassed layout conventions → no guard owned the format dimension → the line-based machinery inherits the blindness → the fail-closed guard refuses correctly → the workflow stays red while the root persists.
+- **Violated invariant:** every source file's physical layout stays processable by the repo's line-based automated machinery.
+- **Root cause:** unguarded format dimension on carried-in sources — not a recipe defect and not a guard defect; both behaved exactly as designed.
+- **Correction:** the thirteen files reformatted to standard layout (tokens preserved — no semantic change; wildcards kept for the automation to expand as designed) plus `SourceFormatGuardTest` (D9) rejecting packed package/import lines repo-wide.
+- **Verification evidence:** the guard runs in CI from this commit; the next Auto Apply run over a touched delivery/ledger/provider module produces an import-only patch the publication guard accepts.
+- **Recurrence risk:** medium — every carry pasting generated sources re-opens the surface; the guard converts the recurrence into a test failure on the carrying PR itself.

@@ -1,6 +1,8 @@
 package com.marketplace.availability;
 
+import com.marketplace.shared.api.ProviderSummary;
 import com.marketplace.shared.security.AuthHelper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.AccessDeniedException;
@@ -14,6 +16,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.time.DayOfWeek;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -51,6 +54,25 @@ class AvailabilityServiceSecurityTest {
 
     @MockitoBean(name = "authHelper")
     private AuthHelper authHelper;
+
+    /**
+     * Part-3's ownership read (1b6d1a1b): the service now resolves the
+     * provider through the shared port before answering a slot/rule/time-off
+     * write, and the write itself requires a VERIFIED profile (the
+     * eligibility gate the same review round added). The slice asserts the
+     * @PreAuthorize surface, so the port answers the eligibility fact every
+     * authorized call needs; the denial tests never reach it (the method
+     * interceptor throws first).
+     */
+    @MockitoBean
+    private com.marketplace.shared.api.ProviderLookupPort providerLookupPort;
+
+    @BeforeEach
+    void theProviderIsEligible() {
+        when(providerLookupPort.findByUserId(any())).thenAnswer(invocation ->
+                Optional.of(new ProviderSummary(
+                        UUID.randomUUID(), "Provider", "VERIFIED", invocation.getArgument(0))));
+    }
 
     @Test
     @WithMockUser(roles = "PROVIDER")
