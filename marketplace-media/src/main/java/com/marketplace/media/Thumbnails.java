@@ -188,14 +188,6 @@ final class Thumbnails {
                     // Within the width bound — no scaling needed, no duplicate stored.
                     return null;
                 }
-                // Row 29: the progressive-scan ceiling — read from the
-                // MARKER structure (metadata tree, no raster work) before
-                // the decode; over the ceiling the decode is refused with
-                // the raster-budget contract's own shape.
-                if ("JPEG".equalsIgnoreCase(reader.getFormatName())
-                        && countJpegScans(reader) > MAX_JPEG_PROGRESSIVE_SCANS) {
-                    return null;
-                }
                 BufferedImage source = reader.read(0);
                 if (source == null) {
                     // Defensive: the permitted reader decoded no raster — a
