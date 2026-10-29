@@ -66,9 +66,17 @@ class KnowledgeContentPurgeAdapterTest {
         int purged = adapter.purgeAuthoredTexts(SUBJECT);
 
         assertThat(purged).isEqualTo(4);
+        // The base-table statement must bump the optimistic-lock version
+        // (KnowledgeEntry inherits @Version from BaseEntity — the adapter's
+        // own review-round-1 law): a JDBC purge that leaves the version
+        // untouched can be silently reverted by a stale managed entity's
+        // flush, and the optimistic-lock check never sees the purge. The
+        // Envers mirror carries no version column and must stay untouched
+        // by the bump.
         verify(jdbcTemplate).update(
                 org.mockito.ArgumentMatchers.argThat((String sql) ->
                         sql.startsWith("UPDATE knowledge_entries SET title = ?, body = ?")
+                                && sql.contains("version = version + 1")
                                 && sql.contains("WHERE author_id = ?")
                                 && sql.contains("title <> ?")
                                 && sql.contains("body <> ?")
@@ -76,7 +84,8 @@ class KnowledgeContentPurgeAdapterTest {
                 any(Object[].class));
         verify(jdbcTemplate).update(
                 org.mockito.ArgumentMatchers.argThat((String sql) ->
-                        sql.startsWith("UPDATE knowledge_entries_aud SET title = ?, body = ?")),
+                        sql.startsWith("UPDATE knowledge_entries_aud SET title = ?, body = ?")
+                                && !sql.contains("version")),
                 any(Object[].class));
     }
 
