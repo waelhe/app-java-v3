@@ -430,6 +430,31 @@ class LendingServiceTest {
     }
 
     /**
+     * CodeRabbit review round on #741's part 4 (2026-10-28, Major —
+     * Stability & Availability): a PAID-AWAITING-ACTIVATION loan is a paid
+     * state the dispute API accepts — markPaid settles the money while the
+     * loan still sits APPROVED. The pre-fix refund filter dropped APPROVED,
+     * so the decision was recorded but never executed, and
+     * hasRefundResolutionForLoan then held any later freeze's release
+     * forever — the loan could die in DISPUTED. The refund now terminates
+     * the paid-APPROVED shape exactly like every other paid state.
+     */
+    @Test
+    void theDisputeRefundExecutesForAPaidApprovedLoanAwaitingActivation() {
+        Loan loan = loan();
+        loan.approve();
+        loan.markPaid(Instant.now()); // paid, still APPROVED — pre-handover
+        UUID disputeId = UUID.randomUUID();
+        when(loanRepository.findByIdForUpdate(loan.getId())).thenReturn(Optional.of(loan));
+        when(loanRepository.save(any(Loan.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.resolveDisputeFromDisputes(disputeId, loan.getId(), DisputeResolution.REFUND_CONSUMER);
+
+        assertThat(loan.getStatus()).isEqualTo(LoanStatus.CANCELLED);
+        verify(eventPublisher).publishEvent(any(LoanCancelledEvent.class));
+    }
+
+    /**
      * Row 8 (agent findings 2026-10-26 14:33 export): the release is HELD
      * while ANY refund resolution exists for the loan — the sibling refund
      * decision committed and awaits its event's consumption; releasing

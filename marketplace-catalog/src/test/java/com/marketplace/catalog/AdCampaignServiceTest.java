@@ -155,6 +155,50 @@ class AdCampaignServiceTest {
     }
 
     @Test
+    void pause_whenTheSettlementEndsTheCampaignReturnsTheEndedViewNotA409() {
+        // CodeRabbit review round on #741's part 4 (2026-10-28, Major —
+        // Functional Correctness): the settlement can consume the rest of
+        // the budget and flip the campaign to ENDED inside
+        // settleOpenWindow; the hold request arrived while the campaign
+        // was ACTIVE, so the pre-fix post-settlement pause() failed its
+        // transition guard and answered a spurious 409. The hold now only
+        // fires when the campaign is STILL ACTIVE after the settlement —
+        // an ended campaign already bills nothing, the hold's own goal.
+        AdCampaign campaign = AdCampaign.start(ownerId, UUID.randomUUID(), 100000L, 10L, 1L, "SAR",
+                NOW.minus(Duration.ofDays(5)), null);
+        when(campaignRepository.findByIdAndProviderId(campaign.getId(), ownerId))
+                .thenReturn(Optional.of(campaign));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(ownerId);
+        org.mockito.Mockito.doAnswer(inv -> {
+            AdCampaign settling = inv.getArgument(0);
+            // the budget's last slice — the settlement's own consume edge
+            settling.consume(settling.getBudgetCents());
+            return null;
+        }).when(billingExecutor).settleOpenWindow(any(AdCampaign.class), any(LocalDate.class));
+
+        AdCampaignService.AdCampaignView view = service.pause(campaign.getId(), authentication);
+
+        assertEquals(AdCampaignStatus.ENDED, campaign.getStatus());
+        assertEquals(AdCampaignStatus.ENDED.name(), view.status());
+    }
+
+    @Test
+    void pause_refusesANonActiveCampaignBeforeAnySettlementRuns() {
+        // The pre-settlement rejection keeps the honest 409 for every
+        // non-ACTIVE campaign — and never bills a dark campaign to
+        // manufacture it.
+        AdCampaign campaign = AdCampaign.start(ownerId, UUID.randomUUID(), 100000L, 10L, 1L, "SAR",
+                NOW.minus(Duration.ofDays(5)), null);
+        campaign.pause();
+        when(campaignRepository.findByIdAndProviderId(campaign.getId(), ownerId))
+                .thenReturn(Optional.of(campaign));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(ownerId);
+
+        assertThrows(ConflictException.class, () -> service.pause(campaign.getId(), authentication));
+        verify(billingExecutor, never()).settleOpenWindow(any(AdCampaign.class), any(LocalDate.class));
+    }
+
+    @Test
     void pause_then_resume_jumpsTheMarkerPastTheDarkDays() {
         AdCampaign campaign = AdCampaign.start(ownerId, UUID.randomUUID(), 100000L, 10L, 1L, "SAR",
                 NOW.minus(Duration.ofDays(5)), null);

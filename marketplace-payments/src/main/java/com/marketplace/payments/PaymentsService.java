@@ -921,14 +921,23 @@ public class PaymentsService implements PaymentsSpi {
                     // past. The gate holds the answer until the cumulative
                     // books reach the submission baseline plus the frozen
                     // amount (the full-refund shape reads its terminal
-                    // REFUNDED state) — the same retryable ConflictException
-                    // every other guard in this file throws.
+                    // REFUNDED state). The review round on #741's part 4
+                    // (2026-10-28) then measured the type hole: this wait
+                    // rode ConflictException, which the paymentProcessing
+                    // retry instance IGNORES — the gate's own message said
+                    // "retry after the webhook lands" while the annotated
+                    // edge never retried it. The wait now carries its own
+                    // RefundBooksSyncPendingException (absent from the
+                    // ignore list, so the retry absorbs the webhook-latency
+                    // window); the wire answer stays the same 409, and the
+                    // amount-freeze/cap refusals below keep the deliberately
+                    // non-retryable ConflictException.
                     boolean booksSynced = operation.getAmountCents() == null
                             ? payment.getStatus() == PaymentStatus.REFUNDED
                             : payment.getRefundedAmountCents()
                                     >= operation.getBooksAtSubmitCents() + operation.getAmountCents();
                     if (!booksSynced) {
-                        throw new ConflictException("The dispute's refund operation already EXECUTED at the"
+                        throw new RefundBooksSyncPendingException("The dispute's refund operation already EXECUTED at the"
                                 + " provider (remote refund " + operation.getRemoteRefundId() + " recorded)"
                                 + " but the local books await the charge.refunded sync — retry after the"
                                 + " webhook lands");

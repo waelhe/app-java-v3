@@ -271,6 +271,20 @@ public class SavedSearchService {
                     if (!matcher.matches(saved.getCriteria(), listingId, providerId)) {
                         continue;
                     }
+                } catch (org.springframework.dao.DataAccessException aborted) {
+                    // CodeRabbit review round on #741's part 4 (2026-10-28,
+                    // Major — Stability & Availability): a database error
+                    // ABORTS the PostgreSQL transaction (the official
+                    // transaction model: an aborted transaction stays
+                    // failed until rollback) — continuing the loop inside
+                    // it would fail the next healthy search or its save,
+                    // defeating the quarantine's own isolation goal. A
+                    // data-access failure is the WHOLE scan's condition:
+                    // it propagates, the activation retries on its next
+                    // run, and the inbox-style at-least-once discipline
+                    // owns the recovery. The criterion-poisoning family
+                    // below stays quarantined per search as designed.
+                    throw aborted;
                 } catch (RuntimeException poisoned) {
                     log.error("Saved search {} of user {} failed evaluation against listing {} — "
                             + "quarantined for this activation (criterion rejected by a consumer): {}",
