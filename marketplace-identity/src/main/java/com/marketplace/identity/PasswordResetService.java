@@ -101,9 +101,26 @@ public class PasswordResetService {
      * four-emoji password (16 code units — 32 UTF-8 bytes, within the
      * bcrypt byte ceiling) failed on count. The redemption leg now accepts
      * exactly what {@code AuthController.ResetCompleteRequest} accepts.
+     *
+     * <p>Review round (CodeRabbit on the #757 sync, 2026-10-29): the
+     * {@code @Size} measure and the hasher's own ceiling are TWO different
+     * bounds — {@code String#length()} counts UTF-16 code units while
+     * Spring Security's BCrypt hasher bounds the input by its 72-UTF-8-byte
+     * working buffer (the framework's own {@code BCrypt.hashpw} rejects
+     * longer inputs by throwing). A password of 71 UTF-16 units built from
+     * surrogate pairs can measure 142 UTF-8 bytes: policy-valid by the
+     * DTO's count, un-hashable by the encoder. The redemption leg rejects
+     * that shape with the honest 400 BEFORE consuming the single-use
+     * token — the token stays live for an honest retry, instead of being
+     * burnt on an encoder failure the caller cannot answer.
      */
     private static boolean passwordWithinSharedPolicy(String password) {
-        return password != null && password.length() >= 8 && password.length() <= 72;
+        if (password == null || password.length() < 8 || password.length() > 72) {
+            return false;
+        }
+        // The bcrypt byte ceiling (Spring Security's own bound): at most 72
+        // UTF-8 bytes of password material reach the hasher.
+        return password.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= 72;
     }
 
     private final UserRepository userRepository;
@@ -200,7 +217,7 @@ public class PasswordResetService {
     public void completeReset(String token, String newPassword) {
         if (!passwordWithinSharedPolicy(newPassword)) {
             throw new IllegalArgumentException(
-                    "The new password must be 8 to 72 characters long");
+                    "The new password must be 8 to 72 characters long and at most 72 UTF-8 bytes");
         }
         AuthActionToken redeemed =
                 authActionTokenService.consume(token, AuthActionTokenPurpose.PASSWORD_RESET);
