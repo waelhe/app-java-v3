@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -58,24 +59,22 @@ class ProviderProfileContentPurgeAdapterTest {
 
     @Test
     void purgeAuthoredTexts_scrubsTheOfferedServiceTextThroughTheOwningProfile() {
-        // argThat-inside-when is the documented Mockito trap: registering the
-        // NEXT stubbing re-evaluates this stubbing's matchers against the
-        // registration invocation, whose argument is argThat's null
-        // placeholder — the lambda runs on null and NPEs deterministically
-        // (measured on CI: this test never ran before; the reactor unmasked
-        // it only after the catalog and pricing fixes landed). The house-safe
-        // shape answers from the REAL sql at invocation time — the sibling
-        // tests' contains() matchers are null-safe for the same reason.
-        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenAnswer(invocation -> {
-            String sql = invocation.getArgument(0);
-            if (sql.startsWith("UPDATE provider_services s SET title = ?")) {
-                return 3;
-            }
-            if (sql.startsWith("UPDATE provider_services_aud s SET title = ?")) {
-                return 2;
-            }
-            return 0;
-        });
+        // CI round 3 (measured on 916d155): the stubs use Mockito's built-in
+        // startsWith matcher — a null-safe TypeSafeMatcher — instead of
+        // custom argThat lambdas. Stacked when() stubbings on the same
+        // method make findAnswerFor evaluate the most recent stub against
+        // the NEXT stubbing's placeholder invocation, and a custom lambda
+        // dereferences that null placeholder (the NPE at line 65, twice
+        // measured). Built-in matchers answer false on null by contract.
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(0);
+        when(jdbcTemplate.update(
+                startsWith("UPDATE provider_services s SET title = ?"),
+                any(Object[].class)))
+                .thenReturn(3);
+        when(jdbcTemplate.update(
+                startsWith("UPDATE provider_services_aud s SET title = ?"),
+                any(Object[].class)))
+                .thenReturn(2);
         when(jdbcTemplate.queryForList(
                 anyString(), eq(UUID.class), eq(SUBJECT)))
                 .thenReturn(List.of());
@@ -84,9 +83,19 @@ class ProviderProfileContentPurgeAdapterTest {
 
         // The services' five rows join the grand total.
         assertThat(purged).isEqualTo(5);
+        // Review round 1: the BASE-table statements must bump the
+        // optimistic-lock version (OfferedService inherits @Version) — a
+        // purge a stale managed entity can silently revert is not a
+        // purge. The Envers mirror carries no version column and must
+        // stay untouched by the bump.
         verify(jdbcTemplate).update(
                 org.mockito.ArgumentMatchers.argThat((String sql) ->
                         sql.startsWith("UPDATE provider_services s SET title = ?, description = NULL")
+                                // Review round 2: the increment is qualified s.version — BOTH
+                                // joined tables carry a version column, so the unqualified
+                                // reference is ambiguous in PostgreSQL and the statement errors
+                                // at runtime (column "version" does not exist / is ambiguous).
+                                && sql.contains("version = s.version + 1")
                                 && sql.contains("FROM provider_profiles p")
                                 && sql.contains("s.provider_id = p.id")
                                 && sql.contains("p.user_id = ?")
@@ -96,6 +105,7 @@ class ProviderProfileContentPurgeAdapterTest {
         verify(jdbcTemplate).update(
                 org.mockito.ArgumentMatchers.argThat((String sql) ->
                         sql.startsWith("UPDATE provider_services_aud s SET title = ?, description = NULL")
+                                && !sql.contains("version")
                                 && sql.contains("FROM provider_profiles p")),
                 any(Object[].class));
     }
@@ -117,5 +127,40 @@ class ProviderProfileContentPurgeAdapterTest {
                 .update(anyString(), any(Object[].class));
         verify(eventPublisher).publishEvent(
                 org.mockito.ArgumentMatchers.any(CacheInvalidationRequested.class));
+    }
+
+    @Test
+    void purgeAuthoredTexts_bumpsTheOptimisticLockVersionOnEveryBaseTableStatement() {
+        // Review round 1: ProviderProfile inherits @Version as well, and
+        // provider_profiles.version is NULL-able (V14) — every base-table
+        // statement must carry COALESCE(version, 0) + 1 so a stale managed
+        // entity cannot flush the persona back over the purge, while the
+        // three _aud mirrors stay version-free.
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+        when(jdbcTemplate.queryForList(anyString(), eq(UUID.class), eq(SUBJECT)))
+                .thenReturn(List.of());
+
+        adapter.purgeAuthoredTexts(SUBJECT);
+
+        verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.startsWith("UPDATE provider_profiles SET bio = NULL")
+                                && sql.contains("version = COALESCE(version, 0) + 1")),
+                any(Object[].class));
+        verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.startsWith("UPDATE provider_profiles SET display_name = ?")
+                                && sql.contains("version = COALESCE(version, 0) + 1")),
+                any(Object[].class));
+        verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.startsWith("UPDATE provider_profiles SET agency_name = NULL")
+                                && sql.contains("version = COALESCE(version, 0) + 1")),
+                any(Object[].class));
+        verify(jdbcTemplate, org.mockito.Mockito.times(3)).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.startsWith("UPDATE provider_profiles_aud")
+                                && !sql.contains("version")),
+                any(Object[].class));
     }
 }
