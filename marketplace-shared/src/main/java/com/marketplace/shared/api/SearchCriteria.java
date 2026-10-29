@@ -362,17 +362,4 @@ public record SearchCriteria(
                             + " decimal places — the coordinate vocabulary stores six");
         }
     }
-
-    /**
-     * Row 1's representation gate — a value whose scale exceeds the
-     * vocabulary's ceiling answers the honest 400 BEFORE any arithmetic
-     * whose allocation cost depends on the exponent.
-     */
-    private static void requireBoundedScale(BigDecimal value, String name) {
-        if (value.scale() > MAX_COORDINATE_SCALE) {
-            throw new BadRequestException(
-                    name + " carries more than " + MAX_COORDINATE_SCALE
-                            + " decimal places — the coordinate vocabulary stores six");
-        }
-    }
 }
