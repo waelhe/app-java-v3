@@ -153,7 +153,7 @@ class PasswordResetServiceTest {
     void completeReset_enforcesTheSharedPasswordPolicyBeforeConsumingTheToken() {
         assertThatThrownBy(() -> service.completeReset("raw-token", "short"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("The new password must be 8 to 72 characters long");
+                .hasMessage("The new password must be 8 to 72 characters long and at most 72 UTF-8 bytes");
         assertThatThrownBy(() -> service.completeReset("raw-token", null))
                 .isInstanceOf(IllegalArgumentException.class);
         org.mockito.Mockito.verify(authActionTokenService, org.mockito.Mockito.never())
@@ -187,6 +187,21 @@ class PasswordResetServiceTest {
         when(authActionTokenService.consume("raw-two", AuthActionTokenPurpose.PASSWORD_RESET))
                 .thenReturn(secondToken);
         service.completeReset("raw-two", "\uD83D\uDE00".repeat(4));
+    }
+
+    @Test
+    void completeReset_refusesAnUnhashableByteLengthBeforeConsumingTheToken() {
+        // Review round (CodeRabbit on the #757 sync, 2026-10-29): 71 UTF-16
+        // units built from surrogate pairs carry 142 UTF-8 bytes — inside the
+        // @Size count, past Spring Security's bcrypt 72-byte working buffer.
+        // The honest 400 precedes the single-use token's consumption, so the
+        // token stays live for an honest retry.
+        String unhashable = "\uD83D\uDE00".repeat(35) + "x";
+        org.assertj.core.api.Assertions.assertThat(unhashable).hasSize(71);
+        assertThatThrownBy(() -> service.completeReset("raw-token", unhashable))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("The new password must be 8 to 72 characters long and at most 72 UTF-8 bytes");
+        verify(authActionTokenService, never()).consume(any(), any());
     }
 
     @Test
