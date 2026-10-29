@@ -114,6 +114,11 @@ class AvailabilitySlotOwnershipSchemaIntegrationTest {
         UUID holderBooking = UUID.randomUUID();   // booking A — confirmed, holds the slot
         UUID siblingBooking = UUID.randomUUID();  // booking B — PENDING sibling
 
+        // The carried row-11 contract: a VERIFIED profile alone receives
+        // bookable availability — bookSlot resolves eligibility through the
+        // real adapter (full context here), so the journey's provider is
+        // seeded as one.
+        seedEligibleProvider(providerId);
         insertSlot(providerId, startsAt, endsAt, false, null);
 
         // A confirms: the slot is booked IN A's name (the ownership claim).
@@ -189,6 +194,12 @@ class AvailabilitySlotOwnershipSchemaIntegrationTest {
         Instant startsAt = monday.atTime(LocalTime.of(9, 0)).toInstant(ZoneOffset.UTC);
         Instant endsAt = monday.atTime(LocalTime.of(17, 0)).toInstant(ZoneOffset.UTC);
 
+        // The same row-11 contract: the generator's rule reads only run for
+        // ELIGIBLE providers — without the VERIFIED profile the skip this
+        // test pins would ride the eligibility edge, not the booked-window
+        // edge it exists to prove.
+        seedEligibleProvider(providerId);
+
         // The rule that daily generation reads.
         jdbcTemplate.update(
                 "INSERT INTO provider_availability_rules (id, provider_id, day_of_week, start_time, end_time,"
@@ -212,6 +223,27 @@ class AvailabilitySlotOwnershipSchemaIntegrationTest {
     }
 
     // ---------- seeding / probing helpers ----------
+
+    /**
+     * The carried row-11 contract's seeding half: a VERIFIED profile alone
+     * publishes and receives bookable availability — the guarded paths
+     * (createSlot, bookSlot, the generator's rule reads) resolve eligibility
+     * through the real adapter here (the full context), so the journey's
+     * provider ids are seeded with the users row the profile's space rides
+     * on and a VERIFIED provider_profiles row (the house seeding shape).
+     */
+    private void seedEligibleProvider(UUID providerId) {
+        jdbcTemplate.update(
+                "INSERT INTO users (id, subject, email, display_name, role)"
+                        + " VALUES (?, ?, ?, ?, 'PROVIDER') ON CONFLICT (id) DO NOTHING",
+                providerId, "r2-" + providerId + "@example.com",
+                "r2-" + providerId + "@example.com", "Availability Owner " + providerId);
+        jdbcTemplate.update(
+                "INSERT INTO provider_profiles (id, display_name, bio, status, user_id,"
+                        + " created_at, updated_at, version, is_deleted)"
+                        + " VALUES (?, ?, 'bio', 'VERIFIED', ?, now(), now(), 0, false)",
+                UUID.randomUUID(), "Availability Owner " + providerId, providerId);
+    }
 
     private void insertSlot(UUID providerId, Instant startsAt, Instant endsAt, boolean booked, UUID holder) {
         jdbcTemplate.update(

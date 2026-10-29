@@ -100,6 +100,18 @@ public class SecurityConfig {
      */
     private static final Profiles PROD_PROFILE = Profiles.of("prod");
 
+    /**
+     * Row 1 (agent findings 2026-10-26 14:33 export, CWE-362): the
+     * login-time password migration's CONDITIONAL, password-only write. The
+     * row updates only when the hash the login just verified is still the
+     * row's CURRENT hash and the account is still enabled — a concurrent
+     * reset or disablement that committed between the login-time load and
+     * this write leaves the row untouched (0 rows) and the override's
+     * reload-and-revalidate path answers the honest authentication failure.
+     */
+    private static final String UPDATE_PASSWORD_IF_CURRENT =
+            "UPDATE auth_users SET password = ? WHERE username = ? AND password = ? AND enabled = ?";
+
     private final MarketplaceProperties properties;
     private final ObjectMapper objectMapper;
 
@@ -735,18 +747,68 @@ public class SecurityConfig {
      * <p><b>The write switch.</b> {@code JdbcUserDetailsManager} carries the
      * 7.x {@code enableUpdatePassword} flag (bytecode default: {@code false}
      * — {@code updatePassword} then returns the user untouched without any
-     * SQL). Enabled here: {@code updatePassword} funnels into the SAME
-     * documented {@code updateUser} choreography the S2/N4/N6 role-change
-     * fix already trusts — the customized {@code updateUserSql} rewrites the
-     * {@code auth_users} row and the authority pair is replaced atomically,
-     * so an upgraded verifier lands exactly where every other login-row
-     * write lands. Login-time upgrade is the documented migration path for
+     * SQL). Enabled here: the login-time upgrade funnels into this bean's
+     * overridden {@code updatePassword} — the row 1 surgical form below.
+     * Login-time upgrade is the documented migration path for
      * one-way hashes («Since there is no way to recover the plaintext, it is
      * difficult to migrate the passwords» — the reference's own words).
      */
     @Bean
     JdbcUserDetailsManager userDetailsService(DataSource dataSource) {
-        JdbcUserDetailsManager manager = new JdbcUserDetailsManager(dataSource);
+        JdbcUserDetailsManager manager = new JdbcUserDetailsManager(dataSource) {
+
+            /**
+             * Row 1 (agent findings 2026-10-26 14:33 export, CWE-362): the
+             * login-time migration write is the PASSWORD COLUMN ONLY, and
+             * CONDITIONAL on the verified facts. The measured 7.1.1 bytecode
+             * of the stock flow: {@code updatePassword} builds a full
+             * snapshot copy and delegates to {@code updateUser}, whose
+             * customized SQL rewrites password AND enabled from that one
+             * snapshot — so a concurrent password reset or disablement
+             * committing between the login-time load and this write was
+             * silently overwritten (the old hash restored over the reset's,
+             * or a disabled account re-enabled). This override writes the
+             * upgraded verifier alone, guarded by the row's CURRENT hash
+             * (exactly what was verified) and a live enabled row; when no
+             * row matches, the account changed underneath the snapshot —
+             * the honest revalidation (reload; a rotated hash or a disabled
+             * row fails authentication) instead of replaying the stale
+             * snapshot. The provider's measured contract: the argument is
+             * ALREADY ENCODED (createSuccessAuthentication encodes before
+             * the call) and the RETURNED user becomes the authenticated
+             * principal's copy — so the success path returns the snapshot
+             * with the upgraded verifier, the parent's own builder shape.
+             * The {@code updateUser} full-row write stays untouched for its
+             * legitimate callers (the role/status admin surfaces under the
+             * account row lock).
+             */
+            @Override
+            public org.springframework.security.core.userdetails.UserDetails updatePassword(
+                    org.springframework.security.core.userdetails.UserDetails user,
+                    String newPassword) {
+                int updated = getJdbcTemplate().update(
+                        UPDATE_PASSWORD_IF_CURRENT,
+                        newPassword, user.getUsername(), user.getPassword(), true);
+                if (updated == 0) {
+                    org.springframework.security.core.userdetails.UserDetails current =
+                            loadUserByUsername(user.getUsername());
+                    if (!current.isEnabled()) {
+                        throw new org.springframework.security.authentication.DisabledException(
+                                "Account is disabled");
+                    }
+                    if (!Objects.equals(current.getPassword(), user.getPassword())) {
+                        throw new org.springframework.security.authentication
+                                .BadCredentialsException(
+                                "Account credentials changed during authentication");
+                    }
+                    // A row that still matches both guards would have updated
+                    // above — this return is the defensive unreachable shape.
+                    return user;
+                }
+                return org.springframework.security.core.userdetails.User
+                        .withUserDetails(user).password(newPassword).build();
+            }
+        };
         manager.setUsersByUsernameQuery("select username, password, enabled from auth_users where username = ?");
         // Phase 1 (the unified plan §10, D-03): the effective authority
         // source. The mapping's ONE-parameter contract is untouched —

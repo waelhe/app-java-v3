@@ -140,8 +140,14 @@ class PaymentsServiceDisputeRefundJournalTest {
         // the resolve rollback (REQUIRES_NEW by construction), the books did
         // not — returning them would hand the caller the pre-refund amounts
         // and the dispute would resolve against numbers the provider already
-        // moved past. The books-sync gate holds the answer with the same
-        // retryable ConflictException every other guard throws.
+        // moved past. The books-sync gate holds the answer with the
+        // NON-retryable ConflictException — review round 2 on #741's part
+        // 4 (2026-10-29) measured that an in-process retryable type is
+        // architecturally void on this path (the refund runs synchronously
+        // inside the caller's transaction: the first throw marks the
+        // shared transaction rollback-only and the attempts re-read the
+        // caller's first-level cache), so the wait's retry vehicle is the
+        // caller's FRESH re-invocation, which the 409 message prescribes.
         UUID disputeId = UUID.randomUUID();
         Payment payment = collectedPayment(0L);
         PaymentRefundOperation executed =

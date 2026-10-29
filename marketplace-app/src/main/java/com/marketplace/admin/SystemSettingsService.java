@@ -85,6 +85,20 @@ public class SystemSettingsService implements SystemSettingsPort {
         return reader.find(key).map(SystemSetting::textValue);
     }
 
+    /**
+     * The admission read's implementation (agent findings 2026-10-26T13:11
+     * export, row 15): the repository's own point read — the same read the
+     * {@code @Cacheable} miss would perform, WITHOUT the cache hop and its
+     * put-after-evict window. The decision gates that call this surface
+     * read the COMMITTED policy whatever a concurrently-evicting admin
+     * change is doing to the cache; the writer's AFTER_COMMIT eviction
+     * stays exactly where it is for the benign cached readers.
+     */
+    @Override
+    public Optional<String> getStringAuthoritative(String key) {
+        return repository.findBySettingKey(key).map(SystemSetting::textValue);
+    }
+
     @Override
     public OptionalInt getInt(String key) {
         Optional<SystemSetting> setting = reader.find(key);

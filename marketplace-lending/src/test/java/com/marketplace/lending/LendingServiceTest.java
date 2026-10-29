@@ -404,6 +404,83 @@ class LendingServiceTest {
         verify(eventPublisher).publishEvent(any(LoanCancelledEvent.class));
     }
 
+    /**
+     * Row 15 (agent findings 2026-10-26 14:33 export): the refund executes
+     * for EVERY paid state the dispute API accepts — a dispute opened
+     * AFTER the return began addresses a RETURN_REQUESTED loan the
+     * ACTIVE-only freeze never froze; the approved refund terminates it
+     * exactly like a frozen loan's (the recommendation's own words:
+     * "independently of whether a freeze occurred").
+     */
+    @Test
+    void theDisputeRefundExecutesForAReturningLoanTheFreezeNeverFroze() {
+        Loan loan = loan();
+        loan.approve();
+        loan.markPaid(Instant.now());
+        loan.activate(Instant.now());
+        loan.requestReturn(Instant.now()); // RETURN_REQUESTED — mid-return
+        UUID disputeId = UUID.randomUUID();
+        when(loanRepository.findByIdForUpdate(loan.getId())).thenReturn(Optional.of(loan));
+        when(loanRepository.save(any(Loan.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.resolveDisputeFromDisputes(disputeId, loan.getId(), DisputeResolution.REFUND_CONSUMER);
+
+        assertThat(loan.getStatus()).isEqualTo(LoanStatus.CANCELLED);
+        verify(eventPublisher).publishEvent(any(LoanCancelledEvent.class));
+    }
+
+    /**
+     * CodeRabbit review round on #741's part 4 (2026-10-28, Major —
+     * Stability & Availability): a PAID-AWAITING-ACTIVATION loan is a paid
+     * state the dispute API accepts — markPaid settles the money while the
+     * loan still sits APPROVED. The pre-fix refund filter dropped APPROVED,
+     * so the decision was recorded but never executed, and
+     * hasRefundResolutionForLoan then held any later freeze's release
+     * forever — the loan could die in DISPUTED. The refund now terminates
+     * the paid-APPROVED shape exactly like every other paid state.
+     */
+    @Test
+    void theDisputeRefundExecutesForAPaidApprovedLoanAwaitingActivation() {
+        Loan loan = loan();
+        loan.approve();
+        loan.markPaid(Instant.now()); // paid, still APPROVED — pre-handover
+        UUID disputeId = UUID.randomUUID();
+        when(loanRepository.findByIdForUpdate(loan.getId())).thenReturn(Optional.of(loan));
+        when(loanRepository.save(any(Loan.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.resolveDisputeFromDisputes(disputeId, loan.getId(), DisputeResolution.REFUND_CONSUMER);
+
+        assertThat(loan.getStatus()).isEqualTo(LoanStatus.CANCELLED);
+        verify(eventPublisher).publishEvent(any(LoanCancelledEvent.class));
+    }
+
+    /**
+     * Row 8 (agent findings 2026-10-26 14:33 export): the release is HELD
+     * while ANY refund resolution exists for the loan — the sibling refund
+     * decision committed and awaits its event's consumption; releasing
+     * first would drop it on arrival (the loan would no longer be
+     * DISPUTED). The freeze stays; the registry's resubmission delivers
+     * the termination the decision already carries.
+     */
+    @Test
+    void theReleaseIsHeldWhileAnApprovedRefundResolutionExistsForTheLoan() {
+        Loan loan = loan();
+        loan.approve();
+        loan.markPaid(Instant.now());
+        loan.activate(Instant.now());
+        loan.markDisputed();
+        UUID disputeId = UUID.randomUUID();
+        when(loanRepository.findByIdForUpdate(loan.getId())).thenReturn(Optional.of(loan));
+        when(disputeLookupPort.hasOpenDisputeForLoan(loan.getId(), disputeId)).thenReturn(false);
+        when(disputeLookupPort.hasRefundResolutionForLoan(loan.getId())).thenReturn(true);
+
+        service.resolveDisputeFromDisputes(disputeId, loan.getId(), DisputeResolution.NO_ACTION);
+
+        assertThat(loan.getStatus()).isEqualTo(LoanStatus.DISPUTED);
+        verify(loanRepository, never()).save(any(Loan.class));
+        verify(eventPublisher, never()).publishEvent(any(LoanDisputeResolvedEvent.class));
+    }
+
     @Test
     void anyOtherResolutionReleasesTheFreezeAndPublishesTheReceiptFact() {
         Loan loan = loan();

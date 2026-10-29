@@ -16,6 +16,20 @@ import java.util.UUID;
 @Transactional(readOnly = true)
 public class PaymentIntentLookupAdapter implements PaymentIntentLookupPort {
 
+    /**
+     * Row 41 (agent findings 2026-10-26T13:11): the checkout leg's payment
+     * proof — the settled family is exactly the collected-money family the
+     * order auto-refund edge switches on (SUCCEEDED and the refunded
+     * states that imply the money landed). CANCELLATION_PENDING is
+     * deliberately OUT: the remote capture may still win or lose that
+     * race — it is not verified payment yet.
+     */
+    private static final java.util.Set<com.marketplace.payments.PaymentIntentStatus> SETTLED =
+            java.util.EnumSet.of(
+                    com.marketplace.payments.PaymentIntentStatus.SUCCEEDED,
+                    com.marketplace.payments.PaymentIntentStatus.PARTIALLY_REFUNDED,
+                    com.marketplace.payments.PaymentIntentStatus.REFUNDED);
+
     private final PaymentIntentRepository paymentIntentRepository;
 
     public PaymentIntentLookupAdapter(PaymentIntentRepository paymentIntentRepository) {
@@ -35,6 +49,13 @@ public class PaymentIntentLookupAdapter implements PaymentIntentLookupPort {
         return paymentIntentRepository.findAllById(paymentIntentIds).stream()
                 .map(PaymentIntentLookupAdapter::toDetails)
                 .toList();
+    }
+
+    @Override
+    public boolean isOrderPayableSettled(UUID orderId) {
+        return paymentIntentRepository.findByOrderId(orderId)
+                .map(intent -> SETTLED.contains(intent.getStatus()))
+                .orElse(false);
     }
 
     private static PaymentIntentDetails toDetails(PaymentIntent i) {

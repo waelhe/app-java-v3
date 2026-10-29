@@ -37,6 +37,7 @@ class AdCampaignServiceTest {
 
     private final AdCampaignRepository campaignRepository = mock(AdCampaignRepository.class);
     private final AdBillingChargeRepository chargeRepository = mock(AdBillingChargeRepository.class);
+    private final AdBillingBatchExecutor billingExecutor = mock(AdBillingBatchExecutor.class);
     private final ProviderListingRepository listingRepository = mock(ProviderListingRepository.class);
     private final CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
     private final ProviderLookupPort providerLookupPort = mock(ProviderLookupPort.class);
@@ -52,7 +53,7 @@ class AdCampaignServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AdCampaignService(campaignRepository, chargeRepository,
+        service = new AdCampaignService(campaignRepository, chargeRepository, billingExecutor,
                 listingRepository, currentUserProvider, providerLookupPort, eventPublisher, CLOCK);
     }
 
@@ -154,6 +155,50 @@ class AdCampaignServiceTest {
     }
 
     @Test
+    void pause_whenTheSettlementEndsTheCampaignReturnsTheEndedViewNotA409() {
+        // CodeRabbit review round on #741's part 4 (2026-10-28, Major —
+        // Functional Correctness): the settlement can consume the rest of
+        // the budget and flip the campaign to ENDED inside
+        // settleOpenWindow; the hold request arrived while the campaign
+        // was ACTIVE, so the pre-fix post-settlement pause() failed its
+        // transition guard and answered a spurious 409. The hold now only
+        // fires when the campaign is STILL ACTIVE after the settlement —
+        // an ended campaign already bills nothing, the hold's own goal.
+        AdCampaign campaign = AdCampaign.start(ownerId, UUID.randomUUID(), 100000L, 10L, 1L, "SAR",
+                NOW.minus(Duration.ofDays(5)), null);
+        when(campaignRepository.findByIdAndProviderId(campaign.getId(), ownerId))
+                .thenReturn(Optional.of(campaign));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(ownerId);
+        org.mockito.Mockito.doAnswer(inv -> {
+            AdCampaign settling = inv.getArgument(0);
+            // the budget's last slice — the settlement's own consume edge
+            settling.consume(settling.getBudgetCents());
+            return null;
+        }).when(billingExecutor).settleOpenWindow(any(AdCampaign.class), any(LocalDate.class));
+
+        AdCampaignService.AdCampaignView view = service.pause(campaign.getId(), authentication);
+
+        assertEquals(AdCampaignStatus.ENDED, campaign.getStatus());
+        assertEquals(AdCampaignStatus.ENDED.name(), view.status());
+    }
+
+    @Test
+    void pause_refusesANonActiveCampaignBeforeAnySettlementRuns() {
+        // The pre-settlement rejection keeps the honest 409 for every
+        // non-ACTIVE campaign — and never bills a dark campaign to
+        // manufacture it.
+        AdCampaign campaign = AdCampaign.start(ownerId, UUID.randomUUID(), 100000L, 10L, 1L, "SAR",
+                NOW.minus(Duration.ofDays(5)), null);
+        campaign.pause();
+        when(campaignRepository.findByIdAndProviderId(campaign.getId(), ownerId))
+                .thenReturn(Optional.of(campaign));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(ownerId);
+
+        assertThrows(ConflictException.class, () -> service.pause(campaign.getId(), authentication));
+        verify(billingExecutor, never()).settleOpenWindow(any(AdCampaign.class), any(LocalDate.class));
+    }
+
+    @Test
     void pause_then_resume_jumpsTheMarkerPastTheDarkDays() {
         AdCampaign campaign = AdCampaign.start(ownerId, UUID.randomUUID(), 100000L, 10L, 1L, "SAR",
                 NOW.minus(Duration.ofDays(5)), null);
@@ -169,6 +214,34 @@ class AdCampaignServiceTest {
         service.resume(campaign.getId(), authentication);
         assertEquals(AdCampaignStatus.ACTIVE, campaign.getStatus());
         assertEquals(LocalDate.parse("2026-10-03"), campaign.getBilledThrough());
+    }
+
+    @Test
+    void pause_settlesTheAccruedCompleteActiveDaysBeforeTheHold() {
+        // Agent findings 2026-10-26T13:11 export, row 45: the owner's hold
+        // must not discard the unsettled window — the settlement runs on
+        // the campaign WHILE IT IS STILL ACTIVE (the billable state), with
+        // the pause's own UTC today as the EXCLUSIVE horizon (the pause
+        // day itself stays the one documented forfeit).
+        AdCampaign campaign = AdCampaign.start(ownerId, UUID.randomUUID(), 100000L, 10L, 1L, "SAR",
+                NOW.minus(Duration.ofDays(5)), null);
+        when(campaignRepository.findByIdAndProviderId(campaign.getId(), ownerId))
+                .thenReturn(Optional.of(campaign));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(ownerId);
+        java.util.List<AdCampaignStatus> statusAtSettlement = new java.util.ArrayList<>();
+        org.mockito.Mockito.doAnswer(inv -> {
+            statusAtSettlement.add(((AdCampaign) inv.getArgument(0)).getStatus());
+            return null;
+        }).when(billingExecutor).settleOpenWindow(any(AdCampaign.class), any(LocalDate.class));
+
+        service.pause(campaign.getId(), authentication);
+
+        // The settlement ran exactly once, on the caller's own campaign,
+        // at the service's UTC today — and the status it observed was
+        // ACTIVE (the window was still billable, not dark).
+        verify(billingExecutor).settleOpenWindow(campaign, LocalDate.parse("2026-10-03"));
+        assertEquals(java.util.List.of(AdCampaignStatus.ACTIVE), statusAtSettlement);
+        assertEquals(AdCampaignStatus.PAUSED, campaign.getStatus());
     }
 
     @Test

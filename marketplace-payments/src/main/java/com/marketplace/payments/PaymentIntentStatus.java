@@ -13,7 +13,20 @@ public enum PaymentIntentStatus {
     FAILED,
     CANCELLED,
     REFUNDED,
-    PARTIALLY_REFUNDED;
+    PARTIALLY_REFUNDED,
+    /**
+     * CodeRabbit agent findings (2026-10-26T11:43 export), row 15 — the
+     * abandonment's own record: a domain cancellation (booking/order/
+     * delivery/loan auto-refund edge) hit an in-flight payment and decided
+     * "this money must return to the buyer"; the remote capture may still
+     * win the race. NOT terminal, NOT retryable, NOT collectible: the
+     * provider's own events resolve it — payment_intent.succeeded settles
+     * the books and pays the abandonment's ONE durable idempotent refund
+     * back; payment_intent.payment_failed / canceled / expired resolve it
+     * to FAILED (no money moved). A new attempt stays blocked until the
+     * race is resolved — the money may still land.
+     */
+    CANCELLATION_PENDING;
 
     /**
      * R4 (comprehensive-review-ar-fix plan §4/R4 — one collectible attempt
@@ -48,12 +61,13 @@ public enum PaymentIntentStatus {
     public static final java.util.Map<PaymentIntentStatus, Set<PaymentIntentStatus>> TRANSITIONS =
             Collections.unmodifiableMap(java.util.Map.of(
                     CREATED, EnumSet.of(PROCESSING, CANCELLED),
-                    PROCESSING, EnumSet.of(SUCCEEDED, FAILED),
+                    PROCESSING, EnumSet.of(SUCCEEDED, FAILED, CANCELLATION_PENDING),
                     SUCCEEDED, EnumSet.of(REFUNDED, PARTIALLY_REFUNDED),
                     FAILED, EnumSet.noneOf(PaymentIntentStatus.class),
                     CANCELLED, EnumSet.noneOf(PaymentIntentStatus.class),
                     REFUNDED, EnumSet.noneOf(PaymentIntentStatus.class),
-                    PARTIALLY_REFUNDED, EnumSet.of(REFUNDED, PARTIALLY_REFUNDED)
+                    PARTIALLY_REFUNDED, EnumSet.of(REFUNDED, PARTIALLY_REFUNDED),
+                    CANCELLATION_PENDING, EnumSet.of(SUCCEEDED, FAILED)
             ));
 
     public void validateTransitionTo(PaymentIntentStatus target) {

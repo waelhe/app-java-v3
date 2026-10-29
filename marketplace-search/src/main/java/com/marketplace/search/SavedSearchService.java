@@ -254,7 +254,41 @@ public class SavedSearchService {
             for (SavedSearch saved : slice.getContent()) {
                 scanned++;
                 lastSeenId = saved.getId();
-                if (!matcher.matches(saved.getCriteria(), listingId, providerId)) {
+                // Row 3 (agent findings 2026-10-26 14:33 export, CWE-755):
+                // the per-search failure boundary. The pre-fix scan ran the
+                // whole population inside ONE transaction with no boundary —
+                // a single stored criterion the eventual query consumer
+                // rejects (however it slipped past the save-time gates)
+                // aborted matching before notifications for ANY user were
+                // published. The quarantine shape: ONE saved search's
+                // evaluation failure is THAT search's own condition — logged
+                // with its identity for the operator, skipped for this
+                // activation, never the population's abort. The scan's own
+                // transaction keeps its atomicity for everything that
+                // evaluates cleanly (the ledger, the markers, the
+                // notifications' structural aggregation).
+                try {
+                    if (!matcher.matches(saved.getCriteria(), listingId, providerId)) {
+                        continue;
+                    }
+                } catch (org.springframework.dao.DataAccessException aborted) {
+                    // CodeRabbit review round on #741's part 4 (2026-10-28,
+                    // Major — Stability & Availability): a database error
+                    // ABORTS the PostgreSQL transaction (the official
+                    // transaction model: an aborted transaction stays
+                    // failed until rollback) — continuing the loop inside
+                    // it would fail the next healthy search or its save,
+                    // defeating the quarantine's own isolation goal. A
+                    // data-access failure is the WHOLE scan's condition:
+                    // it propagates, the activation retries on its next
+                    // run, and the inbox-style at-least-once discipline
+                    // owns the recovery. The criterion-poisoning family
+                    // below stays quarantined per search as designed.
+                    throw aborted;
+                } catch (RuntimeException poisoned) {
+                    log.error("Saved search {} of user {} failed evaluation against listing {} — "
+                            + "quarantined for this activation (criterion rejected by a consumer): {}",
+                            saved.getId(), saved.getUserId(), listingId, poisoned.getMessage());
                     continue;
                 }
                 matched++;

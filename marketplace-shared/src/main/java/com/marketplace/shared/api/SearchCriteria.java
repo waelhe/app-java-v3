@@ -336,19 +336,6 @@ public record SearchCriteria(
     private static final int MAX_COORDINATE_SCALE = 32;
 
     /**
-     * Row 1's representation gate — a value whose scale exceeds the
-     * vocabulary's ceiling answers the honest 400 BEFORE any arithmetic
-     * whose allocation cost depends on the exponent.
-     */
-    private static void requireBoundedScale(BigDecimal value, String name) {
-        if (value.scale() > MAX_COORDINATE_SCALE) {
-            throw new BadRequestException(
-                    name + " carries more than " + MAX_COORDINATE_SCALE
-                            + " decimal places — the coordinate vocabulary stores six");
-        }
-    }
-
-    /**
      * Row 3 (agent findings 2026-10-26 14:33 export, CWE-755): the shared
      * price-filter ceiling — the SAME bound the catalogue's query consumer
      * enforces on its own filters ({@code CatalogService}'s
@@ -362,4 +349,17 @@ public record SearchCriteria(
      * criteria, so the gate here covers both, before anything is stored.
      */
     private static final BigDecimal MAX_PRICE_MAJOR = new BigDecimal("100000000");
+
+    /**
+     * Row 1's representation gate — a value whose scale exceeds the
+     * vocabulary's ceiling answers the honest 400 BEFORE any arithmetic
+     * whose allocation cost depends on the exponent.
+     */
+    private static void requireBoundedScale(BigDecimal value, String name) {
+        if (value.scale() > MAX_COORDINATE_SCALE) {
+            throw new BadRequestException(
+                    name + " carries more than " + MAX_COORDINATE_SCALE
+                            + " decimal places — the coordinate vocabulary stores six");
+        }
+    }
 }

@@ -23,15 +23,44 @@ import java.util.UUID;
 @Transactional(readOnly = true)
 public class AvailabilityLookupAdapter implements AvailabilityLookupPort {
 
-    private final AvailabilitySlotRepository slotRepository;
+    private static final String PROVIDER_STATUS_VERIFIED = "VERIFIED";
 
-    public AvailabilityLookupAdapter(AvailabilitySlotRepository slotRepository) {
+    private final AvailabilitySlotRepository slotRepository;
+    private final com.marketplace.shared.api.ProviderLookupPort providerLookupPort;
+
+    public AvailabilityLookupAdapter(AvailabilitySlotRepository slotRepository,
+                                     com.marketplace.shared.api.ProviderLookupPort providerLookupPort) {
         this.slotRepository = slotRepository;
+        this.providerLookupPort = providerLookupPort;
     }
 
+    /**
+     * Row 11 (agent findings 2026-10-26 14:33 export): the SEARCH-window
+     * consumption gate — the windowed search's "available provider ids"
+     * carry only ELIGIBLE providers. The slot query answers the pure slot
+     * fact (an open window exists); the eligibility fact belongs to the
+     * provider module and is resolved in ONE batch through the
+     * {@code findAllByUserIds} seam (the users.id space the providerId
+     * universe carries — the AuthHelper discipline). A SUSPENDED (or
+     * unverified) profile therefore neither publishes nor generates
+     * bookable slots nor surfaces as an available window: the bookable
+     * surface is coherent end to end, and reinstatement (the machine's own
+     * SUSPENDED -> VERIFIED edge) reopens it with no cleanup owed.
+     */
     @Override
     public Set<UUID> findAvailableProviderIds(Instant startsAt, Instant endsAt) {
-        return slotRepository.findAvailableProviderIds(startsAt, endsAt);
+        Set<UUID> withOpenSlots = slotRepository.findAvailableProviderIds(startsAt, endsAt);
+        if (withOpenSlots.isEmpty()) {
+            return withOpenSlots;
+        }
+        // ONE batch resolution for the whole window's provider set — the
+        // findAllByUserIds seam (never a per-provider loop).
+        java.util.Map<UUID, com.marketplace.shared.api.ProviderSummary> summaries =
+                providerLookupPort.findAllByUserIds(withOpenSlots);
+        return withOpenSlots.stream()
+                .filter(providerId -> summaries.containsKey(providerId)
+                        && PROVIDER_STATUS_VERIFIED.equals(summaries.get(providerId).status()))
+                .collect(java.util.stream.Collectors.toSet());
     }
 
     /**

@@ -78,23 +78,28 @@ public class SavedSearchMatcher {
             return false;
         }
 
-        // The realestate-owned membership sets — D-P10: the radius ANDs
+        // The realestate-owned membership gates — D-P10: the radius ANDs
         // with the property facets, exactly like dispatchRadius composes
         // them (CodeRabbit round 1: the former else-if let a radius
         // criteria silently bypass the facet predicates — a rooms>=5 saved
         // search could alert on a 2-room flat inside the circle).
-        Set<UUID> propertySet = null;
-        if (criteria.hasRadius()) {
-            propertySet = realestatePropertyFilterPort.findListingIdsWithinRadius(
-                    criteria.latitude(), criteria.longitude(), criteria.radiusMeters());
+        // Row 2 (agent findings 2026-10-26 14:33 export, CWE-400): the
+        // membership questions answer in their ONE-LISTING existence
+        // forms — the pre-fix set forms materialized the saved search's
+        // whole matching-property population (unpaged) to test ONE
+        // listing's membership, multiplying database transfer and
+        // processing across the global alert scan's every saved search.
+        // Same predicates, the storage layer's own single-row answer; the
+        // AND composition is preserved verbatim (both gates must pass).
+        if (criteria.hasRadius()
+                && !realestatePropertyFilterPort.listingIsWithinRadius(
+                        criteria.latitude(), criteria.longitude(),
+                        criteria.radiusMeters(), listingId)) {
+            return false;
         }
-        if (criteria.hasPropertyCriteria()) {
-            Set<UUID> facetSet = realestatePropertyFilterPort.findListingIdsMatching(
-                    toPropertyCriteria(criteria));
-            propertySet = propertySet == null ? facetSet
-                    : propertySet.stream().filter(facetSet::contains).collect(java.util.stream.Collectors.toSet());
-        }
-        if (propertySet != null && !propertySet.contains(listingId)) {
+        if (criteria.hasPropertyCriteria()
+                && !realestatePropertyFilterPort.listingMatchesCriteria(
+                        toPropertyCriteria(criteria), listingId)) {
             return false;
         }
         // The catalog-side predicates (text / category / price / guests),

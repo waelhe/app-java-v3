@@ -790,7 +790,14 @@ class PaymentsServiceTest {
     }
 
     @Test
-    void autoRefundByBooking_processingIntent_failsInFlight() {
+    void autoRefundByBooking_processingIntent_recordsTheAbandonment() {
+        // Row 15 (agent findings 2026-10-26T11:43 export): the in-flight
+        // abandonment is NOT a terminal failure — the remote capture may
+        // still win the race. The intent lands CANCELLATION_PENDING, the
+        // payment row keeps PENDING (the remote outcome owns its terminal
+        // state), and the provider's own events resolve the race (succeeded
+        // settles + pays the abandonment refund; failed/canceled/expired
+        // resolve to FAILED).
         UUID bookingId = create(UUID.class);
         UUID intentId = create(UUID.class);
         PaymentIntent intent = of(PaymentIntent.class)
@@ -810,13 +817,15 @@ class PaymentsServiceTest {
                 bookingId, PaymentIntentStatus.COLLECTIBLE)).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(payment));
         when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.autoRefundByBooking(bookingId);
 
-        assertEquals(PaymentIntentStatus.FAILED, intent.getStatus());
-        assertEquals(PaymentStatus.FAILED, payment.getStatus());
-        verify(eventPublisher).publishEvent(new PaymentStateChangedEvent(intentId, "FAILED"));
+        assertEquals(PaymentIntentStatus.CANCELLATION_PENDING, intent.getStatus());
+        // the payment row keeps PENDING — never terminally failed while the
+        // remote race is open (the pre-fix pair-FAILED stranded a winning
+        // capture with no settlement and no refund)
+        assertEquals(PaymentStatus.PENDING, payment.getStatus());
+        verify(eventPublisher).publishEvent(new PaymentStateChangedEvent(intentId, "CANCELLATION_PENDING"));
         verify(eventPublisher).publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), intentId));
     }
 
@@ -891,10 +900,12 @@ class PaymentsServiceTest {
         UUID providerId = create(UUID.class);
         UUID campaignId = create(UUID.class);
         String key = "ad-debit-" + campaignId + "-2026-10-01";
-        PaymentIntent existing = of(PaymentIntent.class)
-                .set(field(PaymentIntent::getConsumerId), providerId)
-                .set(field(PaymentIntent::getIdempotencyKey), key)
-                .create();
+        // Row 39 (agent findings 2026-10-26T13:11): the replay answers only
+        // the window's OWN payable — the existing intent carries the same
+        // binding tuple (origin, campaign, amount, currency) the listener
+        // derives from the frozen window.
+        PaymentIntent existing = PaymentIntent.createForAds(providerId, campaignId,
+                7500L, "SAR", key, null);
         when(intentRepository.findByIdempotencyKey(key)).thenReturn(Optional.of(existing));
 
         PaymentIntent result = service.createAdIntent(providerId, campaignId,

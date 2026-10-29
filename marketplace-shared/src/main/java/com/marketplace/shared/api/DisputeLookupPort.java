@@ -44,4 +44,17 @@ public interface DisputeLookupPort {
      * hostage by X's own row, whatever the delivery mode.
      */
     boolean hasOpenDisputeForLoan(UUID loanId, UUID excludingDisputeId);
+
+    /**
+     * Row 8 (agent findings 2026-10-26 14:33 export): whether ANY of the
+     * loan's disputes was resolved to the consumer's refund — the release
+     * edge's terminal-decision fact. A refund decision already committed
+     * (its event possibly still awaiting consumption through the
+     * publication registry's resubmission) must hold the freeze: releasing
+     * the loan first would drop the approved refund on arrival, because
+     * the refund branch accepts the loan in its frozen state. An APPLIED
+     * refund needs no hold — the loan is already terminal (CANCELLED) and
+     * the DISPUTED guard never reaches the release branch.
+     */
+    boolean hasRefundResolutionForLoan(UUID loanId);
 }

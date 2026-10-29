@@ -50,6 +50,51 @@ public class AvailabilityService implements AvailabilityPort {
      * transaction (the rollback-only trap the catch cannot recover from).
      */
     private final AvailabilitySlotGenerator slotGenerator;
+    private final com.marketplace.shared.api.ProviderLookupPort providerLookupPort;
+
+    /**
+     * Row 11 (agent findings 2026-10-26 14:33 export): the provider
+     * eligibility policy — only a VERIFIED profile holds bookable
+     * availability. The publication gate ({@code createSlot}) and the
+     * claim gate ({@code bookSlot}) both refuse the honest 409 for a
+     * SUSPENDED (or pre-verification PENDING) profile: the finding's own
+     * recommendation ("Enforce provider eligibility before accepting new
+     * bookings and claims, and prevent suspended profiles from publishing
+     * or generating slots"). The house precedent verbatim — the public
+     * page's listings block "is served only for VERIFIED profiles" and
+     * listing "creation requires VERIFIED"; the providerId universe is
+     * the users.id space, resolved through the own-profile seam
+     * {@code findByUserId} (the AuthHelper discipline). The gate is
+     * deliberately NOT folded into the {@code @Cacheable isAvailable}
+     * read — the eligibility fact is not a slot fact, and the claim edge
+     * is the authority that decides.
+     */
+    private static final String PROVIDER_STATUS_VERIFIED = "VERIFIED";
+
+    /**
+     * The eligibility policy's ONE gate — public through
+     * {@link com.marketplace.shared.api.AvailabilityPort} since the CodeRabbit
+     * review round on #741's part 4 (2026-10-28): the booking CREATE path now
+     * holds the same authority the claim edge always applied (see
+     * {@link #bookSlot}'s row-11 comment for the policy itself).
+     */
+    @Override
+    public void requireEligibleProvider(UUID providerId) {
+        boolean eligible = providerLookupPort.findByUserId(providerId)
+                .map(summary -> PROVIDER_STATUS_VERIFIED.equals(summary.status()))
+                .orElse(false);
+        if (!eligible) {
+            throw new ConflictException(
+                    "Provider eligibility required: a verified profile alone publishes and "
+                            + "receives bookable availability (suspended or unverified: " + providerId + ")");
+        }
+    }
+
+    private boolean providerEligible(UUID providerId) {
+        return providerLookupPort.findByUserId(providerId)
+                .map(summary -> PROVIDER_STATUS_VERIFIED.equals(summary.status()))
+                .orElse(false);
+    }
 
     private static final int SLOT_GENERATION_DAYS_AHEAD = 7;
 
@@ -73,18 +118,24 @@ public class AvailabilityService implements AvailabilityPort {
                                ProviderTimeOffRepository timeOffRepository,
                                ApplicationEventPublisher eventPublisher,
                                AvailabilitySlotGenerator slotGenerator,
-                               AvailabilityProperties properties) {
+                               AvailabilityProperties properties,
+                               com.marketplace.shared.api.ProviderLookupPort providerLookupPort) {
         this.repository = repository;
         this.ruleRepository = ruleRepository;
         this.timeOffRepository = timeOffRepository;
         this.eventPublisher = eventPublisher;
         this.slotGenerator = slotGenerator;
         this.properties = properties;
+        this.providerLookupPort = providerLookupPort;
     }
 
     @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
     public AvailabilitySlotResponse createSlot(UUID providerId, Instant startsAt, Instant endsAt) {
-        // Row 11: the window gate precedes the write — an oversized or
+        // Row 11 (2026-10-26 14:33 export): the eligibility gate precedes
+        // the write — a suspended (or unverified) profile publishes no
+        // bookable slot, exactly as it lists no public inventory.
+        requireEligibleProvider(providerId);
+        // Row 11 (2026-10-25): the window gate precedes the write — an oversized or
         // reversed window never reaches the stored slot set.
         requireSupportedSlotWindow(startsAt, endsAt);
         AvailabilitySlot saved = repository.save(AvailabilitySlot.open(providerId, startsAt, endsAt));
@@ -203,6 +254,17 @@ public class AvailabilityService implements AvailabilityPort {
             return;
         }
         for (ProviderAvailabilityRule rule : rules) {
+            // Row 11 (2026-10-26 14:33 export): the generation gate — a
+            // suspended (or unverified) profile's rules generate nothing
+            // while the profile is ineligible. The rule itself stays (the
+            // owner's own config — suspension is reversible: the machine's
+            // own SUSPENDED -> VERIFIED edge reinstates both the profile
+            // and its bookable surface).
+            if (!providerEligible(rule.getProviderId())) {
+                log.info("Availability rule {} skipped for {} — provider not eligible "
+                        + "(suspended or unverified)", rule.getId(), rule.getProviderId());
+                continue;
+            }
             try {
                 // Through the bean, never self-invoked: the REQUIRES_NEW
                 // propagation only applies behind the proxy.
@@ -227,6 +289,12 @@ public class AvailabilityService implements AvailabilityPort {
 
     @Override
     public void bookSlot(UUID providerId, Instant startsAt, Instant endsAt, UUID bookingId) {
+        // Row 11 (2026-10-26 14:33 export): the CLAIM gate — booking
+        // creation and confirmation both claim through this edge, so the
+        // eligibility refusal here answers both surfaces (the honest 409
+        // rolls the booking back; the pre-check {@code isAvailable} stays
+        // a pure slot fact by design — the claim edge is the authority).
+        requireEligibleProvider(providerId);
         AvailabilitySlot slot = repository
                 .findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(providerId, startsAt, endsAt)
                 .orElseThrow(() -> new ConflictException("No available slot for provider " + providerId));

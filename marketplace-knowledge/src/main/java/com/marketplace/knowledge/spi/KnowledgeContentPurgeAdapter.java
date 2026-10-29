@@ -63,17 +63,26 @@ public class KnowledgeContentPurgeAdapter implements AuthoredContentPurgePort {
     @Override
     @Transactional
     public int purgeAuthoredTexts(UUID userId) {
-        // The withdrawal ride-along resolves FIRST — the ids and locations
-        // of the entries whose text still carries content, so the event
-        // fires exactly once per actually-purged entry (a re-run reads an
-        // empty list and publishes nothing).
+        // The withdrawal ride-along resolves FIRST — for EVERY entry the
+        // purged author owns, regardless of its CURRENT title or body.
+        // Row 28 (agent findings 2026-10-26 14:33 export): the pre-fix
+        // selection carried the text-update predicate (title/body still
+        // different from the marker), so an entry whose text ALREADY
+        // matched the tombstone marker — an author-submittable value —
+        // received NO withdrawal event and its indexed or replayed
+        // publication stayed retrievable through the AI vector store after
+        // the erasure. The ownership key alone decides the withdrawal; the
+        // text predicates stay on the UPDATE statements below, where they
+        // belong (the honest row counting). Re-runs re-publish the same
+        // withdrawal facts — the consumption is idempotent through the
+        // durable withdrawal record (the AI store's own exact-key upsert),
+        // exactly the record the finding's recommendation relies on.
         List<KnowledgeWithdrawal> withdrawals = jdbcTemplate.query(
-                "SELECT id, location_id FROM knowledge_entries "
-                        + "WHERE author_id = ? AND (title <> ? OR body <> ?)",
+                "SELECT id, location_id FROM knowledge_entries WHERE author_id = ?",
                 (rs, rowNum) -> new KnowledgeWithdrawal(
                         rs.getObject("id", UUID.class),
                         rs.getObject("location_id", UUID.class)),
-                userId, AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER);
+                userId);
         int entries = jdbcTemplate.update(
                 // version = version + 1 (review round 1): KnowledgeEntry
                 // inherits @Version from BaseEntity, so a JDBC update that

@@ -67,6 +67,12 @@ class OrderReturnsServiceTest {
                 .thenAnswer(inv -> inv.getArgument(0));
         org.mockito.Mockito.lenient().when(returnLines.save(any(OrderReturnLine.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
+        // row 1's budget aggregate: no frozen siblings and an empty sum by
+        // default — every approval/Completion test starts from a clean budget
+        org.mockito.Mockito.lenient()
+                .when(returns.countByOrderIdAndStatusIn(any(), any())).thenReturn(0L);
+        org.mockito.Mockito.lenient()
+                .when(returns.sumFrozenSharesByOrderIdAndStatusIn(any(), any())).thenReturn(0L);
     }
 
     private Order fulfilledOrder() {
@@ -198,6 +204,7 @@ class OrderReturnsServiceTest {
                 OrderReturnLine.of(r.getId(), item, 1)));
         when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
         when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
 
         OrderReturn approved = service.approve(r.getId());
 
@@ -245,6 +252,7 @@ class OrderReturnsServiceTest {
                 OrderReturnLine.of(r.getId(), item, 1)));
         when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
         when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
 
         OrderReturn approved = service.approve(r.getId());
 
@@ -267,6 +275,7 @@ class OrderReturnsServiceTest {
                 OrderReturnLine.of(r.getId(), item, 1)));
         when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
         when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
 
         assertThat(service.approve(r.getId()).getRefundAmountMinor())
                 // goods 3000 + tax share 1500×3000/10000 = 450 → 3450
@@ -307,6 +316,10 @@ class OrderReturnsServiceTest {
         r.approve(2_700L, Instant.now());
         r.receive(Instant.now());
         when(returns.findByIdForUpdate(r.getId())).thenReturn(Optional.of(r));
+        // row 1: the money edge re-reads the budget's ceiling from the order
+        // (this legacy-agreement order carries no shipping breakdown — the
+        // gate passes through untouched, the frozen share still executes)
+when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
         when(orderRefundPort.refundForOrder(order.getId(), r.getId(), 2_700L)).thenReturn(
                 new RefundOutcome(UUID.randomUUID(), 2_700L));
 
@@ -314,6 +327,117 @@ class OrderReturnsServiceTest {
 
         assertThat(completed.getStatus()).isEqualTo(OrderReturn.ReturnStatus.COMPLETED);
         verify(orderRefundPort).refundForOrder(order.getId(), r.getId(), 2_700L);
+    }
+
+    // ------------------------------------------------------------------
+    // CodeRabbit agent findings (2026-10-26T11:43 export), row 1 — the
+    // zero-value return path and the goods-and-tax refund budget
+    // ------------------------------------------------------------------
+
+    /** The order with a REAL shipping charge recorded (V224's breakdown law). */
+    private Order fulfilledOrderWithShipping(long subtotalMinor, long discountMinor,
+                                             long taxMinor, boolean taxInclusive, long shippingMinor) {
+        Order order = Order.placedWithFulfillment(buyer, "SAR", seller,
+                subtotalMinor, discountMinor, taxMinor, taxInclusive,
+                FulfillmentMethod.PLATFORM_DELIVERY,
+                "Riyadh", 24.7136, 46.6753, shippingMinor);
+        order.confirm(Instant.now());
+        order.fulfill(Instant.now());
+        return order;
+    }
+
+    @Test
+    void aFullyDiscountedBasketFreezesAnHonestZeroShare() {
+        // subtotal 10000 fully discounted, no tax, shipping 500 collected:
+        // the goods gave back NOTHING — the pre-fix forced Math.max(1, share)
+        // and minted one minor unit out of the nonrefundable shipping charge
+        Order order = fulfilledOrderWithShipping(10_000L, 10_000L, 0L, true, 500L);
+        OrderItem item = itemOf(order, UUID.randomUUID(), 2, 3_000L);
+        OrderReturn r = OrderReturn.requested(order.getId(), buyer,
+                OrderReturn.ReturnType.RETURN, "arrived late", "SAR", Instant.now());
+        when(returns.findById(r.getId())).thenReturn(Optional.of(r));
+        when(returnLines.findByOrderReturnId(r.getId())).thenReturn(List.of(
+                OrderReturnLine.of(r.getId(), item, 2)));
+        when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+
+        OrderReturn approved = service.approve(r.getId());
+
+        // goods 6000 × (10000−10000)/10000 = 0 — the honest ZERO freeze
+        assertThat(approved.getStatus()).isEqualTo(OrderReturn.ReturnStatus.APPROVED);
+        assertThat(approved.getRefundAmountMinor()).isZero();
+    }
+
+    @Test
+    void aZeroValueCompletionRefundsNothingAndStillCompletes() {
+        // the recommendation's first half: "Allow zero-value returns to
+        // complete without issuing a payment refund" — the port is never
+        // touched; the lifecycle still reaches its terminal state
+        Order order = fulfilledOrderWithShipping(10_000L, 10_000L, 0L, true, 500L);
+        OrderReturn r = OrderReturn.requested(order.getId(), buyer,
+                OrderReturn.ReturnType.RETURN, "arrived late", "SAR", Instant.now());
+        r.approve(0L, Instant.now());
+        r.receive(Instant.now());
+        when(returns.findByIdForUpdate(r.getId())).thenReturn(Optional.of(r));
+
+        OrderReturn completed = service.complete(r.getId());
+
+        assertThat(completed.getStatus()).isEqualTo(OrderReturn.ReturnStatus.COMPLETED);
+        verify(orderRefundPort, never()).refundForOrder(any(), any(), anyLong());
+    }
+
+    @Test
+    void theGoodsAndTaxBudgetRefusesSharesThatWouldReachTheShippingCharge() {
+        // subtotal 10000, discount 1000, no tax, shipping 500: the ceiling is
+        // total − shipping = 9000. A sibling already froze 9000; this return's
+        // 5400 would pay the buyer out of the SHIPPING money — the honest 409
+        Order order = fulfilledOrderWithShipping(10_000L, 1_000L, 0L, true, 500L);
+        OrderItem item = itemOf(order, UUID.randomUUID(), 2, 3_000L);
+        OrderReturn r = OrderReturn.requested(order.getId(), buyer,
+                OrderReturn.ReturnType.RETURN, "second", "SAR", Instant.now());
+        when(returns.findById(r.getId())).thenReturn(Optional.of(r));
+        when(returnLines.findByOrderReturnId(r.getId())).thenReturn(List.of(
+                OrderReturnLine.of(r.getId(), item, 2)));
+        when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(returns.countByOrderIdAndStatusIn(eq(order.getId()), any())).thenReturn(1L);
+        when(returns.sumFrozenSharesByOrderIdAndStatusIn(eq(order.getId()), any()))
+                .thenReturn(9_000L);
+
+        assertThatThrownBy(() -> service.approve(r.getId()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("goods-and-tax budget");
+    }
+
+    @Test
+    void theRoundingDriftOfALegitimateFullReturnStaysInsideTheBudget() {
+        // the allowance half of the law: each return rounds its own share
+        // (Math.round, at most half a unit up) — a FULLY returned order may
+        // sum one unit above the exact ceiling and must still complete
+        Order order = fulfilledOrderWithShipping(10_000L, 1_000L, 0L, true, 500L);
+        OrderItem item = itemOf(order, UUID.randomUUID(), 2, 3_000L);
+        OrderReturn r = OrderReturn.requested(order.getId(), buyer,
+                OrderReturn.ReturnType.RETURN, "second", "SAR", Instant.now());
+        when(returns.findById(r.getId())).thenReturn(Optional.of(r));
+        when(returnLines.findByOrderReturnId(r.getId())).thenReturn(List.of(
+                OrderReturnLine.of(r.getId(), item, 2)));
+        when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(returns.countByOrderIdAndStatusIn(eq(order.getId()), any())).thenReturn(1L);
+        // the sibling froze the exact ceiling; this return's own goods share
+        // rounds to 1 above nothing (goods 6000 × 0.9 = 5400 is refused in the
+        // crossing test — here the sibling froze 3600, this 5400 totals the
+        // exact 9000 ceiling: passes with zero margin, the honest full return
+        when(returns.sumFrozenSharesByOrderIdAndStatusIn(eq(order.getId()), any()))
+                .thenReturn(3_600L);
+
+        OrderReturn approved = service.approve(r.getId());
+
+        assertThat(approved.getRefundAmountMinor()).isEqualTo(5_400L);
+        assertThat(approved.getStatus()).isEqualTo(OrderReturn.ReturnStatus.APPROVED);
     }
 
     @Test
@@ -329,6 +453,13 @@ class OrderReturnsServiceTest {
                 OrderReturnLine.of(r.getId(), item, 2)));
         when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
         when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        // the EXCHANGE branch never reaches the money edge's budget gate
+        // (only the RETURN branch re-reads the cumulative truth under the
+        // order's write lock) and it reads the order UNLOCKED for its
+        // replacement — no findByIdForUpdate stub here, strict stubs
+        // would flag it unused (the review round's comment-accuracy
+        // correction, 2026-10-29: the reason is the BRANCH, not the
+        // amount — this test's frozen share is 2700).
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
         when(orderItemRepository.save(any(OrderItem.class))).thenAnswer(inv -> inv.getArgument(0));
 

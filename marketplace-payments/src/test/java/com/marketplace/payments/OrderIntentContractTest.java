@@ -8,6 +8,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.beans.factory.ObjectProvider;
 
+import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -246,6 +247,70 @@ class OrderIntentContractTest {
         when(intentRepository.findByIdempotencyKey("loan-" + loanId)).thenReturn(Optional.of(existing));
 
         PaymentIntent replayed = service.createLoanIntent(loanId, borrower, 50000L, "SAR");
+
+        assertThat(replayed).isSameAs(existing);
+        verify(intentRepository, never()).save(any());
+    }
+
+    // ------------------------------------------------------------------
+    // Agent findings 2026-10-26T13:11 export, row 39 — the ad window's
+    // derived key answers ONLY the window's own payable (the same
+    // two-layer model: the booking surface's prefix refusal is the
+    // structural isolation, this is the defense in depth on replay)
+    // ------------------------------------------------------------------
+
+    @Test
+    void createAdIntent_refusesAKeyPreOccupiedByASamePayerBookingIntent() {
+        // Row 39's exact attack: the provider (as a booking consumer)
+        // pre-occupies "ad-debit-{campaignId}-{windowStart}" with a cheap
+        // BOOKING intent through the caller-writable key surface, then the
+        // billing event arrives — the replay must refuse, never let the
+        // booking intent complete the billing line as if the AD payable
+        // existed.
+        UUID providerId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        String key = "ad-debit-" + campaignId + "-2026-10-01";
+        PaymentIntent preOccupied = PaymentIntent.create(
+                UUID.randomUUID(), providerId, 700L, "SAR", key, null);
+        when(intentRepository.findByIdempotencyKey(key)).thenReturn(Optional.of(preOccupied));
+
+        assertThatThrownBy(() -> service.createAdIntent(providerId, campaignId,
+                LocalDate.parse("2026-10-01"), 7500L, "SAR", key))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("non-matching payment intent");
+        verify(intentRepository, never()).save(any());
+    }
+
+    @Test
+    void createAdIntent_refusesAKeyHeldByAnAmountMismatchedAdIntent() {
+        // The complete binding check includes the AUTHORITATIVE amount and
+        // currency: a same-origin, same-campaign intent frozen under a
+        // different window's total must never satisfy this window's line.
+        UUID providerId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        String key = "ad-debit-" + campaignId + "-2026-10-01";
+        PaymentIntent stale = PaymentIntent.createForAds(
+                providerId, campaignId, 1200L, "SAR", key, null);
+        when(intentRepository.findByIdempotencyKey(key)).thenReturn(Optional.of(stale));
+
+        assertThatThrownBy(() -> service.createAdIntent(providerId, campaignId,
+                LocalDate.parse("2026-10-01"), 7500L, "SAR", key))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("non-matching payment intent");
+        verify(intentRepository, never()).save(any());
+    }
+
+    @Test
+    void createAdIntent_replaysTheSameIntentForTheSameWindow() {
+        UUID providerId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        String key = "ad-debit-" + campaignId + "-2026-10-01";
+        PaymentIntent existing = PaymentIntent.createForAds(
+                providerId, campaignId, 7500L, "SAR", key, null);
+        when(intentRepository.findByIdempotencyKey(key)).thenReturn(Optional.of(existing));
+
+        PaymentIntent replayed = service.createAdIntent(providerId, campaignId,
+                LocalDate.parse("2026-10-01"), 7500L, "SAR", key);
 
         assertThat(replayed).isSameAs(existing);
         verify(intentRepository, never()).save(any());

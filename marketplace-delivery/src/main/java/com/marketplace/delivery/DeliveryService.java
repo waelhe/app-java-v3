@@ -368,6 +368,21 @@ public class DeliveryService {
     @Observed(name = "delivery.order.leg.create")
     public DeliveryRequestResponse createOrderLegFromFulfillment(
             com.marketplace.shared.api.OrderFulfillmentSelection selection) {
+        // CodeRabbit review round on #741's part 4 (2026-10-28, Minor —
+        // Stability & Availability): the order row's write lock now spans
+        // THIS transaction's own leg check — the caller's earlier
+        // requireOrderFulfillmentForUpdate ran in the settlement
+        // listener's transaction and ended before this service's boundary,
+        // so two parallel paths (the payment settlement listener and the
+        // order fulfillment listener) could both pass the no-active-leg
+        // check, both call routes.route, and one then answered
+        // ConflictException with a rollback. The locked re-read joins THIS
+        // @Transactional method's transaction: the second path blocks on
+        // the row until the first commits, then sees the existing leg and
+        // returns it without routing again (the lock ordering stays single
+        // resource — the order row).
+        selection = orders.requireOrderFulfillmentForUpdate(
+                selection.orderId(), selection.buyerId());
         DeliveryRequest existing = requests.findByOrderIdOrderByCreatedAtAscIdAsc(
                 selection.orderId()).stream()
                 .filter(r -> r.getStatus() != DeliveryRequestStatus.CANCELLED

@@ -128,8 +128,18 @@ public class ReviewsContentPurgeAdapter implements AuthoredContentPurgePort {
                 "SELECT id FROM reviews WHERE reply IS NOT NULL AND provider_id = ?",
                 UUID.class, userId));
 
+        // Row 5 (agent findings 2026-10-26 14:33 export, CWE-362): the text
+        // erasure ADVANCES the live row's optimistic-lock version in the
+        // SAME statement — a provider reply holding a pre-erasure Review
+        // snapshot fails its flush on the version the erasure just
+        // advanced, instead of restoring the erased comment through the
+        // passed check and recreating it in a new audit revision (the
+        // booking/disputes/search purge adapters' own family). Both text
+        // directions (the reviewer's comment, the provider's reply) carry
+        // it; the audit mirrors carry no version column (Envers revisions).
         int comments = jdbcTemplate.update(
-                "UPDATE reviews SET comment = NULL WHERE reviewer_id = ? AND comment IS NOT NULL",
+                "UPDATE reviews SET comment = NULL, version = version + 1 "
+                        + "WHERE reviewer_id = ? AND comment IS NOT NULL",
                 userId);
         int commentAudits = jdbcTemplate.update(
                 "UPDATE reviews_aud SET comment = NULL WHERE reviewer_id = ? AND comment IS NOT NULL",
@@ -138,7 +148,8 @@ public class ReviewsContentPurgeAdapter implements AuthoredContentPurgePort {
         // gate's own authorship model — see the Javadoc): one predicate,
         // both directions, never the counterparty's text.
         int replies = jdbcTemplate.update(
-                "UPDATE reviews SET reply = NULL WHERE reply IS NOT NULL AND provider_id = ?",
+                "UPDATE reviews SET reply = NULL, version = version + 1 "
+                        + "WHERE reply IS NOT NULL AND provider_id = ?",
                 userId);
         int replyAudits = jdbcTemplate.update(
                 "UPDATE reviews_aud SET reply = NULL WHERE reply IS NOT NULL AND provider_id = ?",

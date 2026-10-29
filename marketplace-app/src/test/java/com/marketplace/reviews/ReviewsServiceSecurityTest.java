@@ -93,6 +93,12 @@ class ReviewsServiceSecurityTest {
                 .thenCallRealMethod();
         when(systemSettingsPort.getIntOrDefault(anyString(), anyInt()))
                 .thenCallRealMethod();
+        // Row 15 (agent findings 2026-10-26T13:11): mode() reads the
+        // AUTHORITATIVE admission surface — the same absent-row honesty
+        // (getStringAuthoritative → Optional.empty → the caller's own
+        // default VERIFIED_ONLY) for the booking-origin commands below.
+        when(systemSettingsPort.getStringAuthoritativeOrDefault(anyString(), anyString()))
+                .thenCallRealMethod();
     }
 
     // The ProviderLookupPort bean is GONE (the §9 surgical gate fix): the

@@ -107,10 +107,39 @@ public class ListingContentPurgeAdapter implements AuthoredContentPurgePort {
                 "UPDATE provider_listings_aud SET title = ? WHERE provider_id = ? "
                         + "AND title IS NOT NULL AND title <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
-        int total = titles + descriptions + titleAudits + descriptionAudits;
+        // Agent findings 2026-10-26T13:11 export, row 48: the authored Q&A
+        // bodies die with the same purge — product_questions.asker_id and
+        // product_answers.provider_id are the author UUIDs (V170's own
+        // NOT NULL pairing), body is VARCHAR(2000) NOT NULL on both live
+        // tables (the marker is the honest representation the constraint
+        // admits — the title treatment verbatim), the Envers mirrors
+        // purge with the same predicates (a purge that left the mirror
+        // intact would be cosmetic), and NO is_deleted filter — the
+        // withdrawn text purges like the live (the knowledge adapter's
+        // own law). No cache invalidation: the Q&A feeds read the tables
+        // directly (no cached read model anywhere in the module).
+        int questionBodies = jdbcTemplate.update(
+                "UPDATE product_questions SET body = ? WHERE asker_id = ? "
+                        + "AND body IS NOT NULL AND body <> ?",
+                AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
+        int answerBodies = jdbcTemplate.update(
+                "UPDATE product_answers SET body = ? WHERE provider_id = ? "
+                        + "AND body IS NOT NULL AND body <> ?",
+                AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
+        int questionBodyAudits = jdbcTemplate.update(
+                "UPDATE product_questions_aud SET body = ? WHERE asker_id = ? "
+                        + "AND body IS NOT NULL AND body <> ?",
+                AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
+        int answerBodyAudits = jdbcTemplate.update(
+                "UPDATE product_answers_aud SET body = ? WHERE provider_id = ? "
+                        + "AND body IS NOT NULL AND body <> ?",
+                AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
+        int total = titles + descriptions + titleAudits + descriptionAudits
+                + questionBodies + answerBodies + questionBodyAudits + answerBodyAudits;
         log.info("Listing content purge: userId={}, titles={}, descriptions={}, "
-                        + "auditRows={}",
-                userId, titles, descriptions, titleAudits + descriptionAudits);
+                        + "auditRows={}, questionBodies={}, answerBodies={}, qaAuditRows={}",
+                userId, titles, descriptions, titleAudits + descriptionAudits,
+                questionBodies, answerBodies, questionBodyAudits + answerBodyAudits);
         if (total > 0) {
             // AFTER_COMMIT relay: published inside THIS adapter's transaction,
             // evicted at its commit — the erased text leaves the cached public

@@ -26,6 +26,15 @@ import static org.mockito.Mockito.when;
  */
 class AiWithdrawalGuardedVectorStoreTest {
 
+    /**
+     * Row 26 (agent findings 2026-10-26 14:33 export): the authoritative
+     * source-state seam — LIVE for every source by default (the pre-existing
+     * assertions' world); the not-live tests stub per scenario.
+     */
+    private static final com.marketplace.shared.api.KnowledgeSourceStatePort LIVE_STATE =
+            entryId -> true;
+
+
     private static Document document(String id, String sourceId) {
         Map<String, Object> metadata = sourceId != null
                 ? Map.of(AiKnowledgeGateway.SOURCE_ID_METADATA_KEY, sourceId)
@@ -45,10 +54,70 @@ class AiWithdrawalGuardedVectorStoreTest {
         when(withdrawnSources.withdrawnAmong(Set.of("withdrawn-entry", "live-entry")))
                 .thenReturn(Set.of("withdrawn-entry"));
 
-        List<Document> guarded = new AiWithdrawalGuardedVectorStore(delegate, withdrawnSources)
+        List<Document> guarded = new AiWithdrawalGuardedVectorStore(delegate, withdrawnSources, LIVE_STATE)
                 .similaritySearch(request);
 
         assertThat(guarded).extracting(Document::getId).containsExactly("d2", "d3");
+    }
+
+    /**
+     * Row 26 (agent findings 2026-10-26 14:33 export): the AUTHORITATIVE
+     * source-state filter — a knowledge-entry source whose live fact says
+     * NOT-live (withdrawn or purged in the source transaction) is dropped
+     * even though NO withdrawal record exists yet (the record is written
+     * asynchronously after commit; its absence was previously treated as
+     * permission). Other source types are none of this guard's business.
+     */
+    @Test
+    void similaritySearchDropsAKnowledgeSourceTheAuthoritativeStateSaysIsNotLive() {
+        VectorStore delegate = mock(VectorStore.class);
+        AiWithdrawnSourceStore withdrawnSources = mock(AiWithdrawnSourceStore.class);
+        com.marketplace.shared.api.KnowledgeSourceStatePort notLive = entryId -> false;
+        SearchRequest request = SearchRequest.builder().query("q").build();
+        String entryId = java.util.UUID.randomUUID().toString();
+        Map<String, Object> knowledgeMetadata = Map.of(
+                AiKnowledgeGateway.SOURCE_ID_METADATA_KEY, entryId,
+                "sourceType", "knowledge-entry");
+        Document knowledgeDoc = new Document("d-knowledge", "withdrawn text", knowledgeMetadata);
+        Document strangerType = document("d-other", "other-source");
+        when(delegate.similaritySearch(request)).thenReturn(List.of(knowledgeDoc, strangerType));
+        when(withdrawnSources.withdrawnAmong(anyCollection())).thenReturn(Set.of());
+
+        List<Document> guarded = new AiWithdrawalGuardedVectorStore(delegate, withdrawnSources, notLive)
+                .similaritySearch(request);
+
+        // The knowledge source is gone; the other type passes untouched.
+        assertThat(guarded).extracting(Document::getId).containsExactly("d-other");
+    }
+
+    /**
+     * CodeRabbit review round on #741's part 4 (2026-10-28, Minor —
+     * Security & Privacy): an IllegalArgumentException thrown BY the
+     * authoritative state read must PROPAGATE — the pre-fix catch also
+     * swallowed the executor's own error and answered "live", an open
+     * failure inside a security guard (a withdrawn source's document
+     * passed). The parse's own unparseable stranger keeps its documented
+     * pass-through; the executor now speaks for itself, fail-closed.
+     */
+    @Test
+    void similaritySearchPropagatesAnExecutorError_NeverAnswersLiveThroughIt() {
+        VectorStore delegate = mock(VectorStore.class);
+        AiWithdrawnSourceStore withdrawnSources = mock(AiWithdrawnSourceStore.class);
+        com.marketplace.shared.api.KnowledgeSourceStatePort broken = entryId -> {
+            throw new IllegalArgumentException("the state read itself is broken");
+        };
+        SearchRequest request = SearchRequest.builder().query("q").build();
+        String entryId = java.util.UUID.randomUUID().toString();
+        Map<String, Object> knowledgeMetadata = Map.of(
+                AiKnowledgeGateway.SOURCE_ID_METADATA_KEY, entryId,
+                "sourceType", "knowledge-entry");
+        Document knowledgeDoc = new Document("d-knowledge", "withdrawn text", knowledgeMetadata);
+        when(delegate.similaritySearch(request)).thenReturn(List.of(knowledgeDoc));
+        when(withdrawnSources.withdrawnAmong(anyCollection())).thenReturn(Set.of());
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> new AiWithdrawalGuardedVectorStore(delegate, withdrawnSources, broken)
+                        .similaritySearch(request));
     }
 
     @Test
@@ -60,7 +129,7 @@ class AiWithdrawalGuardedVectorStoreTest {
                 document("d1", "live-1"), document("d2", "live-2")));
         when(withdrawnSources.withdrawnAmong(anyCollection())).thenReturn(Set.of());
 
-        List<Document> guarded = new AiWithdrawalGuardedVectorStore(delegate, withdrawnSources)
+        List<Document> guarded = new AiWithdrawalGuardedVectorStore(delegate, withdrawnSources, LIVE_STATE)
                 .similaritySearch(request);
 
         assertThat(guarded).extracting(Document::getId).containsExactly("d1", "d2");
@@ -74,7 +143,7 @@ class AiWithdrawalGuardedVectorStoreTest {
         when(delegate.similaritySearch(request)).thenReturn(List.of(
                 document("d1", null), document("d2", null)));
 
-        List<Document> guarded = new AiWithdrawalGuardedVectorStore(delegate, withdrawnSources)
+        List<Document> guarded = new AiWithdrawalGuardedVectorStore(delegate, withdrawnSources, LIVE_STATE)
                 .similaritySearch(request);
 
         assertThat(guarded).extracting(Document::getId).containsExactly("d1", "d2");
@@ -88,7 +157,7 @@ class AiWithdrawalGuardedVectorStoreTest {
         SearchRequest request = SearchRequest.builder().query("q").build();
         when(delegate.similaritySearch(request)).thenReturn(List.of());
 
-        assertThat(new AiWithdrawalGuardedVectorStore(delegate, withdrawnSources).similaritySearch(request))
+        assertThat(new AiWithdrawalGuardedVectorStore(delegate, withdrawnSources, LIVE_STATE).similaritySearch(request))
                 .isEmpty();
         verify(withdrawnSources, never()).withdrawnAmong(anyCollection());
     }
@@ -97,7 +166,7 @@ class AiWithdrawalGuardedVectorStoreTest {
     void writesArePassedThroughUntouchedTheProtocolOwnsThem() {
         VectorStore delegate = mock(VectorStore.class);
         AiWithdrawnSourceStore withdrawnSources = mock(AiWithdrawnSourceStore.class);
-        AiWithdrawalGuardedVectorStore guarded = new AiWithdrawalGuardedVectorStore(delegate, withdrawnSources);
+        AiWithdrawalGuardedVectorStore guarded = new AiWithdrawalGuardedVectorStore(delegate, withdrawnSources, LIVE_STATE);
 
         List<Document> documents = List.of(document("d1", "s"));
         guarded.add(documents);
@@ -118,7 +187,7 @@ class AiWithdrawalGuardedVectorStoreTest {
         when(delegate.getNativeClient()).thenReturn(java.util.Optional.of("native"));
 
         AiWithdrawalGuardedVectorStore guarded =
-                new AiWithdrawalGuardedVectorStore(delegate, mock(AiWithdrawnSourceStore.class));
+                new AiWithdrawalGuardedVectorStore(delegate, mock(AiWithdrawnSourceStore.class), LIVE_STATE);
 
         assertThat(guarded.getName()).isEqualTo("PgVectorStore");
         assertThat(guarded.getNativeClient()).contains("native");

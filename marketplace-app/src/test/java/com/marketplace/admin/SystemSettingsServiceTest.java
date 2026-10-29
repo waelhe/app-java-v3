@@ -89,6 +89,26 @@ class SystemSettingsServiceTest {
     }
 
     @Test
+    void getStringAuthoritative_readsTheCommittedRowWithoutTheCachedReader() {
+        // Row 15 (agent findings 2026-10-26T13:11): the admission read —
+        // the REPOSITORY's own point read, never the @Cacheable reader.
+        // The distinguishing assertion: the cached reader is never touched
+        // (no cache population, no put-after-evict window), and the absent
+        // row yields to the caller's own default through the port's own
+        // default-method shape.
+        when(repository.findBySettingKey(KEY)).thenReturn(Optional.of(stored("\"OPEN\"")));
+
+        assertThat(service.getStringAuthoritative(KEY)).contains("OPEN");
+        assertThat(service.getStringAuthoritativeOrDefault(KEY, "VERIFIED_ONLY")).isEqualTo("OPEN");
+        org.mockito.Mockito.verifyNoInteractions(reader);
+
+        when(repository.findBySettingKey(KEY)).thenReturn(Optional.empty());
+        assertThat(service.getStringAuthoritative(KEY)).isEmpty();
+        assertThat(service.getStringAuthoritativeOrDefault(KEY, "VERIFIED_ONLY")).isEqualTo("VERIFIED_ONLY");
+        org.mockito.Mockito.verifyNoInteractions(reader);
+    }
+
+    @Test
     void aValueOfTheWrongJsonTypeIsLoudRatherThanDefaulted() {
         when(reader.find(KEY)).thenReturn(Optional.of(stored("25")));
 

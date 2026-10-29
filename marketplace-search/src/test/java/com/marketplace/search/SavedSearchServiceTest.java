@@ -30,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -213,6 +214,79 @@ class SavedSearchServiceTest {
                 .filter(e -> e.userId().equals(OTHER_USER)).toList()).hasSize(1);
         // the bookkeeping stamp
         assertThat(a.getLastMatchedAt()).isNotNull();
+    }
+
+    /**
+     * Row 3 (agent findings 2026-10-26 14:33 export, CWE-755): the
+     * per-search failure boundary — one stored criterion the eventual
+     * query consumer rejects (however it slipped past the save-time
+     * gates) is QUARANTINED for this activation (logged with its
+     * identity, skipped) and never aborts the population's notification
+     * processing: the healthy saved search still matches, still stamps,
+     * still publishes its aggregated event.
+     */
+    @Test
+    void scan_poisonedSearchIsQuarantined_andTheHealthySearchStillAlerts() {
+        givenTheScanClaimIsAvailable();
+        SavedSearch poisoned = searchOf(USER, true);
+        SavedSearch healthy = searchOf(OTHER_USER, true);
+        when(repository.findFirstAlertEnabledBatch(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(poisoned, healthy)));
+        when(matcher.matches(same(poisoned.getCriteria()), eq(LISTING), eq(PROVIDER)))
+                .thenThrow(new com.marketplace.shared.api.BadRequestException(
+                        "minPrice is limited to the supported monetary range"));
+        when(matcher.matches(same(healthy.getCriteria()), eq(LISTING), eq(PROVIDER)))
+                .thenReturn(true);
+        when(jdbcTemplate.update(eq(SavedSearchService.STAMP_SCAN_CLAIM), any(UUID.class), any(Timestamp.class)))
+                .thenReturn(1);
+        when(jdbcTemplate.update(anyString(), any(), any(), any(), any()))
+                .thenReturn(1);
+
+        service.processListingActivated(LISTING, PROVIDER);
+
+        // The healthy search's alert survived the poisoned neighbor.
+        ArgumentCaptor<SavedSearchMatchedEvent> captor =
+                ArgumentCaptor.forClass(SavedSearchMatchedEvent.class);
+        verify(eventPublisher, org.mockito.Mockito.times(1)).publishEvent(captor.capture());
+        assertThat(captor.getAllValues().get(0).userId()).isEqualTo(OTHER_USER);
+        assertThat(captor.getAllValues().get(0).savedSearchIds())
+                .containsExactlyInAnyOrder(healthy.getId());
+        // The poisoned search was skipped, never stamped.
+        assertThat(poisoned.getLastMatchedAt()).isNull();
+        assertThat(healthy.getLastMatchedAt()).isNotNull();
+    }
+
+    /**
+     * CodeRabbit review round on #741's part 4 (2026-10-28, Major —
+     * Stability & Availability): a DATABASE error during one search's
+     * evaluation is the WHOLE scan's condition — PostgreSQL aborts the
+     * transaction (the official transaction model: an aborted transaction
+     * stays failed until rollback), so continuing the loop inside it
+     * would fail the next healthy search or its save, defeating the
+     * quarantine's own isolation goal. The data-access family propagates;
+     * the scan retries on its next activation, exactly like the webhook
+     * inbox's transient failures.
+     */
+    @Test
+    void scan_aDataAccessErrorFailsTheWholeScan_TheCriterionPoisoningStaysQuarantined() {
+        givenTheScanClaimIsAvailable();
+        SavedSearch poisonedByTheDatabase = searchOf(USER, true);
+        SavedSearch healthy = searchOf(OTHER_USER, true);
+        when(repository.findFirstAlertEnabledBatch(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(poisonedByTheDatabase, healthy)));
+        when(matcher.matches(same(poisonedByTheDatabase.getCriteria()), eq(LISTING), eq(PROVIDER)))
+                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException(
+                        "the evaluation query died on the connection"));
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                org.springframework.dao.DataAccessResourceFailureException.class,
+                () -> service.processListingActivated(LISTING, PROVIDER));
+
+        // Nothing was stamped, nothing was published — the aborted
+        // transaction never reached the healthy search.
+        verify(eventPublisher, org.mockito.Mockito.never())
+                .publishEvent(any(SavedSearchMatchedEvent.class));
+        assertThat(healthy.getLastMatchedAt()).isNull();
     }
 
     @Test

@@ -637,6 +637,34 @@ public class OrdersService implements OrderDeliveryPort {
                 order.getDeliveryRequestId());
     }
 
+    /**
+     * Agent findings 2026-10-26T13:11 export, row 41 — the settlement
+     * edge's resolution. The filter pre-guards the SAME two conditions
+     * {@link #requireOrderFulfillment} throws on (CONFIRMED + a known
+     * seller), so the read answers the selection or the honest absent —
+     * an exception is never the events consumer's answer. A seller-first
+     * confirmed order still PLACED-confirmed-but-unpaid is present here
+     * (CONFIRMED), and its leg is created by THIS edge the moment the
+     * payment settles — the confirmation edge alone stopped creating
+     * legs on the seller's bare word.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.Optional<com.marketplace.shared.api.OrderFulfillmentSelection>
+    findOrderFulfillmentByPaymentIntent(UUID paymentIntentId) {
+        // The order the intent resolved IS the selection's source: the read
+        // builds it from the found aggregate in ONE pass. Routing back
+        // through requireOrderFulfillment(order.getId(), ...) re-read the
+        // row by id (a second query inside the same read-only transaction,
+        // and a needless lookup that can only fail where the filter above
+        // already succeeded) — the merge of part 3's single-builder
+        // selectionOf(order, ...) makes the one-pass form exact, and the
+        // transaction bound to this call no longer starts a second read.
+        return orderRepository.findByPaymentIntentId(paymentIntentId)
+                .filter(order -> order.getStatus() == OrderStatus.CONFIRMED && order.getSellerId() != null)
+                .map(order -> selectionOf(order, order.getId(), order.getConsumerId()));
+    }
+
     @Override
     @Transactional
     @Observed(name = "order.delivery.attach")

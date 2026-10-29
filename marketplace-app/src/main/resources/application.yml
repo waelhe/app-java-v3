@@ -584,6 +584,21 @@ resilience4j:
     instances:
       paymentProcessing:
         base-config: default
+        # Agent findings 2026-10-26T13:11 export, row 24: the shared
+        # provider-health circuit must open ONLY on the channel's real
+        # health. Caller-controlled lookup and validation failures ride the
+        # guarded method's own front (a nonexistent intent id, a foreign
+        # intent, a replayed-settlement state conflict) — an ordinary
+        # consumer hammering absent ids must never change shared payment
+        # availability for everyone. The official ignore-exceptions
+        # mechanism (the aiChat OFF-state precedent's own tool): these
+        # expected failures neither count as failures nor successes for
+        # the breaker, and the retry instance below leaves them un-retried
+        # — an identical lookup miss can never succeed on a second attempt.
+        ignore-exceptions:
+          - com.marketplace.shared.api.ResourceNotFoundException
+          - org.springframework.security.access.AccessDeniedException
+          - com.marketplace.shared.api.ConflictException
       # D.4 (compliance plan wave D — channel resilience): the three channels
       # that cross the process boundary beyond the PSP. mailSend guards the
       # SMTP crossing (EmailService.send — the async AFTER_COMMIT mail leg);
@@ -615,6 +630,24 @@ resilience4j:
       paymentProcessing:
         base-config: default
         max-attempts: 3
+        # Row 24 (agent findings 2026-10-26T13:11) — the retry twin of the
+        # breaker's ignore list above: the expected caller-controlled
+        # failures never trigger a retry (an identical miss re-fails
+        # identically — the attempt would only burn the shared budget).
+        ignore-exceptions:
+          - com.marketplace.shared.api.ResourceNotFoundException
+          - org.springframework.security.access.AccessDeniedException
+          - com.marketplace.shared.api.ConflictException
+        # Review round 2 on #741's part 4 (2026-10-29): the dispute
+        # refund's books-sync WAIT deliberately rides ConflictException
+        # (non-retryable) — the gate fires only on the synchronous
+        # dispute-resolve path, where an in-process @Retry is void (the
+        # first throw marks the shared transaction rollback-only and the
+        # attempts re-read the caller's first-level cache; official
+        # participating-@Transactional semantics). The wait's retry
+        # vehicle is the CALLER's fresh re-invocation, which the gate's
+        # 409 message prescribes; transient PSP errors keep the retry
+        # below on the paths where the method owns the transaction.
       booking:
         base-config: default
         max-attempts: 2

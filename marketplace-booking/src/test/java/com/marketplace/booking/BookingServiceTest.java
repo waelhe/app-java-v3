@@ -6,6 +6,7 @@ import com.marketplace.shared.api.EffectivePricePort;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ListingPriceProvider.ListingInfo;
 import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,6 +52,14 @@ class BookingServiceTest {
      */
     private final EffectivePricePort effectivePricePort = mock(EffectivePricePort.class);
     private final Authentication authentication = mock(Authentication.class);
+    /**
+     * Row 14 (agent findings 2026-10-26 14:33 export): the per-window
+     * cancellation advisory lock's executor — a no-op stub (the unit tests
+     * assert the booking logic, not the serialization; the concurrency
+     * contract rides the real statement in CI).
+     */
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate =
+            mock(org.springframework.jdbc.core.JdbcTemplate.class);
     private BookingService service;
 
     @BeforeEach
@@ -58,7 +67,33 @@ class BookingServiceTest {
         when(effectivePricePort.calculateBookingTotalCents(any(), anyLong(), any(), any()))
                 .thenAnswer(inv -> inv.getArgument(1));
         service = new BookingService(bookingRepository, currentUserProvider, eventPublisher,
-                listingPriceProvider, availabilityPort, effectivePricePort);
+                listingPriceProvider, availabilityPort, effectivePricePort, jdbcTemplate);
+    }
+
+    @Test
+    void create_refusesAnIneligibleProviderBeforeAnySlotFactIsRead() {
+        // CodeRabbit review round on #741's part 4 (2026-10-28, Major —
+        // Functional Correctness): the demand path's own eligibility gate.
+        // A suspended provider with a previously-open slot must not accept
+        // a PENDING booking that confirm could then only refuse — the
+        // port's requireEligibleProvider answers the honest 409 at creation
+        // itself, before the pure slot facts are even read.
+        UUID consumerId = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        UUID listingId = Instancio.create(UUID.class);
+        Instant now = Instant.now();
+
+        when(listingPriceProvider.getListingInfo(listingId))
+                .thenReturn(new ListingInfo(providerId, 5000L));
+        org.mockito.Mockito.doThrow(new ConflictException(
+                "Provider eligibility required: a verified profile alone receives bookable demand"))
+                .when(availabilityPort).requireEligibleProvider(providerId);
+
+        org.junit.jupiter.api.Assertions.assertThrows(ConflictException.class,
+                () -> service.create(consumerId, listingId, now, now.plusSeconds(3600), "notes"));
+        org.mockito.Mockito.verify(availabilityPort, org.mockito.Mockito.never())
+                .isAvailable(providerId, now, now.plusSeconds(3600));
+        org.mockito.Mockito.verify(bookingRepository, org.mockito.Mockito.never()).save(any(Booking.class));
     }
 
     @Test
@@ -507,6 +542,29 @@ class BookingServiceTest {
         service.autoConfirm(id);
 
         assertEquals(BookingStatus.CONFIRMED, booking.getStatus());
+    }
+
+    @Test
+    void autoConfirm_cancelledBooking_doesNothing_neverThrows() {
+        // CodeRabbit review round on #741's part 4 (2026-10-28, Minor —
+        // Stability & Availability): a COMPLETED payment event arriving for
+        // a CANCELLED booking must stay a no-op — the pre-fix guard ignored
+        // CONFIRMED alone, so booking.confirm() answered
+        // ConflictException and the event publication registry resubmitted
+        // the undeliverable transition forever.
+        UUID id = Instancio.create(UUID.class);
+        Booking booking = Instancio.of(Booking.class)
+                .set(field(Booking::getPriceCents), 5000L)
+                .set(field(Booking::getNotes), "notes")
+                .set(field(Booking::getStatus), BookingStatus.CANCELLED)
+                .set(field(Booking::getStartsAt), null)
+                .set(field(Booking::getEndsAt), null)
+                .create();
+        when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
+
+        service.autoConfirm(id);
+
+        assertEquals(BookingStatus.CANCELLED, booking.getStatus());
     }
 
     @Test

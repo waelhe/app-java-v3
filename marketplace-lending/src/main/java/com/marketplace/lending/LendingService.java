@@ -360,25 +360,75 @@ public class LendingService {
      */
     @Transactional
     public void resolveDisputeFromDisputes(UUID disputeId, UUID loanId, DisputeResolution resolution) {
+        // Row 15 (agent findings 2026-10-26 14:33 export, riding the
+        // part-2 review round 2 lock): the REFUND branch applies to the
+        // loan's CURRENT paid state — DISPUTED (the frozen shape), ACTIVE,
+        // RETURN_REQUESTED, RETURNED (the dispute-opened-after-return-begin
+        // shapes the ACTIVE-only freeze never froze; the dispute API
+        // accepts them because its gate carries no state filter) and
+        // APPROVED (the CodeRabbit review round on #741's part 4,
+        // 2026-10-28: markPaid settles the money while the loan still
+        // awaits handover — a paid-awaiting-activation loan is exactly
+        // the paid state the dispute API accepts, and dropping it here
+        // recorded the decision without executing it, after which
+        // hasRefundResolutionForLoan held any later freeze's release
+        // forever — the loan could die in DISPUTED). The pre-fix filter
+        // answered only DISPUTED, so a full refund approved for a
+        // returning loan was recorded but never executed — the
+        // recommendation's own words: "Execute approved refunds for every
+        // paid loan state on which disputes are accepted, independently of
+        // whether a freeze occurred". The non-refund RELEASE stays
+        // DISPUTED-only by design: there is nothing to release on a loan
+        // the freeze never froze. The row's write lock (part-2 review
+        // round 2 — the same serialization as the freeze) keeps the
+        // filter and the has-open-dispute read on the locked committed
+        // truth.
         loanRepository.findByIdForUpdate(loanId)
-                .filter(loan -> loan.getStatus() == LoanStatus.DISPUTED)
+                .filter(loan -> resolution == DisputeResolution.REFUND_CONSUMER
+                        ? loan.getStatus() == LoanStatus.DISPUTED
+                                || loan.getStatus() == LoanStatus.ACTIVE
+                                || loan.getStatus() == LoanStatus.RETURN_REQUESTED
+                                || loan.getStatus() == LoanStatus.RETURNED
+                                || loan.getStatus() == LoanStatus.APPROVED
+                        : loan.getStatus() == LoanStatus.DISPUTED)
                 .ifPresent(loan -> {
                     if (resolution == DisputeResolution.REFUND_CONSUMER) {
                         loan.cancelFromDispute("dispute refund resolution", Instant.now());
                         loanRepository.save(loan);
                         eventPublisher.publishEvent(new LoanCancelledEvent(
                                 loan.getId(), loan.getBorrowerId()));
-                    } else if (!disputeLookupPort.hasOpenDisputeForLoan(loanId, disputeId)) {
+                    } else if (!disputeLookupPort.hasOpenDisputeForLoan(loanId, disputeId)
+                            // Row 8 (agent findings 2026-10-26 14:33 export):
+                            // the release is ALSO held while ANY refund
+                            // resolution exists for the loan — applied or
+                            // still awaiting its event's consumption. The
+                            // delivery-mode hole the 2025-10-25 round could
+                            // not see: a refund decision commits, its event
+                            // sits in the registry's (re)submission queue,
+                            // and a sibling non-refund decision's event
+                            // lands FIRST — the release sees no OPEN
+                            // dispute (both resolved), resumes the loan,
+                            // and the refund event then arrives to a loan
+                            // that is ACTIVE, not DISPUTED: the filter drops
+                            // it, the approved refund is silently
+                            // discarded. Holding the freeze lets the
+                            // registry's resubmission deliver the
+                            // termination the decision already carries; an
+                            // APPLIED refund needs no hold (the loan is
+                            // terminal — CANCELLED — and the filter above
+                            // never reaches this branch).
+                            && !disputeLookupPort.hasRefundResolutionForLoan(loanId)) {
                         // The LAST open dispute resolved — the freeze's exit.
                         loan.resumeFromDispute();
                         loanRepository.save(loan);
                         eventPublisher.publishEvent(new LoanDisputeResolvedEvent(
                                 loan.getId(), loan.getBorrowerId(), loan.getOwnerId()));
                     }
-                    // else: another open dispute still requires the freeze —
-                    // the loan STAYS DISPUTED. The resolved dispute's own
-                    // receipt already reached both parties through the
-                    // disputes module's DisputeResolvedEvent consumers; no
+                    // else: another open dispute still requires the freeze,
+                    // or an approved refund awaits its delivery — the loan
+                    // STAYS DISPUTED. The resolved dispute's own receipt
+                    // already reached both parties through the disputes
+                    // module's DisputeResolvedEvent consumers; no
                     // loan-state event lies about a resume that did not
                     // happen.
                 });
