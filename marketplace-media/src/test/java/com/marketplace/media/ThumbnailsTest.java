@@ -133,7 +133,10 @@ class ThumbnailsTest {
         for (int i = 0; i < original.length; i++) {
             int b = original[i] & 0xFF;
             int next = (i + 1 < original.length) ? (original[i + 1] & 0xFF) : -1;
-            boolean markerFollows = b == 0xFF && next != 0x00 && next != 0xFF
+            // SOI (the stream's first FF D8) is exempt: the JDK reader
+            // requires the stream to START with FF D8 itself, so padding
+            // lands before every marker EXCEPT the opening one.
+            boolean markerFollows = i > 0 && b == 0xFF && next != 0x00 && next != 0xFF
                     && !(next >= 0xD0 && next <= 0xD7) && next != -1;
             if (markerFollows) {
                 // Three spec-allowed fill bytes in front of the real marker.
