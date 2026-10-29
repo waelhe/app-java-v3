@@ -410,6 +410,12 @@ class ObservationCoverageFilesTest {
                     "payment.psp.create",
                     "payment.psp.refund",
                     "payment.psp.webhook",
+                    // W11 (the matrix's G5): the settlement-eligibility READ —
+                    // the administrative-decision-surface exception family
+                    // (the verification-queue and dispatch-board precedents):
+                    // the finance operator's payout-preparation read carries
+                    // its own observation; plain reads stay unobserved per
+                    // the commands-not-reads policy.
                     "payments.settlement.eligibility")),
             Map.entry("marketplace-platform-infra", List.of("email.send")),
             Map.entry("marketplace-pricing", List.of(
