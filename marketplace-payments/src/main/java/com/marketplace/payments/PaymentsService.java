@@ -1492,12 +1492,21 @@ public class PaymentsService implements PaymentsSpi {
     public void refundAbandonedCapture(UUID paymentIntentId) {
         PaymentIntent intent = paymentIntentRepository.findById(paymentIntentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment intent not found: " + paymentIntentId));
-        if (intent.getStatus() == PaymentIntentStatus.REFUNDED
-                || intent.getStatus() == PaymentIntentStatus.PARTIALLY_REFUNDED) {
+        if (intent.getStatus() == PaymentIntentStatus.REFUNDED) {
             // the idempotent no-op read: the abandonment's refund already
-            // executed (a registry resubmission, an operator's manual
-            // refund, or the webhook sync raced ahead) — replaying is a
-            // read, never a second payment
+            // executed in FULL (a registry resubmission, an operator's
+            // manual refund, or the webhook sync raced ahead) — replaying
+            // is a read, never a second payment. PARTIALLY_REFUNDED is
+            // deliberately NOT part of this read (the review round's
+            // outside-diff Major, 2026-10-29): a partial refund from any
+            // other path leaves captured money with the house, and the
+            // sibling cancellation edges (SUCCEEDED, PARTIALLY_REFUNDED
+            // -> refundFully) complete the buyer's recovery — the
+            // abandonment's own decision ("this money returns to the
+            // buyer") now completes it too: refundFully's null amount
+            // returns exactly the REMAINDER under the same
+            // abandonment-scoped key, and the remote cumulative owns the
+            // terminal state.
             log.info("Abandonment refund for intent {} is already {} — the resubmission is a no-op read",
                     paymentIntentId, intent.getStatus());
             return;

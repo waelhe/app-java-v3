@@ -453,9 +453,13 @@ when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(or
                 OrderReturnLine.of(r.getId(), item, 2)));
         when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
         when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
-        // the ZERO-refund exchange skips the budget gate entirely (no money
-        // edge: refundAmountMinor == 0), so no findByIdForUpdate stub here —
-        // strict stubs would flag it unused.
+        // the EXCHANGE branch never reaches the money edge's budget gate
+        // (only the RETURN branch re-reads the cumulative truth under the
+        // order's write lock) and it reads the order UNLOCKED for its
+        // replacement — no findByIdForUpdate stub here, strict stubs
+        // would flag it unused (the review round's comment-accuracy
+        // correction, 2026-10-29: the reason is the BRANCH, not the
+        // amount — this test's frozen share is 2700).
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
         when(orderItemRepository.save(any(OrderItem.class))).thenAnswer(inv -> inv.getArgument(0));
 
