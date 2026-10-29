@@ -86,11 +86,18 @@ class JwtChannelAuthenticationInterceptorTest {
                 new JwtAuthenticationToken(jwt, List.of(() -> "ROLE_CONSUMER"));
         when(jwtAuthenticationConverter.convert(jwt)).thenReturn(converted);
 
+        // Review round (CodeRabbit on the #757 sync, 2026-10-29): the guard
+        // mock answers false by default, so the CONNECT below was silently
+        // REFUSED (preSend returned null) while the test never looked at the
+        // return value — a green test proving nothing. The guard now admits
+        // the session and the SAME message must come back.
+        when(expirationGuard.bearerTokenAuthenticated(any(), any())).thenReturn(true);
+
         StompHeaderAccessor accessor = connectAccessor();
         accessor.setNativeHeader("Authorization", "Bearer token-value");
         Message<byte[]> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
 
-        interceptor.preSend(message, null);
+        assertThat(interceptor.preSend(message, null)).isSameAs(message);
 
         assertThat(accessor.getUser()).isInstanceOf(JwtAuthenticationToken.class);
         JwtAuthenticationToken user = (JwtAuthenticationToken) accessor.getUser();
