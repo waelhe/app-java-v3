@@ -83,6 +83,19 @@ public class KnowledgeContentPurgeAdapter implements AuthoredContentPurgePort {
                         rs.getObject("id", UUID.class),
                         rs.getObject("location_id", UUID.class)),
                 userId);
+        // The lock advance runs BEFORE the text update (CodeRabbit round on
+        // the #760 carry, verified against this file): rows already carrying
+        // the tombstone marker are excluded by the text filter below, so a
+        // revise save loaded against a pre-pass snapshot could still pass
+        // its optimistic-lock check and resurrect content on a
+        // marker-carrying row. The advance targets the filter's exact
+        // complement (title = marker AND body = marker) so the tombstone's
+        // version moves on EVERY pass — the purge invariant is a lock, not
+        // just a write.
+        int lockAdvances = jdbcTemplate.update(
+                "UPDATE knowledge_entries SET version = version + 1 "
+                        + "WHERE author_id = ? AND title = ? AND body = ?",
+                userId, AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER);
         int entries = jdbcTemplate.update(
                 // version = version + 1 (review round 1): KnowledgeEntry
                 // inherits @Version from BaseEntity, so a JDBC update that
@@ -103,8 +116,8 @@ public class KnowledgeContentPurgeAdapter implements AuthoredContentPurgePort {
             eventPublisher.publishEvent(new KnowledgeEntryWithdrawnEvent(
                     withdrawal.entryId(), withdrawal.locationId()));
         }
-        log.info("Knowledge content purge: userId={}, entries={}, auditRows={}, withdrawals={}",
-                userId, entries, auditRows, withdrawals.size());
+        log.info("Knowledge content purge: userId={}, entries={}, auditRows={}, lockAdvances={}, withdrawals={}",
+                userId, entries, auditRows, lockAdvances, withdrawals.size());
         return entries + auditRows;
     }
 
