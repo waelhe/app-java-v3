@@ -453,7 +453,9 @@ when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(or
                 OrderReturnLine.of(r.getId(), item, 2)));
         when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
         when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
-        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        // the ZERO-refund exchange skips the budget gate entirely (no money
+        // edge: refundAmountMinor == 0), so no findByIdForUpdate stub here —
+        // strict stubs would flag it unused.
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
         when(orderItemRepository.save(any(OrderItem.class))).thenAnswer(inv -> inv.getArgument(0));
 
