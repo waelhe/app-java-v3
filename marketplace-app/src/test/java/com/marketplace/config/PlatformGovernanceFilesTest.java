@@ -1,5 +1,7 @@
 package com.marketplace.config;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
@@ -19,12 +21,16 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.MessageDigest;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -95,6 +101,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       Dockerfile pin is the same contract for
  *       the OS layer: silently dropping the upgrade line returns the shipped
  *       image to stale alpine packages until the weekly scan catches it.</li>
+ *   <li><b>agent-skills-pins.json + .agents/skills/**</b> — the vendored
+ *       agent-skills surface (Neon platform operations; the Saleor behavior
+ *       reference) rewires agent behavior with zero review trail unless
+ *       every skill is registered with its source repository, pinned
+ *       upstream commit, license, and a per-file SHA-256. The pin fails
+ *       closed on an unregistered skill directory, a dead registry entry,
+ *       or any vendored byte drifting from the registry; the skills policy
+ *       doc keeps the precedence ladder explicit — skills are reference
+ *       input under the pinned Saleor schema and the canonical plan, never
+ *       wire-contract authority.</li>
  * </ul>
  *
  * <p>File-location note: surefire runs with the module basedir
@@ -878,6 +894,94 @@ class PlatformGovernanceFilesTest {
         ValidatorResult result = runPatchValidator(writePublication(new byte[0]));
         assertThat(result.exitCode()).isNotZero();
         assertThat(result.output()).contains("Missing or empty patch artifact");
+    }
+
+    @Test
+    void agentSkillsVendoredContentIsRegisteredAndDriftIsDetected() throws Exception {
+        // The .agents/skills surface vendors external agent skills (Neon
+        // platform operations; the Saleor behavior reference) directly into
+        // the repository. Before this pin nothing governed that surface: a
+        // silently swapped skill file — or an entire unregistered skill —
+        // would rewire agent behavior with no review trail. The registry is
+        // the pin: every vendored skill records its source repository,
+        // pinned upstream commit, license, and a SHA-256 per file.
+        String registryJson = read("docs", "governance", "plans", "agent-skills-pins.json");
+        JsonNode registry = new ObjectMapper().readTree(registryJson);
+        JsonNode skills = registry.get("skills");
+        assertThat(skills).as("the agent-skills registry must list its skills").isNotNull();
+
+        Map<String, JsonNode> registered = new HashMap<>();
+        for (JsonNode skill : skills) {
+            registered.put(skill.get("name").asText(), skill);
+        }
+
+        Path skillsRoot = repoRoot().resolve(".agents/skills");
+        assertThat(skillsRoot).as(".agents/skills must exist").exists();
+        Set<String> onDisk;
+        try (Stream<Path> dirs = Files.list(skillsRoot)) {
+            onDisk = dirs.filter(Files::isDirectory)
+                    .map(p -> p.getFileName().toString())
+                    .collect(Collectors.toSet());
+        }
+        assertThat(onDisk)
+                .as("every vendored skill directory must be registered — an unregistered skill rewires agent behavior without a review trail")
+                .isSubsetOf(registered.keySet());
+        assertThat(registered.keySet())
+                .as("every registry entry must point at a vendored directory — no dead entries")
+                .isSubsetOf(onDisk);
+
+        MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
+        for (JsonNode skill : skills) {
+            String name = skill.get("name").asText();
+            Path dir = skillsRoot.resolve(name);
+            Set<String> registeredFiles = new HashSet<>();
+            for (JsonNode file : skill.get("files")) {
+                String relative = file.get("path").asText();
+                registeredFiles.add(relative);
+                Path onDiskFile = dir.resolve(relative);
+                assertThat(onDiskFile).as("%s/%s must exist", name, relative).exists();
+                String digest = HexFormat.of().formatHex(sha256.digest(Files.readAllBytes(onDiskFile)));
+                assertThat(digest)
+                        .as("%s/%s must match the registered SHA-256 — vendored skill content moves only with a reviewed registry change",
+                                name, relative)
+                        .isEqualTo(file.get("sha256").asText());
+            }
+            Set<String> diskFiles;
+            try (Stream<Path> files = Files.walk(dir)) {
+                diskFiles = files.filter(Files::isRegularFile)
+                        .map(p -> dir.relativize(p).toString().replace('\\', '/'))
+                        .collect(Collectors.toSet());
+            }
+            assertThat(diskFiles)
+                    .as("%s must carry exactly the registered files — nothing added, nothing removed", name)
+                    .isEqualTo(registeredFiles);
+
+            assertThat(skill.get("sourceRepository").asText())
+                    .as("%s must record its source repository", name).isNotBlank();
+            assertThat(skill.get("pinnedCommit").asText())
+                    .as("%s must record the pinned upstream commit", name).isNotBlank();
+            assertThat(skill.get("verification").asText())
+                    .as("%s must carry a verification verdict", name).isEqualTo("PINNED_UPSTREAM");
+            assertThat(skill.get("upstreamFiles"))
+                    .as("%s must declare which vendored files are byte-identical upstream", name).isNotNull();
+        }
+
+        // The Saleor reference skill is the reason this pin exists: agents
+        // consult its discount/stock internals during the P3/P4 waves as
+        // reference input only — never as wire-contract authority.
+        JsonNode saleorCore = registered.get("saleor-core");
+        assertThat(saleorCore).as("saleor-core must be vendored and registered").isNotNull();
+        assertThat(saleorCore.get("sourceRepository").asText()).isEqualTo("saleor/agent-skills");
+
+        // Precedence: the skills policy keeps the ladder explicit and pinned.
+        String policy = read("docs", "governance", "agent-skills-policy.md");
+        assertThat(policy)
+                .as("the skills policy must state the precedence ladder")
+                .contains("reference, not an authority")
+                .contains("saleor-source-pins.json")
+                .contains("saleor-dashboard-full-commerce-canonical-plan.md")
+                .contains("saleor-contract-divergences.csv")
+                .contains("D-SALEOR-FULL-001");
     }
 
     private static void assumePython3() {
