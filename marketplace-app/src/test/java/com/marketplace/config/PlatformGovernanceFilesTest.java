@@ -729,7 +729,7 @@ class PlatformGovernanceFilesTest {
         assertThat(applyJob)
                 .contains("permissions:\n      contents: read")
                 .contains("persist-credentials: false")
-                .contains("actions/upload-artifact@v6")
+                .contains("actions/upload-artifact@v7")
                 .contains("EXPECTED_REMOTE_SHA=\"\"")
                 .doesNotContain("git ls-remote origin")
                 .doesNotContain("GH_TOKEN:");
@@ -737,7 +737,7 @@ class PlatformGovernanceFilesTest {
                 .contains("needs: apply")
                 .contains("contents: write")
                 .contains("GH_TOKEN: " + "$" + "{{ github.token }}")
-                .contains("actions/download-artifact@v6")
+                .contains("actions/download-artifact@v8")
                 .contains("Verify patch content and exact planned paths before publication")
                 // The patch-content parser lives in scripts/openrewrite/validate-patches.py
                 // (behaviour-tested below); this workflow pin guards the WIRING only —
