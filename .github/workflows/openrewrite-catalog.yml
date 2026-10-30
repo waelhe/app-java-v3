@@ -48,16 +48,21 @@ jobs:
   catalog-audit:
     name: OpenRewrite recipe discovery and dry-run
     runs-on: ubuntu-latest
-    # GitHub withholds repository secrets from pull_request workflows triggered
-    # by Dependabot (official docs: encrypted secrets / Dependabot hardening —
-    # only GITHUB_TOKEN reaches those events), so the credential fail-closed
-    # guard below would otherwise turn every Dependabot PR matching this
-    # workflow's paths filter into a permanent red X that only a manual
-    # maintainer push can clear. Skip the PR-level audit preview for Dependabot
-    # only: the audit still runs on every push to main (the post-merge truth)
-    # and on schedule, and human-authored PRs still fail closed. A skipped job
-    # satisfies the CodeRabbit Gate's bot-exemption path, which accepts
-    # "skipped" as a green conclusion.
+    # First layer of a two-layer design. GitHub withholds repository secrets
+    # from pull_request runs triggered by Dependabot (official docs: only
+    # GITHUB_TOKEN reaches those events), so the fail-closed credential guard
+    # below would otherwise turn every Dependabot PR matching this workflow's
+    # paths filter into a permanent red X that only a manual maintainer push
+    # can clear (measured on #769). This layer keys on github.actor — the
+    # event triggerer, matching the withholding mechanism — so runs a human
+    # triggers (e.g. a maintainer's fix push to a Dependabot branch, measured
+    # on #769: credentials present, full audit green) still execute the audit.
+    # The credential guard below is the second layer: it decides at runtime,
+    # from the credentials actually present, for the residual documented-
+    # impossible cases (Dependabot-authored PRs re-triggered by a human, and
+    # fork PRs). The audit always runs on push to main and on schedule, and
+    # human same-repository PRs still fail closed. A skipped job satisfies
+    # the CodeRabbit Gate's bot-exemption path, which accepts "skipped".
     if: github.event_name != 'pull_request' || github.actor != 'dependabot[bot]'
     steps:
       - name: Checkout
@@ -69,8 +74,22 @@ jobs:
         env:
           CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
           CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+          PR_AUTHOR_LOGIN: ${{ github.event.pull_request.user.login }}
+          PR_HEAD_FORK: ${{ github.event.pull_request.head.repo.fork }}
         run: |
           if [[ -z "${CODEGENOME_USERNAME}" || -z "${CODEGENOME_TOKEN}" ]]; then
+            # Second layer: GitHub withholds repository secrets from pull_request
+            # runs triggered by Dependabot and from fork pull requests (official
+            # docs; only GITHUB_TOKEN reaches those events), so the audit cannot
+            # run at the PR level there regardless of repository configuration.
+            # When credentials are absent AND this is one of those documented-
+            # impossible pull_request contexts, exit loudly with a notice instead
+            # of failing: the audit still runs on push to main (post-merge truth)
+            # and on schedule. Every other context fails closed below.
+            if [[ "${GITHUB_EVENT_NAME}" == "pull_request" && ( "${GITHUB_ACTOR}" == "dependabot[bot]" || "${PR_AUTHOR_LOGIN}" == "dependabot[bot]" || "${PR_HEAD_FORK}" == "true" ) ]]; then
+              echo "::notice::Repository secrets are withheld from this pull_request run by GitHub's Dependabot/fork policy, so the credential-bound catalog audit cannot run at the PR level. It still runs on push to main and on schedule."
+              exit 0
+            fi
             echo "::error::Set CODEGENOME_USERNAME and CODEGENOME_TOKEN GitHub Actions secrets to resolve OpenRewrite artifacts. The job fails closed rather than silently skipping the catalog audit."
             exit 1
           fi
