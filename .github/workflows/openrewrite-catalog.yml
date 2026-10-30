@@ -48,6 +48,27 @@ jobs:
   catalog-audit:
     name: OpenRewrite recipe discovery and dry-run
     runs-on: ubuntu-latest
+    # First layer of a two-layer design. GitHub withholds repository secrets
+    # from pull_request runs triggered by Dependabot (official docs: only
+    # GITHUB_TOKEN reaches those events), so the fail-closed credential guard
+    # below would otherwise turn every Dependabot PR matching this workflow's
+    # paths filter into a permanent red X that only a manual maintainer push
+    # can clear (measured on #769). This layer keys on github.actor — the
+    # event triggerer, matching the withholding mechanism — so runs a human
+    # triggers (e.g. a maintainer's fix push to a Dependabot branch, measured
+    # on #769: credentials present, full audit green) still execute the audit.
+    # The credential guard below is the second layer: it decides at runtime,
+    # from the credentials actually present, for the residual documented-
+    # impossible cases (Dependabot-authored PRs re-triggered by a human, and
+    # fork PRs). The audit always runs on push to main and on schedule, and
+    # human same-repository PRs still fail closed. A skipped job satisfies
+    # the CodeRabbit Gate's bot-exemption path, which accepts "skipped".
+    # The guard propagates its verdict as a step output (official
+    # steps.<id>.outputs mechanism) and every credential-bound step below
+    # skips on it: a bare exit 0 would only end the guard step while the
+    # Maven settings, auth probe, and audit steps still ran and failed
+    # without secrets.
+    if: github.event_name != 'pull_request' || github.actor != 'dependabot[bot]'
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -55,16 +76,37 @@ jobs:
           fetch-depth: 0
 
       - name: Require Code Genome repository credentials
+        id: credentials
         env:
           CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
           CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
+          PR_AUTHOR_LOGIN: ${{ github.event.pull_request.user.login }}
+          PR_HEAD_FORK: ${{ github.event.pull_request.head.repo.fork }}
         run: |
           if [[ -z "${CODEGENOME_USERNAME}" || -z "${CODEGENOME_TOKEN}" ]]; then
+            # Second layer: GitHub withholds repository secrets from pull_request
+            # runs triggered by Dependabot and from fork pull requests (official
+            # docs; only GITHUB_TOKEN reaches those events), so the audit cannot
+            # run at the PR level there regardless of repository configuration.
+            # When credentials are absent AND this is one of those documented-
+            # impossible pull_request contexts, record skip_audit=true so every
+            # credential-bound step below skips cleanly (a bare exit 0 would
+            # only end this guard step while the Maven settings, auth probe,
+            # and audit steps still ran and failed without secrets). The audit
+            # still runs on push to main (post-merge truth) and on schedule.
+            # Every other context fails closed below.
+            if [[ "${GITHUB_EVENT_NAME}" == "pull_request" && ( "${GITHUB_ACTOR}" == "dependabot[bot]" || "${PR_AUTHOR_LOGIN}" == "dependabot[bot]" || "${PR_HEAD_FORK}" == "true" ) ]]; then
+              echo "::notice::Repository secrets are withheld from this pull_request run by GitHub's Dependabot/fork policy, so the credential-bound catalog audit cannot run at the PR level. It still runs on push to main and on schedule."
+              echo "skip_audit=true" >> "${GITHUB_OUTPUT}"
+              exit 0
+            fi
             echo "::error::Set CODEGENOME_USERNAME and CODEGENOME_TOKEN GitHub Actions secrets to resolve OpenRewrite artifacts. The job fails closed rather than silently skipping the catalog audit."
             exit 1
           fi
+          echo "skip_audit=false" >> "${GITHUB_OUTPUT}"
 
       - name: Set up JDK 25 and authenticated Maven settings
+        if: steps.credentials.outputs.skip_audit != 'true'
         uses: actions/setup-java@v6.1.0
         env:
           CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
@@ -79,6 +121,7 @@ jobs:
           overwrite-settings: true
 
       - name: Write explicit Maven settings for Code Genome
+        if: steps.credentials.outputs.skip_audit != 'true'
         env:
           CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
           CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
@@ -116,6 +159,7 @@ jobs:
           PY
 
       - name: Read OpenRewrite version pins from root POM
+        if: steps.credentials.outputs.skip_audit != 'true'
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -146,6 +190,7 @@ jobs:
           PY
 
       - name: Verify Code Genome artifact authentication
+        if: steps.credentials.outputs.skip_audit != 'true'
         env:
           CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
           CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
@@ -171,6 +216,7 @@ jobs:
           echo "Code Genome authentication and both plugin artifact downloads succeeded; credentials were not printed."
 
       - name: Verify recipe versions against the official BOM
+        if: steps.credentials.outputs.skip_audit != 'true'
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -186,6 +232,7 @@ jobs:
             --effective-pom target/openrewrite/recipe-bom-effective-pom.xml
 
       - name: Discover available recipes
+        if: steps.credentials.outputs.skip_audit != 'true'
         shell: bash
         run: |
           set -o pipefail
@@ -199,6 +246,7 @@ jobs:
           fi
 
       - name: Install Maven reactor before Rewrite dry-run
+        if: steps.credentials.outputs.skip_audit != 'true'
         shell: bash
         run: |
           set -o pipefail
@@ -209,6 +257,7 @@ jobs:
             -DskipTests -Popenrewrite install 2>&1 | tee target/openrewrite/reactor-install.log
 
       - name: Capture dry-run report
+        if: steps.credentials.outputs.skip_audit != 'true'
         shell: bash
         run: |
           set -o pipefail
@@ -218,7 +267,7 @@ jobs:
             -Drewrite.exportDatatables=true 2>&1 | tee target/openrewrite/dry-run.log
 
       - name: Upload recipe inventory and dry-run diffs
-        if: always()
+        if: always() && steps.credentials.outputs.skip_audit != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: openrewrite-catalog-${{ github.sha }}
