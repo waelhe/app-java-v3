@@ -956,12 +956,9 @@ class PlatformGovernanceFilesTest {
                     .as("%s must carry exactly the registered files — nothing added, nothing removed", name)
                     .isEqualTo(registeredFiles);
 
-            assertThat(skill.get("sourceRepository").asText())
-                    .as("%s must record its source repository", name).isNotBlank();
-            assertThat(skill.get("pinnedCommit").asText())
-                    .as("%s must record the pinned upstream commit", name).isNotBlank();
-            assertThat(skill.get("license").asText())
-                    .as("%s must record its license", name).isNotBlank();
+            requireNonBlankTextField(skill, "sourceRepository", name + " source repository");
+            requireNonBlankTextField(skill, "pinnedCommit", name + " pinned upstream commit");
+            requireNonBlankTextField(skill, "license", name + " license");
             assertThat(skill.get("verification").asText())
                     .as("%s must carry a verification verdict", name).isEqualTo("PINNED_UPSTREAM");
             assertThat(skill.get("upstreamFiles"))
@@ -980,8 +977,7 @@ class PlatformGovernanceFilesTest {
             assertThat(attribution.path("file").asText())
                     .as("%s attribution must point at a registered file", name)
                     .isIn(registeredFiles);
-            assertThat(attribution.path("origin").asText())
-                    .as("%s must record the LICENSE origin", name).isNotBlank();
+            requireNonBlankTextField(attribution, "origin", name + " LICENSE origin");
         }
 
         // The Saleor reference skill is the reason this pin exists: agents
@@ -1085,6 +1081,18 @@ class PlatformGovernanceFilesTest {
         // "- id:" at line start marks one vulnerability entry in the yaml
         // ignore policy (vulnerabilities: list items).
         return ignoreFile.split("(?m)^\\s*-\\s*id:", -1).length - 1;
+    }
+
+    /**
+     * A JSON {@code null} node renders as the literal string {@code "null"} through
+     * {@code asText()}, which would sail past {@code isNotBlank()} — the agent-skills
+     * registry fields must be real, non-blank JSON strings.
+     */
+    private static void requireNonBlankTextField(JsonNode parent, String field, String description) {
+        JsonNode value = parent.get(field);
+        assertThat(value).as("%s must be present", description).isNotNull();
+        assertThat(value.isTextual()).as("%s must be a JSON string, not null or another type", description).isTrue();
+        assertThat(value.asText()).as("%s must be a non-blank string", description).isNotBlank();
     }
 
     private static String read(String... segments) throws IOException {
