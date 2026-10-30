@@ -462,6 +462,21 @@ jobs:
       actions: write
     env:
       GH_TOKEN: ${{ github.token }}
+      # Batch PRs must be authored by a durable identity rather than the
+      # ephemeral GITHUB_TOKEN: per the official GitHub docs ("Triggering a
+      # workflow"), events caused by GITHUB_TOKEN never start new workflow
+      # runs, so bot-authored PRs otherwise stall until a manual
+      # close/reopen nudge lets CI and CodeRabbit start. AUTOMATION_TOKEN is
+      # a fine-grained PAT scoped to this repository only (Contents and
+      # Pull requests, read/write) and is used exclusively by the gh pr
+      # calls of the publish step below. Validation dispatches and run
+      # polling stay on the job-level GH_TOKEN (github.token with
+      # actions: write) because the PAT deliberately carries no Actions
+      # permission and workflow_dispatch is officially exempt from
+      # GITHUB_TOKEN event suppression. An absent or empty secret falls
+      # back to github.token: the batch PR still opens; checks then wait
+      # for the manual nudge exactly as before.
+      PR_PUBLISH_TOKEN: ${{ secrets.AUTOMATION_TOKEN || github.token }}
     steps:
       - name: Checkout target with write credentials isolated to publish job
         uses: actions/checkout@v7
@@ -582,6 +597,12 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          # gh pr operations in this step run as PR_PUBLISH_TOKEN so created
+          # batch PRs fire pull_request events and CI/CodeRabbit start
+          # without the manual close/reopen nudge. The export is scoped to
+          # this step only: git push keeps the checkout credentials, and the
+          # later dispatch/wait steps keep the job-level github.token.
+          export GH_TOKEN="${PR_PUBLISH_TOKEN}"
           pub="target/openrewrite/publication"; plan="${pub}/batches.json"
           git switch --detach "${TARGET_SHA}"
           git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
