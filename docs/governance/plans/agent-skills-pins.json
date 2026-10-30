@@ -9,7 +9,7 @@
       "docs/governance/plans/saleor-contract-divergences.csv — the registered divergences ledger",
       "the platform code and its tests — measured facts"
     ],
-    "conflictRule": "A skill text never overrides any precedence layer. A discovered conflict is registered in saleor-contract-divergences.csv through a reviewed PR; it is never silently adopted into code.",
+    "conflictRule": "A skill text never overrides any precedence layer. A discovered conflict is registered where its domain keeps decisions, always through a reviewed PR and never silently adopted into code: Saleor wire-contract conflicts go to saleor-contract-divergences.csv; conflicts outside the Saleor wire contract (for example Neon operational guidance contradicting the platform's measured reality) go to the defect-knowledge evidence ledger under docs/governance/defect-knowledge/.",
     "updates": "Vendored skill content moves only by a reviewed PR that updates this registry in the same change (the same discipline as productionPinsMoveOnlyByReviewedChange in saleor-source-pins.json)."
   },
   "skills": [

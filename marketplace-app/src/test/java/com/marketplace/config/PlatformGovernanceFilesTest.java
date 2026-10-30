@@ -990,6 +990,11 @@ class PlatformGovernanceFilesTest {
         int pins = ladder.indexOf("saleor-source-pins.json");
         int plan = ladder.indexOf("saleor-dashboard-full-commerce-canonical-plan.md");
         int divergences = ladder.indexOf("saleor-contract-divergences.csv");
+        // A removed reference would make indexOf return -1 and trivially satisfy the
+        // order comparisons — every rank must actually be present in the ladder first.
+        assertThat(pins).as("the precedence section must name the pinned schema").isNotNegative();
+        assertThat(plan).as("the precedence section must name the canonical plan").isNotNegative();
+        assertThat(divergences).as("the precedence section must name the divergences ledger").isNotNegative();
         assertThat(pins).as("the pinned schema must outrank the canonical plan in the precedence ladder").isLessThan(plan);
         assertThat(plan).as("the canonical plan must outrank the divergences ledger in the precedence ladder").isLessThan(divergences);
     }
