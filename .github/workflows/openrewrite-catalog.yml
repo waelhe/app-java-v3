@@ -48,6 +48,17 @@ jobs:
   catalog-audit:
     name: OpenRewrite recipe discovery and dry-run
     runs-on: ubuntu-latest
+    # GitHub withholds repository secrets from pull_request workflows triggered
+    # by Dependabot (official docs: encrypted secrets / Dependabot hardening —
+    # only GITHUB_TOKEN reaches those events), so the credential fail-closed
+    # guard below would otherwise turn every Dependabot PR matching this
+    # workflow's paths filter into a permanent red X that only a manual
+    # maintainer push can clear. Skip the PR-level audit preview for Dependabot
+    # only: the audit still runs on every push to main (the post-merge truth)
+    # and on schedule, and human-authored PRs still fail closed. A skipped job
+    # satisfies the CodeRabbit Gate's bot-exemption path, which accepts
+    # "skipped" as a green conclusion.
+    if: github.event_name != 'pull_request' || github.actor != 'dependabot[bot]'
     steps:
       - name: Checkout
         uses: actions/checkout@v7
