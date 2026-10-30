@@ -960,6 +960,8 @@ class PlatformGovernanceFilesTest {
                     .as("%s must record its source repository", name).isNotBlank();
             assertThat(skill.get("pinnedCommit").asText())
                     .as("%s must record the pinned upstream commit", name).isNotBlank();
+            assertThat(skill.get("license").asText())
+                    .as("%s must record its license", name).isNotBlank();
             assertThat(skill.get("verification").asText())
                     .as("%s must carry a verification verdict", name).isEqualTo("PINNED_UPSTREAM");
             assertThat(skill.get("upstreamFiles"))
@@ -973,7 +975,9 @@ class PlatformGovernanceFilesTest {
         assertThat(saleorCore).as("saleor-core must be vendored and registered").isNotNull();
         assertThat(saleorCore.get("sourceRepository").asText()).isEqualTo("saleor/agent-skills");
 
-        // Precedence: the skills policy keeps the ladder explicit and pinned.
+        // Precedence: the skills policy keeps the ladder explicit and pinned —
+        // including its ORDER: the pins outrank the plan, the plan outranks the
+        // divergences ledger (contains alone would let a reorder slip through).
         String policy = read("docs", "governance", "agent-skills-policy.md");
         assertThat(policy)
                 .as("the skills policy must state the precedence ladder")
@@ -982,6 +986,12 @@ class PlatformGovernanceFilesTest {
                 .contains("saleor-dashboard-full-commerce-canonical-plan.md")
                 .contains("saleor-contract-divergences.csv")
                 .contains("D-SALEOR-FULL-001");
+        String ladder = policy.substring(policy.indexOf("## 2."), policy.indexOf("## 3."));
+        int pins = ladder.indexOf("saleor-source-pins.json");
+        int plan = ladder.indexOf("saleor-dashboard-full-commerce-canonical-plan.md");
+        int divergences = ladder.indexOf("saleor-contract-divergences.csv");
+        assertThat(pins).as("the pinned schema must outrank the canonical plan in the precedence ladder").isLessThan(plan);
+        assertThat(plan).as("the canonical plan must outrank the divergences ledger in the precedence ladder").isLessThan(divergences);
     }
 
     private static void assumePython3() {

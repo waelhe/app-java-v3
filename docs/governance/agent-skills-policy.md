@@ -32,9 +32,13 @@ conflict the precedence ladder is, in order:
 4. The platform code and its tests — measured facts.
 
 A skill text never overrides any layer above. A discovered conflict is
-registered in `saleor-contract-divergences.csv` through a reviewed PR;
-it is never silently adopted into code. Reading a skill never changes an
-operation's disposition in the canonical plan.
+registered where its domain keeps decisions, always through a reviewed
+PR and never silently adopted into code: Saleor wire-contract conflicts
+go to `saleor-contract-divergences.csv`; conflicts outside the Saleor
+wire contract (for example Neon operational guidance contradicting the
+platform's measured reality) go to the defect-knowledge evidence ledger
+under `docs/governance/defect-knowledge/`. Reading a skill never changes
+an operation's disposition in the canonical plan.
 
 ## 3. What is vendored (inventory)
 
@@ -72,15 +76,35 @@ byte-identical to `neondatabase/agent-skills@51c7d594`, 34 files).
    in the same change — a vendored diff without a registry update fails
    the governance test, and a registry entry without its files fails
    too.
+5. Never run `npx skills add ...` (or any skill-installer command shown
+   inside a vendored skill's own README) against this repository: the
+   installer writes the upstream head into the install path — unpinned,
+   unreviewed — and silently overwrites the pinned snapshot. The
+   governance test fails the resulting diff; the change must be reverted
+   or re-registered through the reviewed-PR procedure above. The install
+   commands in vendored READMEs describe the upstream project's
+   workflow, not this repository's.
 
 ## 5. Measured facts
 
-- Registry created 2026-10-30: 10 skills, 40 files, all
-  `PINNED_UPSTREAM`.
+- Registry created 2026-10-30: 10 skills, 49 files, all
+  `PINNED_UPSTREAM` (40 upstream skill files plus 10 vendored
+  attribution LICENSE copies — one per skill — since no upstream skill
+  directory carries its own license file).
 - `saleor-core` pinned at `saleor/agent-skills@fb1a5725` (2026-08-06).
   Its license record is factual, not interpretive: the repository root
   declares `BSD-3-Clause AND CC-BY-4.0`, while the skill's SKILL.md
   frontmatter self-declares MIT — both statements are preserved in the
-  registry.
+  registry; reconciliation belongs upstream.
 - The Neon skills pinned at `neondatabase/agent-skills@51c7d594`
-  (2026-10-16); Apache-2.0.
+  (2026-10-16); Apache-2.0, with the upstream root LICENSE vendored
+  verbatim beside each skill (`attribution` in the registry).
+- The registry records seven known upstream errata in the vendored
+  `saleor-core` text (`knownUpstreamErrata`), each with its location and
+  the verified fact or its review provenance — two measured directly
+  against `saleor/saleor@3.23.43` (the undefined `unit_discount_reason`
+  in the discount-precedence snippet; `StockQuerySet` living in
+  `saleor/warehouse/models.py`, not the nonexistent `managers.py`).
+  Errata are warnings for consumers, recorded here because vendored
+  files stay byte-for-byte: fixing them belongs upstream, and a fresh
+  upstream snapshot re-vendors through the reviewed-PR procedure.
