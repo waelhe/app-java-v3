@@ -966,6 +966,22 @@ class PlatformGovernanceFilesTest {
                     .as("%s must carry a verification verdict", name).isEqualTo("PINNED_UPSTREAM");
             assertThat(skill.get("upstreamFiles"))
                     .as("%s must declare which vendored files are byte-identical upstream", name).isNotNull();
+
+            // Every vendored skill carries a LICENSE: either as one of its upstream
+            // files or as an attribution copy of the source repository's root license
+            // (policy §4.2). Removing the file together with its registry row — or
+            // gutting the attribution record — must fail closed, not pass silently.
+            assertThat(registeredFiles)
+                    .as("%s must carry a LICENSE (upstream file or attribution copy)", name)
+                    .contains("LICENSE");
+            JsonNode attribution = skill.get("attribution");
+            assertThat(attribution)
+                    .as("%s must record the provenance of its vendored LICENSE", name).isNotNull();
+            assertThat(attribution.path("file").asText())
+                    .as("%s attribution must point at a registered file", name)
+                    .isIn(registeredFiles);
+            assertThat(attribution.path("origin").asText())
+                    .as("%s must record the LICENSE origin", name).isNotBlank();
         }
 
         // The Saleor reference skill is the reason this pin exists: agents
