@@ -432,7 +432,7 @@ jobs:
 
       - name: Upload generated patch and batch plan
         if: steps.target.outputs.apply_required == 'true' && steps.postcondition.outputs.changed == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: openrewrite-publication-${{ github.run_id }}
           path: target/openrewrite/publication/**
@@ -441,7 +441,7 @@ jobs:
 
       - name: Upload automated recipe execution evidence
         if: always() && steps.target.outputs.apply_required == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: openrewrite-auto-apply-${{ github.run_id }}
           path: |
@@ -472,7 +472,7 @@ jobs:
           token: ${{ github.token }}
 
       - name: Download read-only apply artifact
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           name: openrewrite-publication-${{ github.run_id }}
           path: target/openrewrite/publication
