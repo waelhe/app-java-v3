@@ -591,14 +591,18 @@ jobs:
           # single step: it opens/edits batch PRs with the repository-scoped
           # AUTOMATION_TOKEN fine-grained PAT (Contents and Pull requests,
           # read/write; deliberately no Actions and no Workflows permission —
-          # the publication validator only ever allows .java paths). pull_request
+          # it only creates and edits pull-request objects and never writes
+          # file content, while the publication validator's .java-only rule
+          # independently bounds what batch PRs may carry). pull_request
           # events on same-repository PRs need no approval; only fork PRs can
           # require maintainer approval (official docs). git push still
           # authenticates with the checkout credentials, and the dispatch/wait
           # steps keep the job-level GH_TOKEN (github.token with
           # actions: write). An absent or empty secret falls back to
-          # github.token: the batch PR still opens; checks then wait for the
-          # manual nudge exactly as before.
+          # github.token: the batch PR still opens and the dispatched
+          # validation workflows still run (they always use the job-level
+          # github.token), but the PR's event-triggered checks then wait
+          # for the manual nudge exactly as before.
           GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN || github.token }}
         run: |
           set -Eeuo pipefail
