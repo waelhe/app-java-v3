@@ -118,7 +118,7 @@ docs/governance/campaign/saleor-458-root-inventory.csv
 
 Do not create a second 458-row inventory or change the ledger's status vocabulary. A0 alone updates the central ledger. Agents produce concise audit reports under:
 
-docs/governance/campaign/reports/semantic-audit/<workstream>.md
+docs/governance/campaign/reports/semantic-audit/WORKSTREAM.md (for example, A3-P3.md)
 
 Each finding must identify the exact root, source file and symbol, platform implementation location, test evidence, defect severity, user/business consequence, proposed correction, and affected Dashboard route where applicable.
 
