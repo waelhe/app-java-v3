@@ -2,6 +2,8 @@
 
 **Purpose:** Complete the implementation campaign in one continuous build phase. Implementation agents must not stop after each slice to wait for PR review, approval, or merge. Integration happens continuously on a dedicated candidate branch; formal review and the production merge happen only after the whole candidate is built and assembled.
 
+**Required supplement:** Apply [the Saleor Agent Skills & Semantic Audit Directive](saleor-agent-skills-semantic-audit-directive.md) for pinned-skill use, retroactive audit of existing INTEGRATED roots, Saleor behavior verification, and semantic regression tests. It preserves this playbook's A0–A7 ownership and continuous-build model.
+
 **This is an execution protocol, not a replacement plan.** The sole governing plan remains `docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md`. Older Saleor implementation plans remain historical evidence only.
 
 ## 1. Starting point and non-negotiable decisions
@@ -179,6 +181,14 @@ On one frozen candidate SHA, run the repository-mandated full build and checks, 
 - CI, integration, Android/consumer compatibility, CodeQL, container scan/Trivy, Snyk and governance/drift gates required by the repository.
 
 Capture exact URLs, run IDs, conclusions, test totals and candidate SHA. Do not claim a gate is green if its run is pending, absent, or for another SHA. A Production Watchdog failure is a deployment/health signal and must be triaged separately from PR unit-test success; do not ignore it or mislabel it as a code-test failure.
+
+### 7.1 Saleor Agent Skills and retroactive semantic audit
+
+The companion directive [saleor-agent-skills-semantic-audit-directive.md](saleor-agent-skills-semantic-audit-directive.md) is mandatory for every workstream. It specifies how to consume the pinned Saleor skills, verify each rule against Saleor 3.23.43 source/tests and Dashboard 3.23.39, audit previously INTEGRATED roots, and turn verified behavior into regression tests.
+
+Each existing A1–A7 owner audits the INTEGRATED roots in its assigned wave while continuing unblocked implementation work. This does not create new A1/A2/A3 roles, duplicate the 458-root ledger, or introduce a stop-the-world audit phase. A0 alone updates the central ledger and assembles commits. Keep the playbook's statuses, candidate-branch model, frozen-contract discipline, independent R1–R4 review, and single owner-authorized final release merge.
+
+A skill is reference material, not contract authority. Until the vendored skill and pin registry are verified on the commerce candidate, use the exact upstream pinned commit as read-only research; never install an unpinned upstream head into the repository.
 
 ## 8. Implementation Complete gate — required before formal review opens
 
