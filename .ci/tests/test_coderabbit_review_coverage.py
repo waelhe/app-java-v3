@@ -144,7 +144,8 @@ class ManifestTests(unittest.TestCase):
 
 class AlternativeEvidenceTests(ManifestTests):
     def setUp(self):
-        self.candidate = {"head": {"sha": "head-A"},
+        self.candidate = {"head": {"sha": "head-A",
+                                   "repo": {"full_name": "example/repo"}},
                           "user": {"login": "pull-author"},
                           "html_url": "https://github.com/example/repo/pull/50"}
         self.review = {"id": 91, "user": {"login": "independent-reviewer"},
