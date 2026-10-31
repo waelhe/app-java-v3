@@ -297,8 +297,10 @@ jobs:
               owner: context.repo.owner, repo: context.repo.repo, pull_number: number,
             });
             core.setOutput('base_ref', pull.base.ref);
-            core.setOutput('head_repo', pull.head.repo?.full_name || '');
+            core.setOutput('base_sha', pull.base.sha);
             core.setOutput('head_sha', pull.head.sha);
+            core.setOutput('author_login', pull.user.login);
+            core.setOutput('author_type', pull.user.type || '');
 
       - name: Checkout trusted review coverage verifier
         if: steps.coverage-pr.outputs.base_ref == 'main'
@@ -308,25 +310,24 @@ jobs:
           path: trusted
           persist-credentials: false
 
-      # The candidate checkout is DATA only. Never execute code from it in this
-      # pull_request_target job; the verifier runs only from the trusted base.
-      - name: Checkout candidate files as data only
-        if: steps.coverage-pr.outputs.base_ref == 'main'
-        uses: actions/checkout@v7
-        with:
-          repository: ${{ steps.coverage-pr.outputs.head_repo }}
-          ref: ${{ steps.coverage-pr.outputs.head_sha }}
-          path: candidate
-          persist-credentials: false
-
+      # Fetch the candidate manifest through the read-only GitHub API in the
+      # trusted verifier. No code or checkout from the candidate/fork is used.
+      # Bot-authored PRs retain the existing CodeRabbit seat exemption: the
+      # earlier job already gates them on every other required check.
       - name: Verify exact CodeRabbit file coverage (maximum 100 per review)
-        if: steps.coverage-pr.outputs.base_ref == 'main'
+        if: >-
+          steps.coverage-pr.outputs.base_ref == 'main' &&
+          steps.coverage-pr.outputs.author_type != 'Bot' &&
+          !endsWith(steps.coverage-pr.outputs.author_login, '[bot]')
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr }}
+          TRUSTED_BASE_SHA: ${{ github.sha }}
         run: >-
           python3 trusted/.ci/check_coderabbit_review_coverage.py
           --repository "$GITHUB_REPOSITORY" --pr-number "$PR_NUMBER"
-          --manifest candidate/docs/governance/campaign/release/coderabbit-review-coverage.json
+          --manifest-path docs/governance/campaign/release/coderabbit-review-coverage.json
+          --alternative-config trusted/.ci/coderabbit-review-alternative-checks.json
+          --trusted-base-sha "$TRUSTED_BASE_SHA"
           --max-files-per-review 100
