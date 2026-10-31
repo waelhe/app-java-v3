@@ -7,10 +7,6 @@
         "github-actions"
       ],
       "pathPatterns": [
-        "pom.xml",
-        "**/pom.xml",
-        "package.json",
-        "**/package.json",
         "package-lock.json",
         "**/package-lock.json",
         "npm-shrinkwrap.json",
@@ -22,11 +18,11 @@
         "gradle.lockfile",
         "**/gradle.lockfile",
         "libs.versions.toml",
-        "**/libs.versions.toml",
-        "*.gradle",
-        "**/*.gradle",
-        "*.gradle.kts",
-        "**/*.gradle.kts"
+        "**/libs.versions.toml"
+      ],
+      "workflowPath": ".github/workflows/ci.yml",
+      "events": [
+        "pull_request"
       ]
     }
   }
