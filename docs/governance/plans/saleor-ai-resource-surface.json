@@ -25,7 +25,9 @@
         "digestSha256": "6d59d82871be13ff661a377b0d727c706bb7d5ee0f924900700e583db78d993f",
         "archiveBytes": 22117,
         "archiveUrl": "https://docs.saleor.io/.well-known/agent-skills/saleor-app.tar.gz",
-        "digestVerification": "MATCH_RECORDED_IN_SOURCE_PROVENANCE_SPIKE"
+        "digestVerification": "MATCH_RECORDED_IN_SOURCE_PROVENANCE_SPIKE",
+        "adoptionState": "NOT_ADOPTED",
+        "localPath": null
       },
       {
         "name": "saleor-configurator",
@@ -35,7 +37,9 @@
         "digestSha256": "060bd86bed738043064c79279c657095d85434a88c2a148532e46604679b1c48",
         "archiveBytes": 10760,
         "archiveUrl": "https://docs.saleor.io/.well-known/agent-skills/saleor-configurator.tar.gz",
-        "digestVerification": "MATCH_RECORDED_IN_SOURCE_PROVENANCE_SPIKE"
+        "digestVerification": "MATCH_RECORDED_IN_SOURCE_PROVENANCE_SPIKE",
+        "adoptionState": "NOT_ADOPTED",
+        "localPath": null
       },
       {
         "name": "saleor-core",
@@ -46,7 +50,7 @@
         "archiveBytes": 13146,
         "archiveUrl": "https://docs.saleor.io/.well-known/agent-skills/saleor-core.tar.gz",
         "digestVerification": "MATCH_RECORDED_IN_SOURCE_PROVENANCE_SPIKE",
-        "adoptionState": "PROVENANCE_MIGRATION_IN_THIS_PR",
+        "adoptionState": "ADOPTED_PINNED",
         "localPath": ".agents/skills/saleor-core",
         "priorSource": "saleor/agent-skills@fb1a57255f58950962f6e474ccba1cade40f5163"
       },
