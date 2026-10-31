@@ -63,9 +63,9 @@ The earlier A3 discount-only branch and four A3 specialist branches were not use
 ## A0 knowledge-map integration
 
 The A0 branch was reconciled onto the current integration head with a two-parent merge commit:
-- Current A0 branch head after reconciliation: `d8fdeca3199bab2967e443d87f1b57346f208946` before the latest A0 documentation edits.
+- A0 branch head at this snapshot: `0323dd4f447609a6b254772841abcf7c3a7996fa` (re-fetch before every subsequent A0 action). The initial reconciliation merge is `d8fdeca3199bab2967e443d87f1b57346f208946`.
 - Merge parents: live integration `34d37457df53790afc92decd68af1773e6ff8578` and prior A0 knowledge-map branch tip `5e73753ca6f97e796beef27615a0ed94a6c59237`.
-- A0-owned files include `docs/governance/campaign/saleor-domain-knowledge-map.md`, links in `AGENTS.md` and `SYSTEM.md`, and this live snapshot. The map is a navigation companion, not a second plan or root inventory.
+- A0-owned files include `docs/governance/campaign/saleor-domain-knowledge-map.md`, links in `AGENTS.md` and `SYSTEM.md`, the corrected §8 of the multi-agent playbook (retained Dashboard route rule), and live baseline addenda in the promotion plan and semantic-audit directive. This live snapshot is also A0-owned. The map is a navigation companion, not a second plan or root inventory.
 
 ## Launch state and permissions
 
