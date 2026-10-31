@@ -87,6 +87,16 @@ Mutations are commands delegated to the relevant owner. A field may appear in th
 
 The GraphQL adapter must not return secrets, PSP credentials, signing keys, private provider details or internal feature flags.
 
+## A0 Dashboard 3.23.39 route / operation evidence
+
+The pinned Dashboard 3.23.39 source at `bc75e988da0fa4fbc3d47378a888d859d070746f` consumes Shop configuration through multiple routes:
+
+- `src/siteSettings/queries.ts` reads `shop { ...Shop }`; `src/siteSettings/mutations.ts` submits both `shopSettingsUpdate` and `shopAddressUpdate`. Site Settings therefore depends on a real read projection and separate write owners; it cannot be backed by a generic successful key/value mutation.
+- The default-weight-unit control also calls `shopSettingsUpdate`; navigation-pin settings and order settings have their own consumers of this mutation. Each input field must be routed to its measured owner and permission, not treated as one Shop aggregate write.
+- The pinned Dashboard does not define active operations for `shopDomainUpdate` or `shopSettingsTranslate`; these deprecated/legacy roots are not required by the retained settings routes found in this audit.
+- `shopAddressUpdate` **is** used by the Site Settings form. Until the platform's merchant-of-record/legal-entity owner supplies a semantically matching public company-address contract, the address editor must be disabled or replaced by that owner-backed control; it must not write a provider/seller profile address.
+
+
 ## Alternatives considered
 
 - **A — Aggregated read projection with owner-delegated commands. RECOMMENDED.** Matches a modular monolith and avoids a god-object.
