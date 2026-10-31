@@ -922,6 +922,19 @@ class PlatformGovernanceFilesTest {
                 .contains("Official Saleor AI documentation and agent resources")
                 .contains("https://docs.saleor.io/developer/ai");
 
+        String knowledgeMap = read("docs", "governance", "campaign",
+                "saleor-domain-knowledge-map.md");
+        assertThat(knowledgeMap)
+                .contains("saleor/saleor@" + core.path("ref").asText())
+                .contains("saleor/saleor-dashboard@" + dashboard.path("tag").asText())
+                .contains(dashboard.path("commit").asText())
+                .doesNotContain("3.23.43", "3.23.39",
+                        "bc75e988da0fa4fbc3d47378a888d859d070746f");
+
+        assertThat(canonicalPlan)
+                .contains("https://docs.saleor.io/agent-readability.json")
+                .doesNotContain("https://docs.saleor.io/.well-known/agent-readability.json");
+
         String workflow = read(".github", "workflows", "saleor-canonical-governance.yml");
         assertThat(workflow)
                 .contains("['referenceSchema']['ref']")
