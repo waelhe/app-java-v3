@@ -129,6 +129,22 @@ class GitHub:
             if item.get("type") in {"blob", "commit"}
         }
 
+    def merge_base(self, base_sha, head_sha, source_repo=None):
+        """The merge-base of the live main tip and the candidate head.
+
+        The coverage obligation is defined by the three-dot diff — the same
+        basis as the REST files endpoint — so a main tip that moved after the
+        PR was opened (an unrelated PR merged first, for example) can neither
+        add nor remove candidate paths. The compare runs in the repository
+        that holds both refs; a head unknown there fails closed.
+        """
+        root = self.repo_root(source_repo)
+        response = self.get_from(root, f"/compare/{base_sha}...{head_sha}")
+        value = response.get("merge_base_sha")
+        need(isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value) is not None,
+             "compare did not return a usable merge-base SHA")
+        return value
+
     def checks(self, sha, source_repo=None):
         root = self.repo_root(source_repo)
         result, page = [], 1
@@ -313,6 +329,18 @@ def verify_path_content(path, candidate_changes, shard_base, shard_head, candida
     need(shard_head.get(path) == candidate_head.get(path), f"head content changed after review: {path}")
 
 
+def coverage_obligation(candidate_changes, manifest_path):
+    """Split the changed-path set into the coverage obligation and gate metadata.
+
+    The manifest file is the coverage gate's own metadata: inert JSON, schema
+    validated, never executed. It cannot be covered by a review of itself (its
+    content lists the review IDs that would have to review it), so it is
+    excluded from the coverage obligation explicitly and never silently.
+    """
+    excluded = sorted({manifest_path} & set(candidate_changes))
+    return set(candidate_changes) - {manifest_path}, excluded
+
+
 def ensure_exact_coverage(candidate_changes, reviewed, alternatives):
     reviewed_paths = set(reviewed)
     overlap = reviewed_paths & alternatives
@@ -335,7 +363,8 @@ def run(repo, number, manifest_path, alternative_config, trusted_base_sha, token
     need(re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", candidate_head_repo) is not None,
          "candidate head repository name is invalid")
     need(base_sha == trusted_base_sha, f"PR base {base_sha} differs from trusted workflow base {trusted_base_sha}")
-    base_tree, head_tree = client.tree(base_sha), client.tree(head_sha, candidate_head_repo)
+    base_tree = client.tree(client.merge_base(base_sha, head_sha, candidate_head_repo))
+    head_tree = client.tree(head_sha, candidate_head_repo)
     candidate_changes = tree_changes(base_tree, head_tree)
     need(candidate_changes, "candidate has no changed paths")
 
@@ -344,28 +373,36 @@ def run(repo, number, manifest_path, alternative_config, trusted_base_sha, token
     need(candidate_expanded == set(candidate_changes), "candidate PR file list differs from complete Git-tree diff")
     candidate_reviews = client.reviews(number)
     newest = latest_review(candidate_reviews, head_sha, BOT)
-    need(newest is not None, f"no CodeRabbit review on current candidate head {head_sha}")
-    review = exact_review(candidate_reviews, newest["id"], head_sha, BOT, GOOD_STATES)
-    selected = processed_files(review.get("body", ""))
-    need(0 < len(selected) <= MAX_FILES, "candidate CodeRabbit review exceeds the 100-file cap")
-
     direct = set()
-    for path in selected:
-        direct.add(path)
-        record = candidate_by_name.get(path)
-        if record and record.get("previous_filename"):
-            direct.add(record["previous_filename"])
-    need(direct <= set(candidate_changes),
-         f"candidate CodeRabbit review lists paths outside its diff: {sorted(direct-set(candidate_changes))}")
-    if len(candidate_changes) <= MAX_FILES and direct == set(candidate_changes):
-        print(f"PASS — all {len(candidate_changes)} changed paths are listed in CodeRabbit review {review['id']}.")
-        return
+    if len(candidate_changes) <= MAX_FILES:
+        need(newest is not None, f"no CodeRabbit review on current candidate head {head_sha}")
+        review = exact_review(candidate_reviews, newest["id"], head_sha, BOT, GOOD_STATES)
+        selected = processed_files(review.get("body", ""))
+        need(0 < len(selected) <= MAX_FILES, "candidate CodeRabbit review exceeds the 100-file cap")
+        for path in selected:
+            direct.add(path)
+            record = candidate_by_name.get(path)
+            if record and record.get("previous_filename"):
+                direct.add(record["previous_filename"])
+        need(direct <= set(candidate_changes),
+             f"candidate CodeRabbit review lists paths outside its diff: {sorted(direct-set(candidate_changes))}")
+        if direct == set(candidate_changes):
+            print(f"PASS — all {len(candidate_changes)} changed paths are listed in CodeRabbit review {review['id']}.")
+            return
+    else:
+        print(f"Oversized candidate: {len(candidate_changes)} changed paths exceed the {MAX_FILES}-file "
+              "per-review ceiling; a direct head review cannot exist by the bot's own limit. "
+              "Coverage authority: the review-shard manifest with exact one-to-one verification.")
 
     # The candidate manifest is fetched as inert JSON from the exact head SHA.
     # No file or executable from the untrusted candidate checkout is used.
     manifest = client.file_json(manifest_path, head_sha, candidate_head_repo)
     validate_manifest(manifest)
     validate_alternative_config(alternative_config)
+    obligation, gate_metadata = coverage_obligation(candidate_changes, manifest_path)
+    if gate_metadata:
+        print(f"Gate metadata excluded from the coverage obligation (inert schema-validated JSON, "
+              f"never silently omitted): {', '.join(gate_metadata)}")
 
     reviewed, alternatives = {}, set()
     for shard in manifest["reviewShards"]:
@@ -413,9 +450,11 @@ def run(repo, number, manifest_path, alternative_config, trusted_base_sha, token
         need(paths <= set(candidate_changes), f"alternative evidence outside candidate: {sorted(paths-set(candidate_changes))}")
         alternatives.update(paths)
 
-    ensure_exact_coverage(candidate_changes, reviewed, alternatives)
-    print(f"PASS — candidate {head_sha}; paths={len(candidate_changes)}, CodeRabbit={len(reviewed)}, "
-          f"alternatives={len(alternatives)}, review shards={len(manifest['reviewShards'])}.")
+    ensure_exact_coverage(obligation, reviewed, alternatives)
+    print(f"PASS — candidate {head_sha}; paths={len(candidate_changes)} "
+          f"(coverage obligation {len(obligation)} + gate metadata {len(gate_metadata)}), "
+          f"CodeRabbit={len(reviewed)}, alternatives={len(alternatives)}, "
+          f"review shards={len(manifest['reviewShards'])}.")
 
 
 def main():

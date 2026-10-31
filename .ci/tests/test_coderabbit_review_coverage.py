@@ -334,5 +334,231 @@ class TreeTests(unittest.TestCase):
             gate.ensure_exact_coverage(changed, {"Resolver.java": "review-1"}, set())
 
 
+
+class CoverageObligationTests(unittest.TestCase):
+    def test_manifest_path_is_excluded_explicitly(self):
+        changes = {"a.java", "docs/governance/campaign/release/coderabbit-review-coverage.json"}
+        obligation, excluded = gate.coverage_obligation(
+            changes, "docs/governance/campaign/release/coderabbit-review-coverage.json")
+        self.assertEqual(obligation, {"a.java"})
+        self.assertEqual(excluded, ["docs/governance/campaign/release/coderabbit-review-coverage.json"])
+
+    def test_no_manifest_path_means_no_exclusion(self):
+        obligation, excluded = gate.coverage_obligation({"a.java", "b.java"}, "other.json")
+        self.assertEqual(obligation, {"a.java", "b.java"})
+        self.assertEqual(excluded, [])
+
+
+class MergeBaseTests(unittest.TestCase):
+    def test_uses_compare_endpoint_and_returns_merge_base(self):
+        client = gate.GitHub("example/repo", "token")
+        calls = []
+
+        def fake_get_from(root, path):
+            calls.append((root, path))
+            return {"merge_base_sha": "a" * 40}
+
+        client.get_from = fake_get_from
+        self.assertEqual(client.merge_base("b" * 40, "c" * 40), "a" * 40)
+        self.assertEqual(calls, [("https://api.github.com/repos/example/repo",
+                                  "/compare/" + "b" * 40 + "..." + "c" * 40)])
+
+    def test_rejects_compare_without_merge_base(self):
+        client = gate.GitHub("example/repo", "token")
+        client.get_from = lambda root, path: {}
+        with self.assertRaisesRegex(gate.GateError, "merge-base"):
+            client.merge_base("b" * 40, "c" * 40)
+
+
+class RunClient:
+    """In-memory GitHub client for gate.run() integration tests."""
+
+    def __init__(self, pulls=None, files=None, reviews=None, trees=None, manifests=None, merge_bases=None):
+        self._pulls = pulls or {}
+        self._files = files or {}
+        self._reviews = reviews or {}
+        self._trees = trees or {}
+        self._manifests = manifests or {}
+        self._merge_bases = merge_bases or {}
+        self.calls = []
+
+    def pull(self, number):
+        self.calls.append(("pull", number))
+        return self._pulls[number]
+
+    def files(self, number):
+        return self._files[number]
+
+    def reviews(self, number):
+        return self._reviews[number]
+
+    def tree(self, sha, source_repo=None):
+        self.calls.append(("tree", sha))
+        return self._trees[sha]
+
+    def checks(self, sha, source_repo=None):
+        return []
+
+    def file_json(self, path, ref, source_repo=None):
+        self.calls.append(("file_json", path, ref))
+        try:
+            return self._manifests[(path, ref)]
+        except KeyError:
+            raise gate.GateError(f"manifest path is not a file: {path}")
+
+    def merge_base(self, base_sha, head_sha, source_repo=None):
+        self.calls.append(("merge_base", base_sha, head_sha))
+        return self._merge_bases[(base_sha, head_sha)]
+
+    def workflow_run(self, details_url):
+        raise AssertionError("not used in these tests")
+
+
+MANIFEST_PATH = "docs/governance/campaign/release/coderabbit-review-coverage.json"
+BT2 = chr(96)
+
+
+def shard_review_body(paths):
+    lines = "\n".join("* " + BT2 + p + BT2 for p in paths)
+    return ("<details><summary><strong>Files selected for processing: "
+            + str(len(paths)) + "</strong></summary>\n<dl><dd>\n" + lines + "\n</dd></dl></details>")
+
+
+class RunPathTests(ManifestTests):
+    """Integration coverage for gate.run(): the oversized verdict path, the
+    merge-base tree basis, and the manifest self-exclusion."""
+
+    PRODUCT = [f"src/F{i:03d}.java" for i in range(100)]
+
+    def setUp(self):
+        self.config = self.valid_alternative_config()
+        self.trusted_base = "main-tip"
+        self.merge_bases = {(self.trusted_base, "head-A"): "mb-1"}
+        self.base_tree = {path: (path + "-base", "100644", "blob") for path in self.PRODUCT}
+        # main moved after the PR opened: the gate file exists on the main tip
+        # but not at the merge base; it must never become a candidate change.
+        self.main_tip_tree = dict(self.base_tree)
+        self.main_tip_tree[".github/workflows/coderabbit-gate.yml"] = ("gate-blob", "100644", "blob")
+        # 101 changed paths at the candidate head: 100 product paths + the
+        # coverage manifest itself — over the 100-file per-review ceiling.
+        self.head_tree = {path: (path + "-head", "100644", "blob") for path in self.PRODUCT}
+        self.head_tree[MANIFEST_PATH] = ("manifest-blob", "100644", "blob")
+        self.shard_tree = {path: (path + "-head", "100644", "blob") for path in self.PRODUCT}
+        self.candidate_pull = {
+            "state": "open",
+            "base": {"sha": self.trusted_base, "ref": "main"},
+            "head": {"sha": "head-A", "repo": {"full_name": "example/repo"}},
+            "user": {"login": "pull-author"},
+        }
+        self.shard_pull = {
+            "state": "open",
+            "base": {"sha": self.trusted_base, "ref": "main"},
+            "head": {"sha": "shard-head-A", "repo": {"full_name": "example/repo"}},
+            "user": {"login": "review-branch-owner"},
+        }
+        self.shard_review = {
+            "id": 9, "user": {"login": gate.BOT}, "commit_id": "shard-head-A",
+            "state": "COMMENTED", "submitted_at": "2026-10-31T19:40:00Z",
+            "body": shard_review_body(self.PRODUCT),
+        }
+        self.manifest = {
+            "schemaVersion": 1, "maxFilesPerReview": 100,
+            "reviewShards": [{"prNumber": 51, "reviewId": 9, "role": "review"}],
+            "alternativeCoverage": [],
+        }
+        self.candidate_files = [{"filename": path} for path in self.PRODUCT] + [{"filename": MANIFEST_PATH}]
+        self.shard_files = [{"filename": path} for path in self.PRODUCT]
+
+    def client(self, **overrides):
+        return RunClient(
+            pulls=overrides.get("pulls", {50: self.candidate_pull, 51: self.shard_pull}),
+            files=overrides.get("files", {50: self.candidate_files, 51: self.shard_files}),
+            reviews=overrides.get("reviews", {50: [], 51: [self.shard_review]}),
+            trees=overrides.get("trees", {
+                "mb-1": self.base_tree, self.trusted_base: self.main_tip_tree,
+                "head-A": self.head_tree, "shard-head-A": self.shard_tree,
+            }),
+            manifests=overrides.get("manifests", {(MANIFEST_PATH, "head-A"): self.manifest}),
+            merge_bases=overrides.get("merge_bases", self.merge_bases),
+        )
+
+    def run_gate(self, client):
+        real_github = gate.GitHub
+        gate.GitHub = lambda repo, token: client
+        try:
+            return gate.run("example/repo", 50, MANIFEST_PATH, self.config, self.trusted_base, "token")
+        finally:
+            gate.GitHub = real_github
+
+    def test_oversized_passes_without_any_candidate_head_review(self):
+        client = self.client()
+        self.run_gate(client)
+        self.assertIn(("merge_base", self.trusted_base, "head-A"), client.calls)
+        self.assertIn(("tree", "mb-1"), client.calls)
+        self.assertNotIn(("tree", self.trusted_base), client.calls)
+
+    def test_oversized_without_manifest_fails_closed(self):
+        client = self.client(manifests={})
+        with self.assertRaisesRegex(gate.GateError, "manifest path is not a file"):
+            self.run_gate(client)
+
+    def test_oversized_with_uncovered_path_fails_closed(self):
+        covered = self.PRODUCT[:99]
+        partial = dict(self.shard_review)
+        partial["body"] = shard_review_body(covered)
+        client = self.client(
+            reviews={50: [], 51: [partial]},
+            files={50: self.candidate_files,
+                   51: [{"filename": path} for path in covered]},
+            trees={
+                "mb-1": self.base_tree, self.trusted_base: self.main_tip_tree,
+                "head-A": self.head_tree,
+                # the uncovered path stays at its base blob on the shard branch
+                # (unchanged there), so the shard's tree diff equals its 99 files
+                "shard-head-A": {path: (path + "-head", "100644", "blob") for path in covered} | {
+                    self.PRODUCT[99]: (self.PRODUCT[99] + "-base", "100644", "blob")},
+            },
+        )
+        with self.assertRaisesRegex(gate.GateError, "no review evidence"):
+            self.run_gate(client)
+
+    def test_oversized_with_stale_shard_review_fails_closed(self):
+        stale = dict(self.shard_review)
+        stale["commit_id"] = "shard-head-OLD"
+        newer = dict(self.shard_review, id=10, submitted_at="2026-10-31T20:40:00Z")
+        client = self.client(reviews={50: [], 51: [stale, newer]})
+        with self.assertRaisesRegex(gate.GateError, "is stale"):
+            self.run_gate(client)
+
+    def test_manifest_path_itself_is_never_a_coverage_obligation(self):
+        # The manifest path exists in the candidate diff (it is committed on the
+        # candidate head) but carries no shard; only the gate-metadata exclusion
+        # lets the verdict pass, and the exclusion must not cover anything else.
+        client = self.client()
+        self.run_gate(client)
+        self.assertIn(("file_json", MANIFEST_PATH, "head-A"), client.calls)
+
+    def test_direct_path_still_requires_candidate_head_review(self):
+        small = ["src/A.java", "src/B.java"]
+        candidate_review = {
+            "id": 8, "user": {"login": gate.BOT}, "commit_id": "head-A",
+            "state": "COMMENTED", "submitted_at": "2026-10-31T19:00:00Z",
+            "body": shard_review_body(small),
+        }
+        base = {path: (path + "-base", "100644", "blob") for path in small}
+        head = {path: (path + "-head", "100644", "blob") for path in small}
+        client = self.client(
+            pulls={50: self.candidate_pull, 51: self.shard_pull},
+            reviews={50: [candidate_review], 51: [self.shard_review]},
+            files={50: [{"filename": path} for path in small],
+                   51: [{"filename": path} for path in small]},
+            trees={
+                "mb-1": base, self.trusted_base: dict(base, **{".github/workflows/coderabbit-gate.yml": ("gate-blob", "100644", "blob")}),
+                "head-A": head, "shard-head-A": head,
+            },
+        )
+        self.run_gate(client)
+
+
 if __name__ == "__main__":
     unittest.main()
