@@ -5,9 +5,9 @@
 ## Repository heads
 
 - `main`: `f2349deca955cee435e6be3ca56be8a4c251d00a`.
-- `integration/saleor-full-commerce-20261021`: `9f6dde3b3732f014e1b422ad15cbcb4ada186d3e` (A0 governance merge; this PROJECT_MAP refresh is the next docs-only commit).
+- `integration/saleor-full-commerce-20261021`: `5c42c6e323476c40127760626392f4950a497b33` (latest live HEAD before this PROJECT_MAP status refresh).
 - GitHub compare: integration is **150 commits ahead / 0 behind** main; merge base is exactly `f2349deca955cee435e6be3ca56be8a4c251d00a`. Do not merge main into commerce again; the main-to-commerce reconciliation is already complete.
-- Current common dispatch baseline at this measurement: `9f6dde3b3732f014e1b422ad15cbcb4ada186d3e`. The A0 documentation/governance batch is now on the integration candidate. This PROJECT_MAP refresh is itself another docs-only commit; after it, A0 advances A2/A3/A4 to the new live integration HEAD. Always fetch the live ref before starting; never rely on a snapshot SHA after the branch moves.
+- Current common dispatch baseline at this measurement: `5c42c6e323476c40127760626392f4950a497b33`. The A0 documentation/governance batch is on the integration candidate. This PROJECT_MAP refresh is itself a docs-only commit; after it, A0 advances A2/A3/A4 to the new live integration HEAD. Always fetch the live ref before starting; never rely on a snapshot SHA after the branch moves.
 
 ## Governing document hierarchy
 
@@ -26,9 +26,9 @@ The current campaign dispatch uses **three concurrent coding agents only**: A2, 
 
 | Role | Scope | Active workspace | Base |
 |---|---|---|---|
-| A2 | P2 catalog, attributes, variants, inventory/stock/warehouse semantics | `agent/a2-p2-stock-audit-20261031` | `9f6dde3b3732` |
-| A3 | Entire P3: discounts, gift cards, taxes, channels, shop/settings (85 roots) | `agent/a3-p3-commercial-20261031` | `9f6dde3b3732` |
-| A4 | P4 checkout, orders, payments, shipping and financial allocation | `agent/a4-p4-checkout-audit-20261031` | `9f6dde3b3732` |
+| A2 | P2 catalog, attributes, variants, inventory/stock/warehouse semantics | `agent/a2-p2-stock-audit-20261031` | `5c42c6e32347` |
+| A3 | Entire P3: discounts, gift cards, taxes, channels, shop/settings (85 roots) | `agent/a3-p3-commercial-20261031` | `5c42c6e32347` |
+| A4 | P4 checkout, orders, payments, shipping and financial allocation | `agent/a4-p4-checkout-audit-20261031` | `5c42c6e32347` |
 | A0 | Shared-contract stewardship, evidence review, knowledge map and candidate assembly | `integration/saleor-full-commerce-20261021` (A0 docs assembled) | Same live candidate; A0 owns shared changes |
 
 A2/A3/A4 must use isolated worktrees from the same frozen base. They commit their work locally and deliver commit SHAs, changed paths, exact test identifiers, XML reports and blockers to A0. **No individual wave PRs.** A0 assembles commits continuously in dependency order. After the Implementation Complete gate and independent reviews, A0 opens one final release PR to `main`; only the owner authorizes the merge.
