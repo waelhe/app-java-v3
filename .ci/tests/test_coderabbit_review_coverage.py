@@ -11,6 +11,14 @@ SPEC.loader.exec_module(gate)
 BT = chr(96)
 
 
+class FakeClient:
+    def __init__(self, checks=None):
+        self._checks = checks or []
+
+    def checks(self, sha):
+        return self._checks
+
+
 class ParserTests(unittest.TestCase):
     def test_parses_explicit_processed_file_list(self):
         body = ("<details><summary><strong>Files selected for processing: 2</strong></summary>\n"
@@ -66,6 +74,14 @@ class ManifestTests(unittest.TestCase):
                 "reviewShards": [{"prNumber": 50, "reviewId": 9, "role": "candidate"}],
                 "alternativeCoverage": []}
 
+    def valid_alternative_config(self):
+        return {"schemaVersion": 1, "checks": {
+            "Dependency Review (PR dependency changes)": {
+                "appSlugs": ["github-actions"],
+                "pathPatterns": ["pom.xml", "**/pom.xml", "package-lock.json", "**/package-lock.json"]
+            }
+        }}
+
     def test_accepts_candidate_shard_manifest(self):
         gate.validate_manifest(self.valid())
 
@@ -99,6 +115,96 @@ class ManifestTests(unittest.TestCase):
         manifest["alternativeCoverage"] = [{"paths": ["generated.graphqls"], "kind": "check", "checkName": "Schema"}]
         with self.assertRaisesRegex(gate.GateError, "reason and evidenceUrl"):
             gate.validate_manifest(manifest)
+
+    def test_accepts_trusted_alternative_config(self):
+        gate.validate_alternative_config(self.valid_alternative_config())
+
+    def test_rejects_empty_trusted_path_allowlist(self):
+        config = self.valid_alternative_config()
+        config["checks"]["Dependency Review (PR dependency changes)"]["pathPatterns"] = []
+        with self.assertRaisesRegex(gate.GateError, "requires pathPatterns"):
+            gate.validate_alternative_config(config)
+
+
+class AlternativeEvidenceTests(ManifestTests):
+    def setUp(self):
+        self.candidate = {"head": {"sha": "head-A"},
+                          "user": {"login": "pull-author"},
+                          "html_url": "https://github.com/example/repo/pull/50"}
+        self.review = {"id": 91, "user": {"login": "independent-reviewer"},
+                       "commit_id": "head-A", "state": "APPROVED",
+                       "submitted_at": "2026-10-31T17:00:00Z",
+                       "html_url": "https://github.com/example/repo/pull/50#pullrequestreview-91"}
+        self.config = self.valid_alternative_config()
+        self.check = {"name": "Dependency Review (PR dependency changes)",
+                      "head_sha": "head-A", "status": "completed", "conclusion": "success",
+                      "completed_at": "2026-10-31T17:00:00Z",
+                      "html_url": "https://github.com/example/repo/actions/runs/100",
+                      "app": {"slug": "github-actions"}}
+        self.client = FakeClient([self.check])
+
+    def test_accepts_independent_latest_manual_review_url(self):
+        item = {"kind": "manual-review", "paths": ["generated.graphqls"],
+                "reason": "independent contract review", "evidenceUrl": self.review["html_url"],
+                "reviewerLogin": "independent-reviewer", "reviewId": 91}
+        self.assertEqual(gate.verify_alternative(item, self.candidate, [self.review],
+                                                 self.client, self.config), {"generated.graphqls"})
+
+    def test_rejects_pr_author_as_manual_reviewer(self):
+        item = {"kind": "manual-review", "paths": ["generated.graphqls"],
+                "reason": "self review", "evidenceUrl": self.review["html_url"],
+                "reviewerLogin": "pull-author", "reviewId": 91}
+        review = dict(self.review, user={"login": "pull-author"})
+        with self.assertRaisesRegex(gate.GateError, "must be independent"):
+            gate.verify_alternative(item, self.candidate, [review], self.client, self.config)
+
+    def test_rejects_non_latest_manual_review(self):
+        later = dict(self.review, id=92, submitted_at="2026-10-31T18:00:00Z")
+        item = {"kind": "manual-review", "paths": ["generated.graphqls"],
+                "reason": "old review", "evidenceUrl": self.review["html_url"],
+                "reviewerLogin": "independent-reviewer", "reviewId": 91}
+        with self.assertRaisesRegex(gate.GateError, "not latest"):
+            gate.verify_alternative(item, self.candidate, [self.review, later], self.client, self.config)
+
+    def test_rejects_candidate_url_as_manual_evidence(self):
+        item = {"kind": "manual-review", "paths": ["generated.graphqls"],
+                "reason": "candidate URL is not a review URL", "evidenceUrl": self.candidate["html_url"],
+                "reviewerLogin": "independent-reviewer", "reviewId": 91}
+        with self.assertRaisesRegex(gate.GateError, "does not identify the recorded review"):
+            gate.verify_alternative(item, self.candidate, [self.review], self.client, self.config)
+
+    def test_accepts_trusted_dependency_check_for_allowed_path(self):
+        item = {"kind": "check", "paths": ["pom.xml"], "reason": "dependency manifest verification",
+                "evidenceUrl": self.check["html_url"], "checkName": self.check["name"]}
+        self.assertEqual(gate.verify_alternative(item, self.candidate, [], self.client, self.config), {"pom.xml"})
+
+    def test_rejects_check_from_untrusted_github_app(self):
+        item = {"kind": "check", "paths": ["pom.xml"], "reason": "dependency manifest verification",
+                "evidenceUrl": self.check["html_url"], "checkName": self.check["name"]}
+        untrusted = dict(self.check, app={"slug": "candidate-controlled-app"})
+        with self.assertRaisesRegex(gate.GateError, "trusted GitHub App"):
+            gate.verify_alternative(item, self.candidate, [], FakeClient([untrusted]), self.config)
+
+    def test_rejects_check_for_path_outside_trusted_patterns(self):
+        item = {"kind": "check", "paths": ["src/main/java/Resolver.java"],
+                "reason": "not a dependency manifest", "evidenceUrl": self.check["html_url"],
+                "checkName": self.check["name"]}
+        with self.assertRaisesRegex(gate.GateError, "outside trusted path patterns"):
+            gate.verify_alternative(item, self.candidate, [], self.client, self.config)
+
+    def test_rejects_failed_check(self):
+        item = {"kind": "check", "paths": ["pom.xml"], "reason": "dependency manifest verification",
+                "evidenceUrl": self.check["html_url"], "checkName": self.check["name"]}
+        failed = dict(self.check, conclusion="failure")
+        with self.assertRaisesRegex(gate.GateError, "not successful"):
+            gate.verify_alternative(item, self.candidate, [], FakeClient([failed]), self.config)
+
+    def test_rejects_wrong_check_evidence_url(self):
+        item = {"kind": "check", "paths": ["pom.xml"], "reason": "dependency manifest verification",
+                "evidenceUrl": "https://github.com/example/repo/actions/runs/999",
+                "checkName": self.check["name"]}
+        with self.assertRaisesRegex(gate.GateError, "not the latest trusted run"):
+            gate.verify_alternative(item, self.candidate, [], self.client, self.config)
 
 
 class TreeTests(unittest.TestCase):
@@ -148,9 +254,10 @@ class TreeTests(unittest.TestCase):
         self.assertEqual(paths, {"new.java", "old.java"})
 
     def test_unlisted_unsupported_path_is_detected(self):
-        changed = {"generated.graphqls", "Resolver.java"}
-        covered = {"Resolver.java"}
-        self.assertEqual(changed - covered, {"generated.graphqls"})
+        changed = {"generated.graphqls": (None, ("generated", "100644", "blob")),
+                   "Resolver.java": (None, ("resolver", "100644", "blob"))}
+        with self.assertRaisesRegex(gate.GateError, "no review evidence"):
+            gate.ensure_exact_coverage(changed, {"Resolver.java": "review-1"}, set())
 
 
 if __name__ == "__main__":
