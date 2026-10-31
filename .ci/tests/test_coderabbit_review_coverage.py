@@ -109,15 +109,39 @@ class TreeTests(unittest.TestCase):
                  "added": ("e", "100644", "blob")}
         self.assertEqual(set(gate.tree_changes(before, after)), {"change", "deleted", "added"})
 
-    def test_detects_missing_changed_file(self):
-        changed = {"a.java", "b.java"}
-        covered = {"a.java"}
-        self.assertEqual(changed - covered, {"b.java"})
+    def test_rejects_missing_changed_file_evidence(self):
+        changed = {"a.java": (None, ("a", "100644", "blob")),
+                   "b.java": (None, ("b", "100644", "blob"))}
+        with self.assertRaisesRegex(gate.GateError, "no review evidence"):
+            gate.ensure_exact_coverage(changed, {"a.java": "review-1"}, set())
 
-    def test_detects_file_changed_after_shard_review(self):
-        candidate = {"a.java": ("new", "100644", "blob")}
-        reviewed = {"a.java": ("old", "100644", "blob")}
-        self.assertNotEqual(candidate["a.java"], reviewed["a.java"])
+    def test_rejects_file_changed_after_shard_review(self):
+        changed = {"a.java": (("base", "100644", "blob"), ("candidate", "100644", "blob"))}
+        with self.assertRaisesRegex(gate.GateError, "head content changed after review"):
+            gate.verify_path_content("a.java", changed,
+                                     {"a.java": ("base", "100644", "blob")},
+                                     {"a.java": ("old-reviewed", "100644", "blob")},
+                                     {"a.java": ("base", "100644", "blob")},
+                                     {"a.java": ("candidate", "100644", "blob")})
+
+    def test_rejects_base_changed_after_shard_review(self):
+        changed = {"a.java": (("new-base", "100644", "blob"), ("head", "100644", "blob"))}
+        with self.assertRaisesRegex(gate.GateError, "base content changed after review"):
+            gate.verify_path_content("a.java", changed,
+                                     {"a.java": ("old-base", "100644", "blob")},
+                                     {"a.java": ("head", "100644", "blob")},
+                                     {"a.java": ("new-base", "100644", "blob")},
+                                     {"a.java": ("head", "100644", "blob")})
+
+    def test_rejects_duplicate_review_and_alternative_coverage(self):
+        changed = {"a.java": (None, ("a", "100644", "blob"))}
+        with self.assertRaisesRegex(gate.GateError, "both CodeRabbit and alternative"):
+            gate.ensure_exact_coverage(changed, {"a.java": "review-1"}, {"a.java"})
+
+    def test_rejects_evidence_for_path_outside_candidate(self):
+        changed = {"a.java": (None, ("a", "100644", "blob"))}
+        with self.assertRaisesRegex(gate.GateError, "outside candidate"):
+            gate.ensure_exact_coverage(changed, {"other.java": "review-1"}, set())
 
     def test_rename_requires_both_path_names(self):
         _, paths, _ = gate.fileset([{"filename": "new.java", "previous_filename": "old.java"}])
