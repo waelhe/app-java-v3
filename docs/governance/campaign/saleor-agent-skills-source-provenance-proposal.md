@@ -77,9 +77,9 @@ c68109c572d21e0fdec9e5e55084b24be8208f2b6092d744127d6fac90106858  LICENSE
 
 ## 6. License evidence — recorded separately, no reconciliation invented
 
-- **Per-skill `LICENSE`** (all five skills, identical 1,766-byte file): BSD 3-Clause, "Copyright (c) 2026, Saleor Commerce".
-- **`saleor/saleor-docs` root `LICENSE`**: BSD 3-Clause (Saleor Commerce, 2019-2024) **plus** an ISC-license notice for bundled Lucide icons (irrelevant to the skills trees). GitHub's API classifies the root as `NOASSERTION` (custom text).
-- **Measured difference from the old source:** our registry's record for `saleor/agent-skills` states "BSD-3-Clause AND CC-BY-4.0 (repository root)"; the new root LICENSE text carries **no CC-BY-4.0 statement**. Both statements are recorded here as measured facts. Per plan §3.1.5, no legal reconciliation is invented; the migration PR records the new source's evidence in its own registry fields.
+- **Per-skill `LICENSE`** (all five skill directories, identical 1,766-byte file): BSD 3-Clause terms followed by a CC-BY-4.0 notice specifically for artwork; the file is byte-identical to the legacy `saleor/agent-skills` license snapshot.
+- **`saleor/saleor-docs` repository-root `LICENSE`** is a different file: BSD 3-Clause plus an ISC-license notice for bundled Lucide icons. GitHub classifies that custom root license as `NOASSERTION`.
+- **Skill frontmatter:** each `SKILL.md` independently self-declares MIT. These are three distinct pieces of source evidence: per-skill LICENSE, SKILL.md frontmatter, and repository-root LICENSE. The root-license difference from the old repository must not be misreported as removal of CC-BY-4.0 from the skill package, because the per-skill LICENSE still carries that artwork notice. Per plan §3.1.5, no legal precedence is inferred; the registry records the statements separately.
 
 ## 7. Proposed dispositions
 
