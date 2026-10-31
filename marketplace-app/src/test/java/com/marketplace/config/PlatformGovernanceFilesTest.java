@@ -985,7 +985,9 @@ class PlatformGovernanceFilesTest {
         // reference input only — never as wire-contract authority.
         JsonNode saleorCore = registered.get("saleor-core");
         assertThat(saleorCore).as("saleor-core must be vendored and registered").isNotNull();
-        assertThat(saleorCore.get("sourceRepository").asText()).isEqualTo("saleor/agent-skills");
+        assertThat(saleorCore.get("sourceRepository").asText()).isEqualTo("saleor/saleor-docs");
+        assertThat(saleorCore.get("pinnedCommit").asText())
+                .isEqualTo("2cdf6590e838929c3f74c16e982cfdc11073c2d8");
 
         // Precedence: the skills policy keeps the ladder explicit and pinned —
         // including its ORDER: the pins outrank the plan, the plan outranks the
@@ -1009,6 +1011,76 @@ class PlatformGovernanceFilesTest {
         assertThat(divergences).as("the precedence section must name the divergences ledger").isNotNegative();
         assertThat(pins).as("the pinned schema must outrank the canonical plan in the precedence ladder").isLessThan(plan);
         assertThat(plan).as("the canonical plan must outrank the divergences ledger in the precedence ladder").isLessThan(divergences);
+    }
+
+    @Test
+    void saleorAiResourceSurfaceIsPinnedAndSeparatesDiscoveryFromAuthority() throws Exception {
+        JsonNode surface = new ObjectMapper().readTree(
+                read("docs", "governance", "plans", "saleor-ai-resource-surface.json"));
+
+        assertThat(surface.path("sourceSnapshot").path("repository").asText())
+                .isEqualTo("saleor/saleor-docs");
+        assertThat(surface.path("sourceSnapshot").path("commit").asText())
+                .isEqualTo("2cdf6590e838929c3f74c16e982cfdc11073c2d8");
+
+        // The published docs schema at the pinned docs commit must remain the
+        // exact same Git blob as the canonical Saleor 3.23.43 schema pin.
+        JsonNode publishedSchema = surface.path("schema");
+        JsonNode sourcePins = new ObjectMapper().readTree(
+                read("docs", "governance", "plans", "saleor-source-pins.json"));
+        JsonNode referenceSchema = sourcePins.path("referenceSchema");
+        assertThat(publishedSchema.path("gitBlobSha1").asText())
+                .isEqualTo(referenceSchema.path("gitBlobSha1").asText());
+        assertThat(publishedSchema.path("bytes").asInt()).isEqualTo(1_101_635);
+        assertThat(referenceSchema.path("ref").asText()).isEqualTo("3.23.43");
+
+        JsonNode skills = surface.path("discoveryIndex").path("bundles");
+        assertThat(skills.isArray()).isTrue();
+        assertThat(skills.size()).isEqualTo(5);
+        Set<String> names = new HashSet<>();
+        for (JsonNode skill : skills) {
+            String name = skill.path("name").asText();
+            names.add(name);
+            assertThat(skill.path("digestSha256").asText())
+                    .as("%s must retain the official advertised bundle digest", name)
+                    .matches("[0-9a-f]{64}");
+            assertThat(skill.path("adoptionState").asText())
+                    .as("%s adoption state must be explicit", name)
+                    .isIn("ADOPTED_PINNED", "NOT_ADOPTED");
+            if ("saleor-core".equals(name)) {
+                assertThat(skill.path("adoptionState").asText()).isEqualTo("ADOPTED_PINNED");
+                assertThat(skill.path("localPath").asText()).isEqualTo(".agents/skills/saleor-core");
+            } else {
+                assertThat(skill.path("adoptionState").asText()).isEqualTo("NOT_ADOPTED");
+                assertThat(skill.path("localPath").isNull()).isTrue();
+            }
+        }
+        assertThat(names).isEqualTo(Set.of(
+                "saleor-app", "saleor-configurator", "saleor-core",
+                "saleor-storefront", "storefront-builder"));
+
+        // The Documentation MCP is a discovery-only server. Keep it separate
+        // from the independent GraphQL MCP and the platform's actual API.
+        JsonNode mcp = surface.path("documentationMcp");
+        assertThat(mcp.path("readOnly").asBoolean()).isTrue();
+        assertThat(mcp.path("doesNotConnectToSaleorInstance").asBoolean()).isTrue();
+        assertThat(mcp.path("executesGraphqlOperations").asBoolean()).isFalse();
+        assertThat(mcp.path("transport").asText()).isEqualTo("streamable-http");
+        Set<String> mcpTools = new HashSet<>();
+        for (JsonNode tool : mcp.path("tools")) {
+            mcpTools.add(tool.path("name").asText());
+            assertThat(tool.path("readOnlyHint").asBoolean()).isTrue();
+            assertThat(tool.path("openWorldHint").asBoolean()).isFalse();
+        }
+        assertThat(mcpTools).isEqualTo(Set.of(
+                "search_docs", "get_page", "list_pages", "get_navigation"));
+        assertThat(mcp.path("liveProtocolInvocationStatus").asText())
+                .isEqualTo("METADATA_INSPECTED_ONLY");
+
+        assertThat(surface.path("documentationIndexes").path("llmsTxt")
+                .path("lineCountIsContract").asBoolean()).isFalse();
+        assertThat(surface.path("marketplaceRecipe").path("authorityForPlatformArchitecture")
+                .asBoolean()).isFalse();
     }
 
     private static void assumePython3() {
