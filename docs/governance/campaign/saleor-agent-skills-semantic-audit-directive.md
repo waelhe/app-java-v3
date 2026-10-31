@@ -125,7 +125,7 @@ For each rule consumed by an implementation or test:
 
 Known issues already identified in this skill include an uninitialized variable in a Python snippet, an incorrect source-file path for StockQuerySet, currency-precision-blind rounding language, and nuanced stock/click-and-collect and subscription-delivery claims. Re-verify each against the pinned source before using it; do not treat this list as exhaustive.
 
-The saleor-core frontmatter declares MIT while the upstream repository root states BSD-3-Clause AND CC-BY-4.0. Preserve the observed license statements and attribution records; do not invent a legal reconciliation or edit upstream content locally. A0 must keep the legal status explicit and request owner/legal resolution if distribution or modification depends on it.
+The saleor-core frontmatter declares MIT; the per-skill LICENSE file carries BSD-3-Clause terms with a CC-BY-4.0 artwork notice, and the saleor-docs repository root LICENSE separately carries BSD-3-Clause with an ISC notice for bundled icons. Preserve the observed license statements and attribution records; do not invent a legal reconciliation or edit upstream content locally. A0 must keep the legal status explicit and request owner/legal resolution if distribution or modification depends on it.
 
 ## 5. Semantic audit of previously integrated roots
 
