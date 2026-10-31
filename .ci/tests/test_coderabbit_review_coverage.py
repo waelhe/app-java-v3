@@ -12,11 +12,28 @@ BT = chr(96)
 
 
 class FakeClient:
-    def __init__(self, checks=None):
+    def __init__(self, checks=None, workflow=None):
         self._checks = checks or []
+        self._workflow = workflow or {
+            "path": ".github/workflows/ci.yml",
+            "event": "pull_request",
+            "head_sha": "head-A"
+        }
+        self._base_workflow_sha = "trusted-workflow-blob"
+        self._head_workflow_sha = "trusted-workflow-blob"
+        self.check_calls = []
 
     def checks(self, sha, source_repo=None):
+        self.check_calls.append((sha, source_repo))
         return self._checks
+
+    def workflow_run(self, details_url):
+        self.last_details_url = details_url
+        return self._workflow
+
+    def tree(self, sha, source_repo=None):
+        blob = self._base_workflow_sha if sha == "base-A" else self._head_workflow_sha
+        return {".github/workflows/ci.yml": (blob, "100644", "blob")}
 
 
 class ParserTests(unittest.TestCase):
@@ -78,7 +95,9 @@ class ManifestTests(unittest.TestCase):
         return {"schemaVersion": 1, "checks": {
             "Dependency Review (PR dependency changes)": {
                 "appSlugs": ["github-actions"],
-                "pathPatterns": ["pom.xml", "**/pom.xml", "package-lock.json", "**/package-lock.json"]
+                "pathPatterns": ["package-lock.json", "**/package-lock.json"],
+            "workflowPath": ".github/workflows/ci.yml",
+            "events": ["pull_request"]
             }
         }}
 
@@ -144,19 +163,21 @@ class ManifestTests(unittest.TestCase):
 
 class AlternativeEvidenceTests(ManifestTests):
     def setUp(self):
-        self.candidate = {"head": {"sha": "head-A",
-                                   "repo": {"full_name": "example/repo"}},
+        self.candidate = {"base": {"sha": "base-A"},
+                          "head": {"sha": "head-A", "repo": {"full_name": "example/repo"}},
                           "user": {"login": "pull-author"},
                           "html_url": "https://github.com/example/repo/pull/50"}
         self.review = {"id": 91, "user": {"login": "independent-reviewer"},
                        "commit_id": "head-A", "state": "APPROVED",
                        "submitted_at": "2026-10-31T17:00:00Z",
+                       "author_association": "COLLABORATOR",
                        "html_url": "https://github.com/example/repo/pull/50#pullrequestreview-91"}
         self.config = self.valid_alternative_config()
         self.check = {"name": "Dependency Review (PR dependency changes)",
                       "head_sha": "head-A", "status": "completed", "conclusion": "success",
                       "completed_at": "2026-10-31T17:00:00Z",
                       "html_url": "https://github.com/example/repo/actions/runs/100",
+                      "details_url": "https://github.com/example/repo/actions/runs/100/job/900",
                       "app": {"slug": "github-actions"}}
         self.client = FakeClient([self.check])
 
@@ -166,6 +187,14 @@ class AlternativeEvidenceTests(ManifestTests):
                 "reviewerLogin": "independent-reviewer", "reviewId": 91}
         self.assertEqual(gate.verify_alternative(item, self.candidate, [self.review],
                                                  self.client, self.config), {"generated.graphqls"})
+
+    def test_rejects_manual_reviewer_without_repository_access(self):
+        item = {"kind": "manual-review", "paths": ["generated.graphqls"],
+                "reason": "untrusted reviewer", "evidenceUrl": self.review["html_url"],
+                "reviewerLogin": "independent-reviewer", "reviewId": 91}
+        review = dict(self.review, author_association="NONE")
+        with self.assertRaisesRegex(gate.GateError, "repository owner, member, or collaborator"):
+            gate.verify_alternative(item, self.candidate, [review], self.client, self.config)
 
     def test_rejects_pr_author_as_manual_reviewer(self):
         item = {"kind": "manual-review", "paths": ["generated.graphqls"],
@@ -191,12 +220,14 @@ class AlternativeEvidenceTests(ManifestTests):
             gate.verify_alternative(item, self.candidate, [self.review], self.client, self.config)
 
     def test_accepts_trusted_dependency_check_for_allowed_path(self):
-        item = {"kind": "check", "paths": ["pom.xml"], "reason": "dependency manifest verification",
+        item = {"kind": "check", "paths": ["package-lock.json"], "reason": "dependency manifest verification",
                 "evidenceUrl": self.check["html_url"], "checkName": self.check["name"]}
-        self.assertEqual(gate.verify_alternative(item, self.candidate, [], self.client, self.config), {"pom.xml"})
+        self.assertEqual(gate.verify_alternative(item, self.candidate, [], self.client, self.config), {"package-lock.json"})
+        self.assertEqual(self.client.check_calls, [("head-A", None)])
+        self.assertEqual(self.client.last_details_url, self.check["details_url"])
 
     def test_rejects_check_from_untrusted_github_app(self):
-        item = {"kind": "check", "paths": ["pom.xml"], "reason": "dependency manifest verification",
+        item = {"kind": "check", "paths": ["package-lock.json"], "reason": "dependency manifest verification",
                 "evidenceUrl": self.check["html_url"], "checkName": self.check["name"]}
         untrusted = dict(self.check, app={"slug": "candidate-controlled-app"})
         with self.assertRaisesRegex(gate.GateError, "trusted GitHub App"):
@@ -209,15 +240,41 @@ class AlternativeEvidenceTests(ManifestTests):
         with self.assertRaisesRegex(gate.GateError, "outside trusted path patterns"):
             gate.verify_alternative(item, self.candidate, [], self.client, self.config)
 
+    def test_rejects_check_from_untrusted_workflow_path(self):
+        item = {"kind": "check", "paths": ["package-lock.json"], "reason": "dependency manifest verification",
+                "evidenceUrl": self.check["html_url"], "checkName": self.check["name"]}
+        fake = FakeClient([self.check], workflow={
+            "path": ".github/workflows/attacker.yml", "event": "pull_request", "head_sha": "head-A"
+        })
+        with self.assertRaisesRegex(gate.GateError, "trusted workflow"):
+            gate.verify_alternative(item, self.candidate, [], fake, self.config)
+
+    def test_rejects_check_from_unexpected_event(self):
+        item = {"kind": "check", "paths": ["package-lock.json"], "reason": "dependency manifest verification",
+                "evidenceUrl": self.check["html_url"], "checkName": self.check["name"]}
+        fake = FakeClient([self.check], workflow={
+            "path": ".github/workflows/ci.yml", "event": "workflow_dispatch", "head_sha": "head-A"
+        })
+        with self.assertRaisesRegex(gate.GateError, "unexpected workflow event"):
+            gate.verify_alternative(item, self.candidate, [], fake, self.config)
+
+    def test_rejects_candidate_modified_trusted_workflow(self):
+        item = {"kind": "check", "paths": ["package-lock.json"], "reason": "dependency manifest verification",
+                "evidenceUrl": self.check["html_url"], "checkName": self.check["name"]}
+        fake = FakeClient([self.check])
+        fake._head_workflow_sha = "attacker-workflow-blob"
+        with self.assertRaisesRegex(gate.GateError, "changed the trusted workflow"):
+            gate.verify_alternative(item, self.candidate, [], fake, self.config)
+
     def test_rejects_failed_check(self):
-        item = {"kind": "check", "paths": ["pom.xml"], "reason": "dependency manifest verification",
+        item = {"kind": "check", "paths": ["package-lock.json"], "reason": "dependency manifest verification",
                 "evidenceUrl": self.check["html_url"], "checkName": self.check["name"]}
         failed = dict(self.check, conclusion="failure")
         with self.assertRaisesRegex(gate.GateError, "not successful"):
             gate.verify_alternative(item, self.candidate, [], FakeClient([failed]), self.config)
 
     def test_rejects_wrong_check_evidence_url(self):
-        item = {"kind": "check", "paths": ["pom.xml"], "reason": "dependency manifest verification",
+        item = {"kind": "check", "paths": ["package-lock.json"], "reason": "dependency manifest verification",
                 "evidenceUrl": "https://github.com/example/repo/actions/runs/999",
                 "checkName": self.check["name"]}
         with self.assertRaisesRegex(gate.GateError, "not the latest trusted run"):
