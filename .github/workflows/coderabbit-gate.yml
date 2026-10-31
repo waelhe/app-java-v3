@@ -306,7 +306,7 @@ jobs:
         if: steps.coverage-pr.outputs.base_ref == 'main'
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ steps.coverage-pr.outputs.base_sha }}
           path: trusted
           persist-credentials: false
 
@@ -322,7 +322,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr }}
-          TRUSTED_BASE_SHA: ${{ github.sha }}
+          TRUSTED_BASE_SHA: ${{ steps.coverage-pr.outputs.base_sha }}
         run: >-
           python3 trusted/.ci/check_coderabbit_review_coverage.py
           --repository "$GITHUB_REPOSITORY" --pr-number "$PR_NUMBER"
