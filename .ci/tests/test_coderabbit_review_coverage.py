@@ -118,7 +118,7 @@ class ManifestTests(unittest.TestCase):
 
     def test_rejects_duplicate_shard_pr(self):
         manifest = self.valid()
-        manifest["reviewShards"].append({"prNumber": 50, "reviewId": 10})
+        manifest["reviewShards"].append({"prNumber": 51, "reviewId": 10, "role": "review"})
         with self.assertRaisesRegex(gate.GateError, "appears more than once"):
             gate.validate_manifest(manifest)
 
