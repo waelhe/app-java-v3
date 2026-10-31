@@ -41,9 +41,9 @@ Keep the existing architecture:
 - Saleor-compatible public GraphQL is a boundary contract; internal models remain platform-native.
 - Do not edit the canonical plan, source pins, shared SDL, generated DGS code, Flyway numbering, cross-module POMs, Modulith policy, CI workflows, central ledger, or divergence registry unless A0 explicitly assigns the shared-file change.
 
-## 3. Live baseline — re-established 2026-10-31 (Phase A of the promotion plan)
+## 3. Baseline history and live remeasurement (Phase A of the promotion plan)
 
-**Current measured baseline (2026-10-31T03:37Z, post-reconciliation):**
+**Historical reconciliation baseline (2026-10-31T03:37Z; superseded for current dispatch by §3.1):**
 
 - Commerce branch: `integration/saleor-full-commerce-20261021`, HEAD **`6608a869b99e137130346879f54f82791abc5a30`** — this is the published **`CANDIDATE_BASE_SHA`**.
 - `main` HEAD at reconciliation: `f2349deca955cee435e6be3ca56be8a4c251d00a` (the PR #771 merge).
@@ -57,15 +57,44 @@ Keep the existing architecture:
 
 - Branch HEAD at that measurement: `c58e2e9b3b8f0369bc2885544c6e01df3209f237`; main at `28d9947960364565bef4f9fe72eab750c6db4e8f`; compare: diverged, 124 ahead / 14 behind; PR #771 still open (head `58d88c50f3752fcbdc58d514791fdf80d5573fb8`); the skill/registry files not yet present on the commerce branch. Root inventory blob `ec689c64…` and the 163/238/57 split were already as measured above.
 
-Action items 1–5 below are **completed by the reconciliation merge `6608a869`** (facts frozen, divergence resolved file-by-file with recorded decisions, PR #771 payload brought in whole, vendored files verified). Workspaces may now open implementation work against the published `CANDIDATE_BASE_SHA` under the playbook's isolated-branch and shared-contract rules. A0 still re-checks live heads before any candidate assembly action, because `main` may move again.
+Action items 1–5 below are **completed by the reconciliation merge `6608a869`** (facts frozen, divergence resolved file-by-file with recorded decisions, PR #771 payload brought in whole, vendored files verified). At that time, workspaces could open implementation work against that published `CANDIDATE_BASE_SHA`. This instruction is historical; use §3.1 for current workspaces and branches. A0 still re-checks live heads before any candidate assembly action, because `main` may move again.
 
-The original Phase A action items and their completion record (2026-10-30 directive → 2026-10-31 execution):
+The original Phase A action items and their completion record (2026-10-30 directive → 2026-10-31 execution, historical snapshot):
 
 1. Re-read the live commerce and main heads, all relevant open PRs, check runs, unresolved review threads, and the root inventory blob — **done** (freeze in the baseline above; zero open PRs, zero unresolved threads at the merge).
 2. Resolve the 15-commit divergence safely, file-by-file, never blindly — **done**: merge `6608a869`, 4 conflicts resolved with recorded measured decisions (SYSTEM.md merged-tree numbers; findings-doc union; main's approved #766 formatting; UserServiceTest union).
 3. Bring the merged PR #771 payload in whole through the normal main-to-commerce reconciliation — **done**: present and 49/49 hash-verified (§3 current baseline).
 4. Read-only upstream research at the exact pinned commit remains the rule until a reviewed provenance migration (promotion plan §3) replaces the pin; never run an installer or copy an unpinned head.
 5. Implementation work branches now open against the published `CANDIDATE_BASE_SHA` (`6608a869b99e137130346879f54f82791abc5a30`), under the existing playbook's isolated-branch and shared-contract rules.
+
+### 3.1 Current operational baseline — live remeasurement 2026-10-31
+
+This subsection is the active dispatch record and supersedes the 03:37Z/6608a869 and later 435b895d snapshots above.
+
+- Live `main`: `f2349deca955cee435e6be3ca56be8a4c251d00a`.
+- Live commerce integration branch: `34d37457df53790afc92decd68af1773e6ff8578`.
+- GitHub compare: integration is **136 commits ahead / 0 behind** main; merge base is main at `f2349deca955cee435e6be3ca56be8a4c251d00a`. The main-to-commerce reconciliation is complete. Do not repeat it.
+- **Current frozen starting baseline for A2/A3/A4:** `34d37457df53790afc92decd68af1773e6ff8578`. A0 must re-fetch branch/main before any later new dispatch or assembly; never silently reuse this SHA after the live branch moves.
+- Active implementation agents: **A2, A3 and A4 only**. A0 is Integration Lead / Contract Steward, not an extra domain coder.
+- Active workspaces: A2 `agent/a2-p2-stock-audit-20261031`; A3 `agent/a3-p3-commercial-20261031` (all 85 P3 roots); A4 `agent/a4-p4-checkout-audit-20261031`. A0's workspace is `agent/a0-semantic-evidence-gate-20261031`, reconciled onto current integration with A0-owned documentation.
+- P3 children #779–#782 are scoped checklists inside A3's one workspace, not independent agents, branches or PRs.
+- A0 branch was reconciled using merge commit `d8fdeca3199bab2967e443d87f1b57346f208946` with parents current integration `34d37457` and the previous A0 knowledge-map tip `5e73753c`. Subsequent A0 documentation commits update the map, playbook and project snapshot; always fetch the current A0 branch head.
+- P3 ledger facts remain 85 = 8 INTEGRATED + 59 NOT_STARTED + 18 BLOCKED_BY_DECISION at ledger blob `ec689c643b9c906779e09f3fdaee73885052282a`; no root status was changed by this baseline reconciliation.
+
+#### PR inventory
+
+- **#773 — open, active skill provenance PR:** current head `ad5c394c5b7d0633ad38b69ac7090a68dddb2b46`; recorded PR base `435b895d`, now three commits behind current integration. CI, Integration Test and Snyk succeeded on the inspected head. The recorded CodeRabbit approval is not on the current head; a fresh exact-head review and owner authorization are still required. The integration branch's active skill pin remains `saleor/agent-skills@fb1a5725` until #773 is merged. This separate provenance PR does not block unblocked A2/A3/A4 implementation.
+- **#783 — closed without merge:** stale Draft ADR proposal branch, kept only as historical review material. It is not an approved ADR set or execution plan. The seven proposed decision documents remain on the preserved proposal branch; useful evidence must be reconciled into A3 packets and approved through the canonical decision process.
+- No per-agent wave PRs. Agents deliver commits and exact evidence to A0. One final release PR follows the playbook's Implementation Complete and independent-review gates.
+
+#### Corrected scope rules
+
+1. Keep all retained Dashboard 3.23.39 routes, workbenches, controls and workflows. A missing backend capability is implementation work; never hide, disable, remove, suppress or substitute a fake/no-op route.
+2. The previous platform-stage D-WHSE-001 warehouse deferral is superseded for the full-commerce target. A2 owns warehouse/location stock/reservation/allocation; A3 owns channel-to-warehouse membership/order; A4 owns checkout/shipping/fulfilment use. Coordinate through public SPIs and A0 migration/SDL allocation.
+3. The old A3 specialist-only branches are parked at the common baseline and not to be dispatched. A3 is one owner with one unified P3 branch.
+4. No wave PRs and no seven-agent launch. The current parallel execution is A2/A3/A4 plus A0 stewardship.
+5. Canonical plan remains the sole execution authority; old plans and prior SHA/count snapshots are historical evidence only.
+
 
 ## 4. Skill source pins and use
 
