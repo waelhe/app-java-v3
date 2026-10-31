@@ -374,7 +374,11 @@ def run(repo, number, manifest_path, alternative_config, trusted_base_sha, token
     candidate_reviews = client.reviews(number)
     newest = latest_review(candidate_reviews, head_sha, BOT)
     direct = set()
-    if len(candidate_changes) <= MAX_FILES:
+    # The direct/oversized verdict uses the REST file count — the same basis as
+    # the gate workflow and CodeRabbit's own per-review ceiling. Tree paths
+    # double-count renames (old + new name), which would misroute a
+    # rename-heavy candidate into the manifest path despite an existing review.
+    if len(candidate_by_name) <= MAX_FILES:
         need(newest is not None, f"no CodeRabbit review on current candidate head {head_sha}")
         review = exact_review(candidate_reviews, newest["id"], head_sha, BOT, GOOD_STATES)
         selected = processed_files(review.get("body", ""))
@@ -428,7 +432,15 @@ def run(repo, number, manifest_path, alternative_config, trusted_base_sha, token
         names, expanded, by_name = fileset(records)
         need(0 < len(records) <= MAX_FILES, f"shard PR #{number_for_shard} exceeds 100 files")
         need(set(selected_files) == names, f"CodeRabbit did not process every file in shard PR #{number_for_shard}")
-        shard_base, shard_head_tree = base_tree, client.tree(shard_head, shard_head_repo)
+        # The shard's REST file list is computed against the shard's own
+        # merge base (three-dot compare), not the candidate's. When main moved
+        # after the candidate base, a shard cut from the current main tip
+        # carries main-only files (e.g. this gate's own workflow); comparing
+        # its head tree against the candidate merge-base tree would report them
+        # as shard changes and fail every shard. Use the shard's merge base.
+        shard_merge_base = client.merge_base(base_sha, shard_head, shard_head_repo)
+        shard_base = client.tree(shard_merge_base)
+        shard_head_tree = client.tree(shard_head, shard_head_repo)
         need(set(tree_changes(shard_base, shard_head_tree)) == expanded,
              f"shard PR #{number_for_shard} REST file list differs from full Git-tree diff")
 

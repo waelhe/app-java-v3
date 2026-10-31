@@ -433,7 +433,12 @@ class RunPathTests(ManifestTests):
     def setUp(self):
         self.config = self.valid_alternative_config()
         self.trusted_base = "main-tip"
-        self.merge_bases = {(self.trusted_base, "head-A"): "mb-1"}
+        self.merge_bases = {
+            (self.trusted_base, "head-A"): "mb-1",
+            # each shard is cut from the current main tip, so its own merge
+            # base with the recorded base is the main tip itself
+            (self.trusted_base, "shard-head-A"): self.trusted_base,
+        }
         self.base_tree = {path: (path + "-base", "100644", "blob") for path in self.PRODUCT}
         # main moved after the PR opened: the gate file exists on the main tip
         # but not at the merge base; it must never become a candidate change.
@@ -443,7 +448,11 @@ class RunPathTests(ManifestTests):
         # coverage manifest itself — over the 100-file per-review ceiling.
         self.head_tree = {path: (path + "-head", "100644", "blob") for path in self.PRODUCT}
         self.head_tree[MANIFEST_PATH] = ("manifest-blob", "100644", "blob")
-        self.shard_tree = {path: (path + "-head", "100644", "blob") for path in self.PRODUCT}
+        # the shard branch descends from the moved main tip: its tree carries
+        # the main-only gate file, and its diff versus ITS OWN merge base (the
+        # main tip) is exactly the 100 product files it restates.
+        self.shard_tree = dict(self.main_tip_tree)
+        self.shard_tree.update({path: (path + "-head", "100644", "blob") for path in self.PRODUCT})
         self.candidate_pull = {
             "state": "open",
             "base": {"sha": self.trusted_base, "ref": "main"},
@@ -495,7 +504,12 @@ class RunPathTests(ManifestTests):
         self.run_gate(client)
         self.assertIn(("merge_base", self.trusted_base, "head-A"), client.calls)
         self.assertIn(("tree", "mb-1"), client.calls)
-        self.assertNotIn(("tree", self.trusted_base), client.calls)
+        # the candidate base is the merge-base tree (mb-1), never the moved
+        # main tip: tree("main-tip") is fetched only after the shard's own
+        # merge base resolves, i.e. as the shard base
+        self.assertIn(("merge_base", self.trusted_base, "shard-head-A"), client.calls)
+        self.assertLess(client.calls.index(("merge_base", self.trusted_base, "shard-head-A")),
+                        client.calls.index(("tree", self.trusted_base)))
 
     def test_oversized_without_manifest_fails_closed(self):
         client = self.client(manifests={})
@@ -514,9 +528,12 @@ class RunPathTests(ManifestTests):
                 "mb-1": self.base_tree, self.trusted_base: self.main_tip_tree,
                 "head-A": self.head_tree,
                 # the uncovered path stays at its base blob on the shard branch
-                # (unchanged there), so the shard's tree diff equals its 99 files
+                # (unchanged there), so the shard's tree diff versus its own
+                # merge base (the main tip) equals its 99 files; the main-only
+                # gate file is present on both sides and never enters the diff
                 "shard-head-A": {path: (path + "-head", "100644", "blob") for path in covered} | {
-                    self.PRODUCT[99]: (self.PRODUCT[99] + "-base", "100644", "blob")},
+                    self.PRODUCT[99]: (self.PRODUCT[99] + "-base", "100644", "blob"),
+                    ".github/workflows/coderabbit-gate.yml": ("gate-blob", "100644", "blob")},
             },
         )
         with self.assertRaisesRegex(gate.GateError, "no review evidence"):
@@ -537,6 +554,35 @@ class RunPathTests(ManifestTests):
         client = self.client()
         self.run_gate(client)
         self.assertIn(("file_json", MANIFEST_PATH, "head-A"), client.calls)
+
+    def test_rename_heavy_candidate_stays_on_the_direct_path(self):
+        # 60 renames: 60 REST files but 120 tree paths (old + new name). The
+        # gate workflow counts REST files and takes the direct path; the
+        # verifier must use the same basis — the manifest is never consulted.
+        old_names = [f"src/O{i:03d}.java" for i in range(60)]
+        new_names = [f"src/N{i:03d}.java" for i in range(60)]
+        rename_records = [{"filename": new, "previous_filename": old}
+                          for old, new in zip(old_names, new_names)]
+        review = {
+            "id": 8, "user": {"login": gate.BOT}, "commit_id": "head-A",
+            "state": "COMMENTED", "submitted_at": "2026-10-31T19:00:00Z",
+            "body": shard_review_body(new_names),
+        }
+        client = self.client(
+            reviews={50: [review], 51: [self.shard_review]},
+            files={50: rename_records, 51: self.shard_files},
+            trees={
+                "mb-1": {path: (path + "-base", "100644", "blob") for path in old_names},
+                self.trusted_base: dict(
+                    {path: (path + "-base", "100644", "blob") for path in old_names},
+                    **{".github/workflows/coderabbit-gate.yml": ("gate-blob", "100644", "blob")}),
+                "head-A": {path: (path + "-head", "100644", "blob") for path in new_names},
+                "shard-head-A": self.shard_tree,
+            },
+            manifests={},
+        )
+        self.run_gate(client)
+        self.assertNotIn(("file_json", MANIFEST_PATH, "head-A"), client.calls)
 
     def test_direct_path_still_requires_candidate_head_review(self):
         small = ["src/A.java", "src/B.java"]
