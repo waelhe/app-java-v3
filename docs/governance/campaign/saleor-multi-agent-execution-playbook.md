@@ -194,13 +194,13 @@ A skill is reference material, not contract authority. Until the vendored skill 
 
 The build phase is complete only when all items below have evidence:
 
-- Every one of the 458 exact Saleor roots has a disposition and named owner; every Dashboard-used root has an implemented or explicitly disabled/removed route with a documented reason.
+- Every one of the 458 exact Saleor roots has a disposition and named owner. Every retained Dashboard-used route/workbench/control remains present and its required backend operation is implemented, authorized, persisted and tested. A backend gap is not permission to disable, hide, remove or suppress the Dashboard route.
 - Contract-generation and schema-inventory automation show exact pinned-source identity and explain every intentional difference. Name parity alone is not semantic parity.
 - Each implemented operation has argument/return/nullability compatibility, owner-backed behavior, validation, authorization/data-scope behavior, and a test appropriate to its side effects.
 - SDL/type closure, global IDs, cursor semantics, error mapping, enums and money/scalar semantics are coherent across workstreams.
 - No fake/no-op roots, unresolved conflicting owner decisions, undocumented migration collisions, raw UUID leakage where global IDs are required, or direct cross-module persistence access remain.
-- Divergence registry rows are updated from actual evidence. All rows still marked `IMPLEMENTATION_REQUIRED` or `OWNER_ADR_REQUIRED` have either been closed with proof or are explicitly release-blocking and excluded from the release scope through a recorded decision. P7 does not pass with unresolved blocking differences.
-- Pinned Dashboard login/session and critical retained routes pass against the integrated candidate. If the chosen release scope truly cannot complete a route, remove/disable it honestly and document the exact disposition; do not pretend full-dashboard readiness.
+- Divergence registry rows are updated from actual evidence. All rows still marked `IMPLEMENTATION_REQUIRED` or `OWNER_ADR_REQUIRED` have been closed with proof before P7. A true root-level non-applicability requires a specific owner-approved divergence; it does not authorize removal/disablement of a retained Dashboard route. P7 does not pass with unresolved blocking differences.
+- Pinned Dashboard login/session and every retained route/workbench/control pass against the integrated candidate. If any required route behavior is incomplete, preserve the route and keep P7 blocked; do not remove, hide, disable, suppress or replace it with fake data/no-op behavior.
 - Candidate source SHA is frozen and all required test/security/contract gates are green against that SHA.
 
 ## 9. Separate review phase and merge protocol
