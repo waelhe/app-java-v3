@@ -42,8 +42,7 @@ an operation's disposition in the canonical plan.
 
 ## 3. What is vendored (inventory)
 
-Official Saleor source: `saleor/agent-skills` — five skills exist
-upstream; the inventory below is complete.
+Vendored Saleor skill snapshot origin: `saleor/agent-skills@fb1a57255f58950962f6e474ccba1cade40f5163` is the historical immutable origin of the locally vendored `saleor-core` artifact. The current official skill discovery/distribution source is `saleor/saleor-docs`, as recorded in the canonical Saleor plan. The inventory below describes local adoption; it does not claim that all five docs-distributed skills are vendored.
 
 | Skill | State | Reason |
 | --- | --- | --- |
