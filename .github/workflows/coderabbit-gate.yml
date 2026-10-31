@@ -315,10 +315,9 @@ jobs:
       # Bot-authored PRs retain the existing CodeRabbit seat exemption: the
       # earlier job already gates them on every other required check.
       - name: Verify exact CodeRabbit file coverage (maximum 100 per review)
-        if: >-
-          steps.coverage-pr.outputs.base_ref == 'main' &&
+        if: ${{ steps.coverage-pr.outputs.base_ref == 'main' &&
           steps.coverage-pr.outputs.author_type != 'Bot' &&
-          !endsWith(steps.coverage-pr.outputs.author_login, '[bot]')
+          !endsWith(steps.coverage-pr.outputs.author_login, '[bot]') }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
