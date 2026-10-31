@@ -3,18 +3,18 @@
 **Status:** PROPOSED — A0 recommendation; owner approval required.  
 **Decision date:** 2026-10-31  
 **Authority:** D-SALEOR-FULL-001, P2/P3; inventory and stock owners.  
-**Affected roots:** warehouse, warehouses, stock, stocks, channelReorderWarehouses; catalog inventory, allocation and fulfillment.  
+**Affected roots:** `warehouse`, `warehouses`, `stock`, `stocks` (currently `BLOCKED_BY_DECISION`); `createWarehouse`, `updateWarehouse`, `deleteWarehouse`, `assignWarehouseShippingZone`, `unassignWarehouseShippingZone`, `productVariantStocksCreate`, `productVariantStocksDelete`, `productVariantStocksUpdate`, `stockBulkUpdate`, and `channelReorderWarehouses` (currently `NOT_STARTED`); catalog inventory, allocation and fulfillment.  
 **Related decisions:** D-CHANNEL-001, D-SHOP-001.
 
 ## Context and measured gap
 
-The current divergence registry records no warehouse entity or multi-warehouse allocation model. The measured stock facts reside on the existing product/inventory owner: product stock quantity and reserved quantity with database constraints and conditional stock updates. This is effectively one implicit inventory location per product. Adding a Warehouse table and CRUD endpoints would not create Saleor-equivalent inventory behavior.
+The current divergence registry records no warehouse entity or multi-warehouse allocation model. The measured stock facts reside on the existing catalog/inventory owner: `ProductStockAdapter` supports reserve/release/commit for both Product and ProductVariant, and the inputs carry no warehouse/location dimension. The truthful current description is **global product/variant stock with no location dimension**, not "one implicit inventory location per product" or a single-location warehouse model. Adding a Warehouse table and CRUD endpoints would not create Saleor-equivalent inventory behavior.
 
 A real warehouse capability requires more than a list of locations: ownership, stock per location, reservation, allocation, transfer, fulfillment routing, cancellation/release and reconciliation all need semantics.
 
 ## Proposed decision
 
-Defer multi-warehouse capability until an evidenced operational requirement and a complete domain design exist. Keep the existing inventory owner authoritative and keep stock behavior truthful for the current single-location model.
+Defer multi-warehouse capability until an evidenced operational requirement and a complete domain design exist. Keep the existing inventory owner authoritative and keep global product/variant stock behavior truthful while no location dimension exists. The central inventory currently distinguishes four blocked read roots (`warehouse`, `warehouses`, `stock`, `stocks`) from the nine `NOT_STARTED` warehouse/stock mutations and `channelReorderWarehouses`; this ADR's affected-root list intentionally includes each one and does not change any central status.
 
 Do not:
 - introduce a warehouse CRUD module solely to fill the Dashboard;
@@ -32,7 +32,7 @@ If a business need is later accepted, a separate design must define:
 6. channel/location eligibility and cross-owner isolation;
 7. migration and backfill from the present product-level stock model without losing reservations or changing historical orders.
 
-Only after these decisions and acceptance tests exist should a dedicated module/owner be selected. Do not preselect module boundaries or migration numbers in this deferral ADR.
+Only after these decisions and acceptance tests exist should a dedicated module/owner be selected. Do not preselect module boundaries or migration numbers in this deferral ADR. The nine listed mutations and `channelReorderWarehouses` must remain undeclared/unsupported while the warehouse capability is deferred; no CRUD-only implementation or Dashboard success state is permitted.
 
 ## Alternatives considered
 
@@ -44,6 +44,7 @@ Only after these decisions and acceptance tests exist should a dedicated module/
 
 - Real provider/warehouse ownership and permission matrix, including cross-seller isolation.
 - PostgreSQL concurrency tests for reservations and allocation across multiple locations; no oversell under races.
+- Dashboard route coverage maps all four blocked read roots and all ten `NOT_STARTED` warehouse/stock mutations (including `channelReorderWarehouses`) to disabled/empty states; no route issues a request to an undeclared or excluded root.
 - Transfer/adjustment audit trail and stock ledger reconciliation.
 - Multi-location order allocation, split shipment, cancellation and return-to-stock E2E tests.
 - Backfill rehearsal and reconciliation of current product stock/reserved values.
@@ -51,8 +52,8 @@ Only after these decisions and acceptance tests exist should a dedicated module/
 
 ## Work that may continue without this decision
 
-Single-location product inventory and existing checkout reservation work may continue. Channel/catalog/pricing work not depending on warehouses may continue. Only the warehouse/stock multi-location roots and channelReorderWarehouses remain blocked/excluded pending the actual owner decision.
+Global product/variant inventory and existing checkout reservation work may continue without a warehouse/location dimension. Channel/catalog/pricing work not depending on warehouses may continue. Only the warehouse/stock multi-location roots and channelReorderWarehouses remain blocked/excluded pending the actual owner decision.
 
 ## Release impact
 
-The full Saleor release cannot claim warehouse/stock root parity while this capability is excluded. If the owner accepts the deferral, A0 must explicitly exclude those roots and disable dependent Dashboard routes in the release inventory and divergence registry. This proposal alone does not change their current OWNER_ADR_REQUIRED status.
+The full Saleor release cannot claim warehouse/stock root parity while this capability is deferred. The four read roots remain `BLOCKED_BY_DECISION`; the nine mutations plus `channelReorderWarehouses` remain `NOT_STARTED` until the owner chooses a disposition. If the owner accepts permanent deferral/exclusion, A0 must update the central inventory and divergence registry with each exact root and disable its Dashboard route; this ADR alone does not change those statuses. This proposal alone does not change their current OWNER_ADR_REQUIRED status.
