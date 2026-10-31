@@ -88,7 +88,7 @@ class ReviewTests(unittest.TestCase):
 class ManifestTests(unittest.TestCase):
     def valid(self):
         return {"schemaVersion": 1, "maxFilesPerReview": 100,
-                "reviewShards": [{"prNumber": 50, "reviewId": 9, "role": "candidate"}],
+                "reviewShards": [{"prNumber": 51, "reviewId": 9, "role": "review"}],
                 "alternativeCoverage": []}
 
     def valid_alternative_config(self):
@@ -101,7 +101,7 @@ class ManifestTests(unittest.TestCase):
             }
         }}
 
-    def test_accepts_candidate_shard_manifest(self):
+    def test_accepts_independent_review_shard_manifest(self):
         gate.validate_manifest(self.valid())
 
     def test_rejects_limit_above_100(self):
@@ -110,10 +110,10 @@ class ManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(gate.GateError, "must be 100"):
             gate.validate_manifest(manifest)
 
-    def test_rejects_missing_candidate_shard(self):
+    def test_rejects_candidate_role_in_review_shards(self):
         manifest = self.valid()
-        manifest["reviewShards"][0].pop("role")
-        with self.assertRaisesRegex(gate.GateError, "exactly one shard"):
+        manifest["reviewShards"][0]["role"] = "candidate"
+        with self.assertRaisesRegex(gate.GateError, "independent review PRs only"):
             gate.validate_manifest(manifest)
 
     def test_rejects_duplicate_shard_pr(self):
@@ -124,8 +124,8 @@ class ManifestTests(unittest.TestCase):
 
     def test_rejects_unsupported_review_shard_role(self):
         manifest = self.valid()
-        manifest["reviewShards"].append({"prNumber": 51, "reviewId": 10, "role": "alternative"})
-        with self.assertRaisesRegex(gate.GateError, "role must be candidate or review"):
+        manifest["reviewShards"][0]["role"] = "alternative"
+        with self.assertRaisesRegex(gate.GateError, "independent review PRs only"):
             gate.validate_manifest(manifest)
 
     def test_rejects_duplicate_alternative_paths(self):
