@@ -13,9 +13,9 @@
 This dated record supersedes any earlier dispatch baseline or open-PR inventory in this supplemental promotion plan. The sole execution authority remains the canonical plan; this section is only the current operational snapshot.
 
 - `main`: `f2349deca955cee435e6be3ca56be8a4c251d00a`.
-- `integration/saleor-full-commerce-20261021`: `34d37457df53790afc92decd68af1773e6ff8578`.
-- GitHub compare: integration is **136 commits ahead / 0 behind** main; merge base is main at `f2349deca955cee435e6be3ca56be8a4c251d00a`. Main-to-commerce reconciliation is complete. Do not merge main again or reuse an earlier 435b895d/267540760/6608a869 SHA as today's dispatch baseline.
-- Current A2/A3/A4 implementation baseline: `34d37457df53790afc92decd68af1773e6ff8578`; A0 rechecks live branch heads before each new dispatch and assembly.
+- `integration/saleor-full-commerce-20261021`: `bce82ec91391b07ec339308c8429735556cdebdb`.
+- GitHub compare: integration is **156 commits ahead / 0 behind** main; merge base is main at `f2349deca955cee435e6be3ca56be8a4c251d00a`. Main-to-commerce reconciliation is complete. Do not merge main again or reuse an earlier 435b895d/267540760/6608a869 SHA as today's dispatch baseline.
+- Current integration candidate head: `bce82ec91391b07ec339308c8429735556cdebdb`. The remote A2, A3-commercial and A4 branch refs were each verified to have zero unique commits and one commit behind, then fast-forwarded (no force/reset) to this exact head. This does not prove local workspaces are clean; each agent must verify local unpushed/dirty state before resuming. The old A3-discount-audit specialist ref remains parked and must not be dispatched.
 - Active implementation concurrency: exactly three coding agents A2, A3 and A4; A0 is the Integration Lead / Contract Steward. A1–A7 remain the ownership taxonomy, not a direction to launch seven simultaneous coding sessions.
 - Active workspaces: A2 `agent/a2-p2-stock-audit-20261031`; A3 `agent/a3-p3-commercial-20261031` (all P3 roots in one workspace); A4 `agent/a4-p4-checkout-audit-20261031`; A0 `agent/a0-semantic-evidence-gate-20261031`.
 - P3 issues #779–#782 are specialist checklists under A3, not separate branches, agents or PRs. A3 remains sole P3 owner for all 85 roots.
@@ -23,7 +23,8 @@ This dated record supersedes any earlier dispatch baseline or open-PR inventory 
 
 ### Current PR state
 
-- **#773 — active provenance PR:** moves the adopted `saleor-core` source pin and records official AI resources. Current PR head `ad5c394c5b7d0633ad38b69ac7090a68dddb2b46`, recorded base `435b895d` (three commits behind current integration). CI, Integration Test and Snyk were successful on the inspected head. Its last recorded CodeRabbit approval is not current for that head; a fresh exact-head review and owner-authorized merge are still required. This is a separate provenance track and does not block unblocked A2/A3/A4 implementation; the current active integration pin remains the merged `saleor/agent-skills@fb1a5725` until #773 merges.
+- **#786 — refreshed provenance PR:** rebuilds the official `saleor-core` source migration and resource registry on the exact current integration head `bce82ec9`; it supersedes the stale #773 head rather than rebasing/force-pushing the old branch. The migration pins `saleor/saleor-docs@2cdf6590e838929c3f74c16e982cfdc11073c2d8`, preserves the historical `saleor/agent-skills@fb1a5725` origin and seven errata, and explicitly leaves four other official skills unadopted. Require exact-head CI, CodeRabbit and review before integrating it. PR #773 remains a stale Draft and is not the integration candidate.
+- **#785 — CodeRabbit review-coverage gate PR:** five-file governance/CI change targeting `main`; it adds a fail-closed verifier that caps every review at 100 files, checks exact file/blob coverage against complete Git trees, and constrains alternative evidence to trusted checks/path allowlists. CodeRabbit requested changes on an earlier head; the reviewed findings have been addressed in the current code, a fresh exact-head review was requested, and current CI must finish before merging this prerequisite. It does not contain commerce implementation.
 - **#783 — archived without merge:** seven ADR proposals and a canonical-plan patch on a stale branch. It was Draft/non-mergeable, had CodeRabbit changes requested, and included wording superseded by the latest owner scope (Dashboard route suppression/old warehouse deferral). The PR is closed; its branch and proposal files are preserved as historical review material, not approved ADRs or an execution plan.
 - There are no individual A2/A3/A4 wave PRs. Agents deliver commits/evidence to A0; the playbook allows one final release PR after the Implementation Complete gate and independent review.
 
@@ -76,7 +77,7 @@ The initial §2 snapshot above is retained as historical evidence. A later live 
   - `.coderabbit.yaml`: `f998e013b5c8438e9ea4f56a493ef859e9a4eb51`
   - `.github/workflows/coderabbit-gate.yml`: `aa4435733823ba8aba180df2a2eacd3118c489b9`
 
-**A0 conclusion:** Phase A's main-to-commerce reconciliation and inclusion of the approved PR #771 payload are already satisfied. Do not merge main again, cherry-pick PR #771, or copy its files manually. The current integration head is now `267540760abb06740662429a131adf655aeedf69`; `435b895d` is its ancestor. Prepared workspaces still pinned to `435b895d` (including the five-commit A0 knowledge-map branch) must refresh by a normal non-destructive rebase/fast-forward to the current head before further edits or PR creation. Do not force-push or silently reset; report the new base SHA to A0.
+**A0 conclusion:** Phase A's main-to-commerce reconciliation and inclusion of the approved PR #771 payload are already satisfied. Do not merge main again, cherry-pick PR #771, or copy its files manually. The current integration head is now `bce82ec91391b07ec339308c8429735556cdebdb`; both `267540760` and `435b895d` are ancestors only. Prepared workspaces still pinned to `435b895d` (including the five-commit A0 knowledge-map branch) must refresh by a normal non-destructive rebase/fast-forward to the current head before further edits or PR creation. Do not force-push or silently reset; report the new base SHA to A0.
 
 ## 3. Saleor skill-source change — required provenance refresh
 
@@ -214,6 +215,8 @@ Partition review work so no CodeRabbit invocation exceeds the repository's curre
 For human-authored PRs, invoke `@coderabbitai review` once per intended review head when manual activation is required. Use the separate OSS CLI allowance for early, bounded working-diff reviews where the CLI is installed and authorized; schedule these before PR creation and record their output. CLI findings are pre-review evidence only and do not satisfy the GitHub PR review requirement or the current CodeRabbit Gate. All agents operating through the same GitHub/CodeRabbit developer identity share that identity's applicable quota; do not evade limits by creating additional identities. Avoid repeated retries while rate-limited; wait for the actual allowance to refill and preserve the failure evidence. A review is not complete merely because a status says success: inspect the real bot review, the head SHA, processed files, and findings.
 
 ### 8.2 Large final candidate: no false coverage
+
+Implementation status: the supplemental verifier and CI hook are being introduced by PR #785 on `main`. Treat §8.2 as a mandatory release condition, not as active enforcement on this integration branch, until PR #785 is merged and the live `main` workflow contains the verifier. The candidate manifest must be produced only after all review shards and the final candidate review exist; never pre-fill review IDs or claim coverage from a PR that did not receive a completed CodeRabbit review.
 
 The current CodeRabbit Gate accepts the latest completed CodeRabbit review on the **current PR head**; it does not prove that every file in an oversized PR was processed. Before the final release PR:
 

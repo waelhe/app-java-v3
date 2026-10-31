@@ -10,7 +10,7 @@
 
 ## 1. Mission
 
-Use the repository's currently pinned Saleor skill snapshot as specialist reference material, and use the current official Saleor AI discovery surface (`saleor/saleor-docs`) to discover additional resources. The active integration pin remains `saleor/agent-skills@fb1a57255f58950962f6e474ccba1cade40f5163` until the separately reviewed provenance PR #773 is merged. Skills are reference only; pinned Saleor source/tests and canonical project contracts remain authoritative. The mission is to:
+Use the official Saleor AI distribution snapshot `saleor/saleor-docs@2cdf6590e838929c3f74c16e982cfdc11073c2d8` for task-triggered skill discovery and the reviewed, locally vendored `saleor-core` behavior rules. PR #786 carries the provenance/resource-surface migration into the current integration tip; until it is merged, the live integration pin remains the historical `saleor/agent-skills@fb1a57255f58950962f6e474ccba1cade40f5163`. Skills and Documentation MCP are reference/discovery only; pinned Saleor 3.23.45 source/tests, Dashboard 3.23.41, and canonical project contracts remain authoritative. The mission is to:
 
 1. Audit previously INTEGRATED Saleor roots for real contract, behavioral, authorization, persistence, transaction, event, and Dashboard correctness.
 2. Find and repair defects that name/signature checks or ordinary CRUD tests cannot detect.
@@ -67,43 +67,30 @@ The original Phase A action items and their completion record (2026-10-30 direct
 4. Read-only upstream research at the exact pinned commit remains the rule until a reviewed provenance migration (promotion plan §3) replaces the pin; never run an installer or copy an unpinned head.
 5. Implementation work branches now open against the published `CANDIDATE_BASE_SHA` (`6608a869b99e137130346879f54f82791abc5a30`), under the existing playbook's isolated-branch and shared-contract rules.
 
-### 3.1 Current operational baseline — live remeasurement 2026-10-31
+### 3.1 Current live baseline — measured after PR #784
 
-This subsection is the active dispatch record and supersedes the 03:37Z/6608a869 and later 435b895d snapshots above.
+This is the live operational snapshot. Earlier reconciliation, 435b895d, and 34d37457 measurements above are historical only.
 
-- Live `main`: `f2349deca955cee435e6be3ca56be8a4c251d00a`.
-- Live commerce integration branch: `34d37457df53790afc92decd68af1773e6ff8578`.
-- GitHub compare: integration is **136 commits ahead / 0 behind** main; merge base is main at `f2349deca955cee435e6be3ca56be8a4c251d00a`. The main-to-commerce reconciliation is complete. Do not repeat it.
-- **Current frozen starting baseline for A2/A3/A4:** `34d37457df53790afc92decd68af1773e6ff8578`. A0 must re-fetch branch/main before any later new dispatch or assembly; never silently reuse this SHA after the live branch moves.
-- Active implementation agents: **A2, A3 and A4 only**. A0 is Integration Lead / Contract Steward, not an extra domain coder.
-- Active workspaces: A2 `agent/a2-p2-stock-audit-20261031`; A3 `agent/a3-p3-commercial-20261031` (all 85 P3 roots); A4 `agent/a4-p4-checkout-audit-20261031`. A0's workspace is `agent/a0-semantic-evidence-gate-20261031`, reconciled onto current integration with A0-owned documentation.
-- P3 children #779–#782 are scoped checklists inside A3's one workspace, not independent agents, branches or PRs.
-- A0 branch was reconciled using merge commit `d8fdeca3199bab2967e443d87f1b57346f208946` with parents current integration `34d37457` and the previous A0 knowledge-map tip `5e73753c`. Subsequent A0 documentation commits update the map, playbook and project snapshot; always fetch the current A0 branch head.
-- P3 ledger facts remain 85 = 8 INTEGRATED + 59 NOT_STARTED + 18 BLOCKED_BY_DECISION at ledger blob `ec689c643b9c906779e09f3fdaee73885052282a`; no root status was changed by this baseline reconciliation.
-
-#### PR inventory
-
-- **#773 — open, active skill provenance PR:** current head `ad5c394c5b7d0633ad38b69ac7090a68dddb2b46`; recorded PR base `435b895d`, now three commits behind current integration. CI, Integration Test and Snyk succeeded on the inspected head. The recorded CodeRabbit approval is not on the current head; a fresh exact-head review and owner authorization are still required. The integration branch's active skill pin remains `saleor/agent-skills@fb1a5725` until #773 is merged. This separate provenance PR does not block unblocked A2/A3/A4 implementation.
-- **#783 — closed without merge:** stale Draft ADR proposal branch, kept only as historical review material. It is not an approved ADR set or execution plan. The seven proposed decision documents remain on the preserved proposal branch; useful evidence must be reconciled into A3 packets and approved through the canonical decision process.
-- No per-agent wave PRs. Agents deliver commits and exact evidence to A0. One final release PR follows the playbook's Implementation Complete and independent-review gates.
-
-#### Corrected scope rules
-
-1. Keep all retained Dashboard 3.23.41 routes, workbenches, controls and workflows. A missing backend capability is implementation work; never hide, disable, remove, suppress or substitute a fake/no-op route.
-2. The previous platform-stage D-WHSE-001 warehouse deferral is superseded for the full-commerce target. A2 owns warehouse/location stock/reservation/allocation; A3 owns channel-to-warehouse membership/order; A4 owns checkout/shipping/fulfilment use. Coordinate through public SPIs and A0 migration/SDL allocation.
-3. The old A3 specialist-only branches are parked at the common baseline and not to be dispatched. A3 is one owner with one unified P3 branch.
-4. No wave PRs and no seven-agent launch. The current parallel execution is A2/A3/A4 plus A0 stewardship.
-5. Canonical plan remains the sole execution authority; old plans and prior SHA/count snapshots are historical evidence only.
-
-
+- `main`: `f2349deca955cee435e6be3ca56be8a4c251d00a`.
+- `integration/saleor-full-commerce-20261021`: `bce82ec91391b07ec339308c8429735556cdebdb`.
+- GitHub compare: integration is **156 commits ahead / 0 behind** main; merge base is the current main SHA. Do not repeat main-to-commerce reconciliation.
+- A complete recursive Git-tree comparison (both trees non-truncated) measures **430 changed paths** versus main: 369 added and 61 modified. The 300-path comparison API display cap is not used as the inventory.
+- Central Saleor ledger blob: `ec689c643b9c906779e09f3fdaee73885052282a` — 458 roots: **163 INTEGRATED, 238 NOT_STARTED, 57 BLOCKED_BY_DECISION**. These dispositions are not a release certification.
+- **#773** is an old Draft provenance PR with a stale base and is not an integration candidate. **#786** is the refreshed provenance/resource-surface PR rebuilt from the current integration head; it must pass exact-head CI, CodeRabbit and review before the provenance migration is considered active.
+- **#785** is a separate preparatory PR targeting `main` for the ≤100-file CodeRabbit Review Coverage Gate. It is not a commerce implementation PR and must be merged and verified on `main` before a final large commerce release PR depends on its enforcement.
+- No new common A1–A7 `CANDIDATE_BASE_SHA` is published by this snapshot. A0 must inspect existing A2/A3/A4 workspace heads and reconcile their commits non-destructively after #786 integrates; never reset or discard agent work.
 ## 4. Skill source pins and use
 
-The adopted Saleor reference for this campaign is:
+The official Saleor AI discovery/distribution source is `saleor/saleor-docs`. The reproducible campaign snapshot is commit `2cdf6590e838929c3f74c16e982cfdc11073c2d8`; the exact source inventory and advertised five-skill bundle digests are recorded in `docs/governance/plans/saleor-ai-resource-surface.json`.
 
-- Repository: saleor/agent-skills
-- Pinned commit: fb1a57255f58950962f6e474ccba1cade40f5163
-- Skill: skills/saleor-core/
-- Official pinned source: https://github.com/saleor/agent-skills/tree/fb1a57255f58950962f6e474ccba1cade40f5163/skills/saleor-core
+- The locally adopted behavior reference is `saleor-core` from `saleor/saleor-docs@2cdf6590e838929c3f74c16e982cfdc11073c2d8`, subject to PR #786 integrating.
+- The previous `saleor/agent-skills@fb1a57255f58950962f6e474ccba1cade40f5163` commit remains historical origin, not the current distribution authority.
+- `saleor-storefront` and `storefront-builder` are consulted only for actual buyer-facing consumer journeys; neither is the administration Dashboard baseline.
+- `saleor-app` is consulted only for real payment-app or webhook protocol boundaries. It does not authorize adding a Saleor app registry.
+- `saleor-configurator` is a read-only design reference for desired/actual configuration, identity and idempotence. Never run it against a Saleor server or create a second configuration authority.
+- Official Documentation MCP at `https://docs.saleor.io/mcp` is read-only discovery (`search_docs`, `get_page`, `list_pages`, `get_navigation`); it does not connect to a Saleor instance or execute GraphQL.
+
+Never run a skill installer in this repository. Keep only task-relevant references in use; the canonical Saleor schema, pinned source/tests and platform implementation remain authoritative.
 
 Use the skill selectively:
 
