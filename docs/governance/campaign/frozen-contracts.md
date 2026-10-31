@@ -10,11 +10,11 @@
 |---|---|---|
 | Backend `waelhe/app-java-v3` `main` | `ea0031a97db4452748a47582d3fed2c4d3ec1d52` (PR #694 head) | live API read 2026-10-21 |
 | Admin `waelhe/marketplace-admin` `main` | `982ecf3667d2242cab941737cb6a0bceaee7ffcb` (PR #2) | live API read 2026-10-21 |
-| Saleor reference schema | `saleor/saleor@3.23.43:saleor/graphql/schema.graphql`, Git blob SHA-1 `b8fa0dd809081f76dc2834bb5c286561e5783276` | blob SHA re-computed and matched |
+| Saleor reference schema | `saleor/saleor@3.23.45:saleor/graphql/schema.graphql`, Git blob SHA-1 `b8fa0dd809081f76dc2834bb5c286561e5783276` | blob SHA re-computed and matched |
 | Root inventory | 458 exact roots = 90 Query + 342 Mutation + 26 Subscription; waves P1=62, P2=95, P3=85, P4=111, P5=79, P6=26 | generated from the pinned schema, totals equal the checked-in domain matrix |
 | Candidate branch | `integration/saleor-full-commerce-20261021` (backend) created from frozen `main` | see campaign commits |
 | Flyway head | `V247__products_provider_sort_keyset_indexes_concurrently.sql` | repo tree read |
-| Dashboard base | `saleor/saleor-dashboard@3.23.39` commit `bc75e988da0fa4fbc3d47378a888d859d070746f` | source pins |
+| Dashboard base | `saleor/saleor-dashboard@3.23.41` commit `ae7697bc635c46392d2fca5f88a34970097679f7` | source pins |
 
 ## 1. Ownership model (playbook §4 — binding)
 
