@@ -145,7 +145,7 @@
 - **نقطة البداية المجمدة لكل الوكلاء:** `b3c75d0584cda3b07722c424195bcd1c1c87bbd7`. `main` الحالي وقت القياس `ea0031a97db4452748a47582d3fed2c4d3ec1d52`. المقارنة الحية للفرع أظهرت 57 commit متقدمًا عن `main`، و0 خلفه، و120 ملفًا متغيرًا. لا تستخدم `main` بدل فرع المرشح لأن التغييرات المندمجة سابقًا جزء من أساس العمل.
 - ملف جرد الجذور في هذه اللقطة: `docs/governance/campaign/saleor-458-root-inventory.csv`، SHA للـblob `23f10b64107d083eb1ceed44c8325202402a5545`؛ يضم 458 جذرًا. الحالة المسجلة فيه الآن: **22 `INTEGRATED`، و57 `BLOCKED_BY_DECISION`، و379 `NOT_STARTED`**. سجل الجذور نفسه هو مرجع التخصيص، وليس تقارير الحملات النصية إذا تعارضت معه.
 - الخطة الحاكمة الوحيدة: `docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md`. المراجع المساعدة: `docs/governance/plans/saleor-commerce-domain-matrix.csv`، `docs/governance/plans/saleor-source-pins.json`، `docs/governance/plans/saleor-contract-divergences.csv`، و`docs/governance/campaign/frozen-contracts.md`.
-- عقد المصدر: Saleor `3.23.43`، blob `b8fa0dd809081f76dc2834bb5c286561e5783276`؛ Dashboard الأساس `3.23.39`، commit `bc75e988da0fa4fbc3d47378a888d859d070746f`.
+- عقد المصدر: Saleor `3.23.45`، blob `b8fa0dd809081f76dc2834bb5c286561e5783276`؛ Dashboard الأساس `3.23.41`، commit `ae7697bc635c46392d2fca5f88a34970097679f7`.
 - لوحة الإدارة مستقلة في `waelhe/marketplace-admin`؛ `main` المقاس `982ecf3667d2242cab941737cb6a0bceaee7ffcb`. لا تغيّر هذا المستودع ضمن هذا التكليف؛ سجّل أي تعديل Dashboard ضروري كطلب تكامل محدد.
 
 ### العوائق الحية عند انطلاق الحملة
