@@ -43,6 +43,16 @@ Do not create a generic marketplace-settings module containing RefundSettings, R
 7. `refundReasonReferenceClear` / `returnReasonReferenceClear` clear the configured PageType reference. After clear, any refund/return mutation that requires that configured reference must fail with a classified error; tests must prove it cannot accept an unconfigured reference. PageType references are global, not channel-scoped.
 8. Coordinate `OrderSettings.includeDraftOrderInVoucherUsage` and `useLegacyLineDiscountPropagation` with the pricing/voucher owner. Do not build the legacy line-discount propagation path that the pinned upstream contract says will be removed; adopt the `OrderLineDiscount` representation if/when this capability is implemented.
 
+## A0 Dashboard 3.23.39 route / operation evidence
+
+The pinned Dashboard 3.23.39 source at `bc75e988da0fa4fbc3d47378a888d859d070746f` has retained post-sale settings consumers:
+
+- `src/refundsSettings/queries.ts` reads `refundSettings`, `returnSettings` and `pageTypes`; `src/refundsSettings/mutations.ts` uses `refundSettingsUpdate`, `returnSettingsUpdate`, `refundReasonReferenceClear` and `returnReasonReferenceClear`. The Refunds Settings route is therefore a real dependency, not an inferred future route.
+- `src/orders/queries.ts` reads `shop.orderSettings` and channel `orderSettings`; `src/orders/mutations.ts` updates Shop order settings with `shopSettingsUpdate`, while `submitOrderSettingsForm.ts` sends each changed channel's settings through `channelUpdate(input.orderSettings)`. Both read paths and the split global/channel save behavior must be preserved if those Dashboard controls remain enabled.
+- `OrderReturnPage` also reads the refund/return settings; the dependency affects post-sale order journeys, not only the settings page.
+- The Dashboard's PageType picker selects from `pageTypes(first: 100)` and sends a PageType ID. The existence of `marketplace-console/CmsPageType` alone does not prove equivalence. A5 must verify identifier format, ownership/permissions, required type semantics and historical-reference behavior before any of these four settings mutations are enabled. Until then the PageType-backed controls and dependent return/reason flows remain disabled or use an explicitly approved alternative.
+
+
 ## Alternatives considered
 
 - **A — Domain-owned settings and operations with thin Dashboard aggregation. RECOMMENDED.** Preserves real boundaries, historical semantics and financial integrity.
