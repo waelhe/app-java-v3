@@ -41,21 +41,16 @@ class GitHub:
         self.token = token
 
     def get(self, path):
-        request = urllib.request.Request(
-            self.root + path,
-            headers={"Accept": "application/vnd.github+json",
-                     "Authorization": f"Bearer {self.token}",
-                     "X-GitHub-Api-Version": "2022-11-28",
-                     "User-Agent": "saleor-review-coverage-gate"},
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                return json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", "replace")[:800]
-            raise GateError(f"GitHub API {path}: HTTP {exc.code}: {detail}") from exc
-        except (urllib.error.URLError, TimeoutError) as exc:
-            raise GateError(f"GitHub API {path}: {exc}") from exc
+        return self.get_from(self.root, path)
+
+    def workflow_run(self, details_url):
+        parsed = urllib.parse.urlparse(details_url or "")
+        repository = self.root.removeprefix(f"{API}/repos/")
+        prefix = f"/{repository}/actions/runs/"
+        match = re.fullmatch(re.escape(prefix) + r"(\d+)(?:/job/\d+)?/?", parsed.path)
+        need(parsed.scheme == "https" and parsed.netloc == "github.com" and match is not None,
+             "check details_url does not identify a workflow run in the base repository")
+        return self.get(f"/actions/runs/{match.group(1)}")
 
     def file_json(self, path, ref, source_repo=None, max_bytes=250_000):
         safe_path = path.strip("/")
@@ -250,10 +245,17 @@ def validate_alternative_config(config):
         need(isinstance(rule, dict), f"trusted rule for {name!r} must be an object")
         apps = rule.get("appSlugs")
         patterns = rule.get("pathPatterns")
+        workflow_path = rule.get("workflowPath")
+        events = rule.get("events")
         need(isinstance(apps, list) and apps and all(isinstance(x, str) and x for x in apps),
              f"trusted rule for {name!r} requires appSlugs")
         need(isinstance(patterns, list) and patterns and all(isinstance(x, str) and x for x in patterns),
              f"trusted rule for {name!r} requires pathPatterns")
+        need(isinstance(workflow_path, str) and workflow_path.startswith(".github/workflows/")
+             and all(part not in {"", ".", ".."} for part in workflow_path.split("/")),
+             f"trusted rule for {name!r} requires a safe workflowPath")
+        need(isinstance(events, list) and events and all(isinstance(x, str) and x for x in events),
+             f"trusted rule for {name!r} requires events")
 
 
 def verify_alternative(item, candidate, candidate_reviews, client, alternative_config):
@@ -264,14 +266,14 @@ def verify_alternative(item, candidate, candidate_reviews, client, alternative_c
         author = (candidate.get("user") or {}).get("login", "")
         need(reviewer not in {author, BOT}, "manual reviewer must be independent")
         review = exact_review(candidate_reviews, item["reviewId"], head, reviewer, {"APPROVED"})
+        need(review.get("author_association") in {"OWNER", "MEMBER", "COLLABORATOR"},
+             "manual reviewer must be a repository owner, member, or collaborator")
         latest = latest_review(candidate_reviews, head, reviewer)
         need(latest and latest.get("id") == review["id"],
              "manual review is not latest on candidate head")
         need(item["evidenceUrl"] == review.get("html_url") and bool(review.get("html_url")),
              "manual review evidence URL does not identify the recorded review")
     else:
-        head_repo = (candidate.get("head", {}).get("repo") or {}).get("full_name")
-        need(bool(head_repo), "candidate head repository is unavailable for check evidence")
         check_name = item["checkName"]
         rule = alternative_config.get("checks", {}).get(check_name)
         need(rule is not None, f"check {check_name!r} is not allowlisted by trusted base configuration")
@@ -280,7 +282,15 @@ def verify_alternative(item, candidate, candidate_reviews, client, alternative_c
         for path in paths:
             need(any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns),
                  f"path {path!r} is outside trusted path patterns for {check_name!r}")
-        checks = [run for run in client.checks(head, head_repo)
+        workflow_path = rule["workflowPath"]
+        base_tree = client.tree(candidate["base"]["sha"])
+        candidate_head_repo = (candidate.get("head", {}).get("repo") or {}).get("full_name")
+        need(bool(candidate_head_repo), "candidate head repository is unavailable for workflow verification")
+        head_tree = client.tree(head, candidate_head_repo)
+        trusted_workflow = base_tree.get(workflow_path)
+        need(trusted_workflow is not None and head_tree.get(workflow_path) == trusted_workflow,
+             "candidate changed the trusted workflow file used for alternative evidence")
+        checks = [run for run in client.checks(head)
                   if run.get("name") == check_name
                   and run.get("head_sha") == head
                   and (run.get("app") or {}).get("slug") in allowed_apps]
@@ -288,6 +298,13 @@ def verify_alternative(item, candidate, candidate_reviews, client, alternative_c
         latest = max(checks, key=lambda run: (run.get("completed_at") or "", run.get("started_at") or ""))
         need(latest.get("status") == "completed" and latest.get("conclusion") == "success",
              f"latest trusted {check_name} run is not successful")
+        workflow_run = client.workflow_run(latest.get("details_url"))
+        need(workflow_run.get("path") == workflow_path,
+             "check run was not produced by the trusted workflow")
+        need(workflow_run.get("event") in rule["events"],
+             "check run was produced by an unexpected workflow event")
+        need(workflow_run.get("head_sha") == head,
+             "trusted workflow run does not match the candidate head")
         need(latest.get("html_url") == item["evidenceUrl"],
              "check evidence URL is not the latest trusted run")
     return paths
