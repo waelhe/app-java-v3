@@ -1,5 +1,9 @@
 package com.marketplace.orders;
 
+import com.marketplace.orders.spi.CheckoutSpi;
+import com.marketplace.orders.spi.CheckoutView;
+import com.marketplace.orders.spi.OrderCommandSpi;
+import com.marketplace.orders.spi.OrderView;
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.CommercialPricingPort;
 import com.marketplace.shared.api.ConflictException;
@@ -18,6 +22,7 @@ import io.micrometer.observation.annotation.Observed;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -73,10 +78,12 @@ import java.util.UUID;
  * the cart tombstones once, and PLACED still publishes nothing.
  */
 @Service
-public class OrdersService implements OrderDeliveryPort {
+public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, CheckoutSpi {
 
     private static final org.slf4j.Logger log =
             org.slf4j.LoggerFactory.getLogger(OrdersService.class);
+
+    private static final int MAX_LINE_QUANTITY = 1000;
 
     private final CartRepository cartRepository;
     private final CartItemRepository cartItemRepository;
@@ -215,6 +222,153 @@ public class OrdersService implements OrderDeliveryPort {
         return cartRepository.findByConsumerIdAndStatus(consumerId, CartStatus.ACTIVE)
                 .map(cart -> cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
                 .orElse(List.of());
+    }
+
+    // ------------------------------------------------------------------
+    // The checkout slice (the active cart is the checkout aggregate)
+    // ------------------------------------------------------------------
+
+    @Override
+    @Transactional(readOnly = true)
+    public CheckoutView findCheckout(UUID cartId, Authentication authentication) {
+        return checkoutView(requireOwnedActiveCart(cartId, authentication));
+    }
+
+    @Override
+    @Transactional
+    public CheckoutView addLines(UUID cartId, List<LineAdd> lines, Authentication authentication) {
+        Cart cart = requireOwnedActiveCart(cartId, authentication);
+        List<LineAdd> requested = lines == null ? List.of() : lines;
+        for (LineAdd line : requested) {
+            requireLine(line);
+            ProductPricingPort.VariantPrice price =
+                    productPricingPort.priceOfVariant(line.variantId());
+            addCartItem(cart.getConsumerId(), price.productId(), line.variantId(), line.quantity());
+        }
+        return checkoutView(cart);
+    }
+
+    @Override
+    @Transactional
+    public CheckoutView updateLines(UUID cartId, List<LineUpdate> lines,
+                                    Authentication authentication) {
+        Cart cart = requireOwnedActiveCart(cartId, authentication);
+        List<LineUpdate> requested = lines == null ? List.of() : lines;
+        for (LineUpdate update : requested) {
+            requireLine(update);
+            CartItem item = requireCheckoutLine(cart, update);
+            if (update.variantId() != null && !update.variantId().equals(item.getVariantId())) {
+                throw new BadRequestException("Line " + item.getId()
+                        + " does not reference variant " + update.variantId());
+            }
+            item.updateQuantity(update.quantity());
+        }
+        return checkoutView(cart);
+    }
+
+    @Override
+    @Transactional
+    public CheckoutView deleteLines(UUID cartId, List<UUID> lineIds,
+                                    Authentication authentication) {
+        Cart cart = requireOwnedActiveCart(cartId, authentication);
+        List<UUID> requested = lineIds == null ? List.of() : lineIds;
+        for (UUID lineId : requested) {
+            if (lineId == null) {
+                throw new BadRequestException("A checkout line ID is required");
+            }
+            CartItem item = cartItemRepository.findById(lineId)
+                    .filter(candidate -> candidate.getCartId().equals(cart.getId()))
+                    .orElseThrow(() -> new ResourceNotFoundException("CheckoutLine", lineId));
+            cartItemRepository.delete(item);
+        }
+        return checkoutView(cart);
+    }
+
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    public void deleteAsAdmin(UUID cartId) {
+        Cart cart = cartRepository.findById(cartId)
+                .orElseThrow(() -> new ResourceNotFoundException("Checkout", cartId));
+        cartItemRepository.deleteAll(
+                cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()));
+        cartRepository.delete(cart);
+    }
+
+    private Cart requireOwnedActiveCart(UUID cartId, Authentication authentication) {
+        if (cartId == null) {
+            throw new BadRequestException("A checkout ID is required");
+        }
+        Cart cart = cartRepository.findById(cartId)
+                .filter(candidate -> candidate.getStatus() == CartStatus.ACTIVE)
+                .orElseThrow(() -> new ResourceNotFoundException("Checkout", cartId));
+        UUID caller = currentUserProvider.getCurrentUserId(authentication);
+        if (!cart.getConsumerId().equals(caller)
+                && !currentUserProvider.isAdmin(authentication)) {
+            throw new ResourceNotFoundException("Checkout", cartId);
+        }
+        return cart;
+    }
+
+    private CheckoutView checkoutView(Cart cart) {
+        List<CartItem> items =
+                cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId());
+        List<CheckoutView.Line> lines = items.stream()
+                .map(item -> {
+                    if (item.getVariantId() == null) {
+                        throw new ConflictException("Checkout " + cart.getId()
+                                + " contains a product-level line; a checkout line must reference "
+                                + "a product variant");
+                    }
+                    return new CheckoutView.Line(item.getId(), item.getVariantId(),
+                            item.getQuantity());
+                })
+                .toList();
+        int quantity = items.stream().mapToInt(CartItem::getQuantity).sum();
+        return new CheckoutView(cart.getId(), lines, quantity);
+    }
+
+    private void requireLine(LineAdd line) {
+        if (line == null || line.variantId() == null) {
+            throw new BadRequestException("A product variant is required for every checkout line");
+        }
+        requireQuantity(line.quantity());
+    }
+
+    private void requireLine(LineUpdate line) {
+        if (line == null) {
+            throw new BadRequestException("A checkout line update is required");
+        }
+        if (line.lineId() == null && line.variantId() == null) {
+            throw new BadRequestException("A checkout line ID or variant ID is required");
+        }
+        if (line.quantity() == null) {
+            throw new BadRequestException("A checkout line quantity is required");
+        }
+        requireQuantity(line.quantity());
+    }
+
+    private void requireQuantity(int quantity) {
+        if (quantity < 1 || quantity > MAX_LINE_QUANTITY) {
+            throw new BadRequestException("A checkout line quantity must be between 1 and "
+                    + MAX_LINE_QUANTITY);
+        }
+    }
+
+    private CartItem requireCheckoutLine(Cart cart, LineUpdate update) {
+        CartItem item = update.lineId() != null
+                ? cartItemRepository.findById(update.lineId())
+                        .filter(candidate -> candidate.getCartId().equals(cart.getId()))
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                "CheckoutLine", update.lineId()))
+                : cartItemRepository.findByCartIdAndVariantId(cart.getId(), update.variantId())
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                "CheckoutLine for variant", update.variantId()));
+        if (item.getVariantId() == null) {
+            throw new ConflictException("Checkout " + cart.getId()
+                    + " contains a product-level line; a checkout line must reference a variant");
+        }
+        return item;
     }
 
     // ------------------------------------------------------------------
@@ -451,7 +605,8 @@ public class OrdersService implements OrderDeliveryPort {
     @Transactional
     @Observed(name = "order.confirm")
     public Order confirm(UUID orderId) {
-        Order order = requireOrder(orderId);
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
         requireStatus(order, OrderStatus.PLACED, "confirm");
         order.confirm(Instant.now());
         Order saved = orderRepository.save(order);
@@ -752,36 +907,7 @@ public class OrdersService implements OrderDeliveryPort {
     public Order cancel(UUID orderId, String reason) {
         Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
-        if (order.getDeliveryRequestId() != null) {
-            throw new ConflictException("An order linked to an active delivery must be cancelled through its delivery lifecycle");
-        }
-        // The V224 multi-leg guard: a checkout-selected platform delivery
-        // blocks the order's cancellation while ANY leg is in flight — the
-        // primary link alone is not the whole truth when the order split
-        // into several packages (a cancelled primary with live siblings
-        // must not let the order — and its money — slip away).
-        if (order.getFulfillmentMethod() == FulfillmentMethod.PLATFORM_DELIVERY
-                && checkoutDeliveryPort.remainingActiveLegs(orderId) > 0) {
-            throw new ConflictException("An order with an in-flight platform delivery cannot be cancelled — cancel its delivery legs first");
-        }
-        // CodeRabbit agent findings, row 13 (main export) — the delivered-goods
-        // guard: a full cancellation releases ALL reserved inventory and
-        // requests a FULL refund, so it must refuse whenever any package was
-        // already physically delivered (the multi-leg opening: cancel the
-        // uncollected primary AFTER a secondary package arrived, obtain the
-        // full refund, keep the delivered goods). Only a partial-cancellation
-        // operation — a separate future surface — may refund and release the
-        // undelivered rest.
-        if (order.getFulfillmentMethod() == FulfillmentMethod.PLATFORM_DELIVERY
-                && checkoutDeliveryPort.deliveredLegs(order.getId()) > 0) {
-            throw new ConflictException("An order with a delivered package cannot be fully cancelled"
-                    + " — the delivered goods are already in the buyer's hands; a partial"
-                    + " cancellation of the undelivered rest is required");
-        }
-        if (order.getStatus() != OrderStatus.PLACED && order.getStatus() != OrderStatus.CONFIRMED) {
-            throw new ConflictException("Order " + orderId + " is " + order.getStatus()
-                    + " — cancel is legal from PLACED or CONFIRMED only");
-        }
+        requireCancellableOrder(order);
         order.cancel(reason, Instant.now());
         if (order.isStockReserved()) {
             productStockPort.release(productStockMapOf(order.getId()));
@@ -840,6 +966,130 @@ public class OrdersService implements OrderDeliveryPort {
         }
     }
 
+    /** The shared lifecycle and delivery constraints for cancellation. */
+    private void requireCancellableOrder(Order order) {
+        if (order.getDeliveryRequestId() != null) {
+            throw new ConflictException("An order linked to an active delivery must be cancelled through its delivery lifecycle");
+        }
+        // A checkout-selected platform delivery cannot be cancelled while
+        // any leg is in flight; the primary request link is not sufficient.
+        if (order.getFulfillmentMethod() == FulfillmentMethod.PLATFORM_DELIVERY
+                && checkoutDeliveryPort.remainingActiveLegs(order.getId()) > 0) {
+            throw new ConflictException("An order with an in-flight platform delivery cannot be cancelled — cancel its delivery legs first");
+        }
+        // CodeRabbit agent findings, row 16 — the delivered-goods guard: a
+        // full cancellation releases ALL reserved inventory and requests a
+        // FULL refund, so it must refuse whenever any package was already
+        // physically delivered (the multi-leg opening: cancel the
+        // uncollected primary AFTER a secondary package arrived, obtain the
+        // full refund, keep the delivered goods). Only a partial-
+        // cancellation operation — a separate future surface — may refund
+        // and release the undelivered rest.
+        if (order.getFulfillmentMethod() == FulfillmentMethod.PLATFORM_DELIVERY
+                && checkoutDeliveryPort.deliveredLegs(order.getId()) > 0) {
+            throw new ConflictException("An order with a delivered package cannot be fully cancelled"
+                    + " — the delivered goods are already in the buyer's hands; a partial"
+                    + " cancellation of the undelivered rest is required");
+        }
+        if (order.getStatus() != OrderStatus.PLACED && order.getStatus() != OrderStatus.CONFIRMED) {
+            throw new ConflictException("Order " + order.getId() + " is " + order.getStatus()
+                    + " — cancel is legal from PLACED or CONFIRMED only");
+        }
+    }
+
+    /**
+     * Enforce the management boundary before a transport adapter decodes
+     * caller-supplied IDs. The method has no domain side effect.
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    public void requireAdmin() {
+    }
+
+    /**
+     * Saleor P4 order-confirm management command. Confirmation remains the
+     * orders owner's existing state transition and event publication; this
+     * adapter does not add a second payment-capture path.
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    @Observed(name = "order.admin.confirm")
+    public OrderView confirmAsAdmin(UUID orderId) {
+        Order confirmed = confirm(orderId);
+        return new OrderView(confirmed.getId(), confirmed.getPlacedAt(), confirmed.getStatus().name());
+    }
+
+    /**
+     * Saleor's bulk-cancel semantics: inspect every unique order under a
+     * row lock before performing transitions. State refusals are item errors;
+     * unexpected execution failures escape the enclosing transaction.
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    @Observed(name = "order.admin.bulk-cancel")
+    public com.marketplace.orders.spi.OrderBulkCancelResult bulkCancelAsAdmin(List<UUID> orderIds) {
+        if (orderIds == null || orderIds.isEmpty()) {
+            return new com.marketplace.orders.spi.OrderBulkCancelResult(0, List.of());
+        }
+
+        java.util.Set<UUID> uniqueIds = new java.util.LinkedHashSet<>(orderIds);
+        java.util.List<com.marketplace.orders.spi.OrderBulkCancelResult.Failure> failures =
+                new java.util.ArrayList<>();
+
+        // Stable ordering prevents overlapping bulk requests from acquiring
+        // row locks in opposite order and unnecessarily deadlocking.
+        List<UUID> orderedIds = uniqueIds.stream().sorted().toList();
+
+        // Match Saleor's clean-input-before-bulk-action behavior: no order is
+        // transitioned until all unique IDs have had their locked state and
+        // delivery constraints checked.
+        java.util.List<UUID> cancellableIds = new java.util.ArrayList<>();
+        for (UUID orderId : orderedIds) {
+            Order order = orderRepository.findByIdForUpdate(orderId).orElse(null);
+            if (order == null) {
+                failures.add(new com.marketplace.orders.spi.OrderBulkCancelResult.Failure(
+                        orderId,
+                        com.marketplace.orders.spi.OrderBulkCancelResult.FailureKind.NOT_FOUND,
+                        "Order not found: " + orderId));
+                continue;
+            }
+            try {
+                requireCancellableOrder(order);
+                cancellableIds.add(orderId);
+            } catch (ConflictException exception) {
+                failures.add(new com.marketplace.orders.spi.OrderBulkCancelResult.Failure(
+                        orderId,
+                        com.marketplace.orders.spi.OrderBulkCancelResult.FailureKind.CONFLICT,
+                        exception.getMessage()));
+            }
+        }
+
+        int cancelledCount = 0;
+        for (UUID orderId : cancellableIds) {
+            cancel(orderId, "Cancelled through the order-management bulk API");
+            cancelledCount++;
+        }
+        return new com.marketplace.orders.spi.OrderBulkCancelResult(cancelledCount, failures);
+    }
+
+    /**
+     * Saleor P4 order-management mutation backed by the existing domain
+     * state machine. ADMIN authorization belongs at this service boundary.
+     * Cancellation locks and transitions the order, releases its stock
+     * reservation, and publishes OrderCancelledEvent so the existing
+     * payments owner settles its intent. No PSP or ledger logic is duplicated.
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    @Observed(name = "order.admin.cancel")
+    public OrderView cancelAsAdmin(UUID orderId) {
+        Order cancelled = cancel(orderId, "Cancelled through the order-management API");
+        return new OrderView(cancelled.getId(), cancelled.getPlacedAt(), cancelled.getStatus().name());
+    }
+
     /**
      * Stage 6 (ADR-0002): the buyer's payment-intent surface — creates (or
      * idempotently returns) the order's intent through the EXISTING
@@ -871,14 +1121,13 @@ public class OrdersService implements OrderDeliveryPort {
      */
     @Transactional
     public void confirmFromPayment(java.util.UUID paymentIntentId) {
+        // Serialize concurrent/delivered-again payment completion events on
+        // the authoritative order row. A redelivery that observes CONFIRMED
+        // after the lock is acquired is a no-op, not a stale-state conflict.
         orderRepository.findByPaymentIntentId(paymentIntentId)
-                .filter(order -> order.getStatus() == OrderStatus.PLACED)
-                .ifPresentOrElse(order -> confirm(order.getId()),
-                        () -> {
-                            // The honest no-op: the order moved past PLACED
-                            // (or carries no such intent) — the machine's
-                            // current state is already the newer truth.
-                        });
+                .ifPresent(order -> orderRepository.findByIdForUpdate(order.getId())
+                        .filter(locked -> locked.getStatus() == OrderStatus.PLACED)
+                        .ifPresent(locked -> confirm(locked.getId())));
     }
 
     /**
