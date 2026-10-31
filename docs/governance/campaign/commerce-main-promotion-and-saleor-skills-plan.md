@@ -38,8 +38,9 @@ PR #771, `governance(agent-skills): pin the vendored skills surface and adopt sa
 The initial §2 snapshot above is retained as historical evidence. A later live remeasurement on the same date supersedes its divergence statement:
 
 - Live `main`: `f2349deca955cee435e6be3ca56be8a4c251d00a`.
-- Live `integration/saleor-full-commerce-20261021`: `435b895d2c98ada7dc2c9661bb2973c7774f78b4`.
-- GitHub compare `main...integration`: `ahead`, 133 commits ahead, 0 behind; merge base equals the current main SHA. The complete main history is already an ancestor of the commerce branch.
+- Live `integration/saleor-full-commerce-20261021`: `267540760abb06740662429a131adf655aeedf69`.
+- GitHub compare `main...integration`: `ahead`, 135 commits ahead, 0 behind; merge base equals the current main SHA.
+- Since the earlier `435b895d` snapshot, A0 added two docs-only commits: the live-baseline refresh and the owner-approved full Dashboard/full-commerce scope reaffirmation in the canonical plan. The complete main history is already an ancestor of the commerce branch.
 - The approved PR #771 payload is present on the commerce branch and byte-identical by Git blob SHA to main:
   - `docs/governance/agent-skills-policy.md`: `9fb1d91a9ad25392fb9e719f122d258866bbd609`
   - `docs/governance/plans/agent-skills-pins.json`: `6ef9280fb535b42ed083b523b5fbeb56e88cc9b1`
@@ -47,7 +48,7 @@ The initial §2 snapshot above is retained as historical evidence. A later live 
   - `.coderabbit.yaml`: `f998e013b5c8438e9ea4f56a493ef859e9a4eb51`
   - `.github/workflows/coderabbit-gate.yml`: `aa4435733823ba8aba180df2a2eacd3118c489b9`
 
-**A0 conclusion:** Phase A's main-to-commerce reconciliation and inclusion of the approved PR #771 payload are already satisfied at this live snapshot. Do not merge main again, cherry-pick PR #771, or copy its files manually. Keep `435b895d2c98ada7dc2c9661bb2973c7774f78b4` as the current integration baseline until a new candidate is explicitly published. Prepared agent workspaces pinned to this SHA may proceed against this baseline; any new candidate SHA must be broadcast before they rebase or open PRs.
+**A0 conclusion:** Phase A's main-to-commerce reconciliation and inclusion of the approved PR #771 payload are already satisfied. Do not merge main again, cherry-pick PR #771, or copy its files manually. The current integration head is now `267540760abb06740662429a131adf655aeedf69`; `435b895d` is its ancestor. Prepared workspaces still pinned to `435b895d` (including the five-commit A0 knowledge-map branch) must refresh by a normal non-destructive rebase/fast-forward to the current head before further edits or PR creation. Do not force-push or silently reset; report the new base SHA to A0.
 
 ## 3. Saleor skill-source change — required provenance refresh
 
