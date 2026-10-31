@@ -23,7 +23,7 @@ This dated record supersedes any earlier dispatch baseline or open-PR inventory 
 
 ### Current PR state
 
-- **#786 — refreshed provenance PR:** rebuilds the official `saleor-core` source migration and resource registry on the exact current integration head `bce82ec9`; it supersedes the stale #786 head rather than rebasing/force-pushing the old branch. The migration pins `saleor/saleor-docs@2cdf6590e838929c3f74c16e982cfdc11073c2d8`, preserves the historical `saleor/agent-skills@fb1a5725` origin and seven errata, and explicitly leaves four other official skills unadopted. Require exact-head CI, CodeRabbit and review before integrating it. PR #786 remains a stale Draft and is not the integration candidate.
+- **#786 — refreshed provenance PR:** rebuilds the official `saleor-core` source migration and resource registry on the exact current integration head `bce82ec9`; it supersedes the stale #773 head rather than rebasing/force-pushing the old branch. The migration pins `saleor/saleor-docs@2cdf6590e838929c3f74c16e982cfdc11073c2d8`, preserves the historical `saleor/agent-skills@fb1a5725` origin and seven errata, and explicitly leaves four other official skills unadopted. Require exact-head CI, CodeRabbit and review before integrating it. PR #773 remains a stale Draft and is not the integration candidate.
 - **#783 — archived without merge:** seven ADR proposals and a canonical-plan patch on a stale branch. It was Draft/non-mergeable, had CodeRabbit changes requested, and included wording superseded by the latest owner scope (Dashboard route suppression/old warehouse deferral). The PR is closed; its branch and proposal files are preserved as historical review material, not approved ADRs or an execution plan.
 - There are no individual A2/A3/A4 wave PRs. Agents deliver commits/evidence to A0; the playbook allows one final release PR after the Implementation Complete gate and independent review.
 
@@ -76,7 +76,7 @@ The initial §2 snapshot above is retained as historical evidence. A later live 
   - `.coderabbit.yaml`: `f998e013b5c8438e9ea4f56a493ef859e9a4eb51`
   - `.github/workflows/coderabbit-gate.yml`: `aa4435733823ba8aba180df2a2eacd3118c489b9`
 
-**A0 conclusion:** Phase A's main-to-commerce reconciliation and inclusion of the approved PR #771 payload are already satisfied. Do not merge main again, cherry-pick PR #771, or copy its files manually. The current integration head is now `267540760abb06740662429a131adf655aeedf69`; `435b895d` is its ancestor. Prepared workspaces still pinned to `435b895d` (including the five-commit A0 knowledge-map branch) must refresh by a normal non-destructive rebase/fast-forward to the current head before further edits or PR creation. Do not force-push or silently reset; report the new base SHA to A0.
+**A0 conclusion:** Phase A's main-to-commerce reconciliation and inclusion of the approved PR #771 payload are already satisfied. Do not merge main again, cherry-pick PR #771, or copy its files manually. The current integration head is now `bce82ec91391b07ec339308c8429735556cdebdb`; both `267540760` and `435b895d` are ancestors only. Prepared workspaces still pinned to `435b895d` (including the five-commit A0 knowledge-map branch) must refresh by a normal non-destructive rebase/fast-forward to the current head before further edits or PR creation. Do not force-push or silently reset; report the new base SHA to A0.
 
 ## 3. Saleor skill-source change — required provenance refresh
 
