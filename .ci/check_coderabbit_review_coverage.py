@@ -207,7 +207,7 @@ def validate_manifest(data):
     alternatives = data.get("alternativeCoverage", [])
     need(isinstance(shards, list) and shards, "reviewShards must be a non-empty array")
     need(isinstance(alternatives, list), "alternativeCoverage must be an array")
-    seen, candidate_count = set(), 0
+    seen = set()
     for shard in shards:
         need(isinstance(shard, dict), "review shard must be an object")
         number, review_id = shard.get("prNumber"), shard.get("reviewId")
@@ -215,11 +215,8 @@ def validate_manifest(data):
         need(isinstance(review_id, int) and review_id > 0, "review shard needs a positive reviewId")
         need(number not in seen, f"PR #{number} appears more than once")
         seen.add(number)
-        candidate_count += shard.get("role") == "candidate"
-    need(candidate_count == 1, "exactly one shard must have role='candidate'")
-    for shard in shards:
-        need(shard.get("role") in {"candidate", "review"},
-             "review shard role must be candidate or review")
+        need(shard.get("role") == "review",
+             "reviewShards must contain independent review PRs only; candidate review is discovered from the candidate head")
     for item in alternatives:
         need(isinstance(item, dict), "alternative coverage must be an object")
         paths = item.get("paths")
@@ -370,9 +367,11 @@ def run(repo, number, manifest_path, alternative_config, trusted_base_sha, token
     validate_manifest(manifest)
     validate_alternative_config(alternative_config)
 
-    reviewed, alternatives, candidate_shards = {}, set(), 0
+    reviewed, alternatives = {}, set()
     for shard in manifest["reviewShards"]:
         number_for_shard = shard["prNumber"]
+        need(number_for_shard != number,
+             "candidate PR review is discovered directly from the current head and must not be listed as a shard")
         pull = client.pull(number_for_shard)
         shard_head = pull["head"]["sha"]
         shard_head_repo = (pull.get("head", {}).get("repo") or {}).get("full_name")
@@ -380,32 +379,21 @@ def run(repo, number, manifest_path, alternative_config, trusted_base_sha, token
         need(pull.get("state") == "open", f"shard PR #{number_for_shard} must remain open during verification")
         need(pull["base"]["sha"] == base_sha and pull["base"]["ref"] == "main",
              f"shard PR #{number_for_shard} must use exact candidate base {base_sha}")
-        reviews = candidate_reviews if number_for_shard == number else client.reviews(number_for_shard)
+        need(shard.get("role") == "review", "reviewShards entries must declare role='review'")
+        reviews = client.reviews(number_for_shard)
         r = exact_review(reviews, shard["reviewId"], shard_head, BOT, GOOD_STATES)
         newest_shard = latest_review(reviews, shard_head, BOT)
         need(newest_shard and newest_shard["id"] == r["id"], f"shard PR #{number_for_shard} review is stale")
         selected_files = processed_files(r.get("body", ""))
         need(0 < len(selected_files) <= MAX_FILES, "a CodeRabbit shard exceeded 100 files")
 
-        if number_for_shard == number:
-            candidate_shards += 1
-            need(shard.get("role") == "candidate", "final PR shard must declare candidate role")
-            records, shard_base, shard_head_tree = candidate_records, base_tree, head_tree
-        else:
-            need(shard.get("role") == "review", "non-candidate shards must declare role='review'")
-            records = client.files(number_for_shard)
-            names, expanded, by_name = fileset(records)
-            need(0 < len(records) <= MAX_FILES, f"shard PR #{number_for_shard} exceeds 100 files")
-            need(set(selected_files) == names, f"CodeRabbit did not process every file in shard PR #{number_for_shard}")
-            shard_base, shard_head_tree = base_tree, client.tree(shard_head, shard_head_repo)
-            need(set(tree_changes(shard_base, shard_head_tree)) == expanded,
-                 f"shard PR #{number_for_shard} REST file list differs from full Git-tree diff")
-
-        if number_for_shard == number:
-            # The final candidate review proves the current release head was
-            # reviewed, but it is not a coverage shard. Separate shard PRs
-            # cover the changed paths so no path is double-counted.
-            continue
+        records = client.files(number_for_shard)
+        names, expanded, by_name = fileset(records)
+        need(0 < len(records) <= MAX_FILES, f"shard PR #{number_for_shard} exceeds 100 files")
+        need(set(selected_files) == names, f"CodeRabbit did not process every file in shard PR #{number_for_shard}")
+        shard_base, shard_head_tree = base_tree, client.tree(shard_head, shard_head_repo)
+        need(set(tree_changes(shard_base, shard_head_tree)) == expanded,
+             f"shard PR #{number_for_shard} REST file list differs from full Git-tree diff")
 
         _, _, by_name = fileset(records)
         paths = set()
@@ -419,7 +407,6 @@ def run(repo, number, manifest_path, alternative_config, trusted_base_sha, token
                                 base_tree, head_tree)
             reviewed[path] = f"PR #{number_for_shard} review {r['id']}"
 
-    need(candidate_shards == 1, "candidate PR must occur exactly once in reviewShards")
     for item in manifest.get("alternativeCoverage", []):
         paths = verify_alternative(item, candidate, candidate_reviews, client, alternative_config)
         need(not (paths & (set(reviewed) | alternatives)), "alternative evidence overlaps existing coverage")
