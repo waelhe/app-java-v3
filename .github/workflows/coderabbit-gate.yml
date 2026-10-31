@@ -281,3 +281,52 @@ jobs:
                   sys.exit(1)
               time.sleep(30)
           PY
+      - name: Resolve target PR head for coverage verification
+        id: coverage-pr
+        uses: actions/github-script@v9
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr }}
+        with:
+          script: |
+            const number = Number(process.env.PR_NUMBER);
+            if (!Number.isInteger(number) || number < 1) {
+              core.setFailed('A valid PR number is required for review coverage verification.');
+              return;
+            }
+            const { data: pull } = await github.rest.pulls.get({
+              owner: context.repo.owner, repo: context.repo.repo, pull_number: number,
+            });
+            core.setOutput('base_ref', pull.base.ref);
+            core.setOutput('head_repo', pull.head.repo?.full_name || '');
+            core.setOutput('head_sha', pull.head.sha);
+
+      - name: Checkout trusted review coverage verifier
+        if: steps.coverage-pr.outputs.base_ref == 'main'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: trusted
+          persist-credentials: false
+
+      # The candidate checkout is DATA only. Never execute code from it in this
+      # pull_request_target job; the verifier runs only from the trusted base.
+      - name: Checkout candidate files as data only
+        if: steps.coverage-pr.outputs.base_ref == 'main'
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.coverage-pr.outputs.head_repo }}
+          ref: ${{ steps.coverage-pr.outputs.head_sha }}
+          path: candidate
+          persist-credentials: false
+
+      - name: Verify exact CodeRabbit file coverage (maximum 100 per review)
+        if: steps.coverage-pr.outputs.base_ref == 'main'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr }}
+        run: >-
+          python3 trusted/.ci/check_coderabbit_review_coverage.py
+          --repository "$GITHUB_REPOSITORY" --pr-number "$PR_NUMBER"
+          --manifest candidate/docs/governance/campaign/release/coderabbit-review-coverage.json
+          --max-files-per-review 100

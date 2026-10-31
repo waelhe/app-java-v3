@@ -95,6 +95,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Test CodeRabbit coverage verifier
+        run: python3 -m unittest discover -s .ci/tests -p 'test_coderabbit_review_coverage.py' -v
+
       - name: Gitleaks secret scan (high/critical policy)
         uses: gitleaks/gitleaks-action@v3
         env:
