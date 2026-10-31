@@ -54,6 +54,8 @@ Repository policy: do not run `npx skills add`. The active integration-branch pi
 
 The matrix below is a **domain navigation and dependency map**, not a root inventory. Exact operations, owner assignments and statuses must be read from the central CSV and category matrix.
 
+**Pinned Dashboard rule:** every retained Dashboard 3.23.39 route, workbench, menu item, control and workflow stays in scope. A backend capability gap creates an implementation obligation and blocks P7; it never authorizes hiding, disabling, removing or suppressing the UI surface, or replacing it with fake data/no-op behavior. Root-level non-applicability is handled only through an owner-approved divergence, not by deleting the retained route.
+
 | Domain | Official knowledge entry points | Platform owner anchors to verify in code | Important dependencies / routing | Skill routing |
 |---|---|---|---|---|
 | Identity, users, permissions and auth | API Users/Authentication; pinned auth and permission tests | `marketplace-identity`, `marketplace-console`, OIDC/PKCE Dashboard adapter | Every administrative and customer mutation; provider/resource scope; channel-scoped staff permissions | `saleor-app` only for actual app permission protocol |
