@@ -10,7 +10,7 @@
 
 ## 1. Mission
 
-Use the official saleor/agent-skills repository as specialized domain knowledge to:
+Use the repository's currently pinned Saleor skill snapshot as specialist reference material, and use the current official Saleor AI discovery surface (`saleor/saleor-docs`) to discover additional resources. The active integration pin remains `saleor/agent-skills@fb1a57255f58950962f6e474ccba1cade40f5163` until the separately reviewed provenance PR #773 is merged. Skills are reference only; pinned Saleor source/tests and canonical project contracts remain authoritative. The mission is to:
 
 1. Audit previously INTEGRATED Saleor roots for real contract, behavioral, authorization, persistence, transaction, event, and Dashboard correctness.
 2. Find and repair defects that name/signature checks or ordinary CRUD tests cannot detect.
