@@ -101,12 +101,11 @@ class DisputesContentPurgeAdapterTest {
 
         assertEquals(2, adapter.purgeAuthoredTexts(SUBJECT));
 
-        // CI round 4 (measured on b21470db): BOTH statements — the live row
-        // AND the audit mirror — carry the SAME authorship predicate and
-        // idempotence filter (the mirror purge joined the adapter with the
-        // round-1 purge family); the single-invocation verify of the
-        // pre-mirror era answered TooManyActualInvocations. The port's
-        // contract is asserted on EACH of the two statements.
+        // BOTH statements carry the predicate — the live row's erasure AND
+        // the audit mirror's scrub share the same authorship predicate and
+        // idempotence filter (measured on CI: the single-invocation verify
+        // was a TooManyActualInvocations because both updates match; the
+        // pin is stronger as a pair — the predicate binds both statements).
         verify(jdbcTemplate, times(2)).update(
                 contains("WHERE opened_by = ? AND reason IS NOT NULL AND reason <> ?"),
                 eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
