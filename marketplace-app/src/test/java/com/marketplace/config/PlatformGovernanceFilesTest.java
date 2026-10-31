@@ -931,6 +931,37 @@ class PlatformGovernanceFilesTest {
                 .doesNotContain("3.23.43", "3.23.39",
                         "bc75e988da0fa4fbc3d47378a888d859d070746f");
 
+        String[] activeSaleorGuidance = {
+                read("docs", "governance", "campaign",
+                        "commerce-main-promotion-and-saleor-skills-plan.md"),
+                read("docs", "governance", "campaign",
+                        "saleor-agent-skills-semantic-audit-directive.md"),
+                read("docs", "governance", "campaign",
+                        "saleor-agent-skills-source-provenance-proposal.md"),
+                read("docs", "governance", "campaign",
+                        "saleor-multi-agent-execution-playbook.md"),
+                read("docs", "governance", "campaign",
+                        "A0-EXECUTION-DIRECTIVE-20261028.md"),
+                read("docs", "governance", "campaign", "README.md"),
+                read("docs", "governance", "campaign", "frozen-contracts.md"),
+                read("docs", "governance", "campaign", "agent-tasks",
+                        "agent-1-identity-cms-navigation.md"),
+                read("docs", "governance", "campaign", "agent-tasks",
+                        "agent-2-catalog-pricing.md"),
+                read("docs", "governance", "campaign", "agent-tasks",
+                        "agent-3-orders-payments-events.md"),
+                read("docs", "governance", "plans",
+                        "saleor-contract-divergences.csv")
+        };
+        for (String guidanceDocument : activeSaleorGuidance) {
+            assertThat(guidanceDocument)
+                    .doesNotContain("3.23.43", "3.23.39",
+                            "bc75e988da0fa4fbc3d47378a888d859d070746f");
+        }
+
+        String skillPolicy = read("docs", "governance", "agent-skills-policy.md");
+        assertThat(skillPolicy).contains("3.23.45 reference schema (blob-verified)");
+
         assertThat(canonicalPlan)
                 .contains("https://docs.saleor.io/agent-readability.json")
                 .doesNotContain("https://docs.saleor.io/.well-known/agent-readability.json");
