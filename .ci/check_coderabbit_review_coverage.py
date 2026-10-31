@@ -218,12 +218,13 @@ def validate_manifest(data):
         number, review_id = shard.get("prNumber"), shard.get("reviewId")
         need(isinstance(number, int) and number > 0, "review shard needs a positive prNumber")
         need(isinstance(review_id, int) and review_id > 0, "review shard needs a positive reviewId")
-        need(shard.get("role") in {"candidate", "review"},
-             "review shard role must be candidate or review")
         need(number not in seen, f"PR #{number} appears more than once")
         seen.add(number)
         candidate_count += shard.get("role") == "candidate"
     need(candidate_count == 1, "exactly one shard must have role='candidate'")
+    for shard in shards:
+        need(shard.get("role") in {"candidate", "review"},
+             "review shard role must be candidate or review")
     for item in alternatives:
         need(isinstance(item, dict), "alternative coverage must be an object")
         paths = item.get("paths")
@@ -258,7 +259,6 @@ def validate_alternative_config(config):
 def verify_alternative(item, candidate, candidate_reviews, client, alternative_config):
     paths = set(item["paths"])
     head = candidate["head"]["sha"]
-    head_repo = candidate["head"]["repo"]["full_name"]
     if item["kind"] == "manual-review":
         reviewer = item["reviewerLogin"]
         author = (candidate.get("user") or {}).get("login", "")
@@ -270,6 +270,8 @@ def verify_alternative(item, candidate, candidate_reviews, client, alternative_c
         need(item["evidenceUrl"] == review.get("html_url") and bool(review.get("html_url")),
              "manual review evidence URL does not identify the recorded review")
     else:
+        head_repo = (candidate.get("head", {}).get("repo") or {}).get("full_name")
+        need(bool(head_repo), "candidate head repository is unavailable for check evidence")
         check_name = item["checkName"]
         rule = alternative_config.get("checks", {}).get(check_name)
         need(rule is not None, f"check {check_name!r} is not allowlisted by trusted base configuration")
