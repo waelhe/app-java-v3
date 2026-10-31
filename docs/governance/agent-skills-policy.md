@@ -24,7 +24,7 @@ implementing platform work. It is reference, not an authority: on any
 conflict the precedence ladder is, in order:
 
 1. `docs/governance/plans/saleor-source-pins.json` — the pinned Saleor
-   3.23.43 reference schema (blob-verified) and the Dashboard pins.
+   3.23.45 reference schema (blob-verified) and the Dashboard pins.
 2. `docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md`
    — the D-SALEOR-FULL-001 canonical plan and its domain matrix.
 3. `docs/governance/plans/saleor-contract-divergences.csv` — the
