@@ -42,6 +42,47 @@ Only create marketplace-shop-profile if code inspection confirms there is no exi
 | `shopAddressUpdate` | Unsupported until a single platform-level public/trading-address owner and replacement/deletion semantics are established | Must not overwrite or erase legal-entity/provider addresses or create success-shaped settings writes |
 | `shopSettingsUpdate` | Per-field delegated command only; no generic key/value write | Every field needs a named owner, permission, SPI, audit and Dashboard route disposition |
 
+### Pinned Shop read-projection dispositions
+
+| Saleor `Shop` field family | Proposed owner/disposition | Contract boundary |
+|---|---|---|
+| `name`, `description`, `headerText`, `translation` | A narrow platform-level shop-profile capability only after A5 proves no existing owner | Never reuse provider/seller legal profiles; until an owner and translation SPI exist, keep unsupported |
+| `channelCurrencies` | marketplace-channels | Derived from real channels; no duplicate currency list |
+| `availableShippingMethods` | marketplace-delivery | Resolve only for the supplied channel and optional address; no global unscoped method list |
+| `availablePaymentGateways` | marketplace-payments | Channel-scoped provider capability only; deprecated currency-only lookup must not become a second configuration path |
+| `permissions` | identity/RBAC | Caller-specific effective permissions; do not return a static role list |
+| `availableExternalAuthentications` | Unsupported until a real external-authentication provider/registry contract exists | The platform's own authentication flow is not a Saleor external-auth plugin registry |
+| `countries`, `languages`, `phonePrefixes`, `defaultCountry` | Unsupported until a single authoritative locale/region configuration is measured | Do not confuse the global Shop default country with `Channel.defaultCountry` |
+| `domain` | Read-only runtime deployment URL only if the deployed `PUBLIC_URL` equivalent is authoritative | `shopDomainUpdate` remains unsupported; no database setting may override deployment truth |
+| `companyAddress` | Platform merchant-of-record/legal-entity owner under ADR-0013 | Never map to a seller/provider address; unsupported until the legal-entity owner contract exists |
+| `defaultMailSenderName`, `defaultMailSenderAddress`, `staffNotificationRecipients` | Notification/mail configuration owner only if A5 proves an existing capability | Otherwise unsupported; never expose credentials or private provider configuration |
+| `trackInventoryByDefault`, `defaultWeightUnit` | marketplace-catalog / inventory owner | Defaults only; must not rewrite existing ProductVariant tracking or stored measurements |
+| `reserveStockDurationAnonymousUser`, `reserveStockDurationAuthenticatedUser`, `limitQuantityPerCheckout` | marketplace-orders checkout policy, with inventory reservation contract via SPI | Versioned policy; active checkouts/orders retain their frozen reservation/quantity rules |
+| `fulfillmentAutoApprove`, `fulfillmentAllowUnpaid` | Unsupported pending explicit fulfillment lifecycle owner and permission/audit contract | Do not infer this from delivery quotes or courier assignment |
+| `customerSetPasswordUrl`, `enableAccountConfirmationByEmail`, `allowLoginWithoutConfirmation`, `passwordLoginMode`, `accountConfirmMergeMode` | identity | Identity-owned commands and effective policy; no console key/value shadow |
+| `allowStorefrontTraffic` | Unsupported as a public commerce setting until an explicit platform-security owner approves it | Do not let a GraphQL Shop mutation weaken the app's request-access boundary |
+| `preserveAllAddressFields` | Unsupported pending a measured address-validation owner and country-specific behavior contract | No silent change to address normalization |
+| `includeTaxesInPrices`, `displayGrossPrices`, `chargeTaxesOnShipping` | marketplace-pricing / delivery via D-TAX-001 and D-CHANNEL-001 | Deprecated Shop aliases; channel/tax-class semantics only, not global Shop switches |
+| `useLegacyShippingZoneStockAvailability` | Unsupported under D-WHSE-001 until location/warehouse and delivery-zone semantics exist | Do not implement a legacy toggle over global product/variant stock |
+| `useLegacyUpdateWebhookEmission` | Unsupported | No Saleor legacy webhook-emission mode is invented in the platform |
+| `availableTaxApps`, `limits`, `announcements`, `version`, `schemaVersion` | Platform runtime/extension capability; expose only when an exact owned source exists | No fabricated app registry, limits, announcements or version metadata |
+
+### Pinned ShopSettingsInput mutation dispositions
+
+`shopSettingsUpdate` is a single Saleor mutation with `MANAGE_SETTINGS`; it is **not** a generic console settings write. Its exact input fields are mapped as follows:
+
+- `name`, `headerText`, `description`, `metadata`, `privateMetadata`: platform shop-profile owner only; private metadata remains permission-protected.
+- `trackInventoryByDefault`, `defaultWeightUnit`: catalog/inventory owner.
+- `fulfillmentAutoApprove`, `fulfillmentAllowUnpaid`: unsupported until a real fulfillment lifecycle owner and matching state transitions are proven.
+- `defaultMailSenderName`, `defaultMailSenderAddress`, `staffNotificationRecipients`: notification/mail configuration owner only if measured; otherwise unsupported.
+- `customerSetPasswordUrl`, `enableAccountConfirmationByEmail`, `allowLoginWithoutConfirmation`, `passwordLoginMode`, `accountConfirmMergeMode`: identity owner.
+- `reserveStockDurationAnonymousUser`, `reserveStockDurationAuthenticatedUser`, `limitQuantityPerCheckout`: orders/checkout owner; reservation mechanics use inventory SPI and immutable checkout/order policy snapshots.
+- `allowStorefrontTraffic`: platform-security-owned deployment/API boundary; unsupported from GraphQL until an explicit safe control plane exists.
+- `preserveAllAddressFields`: unsupported until an address-validation owner is measured.
+- `useLegacyShippingZoneStockAvailability`: unsupported under D-WHSE-001; do not fake shipping-zone stock behavior.
+- Deprecated `includeTaxesInPrices`, `displayGrossPrices`, `chargeTaxesOnShipping`: do not store global aliases; use the per-channel tax configuration and shipping-method TaxClass contract only.
+- Deprecated `useLegacyUpdateWebhookEmission`: unsupported; never add a compatibility mode without actual legacy event semantics.
+
 Mutations are commands delegated to the relevant owner. A field may appear in the GraphQL projection only if its owner supports a real read contract; a mutation may appear as supported only if its authoritative owner has a real write use case, permission policy, audit and persistence. Unsupported fields remain undeclared or explicitly classified; no synthetic defaults and no settings-shaped success response.
 
 The GraphQL adapter must not return secrets, PSP credentials, signing keys, private provider details or internal feature flags.
