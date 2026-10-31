@@ -65,11 +65,7 @@ class GitHub:
         need(re.fullmatch(r"[0-9a-f]{40}", ref) is not None, "manifest ref must be a full commit SHA")
         encoded_path = urllib.parse.quote(safe_path, safe="/")
         encoded_ref = urllib.parse.quote(ref, safe="")
-        root = self.root
-        if source_repo is not None:
-            need(re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", source_repo) is not None,
-                 "invalid candidate source repository")
-            root = f"{API}/repos/{source_repo}"
+        root = self.repo_root(source_repo)
         response = self.get_from(root, f"/contents/{encoded_path}?ref={encoded_ref}")
         need(response.get("type") == "file", f"manifest path is not a file: {safe_path}")
         need(response.get("encoding") == "base64", "GitHub did not return the manifest as base64")
@@ -112,6 +108,13 @@ class GitHub:
             page += 1
             need(page <= 100, f"pagination limit reached for {path}")
 
+    def repo_root(self, repository=None):
+        if repository is None:
+            return self.root
+        need(re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) is not None,
+             "invalid GitHub repository selector")
+        return f"{API}/repos/{repository}"
+
     def pull(self, number):
         return self.get(f"/pulls/{number}")
 
@@ -122,7 +125,7 @@ class GitHub:
         return self.pages(f"/pulls/{number}/reviews")
 
     def tree(self, sha, source_repo=None):
-        root = self.root if source_repo is None else f"{API}/repos/{source_repo}"
+        root = self.repo_root(source_repo)
         response = self.get_from(root, f"/git/trees/{sha}?recursive=1")
         need(not response.get("truncated"), f"Git tree truncated for {sha}")
         return {
@@ -132,7 +135,7 @@ class GitHub:
         }
 
     def checks(self, sha, source_repo=None):
-        root = self.root if source_repo is None else f"{API}/repos/{source_repo}"
+        root = self.repo_root(source_repo)
         result, page = [], 1
         while True:
             response = self.get_from(root, f"/commits/{sha}/check-runs?per_page=100&page={page}")
@@ -215,6 +218,8 @@ def validate_manifest(data):
         number, review_id = shard.get("prNumber"), shard.get("reviewId")
         need(isinstance(number, int) and number > 0, "review shard needs a positive prNumber")
         need(isinstance(review_id, int) and review_id > 0, "review shard needs a positive reviewId")
+        need(shard.get("role") in {"candidate", "review"},
+             "review shard role must be candidate or review")
         need(number not in seen, f"PR #{number} appears more than once")
         seen.add(number)
         candidate_count += shard.get("role") == "candidate"
@@ -224,6 +229,7 @@ def validate_manifest(data):
         paths = item.get("paths")
         need(isinstance(paths, list) and paths and all(isinstance(path, str) and path for path in paths),
              "alternative evidence requires non-empty paths")
+        need(len(paths) == len(set(paths)), "alternative evidence contains duplicate paths")
         need(item.get("reason") and item.get("evidenceUrl"), "alternative evidence needs reason and evidenceUrl")
         need(item.get("kind") in {"check", "manual-review"},
              f"unsupported alternative evidence kind: {item.get('kind')!r}")
@@ -333,6 +339,8 @@ def run(repo, number, manifest_path, alternative_config, trusted_base_sha, token
         record = candidate_by_name.get(path)
         if record and record.get("previous_filename"):
             direct.add(record["previous_filename"])
+    need(direct <= set(candidate_changes),
+         f"candidate CodeRabbit review lists paths outside its diff: {sorted(direct-set(candidate_changes))}")
     if len(candidate_changes) <= MAX_FILES and direct == set(candidate_changes):
         print(f"PASS — all {len(candidate_changes)} changed paths are listed in CodeRabbit review {review['id']}.")
         return
@@ -350,6 +358,7 @@ def run(repo, number, manifest_path, alternative_config, trusted_base_sha, token
         shard_head = pull["head"]["sha"]
         shard_head_repo = (pull.get("head", {}).get("repo") or {}).get("full_name")
         need(bool(shard_head_repo), f"shard PR #{number_for_shard} head repository is unavailable")
+        need(pull.get("state") == "open", f"shard PR #{number_for_shard} must remain open during verification")
         need(pull["base"]["sha"] == base_sha and pull["base"]["ref"] == "main",
              f"shard PR #{number_for_shard} must use exact candidate base {base_sha}")
         reviews = candidate_reviews if number_for_shard == number else client.reviews(number_for_shard)
@@ -364,7 +373,7 @@ def run(repo, number, manifest_path, alternative_config, trusted_base_sha, token
             need(shard.get("role") == "candidate", "final PR shard must declare candidate role")
             records, shard_base, shard_head_tree = candidate_records, base_tree, head_tree
         else:
-            need(shard.get("role") != "candidate", "only final PR may be the candidate shard")
+            need(shard.get("role") == "review", "non-candidate shards must declare role='review'")
             records = client.files(number_for_shard)
             names, expanded, by_name = fileset(records)
             need(0 < len(records) <= MAX_FILES, f"shard PR #{number_for_shard} exceeds 100 files")
