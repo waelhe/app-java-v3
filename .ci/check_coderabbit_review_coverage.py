@@ -209,6 +209,24 @@ def verify_alternative(item, candidate, candidate_reviews, client):
     return paths
 
 
+
+def verify_path_content(path, candidate_changes, shard_base, shard_head, candidate_base, candidate_head):
+    need(path in candidate_changes, f"reviewed path is outside candidate diff: {path}")
+    need(shard_base.get(path) == candidate_base.get(path), f"base content changed after review: {path}")
+    need(shard_head.get(path) == candidate_head.get(path), f"head content changed after review: {path}")
+
+
+def ensure_exact_coverage(candidate_changes, reviewed, alternatives):
+    reviewed_paths = set(reviewed)
+    overlap = reviewed_paths & alternatives
+    need(not overlap, f"paths have both CodeRabbit and alternative evidence: {sorted(overlap)}")
+    covered = reviewed_paths | alternatives
+    missing = set(candidate_changes) - covered
+    extra = covered - set(candidate_changes)
+    need(not extra, f"evidence includes paths outside candidate: {sorted(extra)}")
+    need(not missing, f"changed files have no review evidence: {sorted(missing)}")
+
+
 def run(repo, number, manifest_path, token):
     client = GitHub(repo, token)
     candidate = client.pull(number)
@@ -282,10 +300,9 @@ def run(repo, number, manifest_path, token):
             if path in by_name and by_name[path].get("previous_filename"):
                 paths.add(by_name[path]["previous_filename"])
         for path in paths:
-            need(path in candidate_changes, f"shard covers path outside final candidate: {path}")
-            need(shard_base.get(path) == base_tree.get(path), f"base content changed after review: {path}")
-            need(shard_head_tree.get(path) == head_tree.get(path), f"head content changed after review: {path}")
             need(path not in reviewed, f"path covered by more than one CodeRabbit shard: {path}")
+            verify_path_content(path, candidate_changes, shard_base, shard_head_tree,
+                                base_tree, head_tree)
             reviewed[path] = f"PR #{number_for_shard} review {r['id']}"
 
     need(candidate_shards == 1, "candidate PR must occur exactly once in reviewShards")
@@ -295,11 +312,7 @@ def run(repo, number, manifest_path, token):
         need(paths <= set(candidate_changes), f"alternative evidence outside candidate: {sorted(paths-set(candidate_changes))}")
         alternatives.update(paths)
 
-    missing = set(candidate_changes) - set(reviewed) - alternatives
-    extra = (set(reviewed) | alternatives) - set(candidate_changes)
-    need(not extra, f"evidence includes paths outside candidate: {sorted(extra)}")
-    need(not missing, f"changed files have no review evidence: {sorted(missing)}")
-    need(not (set(reviewed) & alternatives), "path has both CodeRabbit and alternative evidence")
+    ensure_exact_coverage(candidate_changes, reviewed, alternatives)
     print(f"PASS — candidate {head_sha}; paths={len(candidate_changes)}, CodeRabbit={len(reviewed)}, "
           f"alternatives={len(alternatives)}, review shards={len(manifest['reviewShards'])}.")
 
