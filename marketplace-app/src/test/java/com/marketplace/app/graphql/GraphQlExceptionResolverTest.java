@@ -30,7 +30,7 @@ import static org.mockito.Mockito.when;
 class GraphQlExceptionResolverTest {
 
     private final GraphQlExceptionResolver resolver = new GraphQlExceptionResolver(
-            new GraphQlProperties(new GraphQlProperties.Errors(false), null, null));
+            new GraphQlProperties(new GraphQlProperties.Errors(false), null, null, null));
     private final DataFetchingEnvironment env = mock(DataFetchingEnvironment.class);
 
     /**
