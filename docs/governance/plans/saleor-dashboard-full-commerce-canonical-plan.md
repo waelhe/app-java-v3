@@ -15,7 +15,18 @@
 
 Use saleor/saleor-dashboard tag 3.23.39, commit bc75e988da0fa4fbc3d47378a888d859d070746f, as the reproducible UI baseline. Preserve the full upstream commerce workbenches, navigation, product/order screens, list/detail/editor patterns, filters, forms, permission-aware navigation, error/loading states, component tests and E2E assets. Expand this same base for the platform's provider, business, community, property, services and tourism workbenches.
 
-“Full base” means the full maintained codebase remains the starting point. It does not mean every menu item is production-ready before its backend capability passes acceptance. Until then, CI capability metadata must disable or explicitly mark unsupported routes rather than show a fake-success screen.
+“Full base” means the complete maintained codebase, navigation, workbenches, routes, components and workflows remain in scope. A backend capability gap is an implementation obligation, not permission to remove, hide, disable, suppress or omit its Dashboard route/control. Preserve every Dashboard route and intended workflow while completing its owning backend capability and acceptance evidence. Never replace missing behavior with fake-success, fabricated data or a silent no-op.
+
+### D6. Owner reaffirmation — preserve the complete Dashboard and reopen the full commerce target (2026-10-31)
+
+The owner has reaffirmed the full-commerce scope and explicitly directed that no Dashboard capability be disabled or removed to accommodate backend gaps. This is an owner-level scope clarification under D-SALEOR-FULL-001.
+
+1. Preserve the complete pinned Dashboard 3.23.39 codebase and every retained administration route, workbench, menu item, control and workflow. Do not hide, disable, remove or suppress a route because its backend capability is blocked, unimplemented, awaiting an owner/SPI, or not yet tested.
+2. A missing backend capability remains implementation work in its assigned Saleor wave. Keep its gap visible in the central ledger and deliver the real owning model, use case, SPI, persistence, security, migration and tests. Do not invent success-shaped placeholders, fake records, silent no-ops or Dashboard-only substitutes.
+3. The earlier platform-stage deferrals in `ADR-0012 §5` (commercial channels) and `ADR-0012 §7` (multi-location inventory) are superseded **for the full Saleor commerce compatibility target**. They remain historical evidence of the earlier platform stage and retain useful internal invariants, but they no longer justify excluding Saleor channel or warehouse/inventory capabilities from the target.
+4. Channel and warehouse capabilities must be implemented through explicit domain ownership and public SPIs, respecting monetary context, inventory reservation/allocation, fulfillment, audit, concurrency and historical-order snapshots. Do not equate channels with neighborhood/persona/provider authorization; do not invent a second inventory or commerce engine.
+5. Gift cards, tax classes/configuration, Shop/settings and the other P3/P4/P2 workbench capabilities remain in the complete target. Existing owner gaps trigger domain design and implementation, not Dashboard route removal.
+6. This reaffirmation does not mark any root implemented or tested. A0 alone updates root dispositions, shared SDL and divergence records after the exact behavior, owners, tests and review evidence are verified. A genuine root-level non-applicability still requires a specific, owner-approved divergence; it must not be used to remove a retained Dashboard route or workbench.
 
 ### D2. Use the complete Saleor schema as the commerce reference contract
 
@@ -191,7 +202,7 @@ Phase order is dependency-aware, not permission to skip a later category. Work c
 - Classify every uncategorized root from the generated inventory. Federation, plugins, translations, export jobs and other roots require an owner plus an explicit adopt/adapt/defer/N-A decision.
 - Platform social/community/property/jobs/tourism workbenches are added after their owning contracts and E2E recipes exist. They do not replace Saleor commerce operations.
 
-**Gate:** every retained route has 100% operation mapping to accepted API contracts; every removed/deferred route has an explicit capability record and automated assertion that it cannot ship enabled.
+**Gate:** every pinned Dashboard route and workflow has 100% operation mapping to accepted API contracts and its required backend behavior is implemented and tested. No retained route/workbench/control is removed, hidden or disabled as a substitute for backend work.
 
 ### P6 — Live events (26 subscription events)
 
@@ -204,7 +215,7 @@ Phase order is dependency-aware, not permission to skip a later category. Work c
 ### P7 — Final full Dashboard release gate
 
 Release only after:
-- the pinned reference inventory has 458/458 root dispositions in the generated report. Every applicable commerce root is implemented and tested; true architectural non-applicability is permitted only with an owner-approved divergence ADR and an explicit Dashboard route disposition. No `DEFER`, `IMPLEMENTATION_REQUIRED`, or `OWNER_ADR_REQUIRED` may remain at full release.
+- the pinned reference inventory has 458/458 root dispositions in the generated report. Every applicable commerce root is implemented and tested; true architectural non-applicability is permitted only with an owner-approved divergence ADR and a complete disposition in the central ledger. No `DEFER`, `IMPLEMENTATION_REQUIRED`, or `OWNER_ADR_REQUIRED` may remain at full release. Every retained Dashboard route/workbench remains present and its required operation journeys pass end to end; no route is hidden or disabled as a substitute for missing backend capability.
 - all Dashboard runtime operations in retained routes map to accepted contracts and are implemented/tested for the release;
 - operation signatures and required nested type/input/enum/scalar closure are verified, not just root names;
 - final-head backend CI, schema compatibility, generated code, Modulith boundaries and negative security tests pass;
