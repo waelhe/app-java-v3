@@ -15,14 +15,15 @@
   "skills": [
     {
       "name": "saleor-core",
-      "sourceRepository": "saleor/agent-skills",
+      "sourceRepository": "saleor/saleor-docs",
       "sourcePath": "skills/saleor-core",
-      "pinnedCommit": "fb1a57255f58950962f6e474ccba1cade40f5163",
+      "pinnedCommit": "2cdf6590e838929c3f74c16e982cfdc11073c2d8",
       "verification": "PINNED_UPSTREAM",
-      "verificationMethod": "git blob SHA equality between .agents/skills/saleor-core and saleor/agent-skills@fb1a5725 (skills/saleor-core tree), measured 2026-10-30",
-      "license": "BSD-3-Clause AND CC-BY-4.0 (repository root); the SKILL.md frontmatter additionally self-declares MIT",
+      "verificationMethod": "Official saleor-core archive SHA-256 matched the discovery index at measurement 2026-10-31 (13,146 bytes); extracted files were checked against saleor/saleor-docs@2cdf6590 tree blobs and per-file SHA-256 values. The README install-command-only difference was updated; SKILL.md and all three behavior rule files are byte-identical to the prior fb1a5725 snapshot.",
+      "license": "The per-skill LICENSE carries BSD-3-Clause terms and a CC-BY-4.0 artwork notice; SKILL.md frontmatter self-declares MIT. The saleor-docs repository root LICENSE is a separate BSD-3-Clause text with an ISC notice for bundled icons. Statements are preserved as evidence without legal reconciliation.",
       "role": "Saleor backend internals reference (discount precedence, order-level discount allocation, stock availability modes) — consumed as review input for the P3 wave (commercial context, promotions, tax and configuration — 85 roots) and the P4 wave (checkout, order, payment and shipping lifecycle — 111 roots) of D-SALEOR-FULL-001; never wire-contract authority.",
       "upstreamFiles": [
+        "LICENSE",
         "README.md",
         "SKILL.md",
         "rules/discount-precedence.md",
@@ -31,7 +32,7 @@
       ],
       "attribution": {
         "file": "LICENSE",
-        "origin": "saleor/agent-skills repository-root LICENSE at pinnedCommit, vendored verbatim"
+        "origin": "saleor/saleor-docs@2cdf6590e838929c3f74c16e982cfdc11073c2d8 skills/saleor-core/LICENSE, vendored verbatim"
       },
       "files": [
         {
@@ -40,7 +41,7 @@
         },
         {
           "path": "README.md",
-          "sha256": "d6c6598b010daf779f00dfaa60cb5aa21c13026ed63fea341d4974f8a1d141a7"
+          "sha256": "8519dc5e18aeda3b6dae09ab62421d5ce32daf8734647740248018642175d687"
         },
         {
           "path": "SKILL.md",
@@ -98,9 +99,9 @@
         },
         {
           "location": "SKILL.md:11",
-          "issue": "the frontmatter self-declares license MIT while the repository root declares BSD-3-Clause AND CC-BY-4.0",
-          "verifiedFact": "both statements are preserved verbatim in this entry's license field; reconciliation belongs upstream, not in the vendored copy",
-          "evidence": "measured 2026-10-30"
+          "issue": "the frontmatter self-declares MIT while the per-skill LICENSE contains BSD 3-Clause terms and a separate CC-BY-4.0 artwork notice",
+          "verifiedFact": "the SKILL.md frontmatter, per-skill LICENSE, and repository-root LICENSE are preserved as separate source statements; do not infer legal precedence or silently overwrite any of them",
+          "evidence": "measured against saleor/saleor-docs@2cdf6590e838929c3f74c16e982cfdc11073c2d8, 2026-10-31"
         }
       ]
     },
@@ -472,5 +473,6 @@
         "origin": "neondatabase/agent-skills repository-root LICENSE at pinnedCommit, vendored verbatim"
       }
     }
-  ]
+  ],
+  "lastUpdatedAt": "2026-10-31"
 }

@@ -22,20 +22,22 @@ This plan must not create a second 458-root inventory, reassign A1–A7, bypass 
 
 ## 2. Live baseline — measured 2026-10-31
 
-The GitHub compare of `main...integration/saleor-full-commerce-20261021` returned:
+### 2.1 Historical pre-reconciliation snapshot
 
-- `main` base SHA: `f2349deca955cee435e6be3ca56be8a4c251d00a`.
-- Relationship: `diverged`.
-- Commerce branch: **129 commits ahead, 15 commits behind** `main`.
-- Compare API returned 300 file entries. This is the response ceiling observed from the comparison endpoint, not a proven complete changed-file count.
+The earlier GitHub compare of `main...integration/saleor-full-commerce-20261021` returned 129 commits ahead / 15 behind and was capped at 300 file entries. This is historical evidence only; it was superseded by the normal reconciliation.
 
-The old baseline in §3 of the semantic-audit directive (124 ahead / 14 behind, and PR #771 still open) is a historical 2026-10-30 snapshot. Do not reuse it as the execution baseline. A0 must capture the current branch HEAD, `main` HEAD, merge base, complete commit ranges, complete changed-path inventory, migrations head, root-inventory blob, open PRs, review threads, and checks immediately before reconciliation.
+### 2.2 Current reconciled candidate — measured 2026-10-31
 
-PR #771, `governance(agent-skills): pin the vendored skills surface and adopt saleor-core`, is now merged into `main`. The merged main contains the policy, registry, vendored `saleor-core`, and fail-closed governance test. At this measurement those files are absent from the commerce branch. The first reconciliation must bring the **whole approved PR #771 change** into the commerce candidate through the normal main-to-commerce reconciliation; do not manually copy only selected files, re-install a live skill, or cherry-pick around the divergent history.
+- `main` HEAD: `f2349deca955cee435e6be3ca56be8a4c251d00a`.
+- Reconciliation merge: `6608a869b99e137130346879f54f82791abc5a30`, published as `CANDIDATE_BASE_SHA` in the semantic-audit directive.
+- Latest commerce branch HEAD at this review: `435b895d2c98ada7dc2c9661bb2973c7774f78b4` (the reconciliation plus the baseline handoff and source-provenance measurement commits).
+- Live compare at this review: commerce **133 commits ahead, 0 commits behind** `main`; the merge base is `main` at `f2349deca955cee435e6be3ca56be8a4c251d00a`.
+- The additional commits after `CANDIDATE_BASE_SHA` are governance/evidence updates; A0 must still re-fetch exact heads, changed paths, migrations, inventory, checks and reviews before candidate assembly or release.
 
+PR #771 is merged into `main` and its complete policy, registry, vendored `saleor-core`, nine Neon skills and fail-closed governance test are now present on commerce through reconciliation merge `6608a869`. The vendored surface was verified at 49/49 registered files. Do not repeat the reconciliation or manually recopy those files. The source-provenance proposal was subsequently committed as `435b895d`; this PR executes the reviewed `saleor-core` provenance update and records the official discovery surfaces without installing the other four skills.
 ## 3. Saleor skill-source change — required provenance refresh
 
-The previous skills directive and PR #771 pin `saleor-core` to `saleor/agent-skills@fb1a57255f58950962f6e474ccba1cade40f5163`. That is a valid historical pin and must remain byte-verifiable until a reviewed migration replaces it.
+PR #771 originally pinned `saleor-core` to `saleor/agent-skills@fb1a57255f58950962f6e474ccba1cade40f5163`. That was a valid historical pin. The source-provenance spike in commit `435b895d` verified the official `saleor/saleor-docs@2cdf6590` snapshot and established that the published behavior surface is unchanged; this dedicated PR updates the source attribution, registry, README and governance test. The old commit remains recorded as historical origin, not the current distribution pin.
 
 Saleor's current official Agents documentation now directs installation/discovery through **`saleor/saleor-docs`**, not `saleor/agent-skills`, and publishes five skills: `saleor-core`, `saleor-storefront`, `saleor-app`, `saleor-configurator`, and `storefront-builder`. Its machine-readable discovery index is:
 
@@ -45,18 +47,18 @@ Saleor's current official Agents documentation now directs installation/discover
 
 This change is important because the existing main policy says the five-skill inventory is complete under the old `saleor/agent-skills` source. That source/catalog statement needs a reviewed correction. Do not silently rewrite the old pin or treat a mutable `main` URL as a reproducible version.
 
-### 3.1 Required source migration work
+### 3.1 Provenance migration — current PR
 
-A0 opens a dedicated, reviewable provenance update after the branch reconciliation:
+The five-skill discovery spike is recorded in `saleor-agent-skills-source-provenance-proposal.md` and was committed after the reconciliation. This dedicated PR stages the `saleor-core` source migration against the exact docs snapshot:
 
-1. Capture the exact `saleor/saleor-docs` commit SHA used for the snapshot; do not pin the symbolic `main` branch.
-2. Record the official discovery-index response and the advertised digest for every skill bundle.
-3. Download/inspect each selected skill bundle at that exact snapshot and verify its contents against the source tree. Record per-file SHA-256, source path, repository, commit, version metadata, and license/attribution.
-4. Compare the new `saleor-core` content with the currently vendored `saleor/agent-skills@fb1a5725` files. Produce a behavior-level change report; do not overwrite the existing snapshot until the diff is reviewed.
-5. Preserve the existing known-upstream-errata record and the observed license statements. The old `saleor-core` skill frontmatter says MIT while the old upstream repository root says BSD-3-Clause AND CC-BY-4.0. Record the new source's license evidence separately; do not invent a legal reconciliation.
-6. For each newly adopted skill, vendor only the reviewed exact snapshot. Update the pin registry, policy/catalog, per-file hashes, license/attribution, and governance test in the same PR.
-7. Keep unadopted skills in the official-source applicability catalog, not as fake vendored registry entries. A non-vendored skill must not be presented as installed or hash-verified locally.
-8. Never run `npx skills add` in this repository. The installer resolves a moving upstream version and can replace the reviewed snapshot outside the pin workflow.
+1. Pin the official docs snapshot at `saleor/saleor-docs@2cdf6590e838929c3f74c16e982cfdc11073c2d8`; do not use the symbolic `main` for vendored bytes.
+2. Record the five discovery-index bundle digests and archive-size verification evidence in `saleor-agent-skills-source-provenance-proposal.md` and `saleor-ai-resource-surface.json`.
+3. Migrate only `saleor-core`: update its README to the exact pinned source, registry provenance, per-file SHA-256, license statements, attribution, and known-errata evidence in this same PR. The three behavior rules and SKILL.md remain byte-identical; the README installer-command line is behavior-neutral.
+4. Preserve all seven known upstream errata and keep the new license statements factual and separate; do not infer legal precedence.
+5. Keep `saleor-storefront`, `saleor-app`, `saleor-configurator`, and `storefront-builder` in the official applicability catalog only. No new skill directories are added by this PR.
+6. Never run `npx skills add` in this repository; it resolves a moving upstream distribution and bypasses the reviewed pin workflow.
+
+The catalog also records the official Documentation MCP, the observed `llms.txt` surface, the exact schema blob match, and the Marketplace Recipe applicability prompts. Those resources are discovery/reference inputs only.
 
 This is a provenance migration, not a wire-contract migration. It does not change Saleor 3.23.43, Dashboard 3.23.39, the SDL, any root disposition, or an approved divergence.
 
@@ -66,7 +68,7 @@ The goal is to extract maximum **relevant, verifiable** value from all five offi
 
 | Official skill | Useful workstreams | What agents should extract and verify | Explicit boundary |
 |---|---|---|---|
-| `saleor-core` | A2/P2, A3/P3, A4/P4, A6 where stock events apply, A7 only for the Dashboard guidance documented inside the published rule files | Exactly the three published rule families of the pinned snapshot `saleor/agent-skills@fb1a57255f58950962f6e474ccba1cade40f5163`: `discount-precedence` (precedence, suppression, denormalized-field semantics), `order-discount-allocation` (two-pass distribution, per-line exposure, gift-line shape), and `stock-availability-modes` (legacy vs direct stock, purchasability vs shippability, click-and-collect, mode-conditional events, and the Dashboard-wording and migration/test guidance those rule files themselves document). | Coverage is those three rule files at that pinned commit and nothing else. Taxes, gift cards, channels, payment, checkout, orders, and shipping details not in those rules require direct pinned Saleor 3.23.43 source/tests. No additional topic may be attributed to this skill until a fixed new snapshot is reviewed and documented through the §3 provenance procedure. |
+| `saleor-core` | A2/P2, A3/P3, A4/P4, A6 where stock events apply, A7 only for the Dashboard guidance documented inside the published rule files | Exactly the three published rule families of the pinned snapshot `saleor/saleor-docs@2cdf6590e838929c3f74c16e982cfdc11073c2d8` (whose upstream README records import from the historical `saleor/agent-skills@fb1a5725`): `discount-precedence` (precedence, suppression, denormalized-field semantics), `order-discount-allocation` (two-pass distribution, per-line exposure, gift-line shape), and `stock-availability-modes` (legacy vs direct stock, purchasability vs shippability, click-and-collect, mode-conditional events, and the Dashboard-wording and migration/test guidance those rule files themselves document). | Coverage is those three rule files at that pinned commit and nothing else. Taxes, gift cards, channels, payment, checkout, orders, and shipping details not in those rules require direct pinned Saleor 3.23.43 source/tests. No additional topic may be attributed to this skill until a fixed new snapshot is reviewed and documented through the §3 provenance procedure. |
 | `saleor-storefront` | A2/P2, A3/P3, A4/P4; optional consumer work in `waelhe/web-marketplace` | GraphQL data-model and nullability patterns; token/permission behavior; product/variant selection; channel-scoped queries; checkout lifecycle; purchasability and storefront-facing price/availability. | It is a consumer/API usage reference, not authority to change the pinned SDL. It does not replace the backend canonical plan or the administration Dashboard. Cross-repository changes require a separate scoped work packet. |
 | `saleor-app` | A4 payment integrations when a real external-app protocol is in scope; A5 integrations/webhooks; A6 only for actual app/webhook boundaries | App manifest and registration protocol, app/user permission scopes, payment-app lifecycle, external webhook signature/authentication, sync vs async delivery, retry, settings and Dashboard AppBridge behavior. | Conditional reference only. Do not create a Saleor app registry, app-token store, AppBridge runtime, or second integration authority unless an owner-approved platform requirement and domain owner exist. It is not a substitute for the platform's own subscription/event-delivery source and tests. |
 | `saleor-configurator` | A0 governance/configuration design; A3/A5 only where a real declarative configuration surface is approved | Config schema design, stable entity identity (slug vs name), desired-vs-actual diff, dependency ordering, idempotent deployment plans, and partial-failure reporting. | Read-only design reference. Do not run Configurator against Saleor, provision a Saleor shop, add Saleor credentials, or create a second configuration authority. Any platform config-code proposal needs an owning module and decision. |
@@ -83,6 +85,14 @@ The goal is to extract maximum **relevant, verifiable** value from all five offi
 - **A7 / Dashboard:** keep the complete pinned Saleor Dashboard 3.23.39 as the admin UI authority. Use `saleor-core` only for relevant Dashboard behavior/copy. Use storefront/builder references only for buyer-facing journeys, not as Dashboard scaffolding.
 
 No skill changes A0–A7 ownership, central ledger ownership, shared SDL authority, SPI ownership, Flyway numbering, or the decision/ADR process.
+
+### 4.2 Documentation discovery and Marketplace Recipe
+
+The official Documentation MCP is `https://docs.saleor.io/mcp`, version 2.0.3, Streamable HTTP. Its server card declares four read-only tools: `search_docs`, `get_page`, `list_pages`, and `get_navigation`. The official AI page explicitly says this endpoint only searches/reads docs; it does not connect to a Saleor instance or execute GraphQL. Keep it separate from the optional GraphQL MCP, which must consume the pinned 3.23.43 SDL. The tool metadata and access boundary are captured in `saleor-ai-resource-surface.json`; this repository does not treat a live docs endpoint as a release-time dependency.
+
+Use `llms.txt` and API-reference indexes to find the right source page or operation quickly. The 2,637-line count recorded on 2026-10-31 is a rendered snapshot observation only; it is not a test invariant. Do not rely on an unpinned `llms-full.txt` size claim or a mutable documentation page to prove behavior.
+
+The official Marketplace Recipe is a **review checklist**, not our platform architecture. It highlights: custom vendor modeling rather than a native Saleor vendor; commodity vs boutique offer modeling; application-level seller resource isolation (OIDC/token claims alone do not enforce object ownership); vendor-aware order-line fulfillment and shipping; separation of customer payment from asynchronous seller payout; and vendor-specific tax handling. Map these to A1/A3/A4/A5/A7 only where the corresponding platform capability is already in approved scope. Derive test cases for seller isolation, line-to-seller ownership, split fulfillment, refunds/recovery, payout idempotency/reconciliation, tax and operator/seller access. Do not import Saleor Models/Attributes as a mandatory data model or adopt Stripe Connect/provider advice by default. See `saleor-ai-resource-surface.json`.
 
 ## 5. Mandatory skill-consumption protocol
 
@@ -119,21 +129,24 @@ Use official Saleor source/tests for behavior not documented by a selected skill
 
 This repository's existing playbook requires one assembled candidate and one final release PR because a merge to `main` triggers production deployment. Preserve that model.
 
-### Phase A — Re-establish and reconcile
+### Phase A — Main-to-commerce reconciliation completed; candidate refresh pending
 
-1. A0 freezes live `main`, commerce branch, merge base, open PRs, checks, review threads, migration head, root inventory, and all changed paths/commit ranges.
-2. Reconcile **main into commerce first**. No commerce-to-main merge, force push, history rewrite, or blind rebase.
-3. Include the complete already-merged PR #771 change: policy, pin registry, vendored files, and governance test. Resolve conflicts with their ownership and test implications recorded.
-4. Record `CANDIDATE_BASE_SHA`; validate that the vendored files match registered hashes and `PlatformGovernanceFilesTest` fails closed on drift.
-5. Refresh the stale baseline section in the semantic-audit handoff with dated live measurements, retaining historical evidence rather than rewriting old measurements as if they were current.
+The main-to-commerce reconciliation is already complete. Merge `6608a869b99e137130346879f54f82791abc5a30` brought the complete approved PR #771 payload into the commerce branch; the 49 registered vendored files were hash-verified. The live measurement recorded in §2.2 showed `integration/saleor-full-commerce-20261021` at `435b895d2c98ada7dc2c9661bb2973c7774f78b4`, 133 commits ahead and 0 behind `main`. Do not repeat the reconciliation or recopy PR #771 files.
 
-### Phase B — Candidate build and audit
+1. **Completed:** freeze and reconcile `main` into commerce, including all conflicts and ownership decisions, as recorded in the semantic-audit directive and merge `6608a869`.
+2. **In progress in this PR:** migrate the `saleor-core` provenance and resource catalog as specified in §3. PR #773 is an integration-only governance PR; its checks and review must apply to its final head.
+3. PR #783 is a separate **Draft / review-only** ADR track. A1–A7 may review its proposals now, independently of #773. It does not approve decisions, change root dispositions, or authorize implementation.
+4. After the owner-authorized merge of #773 into the integration branch, A0 re-reads live `main` and integration heads, open PRs, checks, review threads, changed paths, migration head and root-inventory blob, then publishes a refreshed `CANDIDATE_BASE_SHA`. The historical `6608a869` reconciliation SHA and the `435b895d` pre-PR base are not to be reused as the new implementation baseline.
 
-1. Dispatch A1–A7 using the existing playbook and exact root/file ownership.
-2. Agents audit their already-INTEGRATED roots and continue unblocked NOT_STARTED implementation in the same continuous build cycle.
-3. A0 assembles completed commits on the candidate branch in dependency order, not by merging partial waves to `main`.
-4. Resolve decision-blocked roots only through owner-approved ADR/divergence records. No no-op or success-shaped implementation.
-5. The skill source refresh in §3 is a separate provenance work packet; it must not block unrelated commerce implementation, and the existing pinned core snapshot remains usable while the reviewed refresh is pending.
+### Phase B — ADR review, candidate build and audit
+
+1. Keep PR #783 Draft while A1–A7 submit evidence-based reviews of the assigned ADRs. A0 consolidates the findings; only the repository owner may accept or reject the proposed decisions.
+2. Until the owner decision is recorded, no ADR-dependent root may be implemented or moved out of `BLOCKED_BY_DECISION` / `OWNER_ADR_REQUIRED`. Agents may continue independent work already authorized by their current work packets; do not create new feature branches from the historical SHA.
+3. After #773 is merged by owner authorization and A0 publishes the refreshed candidate SHA, dispatch or rebase/confirm A1–A7 implementation workspaces so every new workstream starts from that same exact SHA and the existing root/file ownership.
+4. Each agent audits its already-INTEGRATED roots and continues unblocked NOT_STARTED implementation in the same continuous build cycle. Audit coverage is not limited to the skills' narrow behavior domains.
+5. A0 assembles completed commits on the candidate branch in dependency order, not by merging partial waves to `main`.
+6. Resolve decision-blocked roots only through owner-approved ADR/divergence records. No no-op or success-shaped implementation.
+7. The four skills other than `saleor-core` remain discovery-only references unless a workstream requests and reviews adoption through the pinning policy.
 
 ### Phase C — Review and one release PR
 
@@ -198,12 +211,12 @@ Do not report a single blended “Saleor completion percentage”. Keep separate
 
 ## 10. First actions for A0
 
-1. Re-fetch the live baseline and publish the new `CANDIDATE_BASE_SHA`; the 2026-10-31 measurements in §2 are a starting snapshot only.
-2. Reconcile `main` into commerce and verify the full PR #771 governance/skill payload.
-3. Update the stale live-baseline note in the semantic-audit handoff.
-4. Validate the one-root-per-row inventory against the pinned schema and current domain matrix.
-5. Run the source-provenance spike for `saleor/saleor-docs` and publish a five-skill applicability/source-pin proposal. Do not vendor or update skill files in this plan-only change.
-6. Dispatch the current A1–A7 owners. Prioritize A2/A3/A4 where core skill rules give direct value, while every workstream audits its existing INTEGRATED roots.
+1. Complete PR #773 on its final head: require green CI and Integration Test, successful security checks, fresh CodeRabbit review, and independent review. The PR targets `integration/saleor-full-commerce-20261021` only; do not merge it to `main`.
+2. Keep PR #783 Draft and start the A1–A7 ADR review track now. Collect source/test evidence and per-ADR verdicts; do not treat comments as owner approval or change central dispositions.
+3. After the repository owner authorizes and #773 is merged into integration, re-fetch live `main` and integration refs, compare/merge-base, all open PRs and review threads, current checks, full changed-path inventory, migration head, and root-inventory blob.
+4. Publish the refreshed `CANDIDATE_BASE_SHA` and update §3 of the semantic-audit directive with the measured live baseline. Preserve `6608a869` and the earlier 435b895d measurement as historical evidence; do not overwrite them as though they were the new branch tip.
+5. Revalidate the single 458-row inventory against the pinned schema and current domain matrix, including exact counts/statuses and the inventory blob on the refreshed candidate.
+6. Only then open/confirm isolated A1–A7 implementation branches, all from the same refreshed SHA. Keep ADR-dependent roots blocked until the owner decision; allow independent authorized work to proceed.
 7. Measure CodeRabbit's current quota and file-processing limits using a bounded, representative review. Design the coverage gate if the full release candidate cannot be reviewed in one request.
 8. Assemble candidate work continuously, then complete independent review and the single final release PR.
 
