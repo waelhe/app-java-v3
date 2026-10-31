@@ -54,6 +54,16 @@ The measured freeze boundary is `marketplace-orders`: at order placement it capt
 7. channelReorderWarehouses remains blocked by D-WHSE-001; this proposal does not establish a warehouse model.
 8. A channel's legal entity/issuer relationship is explicit. Channel is not itself proof of merchant-of-record or seller authorization.
 
+## A0 Dashboard 3.23.39 route / operation evidence
+
+The pinned Dashboard 3.23.39 source at `bc75e988da0fa4fbc3d47378a888d859d070746f` has active Channel operations:
+
+- `src/channels/mutations.ts` defines `channelCreate`, `channelUpdate`, `channelDelete`, `channelActivate`, `channelDeactivate`, and `channelReorderWarehouses`; the Channels list/details components expose the related routes and controls.
+- `channelUpdate` is also used by channel setup/details for channel-scoped settings and membership changes. The upstream input carries order, checkout, payment and stock settings, plus warehouse and shipping-zone assignment fields; these are not safe to satisfy with a generic Channel row update.
+- The Channel details setup path creates a warehouse and assigns it through Channel update; the inventory card exposes warehouse assignment/create actions. These controls depend on D-WHSE-001 and must be capability-gated in platform mode.
+- Because this proposal keeps `channelDelete` unsupported, the Dashboard channel-delete dialog/action must be hidden or disabled until a lossless reference/deletion policy is accepted. Channel create/update/activate/deactivate are separate operations and must each be checked against the actual platform Channel owner; do not treat one successful mutation as proof that all Channel settings are supported.
+
+
 ## Alternatives considered
 
 - **A — First-class marketplace-channels module with delegated domain settings. RECOMMENDED.** Makes the commercial context explicit while retaining existing pricing, inventory, delivery, order and payment authorities.
