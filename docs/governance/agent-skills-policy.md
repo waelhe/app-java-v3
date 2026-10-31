@@ -102,18 +102,19 @@ byte-identical to `neondatabase/agent-skills@51c7d594`, 34 files).
   per-skill LICENSE from `saleor/saleor-docs@2cdf6590`; the original
   `saleor/agent-skills@fb1a5725` provenance is retained as historical
   origin in the source-provenance proposal.
-- `saleor-core` provenance migrated in the reviewed change from the
+- PR #773 implements the `saleor-core` provenance migration from the
   historical `saleor/agent-skills@fb1a5725` snapshot to
   `saleor/saleor-docs@2cdf6590e838929c3f74c16e982cfdc11073c2d8`.
   The official archive digest matched the discovery index in the
   2026-10-31 source-provenance measurement; the three behavior rule
   files and SKILL.md are byte-identical, and README's installer command
-  is the only behavior-neutral file change. All seven known upstream
-  errata remain recorded. License evidence is not interpreted: the
-  per-skill LICENSE carries BSD-3-Clause terms and a CC-BY-4.0 artwork
-  notice; SKILL.md frontmatter self-declares MIT; the docs repository
-  root LICENSE is separately recorded as BSD-3-Clause with an ISC
-  notice for bundled icons.
+  is the only behavior-neutral file change. The registry and policy
+  transition becomes the active integration-branch pin only when PR
+  #773 is merged. All seven known upstream errata remain recorded.
+  License evidence is not interpreted: the per-skill LICENSE carries
+  BSD-3-Clause terms and a CC-BY-4.0 artwork notice; SKILL.md frontmatter
+  self-declares MIT; the docs repository root LICENSE is separately
+  recorded as BSD-3-Clause with an ISC notice for bundled icons.
 - The Neon skills pinned at `neondatabase/agent-skills@51c7d594`
   (2026-10-16); Apache-2.0, with the upstream root LICENSE vendored
   verbatim beside each skill (`attribution` in the registry).
