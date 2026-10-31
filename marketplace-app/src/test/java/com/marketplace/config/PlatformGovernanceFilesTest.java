@@ -1112,6 +1112,8 @@ class PlatformGovernanceFilesTest {
         JsonNode referenceSchema = sourcePins.path("referenceSchema");
         assertThat(publishedSchema.path("gitBlobSha1").asText())
                 .isEqualTo(referenceSchema.path("gitBlobSha1").asText());
+        assertThat(publishedSchema.path("pinnedSaleorVersion").asText())
+                .isEqualTo(referenceSchema.path("ref").asText());
         assertThat(publishedSchema.path("bytes").asInt()).isEqualTo(1_101_635);
         assertThat(referenceSchema.path("ref").asText()).isEqualTo("3.23.45");
 
