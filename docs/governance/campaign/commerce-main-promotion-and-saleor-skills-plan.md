@@ -8,6 +8,34 @@
 
 > This plan supplements, and does not replace, the canonical Saleor execution plan, the multi-agent execution playbook, or the Saleor Agent Skills & Semantic Audit Directive. If any instruction conflicts with those authorities, stop and ask A0 to reconcile it. No part of this plan authorizes a Saleor runtime, a second database, a production deployment, or a merge to `main`.
 
+## 0.1 Latest live remeasurement — 2026-10-31 (supersedes earlier SHA snapshots)
+
+This dated record supersedes any earlier dispatch baseline or open-PR inventory in this supplemental promotion plan. The sole execution authority remains the canonical plan; this section is only the current operational snapshot.
+
+- `main`: `f2349deca955cee435e6be3ca56be8a4c251d00a`.
+- `integration/saleor-full-commerce-20261021`: `34d37457df53790afc92decd68af1773e6ff8578`.
+- GitHub compare: integration is **136 commits ahead / 0 behind** main; merge base is main at `f2349deca955cee435e6be3ca56be8a4c251d00a`. Main-to-commerce reconciliation is complete. Do not merge main again or reuse an earlier 435b895d/267540760/6608a869 SHA as today's dispatch baseline.
+- Current A2/A3/A4 implementation baseline: `34d37457df53790afc92decd68af1773e6ff8578`; A0 rechecks live branch heads before each new dispatch and assembly.
+- Active implementation concurrency: exactly three coding agents A2, A3 and A4; A0 is the Integration Lead / Contract Steward. A1–A7 remain the ownership taxonomy, not a direction to launch seven simultaneous coding sessions.
+- Active workspaces: A2 `agent/a2-p2-stock-audit-20261031`; A3 `agent/a3-p3-commercial-20261031` (all P3 roots in one workspace); A4 `agent/a4-p4-checkout-audit-20261031`; A0 `agent/a0-semantic-evidence-gate-20261031`.
+- P3 issues #779–#782 are specialist checklists under A3, not separate branches, agents or PRs. A3 remains sole P3 owner for all 85 roots.
+- Previous specialist-only A3 branch refs were parked empty at the common baseline; do not dispatch them. They contain no unique implementation commits.
+
+### Current PR state
+
+- **#773 — active provenance PR:** moves the adopted `saleor-core` source pin and records official AI resources. Current PR head `ad5c394c5b7d0633ad38b69ac7090a68dddb2b46`, recorded base `435b895d` (three commits behind current integration). CI, Integration Test and Snyk were successful on the inspected head. Its last recorded CodeRabbit approval is not current for that head; a fresh exact-head review and owner-authorized merge are still required. This is a separate provenance track and does not block unblocked A2/A3/A4 implementation; the current active integration pin remains the merged `saleor/agent-skills@fb1a5725` until #773 merges.
+- **#783 — archived without merge:** seven ADR proposals and a canonical-plan patch on a stale branch. It was Draft/non-mergeable, had CodeRabbit changes requested, and included wording superseded by the latest owner scope (Dashboard route suppression/old warehouse deferral). The PR is closed; its branch and proposal files are preserved as historical review material, not approved ADRs or an execution plan.
+- There are no individual A2/A3/A4 wave PRs. Agents deliver commits/evidence to A0; the playbook allows one final release PR after the Implementation Complete gate and independent review.
+
+### Scope corrections that govern current dispatch
+
+1. The latest canonical plan forbids hiding, disabling, removing or suppressing any retained Dashboard 3.23.39 route/workbench/control because a backend capability is missing. The missing backend capability is implementation work; P7 remains blocked until done.
+2. The previous platform-stage D-WHSE-001 deferral is superseded for the full Saleor target. A2 owns warehouse/location stock and allocation; A3 owns channel-to-warehouse membership and ordering; A4 owns checkout/shipping/fulfilment use through public SPIs.
+3. The canonical 458-root inventory remains the only root-status authority. P3 at the measured ledger blob `ec689c643b9c906779e09f3fdaee73885052282a` is 85 roots = 8 INTEGRATED + 59 NOT_STARTED + 18 BLOCKED_BY_DECISION.
+4. No wave PRs, no branch-per-subdomain, no independent A3 specialists. A3 executes discounts, gifts, taxes, channels and Shop from its one unified branch. All shared files/SDL/ledger/divergences/pins/CI/Flyway allocation remain A0-owned.
+
+---
+
 ## 1. Governing documents and boundaries
 
 The following remain authoritative:
@@ -20,7 +48,7 @@ The following remain authoritative:
 
 This plan must not create a second 458-root inventory, reassign A1–A7, bypass A0 ownership of shared files, or change the canonical contract. A skill is specialist reference material, never a wire-contract authority.
 
-## 2. Live baseline — measured 2026-10-31
+## 2. Historical baseline snapshots — 2026-10-31
 
 The GitHub compare of `main...integration/saleor-full-commerce-20261021` returned:
 
@@ -29,7 +57,7 @@ The GitHub compare of `main...integration/saleor-full-commerce-20261021` returne
 - Commerce branch: **129 commits ahead, 15 commits behind** `main`.
 - Compare API returned 300 file entries. This is the response ceiling observed from the comparison endpoint, not a proven complete changed-file count.
 
-The old baseline in §3 of the semantic-audit directive (124 ahead / 14 behind, and PR #771 still open) is a historical 2026-10-30 snapshot. Do not reuse it as the execution baseline. A0 must capture the current branch HEAD, `main` HEAD, merge base, complete commit ranges, complete changed-path inventory, migrations head, root-inventory blob, open PRs, review threads, and checks immediately before reconciliation.
+The old baseline in §3 of the semantic-audit directive (124 ahead / 14 behind, and PR #771 still open) is a historical 2026-10-30 snapshot. Do not reuse it as the execution baseline. The live dispatch baseline is recorded in §0.1 above. A0 must capture the current branch HEAD, `main` HEAD, merge base, complete commit ranges, complete changed-path inventory, migrations head, root-inventory blob, open PRs, review threads, and checks immediately before reconciliation.
 
 PR #771, `governance(agent-skills): pin the vendored skills surface and adopt saleor-core`, is now merged into `main`. The merged main contains the policy, registry, vendored `saleor-core`, and fail-closed governance test. At this measurement those files are absent from the commerce branch. The first reconciliation must bring the **whole approved PR #771 change** into the commerce candidate through the normal main-to-commerce reconciliation; do not manually copy only selected files, re-install a live skill, or cherry-pick around the divergent history.
 
