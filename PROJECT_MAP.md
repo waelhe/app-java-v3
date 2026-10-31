@@ -1,3 +1,28 @@
+# Saleor Campaign — current execution snapshot (2026-10-31)
+
+**Live integration HEAD measured:** `435b895d2c98ada7dc2c9661bb2973c7774f78b4` on `integration/saleor-full-commerce-20261021`. Re-read the live branch head before any new branch/rebase/assembly action; this is the starting SHA for the current prepared workspaces, not a permanent pin.
+
+**Current coordination tasks**
+- A2 / P2 inventory audit: [#776](https://github.com/waelhe/app-java-v3/issues/776) — branch `agent/a2-p2-stock-audit-20261031`.
+- A3 / P3 parent for all 85 commercial roots: [#778](https://github.com/waelhe/app-java-v3/issues/778). A3 keeps ownership of the complete P3 wave.
+  - Discounts (33 roots): [#774](https://github.com/waelhe/app-java-v3/issues/774) — `agent/a3-p3-discount-audit-20261031`.
+  - Gift cards (21 roots): [#779](https://github.com/waelhe/app-java-v3/issues/779) — `agent/saleor-p3-gift-cards-20261031`; requires owner decision `D-GC-001` before financial implementation.
+  - Taxes (14 roots): [#780](https://github.com/waelhe/app-java-v3/issues/780) — `agent/saleor-p3-taxes-20261031`; requires `D-TAX-001`.
+  - Channels (8 roots): [#781](https://github.com/waelhe/app-java-v3/issues/781) — `agent/saleor-p3-channels-20261031`; requires `D-CHANNEL-001`; warehouse linkage remains under `D-WHSE-001`.
+  - Shop settings (9 roots): [#782](https://github.com/waelhe/app-java-v3/issues/782) — `agent/saleor-p3-shop-settings-20261031`; requires `D-SHOP-001` and `D-SETTINGS-001`.
+- A4 / P4 order, checkout and discount-allocation audit: [#775](https://github.com/waelhe/app-java-v3/issues/775) — branch `agent/a4-p4-checkout-audit-20261031`.
+- A0 / domain knowledge map and Semantic Evidence Gate: [#777](https://github.com/waelhe/app-java-v3/issues/777) — branch `agent/a0-semantic-evidence-gate-20261031`. Its initial map and links from AGENTS.md/SYSTEM.md, plus this PROJECT_MAP execution snapshot, are committed on that branch; the issue remains open for review, validation and gate implementation.
+
+**P3 inventory snapshot from central ledger blob `ec689c643b9c906779e09f3fdaee73885052282a`:** 85 roots = 8 INTEGRATED + 59 NOT_STARTED + 18 BLOCKED_BY_DECISION. The child issues are work packets only; they do not create another root inventory or mutate these statuses.
+
+**Whole-system knowledge reference:** [Saleor Commerce Domain Knowledge Map](https://github.com/waelhe/app-java-v3/blob/agent/a0-semantic-evidence-gate-20261031/docs/governance/campaign/saleor-domain-knowledge-map.md). It routes the 458-root ledger, domain matrix, divergences, official docs, pinned source/test families, platform owners, cross-domain dependencies and applicable skill references. It is not an authority over the canonical plan and does not duplicate root statuses.
+
+**PR #773:** remains open and unmerged; it still targets `integration/saleor-full-commerce-20261021`. No change was made to it in this coordination pass.
+
+**Agent launch state:** branches and instructions are prepared, but GitHub Assignees remain empty because no individual agent GitHub usernames were supplied. Branch creation does not itself start an external coding-agent session. The tasks include the startup commands and delivery protocol.
+
+---
+
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
 ## قرار الحوكمة الحاكم لتكامل Saleor — D-SALEOR-FULL-001 (2026-10-20)
