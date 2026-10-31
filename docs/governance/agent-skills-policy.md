@@ -42,12 +42,21 @@ an operation's disposition in the canonical plan.
 
 ## 3. What is vendored (inventory)
 
-Official Saleor source: `saleor/agent-skills` — five skills exist
-upstream; the inventory below is complete.
+Current official Saleor Agent Skills discovery is published by
+`saleor/saleor-docs`. This policy's source snapshot is
+`saleor/saleor-docs@2cdf6590e838929c3f74c16e982cfdc11073c2d8`
+(see `docs/governance/plans/saleor-ai-resource-surface.json`). The
+official discovery index advertises five skills. The legacy
+`saleor/agent-skills@fb1a57255f58950962f6e474ccba1cade40f5163`
+repository is the historical source for four of those skills; the
+pinned docs snapshot's own `skills/README.md` declares that import.
+`storefront-builder` is also in the current five-skill documentation
+distribution. The table below describes this repository's adoption
+state, not merely upstream availability.
 
 | Skill | State | Reason |
 | --- | --- | --- |
-| `saleor-core` | ADOPTED (pinned) | Discount precedence, order-level discount allocation across lines, and stock availability modes — direct review input for the P3 wave (commercial context, promotions, tax and configuration — 85 roots) and the P4 wave (checkout, order, payment and shipping lifecycle — 111 roots) of D-SALEOR-FULL-001. |
+| `saleor-core` | ADOPTED (pinned) | Provenance pinned to `saleor/saleor-docs@2cdf6590e838929c3f74c16e982cfdc11073c2d8`; its unchanged three behavior rules cover discount precedence, order-level allocation, and stock availability. Direct review input for the P3 and P4 waves of D-SALEOR-FULL-001. |
 | `saleor-storefront` | NOT ADOPTED | Storefront API patterns; this backend pins its wire contract from the Saleor reference schema, not from storefront examples. Revisit if a storefront consumer project needs it. |
 | `saleor-app` | NOT ADOPTED | Saleor app protocol (manifest, appbridge, webhooks); the platform runs no Saleor app registry — `saleorBackendIsDeployed: false`. Revisit only for a real external integration task. |
 | `saleor-configurator` | NOT ADOPTED | Store-configuration-as-code for a running Saleor instance; no second Saleor engine exists here by architectural decision. |
@@ -91,11 +100,18 @@ byte-identical to `neondatabase/agent-skills@51c7d594`, 34 files).
   `PINNED_UPSTREAM` (40 upstream skill files plus 10 vendored
   attribution LICENSE copies — one per skill — since no upstream skill
   directory carries its own license file).
-- `saleor-core` pinned at `saleor/agent-skills@fb1a5725` (2026-08-06).
-  Its license record is factual, not interpretive: the repository root
-  declares `BSD-3-Clause AND CC-BY-4.0`, while the skill's SKILL.md
-  frontmatter self-declares MIT — both statements are preserved in the
-  registry; reconciliation belongs upstream.
+- `saleor-core` provenance migrated in the reviewed change from the
+  historical `saleor/agent-skills@fb1a5725` snapshot to
+  `saleor/saleor-docs@2cdf6590e838929c3f74c16e982cfdc11073c2d8`.
+  The official archive digest matched the discovery index in the
+  2026-10-31 source-provenance measurement; the three behavior rule
+  files and SKILL.md are byte-identical, and README's installer command
+  is the only behavior-neutral file change. All seven known upstream
+  errata remain recorded. License evidence is not interpreted: the
+  per-skill LICENSE carries BSD-3-Clause terms and a CC-BY-4.0 artwork
+  notice; SKILL.md frontmatter self-declares MIT; the docs repository
+  root LICENSE is separately recorded as BSD-3-Clause with an ISC
+  notice for bundled icons.
 - The Neon skills pinned at `neondatabase/agent-skills@51c7d594`
   (2026-10-16); Apache-2.0, with the upstream root LICENSE vendored
   verbatim beside each skill (`attribution` in the registry).
