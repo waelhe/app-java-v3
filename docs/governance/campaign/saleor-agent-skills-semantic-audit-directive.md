@@ -10,7 +10,7 @@
 
 ## 1. Mission
 
-Use the official saleor/agent-skills repository as specialized domain knowledge to:
+Use the official Saleor Agent Skills distribution in saleor/saleor-docs (the pinned campaign snapshot is 2cdf6590e838929c3f74c16e982cfdc11073c2d8) and the reviewed vendored saleor-core skill as specialized domain knowledge to:
 
 1. Audit previously INTEGRATED Saleor roots for real contract, behavioral, authorization, persistence, transaction, event, and Dashboard correctness.
 2. Find and repair defects that name/signature checks or ordinary CRUD tests cannot detect.
@@ -71,10 +71,14 @@ The original Phase A action items and their completion record (2026-10-30 direct
 
 The adopted Saleor reference for this campaign is:
 
-- Repository: saleor/agent-skills
-- Pinned commit: fb1a57255f58950962f6e474ccba1cade40f5163
-- Skill: skills/saleor-core/
-- Official pinned source: https://github.com/saleor/agent-skills/tree/fb1a57255f58950962f6e474ccba1cade40f5163/skills/saleor-core
+- Official distribution repository: `saleor/saleor-docs`
+- Pinned commit: `2cdf6590e838929c3f74c16e982cfdc11073c2d8`
+- Skill: `skills/saleor-core/`
+- Official pinned source: https://github.com/saleor/saleor-docs/tree/2cdf6590e838929c3f74c16e982cfdc11073c2d8/skills/saleor-core
+- Historical origin: `saleor/agent-skills@fb1a57255f58950962f6e474ccba1cade40f5163`; the pinned docs snapshot's own `skills/README.md` records that the original skill directories were imported from that commit.
+- Source/digest inventory: `docs/governance/plans/saleor-ai-resource-surface.json`.
+
+The migration changes provenance and the README installation-command line only. The three behavior rule files and SKILL.md remain byte-identical; the seven registered upstream errata are retained.
 
 Use the skill selectively:
 
@@ -95,6 +99,12 @@ Other skills are conditional references only:
 
 Never run npx skills add or another skill installer against this repository. A skill update is allowed only through a reviewed PR that updates vendored files, source commit, license/attribution metadata, and per-file integrity records together.
 
+### 4.1 Documentation discovery is not execution authority
+
+The official Documentation MCP at `https://docs.saleor.io/mcp` is a read-only documentation server. Its published server card declares four read-only tools (`search_docs`, `get_page`, `list_pages`, `get_navigation`), Streamable HTTP transport, and version 2.0.3. It does not connect to a Saleor instance or execute GraphQL operations. The separate Saleor GraphQL MCP is a different tool and must be configured against the already pinned SDL version, never a moving upstream `main` schema.
+
+Agents may use Documentation MCP and `llms.txt` to discover relevant pages, API sections, and rule references. They must then pin the relevant docs/source commit and verify the claim in Saleor 3.23.43 source/tests. MCP search results, live documentation pages, generated indexes, and skill text are discovery aids, not implementation evidence or platform authority. The resource snapshot and measured limits live in `docs/governance/plans/saleor-ai-resource-surface.json`; its line counts are observations, not contracts.
+
 ### 4.1 Verify every skill claim against upstream
 
 For each rule consumed by an implementation or test:
@@ -109,7 +119,7 @@ For each rule consumed by an implementation or test:
 
 Known issues already identified in this skill include an uninitialized variable in a Python snippet, an incorrect source-file path for StockQuerySet, currency-precision-blind rounding language, and nuanced stock/click-and-collect and subscription-delivery claims. Re-verify each against the pinned source before using it; do not treat this list as exhaustive.
 
-The saleor-core frontmatter declares MIT while the upstream repository root states BSD-3-Clause AND CC-BY-4.0. Preserve the observed license statements and attribution records; do not invent a legal reconciliation or edit upstream content locally. A0 must keep the legal status explicit and request owner/legal resolution if distribution or modification depends on it.
+The saleor-core SKILL.md frontmatter self-declares MIT; its per-skill LICENSE carries BSD-3-Clause terms and a separate CC-BY-4.0 artwork notice. The saleor/saleor-docs repository root LICENSE is a distinct BSD-3-Clause text with an ISC notice for bundled icons. Preserve these source statements separately; do not infer legal precedence or edit upstream content locally. A0 must request owner/legal resolution if a distribution decision depends on it.
 
 ## 5. Semantic audit of previously integrated roots
 
