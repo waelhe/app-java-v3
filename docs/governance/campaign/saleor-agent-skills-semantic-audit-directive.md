@@ -41,31 +41,38 @@ Keep the existing architecture:
 - Saleor-compatible public GraphQL is a boundary contract; internal models remain platform-native.
 - Do not edit the canonical plan, source pins, shared SDL, generated DGS code, Flyway numbering, cross-module POMs, Modulith policy, CI workflows, central ledger, or divergence registry unless A0 explicitly assigns the shared-file change.
 
-## 3. Live baseline — re-established 2026-10-31 (Phase A of the promotion plan)
+## 3. Reconciliation baseline — 2026-10-31 (historical measurement; not a current implementation base)
 
-**Current measured baseline (2026-10-31T03:37Z, post-reconciliation):**
+**Reconciliation freeze captured at 2026-10-31T03:37Z:**
 
-- Commerce branch: `integration/saleor-full-commerce-20261021`, HEAD **`6608a869b99e137130346879f54f82791abc5a30`** — this is the published **`CANDIDATE_BASE_SHA`**.
+- Commerce branch: `integration/saleor-full-commerce-20261021`, HEAD **`6608a869b99e137130346879f54f82791abc5a30`** at the time of reconciliation. This was the published `CANDIDATE_BASE_SHA` for that freeze only; it is not the branch tip after subsequent governance commits and must not be reused for new branches.
 - `main` HEAD at reconciliation: `f2349deca955cee435e6be3ca56be8a4c251d00a` (the PR #771 merge).
 - Pre-reconciliation freeze (measured 2026-10-31): commerce **130 commits ahead, 15 commits behind**, merge base `f2702ff4617825d01880cd19fd7a5f66918cbf20`; 592 commerce-side changed files, 200 main-side, 179 both-sides — 171 byte-identical, 6 auto-merged, 4 conflicts resolved in the merge commit (measured union/ownership decisions recorded in its message).
-- PR #771 **is merged into main** (`f2349dec`); its full payload — `docs/governance/agent-skills-policy.md`, `docs/governance/plans/agent-skills-pins.json`, vendored `saleor-core` + 9 neon skills with LICENSE attribution, and the fail-closed `PlatformGovernanceFilesTest` — **is now present on the commerce branch** via the reconciliation merge; all 49 pinned files sha256-verified against the registry in the merged tree.
-- Root inventory blob at `CANDIDATE_BASE_SHA`: `ec689c643b9c906779e09f3fdaee73885052282a` — 458 roots: 163 INTEGRATED, 238 NOT_STARTED, 57 BLOCKED_BY_DECISION (re-measured 2026-10-31; unchanged).
-- Open PRs at re-establishment: **none** (the review-only draft superseded by the promotion plan is closed; the final release PR is created fresh per plan §7 Phase C).
-- Migration head on the candidate: `V295` (214 versioned migrations, measured in the merged tree; matches the `DocumentationNumbersGuardTest` derivations together with 188 IT test files).
+- PR #771 was merged into `main` (`f2349dec`); its full payload — policy, pin registry, vendored `saleor-core` + nine Neon skills with LICENSE attribution, and fail-closed `PlatformGovernanceFilesTest` — is present on commerce through merge `6608a869`; all 49 registered files were hash-verified in that tree.
+- Root inventory blob at that freeze: `ec689c643b9c906779e09f3fdaee73885052282a` — 458 roots: 163 INTEGRATED, 238 NOT_STARTED, 57 BLOCKED_BY_DECISION. These are historical measurements and must be revalidated on the refreshed candidate.
+- Migration head at that freeze: `V295` (214 versioned migrations); re-read it before candidate assembly.
 
-**Historical snapshot (2026-10-30, superseded by the above — kept as evidence, not current):**
+**Current coordination refs verified 2026-10-31:**
 
-- Branch HEAD at that measurement: `c58e2e9b3b8f0369bc2885544c6e01df3209f237`; main at `28d9947960364565bef4f9fe72eab750c6db4e8f`; compare: diverged, 124 ahead / 14 behind; PR #771 still open (head `58d88c50f3752fcbdc58d514791fdf80d5573fb8`); the skill/registry files not yet present on the commerce branch. Root inventory blob `ec689c64…` and the 163/238/57 split were already as measured above.
+- `main` HEAD: `f2349deca955cee435e6be3ca56be8a4c251d00a`.
+- Integration branch HEAD: `435b895d2c98ada7dc2c9661bb2973c7774f78b4`, 133 commits ahead and 0 behind `main` at the last live compare.
+- PR #773 is the open source-provenance/resource-surface PR targeting integration, based on `435b895d`; it must pass current-head checks and review before an owner-authorized integration merge.
+- PR #783 is a separate Draft, review-only ADR proposal PR on the same integration base. A1–A7 may begin its evidence-based ADR reviews now; no proposal becomes an approved decision by being present or reviewed in that PR.
+- The two PRs are separate coordination tracks. Do not create new implementation branches from `6608a869` or `435b895d` while #773 is pending.
 
-Action items 1–5 below are **completed by the reconciliation merge `6608a869`** (facts frozen, divergence resolved file-by-file with recorded decisions, PR #771 payload brought in whole, vendored files verified). Workspaces may now open implementation work against the published `CANDIDATE_BASE_SHA` under the playbook's isolated-branch and shared-contract rules. A0 still re-checks live heads before any candidate assembly action, because `main` may move again.
+The reconciliation tasks are complete; the next implementation baseline is deliberately **not published yet**. After the repository owner authorizes and PR #773 merges into integration, A0 must refetch both live branch heads, open PRs, check runs, unresolved review threads, complete changed paths, migration head, and root-inventory blob, then publish a refreshed `CANDIDATE_BASE_SHA`. Only that new SHA may be used as the common base for new A1–A7 implementation branches.
 
-The original Phase A action items and their completion record (2026-10-30 directive → 2026-10-31 execution):
+**Historical snapshot (2026-10-30, superseded — retained as evidence):**
 
-1. Re-read the live commerce and main heads, all relevant open PRs, check runs, unresolved review threads, and the root inventory blob — **done** (freeze in the baseline above; zero open PRs, zero unresolved threads at the merge).
-2. Resolve the 15-commit divergence safely, file-by-file, never blindly — **done**: merge `6608a869`, 4 conflicts resolved with recorded measured decisions (SYSTEM.md merged-tree numbers; findings-doc union; main's approved #766 formatting; UserServiceTest union).
-3. Bring the merged PR #771 payload in whole through the normal main-to-commerce reconciliation — **done**: present and 49/49 hash-verified (§3 current baseline).
-4. Read-only upstream research at the exact pinned commit remains the rule until a reviewed provenance migration (promotion plan §3) replaces the pin; never run an installer or copy an unpinned head.
-5. Implementation work branches now open against the published `CANDIDATE_BASE_SHA` (`6608a869b99e137130346879f54f82791abc5a30`), under the existing playbook's isolated-branch and shared-contract rules.
+- Branch HEAD at that measurement: `c58e2e9b3b8f0369bc2885544c6e01df3209f237`; main at `28d9947960364565bef4f9fe72eab750c6db4e8f`; compare: diverged, 124 ahead / 14 behind; PR #771 still open (head `58d88c50f3752fcbdc58d514791fdf80d5573fb8`); the skill/registry files were not yet present on commerce.
+
+**Original Phase A action record (2026-10-30 → 2026-10-31):**
+
+1. Re-read live heads, open PRs, check runs, review threads and root inventory — **completed** at the `6608a869` freeze.
+2. Resolve the main divergence file-by-file — **completed** by merge `6608a869`; four conflicts were resolved with recorded measured decisions.
+3. Bring the full PR #771 payload into commerce — **completed**; all 49 registered files were verified against the registry.
+4. Until PR #773 is merged, use only the exact pinned source snapshot as read-only research; never run an installer or copy an unpinned head.
+5. New implementation branches are **deferred** until PR #773 is merged by owner authorization and A0 publishes the refreshed common `CANDIDATE_BASE_SHA`.
 
 ## 4. Skill source pins and use
 
@@ -336,13 +343,13 @@ Required outcomes:
 
 ## 12. First executable sequence for A0
 
-1. Re-fetch the live branch/main/PR #771/root-inventory state; do not reuse the 2026-10-30 snapshot without verification.
-2. Reconcile the 14-commit main divergence safely and publish one CANDIDATE_BASE_SHA.
-3. Verify PR #771 and the actual presence/integrity of saleor-core and its registry on the candidate. If not yet available, read the pinned upstream skill only as read-only research.
-4. Regenerate/validate the campaign root inventory and confirm all 458 rows still match the pinned schema and domain matrix.
-5. Dispatch the existing A1–A7 assignments with this directive, the playbook, frozen contracts, exact root lists and file boundaries.
-6. Require A3 and A4 to start with P3/P4 semantic audits; A2 audits stock/catalog availability; all other agents audit their own existing INTEGRATED roots while progressing unblocked work.
-7. Start candidate assembly as commits and evidence arrive. Do not wait for every independent workstream to finish before assembling safe, dependency-ready work.
-8. Report baseline counts, candidate SHA, active workstreams, audit findings, commits assembled, gates and blockers to the owner.
+1. Complete the current-head review and required gates for PR #773, including CI, Integration Test, security checks, fresh CodeRabbit review and independent review. It targets integration only; it does not authorize a merge to `main`.
+2. Keep PR #783 Draft as a review-only track. A1–A7 may submit their ADR evidence and verdicts in parallel; A0 consolidates them and the repository owner alone decides whether to accept the proposals.
+3. Do not open new implementation branches from `6608a869` or `435b895d`. After owner-authorized merge of #773 into integration, capture the live `main`/integration heads, merge base, PRs, checks, review threads, changed paths, migration head and root-inventory blob.
+4. Publish a refreshed `CANDIDATE_BASE_SHA`; update this directive's baseline with the exact measured values while retaining the older reconciliation measurements as historical evidence.
+5. Revalidate all 458 inventory rows against the pinned schema and domain matrix, including exact status counts and blob SHA.
+6. Dispatch A1–A7 from the same refreshed candidate SHA with the existing playbook, frozen contracts, exact root lists and file boundaries. Keep ADR-dependent roots blocked until owner decisions; independent authorized work can continue.
+7. Require each agent to audit its existing INTEGRATED roots while continuing unblocked assigned implementation; use upstream tests and platform regression tests as the evidence standard.
+8. Assemble dependency-ready commits and evidence continuously on the candidate, then report baseline, SHA, active workstreams, audit findings, commits, gates and blockers to the owner.
 
 **Execution rule:** begin from live GitHub evidence, preserve the existing plan and ownership, use skills to ask better questions, use pinned Saleor source/tests to answer them, and use platform tests plus Dashboard journeys to prove the implementation.
