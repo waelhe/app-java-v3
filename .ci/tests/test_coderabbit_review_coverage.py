@@ -103,6 +103,22 @@ class ManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(gate.GateError, "appears more than once"):
             gate.validate_manifest(manifest)
 
+    def test_rejects_unsupported_review_shard_role(self):
+        manifest = self.valid()
+        manifest["reviewShards"][0]["role"] = "alternative"
+        with self.assertRaisesRegex(gate.GateError, "role must be candidate or review"):
+            gate.validate_manifest(manifest)
+
+    def test_rejects_duplicate_alternative_paths(self):
+        manifest = self.valid()
+        manifest["alternativeCoverage"] = [{
+            "paths": ["pom.xml", "pom.xml"], "kind": "check",
+            "reason": "dependency review", "evidenceUrl": "https://example.invalid",
+            "checkName": "Dependency Review (PR dependency changes)"
+        }]
+        with self.assertRaisesRegex(gate.GateError, "duplicate paths"):
+            gate.validate_manifest(manifest)
+
     def test_rejects_unsupported_evidence_kind(self):
         manifest = self.valid()
         manifest["alternativeCoverage"] = [{"paths": ["generated.graphqls"], "kind": "summary-only",
