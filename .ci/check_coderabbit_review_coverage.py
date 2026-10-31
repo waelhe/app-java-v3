@@ -57,7 +57,7 @@ class GitHub:
         except (urllib.error.URLError, TimeoutError) as exc:
             raise GateError(f"GitHub API {path}: {exc}") from exc
 
-    def file_json(self, path, ref, max_bytes=250_000):
+    def file_json(self, path, ref, source_repo=None, max_bytes=250_000):
         safe_path = path.strip("/")
         need(safe_path and not path.startswith("/") and "\\" not in safe_path
              and all(part not in {"", ".", ".."} for part in safe_path.split("/")),
@@ -65,7 +65,12 @@ class GitHub:
         need(re.fullmatch(r"[0-9a-f]{40}", ref) is not None, "manifest ref must be a full commit SHA")
         encoded_path = urllib.parse.quote(safe_path, safe="/")
         encoded_ref = urllib.parse.quote(ref, safe="")
-        response = self.get(f"/contents/{encoded_path}?ref={encoded_ref}")
+        root = self.root
+        if source_repo is not None:
+            need(re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", source_repo) is not None,
+                 "invalid candidate source repository")
+            root = f"{API}/repos/{source_repo}"
+        response = self.get_from(root, f"/contents/{encoded_path}?ref={encoded_ref}")
         need(response.get("type") == "file", f"manifest path is not a file: {safe_path}")
         need(response.get("encoding") == "base64", "GitHub did not return the manifest as base64")
         need(isinstance(response.get("size"), int) and response["size"] <= max_bytes,
@@ -77,6 +82,23 @@ class GitHub:
             return json.loads(raw.decode("utf-8"))
         except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise GateError(f"candidate manifest is not valid UTF-8 JSON: {exc}") from exc
+
+    def get_from(self, root, path):
+        request = urllib.request.Request(
+            root + path,
+            headers={"Accept": "application/vnd.github+json",
+                     "Authorization": f"Bearer {self.token}",
+                     "X-GitHub-Api-Version": "2022-11-28",
+                     "User-Agent": "saleor-review-coverage-gate"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")[:800]
+            raise GateError(f"GitHub API {path}: HTTP {exc.code}: {detail}") from exc
+        except (urllib.error.URLError, TimeoutError) as exc:
+            raise GateError(f"GitHub API {path}: {exc}") from exc
 
     def pages(self, path):
         result, page = [], 1
@@ -99,8 +121,9 @@ class GitHub:
     def reviews(self, number):
         return self.pages(f"/pulls/{number}/reviews")
 
-    def tree(self, sha):
-        response = self.get(f"/git/trees/{sha}?recursive=1")
+    def tree(self, sha, source_repo=None):
+        root = self.root if source_repo is None else f"{API}/repos/{source_repo}"
+        response = self.get_from(root, f"/git/trees/{sha}?recursive=1")
         need(not response.get("truncated"), f"Git tree truncated for {sha}")
         return {
             item["path"]: (item["sha"], item["mode"], item["type"])
@@ -108,10 +131,11 @@ class GitHub:
             if item.get("type") in {"blob", "commit"}
         }
 
-    def checks(self, sha):
+    def checks(self, sha, source_repo=None):
+        root = self.root if source_repo is None else f"{API}/repos/{source_repo}"
         result, page = [], 1
         while True:
-            response = self.get(f"/commits/{sha}/check-runs?per_page=100&page={page}")
+            response = self.get_from(root, f"/commits/{sha}/check-runs?per_page=100&page={page}")
             batch = response.get("check_runs", [])
             need(isinstance(batch, list), f"invalid check-run response for {sha}")
             result.extend(batch)
@@ -228,6 +252,7 @@ def validate_alternative_config(config):
 def verify_alternative(item, candidate, candidate_reviews, client, alternative_config):
     paths = set(item["paths"])
     head = candidate["head"]["sha"]
+    head_repo = candidate["head"]["repo"]["full_name"]
     if item["kind"] == "manual-review":
         reviewer = item["reviewerLogin"]
         author = (candidate.get("user") or {}).get("login", "")
@@ -247,7 +272,7 @@ def verify_alternative(item, candidate, candidate_reviews, client, alternative_c
         for path in paths:
             need(any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns),
                  f"path {path!r} is outside trusted path patterns for {check_name!r}")
-        checks = [run for run in client.checks(head)
+        checks = [run for run in client.checks(head, head_repo)
                   if run.get("name") == check_name
                   and run.get("head_sha") == head
                   and (run.get("app") or {}).get("slug") in allowed_apps]
@@ -283,8 +308,12 @@ def run(repo, number, manifest_path, alternative_config, trusted_base_sha, token
     need(candidate.get("state") == "open", "candidate PR must remain open during coverage verification")
     need(candidate.get("base", {}).get("ref") == "main", "coverage gate only applies to main-targeting PRs")
     base_sha, head_sha = candidate["base"]["sha"], candidate["head"]["sha"]
+    candidate_head_repo = (candidate.get("head", {}).get("repo") or {}).get("full_name")
+    need(bool(candidate_head_repo), "candidate head repository is unavailable")
+    need(re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", candidate_head_repo) is not None,
+         "candidate head repository name is invalid")
     need(base_sha == trusted_base_sha, f"PR base {base_sha} differs from trusted workflow base {trusted_base_sha}")
-    base_tree, head_tree = client.tree(base_sha), client.tree(head_sha)
+    base_tree, head_tree = client.tree(base_sha), client.tree(head_sha, candidate_head_repo)
     candidate_changes = tree_changes(base_tree, head_tree)
     need(candidate_changes, "candidate has no changed paths")
 
@@ -310,7 +339,7 @@ def run(repo, number, manifest_path, alternative_config, trusted_base_sha, token
 
     # The candidate manifest is fetched as inert JSON from the exact head SHA.
     # No file or executable from the untrusted candidate checkout is used.
-    manifest = client.file_json(manifest_path, head_sha)
+    manifest = client.file_json(manifest_path, head_sha, candidate_head_repo)
     validate_manifest(manifest)
     validate_alternative_config(alternative_config)
 
@@ -319,6 +348,8 @@ def run(repo, number, manifest_path, alternative_config, trusted_base_sha, token
         number_for_shard = shard["prNumber"]
         pull = client.pull(number_for_shard)
         shard_head = pull["head"]["sha"]
+        shard_head_repo = (pull.get("head", {}).get("repo") or {}).get("full_name")
+        need(bool(shard_head_repo), f"shard PR #{number_for_shard} head repository is unavailable")
         need(pull["base"]["sha"] == base_sha and pull["base"]["ref"] == "main",
              f"shard PR #{number_for_shard} must use exact candidate base {base_sha}")
         reviews = candidate_reviews if number_for_shard == number else client.reviews(number_for_shard)
@@ -338,7 +369,7 @@ def run(repo, number, manifest_path, alternative_config, trusted_base_sha, token
             names, expanded, by_name = fileset(records)
             need(0 < len(records) <= MAX_FILES, f"shard PR #{number_for_shard} exceeds 100 files")
             need(set(selected_files) == names, f"CodeRabbit did not process every file in shard PR #{number_for_shard}")
-            shard_base, shard_head_tree = base_tree, client.tree(shard_head)
+            shard_base, shard_head_tree = base_tree, client.tree(shard_head, shard_head_repo)
             need(set(tree_changes(shard_base, shard_head_tree)) == expanded,
                  f"shard PR #{number_for_shard} REST file list differs from full Git-tree diff")
 
