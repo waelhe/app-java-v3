@@ -30,6 +30,10 @@ import org.springframework.validation.annotation.Validated;
  *       and {@code MaxQueryComplexityInstrumentation} (design §5.7/§6:
  *       resource limits verified under the exact resolved version —
  *       graphql-java 25.0, resolved by the Boot 4.1.1 BOM).</li>
+ *   <li>{@code bulk} — the bulk-mutation list bound (the G4 review):
+ *       every {@code *Bulk*} mutation root that accepts a list of items
+ *       or ids rejects a list longer than {@code maxListItems} BEFORE any
+ *       command is built or any item is iterated.</li>
  * </ul>
  *
  * <p>All values are env-tunable without rebuild (the G-R6 calibration
@@ -50,7 +54,8 @@ import org.springframework.validation.annotation.Validated;
 public record GraphQlProperties(
         @DefaultValue Errors errors,
         @Valid @DefaultValue Pagination pagination,
-        @Valid @DefaultValue Limits limits
+        @Valid @DefaultValue Limits limits,
+        @Valid @DefaultValue Bulk bulk
 ) {
 
     /**
@@ -102,6 +107,23 @@ public record GraphQlProperties(
     public record Limits(
             @Min(1) @Max(100) @DefaultValue("10") int maxQueryDepth,
             @Min(1) @Max(10_000) @DefaultValue("200") int maxQueryComplexity
+    ) {
+    }
+
+    /**
+     * Bulk-mutation input bounds (the G4 review on PR #723): an
+     * unbounded request list would turn one call into an unbounded write
+     * fan-out — the write-surface twin of the pagination hard maximum.
+     * Every {@code *Bulk*} mutation root that accepts a list of items or
+     * ids rejects a list longer than {@code maxListItems} BEFORE any
+     * command is built or any item is iterated (the classified validation
+     * family the other transport-level guards answer — never a silent
+     * truncation). Env-tunable without rebuild; validated at binding
+     * time like every section here, so a non-deployable bound fails
+     * STARTUP.
+     */
+    public record Bulk(
+            @Min(1) @Max(10_000) @DefaultValue("200") int maxListItems
     ) {
     }
 }

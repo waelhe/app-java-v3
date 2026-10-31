@@ -41,6 +41,32 @@ public interface ProductRepository extends JpaRepository<Product, UUID>, JpaSpec
     Window<Product> findByProviderIdOrderByCreatedAtDescIdDesc(
             UUID providerId, KeysetScrollPosition position, Limit limit);
 
+    // ------------------------------------------------------------------
+    // Campaign packet campaign-b4-c (the Saleor products read roots): the
+    // store-wide SQL keyset scrolls — the scrollStaffUsers derived-method
+    // precedent (Window-returning, KeysetScrollPosition/Limit-taking, the
+    // static ordering baked into the method name with the id tiebreaker).
+    // The products table is populated commerce data, never bounded
+    // reference data: the continuation queries execute as real keyset SQL.
+    // ------------------------------------------------------------------
+
+    /** The include-unpublished (ADMIN) population's NAME-ascending keyset scroll. */
+    Window<Product> findByOrderByTitleAscIdAsc(KeysetScrollPosition position, Limit limit);
+
+    /** The include-unpublished (ADMIN) population's NAME-descending keyset scroll. */
+    Window<Product> findByOrderByTitleDescIdDesc(KeysetScrollPosition position, Limit limit);
+
+    /** The public ACTIVE population's NAME-ascending keyset scroll (the storefront slice). */
+    Window<Product> findByStatusOrderByTitleAscIdAsc(
+            StoreProductStatus status, KeysetScrollPosition position, Limit limit);
+
+    /** The public ACTIVE population's NAME-descending keyset scroll (the storefront slice). */
+    Window<Product> findByStatusOrderByTitleDescIdDesc(
+            StoreProductStatus status, KeysetScrollPosition position, Limit limit);
+
+    /** The public ACTIVE population's own count (the honest caller-scoped totalCount). */
+    long countByStatus(StoreProductStatus status);
+
     /**
      * Reserves {@code qty} units of an ACTIVE product whose free stock
      * covers it — the placement's write.

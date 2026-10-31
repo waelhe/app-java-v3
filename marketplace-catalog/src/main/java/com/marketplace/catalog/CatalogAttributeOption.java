@@ -34,16 +34,52 @@ public class CatalogAttributeOption extends BaseEntity {
         if (attributeDefinitionId == null) throw new IllegalArgumentException("attributeDefinitionId is required");
         if (code == null || code.length() > 50 || !code.matches("^[a-z][a-z0-9-]*$"))
             throw new IllegalArgumentException("option code must be a lowercase slug (max 50)");
-        if ((nameEn == null || nameEn.isBlank()) && (nameAr == null || nameAr.isBlank()))
-            throw new IllegalArgumentException("at least one of nameEn or nameAr is required");
-        if (nameEn != null && nameEn.length() > 100) throw new IllegalArgumentException("nameEn must be at most 100 characters");
-        if (nameAr != null && nameAr.length() > 100) throw new IllegalArgumentException("nameAr must be at most 100 characters");
+        validateNames(nameEn, nameAr);
         if (position < 0) throw new IllegalArgumentException("position must be non-negative");
         return new CatalogAttributeOption(UUID.randomUUID(), attributeDefinitionId, code,
                 blankToNull(nameEn), blankToNull(nameAr), position);
     }
 
+    private static void validateNames(String nameEn, String nameAr) {
+        if ((nameEn == null || nameEn.isBlank()) && (nameAr == null || nameAr.isBlank()))
+            throw new IllegalArgumentException("at least one of nameEn or nameAr is required");
+        if (nameEn != null && nameEn.length() > 100) throw new IllegalArgumentException("nameEn must be at most 100 characters");
+        if (nameAr != null && nameAr.length() > 100) throw new IllegalArgumentException("nameAr must be at most 100 characters");
+    }
+
     private static String blankToNull(String value) { return value == null || value.isBlank() ? null : value; }
+
+    /**
+     * The option row's amendment shape — the ADMIN write use case's own
+     * seam (the Saleor {@code attributeValueUpdate} root mapped onto the
+     * registry's bilingual columns; the {@code Category.revise}
+     * precedent). Each argument is the ALREADY-VALIDATED replacement
+     * value (the use case owns validation and the immutable-code
+     * contract); {@code null} preserves the column (partial update, the
+     * Saleor input's omit-to-preserve semantics). The code, the owning
+     * attribute reference and the position are stable identity — never
+     * amended here (position moves only through the reorder root's own
+     * seam).
+     */
+    void revise(String newNameEn, String newNameAr) {
+        validateNames(newNameEn, newNameAr);
+        this.nameEn = blankToNull(newNameEn);
+        this.nameAr = blankToNull(newNameAr);
+    }
+
+    /**
+     * The option row's position-move seam — the ADMIN reorder use case's
+     * own seam (the Saleor {@code attributeReorderValues} root — the
+     * position column the entity's own javadoc reserves for exactly this
+     * root). The new position is the SERVICE's own compacted derivation
+     * (the relative-move algorithm's outcome); the position-uniqueness
+     * column remains the concurrent-write backstop.
+     */
+    void reposition(int newPosition) {
+        if (newPosition < 0) throw new IllegalArgumentException("position must be non-negative");
+        this.position = newPosition;
+    }
+
     @Override public UUID getId() { return id; }
     public UUID getAttributeDefinitionId() { return attributeDefinitionId; }
     public String getCode() { return code; }

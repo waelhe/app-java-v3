@@ -773,6 +773,83 @@ resilience4j:
         base-config: default
         limit-for-period: 50
         timeout-duration: 0
+      # Campaign packet campaign-b1-a1 (A1 identity agent request, applied by
+      # A0): the permission-group read roots' named instance at the same
+      # identity read budget as graphqlUserQuery (50/min, fail-fast).
+      graphqlPermissionGroupQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      # Campaign packet campaign-b2-a2 (A2 catalog read roots, applied by
+      # A0): the product-type read roots' named instance at the shared
+      # catalog read budget (50/min, fail-fast — the catalog limiter
+      # precedent's own budget).
+      graphqlCatalogRead:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      # Campaign packet campaign-b3-a1b (A1 identity agent request, applied
+      # by A0): the customers read root's named instance at the same
+      # identity read budget as graphqlUserQuery (50/min, fail-fast).
+      graphqlCustomerQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      # Campaign packet campaign-b3-a2b (A2 catalog agent request, applied
+      # by A0): the attribute read roots' named instance at the shared
+      # catalog read budget (50/min, fail-fast).
+      graphqlCatalogAttributeQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      # Campaign packet campaign-b4-a (A2 catalog read roots, applied
+      # in-branch by A0 — the sequential single-writer flow): the
+      # category read roots' named instance at the shared catalog
+      # read budget (50/min, fail-fast — the catalog limiter
+      # precedent's own budget).
+      graphqlCategoryQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      # Campaign packet campaign-b4-c (A2 catalog read roots, applied
+      # in-branch by A0 — the sequential single-writer flow): the
+      # product read roots' named instance at the shared catalog
+      # read budget (50/min, fail-fast).
+      graphqlProductQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      # Campaign packet campaign-b5-a (A2 catalog read roots, applied
+      # in-branch by A0 — the sequential single-writer flow): the
+      # product-variant read roots' named instance at the shared catalog
+      # read budget (50/min, fail-fast — the catalog limiter
+      # precedent's own budget).
+      graphqlProductVariantQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      # Campaign packet campaign-b5-b (P4 order read roots, applied
+      # in-branch by A0 — the sequential single-writer flow): the order
+      # read roots' named instance at the shared management read budget
+      # (50/min, fail-fast — the catalog limiter precedent's own budget).
+      graphqlOrderQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      # Campaign packet campaign-b3-a3 (A3 pricing agent request, applied
+      # by A0): the promotion read roots' named instance at the shared
+      # read budget (50/min, fail-fast).
+      graphqlPromotionQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      # Campaign packet campaign-b3-a3 (A3 pricing agent request, applied
+      # by A0): the voucher read roots' named instance at the shared
+      # read budget (50/min, fail-fast).
+      graphqlVoucherQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
       # Phase 6 (the GraphQL plan §11-Phase-6 — the first composite
       # journey, the inventory #599 §7 stage 4): the two home reads'
       # named instances, the same L29 fail-fast model. graphqlDiscovery-
@@ -947,6 +1024,61 @@ resilience4j:
       providerFollowCreate:
         base-config: default
         limit-for-period: 30
+        timeout-duration: 0
+      # A0's central pass (the Saleor 458-root campaign): the agents'
+      # declared named instances, applied by the integrator exactly as the
+      # handoffs requested — the @RateLimiter annotations were landing on
+      # the registry's default budget (100/min, 5s wait) until these keys
+      # existed; now every write family sits at the platform's own write
+      # budget (10/min fail-fast, the graphqlStoreProductMutation
+      # precedent) and the collection read at the shared catalog read
+      # budget (50/min, the graphqlCategoryQuery precedent).
+      # Agent 1 (P1 identity — TokenDataFetcher's own request): the token
+      # mutation family — tokenCreate IS the password grant (the
+      # unauthenticated sign-in surface), tokenRefresh the rotation;
+      # the write budget with fail-fast is the family's own posture.
+      graphqlTokenMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      # Agent 2 (campaign-b5/a — the catalog/pricing write roots): each
+      # mutation family its own instance at the same write budget, so one
+      # family's burst cannot exhaust another's window.
+      graphqlCategoryMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlProductTypeMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlVoucherMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlAttributeMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlAttributeValueMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlProductVariantMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlCollectionMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlProductMediaMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlCollectionQuery:
+        base-config: default
+        limit-for-period: 50
         timeout-duration: 0
 
 app:
