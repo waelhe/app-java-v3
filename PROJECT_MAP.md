@@ -5,9 +5,9 @@
 ## Repository heads
 
 - `main`: `f2349deca955cee435e6be3ca56be8a4c251d00a`.
-- `integration/saleor-full-commerce-20261021`: `34d37457df53790afc92decd68af1773e6ff8578`.
-- GitHub compare: integration is **136 commits ahead / 0 behind** main; merge base is exactly `f2349deca955cee435e6be3ca56be8a4c251d00a`. Do not merge main into commerce again; the main-to-commerce reconciliation is already complete.
-- Current dispatch baseline for implementation agents: `34d37457df53790afc92decd68af1773e6ff8578`. A0 must re-fetch live heads before every new dispatch/assembly action; a new baseline is a new dated measurement, not an assumption.
+- `integration/saleor-full-commerce-20261021`: `9f6dde3b3732f014e1b422ad15cbcb4ada186d3e` (A0 governance merge; this PROJECT_MAP refresh is the next docs-only commit).
+- GitHub compare: integration is **150 commits ahead / 0 behind** main; merge base is exactly `f2349deca955cee435e6be3ca56be8a4c251d00a`. Do not merge main into commerce again; the main-to-commerce reconciliation is already complete.
+- Current common dispatch baseline at this measurement: `9f6dde3b3732f014e1b422ad15cbcb4ada186d3e`. The A0 documentation/governance batch is now on the integration candidate. This PROJECT_MAP refresh is itself another docs-only commit; after it, A0 advances A2/A3/A4 to the new live integration HEAD. Always fetch the live ref before starting; never rely on a snapshot SHA after the branch moves.
 
 ## Governing document hierarchy
 
@@ -26,10 +26,10 @@ The current campaign dispatch uses **three concurrent coding agents only**: A2, 
 
 | Role | Scope | Active workspace | Base |
 |---|---|---|---|
-| A2 | P2 catalog, attributes, variants, inventory/stock/warehouse semantics | `agent/a2-p2-stock-audit-20261031` | `34d37457df53` |
-| A3 | Entire P3: discounts, gift cards, taxes, channels, shop/settings (85 roots) | `agent/a3-p3-commercial-20261031` | `34d37457df53` |
-| A4 | P4 checkout, orders, payments, shipping and financial allocation | `agent/a4-p4-checkout-audit-20261031` | `34d37457df53` |
-| A0 | Shared-contract stewardship, evidence review, knowledge map and candidate assembly | `agent/a0-semantic-evidence-gate-20261031` | A0 branch includes current integration + A0-owned docs |
+| A2 | P2 catalog, attributes, variants, inventory/stock/warehouse semantics | `agent/a2-p2-stock-audit-20261031` | `9f6dde3b3732` |
+| A3 | Entire P3: discounts, gift cards, taxes, channels, shop/settings (85 roots) | `agent/a3-p3-commercial-20261031` | `9f6dde3b3732` |
+| A4 | P4 checkout, orders, payments, shipping and financial allocation | `agent/a4-p4-checkout-audit-20261031` | `9f6dde3b3732` |
+| A0 | Shared-contract stewardship, evidence review, knowledge map and candidate assembly | `integration/saleor-full-commerce-20261021` (A0 docs assembled) | Same live candidate; A0 owns shared changes |
 
 A2/A3/A4 must use isolated worktrees from the same frozen base. They commit their work locally and deliver commit SHAs, changed paths, exact test identifiers, XML reports and blockers to A0. **No individual wave PRs.** A0 assembles commits continuously in dependency order. After the Implementation Complete gate and independent reviews, A0 opens one final release PR to `main`; only the owner authorizes the merge.
 
@@ -51,7 +51,7 @@ The old D-WHSE-001 platform-stage deferral is superseded for the full-commerce t
 
 | PR | Status | Purpose | Current disposition |
 |---|---|---|---|
-| [#773](https://github.com/waelhe/app-java-v3/pull/773) | Open, not merged | Saleor AI skill provenance and official resource-surface registry; migrates the adopted `saleor-core` source pin and adds fail-closed governance tests | Keep as the only active PR. CI, Integration Test and Snyk were green on inspected head `ad5c394c`; CodeRabbit approval is **not current for that head**, so do not merge until exact-head review and owner authorization. PR branch base is the older `435b895d` (3 commits behind the live integration base). |
+| [#773](https://github.com/waelhe/app-java-v3/pull/773) | Open, not merged; currently non-mergeable | Saleor AI skill provenance and official resource-surface registry; migrates the adopted `saleor-core` source pin and adds fail-closed governance tests | Purpose is valid, but this is stale: head `ad5c394c`; recorded base `435b895d`; compare to live integration is **diverged: 16 ahead / 17 behind**, GitHub `mergeable=false`. CI, Integration Test and Snyk succeeded on inspected head; its CodeRabbit approval is not current for the head. Keep unmerged; A0 must reconcile its 8 changed files on top of the live integration in a new reviewable head/PR update, rerun CI/Snyk, obtain an exact-head independent review, then ask owner authorization. The current active skill pin remains `saleor/agent-skills@fb1a5725` until approved merge. |
 | [#783](https://github.com/waelhe/app-java-v3/pull/783) | Closed without merge; branch preserved | Seven proposed ownership ADRs and an obsolete copy of canonical-plan changes | Archived review material only. Its draft recommendations are not approved decisions or an execution plan. The proposal branch remains for traceability. |
 
 The active skill pin on integration remains the merged `saleor/agent-skills@fb1a5725` snapshot until #773 is reviewed and merged. The proposed `saleor/saleor-docs@2cdf6590` provenance is not yet active. #773 is a separate provenance track; it does not replace the canonical plan or block unrelated A2/A3/A4 implementation using the currently valid pin.
@@ -63,7 +63,7 @@ The earlier A3 discount-only branch and four A3 specialist branches were not use
 ## A0 knowledge-map integration
 
 The A0 branch was reconciled onto the current integration head with a two-parent merge commit:
-- A0 branch head at this snapshot: `0323dd4f447609a6b254772841abcf7c3a7996fa` (re-fetch before every subsequent A0 action). The initial reconciliation merge is `d8fdeca3199bab2967e443d87f1b57346f208946`.
+- A0 docs-only reconciliation merge: `9f6dde3b3732f014e1b422ad15cbcb4ada186d3e`; this contains the A0-owned knowledge map and governance corrections and is now the integration candidate tip. Re-fetch the live tip after this PROJECT_MAP refresh.
 - Merge parents: live integration `34d37457df53790afc92decd68af1773e6ff8578` and prior A0 knowledge-map branch tip `5e73753ca6f97e796beef27615a0ed94a6c59237`.
 - A0-owned files include `docs/governance/campaign/saleor-domain-knowledge-map.md`, links in `AGENTS.md` and `SYSTEM.md`, the corrected §8 of the multi-agent playbook (retained Dashboard route rule), and live baseline addenda in the promotion plan and semantic-audit directive. This live snapshot is also A0-owned. The map is a navigation companion, not a second plan or root inventory.
 
