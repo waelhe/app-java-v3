@@ -6,6 +6,44 @@
 **Target branch:** integration/saleor-full-commerce-20261021  
 **Authority order:** canonical plan → frozen contracts → approved divergence registry → current source/tests → these proposed ADRs. This document supplements, and does not replace, the A0 execution directive or the multi-agent playbook.
 
+## 0. Order of PRs and the exact starting point
+
+There are two separate PRs on the same target branch. They must not be treated as competing implementation PRs:
+
+| PR | Scope | Current treatment |
+|---|---|---|
+| [#773](https://github.com/waelhe/app-java-v3/pull/773) | Source-provenance migration for the already adopted saleor-core skill and official Saleor AI resource catalogue. No commerce SDL or domain behavior changes. | A0 owns the last CodeRabbit digest assertion follow-up. Merge to the commerce integration branch only after the new-head CI, Integration Test, Snyk and CodeRabbit review are verified. Never merge this PR to main. |
+| [#783](https://github.com/waelhe/app-java-v3/pull/783) | Seven proposed ownership ADRs plus this review assignment. | Keep Draft and review-only. Do not merge it while agents are still reviewing or before the owner has decided the proposed ADRs. |
+
+**Measured start state on 2026-10-31:** PR #773 is open, non-draft and mergeable. Its preceding head had CI and Integration Test success, Snyk success, and a CodeRabbit APPROVED review plus one low-severity follow-up asking that the five SHA-256 digests be asserted as exact values, not only as 64-character hex strings. A0 has applied that test-only correction on commit `8c78e79b718f4d69e9e3980ec0904e3a90551ce2`; the CI and Integration Test runs for this new commit were still in progress at the last measurement, while Snyk was success. The new head requires a fresh CodeRabbit review/result.
+
+The target branch was last measured at `435b895d2c98ada7dc2c9661bb2973c7774f78b4`. This is a live branch tip, not a permanent candidate baseline. The semantic-audit directive's earlier `CANDIDATE_BASE_SHA=6608a869...` is the reconciled baseline from before subsequent governance commits. **Do not create fresh implementation branches from either historical SHA by assumption.**
+
+### Start immediately — review track
+
+A1–A7 may begin their assigned review now against the exact seven ADR files in PR #783 and the live code/source evidence. Their review is read-only: submit findings as PR #783 comments. PR #773 does not change those ADR files or the commerce schema, so there is no reason to hold the review until #773 is merged.
+
+### Start after PR #773 — implementation track
+
+A0 must wait for the #773 new-head gates/review, merge it only into `integration/saleor-full-commerce-20261021`, then re-read the live integration and main heads, inventory blob, migration head and open PRs. A0 publishes a fresh `CANDIDATE_BASE_SHA` equal to the verified integration head after that merge. Only then should A0 create or confirm isolated A1–A7 implementation branches from that same SHA. If any agent already has a branch from an earlier base, A0 inventories its commits and reconciles it deliberately; nobody blindly rebases or throws away work.
+
+PR #783 remains a review-only Draft against the integration branch. After #773 lands, re-check/update #783 against the new target head without changing its seven ADR meanings. Do not merge #783 merely to let agents read it; the files are already visible on its PR head.
+
+### First action for each role
+
+| Role | First thing to open | Review track on PR #783 | Existing implementation track after A0 publishes the new base |
+|---|---|---|---|
+| **A0** | PR #773 head, CodeRabbit follow-up, then #783 decision files and current inventory | Lead and consolidate all reviews; check dependencies and contradictions | Refresh candidate SHA; allocate branches/migrations; maintain shared SDL, inventory and divergence records. No domain implementation task. |
+| **A1** | D-GC-001, D-CHANNEL-001, D-SHOP-001 and ADR-0013 | Verify issuer vs merchant-of-record vs seller vs cardholder; authorization, role matrix, provider isolation, bearer-code security and audit ownership | No P1 NOT_STARTED roots in the measured assignment; continue the assigned P1 INTEGRATED semantic/security audit and report P1 blockers through decision packets. |
+| **A2** | D-TAX-001, D-CHANNEL-001, D-SALE-001, D-WHSE-001 | Define catalog-owned TaxClass assignment and the Catalog–Channels contract; evidence whether warehouses are actually required; compare catalogue Sale behavior | Continue only P2 NOT_STARTED roots in the live inventory that do not require the unresolved Channel, TaxClass or Warehouse contract; audit P2 INTEGRATED roots. Do not build warehouses or channel publication shortcuts. |
+| **A3** | All seven ADRs, starting with D-CHANNEL-001 and D-TAX-001; inspect current TaxRate, Promotion and Voucher owners | Lead the P3 domain review. Produce a root-by-root dependency split and exact Saleor 3.23.43 evidence | Continue independent promotion/voucher semantics and audit the eight currently INTEGRATED promotion/voucher roots. Hold TaxClass/configuration, gift-card, channel, Sale and Shop/settings-dependent roots until their ADRs are owner-approved. In particular, do not infer that a NOT_STARTED status overrides a dependency identified by the ADR. |
+| **A4** | D-GC-001, D-SETTINGS-001, D-CHANNEL-001 and ADR-0013 | Produce the reservation/tender/refund/ledger state-flow, including mixed tender, partial refund, idempotency and unknown PSP outcomes | Continue independent P4 payment/order/checkout/shipping work from the live inventory. Hold gift-card tender, channel-dependent behavior and settings work until interfaces and owner decisions are approved. |
+| **A5** | D-SHOP-001 and D-SETTINGS-001, then pinned Dashboard Shop/PageType query call sites | Map each Shop field/mutation and reasonReferenceType to a real platform owner; separate public profile from console settings/secrets | Continue P5 roots with a verified owner and current contract; maintain the existing page/menu implementation and audit. Do not create generic Shop/Settings CRUD or expose console secrets. |
+| **A6** | Pinned 3.23.43 Subscription root inventory and D-GC-001/D-CHANNEL-001/D-SETTINGS-001 | Separate real Saleor public subscription operations from internal Modulith events; verify event owner, transaction boundary, replay and authorization | Continue only subscriptions backed by real domain publishers and current owner contracts. Do not invent gift-card/channel subscription roots or use asynchronous listeners as the financial transaction boundary. |
+| **A7** | Pinned Dashboard 3.23.39 query/fragment/component source for Sale, Promotions, Taxes, Channels, Gift Cards, Shop, Return/Refund Settings and Warehouse | Build the route → GraphQL operation → type closure → permission → read-back matrix; identify exact blocked controls and required UI states | Continue dashboard contract synchronization and authorized journeys. Do not remove, enable or redesign a route until A0 records an owner-approved disposition and exact backend capability. |
+
+**Implementation root selection rule:** use the current `saleor-458-root-inventory.csv` as the sole root list and the live `NOT_STARTED` status, filtered by the existing `owner_agent` and `wave`. The old root lists in dated task files are a snapshot, not permission to execute a root whose dependency is now blocked. Where a proposed ADR reveals such a dependency, the agent raises the exact roots to A0; A0 records the correct disposition only after owner approval. Each workstream audits its own `INTEGRATED` roots in parallel with unrelated implementation work.
+
 ## 1. Instructions common to every agent
 
 1. Read the current live versions of `AGENTS.md`, `SYSTEM.md`, `PROJECT_MAP.md`, the canonical Saleor plan, `frozen-contracts.md`, the current A0 directive, the relevant ADR(s), and the exact pinned Saleor 3.23.43 source/tests. Read the pinned Dashboard 3.23.39 operation call sites where the conclusion affects a Dashboard route.
