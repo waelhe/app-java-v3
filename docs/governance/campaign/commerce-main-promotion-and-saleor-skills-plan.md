@@ -148,10 +148,11 @@ The repository already carries `.coderabbit.yaml` and `CodeRabbit Gate` in `main
 
 **Verified operating facts:**
 
-- CodeRabbit's official pricing page lists hourly PR-review allowances by paid plan (Essentials 5, Team 8, Advanced 10, Enterprise 12 per developer/hour), subject to fair-use policy. Its FAQ says limits vary by plan and product surface. These are not the measured entitlement of this repository's open-source installation.
-- PR #771's actual CodeRabbit review metadata stated one included review per hour and zero remaining after that review. Treat this as the project-observed allowance on that date; recheck the current repository/account limit before each review campaign.
+- CodeRabbit's official plan documentation states that the **Open Source (OSS) tier allows 100–300 files per review**, depending on project community/popularity; the exact allowance is repository-scoped. The file count is measured after `path_filters`. The same table states 1–10 PR reviews per developer/hour for OSS; public repositories with fewer than 10 stars require manual review triggering. See the official [Plans and pricing](https://docs.coderabbit.ai/management/plans) documentation.
+- PR #771's actual CodeRabbit review metadata stated one included review per hour and zero remaining after that review. This is the measured project observation for that review, consistent with the lower end of the OSS tier; recheck the live allowance before each campaign.
+- The official limits documentation says usage-based large-PR review can be offered when an eligible review exceeds its included file allowance but contains no more than 300 files; **reviews above 300 files are not supported through usage pricing**. Do not plan on paid overage to make a greater-than-300-file review possible. For the current OSS arrangement, do not enable paid usage-based review without owner approval.
 - The workflow's **720-second** human-review polling deadline is a local gate setting, not CodeRabbit's service timeout. The workflow's **75-minute** job timeout is a GitHub Actions ceiling, not a CodeRabbit runtime guarantee.
-- No authoritative per-file byte-size ceiling or universal CodeRabbit review-time ceiling has been established by this plan. Do not invent one or use the GitHub compare endpoint's 300 returned-file cap as a CodeRabbit limit.
+- The official limits page establishes a per-review file-count cap, but this plan has not established a universal per-file byte-size ceiling or CodeRabbit service-timeout value. Record any per-file skip/truncation or time-limit error from the actual review run; do not infer a vendor limit from the local 720-second gate or the GitHub compare endpoint's 300 returned-file cap.
 
 ### 8.1 Review preflight and batching
 
@@ -163,7 +164,7 @@ Before invoking CodeRabbit, A0 records:
 - CodeRabbit's current plan allowance and any account-visible file/size constraints;
 - CodeRabbit's processed/selected-file list, skipped/unsupported-file notices, rate-limit status, and elapsed time after the review.
 
-Use semantic batches and a conservative **internal** review budget that A0 calibrates from actual processed-file and elapsed-time evidence. It is not a vendor guarantee. Do not solve size problems by hiding production code, tests, SDL, migrations, or security workflows in `path_filters`. Any intentionally excluded file must have an alternate named check/reviewer and be listed in the review evidence.
+Partition review work so no CodeRabbit invocation exceeds the repository's currently confirmed OSS allowance. Until the account UI proves a higher limit, plan each request against the **100-file lower bound**, then use the observed current OSS allowance to raise the batch ceiling; never plan an invocation above 300 files. If a candidate needs more than one review shard, the coverage-gate work in §8.2 is mandatory. Use semantic batches, and separately measure unusually large individual files by bytes/changed lines. Do not solve size problems by hiding production code, tests, SDL, migrations, or security workflows in `path_filters`. Any intentionally excluded file must have an alternate named check/reviewer and be listed in the review evidence.
 
 For human-authored PRs, invoke `@coderabbitai review` once per intended review head when manual activation is required. Avoid repeated retries while rate-limited; wait for the actual allowance to refill and preserve the failure evidence. A review is not complete merely because a status says success: inspect the real bot review, the head SHA, processed files, and findings.
 
