@@ -962,8 +962,7 @@ class PlatformGovernanceFilesTest {
         String skillPolicy = read("docs", "governance", "agent-skills-policy.md");
         assertThat(skillPolicy)
                 .contains("3.23.45 reference schema (blob-verified)")
-                .contains("current official skill discovery/distribution source is "
-                        + "`saleor/saleor-docs`")
+                .contains("saleor/saleor-docs@2cdf6590e838929c3f74c16e982cfdc11073c2d8")
                 .doesNotContain("Official Saleor source: `saleor/agent-skills`");
 
         assertThat(canonicalPlan)
