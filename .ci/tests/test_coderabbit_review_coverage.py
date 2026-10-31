@@ -15,7 +15,7 @@ class FakeClient:
     def __init__(self, checks=None):
         self._checks = checks or []
 
-    def checks(self, sha):
+    def checks(self, sha, source_repo=None):
         return self._checks
 
 
@@ -105,7 +105,7 @@ class ManifestTests(unittest.TestCase):
 
     def test_rejects_unsupported_review_shard_role(self):
         manifest = self.valid()
-        manifest["reviewShards"][0]["role"] = "alternative"
+        manifest["reviewShards"].append({"prNumber": 51, "reviewId": 10, "role": "alternative"})
         with self.assertRaisesRegex(gate.GateError, "role must be candidate or review"):
             gate.validate_manifest(manifest)
 
