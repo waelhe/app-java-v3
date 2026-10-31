@@ -140,7 +140,10 @@ class GitHub:
         """
         root = self.repo_root(source_repo)
         response = self.get_from(root, f"/compare/{base_sha}...{head_sha}")
-        value = response.get("merge_base_sha")
+        # The Compare API returns the merge base as an object:
+        # merge_base_commit.sha (verified live 2026-10-31; there is no
+        # top-level merge_base_sha field).
+        value = (response.get("merge_base_commit") or {}).get("sha")
         need(isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value) is not None,
              "compare did not return a usable merge-base SHA")
         return value

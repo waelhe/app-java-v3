@@ -356,7 +356,7 @@ class MergeBaseTests(unittest.TestCase):
 
         def fake_get_from(root, path):
             calls.append((root, path))
-            return {"merge_base_sha": "a" * 40}
+            return {"merge_base_commit": {"sha": "a" * 40}}
 
         client.get_from = fake_get_from
         self.assertEqual(client.merge_base("b" * 40, "c" * 40), "a" * 40)
@@ -366,6 +366,15 @@ class MergeBaseTests(unittest.TestCase):
     def test_rejects_compare_without_merge_base(self):
         client = gate.GitHub("example/repo", "token")
         client.get_from = lambda root, path: {}
+        with self.assertRaisesRegex(gate.GateError, "merge-base"):
+            client.merge_base("b" * 40, "c" * 40)
+
+    def test_rejects_legacy_merge_base_sha_field(self):
+        # The Compare API has no top-level merge_base_sha field (verified live
+        # 2026-10-31): a payload carrying only that legacy key must fail
+        # closed, never silently return a missing merge base.
+        client = gate.GitHub("example/repo", "token")
+        client.get_from = lambda root, path: {"merge_base_sha": "a" * 40}
         with self.assertRaisesRegex(gate.GateError, "merge-base"):
             client.merge_base("b" * 40, "c" * 40)
 
