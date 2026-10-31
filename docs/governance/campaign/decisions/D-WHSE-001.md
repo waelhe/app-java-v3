@@ -34,6 +34,18 @@ If a business need is later accepted, a separate design must define:
 
 Only after these decisions and acceptance tests exist should a dedicated module/owner be selected. Do not preselect module boundaries or migration numbers in this deferral ADR. The nine listed mutations and `channelReorderWarehouses` must remain undeclared/unsupported while the warehouse capability is deferred; no CRUD-only implementation or Dashboard success state is permitted.
 
+## A0 Dashboard 3.23.39 route / operation evidence
+
+The pinned Dashboard 3.23.39 source at `bc75e988da0fa4fbc3d47378a888d859d070746f` has direct dependencies on the deferred location-aware roots:
+
+- `src/warehouses/mutations.ts` defines warehouse create/update/delete; the Warehouses list and dialogs expose those operations.
+- Channel Details / setup calls `createWarehouse`, updates Channel warehouse assignments and exposes assign/create actions. The Channel inventory/setup cards cannot remain active when warehouse membership roots are undeclared.
+- `src/channels/mutations.ts` defines `channelReorderWarehouses`; the channel UI can reorder assigned locations.
+- `src/products/mutations.ts` performs `productVariantStocksDelete`, `productVariantStocksCreate` and `productVariantStocksUpdate` within the variant update flow. The product variant editor therefore depends on warehouse/location stock semantics, not merely on a Warehouse list page.
+- The pinned Dashboard changelog explicitly states that preorder UI was removed and that pre-sales should use ordinary stock/warehouse or `trackInventory=false`; that removal does not remove the warehouse/stock dependencies above.
+- Under this deferral proposal, the Warehouses routes, Channel inventory/assignment/reorder controls and per-variant warehouse-stock editor must all be capability-gated/disabled in platform mode. A partial UI that exposes these controls and then returns a GraphQL error or fake empty inventory is not acceptable.
+
+
 ## Alternatives considered
 
 - **A — Defer and explicitly exclude multi-warehouse Dashboard surfaces while preserving current product-level inventory. RECOMMENDED for current evidence.** Does not invent capability and does not block unrelated commerce work.
