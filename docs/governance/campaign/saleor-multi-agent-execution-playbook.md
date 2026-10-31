@@ -15,8 +15,8 @@ At the last verified repository snapshot on 2026-10-21:
 - Spring Boot capability audit PR #692 is merged at `b122c90b…`.
 - Typed global-ID codec PR #693 is merged at `f3a31788…`.
 - Users read roots `me`, `user`, and `staffUsers` PR #694 is merged at `ea0031a…`.
-- Saleor reference schema: Saleor `3.23.43`, `saleor/graphql/schema.graphql`, Git blob SHA-1 `b8fa0dd809081f76dc2834bb5c286561e5783276`, containing 90 Query + 342 Mutation + 26 Subscription roots = 458 roots.
-- Dashboard base: `saleor/saleor-dashboard` `3.23.39`, commit `bc75e988da0fa4fbc3d47378a888d859d070746f`.
+- Saleor reference schema: Saleor `3.23.45`, `saleor/graphql/schema.graphql`, Git blob SHA-1 `b8fa0dd809081f76dc2834bb5c286561e5783276`, containing 90 Query + 342 Mutation + 26 Subscription roots = 458 roots.
+- Dashboard base: `saleor/saleor-dashboard` `3.23.41`, commit `ae7697bc635c46392d2fca5f88a34970097679f7`.
 
 **Re-fetch and freeze the actual `main` SHA and source pins at campaign start.** The SHAs above are a reference snapshot, not permission to ignore subsequent commits.
 
@@ -184,7 +184,7 @@ Capture exact URLs, run IDs, conclusions, test totals and candidate SHA. Do not 
 
 ### 7.1 Saleor Agent Skills and retroactive semantic audit
 
-The companion directive [saleor-agent-skills-semantic-audit-directive.md](saleor-agent-skills-semantic-audit-directive.md) is mandatory for every workstream. It specifies how to consume the pinned Saleor skills, verify each rule against Saleor 3.23.43 source/tests and Dashboard 3.23.39, audit previously INTEGRATED roots, and turn verified behavior into regression tests.
+The companion directive [saleor-agent-skills-semantic-audit-directive.md](saleor-agent-skills-semantic-audit-directive.md) is mandatory for every workstream. It specifies how to consume the pinned Saleor skills, verify each rule against Saleor 3.23.45 source/tests and Dashboard 3.23.41, audit previously INTEGRATED roots, and turn verified behavior into regression tests.
 
 Each existing A1–A7 owner audits the INTEGRATED roots in its assigned wave while continuing unblocked implementation work. This does not create new A1/A2/A3 roles, duplicate the 458-root ledger, or introduce a stop-the-world audit phase. A0 alone updates the central ledger and assembles commits. Keep the playbook's statuses, candidate-branch model, frozen-contract discipline, independent R1–R4 review, and single owner-authorized final release merge.
 
