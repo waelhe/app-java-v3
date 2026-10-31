@@ -31,6 +31,17 @@ Keep **marketplace-pricing** as the sole tax calculation and rate authority, and
 8. `Query.taxTypes` is deprecated upstream in favor of `taxClasses`, but its description still denotes gateway-reported tax types; do not treat the name/deprecation as permission to synthesize gateway data from local statutory rates. Keep this root explicitly unsupported/undeclared unless a genuine provider-owned tax-gateway contract is accepted. Do not invent a `taxCode`.
 9. `Mutation.shopFetchTaxRates` is a separate deprecated gateway operation, not the read counterpart of locally configured `TaxRate`. Keep it unsupported/undeclared without a real Tax Gateway SPI and provider-owned response. In particular, neither `shopFetchTaxRates` nor `taxTypes` may read or serialize the local `marketplace-pricing.TaxRate` table as a fake gateway result.
 
+## A0 Dashboard 3.23.39 route / operation evidence
+
+The pinned Dashboard 3.23.39 source at `bc75e988da0fa4fbc3d47378a888d859d070746f` uses the tax-class/channel-tax contract directly:
+
+- Tax configuration routes query `taxConfigurations` and mutate `taxConfigurationUpdate`.
+- Tax-country routes query `taxCountryConfigurations` and use `taxCountryConfigurationUpdate` / `taxCountryConfigurationDelete`.
+- Tax-class routes query `taxClasses` and use `taxClassCreate`, `taxClassUpdate` and `taxClassDelete`; product-type/shipping assignment pickers also query `taxClasses`.
+- `src/taxes/queries.ts` defines `TaxStrategyChoices` over `shop.availableTaxApps`; the strategy picker consumes this field. If the platform has no genuine tax-app registry, that picker and the related dynamic-provider controls must be explicitly unavailable rather than backed by fabricated app rows.
+- No Dashboard operation using `taxTypes` or `shopFetchTaxRates` was found in the pinned source. Their unsupported dispositions do not disable the core tax-class screens; conversely, the absence of these deprecated gateway roots does not satisfy the tax-class/configuration dependencies above.
+
+
 ## Alternatives considered
 
 - **A — Extend marketplace-pricing with tax classes, class rates and channel configuration. RECOMMENDED.** Retains one calculation authority and evolves the real tax owner.
