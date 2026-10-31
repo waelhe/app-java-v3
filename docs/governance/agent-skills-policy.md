@@ -96,10 +96,12 @@ byte-identical to `neondatabase/agent-skills@51c7d594`, 34 files).
 
 ## 5. Measured facts
 
-- Registry created 2026-10-30: 10 skills, 49 files, all
-  `PINNED_UPSTREAM` (40 upstream skill files plus 10 vendored
-  attribution LICENSE copies — one per skill — since no upstream skill
-  directory carries its own license file).
+- Registry created 2026-10-30 and now records 10 skills / 49 files,
+  all `PINNED_UPSTREAM`. The nine Neon skills retain their repository-root
+  LICENSE attribution copies. `saleor-core` now carries the upstream
+  per-skill LICENSE from `saleor/saleor-docs@2cdf6590`; the original
+  `saleor/agent-skills@fb1a5725` provenance is retained as historical
+  origin in the source-provenance proposal.
 - `saleor-core` provenance migrated in the reviewed change from the
   historical `saleor/agent-skills@fb1a5725` snapshot to
   `saleor/saleor-docs@2cdf6590e838929c3f74c16e982cfdc11073c2d8`.
