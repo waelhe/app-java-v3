@@ -13,7 +13,7 @@
 
 ### D1. Reuse the complete Saleor Dashboard as the mature administration base
 
-Use saleor/saleor-dashboard tag 3.23.39, commit bc75e988da0fa4fbc3d47378a888d859d070746f, as the reproducible UI baseline. Preserve the full upstream commerce workbenches, navigation, product/order screens, list/detail/editor patterns, filters, forms, permission-aware navigation, error/loading states, component tests and E2E assets. Expand this same base for the platform's provider, business, community, property, services and tourism workbenches.
+Use saleor/saleor-dashboard tag 3.23.41, commit ae7697bc635c46392d2fca5f88a34970097679f7, as the reproducible UI baseline. Preserve the full upstream commerce workbenches, navigation, product/order screens, list/detail/editor patterns, filters, forms, permission-aware navigation, error/loading states, component tests and E2E assets. Expand this same base for the platform's provider, business, community, property, services and tourism workbenches.
 
 “Full base” means the complete maintained codebase, navigation, workbenches, routes, components and workflows remain in scope. A backend capability gap is an implementation obligation, not permission to remove, hide, disable, suppress or omit its Dashboard route/control. Preserve every Dashboard route and intended workflow while completing its owning backend capability and acceptance evidence. Never replace missing behavior with fake-success, fabricated data or a silent no-op.
 
@@ -21,7 +21,7 @@ Use saleor/saleor-dashboard tag 3.23.39, commit bc75e988da0fa4fbc3d47378a888d859
 
 The owner has reaffirmed the full-commerce scope and explicitly directed that no Dashboard capability be disabled or removed to accommodate backend gaps. This is an owner-level scope clarification under D-SALEOR-FULL-001.
 
-1. Preserve the complete pinned Dashboard 3.23.39 codebase and every retained administration route, workbench, menu item, control and workflow. Do not hide, disable, remove or suppress a route because its backend capability is blocked, unimplemented, awaiting an owner/SPI, or not yet tested.
+1. Preserve the complete pinned Dashboard 3.23.41 codebase and every retained administration route, workbench, menu item, control and workflow. Do not hide, disable, remove or suppress a route because its backend capability is blocked, unimplemented, awaiting an owner/SPI, or not yet tested.
 2. A missing backend capability remains implementation work in its assigned Saleor wave. Keep its gap visible in the central ledger and deliver the real owning model, use case, SPI, persistence, security, migration and tests. Do not invent success-shaped placeholders, fake records, silent no-ops or Dashboard-only substitutes.
 3. The earlier platform-stage deferrals in `ADR-0012 §5` (commercial channels) and `ADR-0012 §7` (multi-location inventory) are superseded **for the full Saleor commerce compatibility target**. They remain historical evidence of the earlier platform stage and retain useful internal invariants, but they no longer justify excluding Saleor channel or warehouse/inventory capabilities from the target.
 4. Channel and warehouse capabilities must be implemented through explicit domain ownership and public SPIs, respecting monetary context, inventory reservation/allocation, fulfillment, audit, concurrency and historical-order snapshots. Do not equate channels with neighborhood/persona/provider authorization; do not invent a second inventory or commerce engine.
@@ -30,7 +30,7 @@ The owner has reaffirmed the full-commerce scope and explicitly directed that no
 
 ### D2. Use the complete Saleor schema as the commerce reference contract
 
-The immutable reference is saleor/saleor@3.23.43:saleor/graphql/schema.graphql, Git blob SHA b8fa0dd809081f76dc2834bb5c286561e5783276. The measured root inventory is 90 Query roots + 342 Mutation roots + 26 Subscription events = **458 root entry points**. Exact domain counts and owner mappings live in the CSV matrix.
+The immutable reference is saleor/saleor@3.23.45:saleor/graphql/schema.graphql, Git blob SHA b8fa0dd809081f76dc2834bb5c286561e5783276. The measured root inventory is 90 Query roots + 342 Mutation roots + 26 Subscription events = **458 root entry points**. Exact domain counts and owner mappings live in the CSV matrix.
 
 This is the complete reference and target inventory, not permission to add null/no-op resolvers. Every root must be classified, assigned, implemented or explicitly exempted with a decision record, and tested. The release target is full support for every retained Dashboard operation and a complete disposition for every root in the pinned reference schema. No domain is silently dropped because it is difficult or does not fit an existing DTO.
 
@@ -66,10 +66,34 @@ Saleor's official Dashboard source makes the coupling explicit: its product-list
 
 Official sources:
 - Saleor API reference: https://docs.saleor.io/api-reference/
-- Pinned Dashboard product query: https://github.com/saleor/saleor-dashboard/blob/3.23.39/src/products/queries.ts
-- Pinned Dashboard configuration/schema generation: https://github.com/saleor/saleor-dashboard/blob/3.23.39/docs/configuration.md
-- Pinned Dashboard multi-schema generation: https://github.com/saleor/saleor-dashboard/blob/3.23.39/docs/multi-schema.md
-- Saleor 3.23.43 complete source schema: https://github.com/saleor/saleor/blob/3.23.43/saleor/graphql/schema.graphql
+- Pinned Dashboard product query: https://github.com/saleor/saleor-dashboard/blob/3.23.41/src/products/queries.ts
+- Pinned Dashboard configuration/schema generation: https://github.com/saleor/saleor-dashboard/blob/3.23.41/docs/configuration.md
+- Pinned Dashboard multi-schema generation: https://github.com/saleor/saleor-dashboard/blob/3.23.41/docs/multi-schema.md
+- Saleor 3.23.45 complete source schema: https://github.com/saleor/saleor/blob/3.23.45/saleor/graphql/schema.graphql
+
+### Official Saleor AI documentation and agent resources — operating policy (verified 2026-10-31)
+
+Use [Saleor's AI developer guide](https://docs.saleor.io/developer/ai) as the entry point for agent-specific documentation. Its current official source snapshot is [saleor/saleor-docs@2cdf6590e838929c3f74c16e982cfdc11073c2d8](https://github.com/saleor/saleor-docs/commit/2cdf6590e838929c3f74c16e982cfdc11073c2d8). This is a documentation/skill snapshot, not a replacement for the immutable Core and Dashboard release pins above.
+
+**Use the full resource surface, with the following authority boundaries:**
+
+1. **Documentation MCP** — use `https://docs.saleor.io/mcp` for read-only documentation discovery through `search_docs`, `get_page`, `list_pages` and `get_navigation`. It does not connect to a Saleor instance and does not execute GraphQL operations. It is a retrieval tool, not a runtime or implementation validator.
+2. **Documentation indexes** — use [llms.txt](https://docs.saleor.io/llms.txt) to discover current topics and per-domain API references; use [llms-full.txt](https://docs.saleor.io/llms-full.txt) or the individual Markdown pages when full context is required. The generated API catalogue/JSON references, [AI catalog](https://docs.saleor.io/.well-known/ai-catalog.json), [agent-readability manifest](https://docs.saleor.io/agent-readability.json), [skill discovery index](https://docs.saleor.io/.well-known/agent-skills/index.json), and [MCP discovery metadata](https://docs.saleor.io/.well-known/mcp.json) are discovery surfaces. They are mutable: never treat their current line counts, ordering, generated content or `main` pointers as an immutable schema contract.
+3. **Separate GraphQL schema tooling** — when a schema-aware GraphQL MCP is useful for offline exploration, give it the exact SDL downloaded from `saleor/saleor@3.23.45`. Do not confuse this schema tool with the read-only Documentation MCP, do not point it at an unpinned `main` schema, and do not infer that this platform operates a Saleor GraphQL server.
+4. **Official Agent Skills** — the docs distribution currently lists five skills: `saleor-core` (1.2.0), `saleor-storefront` (1.0.0), `saleor-app` (1.0.0), `saleor-configurator` (1.0.0) and `storefront-builder` (2.0.0). Select by task; do not bulk-install or automatically execute all five:
+   - `saleor-core`: required specialist review input for discount precedence/allocation, stock availability modes, purchasability vs shippability, related Dashboard wording and mode-conditional stock events. Read `SKILL.md`, then only the relevant rule file(s). Verify every behavior claim against Core 3.23.45 source and tests; currency precision, click-and-collect and legacy/direct-mode details require explicit tests.
+   - `saleor-storefront`: use for Saleor GraphQL data-model/nullability, permissions, product/variant patterns, channel-scoped queries and checkout lifecycle when reviewing customer-facing contracts or the consumers of the Dashboard API. Treat it as API-behavior reference, not permission to introduce a Saleor runtime or change the pinned SDL.
+   - `storefront-builder`: use only when a storefront UX/data-contract task is actually assigned. Its bootstrap steps assume a reachable Saleor instance and must not be followed for this Spring-owned platform; do not create a second storefront-to-Saleor integration. Relevant data/UX rules may be consulted selectively.
+   - `saleor-app`: consult only for a real external Saleor App, payment-app protocol or Saleor webhook boundary. Do not introduce Saleor App registration, AppBridge, JWT or metadata storage as a substitute for this platform's existing Spring interfaces, signed provider webhooks and payment owners.
+   - `saleor-configurator`: consult only when managing configuration of an actual Saleor store. It is not applicable to deploying or configuring this Spring platform; do not introduce a Saleor instance or credentials merely to use this skill.
+5. **Skill provenance and progressive disclosure** — the source of the current official skills distribution is `saleor/saleor-docs`; `saleor/agent-skills` is historical origin, not the current discovery endpoint. Vendored files must be tied to an immutable repository commit, archive/file digests and preserved license/attribution evidence in `agent-skills-pins.json`. Never use an unpinned `npx skills add` against a moving default branch for CI or production agents. Do not copy compiled skill bundles wholesale into every prompt: read the relevant `SKILL.md`, follow its links to the narrow rule/reference required, and verify the exact source version. The dedicated official-AI/provenance work in [PR #773](https://github.com/waelhe/app-java-v3/pull/773) remains a separate draft/rebase item; it must not be treated as merged or as current integration-branch state.
+6. **Marketplace recipe** — use [Saleor's Marketplace Recipe](https://docs.saleor.io/recipes/marketplace) as a question checklist for vendor/resource isolation, immutable order-line ownership, mixed-vendor fulfilment, payment versus payout, idempotency and vendor-specific tax. It is reference material only: Saleor vendors/models and Stripe Connect are not platform architecture decisions. Existing platform owners, approved SPIs and ADRs govern the implementation.
+7. **Mandatory consumption loop** — for each useful AI/skill insight: identify the exact Saleor operation/type/field or Dashboard route; locate the matching implementation and tests in the pinned upstream repositories; record the observed semantics and source commit/path/test; map it to the existing Spring Modulith owner and approved SPI; implement through the same use case as REST; then prove it with JUnit, integration/security tests and platform-backed Dashboard E2E. Register any public wire divergence explicitly. A skill paragraph, generated types, root-name match or successful build is not implementation evidence.
+
+**Non-negotiable precedence:** D-SALEOR-FULL-001, immutable `saleor-source-pins.json`, pinned Saleor source/tests, the accepted platform SDL and existing platform domain contracts/tests remain authoritative. AI documentation and skills accelerate discovery and semantic auditing; they cannot override the canonical plan, authorize new infrastructure, or justify fake-success/no-op resolvers. Spring Boot, PostgreSQL and Spring Modulith remain the only commerce runtime/source of truth; Netflix DGS remains the GraphQL resolver model.
+
+### Related integration references
+
 - Saleor marketplace recipe: https://docs.saleor.io/recipes/marketplace
 - Saleor extension/fork trade-offs: https://docs.saleor.io/developer/extending/overview
 - DGS programming model and Spring for GraphQL integration: https://netflix.github.io/dgs/spring-graphql-integration/
@@ -255,7 +279,7 @@ Existing platform roots are not deleted in this governance change. They remain b
 
 The following documents remain in history but cease to be execution authorities:
 1. docs/governance/plans/saleor-dashboard-marketplace-adaptation-plan.md — original fork/source study and lessons; contradictory implementation rules are superseded.
-2. docs/research/saleor-schema-parity-plan.md — measured 3.23.43 baseline and domain observations; previous wave order and narrower adoption policy are superseded.
+2. docs/research/saleor-schema-parity-plan.md — historical 3.23.43 measurement and domain observations; the current immutable reference pin is 3.23.45. Previous wave order and narrower adoption policy are superseded.
 3. docs/research/saleor-commerce-backend-fit-gap.md and docs/research/social-commerce-business-tourism-saleor-alignment.md remain useful domain evidence only; this plan owns Dashboard/schema integration.
 
 **Actual PR history is authoritative (measured 2026-10-20):** #676 and #677 were merged before D-SALEOR-FULL-001. #678 was closed at 11:52:01 UTC and then merged at 12:20:31 UTC by the repository's subsequent merge session; its keyset-backed product filter/sort foundation is therefore part of current `main`. The owner's keep-or-revert decision on #678 remains open as documented on #686; absent an explicit revert command the content stays in place and must be assessed against the Saleor-shaped `products` contract in P2 — it does not count as implementing the full Saleor product surface by itself. PRs #679, #680, #681 and #683 remain closed and unmerged; their commits/branches are preserved as source material, not accepted implementation. A workflow fails if any retired PR number #676, #677, #678, #679, #680, #681 or #683 is reopened. Continue with new operation-aligned PRs only; never reopen an old PR to resume its retired contract strategy.

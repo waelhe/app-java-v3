@@ -104,4 +104,4 @@ No unadopted skill becomes a fake vendored registry entry (plan §3.1.7).
 7. Keep the four unadopted skills in the applicability catalog with their measured digests (§2/§4).
 8. Never run `npx skills add` in this repository (unchanged rule).
 
-**Boundaries (unchanged):** this proposal changes no wire contract, no Saleor 3.23.43 source pin, no Dashboard 3.23.39 pin, no SDL, no root disposition, no approved divergence. Skills remain specialist reference material, never a wire-contract authority.
+**Boundaries (unchanged):** this proposal changes no wire contract, no Saleor 3.23.45 source pin, no Dashboard 3.23.41 pin, no SDL, no root disposition, no approved divergence. Skills remain specialist reference material, never a wire-contract authority.

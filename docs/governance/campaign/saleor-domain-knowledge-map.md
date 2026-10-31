@@ -2,8 +2,8 @@
 
 **Status:** A0 campaign knowledge index; companion to (not replacement for) the canonical execution plan.  
 **Governing decision:** `D-SALEOR-FULL-001`  
-**Saleor source pin:** `saleor/saleor@3.23.43`, schema blob `b8fa0dd809081f76dc2834bb5c286561e5783276`  
-**Dashboard pin:** `saleor/saleor-dashboard@3.23.39`, commit `bc75e988da0fa4fbc3d47378a888d859d070746f`  
+**Saleor source pin:** `saleor/saleor@3.23.45`, schema blob `b8fa0dd809081f76dc2834bb5c286561e5783276`  
+**Dashboard pin:** `saleor/saleor-dashboard@3.23.41`, commit `ae7697bc635c46392d2fca5f88a34970097679f7`  
 **Current campaign baseline:** `34d37457df53790afc92decd68af1773e6ff8578` on `integration/saleor-full-commerce-20261021`; the initial map content was reconciled onto this baseline in the A0 branch merge commit `d8fdeca3199bab2967e443d87f1b57346f208946`. Re-read the live integration HEAD before each new work packet.
 
 > This document maps knowledge, domain relationships, evidence sources and agent routing. It deliberately does **not** list the 458 roots, copy their status, or assign a parallel root disposition. The only root inventory is `docs/governance/campaign/saleor-458-root-inventory.csv`; the category/owner/acceptance matrix is `docs/governance/plans/saleor-commerce-domain-matrix.csv`; accepted wire differences belong in `docs/governance/plans/saleor-contract-divergences.csv`.
@@ -16,8 +16,8 @@ Use the following order when deciding what a Saleor-shaped operation should mean
 2. `docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md` — sole execution and product-scope authority for D-SALEOR-FULL-001.
 3. `docs/governance/campaign/frozen-contracts.md` — accepted internal contracts and domain boundaries.
 4. `docs/governance/plans/saleor-contract-divergences.csv` plus approved ADRs — explicit differences and their approval state.
-5. Official Saleor 3.23.43 source and tests — primary evidence for upstream behavior.
-6. Official Dashboard 3.23.39 source and tests — evidence for retained administrative journeys and their exact operation use.
+5. Official Saleor 3.23.45 source and tests — primary evidence for upstream behavior.
+6. Official Dashboard 3.23.41 source and tests — evidence for retained administrative journeys and their exact operation use.
 7. Official Saleor documentation — conceptual/API guidance; useful for discovering scenarios, but verify version-specific behavior against pinned source/tests.
 8. Pinned Agent Skills and MCP outputs — specialist reference material only. They do not override schema, source, tests, platform contracts or owner decisions.
 9. Current Spring platform code/tests — evidence of what our platform actually does, never a reason to silently redefine the upstream target.
@@ -34,7 +34,7 @@ The Documentation MCP is read-only. It searches/reads Saleor documentation and n
 
 ### 2.2 GraphQL MCP
 
-The Saleor GraphQL MCP is a **separate** tool from Documentation MCP. If used, generate/download its SDL input only from the immutable `saleor-source-pins.json` reference: Saleor 3.23.43. Never use `main`, a moving latest schema, or a running Saleor backend. MCP schema introspection is a contract discovery aid, not proof that our Spring implementation works.
+The Saleor GraphQL MCP is a **separate** tool from Documentation MCP. If used, generate/download its SDL input only from the immutable `saleor-source-pins.json` reference: Saleor 3.23.45. Never use `main`, a moving latest schema, or a running Saleor backend. MCP schema introspection is a contract discovery aid, not proof that our Spring implementation works.
 
 ### 2.3 Five official Agent Skills — choose by task, do not install indiscriminately
 
@@ -54,7 +54,7 @@ Repository policy: do not run `npx skills add`. The active integration-branch pi
 
 The matrix below is a **domain navigation and dependency map**, not a root inventory. Exact operations, owner assignments and statuses must be read from the central CSV and category matrix.
 
-**Pinned Dashboard rule:** every retained Dashboard 3.23.39 route, workbench, menu item, control and workflow stays in scope. A backend capability gap creates an implementation obligation and blocks P7; it never authorizes hiding, disabling, removing or suppressing the UI surface, or replacing it with fake data/no-op behavior. Root-level non-applicability is handled only through an owner-approved divergence, not by deleting the retained route.
+**Pinned Dashboard rule:** every retained Dashboard 3.23.41 route, workbench, menu item, control and workflow stays in scope. A backend capability gap creates an implementation obligation and blocks P7; it never authorizes hiding, disabling, removing or suppressing the UI surface, or replacing it with fake data/no-op behavior. Root-level non-applicability is handled only through an owner-approved divergence, not by deleting the retained route.
 
 | Domain | Official knowledge entry points | Platform owner anchors to verify in code | Important dependencies / routing | Skill routing |
 |---|---|---|---|---|
@@ -93,8 +93,8 @@ Each journey must run against the platform's actual owning use cases and Postgre
 
 Every report should be traceable through this chain:
 
-`Saleor 3.23.43 source symbol + upstream test`  
-→ `Dashboard 3.23.39 route/operation (if retained)`  
+`Saleor 3.23.45 source symbol + upstream test`  
+→ `Dashboard 3.23.41 route/operation (if retained)`  
 → `central root reference + domain matrix category`  
 → `platform owner module/service/SPI/entity/repository`  
 → `approved decision or divergence`  
@@ -121,9 +121,9 @@ A root or domain is not complete because a resolver exists, SDL compiles, a gene
 
 - Agents / Documentation MCP / Skills / GraphQL MCP: https://docs.saleor.io/developer/ai
 - Documentation MCP endpoint: https://docs.saleor.io/mcp
-- API reference generated from Saleor 3.23.43: https://docs.saleor.io/api-reference
-- Pinned backend tag: https://github.com/saleor/saleor/tree/3.23.43
-- Pinned Dashboard tag: https://github.com/saleor/saleor-dashboard/tree/3.23.39
+- API reference generated from Saleor 3.23.45: https://docs.saleor.io/api-reference
+- Pinned backend tag: https://github.com/saleor/saleor/tree/3.23.45
+- Pinned Dashboard tag: https://github.com/saleor/saleor-dashboard/tree/3.23.41
 - Official skill discovery: https://docs.saleor.io/.well-known/agent-skills/index.json
 - Official channels: https://docs.saleor.io/developer/channels/overview
 - Official taxes: https://docs.saleor.io/developer/taxes

@@ -89,7 +89,7 @@ This subsection is the active dispatch record and supersedes the 03:37Z/6608a869
 
 #### Corrected scope rules
 
-1. Keep all retained Dashboard 3.23.39 routes, workbenches, controls and workflows. A missing backend capability is implementation work; never hide, disable, remove, suppress or substitute a fake/no-op route.
+1. Keep all retained Dashboard 3.23.41 routes, workbenches, controls and workflows. A missing backend capability is implementation work; never hide, disable, remove, suppress or substitute a fake/no-op route.
 2. The previous platform-stage D-WHSE-001 warehouse deferral is superseded for the full-commerce target. A2 owns warehouse/location stock/reservation/allocation; A3 owns channel-to-warehouse membership/order; A4 owns checkout/shipping/fulfilment use. Coordinate through public SPIs and A0 migration/SDL allocation.
 3. The old A3 specialist-only branches are parked at the common baseline and not to be dispatched. A3 is one owner with one unified P3 branch.
 4. No wave PRs and no seven-agent launch. The current parallel execution is A2/A3/A4 plus A0 stewardship.
@@ -128,9 +128,9 @@ Never run npx skills add or another skill installer against this repository. A s
 
 For each rule consumed by an implementation or test:
 
-1. Locate the exact source file and function in Saleor 3.23.43.
+1. Locate the exact source file and function in Saleor 3.23.45.
 2. Locate the upstream unit/integration tests that establish the behavior.
-3. Inspect the relevant Dashboard 3.23.39 usage when UI behavior is involved.
+3. Inspect the relevant Dashboard 3.23.41 usage when UI behavior is involved.
 4. Record the pinned source URL, commit, path, symbol, and relevant lines/test.
 5. Check knownUpstreamErrata in the skill registry when available.
 6. If skill prose conflicts with source or tests, treat it as a documented upstream erratum. Do not patch the vendored copy; report the evidence to A0 for the registry/policy process.
