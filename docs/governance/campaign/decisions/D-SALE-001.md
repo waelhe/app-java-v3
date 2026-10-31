@@ -23,6 +23,16 @@ Use the following per-surface rule:
 5. Keep promotion precedence, allocation and catalogue-vs-order behavior grounded in pinned Saleor 3.23.43 source/tests and the adopted saleor-core skill only for its documented discount-precedence/allocation rules. The measured platform currently applies the best order promotion and then a voucher to the post-promotion subtotal (they stack); the pinned Saleor order-discount path suppresses/clears the order promotion when an order voucher is present, while catalogue line promotions may coexist with an order-level voucher. This is an existing semantic divergence, not a presumed equivalence: A0 must either require conformance before catalogue-promotion release or register an owner-approved divergence and test the exact three-way precedence. The skill does not define Saleor tax, channel or gift-card behavior.
 6. Keep existing promotion/voucher models and consumers backward compatible until a consumer inventory and migration gate authorizes deprecation. Do not rename existing platform operations or delete existing data as part of this decision.
 
+## A0 Dashboard 3.23.39 route / operation evidence
+
+The pinned Dashboard source at `bc75e988da0fa4fbc3d47378a888d859d070746f` requires a per-route, not family-wide, disposition:
+
+- The visible `/discounts/sales`, `/discounts/sales/add` and `/discounts/sales/:id` paths in `src/discounts/index.tsx` are wired to `DiscountList`, `DiscountCreate` and `DiscountDetails`. Those components use `promotions`, `promotionCreate`, `promotionUpdate` and `promotionDelete`; the URL's legacy “sales” segment does **not** prove that the page calls `sales` or performs Sale CRUD. Keep this route only for the Promotion behavior that the platform actually supports, with ORDER versus CATALOGUE behavior separately gated.
+- The separate Translations → Sales route is active: `src/translations/views/EntityLists/TranslationsSaleList.tsx` uses `translations(kind: SALE)`; `src/translations/views/TranslationsSales.tsx` uses the Sale translation details query and `updateSaleTranslations`; `src/translations/mutations.ts` calls `saleTranslate`. Therefore `saleTranslate` is a real retained Dashboard dependency. If no lossless Sale translation owner/mapping is approved, disable only the Sale translation route/control and retain evidence that this is an intentional capability exclusion.
+- `src/discounts/queries.ts` still declares `saleList` and `saleDetails` documents, but the visible Discounts route components above use Promotion hooks. Do not count the static legacy documents as proof of an active Sale CRUD flow; conversely, do not count the route as proof that Sale translation is unused.
+- No retained Dashboard operation using `saleBulkDelete` was found. Its non-deprecated upstream status still requires an explicit root disposition, but it is not a current Dashboard UI blocker in this pinned build.
+
+
 ## Alternatives considered
 
 - **A — No new Sale aggregate; adapt legacy Sale roots to catalogue Promotions only after field-level semantic proof, otherwise explicitly exclude and disable the route. RECOMMENDED.** Avoids duplicate business state without pretending the two APIs are automatically identical.
