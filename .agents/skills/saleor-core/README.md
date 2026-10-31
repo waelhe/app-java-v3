@@ -1,37 +1,36 @@
-# saleor-core
+# Saleor Core Skill — pinned platform reference
 
-Backend behavior reference for the [Saleor](https://saleor.io) e-commerce platform. Covers internal mechanics derived from reading the core source code — discount precedence, stock availability modes, denormalized fields, and known Dashboard gotchas.
+This repository vendors the reviewed `saleor-core` skill snapshot at
+`saleor/saleor-docs@2cdf6590e838929c3f74c16e982cfdc11073c2d8`.
 
-## Installation
+The skill is automatically available to compatible coding agents from
+`.agents/skills/saleor-core`. Its source commit, official bundle digest,
+per-file hashes, attribution, and adoption state are recorded in
+`docs/governance/plans/agent-skills-pins.json` and
+`docs/governance/plans/saleor-ai-resource-surface.json`.
+
+## Installation and updates
+
+Do not run `npx skills add` or `npx skills update` in this repository:
+those commands resolve remote skill content and can replace this reviewed
+snapshot outside the repository's provenance and hash-verification workflow.
+
+For a separate project that intentionally wants the current upstream skill
+rather than this repository's reviewed pin, follow the official instructions
+at <https://docs.saleor.io/developer/ai>:
 
 ```shell
-npx skills add . --skill saleor-core
+npx skills add saleor/saleor-docs --skill saleor-core
 ```
 
-## What's Included
+That command installs the current distribution; it does not reproduce this
+repository's pinned commit. For this platform, use the committed snapshot and
+the pin registry above.
 
-### Rules (progressively disclosed)
+## What's included
 
-| Rule | Topic |
-|------|-------|
-| `discount-precedence` | Full precedence hierarchy, manual vs voucher vs promotion interactions, denormalized field semantics, known Dashboard bug |
-| `order-discount-allocation` | Two-pass calculation of order-level discounts, what the API exposes vs reconstructs, gift-line shape gotcha (`ORDER_PROMOTION` on `OrderLine.discounts[]`), guidance for price-explanation tooling |
-| `stock-availability-modes` | `Shop.useLegacyShippingZoneStockAvailability` (3.23+), purchasability vs shippability, server queryset dispatch, mode-conditional webhooks, Dashboard UI / copy / severity rules, migration footguns, test fixtures |
-
-## Structure
-
-```
-saleor-core/
-├── SKILL.md              # Overview and quick reference (agents read this first)
-├── README.md             # This file (for humans)
-└── rules/                # Individual rule files
-    ├── discount-precedence.md
-    ├── order-discount-allocation.md
-    └── stock-availability-modes.md
-```
-
-## What's NOT Included
-
-- Storefront API patterns — see `saleor-storefront`
-- App development patterns — see `saleor-app`
-- Exhaustive Saleor source walkthrough — rules focus on behavior that matters for building integrations
+The adopted snapshot provides Saleor Core implementation guidance for
+discount precedence, order-level discount allocation, and stock availability
+modes. These rules are specialist reference material only. The pinned Saleor
+3.23.45 source/tests, Dashboard 3.23.41, canonical platform plan, frozen
+contracts, and approved divergence records remain authoritative.
