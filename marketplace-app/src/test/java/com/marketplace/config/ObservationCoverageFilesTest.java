@@ -401,15 +401,8 @@ class ObservationCoverageFilesTest {
                     // their own service seam; the recovery sweep's reads stay
                     // unobserved per the commands-not-reads policy.
                     "payment.abandonment.refund", "payment.abandonment.resolve",
-                    "payment.cancel",
-                    "payment.confirm",
-                    "payment.delivery-intent.create",
-                    "payment.delivery.refund",
-                    "payment.fail",
-                    "payment.process",
-                    "payment.psp.create",
-                    "payment.psp.refund",
-                    "payment.psp.webhook",
+                    "payment.cancel", "payment.confirm", "payment.delivery-intent.create", "payment.delivery.refund", "payment.fail", "payment.process",
+                    "payment.psp.create", "payment.psp.refund", "payment.psp.webhook",
                     // W11 (the matrix's G5): the settlement-eligibility READ —
                     // the administrative-decision-surface exception family
                     // (the verification-queue and dispatch-board precedents):

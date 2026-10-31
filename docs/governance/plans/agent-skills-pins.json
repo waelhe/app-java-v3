@@ -1,0 +1,476 @@
+{
+  "version": 1,
+  "registeredAt": "2026-10-30",
+  "policy": {
+    "role": "specialized reference for agents, never an authority",
+    "precedence": [
+      "docs/governance/plans/saleor-source-pins.json — the pinned Saleor 3.23.43 reference schema (blob-verified) and the Dashboard pins",
+      "docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md — the D-SALEOR-FULL-001 canonical plan and its domain matrix",
+      "docs/governance/plans/saleor-contract-divergences.csv — the registered divergences ledger",
+      "the platform code and its tests — measured facts"
+    ],
+    "conflictRule": "A skill text never overrides any precedence layer. A discovered conflict is registered where its domain keeps decisions, always through a reviewed PR and never silently adopted into code: Saleor wire-contract conflicts go to saleor-contract-divergences.csv; conflicts outside the Saleor wire contract (for example Neon operational guidance contradicting the platform's measured reality) go to the defect-knowledge evidence ledger under docs/governance/defect-knowledge/.",
+    "updates": "Vendored skill content moves only by a reviewed PR that updates this registry in the same change (the same discipline as productionPinsMoveOnlyByReviewedChange in saleor-source-pins.json)."
+  },
+  "skills": [
+    {
+      "name": "saleor-core",
+      "sourceRepository": "saleor/agent-skills",
+      "sourcePath": "skills/saleor-core",
+      "pinnedCommit": "fb1a57255f58950962f6e474ccba1cade40f5163",
+      "verification": "PINNED_UPSTREAM",
+      "verificationMethod": "git blob SHA equality between .agents/skills/saleor-core and saleor/agent-skills@fb1a5725 (skills/saleor-core tree), measured 2026-10-30",
+      "license": "BSD-3-Clause AND CC-BY-4.0 (repository root); the SKILL.md frontmatter additionally self-declares MIT",
+      "role": "Saleor backend internals reference (discount precedence, order-level discount allocation, stock availability modes) — consumed as review input for the P3 wave (commercial context, promotions, tax and configuration — 85 roots) and the P4 wave (checkout, order, payment and shipping lifecycle — 111 roots) of D-SALEOR-FULL-001; never wire-contract authority.",
+      "upstreamFiles": [
+        "README.md",
+        "SKILL.md",
+        "rules/discount-precedence.md",
+        "rules/order-discount-allocation.md",
+        "rules/stock-availability-modes.md"
+      ],
+      "attribution": {
+        "file": "LICENSE",
+        "origin": "saleor/agent-skills repository-root LICENSE at pinnedCommit, vendored verbatim"
+      },
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "c68109c572d21e0fdec9e5e55084b24be8208f2b6092d744127d6fac90106858"
+        },
+        {
+          "path": "README.md",
+          "sha256": "d6c6598b010daf779f00dfaa60cb5aa21c13026ed63fea341d4974f8a1d141a7"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "5fa2cc7f9eeb42d02e80dbd3b6a78ef3d38593d3658e5699e84d86399a4da3b5"
+        },
+        {
+          "path": "rules/discount-precedence.md",
+          "sha256": "90e9e9aa793c4ec123cfd7618df498aa0daa1d9c96ea32f4b5004d3e909fbf6d"
+        },
+        {
+          "path": "rules/order-discount-allocation.md",
+          "sha256": "8c61d4e280a0831fa90b483897be74ed4ef571459044bb0ed6ed37842c23b411"
+        },
+        {
+          "path": "rules/stock-availability-modes.md",
+          "sha256": "9f55952873d00b14d170644caab52ef245efd2a46d5250f44f40acf622e8a2b4"
+        }
+      ],
+      "knownUpstreamErrata": [
+        {
+          "location": "rules/discount-precedence.md:204",
+          "issue": "the Python snippet uses unit_discount_reason without initializing it",
+          "verifiedFact": "the pinned upstream source saleor/discount/utils/order.py at 3.23.43 initializes unit_discount_reason from discount.reason before the calculation (lines 126-129); the snippet is not copy-paste runnable",
+          "evidence": "measured against saleor/saleor@3.23.43, 2026-10-30"
+        },
+        {
+          "location": "rules/stock-availability-modes.md:5,205",
+          "issue": "the text locates StockQuerySet in saleor/warehouse/managers.py",
+          "verifiedFact": "that path does not exist at 3.23.43; StockQuerySet and the for_channel / for_channel_and_country methods live in saleor/warehouse/models.py (lines 329/440/377)",
+          "evidence": "measured against saleor/saleor@3.23.43, 2026-10-30"
+        },
+        {
+          "location": "rules/order-discount-allocation.md:107",
+          "issue": "the rounding bound is phrased as 'at most a cent', which is blind to the currency's exponent",
+          "verifiedFact": "flagged by the 2026-10-30 CodeRabbit review of PR #771; agents must treat the authoritative rounding rule as currency-precision-bound, not cent-bound",
+          "evidence": "CodeRabbit review 2026-10-30 (PR #771); verify against saleor/saleor@3.23.43 when consumed"
+        },
+        {
+          "location": "rules/stock-availability-modes.md:83-90",
+          "issue": "the legacy-mode description attaches four shipping conditions to every Stock row",
+          "verifiedFact": "flagged by the 2026-10-30 CodeRabbit review: for_channel_and_click_and_collect returns channel warehouses without requiring shipping-zone linkage, and for_channel_and_country includes click-and-collect warehouses when country_code is empty or include_cc_warehouses is true",
+          "evidence": "CodeRabbit review 2026-10-30 (PR #771); verify against saleor/saleor@3.23.43 when consumed"
+        },
+        {
+          "location": "rules/stock-availability-modes.md:135",
+          "issue": "conflates accepting a GraphQL subscription with delivering its events",
+          "verifiedFact": "flagged by the 2026-10-30 CodeRabbit review: subscriptions can be created in legacy mode while the four stock events are only delivered when useLegacyShippingZoneStockAvailability is disabled and the event fires",
+          "evidence": "CodeRabbit review 2026-10-30 (PR #771); verify against saleor/saleor@3.23.43 when consumed"
+        },
+        {
+          "location": "rules/stock-availability-modes.md:198",
+          "issue": "claims one unified per-destination answer inside channel countries for the triple warehouse/channel/shipping-zone setting",
+          "verifiedFact": "flagged by the 2026-10-30 CodeRabbit review: legacy mode keeps stock visibility dependent on the customer destination country being covered by the warehouse's shipping zone; direct mode removes the destination dependence",
+          "evidence": "CodeRabbit review 2026-10-30 (PR #771); verify against saleor/saleor@3.23.43 when consumed"
+        },
+        {
+          "location": "SKILL.md:11",
+          "issue": "the frontmatter self-declares license MIT while the repository root declares BSD-3-Clause AND CC-BY-4.0",
+          "verifiedFact": "both statements are preserved verbatim in this entry's license field; reconciliation belongs upstream, not in the vendored copy",
+          "evidence": "measured 2026-10-30"
+        }
+      ]
+    },
+    {
+      "name": "neon",
+      "sourceRepository": "neondatabase/agent-skills",
+      "sourcePath": "skills/neon",
+      "pinnedCommit": "51c7d594c0568d52a15eede61cc43f9f1227607a",
+      "verification": "PINNED_UPSTREAM",
+      "verificationMethod": "git blob SHA equality between the skill's upstreamFiles and neondatabase/agent-skills@51c7d594 (skills/neon tree), measured 2026-10-30 (retroactive pin of the pre-existing vendored copy; the LICENSE is the repository-root LICENSE vendored verbatim)",
+      "license": "Apache-2.0",
+      "role": "Neon platform operations reference (the production Postgres host); vendored before this registry existed and verified byte-identical to the pinned upstream commit at registration.",
+      "upstreamFiles": [
+        "SKILL.md",
+        "references/auth.md",
+        "references/claimable-neon.md",
+        "references/function-triggers.md",
+        "references/logs-loki.md",
+        "references/parse-env.md",
+        "references/sdk.md"
+      ],
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "0a90876a53bac24f337aa7555b12e96b59e8f75bc7e485d26e95929965361c61"
+        },
+        {
+          "path": "references/auth.md",
+          "sha256": "c2c609f25d6936c8df52989889ffff738f55b5100259e9193173ed07891f49f0"
+        },
+        {
+          "path": "references/claimable-neon.md",
+          "sha256": "4622e8c718b09360fda508379a4cd3470b79c8e024f35b2fcd9c349585d9260b"
+        },
+        {
+          "path": "references/function-triggers.md",
+          "sha256": "a72aadc3e63464db7f618abb6daa7f119eb76cf213f27a88c84f7aa92b4dd254"
+        },
+        {
+          "path": "references/logs-loki.md",
+          "sha256": "fb338ad4d75e3d6c594945bd24d64a4134860fc2f554cd3273c27dd79769c889"
+        },
+        {
+          "path": "references/parse-env.md",
+          "sha256": "f43eb0d40570b06437ea3a93662ab528bad4d5c44c9c28c45f993aaa269e10bd"
+        },
+        {
+          "path": "references/sdk.md",
+          "sha256": "b9376b5bb1658d9d926a560a7be632a0aaa4fd12e60f38c3ba5050bd35989da0"
+        }
+      ],
+      "attribution": {
+        "file": "LICENSE",
+        "origin": "neondatabase/agent-skills repository-root LICENSE at pinnedCommit, vendored verbatim"
+      }
+    },
+    {
+      "name": "neon-ai-gateway",
+      "sourceRepository": "neondatabase/agent-skills",
+      "sourcePath": "skills/neon-ai-gateway",
+      "pinnedCommit": "51c7d594c0568d52a15eede61cc43f9f1227607a",
+      "verification": "PINNED_UPSTREAM",
+      "verificationMethod": "git blob SHA equality between the skill's upstreamFiles and neondatabase/agent-skills@51c7d594 (skills/neon-ai-gateway tree), measured 2026-10-30 (retroactive pin of the pre-existing vendored copy; the LICENSE is the repository-root LICENSE vendored verbatim)",
+      "license": "Apache-2.0",
+      "role": "Neon platform operations reference (the production Postgres host); vendored before this registry existed and verified byte-identical to the pinned upstream commit at registration.",
+      "upstreamFiles": [
+        "SKILL.md"
+      ],
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "eafda7c2ede9fcd24dc68f6d46334a37a6dedcbc4fb9e323ac10fb2df8a95312"
+        }
+      ],
+      "attribution": {
+        "file": "LICENSE",
+        "origin": "neondatabase/agent-skills repository-root LICENSE at pinnedCommit, vendored verbatim"
+      }
+    },
+    {
+      "name": "neon-auth",
+      "sourceRepository": "neondatabase/agent-skills",
+      "sourcePath": "skills/neon-auth",
+      "pinnedCommit": "51c7d594c0568d52a15eede61cc43f9f1227607a",
+      "verification": "PINNED_UPSTREAM",
+      "verificationMethod": "git blob SHA equality between the skill's upstreamFiles and neondatabase/agent-skills@51c7d594 (skills/neon-auth tree), measured 2026-10-30 (retroactive pin of the pre-existing vendored copy; the LICENSE is the repository-root LICENSE vendored verbatim)",
+      "license": "Apache-2.0",
+      "role": "Neon platform operations reference (the production Postgres host); vendored before this registry existed and verified byte-identical to the pinned upstream commit at registration.",
+      "upstreamFiles": [
+        "SKILL.md",
+        "references/managed-auth.md",
+        "references/self-managed.md"
+      ],
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "5f91f328235382f3e9afef449729e304a531848a90c02b40c4fd1192709e0319"
+        },
+        {
+          "path": "references/managed-auth.md",
+          "sha256": "382c00feeb2f3cc12dbe9b881a43339eef25741d4bc4b70d43c63d2311587dd9"
+        },
+        {
+          "path": "references/self-managed.md",
+          "sha256": "2c53afcd667a9d3e9df9d7bf3eef2aec94ae4a0ec01c7f65852a965267bc127a"
+        }
+      ],
+      "attribution": {
+        "file": "LICENSE",
+        "origin": "neondatabase/agent-skills repository-root LICENSE at pinnedCommit, vendored verbatim"
+      }
+    },
+    {
+      "name": "neon-functions",
+      "sourceRepository": "neondatabase/agent-skills",
+      "sourcePath": "skills/neon-functions",
+      "pinnedCommit": "51c7d594c0568d52a15eede61cc43f9f1227607a",
+      "verification": "PINNED_UPSTREAM",
+      "verificationMethod": "git blob SHA equality between the skill's upstreamFiles and neondatabase/agent-skills@51c7d594 (skills/neon-functions tree), measured 2026-10-30 (retroactive pin of the pre-existing vendored copy; the LICENSE is the repository-root LICENSE vendored verbatim)",
+      "license": "Apache-2.0",
+      "role": "Neon platform operations reference (the production Postgres host); vendored before this registry existed and verified byte-identical to the pinned upstream commit at registration.",
+      "upstreamFiles": [
+        "SKILL.md",
+        "references/ai-sdk.md",
+        "references/function-triggers.md",
+        "references/mastra-studio.md",
+        "references/mcp.md",
+        "references/native-binaries.md",
+        "references/production-hardening.md",
+        "references/sentry.md",
+        "references/sse.md"
+      ],
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "67faeb351691ffa20723d8cff6b8c527aaa05c4b36338ff3fea6d031e9abf449"
+        },
+        {
+          "path": "references/ai-sdk.md",
+          "sha256": "3bca13c980a6634ce3dd53533145c9b93f5b3f87f777b62b66ed5f582dce3370"
+        },
+        {
+          "path": "references/function-triggers.md",
+          "sha256": "a54ed9599ebdcd340141f6a6f3b9770ef1d8406a936515c929444fc6a9c695eb"
+        },
+        {
+          "path": "references/mastra-studio.md",
+          "sha256": "01b7d421a36e64a704854b9fafe99ddc3d262d6d1da4af6eb44b12968064a0b0"
+        },
+        {
+          "path": "references/mcp.md",
+          "sha256": "45c7a48c22b4cdb2deaecae40a17cd9d55755c36ae288d2ddad0dfcf111f03e9"
+        },
+        {
+          "path": "references/native-binaries.md",
+          "sha256": "04d39d8dc2e822e6e2189752ae01fdff5d85f175059b6209df1c77e105941ae0"
+        },
+        {
+          "path": "references/production-hardening.md",
+          "sha256": "1b3f0eb3e13aae1d1bdea3e32b476b6e1135276da6b8b51d4db30df0326b71c8"
+        },
+        {
+          "path": "references/sentry.md",
+          "sha256": "be93790a9b62e0a78a575cebbc094ee7d93af57dbb1cdd88fe011595407b9e58"
+        },
+        {
+          "path": "references/sse.md",
+          "sha256": "331caf1e37de5a3d68258fa9d7b83e6afb2215491d21ca21a5e24b7114b91b3d"
+        }
+      ],
+      "attribution": {
+        "file": "LICENSE",
+        "origin": "neondatabase/agent-skills repository-root LICENSE at pinnedCommit, vendored verbatim"
+      }
+    },
+    {
+      "name": "neon-object-storage",
+      "sourceRepository": "neondatabase/agent-skills",
+      "sourcePath": "skills/neon-object-storage",
+      "pinnedCommit": "51c7d594c0568d52a15eede61cc43f9f1227607a",
+      "verification": "PINNED_UPSTREAM",
+      "verificationMethod": "git blob SHA equality between the skill's upstreamFiles and neondatabase/agent-skills@51c7d594 (skills/neon-object-storage tree), measured 2026-10-30 (retroactive pin of the pre-existing vendored copy; the LICENSE is the repository-root LICENSE vendored verbatim)",
+      "license": "Apache-2.0",
+      "role": "Neon platform operations reference (the production Postgres host); vendored before this registry existed and verified byte-identical to the pinned upstream commit at registration.",
+      "upstreamFiles": [
+        "SKILL.md"
+      ],
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "21a99301ef7f811d5ca58a71c51af1d40c31b70893da912ee7028f76afccff40"
+        }
+      ],
+      "attribution": {
+        "file": "LICENSE",
+        "origin": "neondatabase/agent-skills repository-root LICENSE at pinnedCommit, vendored verbatim"
+      }
+    },
+    {
+      "name": "neon-postgres",
+      "sourceRepository": "neondatabase/agent-skills",
+      "sourcePath": "skills/neon-postgres",
+      "pinnedCommit": "51c7d594c0568d52a15eede61cc43f9f1227607a",
+      "verification": "PINNED_UPSTREAM",
+      "verificationMethod": "git blob SHA equality between the skill's upstreamFiles and neondatabase/agent-skills@51c7d594 (skills/neon-postgres tree), measured 2026-10-30 (retroactive pin of the pre-existing vendored copy; the LICENSE is the repository-root LICENSE vendored verbatim)",
+      "license": "Apache-2.0",
+      "role": "Neon platform operations reference (the production Postgres host); vendored before this registry existed and verified byte-identical to the pinned upstream commit at registration.",
+      "upstreamFiles": [
+        "SKILL.md",
+        "references/full-text-search.md",
+        "references/hybrid-search.md",
+        "references/lakebase-search-drizzle.md",
+        "references/vector-search.md"
+      ],
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "2a678875655810d33e42284de50d19a8c669691a39c2924d2c03f770068a1a87"
+        },
+        {
+          "path": "references/full-text-search.md",
+          "sha256": "ddeb529f7a6c520b4a94007f6196c47ed8f632b764b8be31e37a7b51324c8186"
+        },
+        {
+          "path": "references/hybrid-search.md",
+          "sha256": "4cd691c80744e64696661dad03eea4e0eb668493e97b82c16400477f1e6c1ecc"
+        },
+        {
+          "path": "references/lakebase-search-drizzle.md",
+          "sha256": "5f62c91d98e1d8cc2981b07e12e8ffeacbe4d855bb2f91897c1c8d4d625932db"
+        },
+        {
+          "path": "references/vector-search.md",
+          "sha256": "1a8e15b0ff2b965c791b19945fc36f444e47f5aeb1fa321291e609e15f0347f6"
+        }
+      ],
+      "attribution": {
+        "file": "LICENSE",
+        "origin": "neondatabase/agent-skills repository-root LICENSE at pinnedCommit, vendored verbatim"
+      }
+    },
+    {
+      "name": "neon-postgres-branches",
+      "sourceRepository": "neondatabase/agent-skills",
+      "sourcePath": "skills/neon-postgres-branches",
+      "pinnedCommit": "51c7d594c0568d52a15eede61cc43f9f1227607a",
+      "verification": "PINNED_UPSTREAM",
+      "verificationMethod": "git blob SHA equality between the skill's upstreamFiles and neondatabase/agent-skills@51c7d594 (skills/neon-postgres-branches tree), measured 2026-10-30 (retroactive pin of the pre-existing vendored copy; the LICENSE is the repository-root LICENSE vendored verbatim)",
+      "license": "Apache-2.0",
+      "role": "Neon platform operations reference (the production Postgres host); vendored before this registry existed and verified byte-identical to the pinned upstream commit at registration.",
+      "upstreamFiles": [
+        "SKILL.md"
+      ],
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "9f47d5a49553a465837c1e8b2d90a90aac72a5313a996c081027290f259a8d71"
+        }
+      ],
+      "attribution": {
+        "file": "LICENSE",
+        "origin": "neondatabase/agent-skills repository-root LICENSE at pinnedCommit, vendored verbatim"
+      }
+    },
+    {
+      "name": "neon-postgres-egress-optimizer",
+      "sourceRepository": "neondatabase/agent-skills",
+      "sourcePath": "skills/neon-postgres-egress-optimizer",
+      "pinnedCommit": "51c7d594c0568d52a15eede61cc43f9f1227607a",
+      "verification": "PINNED_UPSTREAM",
+      "verificationMethod": "git blob SHA equality between the skill's upstreamFiles and neondatabase/agent-skills@51c7d594 (skills/neon-postgres-egress-optimizer tree), measured 2026-10-30 (retroactive pin of the pre-existing vendored copy; the LICENSE is the repository-root LICENSE vendored verbatim)",
+      "license": "Apache-2.0",
+      "role": "Neon platform operations reference (the production Postgres host); vendored before this registry existed and verified byte-identical to the pinned upstream commit at registration.",
+      "upstreamFiles": [
+        "SKILL.md"
+      ],
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "d7536270b6dd59a66fa5daf1578cc55a5b761d7163f6f6b1596662481b8d5d9b"
+        }
+      ],
+      "attribution": {
+        "file": "LICENSE",
+        "origin": "neondatabase/agent-skills repository-root LICENSE at pinnedCommit, vendored verbatim"
+      }
+    },
+    {
+      "name": "neon-realtime",
+      "sourceRepository": "neondatabase/agent-skills",
+      "sourcePath": "skills/neon-realtime",
+      "pinnedCommit": "51c7d594c0568d52a15eede61cc43f9f1227607a",
+      "verification": "PINNED_UPSTREAM",
+      "verificationMethod": "git blob SHA equality between the skill's upstreamFiles and neondatabase/agent-skills@51c7d594 (skills/neon-realtime tree), measured 2026-10-30 (retroactive pin of the pre-existing vendored copy; the LICENSE is the repository-root LICENSE vendored verbatim)",
+      "license": "Apache-2.0",
+      "role": "Neon platform operations reference (the production Postgres host); vendored before this registry existed and verified byte-identical to the pinned upstream commit at registration.",
+      "upstreamFiles": [
+        "SKILL.md",
+        "references/mutations.md",
+        "references/queries.md",
+        "references/reactivity.md",
+        "references/ssr.md",
+        "references/subscribing.md"
+      ],
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "fb23ec04c6301c661d52e8733fb6186f3fa8d8bf287675ea1ff4180e221d181a"
+        },
+        {
+          "path": "references/mutations.md",
+          "sha256": "9a80e05fcbaec95dc02ccdc5295d451191430f53c74f12563fc63279912e3d96"
+        },
+        {
+          "path": "references/queries.md",
+          "sha256": "5494d4231312d8c7a3ca7933e655257c4061d1415c52297d7c5b876a14da7ecd"
+        },
+        {
+          "path": "references/reactivity.md",
+          "sha256": "3d902cb29ae0ca64ce09ca34c6ed9af8d1cf00da892b5c7e721796a4e55a5bc3"
+        },
+        {
+          "path": "references/ssr.md",
+          "sha256": "5643b6fc515b09240dfb9c598ea0ea783f1a235fc6dda50a53e028eec350ab59"
+        },
+        {
+          "path": "references/subscribing.md",
+          "sha256": "a2f5afb37cf8081225025c999bfb92c911ce5e6c4f9d43ec20bb7a2f58492027"
+        }
+      ],
+      "attribution": {
+        "file": "LICENSE",
+        "origin": "neondatabase/agent-skills repository-root LICENSE at pinnedCommit, vendored verbatim"
+      }
+    }
+  ]
+}
