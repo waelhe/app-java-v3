@@ -897,6 +897,39 @@ class PlatformGovernanceFilesTest {
     }
 
     @Test
+    void saleorReleasePinsAreCurrentAndCanonicalCiUsesTheManifest() throws Exception {
+        JsonNode pins = new ObjectMapper().readTree(
+                read("docs", "governance", "plans", "saleor-source-pins.json"));
+
+        JsonNode core = pins.path("referenceSchema");
+        assertThat(core.path("repository").asText()).isEqualTo("saleor/saleor");
+        assertThat(core.path("ref").asText()).isEqualTo("3.23.45");
+        assertThat(core.path("path").asText()).isEqualTo("saleor/graphql/schema.graphql");
+        assertThat(core.path("gitBlobSha1").asText())
+                .isEqualTo("b8fa0dd809081f76dc2834bb5c286561e5783276");
+        assertThat(core.path("totalRoots").asInt()).isEqualTo(458);
+
+        JsonNode dashboard = pins.path("dashboard");
+        assertThat(dashboard.path("tag").asText()).isEqualTo("3.23.41");
+        assertThat(dashboard.path("commit").asText())
+                .isEqualTo("ae7697bc635c46392d2fca5f88a34970097679f7");
+
+        String canonicalPlan = read("docs", "governance", "plans",
+                "saleor-dashboard-full-commerce-canonical-plan.md");
+        assertThat(canonicalPlan)
+                .contains("tag 3.23.41")
+                .contains("saleor/saleor@3.23.45:saleor/graphql/schema.graphql")
+                .contains("Official Saleor AI documentation and agent resources")
+                .contains("https://docs.saleor.io/developer/ai");
+
+        String workflow = read(".github", "workflows", "saleor-canonical-governance.yml");
+        assertThat(workflow)
+                .contains("['referenceSchema']['ref']")
+                .contains("saleor-source-pins.json")
+                .doesNotContain("SALEOR_REF: \"3.23.43\"");
+    }
+
+    @Test
     void agentSkillsVendoredContentIsRegisteredAndDriftIsDetected() throws Exception {
         // The .agents/skills surface vendors external agent skills (Neon
         // platform operations; the Saleor behavior reference) directly into
