@@ -3,7 +3,7 @@
 **Status:** PROPOSED — A0 recommendation; owner approval required.  
 **Decision date:** 2026-10-31  
 **Authority:** D-SALEOR-FULL-001, P3; frozen module/SPI contract §7.  
-**Affected roots:** channel, channels, channelCreate, channelUpdate, channelDelete, channelActivate, channelDeactivate; channel arguments on products, variants, vouchers, promotions, checkout, orders, tax, shipping and payments.  
+**Affected roots:** channel, channels, channelCreate, channelUpdate, channelDelete, channelActivate, channelDeactivate; channel arguments on products, variants, vouchers, promotions, checkout, orders, tax, shipping and payments; channelReorderWarehouses (deferred under D-WHSE-001). `channelDelete` is proposed as unsupported until a lossless, audited deletion/transfer contract is proved; deactivation/archive is the supported lifecycle.  
 **Related decisions:** D-TAX-001, D-GC-001, D-SHOP-001, D-WHSE-001.
 
 ## Context
@@ -23,27 +23,32 @@ Create **marketplace-channels** as the owner of channel identity and commercial-
 
 It does **not** own or duplicate the domain state configured in a channel:
 
-| Channel-dependent fact | Data owner |
-|---|---|
-| Product publication and channel availability | marketplace-catalog |
-| Channel price lists and monetary rules | marketplace-pricing |
-| Tax classes/rates and channel tax strategy | marketplace-pricing (D-TAX-001) |
-| Promotions/vouchers eligibility | marketplace-pricing |
-| Stock availability / reservation | Existing inventory/catalog owner until a warehouse decision |
-| Shipping methods, zones and delivery options | marketplace-delivery |
-| Checkout and order channel snapshot / visibility | marketplace-orders / checkout owner |
-| External payment execution | marketplace-payments |
-| Channel-scoped staff authorization | identity/RBAC owner, with channel context supplied as a resource scope |
+| Channel field / configuration | Sole write owner | Channel API boundary and security | Snapshot/freeze responsibility |
+|---|---|---|---|
+| Channel ID, name, slug, active state, immutable `currencyCode`, default country and default-channel lifecycle | marketplace-channels | `channelCreate` / `channelUpdate`; `MANAGE_CHANNELS` | Publish immutable `ChannelContext` (ID, currency, country, state) via public SPI/events |
+| Product publication and channel availability | marketplace-catalog | Catalog-owned command/SPI; channel scope validated by Channels | Catalog supplies the versioned publication/availability facts used at checkout |
+| Channel price lists and monetary rules | marketplace-pricing | Pricing-owned command/SPI | Pricing supplies the applied price/rule version to the order snapshot |
+| Tax classes/rates and `taxConfiguration` | marketplace-pricing (D-TAX-001) | Pricing-owned tax configuration SPI; no duplicate Channel table | Pricing supplies rate/class/strategy versions to the order snapshot |
+| Promotions/vouchers eligibility | marketplace-pricing | Pricing-owned command/SPI | Pricing supplies the resolved discount allocation and version |
+| `orderSettings` (including the nested `channelUpdate(input.orderSettings)` path) | marketplace-orders is the single persistence/behavior owner | Composite `channelUpdate` delegates to the Orders SPI; require both `MANAGE_CHANNELS` and `MANAGE_ORDERS`, then audit actor/reason/time | Orders freezes the effective order policy/version on each order |
+| `checkoutSettings` | marketplace-orders (the measured `OrdersService implements CheckoutSpi` owner) | Orders/checkout SPI; Channels validates context but does not persist checkout policy | Orders freezes the applicable checkout policy at placement |
+| `paymentSettings` | marketplace-payments | Payments-owned SPI; channel context is passed as a validated scope; apply owner permission plus channel permission | Payments/Orders persist the actual tender/payment facts needed for historical order interpretation |
+| `stockSettings` and product/variant stock availability | Existing catalog/inventory owner; not marketplace-channels | Inventory/catalog SPI; no channel-owned stock counters | Inventory facts used for reservation are recorded with the order/fulfillment snapshot |
+| `warehouses`, `addWarehouses`, `removeWarehouses`, `channelReorderWarehouses` | No owner accepted in this proposal; deferred by D-WHSE-001 | Undeclared/unsupported until a warehouse decision and real membership SPI exist | No synthetic warehouse IDs or memberships |
+| `availableShippingMethodsPerCountry`, shipping methods/zones and delivery options | marketplace-delivery | Delivery-owned read/write SPI; channel context supplied as input | Orders freezes the selected method, quote and applicable delivery facts |
+| Channel-scoped staff authorization | identity/RBAC owner | Resource-scope authorization; channel ID knowledge is not authority | Audit records retain actor and channel scope |
 
-Cross-module relationships are owned by the domain that owns the relationship. Other modules consume the Channels SPI/events; they do not read or update marketplace-channels tables directly. Avoid a central channel aggregate that becomes a god-object or creates a Modulith dependency cycle.
+Cross-module relationships are owned by the domain that owns the relationship. `channelUpdate` is a composite adapter command, not permission for marketplace-channels to persist every nested settings object: the adapter delegates each field to its sole owner SPI, validates both channel and owner permissions, and reports success only after all required owner operations succeed under a defined consistency contract. Other modules consume the Channels SPI/events; they do not read or update marketplace-channels tables directly. Avoid a central channel aggregate that becomes a god-object or creates a Modulith dependency cycle.
+
+The measured freeze boundary is `marketplace-orders`: at order placement it captures the channel context and the versioned commercial facts returned by pricing, catalog, delivery and payments. Each domain remains the authority for its own policy; Orders owns the immutable historical order snapshot. A later channel-setting change must not rewrite that snapshot.
 
 ### Invariants
 
 1. Channel currency is immutable after creation. A different currency or materially different sales policy requires a distinct channel; do not implement ad hoc currency conversion by mutating channel currency.
 2. Channel is commercial context, not identity/persona/geography/provider partition. Supplier-specific/customer-specific price lists remain explicit pricing features; neighbourhood visibility and user authorization remain their respective owners.
-3. A channel with orders/checkouts or other historical references is never hard-deleted. Deactivate/archive it for new commercial activity and preserve historical resolution.
+3. A channel with orders/checkouts or other historical references is never hard-deleted. The proposed contract does not expose `channelDelete` at all until a compatible reference-transfer/deletion design and tests exist; Dashboard delete controls remain absent/disabled. Deactivate/archive it for new commercial activity and preserve historical resolution.
 4. A request carrying a channel must validate that the channel exists, is active for the requested operation, and is compatible with the relevant entity and principal. Do not infer authorization from knowledge of a channel ID.
-5. The channel context must be frozen onto checkout/order where required to preserve currency, policy and reporting history.
+5. The channel context and effective policy versions must be frozen by `marketplace-orders` onto checkout/order where required to preserve currency, pricing, tax, delivery, tender and reporting history. Configuration owners supply their versioned facts; they do not update historical orders.
 6. Channel-level configuration is delegated to the owner in the table above. No duplicate ChannelPrice, tax, stock, promotion or payment state is added to the Channels module merely to satisfy the Dashboard.
 7. channelReorderWarehouses remains blocked by D-WHSE-001; this proposal does not establish a warehouse model.
 8. A channel's legal entity/issuer relationship is explicit. Channel is not itself proof of merchant-of-record or seller authorization.
@@ -58,6 +63,9 @@ Cross-module relationships are owned by the domain that owns the relationship. O
 ## Required acceptance evidence
 
 - Modulith architecture tests prove channel identity has one owner and no cyclic dependencies; channel-dependent owners use public SPIs/events.
+- A field-level manifest for `Channel` and `channelUpdate` proves the sole write owner, permission, SPI, adapter behavior and order-freeze rule for `orderSettings`, `checkoutSettings`, `paymentSettings`, `taxConfiguration`, `stockSettings`, warehouse assignments and `availableShippingMethodsPerCountry`.
+- Permission/audit tests prove `channelUpdate(input.orderSettings)` requires both `MANAGE_CHANNELS` and `MANAGE_ORDERS`; each other nested field requires its channel permission plus the owning-domain permission.
+- Lifecycle tests cover `channelActivate` and `channelDeactivate`; Dashboard and GraphQL contract tests prove `channelDelete` is not exposed as a successful operation while the proposed unsupported disposition remains, and prove no warehouse membership or reorder path is fabricated.
 - PostgreSQL constraints/integration tests prove currency immutability, unique slug/ID rules, safe default-channel transitions and no deletion of referenced channels.
 - Cross-channel tests cover catalog publication, price, tax, discount/voucher, shipping and checkout/order access; unauthorized or inactive channel use fails closed.
 - Frozen-order tests prove channel currency/context does not drift after order placement.
