@@ -11,7 +11,7 @@
   - Channels (8 roots): [#781](https://github.com/waelhe/app-java-v3/issues/781) — `agent/saleor-p3-channels-20261031`; requires `D-CHANNEL-001`; warehouse linkage remains under `D-WHSE-001`.
   - Shop settings (9 roots): [#782](https://github.com/waelhe/app-java-v3/issues/782) — `agent/saleor-p3-shop-settings-20261031`; requires `D-SHOP-001` and `D-SETTINGS-001`.
 - A4 / P4 order, checkout and discount-allocation audit: [#775](https://github.com/waelhe/app-java-v3/issues/775) — branch `agent/a4-p4-checkout-audit-20261031`.
-- A0 / domain knowledge map and Semantic Evidence Gate: [#777](https://github.com/waelhe/app-java-v3/issues/777) — branch `agent/a0-semantic-evidence-gate-20261031`. Its initial map and the AGENTS startup-link are committed on that branch; the issue remains open for review, validation and gate implementation.
+- A0 / domain knowledge map and Semantic Evidence Gate: [#777](https://github.com/waelhe/app-java-v3/issues/777) — branch `agent/a0-semantic-evidence-gate-20261031`. Its initial map and links from AGENTS.md/SYSTEM.md, plus this PROJECT_MAP execution snapshot, are committed on that branch; the issue remains open for review, validation and gate implementation.
 
 **P3 inventory snapshot from central ledger blob `ec689c643b9c906779e09f3fdaee73885052282a`:** 85 roots = 8 INTEGRATED + 59 NOT_STARTED + 18 BLOCKED_BY_DECISION. The child issues are work packets only; they do not create another root inventory or mutate these statuses.
 
