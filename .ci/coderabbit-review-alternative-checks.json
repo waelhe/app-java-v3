@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "description": "Trusted CodeRabbit alternative-evidence allowlist. This file is read from the trusted main commit, never from the candidate.",
+  "checks": {
+    "Dependency Review (PR dependency changes)": {
+      "appSlugs": [
+        "github-actions"
+      ],
+      "pathPatterns": [
+        "pom.xml",
+        "**/pom.xml",
+        "package.json",
+        "**/package.json",
+        "package-lock.json",
+        "**/package-lock.json",
+        "npm-shrinkwrap.json",
+        "**/npm-shrinkwrap.json",
+        "yarn.lock",
+        "**/yarn.lock",
+        "pnpm-lock.yaml",
+        "**/pnpm-lock.yaml",
+        "gradle.lockfile",
+        "**/gradle.lockfile",
+        "libs.versions.toml",
+        "**/libs.versions.toml",
+        "*.gradle",
+        "**/*.gradle",
+        "*.gradle.kts",
+        "**/*.gradle.kts"
+      ]
+    }
+  }
+}
