@@ -33,6 +33,22 @@ The old baseline in §3 of the semantic-audit directive (124 ahead / 14 behind, 
 
 PR #771, `governance(agent-skills): pin the vendored skills surface and adopt saleor-core`, is now merged into `main`. The merged main contains the policy, registry, vendored `saleor-core`, and fail-closed governance test. At this measurement those files are absent from the commerce branch. The first reconciliation must bring the **whole approved PR #771 change** into the commerce candidate through the normal main-to-commerce reconciliation; do not manually copy only selected files, re-install a live skill, or cherry-pick around the divergent history.
 
+### Live baseline refresh — later measurement on 2026-10-31
+
+The initial §2 snapshot above is retained as historical evidence. A later live remeasurement on the same date supersedes its divergence statement:
+
+- Live `main`: `f2349deca955cee435e6be3ca56be8a4c251d00a`.
+- Live `integration/saleor-full-commerce-20261021`: `435b895d2c98ada7dc2c9661bb2973c7774f78b4`.
+- GitHub compare `main...integration`: `ahead`, 133 commits ahead, 0 behind; merge base equals the current main SHA. The complete main history is already an ancestor of the commerce branch.
+- The approved PR #771 payload is present on the commerce branch and byte-identical by Git blob SHA to main:
+  - `docs/governance/agent-skills-policy.md`: `9fb1d91a9ad25392fb9e719f122d258866bbd609`
+  - `docs/governance/plans/agent-skills-pins.json`: `6ef9280fb535b42ed083b523b5fbeb56e88cc9b1`
+  - `.agents/skills/saleor-core/SKILL.md`: `2db2c66276fffbf0ba79c15942b87ca0ea0476c7`
+  - `.coderabbit.yaml`: `f998e013b5c8438e9ea4f56a493ef859e9a4eb51`
+  - `.github/workflows/coderabbit-gate.yml`: `aa4435733823ba8aba180df2a2eacd3118c489b9`
+
+**A0 conclusion:** Phase A's main-to-commerce reconciliation and inclusion of the approved PR #771 payload are already satisfied at this live snapshot. Do not merge main again, cherry-pick PR #771, or copy its files manually. Keep `435b895d2c98ada7dc2c9661bb2973c7774f78b4` as the current integration baseline until a new candidate is explicitly published. Prepared agent workspaces pinned to this SHA may proceed against this baseline; any new candidate SHA must be broadcast before they rebase or open PRs.
+
 ## 3. Saleor skill-source change — required provenance refresh
 
 The previous skills directive and PR #771 pin `saleor-core` to `saleor/agent-skills@fb1a57255f58950962f6e474ccba1cade40f5163`. That is a valid historical pin and must remain byte-verifiable until a reviewed migration replaces it.
