@@ -1043,7 +1043,19 @@ class PlatformGovernanceFilesTest {
             names.add(name);
             assertThat(skill.path("digestSha256").asText())
                     .as("%s must retain the official advertised bundle digest", name)
-                    .matches("[0-9a-f]{64}");
+                    .isEqualTo(switch (name) {
+                        case "saleor-app" ->
+                                "6d59d82871be13ff661a377b0d727c706bb7d5ee0f924900700e583db78d993f";
+                        case "saleor-configurator" ->
+                                "060bd86bed738043064c79279c657095d85434a88c2a148532e46604679b1c48";
+                        case "saleor-core" ->
+                                "257525713919a5f7490e65cbfad7e1d99fc6f93378c957b11289275ae545c6af";
+                        case "saleor-storefront" ->
+                                "f4949c787717a549a42ee2ff6289e77796296c522366eb11882bace242c7661d";
+                        case "storefront-builder" ->
+                                "e6cafd7686b459a5b268c876a3a428a963bd99b80acaaaf3ac2761f8ab341b50";
+                        default -> throw new AssertionError("Unexpected skill: " + name);
+                    });
             assertThat(skill.path("adoptionState").asText())
                     .as("%s adoption state must be explicit", name)
                     .isIn("ADOPTED_PINNED", "NOT_ADOPTED");
