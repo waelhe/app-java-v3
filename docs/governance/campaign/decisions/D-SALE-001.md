@@ -8,7 +8,7 @@
 
 ## Context
 
-Saleor's 3.23.43 API reference still contains the Sale object and operations, but explicitly marks Sale deprecated and says to use Promotion instead. The same pinned API distinguishes catalogue promotions (which affect catalog-visible product prices) from order promotions (which affect checkout/order totals). The canonical domain matrix currently assigns the Discounts family to marketplace-pricing; the root inventory still lists the legacy sale mutations as NOT_STARTED. No decision may silently erase those pinned roots or count a same-named promotion as equivalent.
+Saleor 3.23.43 retains the `Sale` type and its operation family, but deprecation is per entry point, not blanket: `Query.sale` / `Query.sales`, `saleCreate`, `saleUpdate`, `saleDelete`, `saleCataloguesAdd`, `saleCataloguesRemove`, `saleTranslate` and `saleChannelListingUpdate` carry deprecation guidance; `type Sale` itself has no type-level deprecation and **`Mutation.saleBulkDelete` is not deprecated**. Therefore `saleBulkDelete` requires its own explicit disposition and must not be excluded merely by saying "Sale is deprecated". The pinned API distinguishes catalogue promotions (which affect catalog-visible product prices) from order promotions (which affect checkout/order totals). The canonical domain matrix assigns the Discounts family to marketplace-pricing; the central inventory records `sale` / `sales` as `BLOCKED_BY_DECISION` under D-SALE-001 and the eight sale mutations as `NOT_STARTED`. No decision may silently erase those roots or count a same-named promotion as equivalent.
 
 ## Proposed decision
 
@@ -16,11 +16,11 @@ Do **not** create a new long-lived Sale aggregate or duplicate discount engine. 
 
 Use the following per-surface rule:
 
-1. Use the existing Promotion model only where the actual semantics are compatible. In particular, a Sale that reduces product/catalogue prices must map to a catalogue-promotion policy, not be flattened into an order promotion.
-2. Before retaining a Saleor sale operation as an adapter, compare the exact pinned Sale input/output fields, catalogue targets (categories/collections/products/variants), date range, discount type/value, channel listings, translation and mutation error behavior with the platform Promotion use case. Implement a lossless mapping only where every exposed field has an authoritative owner and persisted behavior.
-3. Where the mapping is not lossless, explicitly disposition that Sale root as EXPLICITLY_EXCLUDED (or the correct approved inventory status), leave the unsupported wire surface undeclared, and disable every Dashboard route/control that requires it. The Dashboard route audit is a required A7 deliverable; do not assume the deprecated API is unused.
+1. Keep `marketplace-pricing` as the single promotion/discount authority, but do not claim that its current `Promotion` entity is a catalogue-promotion model: the measured entity and `CommercialPricingService` are order-level and do not carry catalogue targets, per-channel catalogue listings, or a channel input; `ProductPricingPort` has no catalogue-discount seam and the current platform `ProductVariant` GraphQL type has no price/on-sale/discount fields. A catalogue-promotion capability must be designed and owned inside `marketplace-pricing` (using plain-UUID cross-module references and declared SPIs), not created as a second engine.
+2. Before retaining a Saleor sale operation as an adapter, compare exact pinned fields and behavior: category/collection/product/variant targets, `Sale.type` and value, dates, translation, mutation errors, events and permissions. `SaleChannelListing.discountValue` is per-channel and includes its currency; Saleor `PromotionRule` fixed value is interpreted in the current channel currency and is one value for all channels on that rule. A lossless fixed-value mapping therefore requires one channel-scoped rule per channel (or another explicitly proved equivalent), not one shared fixed rule. No sale/channel-listing root may be enabled before D-CHANNEL-001 and that mapping matrix are accepted.
+3. Where the mapping is not lossless, explicitly disposition that Sale root as EXPLICITLY_EXCLUDED (or the correct owner-approved inventory status), leave the unsupported wire surface undeclared, and disable every Dashboard route/control that requires it. `saleBulkDelete` must have an explicit row even though it is not deprecated. `saleTranslate` / `promotionTranslate` remain unsupported until a real translation owner and behavior exist. The Dashboard route audit is a required A7 deliverable; do not assume the deprecated API is unused.
 4. Never return a successful Sale payload after merely creating a vaguely similar promotion. No placeholder CRUD and no silent no-op fields.
-5. Keep promotion precedence, allocation and catalogue-vs-order behavior grounded in the pinned Saleor source/tests and the adopted saleor-core skill only for its documented discount-precedence/allocation rules. The skill does not define Saleor tax, channel or gift-card behavior.
+5. Keep promotion precedence, allocation and catalogue-vs-order behavior grounded in pinned Saleor 3.23.43 source/tests and the adopted saleor-core skill only for its documented discount-precedence/allocation rules. The measured platform currently applies the best order promotion and then a voucher to the post-promotion subtotal (they stack); the pinned Saleor order-discount path suppresses/clears the order promotion when an order voucher is present, while catalogue line promotions may coexist with an order-level voucher. This is an existing semantic divergence, not a presumed equivalence: A0 must either require conformance before catalogue-promotion release or register an owner-approved divergence and test the exact three-way precedence. The skill does not define Saleor tax, channel or gift-card behavior.
 6. Keep existing promotion/voucher models and consumers backward compatible until a consumer inventory and migration gate authorizes deprecation. Do not rename existing platform operations or delete existing data as part of this decision.
 
 ## Alternatives considered
@@ -33,7 +33,9 @@ Use the following per-surface rule:
 ## Required acceptance evidence
 
 - Pinned Saleor 3.23.43 source/schema tests prove the exact Sale fields, operations, mutation inputs and deprecation metadata.
-- A mapping matrix covers every retained Sale field and mutation against the Promotion owner, with explicit unowned fields and exact exclusions.
+- A mapping matrix covers every retained Sale field and mutation against the catalogue-promotion owner, with explicit rows for `saleBulkDelete` (not deprecated), `saleTranslate`, per-channel fixed values (one rule per channel), event mapping and exact exclusions.
+- Catalogue price-presentation contract tests cover the required variant fields (`onSale`, `discount`, `price`, `priceUndiscounted`) and exact money/rounding; these remain blocked until the platform wire surface and owning pricing capability exist.
+- Precedence tests prove catalogue line promotions can coexist with order-level vouchers, while order-level promotion/voucher interaction matches the pinned contract or is covered by an owner-approved divergence; tests also prove no same-level stacking.
 - Price-parity tests prove catalogue promotions affect the same products/variants and amounts as the approved policy; order-promotion tests prove the two effects are not conflated.
 - Tests cover stacking/precedence, date boundaries, channels, currency, category/collection/product targeting, translations, permission and audit.
 - Dashboard 3.23.39 route/operation inventory identifies every call site for sale/sales/mutations; tests prove any excluded control is absent/disabled and no runtime request depends on it.
@@ -41,7 +43,7 @@ Use the following per-surface rule:
 
 ## Work that may continue without this decision
 
-Promotion/voucher implementation may continue where it does not depend on Sale compatibility. Catalog and pricing tests may proceed. Sale roots remain unapproved for implementation or exclusion until the mapping and Dashboard route evidence are reviewed.
+ORDER-type promotion and voucher work may continue where it does not depend on catalogue targeting or Sale compatibility. `promotion` / `promotions` order-level behavior is distinct from `CATALOGUE` semantics. Catalogue-type promotion rules, catalogue-targeting voucher roots (`voucherCataloguesAdd` / `voucherCataloguesRemove`), catalogue price-presentation fields and the dependent `productVariantDiscountedPriceUpdated` event remain blocked until the catalogue-promotion model, channel semantics and money-on-wire prerequisites are accepted. Sale roots remain unapproved for implementation or exclusion until the mapping and Dashboard route evidence are reviewed.
 
 ## Release impact
 
