@@ -110,7 +110,7 @@ byte-identical to `neondatabase/agent-skills@51c7d594`, 34 files).
   files and SKILL.md are byte-identical, and README's installer command
   is the only behavior-neutral file change. The registry and policy
   transition becomes the active integration-branch pin only when PR
-  #773 is merged. All seven known upstream errata remain recorded.
+  #786 is merged. All seven known upstream errata remain recorded.
   License evidence is not interpreted: the per-skill LICENSE carries
   BSD-3-Clause terms and a CC-BY-4.0 artwork notice; SKILL.md frontmatter
   self-declares MIT; the docs repository root LICENSE is separately
