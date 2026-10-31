@@ -129,21 +129,24 @@ Use official Saleor source/tests for behavior not documented by a selected skill
 
 This repository's existing playbook requires one assembled candidate and one final release PR because a merge to `main` triggers production deployment. Preserve that model.
 
-### Phase A — Re-establish and reconcile
+### Phase A — Main-to-commerce reconciliation completed; candidate refresh pending
 
-1. A0 freezes live `main`, commerce branch, merge base, open PRs, checks, review threads, migration head, root inventory, and all changed paths/commit ranges.
-2. Reconcile **main into commerce first**. No commerce-to-main merge, force push, history rewrite, or blind rebase.
-3. Include the complete already-merged PR #771 change: policy, pin registry, vendored files, and governance test. Resolve conflicts with their ownership and test implications recorded.
-4. Record `CANDIDATE_BASE_SHA`; validate that the vendored files match registered hashes and `PlatformGovernanceFilesTest` fails closed on drift.
-5. Refresh the stale baseline section in the semantic-audit handoff with dated live measurements, retaining historical evidence rather than rewriting old measurements as if they were current.
+The main-to-commerce reconciliation is already complete. Merge `6608a869b99e137130346879f54f82791abc5a30` brought the complete approved PR #771 payload into the commerce branch; the 49 registered vendored files were hash-verified. The live measurement recorded in §2.2 showed `integration/saleor-full-commerce-20261021` at `435b895d2c98ada7dc2c9661bb2973c7774f78b4`, 133 commits ahead and 0 behind `main`. Do not repeat the reconciliation or recopy PR #771 files.
 
-### Phase B — Candidate build and audit
+1. **Completed:** freeze and reconcile `main` into commerce, including all conflicts and ownership decisions, as recorded in the semantic-audit directive and merge `6608a869`.
+2. **In progress in this PR:** migrate the `saleor-core` provenance and resource catalog as specified in §3. PR #773 is an integration-only governance PR; its checks and review must apply to its final head.
+3. PR #783 is a separate **Draft / review-only** ADR track. A1–A7 may review its proposals now, independently of #773. It does not approve decisions, change root dispositions, or authorize implementation.
+4. After the owner-authorized merge of #773 into the integration branch, A0 re-reads live `main` and integration heads, open PRs, checks, review threads, changed paths, migration head and root-inventory blob, then publishes a refreshed `CANDIDATE_BASE_SHA`. The historical `6608a869` reconciliation SHA and the `435b895d` pre-PR base are not to be reused as the new implementation baseline.
 
-1. Dispatch A1–A7 using the existing playbook and exact root/file ownership.
-2. Agents audit their already-INTEGRATED roots and continue unblocked NOT_STARTED implementation in the same continuous build cycle.
-3. A0 assembles completed commits on the candidate branch in dependency order, not by merging partial waves to `main`.
-4. Resolve decision-blocked roots only through owner-approved ADR/divergence records. No no-op or success-shaped implementation.
-5. The `saleor-core` provenance refresh in §3 is a separate, reviewable work packet; it must not block unrelated commerce implementation. Other four official skills remain discovery-only references until a workstream explicitly requests and reviews adoption.
+### Phase B — ADR review, candidate build and audit
+
+1. Keep PR #783 Draft while A1–A7 submit evidence-based reviews of the assigned ADRs. A0 consolidates the findings; only the repository owner may accept or reject the proposed decisions.
+2. Until the owner decision is recorded, no ADR-dependent root may be implemented or moved out of `BLOCKED_BY_DECISION` / `OWNER_ADR_REQUIRED`. Agents may continue independent work already authorized by their current work packets; do not create new feature branches from the historical SHA.
+3. After #773 is merged by owner authorization and A0 publishes the refreshed candidate SHA, dispatch or rebase/confirm A1–A7 implementation workspaces so every new workstream starts from that same exact SHA and the existing root/file ownership.
+4. Each agent audits its already-INTEGRATED roots and continues unblocked NOT_STARTED implementation in the same continuous build cycle. Audit coverage is not limited to the skills' narrow behavior domains.
+5. A0 assembles completed commits on the candidate branch in dependency order, not by merging partial waves to `main`.
+6. Resolve decision-blocked roots only through owner-approved ADR/divergence records. No no-op or success-shaped implementation.
+7. The four skills other than `saleor-core` remain discovery-only references unless a workstream requests and reviews adoption through the pinning policy.
 
 ### Phase C — Review and one release PR
 
@@ -208,12 +211,12 @@ Do not report a single blended “Saleor completion percentage”. Keep separate
 
 ## 10. First actions for A0
 
-1. Re-fetch the live baseline and publish the new `CANDIDATE_BASE_SHA`; the 2026-10-31 measurements in §2 are a starting snapshot only.
-2. Reconcile `main` into commerce and verify the full PR #771 governance/skill payload.
-3. Update the stale live-baseline note in the semantic-audit handoff.
-4. Validate the one-root-per-row inventory against the pinned schema and current domain matrix.
-5. Use the completed source-provenance spike (`435b895d`) and this dedicated PR to migrate only `saleor-core` to the reviewed `saleor/saleor-docs@2cdf6590` pin; retain the other four skills as not-adopted applicability references. Do not reinstall or bulk-vendor them.
-6. Dispatch the current A1–A7 owners. Prioritize A2/A3/A4 where core skill rules give direct value, while every workstream audits its existing INTEGRATED roots.
+1. Complete PR #773 on its final head: require green CI and Integration Test, successful security checks, fresh CodeRabbit review, and independent review. The PR targets `integration/saleor-full-commerce-20261021` only; do not merge it to `main`.
+2. Keep PR #783 Draft and start the A1–A7 ADR review track now. Collect source/test evidence and per-ADR verdicts; do not treat comments as owner approval or change central dispositions.
+3. After the repository owner authorizes and #773 is merged into integration, re-fetch live `main` and integration refs, compare/merge-base, all open PRs and review threads, current checks, full changed-path inventory, migration head, and root-inventory blob.
+4. Publish the refreshed `CANDIDATE_BASE_SHA` and update §3 of the semantic-audit directive with the measured live baseline. Preserve `6608a869` and the earlier 435b895d measurement as historical evidence; do not overwrite them as though they were the new branch tip.
+5. Revalidate the single 458-row inventory against the pinned schema and current domain matrix, including exact counts/statuses and the inventory blob on the refreshed candidate.
+6. Only then open/confirm isolated A1–A7 implementation branches, all from the same refreshed SHA. Keep ADR-dependent roots blocked until the owner decision; allow independent authorized work to proceed.
 7. Measure CodeRabbit's current quota and file-processing limits using a bounded, representative review. Design the coverage gate if the full release candidate cannot be reviewed in one request.
 8. Assemble candidate work continuously, then complete independent review and the single final release PR.
 
