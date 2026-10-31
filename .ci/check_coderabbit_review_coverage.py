@@ -8,11 +8,14 @@ path needs a named, independently verifiable alternative check or review.
 """
 from __future__ import annotations
 import argparse
+import base64
+import fnmatch
 import json
 import os
 import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 API = "https://api.github.com"
@@ -53,6 +56,27 @@ class GitHub:
             raise GateError(f"GitHub API {path}: HTTP {exc.code}: {detail}") from exc
         except (urllib.error.URLError, TimeoutError) as exc:
             raise GateError(f"GitHub API {path}: {exc}") from exc
+
+    def file_json(self, path, ref, max_bytes=250_000):
+        safe_path = path.strip("/")
+        need(safe_path and not path.startswith("/") and "\\" not in safe_path
+             and all(part not in {"", ".", ".."} for part in safe_path.split("/")),
+             "manifest path must be a safe repository-relative path")
+        need(re.fullmatch(r"[0-9a-f]{40}", ref) is not None, "manifest ref must be a full commit SHA")
+        encoded_path = urllib.parse.quote(safe_path, safe="/")
+        encoded_ref = urllib.parse.quote(ref, safe="")
+        response = self.get(f"/contents/{encoded_path}?ref={encoded_ref}")
+        need(response.get("type") == "file", f"manifest path is not a file: {safe_path}")
+        need(response.get("encoding") == "base64", "GitHub did not return the manifest as base64")
+        need(isinstance(response.get("size"), int) and response["size"] <= max_bytes,
+             f"manifest exceeds {max_bytes} bytes")
+        payload = "".join((response.get("content") or "").split())
+        try:
+            raw = base64.b64decode(payload, validate=True)
+            need(len(raw) <= max_bytes, f"manifest exceeds {max_bytes} bytes")
+            return json.loads(raw.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise GateError(f"candidate manifest is not valid UTF-8 JSON: {exc}") from exc
 
     def pages(self, path):
         result, page = [], 1
@@ -186,7 +210,22 @@ def validate_manifest(data):
                  "manual review evidence requires reviewerLogin and reviewId")
 
 
-def verify_alternative(item, candidate, candidate_reviews, client):
+def validate_alternative_config(config):
+    need(config.get("schemaVersion") == 1, "trusted alternative-check config schemaVersion must be 1")
+    checks = config.get("checks")
+    need(isinstance(checks, dict), "trusted alternative-check config requires checks object")
+    for name, rule in checks.items():
+        need(isinstance(name, str) and name, "trusted check name must be non-empty")
+        need(isinstance(rule, dict), f"trusted rule for {name!r} must be an object")
+        apps = rule.get("appSlugs")
+        patterns = rule.get("pathPatterns")
+        need(isinstance(apps, list) and apps and all(isinstance(x, str) and x for x in apps),
+             f"trusted rule for {name!r} requires appSlugs")
+        need(isinstance(patterns, list) and patterns and all(isinstance(x, str) and x for x in patterns),
+             f"trusted rule for {name!r} requires pathPatterns")
+
+
+def verify_alternative(item, candidate, candidate_reviews, client, alternative_config):
     paths = set(item["paths"])
     head = candidate["head"]["sha"]
     if item["kind"] == "manual-review":
@@ -195,19 +234,30 @@ def verify_alternative(item, candidate, candidate_reviews, client):
         need(reviewer not in {author, BOT}, "manual reviewer must be independent")
         review = exact_review(candidate_reviews, item["reviewId"], head, reviewer, {"APPROVED"})
         latest = latest_review(candidate_reviews, head, reviewer)
-        need(latest and latest.get("id") == review["id"], "manual review is not latest on candidate head")
-        need(item["evidenceUrl"] in {review.get("html_url"), candidate.get("html_url")},
+        need(latest and latest.get("id") == review["id"],
+             "manual review is not latest on candidate head")
+        need(item["evidenceUrl"] == review.get("html_url") and bool(review.get("html_url")),
              "manual review evidence URL does not identify the recorded review")
     else:
+        check_name = item["checkName"]
+        rule = alternative_config.get("checks", {}).get(check_name)
+        need(rule is not None, f"check {check_name!r} is not allowlisted by trusted base configuration")
+        allowed_apps = set(rule["appSlugs"])
+        patterns = rule["pathPatterns"]
+        for path in paths:
+            need(any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns),
+                 f"path {path!r} is outside trusted path patterns for {check_name!r}")
         checks = [run for run in client.checks(head)
-                  if run.get("name") == item["checkName"] and run.get("head_sha") == head]
-        need(checks, f"no candidate-head check named {item['checkName']!r}")
+                  if run.get("name") == check_name
+                  and run.get("head_sha") == head
+                  and (run.get("app") or {}).get("slug") in allowed_apps]
+        need(checks, f"no candidate-head check {check_name!r} from a trusted GitHub App")
         latest = max(checks, key=lambda run: (run.get("completed_at") or "", run.get("started_at") or ""))
         need(latest.get("status") == "completed" and latest.get("conclusion") == "success",
-             f"latest {item['checkName']} run is not successful")
-        need(latest.get("html_url") == item["evidenceUrl"], "check evidence URL is not the latest run")
+             f"latest trusted {check_name} run is not successful")
+        need(latest.get("html_url") == item["evidenceUrl"],
+             "check evidence URL is not the latest trusted run")
     return paths
-
 
 
 def verify_path_content(path, candidate_changes, shard_base, shard_head, candidate_base, candidate_head):
@@ -227,12 +277,13 @@ def ensure_exact_coverage(candidate_changes, reviewed, alternatives):
     need(not missing, f"changed files have no review evidence: {sorted(missing)}")
 
 
-def run(repo, number, manifest_path, token):
+def run(repo, number, manifest_path, alternative_config, trusted_base_sha, token):
     client = GitHub(repo, token)
     candidate = client.pull(number)
     need(candidate.get("state") == "open", "candidate PR must remain open during coverage verification")
     need(candidate.get("base", {}).get("ref") == "main", "coverage gate only applies to main-targeting PRs")
     base_sha, head_sha = candidate["base"]["sha"], candidate["head"]["sha"]
+    need(base_sha == trusted_base_sha, f"PR base {base_sha} differs from trusted workflow base {trusted_base_sha}")
     base_tree, head_tree = client.tree(base_sha), client.tree(head_sha)
     candidate_changes = tree_changes(base_tree, head_tree)
     need(candidate_changes, "candidate has no changed paths")
@@ -257,13 +308,11 @@ def run(repo, number, manifest_path, token):
         print(f"PASS — all {len(candidate_changes)} changed paths are listed in CodeRabbit review {review['id']}.")
         return
 
-    try:
-        with open(manifest_path, encoding="utf-8") as handle:
-            manifest = json.load(handle)
-    except FileNotFoundError as exc:
-        uncovered = sorted(set(candidate_changes) - direct)
-        raise GateError(f"coverage manifest is required; uncovered paths={uncovered}") from exc
+    # The candidate manifest is fetched as inert JSON from the exact head SHA.
+    # No file or executable from the untrusted candidate checkout is used.
+    manifest = client.file_json(manifest_path, head_sha)
     validate_manifest(manifest)
+    validate_alternative_config(alternative_config)
 
     reviewed, alternatives, candidate_shards = {}, set(), 0
     for shard in manifest["reviewShards"]:
@@ -293,6 +342,12 @@ def run(repo, number, manifest_path, token):
             need(set(tree_changes(shard_base, shard_head_tree)) == expanded,
                  f"shard PR #{number_for_shard} REST file list differs from full Git-tree diff")
 
+        if number_for_shard == number:
+            # The final candidate review proves the current release head was
+            # reviewed, but it is not a coverage shard. Separate shard PRs
+            # cover the changed paths so no path is double-counted.
+            continue
+
         _, _, by_name = fileset(records)
         paths = set()
         for path in selected_files:
@@ -307,7 +362,7 @@ def run(repo, number, manifest_path, token):
 
     need(candidate_shards == 1, "candidate PR must occur exactly once in reviewShards")
     for item in manifest.get("alternativeCoverage", []):
-        paths = verify_alternative(item, candidate, candidate_reviews, client)
+        paths = verify_alternative(item, candidate, candidate_reviews, client, alternative_config)
         need(not (paths & (set(reviewed) | alternatives)), "alternative evidence overlaps existing coverage")
         need(paths <= set(candidate_changes), f"alternative evidence outside candidate: {sorted(paths-set(candidate_changes))}")
         alternatives.update(paths)
@@ -321,7 +376,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repository", default=os.getenv("GITHUB_REPOSITORY"))
     parser.add_argument("--pr-number", type=int, required=True)
-    parser.add_argument("--manifest", required=True)
+    parser.add_argument("--manifest-path", required=True)
+    parser.add_argument("--alternative-config", required=True)
+    parser.add_argument("--trusted-base-sha", required=True)
     parser.add_argument("--max-files-per-review", type=int, default=MAX_FILES)
     args = parser.parse_args()
     if not args.repository:
@@ -330,7 +387,11 @@ def main():
         parser.error("this repository enforces exactly 100 files per CodeRabbit review")
     token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN") or ""
     try:
-        run(args.repository, args.pr_number, args.manifest, token)
+        with open(args.alternative_config, encoding="utf-8") as handle:
+            alternative_config = json.load(handle)
+        validate_alternative_config(alternative_config)
+        run(args.repository, args.pr_number, args.manifest_path,
+            alternative_config, args.trusted_base_sha, token)
     except (GateError, OSError, json.JSONDecodeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
