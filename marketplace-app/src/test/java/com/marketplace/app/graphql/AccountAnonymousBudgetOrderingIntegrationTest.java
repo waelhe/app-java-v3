@@ -21,6 +21,7 @@ import test.config.IntegrationContainers;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -93,9 +94,11 @@ class AccountAnonymousBudgetOrderingIntegrationTest {
     }
 
     private boolean carriesRateLimit(HttpGraphQlTester.Response response) {
-        return response.errors().getErrors().stream()
+        AtomicBoolean found = new AtomicBoolean(false);
+        response.errors().satisfy(errors -> found.set(errors.stream()
                 .anyMatch(error -> RL_001.equals(
-                        String.valueOf(error.getExtensions().get("errorCode"))));
+                        String.valueOf(error.getExtensions().get("errorCode"))))));
+        return found.get();
     }
 
     @Test
@@ -142,18 +145,18 @@ class AccountAnonymousBudgetOrderingIntegrationTest {
     }
 
     private HttpGraphQlTester testerFor(String subject, String role) {
-        HttpGraphQlTester.Builder builder = HttpGraphQlTester.builder(
-                WebTestClient.bindToServer().baseUrl("http://localhost:" + port + "/graphql"));
-        if (subject == null) {
-            return builder.build();
+        WebTestClient.Builder client = WebTestClient.bindToServer()
+                .baseUrl("http://localhost:" + port + "/graphql");
+        if (subject != null) {
+            Jwt jwt = Jwt.withTokenValue("test-token")
+                    .header("alg", "RS256")
+                    .claim("sub", subject)
+                    .claim("aud", List.of("marketplace-api"))
+                    .claim("roles", List.of(role))
+                    .build();
+            when(jwtDecoder.decode(anyString())).thenReturn(jwt);
+            client = client.defaultHeader("Authorization", "Bearer test-token");
         }
-        Jwt jwt = Jwt.withTokenValue("test-token")
-                .header("alg", "RS256")
-                .claim("sub", subject)
-                .claim("aud", List.of("marketplace-api"))
-                .claim("roles", List.of(role))
-                .build();
-        when(jwtDecoder.decode(anyString())).thenReturn(jwt);
-        return builder.defaultHeader("Authorization", "Bearer test-token").build();
+        return HttpGraphQlTester.builder(client).build();
     }
 }
