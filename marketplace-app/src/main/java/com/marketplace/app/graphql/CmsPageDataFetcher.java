@@ -39,7 +39,6 @@ import org.springframework.graphql.data.pagination.EncodingCursorStrategy;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -68,19 +67,22 @@ public class CmsPageDataFetcher {
     private final SaleorGlobalIdCodec globalIdCodec;
     private final EncodingCursorStrategy<ScrollPosition> cursorStrategy;
     private final GraphQlProperties properties;
+    private final CmsPageGraphQlMapper pageMapper;
 
     public CmsPageDataFetcher(CmsPageSpi cmsPageSpi,
                               com.marketplace.catalog.spi.AttributeReadSpi attributeReadSpi,
                               AgentOneGraphQlMappers mappers,
                               SaleorGlobalIdCodec globalIdCodec,
                               EncodingCursorStrategy<ScrollPosition> cursorStrategy,
-                              GraphQlProperties properties) {
+                              GraphQlProperties properties,
+                              CmsPageGraphQlMapper pageMapper) {
         this.cmsPageSpi = cmsPageSpi;
         this.attributeReadSpi = attributeReadSpi;
         this.mappers = mappers;
         this.globalIdCodec = globalIdCodec;
         this.cursorStrategy = cursorStrategy;
         this.properties = properties;
+        this.pageMapper = pageMapper;
     }
 
     // ---------------------------------------------------------------------
@@ -409,24 +411,11 @@ public class CmsPageDataFetcher {
     // ---------------------------------------------------------------------
 
     private Page toGraphQlPage(CmsPageSpi.PageView view) {
-        return Page.newBuilder()
-                .id(globalIdCodec.encode(PAGE_TYPE_TAG, view.id()))
-                .seoTitle(view.seoTitle())
-                .seoDescription(view.seoDescription())
-                .title(view.title())
-                .content(view.content())
-                .isPublished(view.published())
-                .publishedAt(view.publishedAt() == null ? null
-                        : DateTimeFormatter.ISO_INSTANT.format(view.publishedAt()))
-                .slug(view.slug())
-                .created(view.createdAt() == null ? null
-                        : DateTimeFormatter.ISO_INSTANT.format(view.createdAt()))
-                .pageType(PageType.newBuilder()
-                        .id(globalIdCodec.encode(PAGE_TYPE_TYPE_TAG, view.pageTypeId()))
-                        .name(view.pageTypeName() == null ? "" : view.pageTypeName())
-                        .slug(view.pageTypeSlug() == null ? "" : view.pageTypeSlug())
-                        .build())
-                .build();
+        // The wave-3 review's MenuItem.page binding: the mapping moved to
+        // the shared CmsPageGraphQlMapper (the package's *GraphQlMapper
+        // component precedent) so the navigation fetcher's field resolver
+        // renders the SAME page projection — one mapping, every surface.
+        return pageMapper.toGraphQlPage(view);
     }
 
     PageType toGraphQlPageType(CmsPageSpi.PageTypeView view) {

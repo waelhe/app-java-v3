@@ -97,12 +97,21 @@ public class AccountLifecycleDataFetcher {
         return SendConfirmationEmail.newBuilder().errors(mappers.emptyAccountErrors()).build();
     }
 
-    /** Saleor {@code confirmAccount(email, password, token)} — token-proofed. */
+    /**
+     * Saleor {@code confirmAccount(email, password, token)} — token-proofed.
+     * The wave-3 review (Major · Stability): the per-caller budget this
+     * root's wave-2 split intended — without it, one anonymous client's
+     * setPassword spam exhausts the SHARED anonymous budget and starves
+     * registration and password reset for every other caller (and the
+     * token-guessing surface gets its own per-address budget besides).
+     */
     @DgsMutation(field = DgsConstants.MUTATION.ConfirmAccount)
     @RateLimiter(name = "graphqlAccountAnonymousMutation")
     public ConfirmAccount confirmAccount(@InputArgument String email,
                                          @InputArgument String password,
-                                         @InputArgument String token) {
+                                         @InputArgument String token,
+                                         graphql.schema.DataFetchingEnvironment environment) {
+        perCallerRateLimitGuard.acquirePermit(environment, "graphqlAccountAnonymousMutation");
         if (token == null || token.isBlank()) {
             throw new IllegalArgumentException("A confirmation token is required");
         }
@@ -120,12 +129,18 @@ public class AccountLifecycleDataFetcher {
                 .build();
     }
 
-    /** Saleor {@code setPassword(email, password, token)} — the reset redemption. */
+    /**
+     * Saleor {@code setPassword(email, password, token)} — the reset
+     * redemption. The wave-3 review: the same per-caller budget
+     * confirmAccount carries.
+     */
     @DgsMutation(field = DgsConstants.MUTATION.SetPassword)
     @RateLimiter(name = "graphqlAccountAnonymousMutation")
     public SetPassword setPassword(@InputArgument String email,
                                    @InputArgument String password,
-                                   @InputArgument String token) {
+                                   @InputArgument String token,
+                                   graphql.schema.DataFetchingEnvironment environment) {
+        perCallerRateLimitGuard.acquirePermit(environment, "graphqlAccountAnonymousMutation");
         if (token == null || token.isBlank() || password == null || password.isBlank()) {
             throw new IllegalArgumentException("A token and a new password are required");
         }
@@ -314,7 +329,14 @@ public class AccountLifecycleDataFetcher {
 
     private Authentication currentAuthentication() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) {
+        // The wave-3 review (Minor · Security): AnonymousAuthenticationToken
+        // answers isAuthenticated() == true — the type check is the only
+        // honest wall (the guard is defense-in-depth: sendConfirmationEmail
+        // is currently behind the PreLoginGraphQlGate, but the guard must
+        // not silently accept an anonymous caller if the gate's allowlist
+        // ever widens).
+        if (authentication == null || !authentication.isAuthenticated()
+                || authentication instanceof org.springframework.security.authentication.AnonymousAuthenticationToken) {
             throw new org.springframework.security.authentication
                     .AuthenticationCredentialsNotFoundException(
                     "Authentication is required for account operations");

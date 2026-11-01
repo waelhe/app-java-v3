@@ -141,15 +141,22 @@ public class UserManagementDataFetcher {
             // never the whole batch. Saleor's errorPolicy contract keeps
             // the valid rows and reports the failure per-row in
             // results[i].errors; a null id answers the per-row failure.
+            // The wave-3 review moved toFields INSIDE the same guard: its
+            // classified not-implemented rejections (the wave-2 honesty
+            // fix) are row-level validation failures — one bad row must
+            // fail itself, not the batch (the identity owner's
+            // bulkUpdateCustomers answers the per-row INVALID for a null
+            // id — the null-pairing path the catch ladder already uses).
             try {
                 ids.add(resolveTarget(row.getExternalReference(), row.getId()));
+                rows.add(toFields(row.getInput()));
             } catch (RuntimeException rowFailure) {
                 if (!ignoreFailed) {
                     throw rowFailure;
                 }
                 ids.add(null);
+                rows.add(null);
             }
-            rows.add(toFields(row.getInput()));
         }
         List<com.marketplace.identity.spi.BulkRowResult> results =
                 userManagementSpi.bulkUpdateCustomers(currentAuthentication(), ids, rows,

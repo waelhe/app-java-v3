@@ -67,15 +67,27 @@ public class CmsNavigationDataFetcher {
     private final SaleorGlobalIdCodec globalIdCodec;
     private final EncodingCursorStrategy<ScrollPosition> cursorStrategy;
     private final GraphQlProperties properties;
+    private final com.marketplace.catalog.spi.CategoryReadSpi categoryReadSpi;
+    private final CategoryGraphQlMapper categoryMapper;
+    private final com.marketplace.console.spi.CmsPageSpi cmsPageSpi;
+    private final CmsPageGraphQlMapper pageMapper;
 
     public CmsNavigationDataFetcher(CmsNavigationSpi navigationPort,
                                     SaleorGlobalIdCodec globalIdCodec,
                                     EncodingCursorStrategy<ScrollPosition> cursorStrategy,
-                                    GraphQlProperties properties) {
+                                    GraphQlProperties properties,
+                                    com.marketplace.catalog.spi.CategoryReadSpi categoryReadSpi,
+                                    CategoryGraphQlMapper categoryMapper,
+                                    com.marketplace.console.spi.CmsPageSpi cmsPageSpi,
+                                    CmsPageGraphQlMapper pageMapper) {
         this.navigationPort = navigationPort;
         this.globalIdCodec = globalIdCodec;
         this.cursorStrategy = cursorStrategy;
         this.properties = properties;
+        this.categoryReadSpi = categoryReadSpi;
+        this.categoryMapper = categoryMapper;
+        this.cmsPageSpi = cmsPageSpi;
+        this.pageMapper = pageMapper;
     }
 
     // ---------------------------------------------------------------------
@@ -576,6 +588,54 @@ public class CmsNavigationDataFetcher {
                         decodeId(item.getMenu().getId(), MENU_TAG, "A menu ID is required"))
                 .map(view -> toMenuWithItems(caller, view))
                 .orElse(item.getMenu());
+    }
+
+    /**
+     * The {@code MenuItem.category} read-back — the wave-3 review (Minor ·
+     * Functional Correctness): the write paths (menuItemCreate/Update)
+     * accept and persist the category binding, but no path ever rendered
+     * it — the field answered null even when set. The resolver re-reads
+     * the item (the view carries the categoryId) and resolves the REAL
+     * category through the catalog owner's own lookup; an item without a
+     * category answers null (the nullable field's honest absence). No
+     * rate limiting on field fetchers (the wave-1 lesson).
+     */
+    @DgsData(parentType = DgsConstants.MENUITEM.TYPE_NAME, field = DgsConstants.MENUITEM.Category)
+    public com.marketplace.app.graphql.generated.types.Category menuItemCategory(
+            DataFetchingEnvironment environment) {
+        MenuItem item = environment.getSource();
+        if (item == null || item.getId() == null) {
+            return null;
+        }
+        Authentication caller = currentAuthentication();
+        return navigationPort.findMenuItemById(caller,
+                        decodeId(item.getId(), MENU_ITEM_TAG, "A menu item ID is required"))
+                .flatMap(view -> view.categoryId() == null ? java.util.Optional.empty()
+                        : categoryReadSpi.findCategoryById(view.categoryId(), caller))
+                .map(categoryMapper::toGraphQlCategory)
+                .orElse(null);
+    }
+
+    /**
+     * The {@code MenuItem.page} read-back — the same wave-3 finding: the
+     * page binding renders through the shared CmsPageGraphQlMapper (the
+     * mapping extracted from CmsPageDataFetcher for exactly this reuse);
+     * an item without a page answers null.
+     */
+    @DgsData(parentType = DgsConstants.MENUITEM.TYPE_NAME, field = DgsConstants.MENUITEM.Page)
+    public com.marketplace.app.graphql.generated.types.Page menuItemPage(
+            DataFetchingEnvironment environment) {
+        MenuItem item = environment.getSource();
+        if (item == null || item.getId() == null) {
+            return null;
+        }
+        Authentication caller = currentAuthentication();
+        return navigationPort.findMenuItemById(caller,
+                        decodeId(item.getId(), MENU_ITEM_TAG, "A menu item ID is required"))
+                .flatMap(view -> view.pageId() == null ? java.util.Optional.empty()
+                        : cmsPageSpi.findPageById(caller, view.pageId()))
+                .map(pageMapper::toGraphQlPage)
+                .orElse(null);
     }
 
     /**

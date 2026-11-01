@@ -102,13 +102,18 @@ public class PlatformTokenGrantService {
     private static final String ROLES_ATTRIBUTE = "platform.roles";
 
     /**
-     * The shard review (Major · Security & Privacy, 2026-11-01 wave 2):
-     * the family's OWN birth time on the authorization row — every
-     * rotation re-issues the refresh token (now + TTL), so the token's
-     * issuedAt can never bound the family's age; the attribute does. A
-     * legacy row (pre-attribute) is seeded from the presented token's
-     * issuedAt at its next rotation — the conservative floor (the family
-     * is at least as old as the presented token).
+     * The shard review (Major · Security & Privacy, 2026-11-01 wave 2;
+     * representation hardened in wave 3): the family's OWN birth time on
+     * the authorization row — every rotation re-issues the refresh token
+     * (now + TTL), so the token's issuedAt can never bound the family's
+     * age; the attribute does. Stored as **epoch millis (Long)** — a
+     * basic JSON scalar with no typing subtleties on the authorization
+     * store's polymorphic deserialization (the wave-3 review's
+     * robustness demand; the Long representation is unconditionally
+     * safe across every Jackson/PTV configuration). A legacy row
+     * (pre-attribute) is seeded from the presented token's issuedAt at
+     * its next rotation — the conservative floor (the family is at
+     * least as old as the presented token).
      */
     private static final String FAMILY_CREATED_ATTRIBUTE = "platform.family.created";
 
@@ -312,8 +317,7 @@ public class PlatformTokenGrantService {
         // and RoleAssignmentService's own DELETE statements — so a
         // disabled account cannot refresh; NO parallel per-refresh
         // account read is added here, per the reviewer's own guidance.)
-        Instant familyCreated = authorization.getAttributes()
-                .get(FAMILY_CREATED_ATTRIBUTE) instanceof Instant recorded ? recorded : null;
+        Instant familyCreated = familyCreatedAt(authorization);
         Instant familyStart = familyCreated != null ? familyCreated
                 : authorization.getRefreshToken().getToken().getIssuedAt();
         if (familyStart != null
@@ -342,7 +346,7 @@ public class PlatformTokenGrantService {
             // floor — the family is at least this old), so the NEXT refresh
             // enforces the true family age from the same attribute every
             // new grant carries.
-            rotation.attribute(FAMILY_CREATED_ATTRIBUTE, familyStart);
+            rotation.attribute(FAMILY_CREATED_ATTRIBUTE, familyStart.toEpochMilli());
         }
         OAuth2Authorization refreshed = rotation.build();
         // THE atomic boundary: the store arbitrates the consumption —
@@ -397,6 +401,24 @@ public class PlatformTokenGrantService {
         return jwtEncoder().encode(JwtEncoderParameters.from(claims)).getTokenValue();
     }
 
+    /**
+     * Reads the family's birth time from the authorization attributes —
+     * epoch millis (Long) is the recorded representation; an Instant
+     * value is still honored (an interim-build row would carry one, and
+     * the honest read never breaks a live session over a
+     * representation difference).
+     */
+    private static Instant familyCreatedAt(OAuth2Authorization authorization) {
+        Object raw = authorization.getAttributes().get(FAMILY_CREATED_ATTRIBUTE);
+        if (raw instanceof Number epochMillis) {
+            return Instant.ofEpochMilli(epochMillis.longValue());
+        }
+        if (raw instanceof Instant recorded) {
+            return recorded;
+        }
+        return null;
+    }
+
     private OAuth2Authorization authorizationRow(String principal, Set<String> roles,
                                                   String accessToken, String refreshToken,
                                                   Instant issuedAt) {
@@ -418,9 +440,11 @@ public class PlatformTokenGrantService {
                 .refreshToken(refreshTokenToken)
                 .attribute(ROLES_ATTRIBUTE, roles)
                 // The family's birth time (the wave-2 review's absolute
-                // session cap) — written once at grant; rotations preserve
-                // it (OAuth2Authorization.from copies the attributes).
-                .attribute(FAMILY_CREATED_ATTRIBUTE, issuedAt)
+                // session cap) — written once at grant as EPOCH MILLIS (the
+                // wave-3 hardening: a basic scalar, no polymorphic
+                // deserialization subtleties); rotations preserve it
+                // (OAuth2Authorization.from copies the attributes).
+                .attribute(FAMILY_CREATED_ATTRIBUTE, issuedAt.toEpochMilli())
                 .build();
     }
 

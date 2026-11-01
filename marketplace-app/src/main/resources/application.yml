@@ -1075,13 +1075,16 @@ resilience4j:
       # requestPasswordReset, sendConfirmationEmail, setPassword,
       # confirmAccount) leave the shared graphqlAccountMutation budget —
       # a flood of reset requests must never starve the authenticated
-      # customer/staff admin mutations sharing that instance. The email
-      # senders and the registration root carry the per-caller guard
-      # besides (the perCallerGrant config above); the token-proofed
-      # roots (setPassword/confirmAccount) ride this instance alone.
+      # customer/staff admin mutations sharing that instance. The wave-3
+      # review RAISED the outer ceiling 10 -> 60 (the same reasoning as
+      # graphqlTokenMutation): a per-JVM 10/min meant ONE caller's ten
+      # reset requests starved every other caller's registration — the
+      # outer ceiling must fit aggregate traffic; the per-caller guard
+      # (PerCallerRateLimitGuard, the perCallerGrant config — now wired
+      # into ALL FIVE anonymous roots) does the real flood control.
       graphqlAccountAnonymousMutation:
         base-config: default
-        limit-for-period: 10
+        limit-for-period: 60
         timeout-duration: 0
       graphqlCmsMutation:
         base-config: default
