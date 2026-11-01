@@ -24,7 +24,7 @@ implementing platform work. It is reference, not an authority: on any
 conflict the precedence ladder is, in order:
 
 1. `docs/governance/plans/saleor-source-pins.json` — the pinned Saleor
-   3.23.43 reference schema (blob-verified) and the Dashboard pins.
+   3.23.45 reference schema (blob-verified) and the Dashboard pins.
 2. `docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md`
    — the D-SALEOR-FULL-001 canonical plan and its domain matrix.
 3. `docs/governance/plans/saleor-contract-divergences.csv` — the
@@ -42,8 +42,7 @@ an operation's disposition in the canonical plan.
 
 ## 3. What is vendored (inventory)
 
-Official Saleor source: `saleor/agent-skills` — five skills exist
-upstream; the inventory below is complete.
+Vendored Saleor skill snapshot origin: `saleor/agent-skills@fb1a57255f58950962f6e474ccba1cade40f5163` is the historical immutable origin of the locally vendored `saleor-core` artifact. The current official skill discovery/distribution source is `saleor/saleor-docs`, as recorded in the canonical Saleor plan. The inventory below describes local adoption; it does not claim that all five docs-distributed skills are vendored.
 
 | Skill | State | Reason |
 | --- | --- | --- |

@@ -3,7 +3,7 @@ name: CI
 on:
   workflow_dispatch:
   push:
-    branches: [ main, feat/product-variants ]
+    branches: [ main, feat/product-variants, integration/saleor-full-commerce-20261021 ]
   pull_request:
     # Parallel plan §4.1: the four gates run on pull_request for the wave's
     # integrative PRs. The official GitHub docs are explicit that the
@@ -22,8 +22,18 @@ on:
     # entries retired with the wave in the post-merge truth-sync exactly
     # as their own comments prescribed — inert weight otherwise. PRs
     # targeting main gate through the pull_request event as before.
-        # Temporary stacked Saleor PR target pattern; retire after #677-#681 are reconciled.
-    branches: [ main, feat/saleor-commerce-product-keyset-pagination, 'feat/saleor-*' ]
+        # Saleor full-commerce campaign wave (2026-10-21): every PR of this
+        # wave (#696/#697 already merged into the base; #698 open on it, with
+        # the stacked #708 auto-retargeting here once #698 merges) targets
+        # exactly one integration base,
+        # integration/saleor-full-commerce-20261021 — listed by its exact
+        # name on purpose, no glob, so the gates gate every push to those
+        # PRs through the pull_request event itself: automatic management,
+        # never a manual workflow_dispatch standing in for the trigger the
+        # base list forgot (the agent-3-gate-trigger-proposal.md measured
+        # gap). Retire this exact entry when the wave merges to main,
+        # exactly as the stacked-wave entries above retired with theirs.
+    branches: [ main, feat/saleor-commerce-product-keyset-pagination, 'feat/saleor-*', integration/saleor-full-commerce-20261021 ]
 
 
 # One test round per ref: a newer push supersedes the older round and
@@ -567,6 +577,74 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+  # Saleor wire-contract guard. This runs on every CI-triggering PR/push,
+  # not only when SDL files change, so resolver-only changes cannot bypass it.
+  # The official schema is immutable-pinned and hash-verified before comparing
+  # every already-declared Saleor Query/Mutation/Subscription root signature.
+  saleor-root-contract:
+    name: Saleor Root Contract Gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned GraphQL SDL parser
+        run: python -m pip install --disable-pip-version-check graphql-core==3.2.6
+
+      - name: Download, verify and compare against the pinned Saleor contract
+        env:
+          SALEOR_REF: "3.23.43"
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          REFERENCE_SCHEMA="${RUNNER_TEMP}/saleor-reference.graphql"
+          curl --fail --silent --show-error --location \
+            "https://raw.githubusercontent.com/saleor/saleor/${SALEOR_REF}/saleor/graphql/schema.graphql" \
+            --output "${REFERENCE_SCHEMA}"
+          ACTUAL="$(git hash-object "${REFERENCE_SCHEMA}")"
+          EXPECTED="$(python -c "import json; print(json.load(open('docs/governance/plans/saleor-source-pins.json'))['referenceSchema']['gitBlobSha1'])")"
+          test "${ACTUAL}" = "${EXPECTED}" || {
+            echo "::error::Pinned Saleor SDL hash mismatch: expected ${EXPECTED}; got ${ACTUAL}"
+            exit 1
+          }
+
+          ARGS=(
+            --reference "${REFERENCE_SCHEMA}"
+            --schema-dir marketplace-app/src/main/resources/graphql
+            --pins docs/governance/plans/saleor-source-pins.json
+            --summary "${GITHUB_STEP_SUMMARY}"
+          )
+          if [ -n "${GITHUB_BASE_REF:-}" ]; then
+            git fetch --no-tags origin \
+              "refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+            BASE_SCHEMA_ROOT="${RUNNER_TEMP}/saleor-base-tree"
+            mkdir -p "${BASE_SCHEMA_ROOT}"
+            git archive "refs/remotes/origin/${GITHUB_BASE_REF}" \
+              marketplace-app/src/main/resources/graphql \
+              | tar -x -C "${BASE_SCHEMA_ROOT}" --strip-components=4
+            ARGS+=(--base-schema-dir "${BASE_SCHEMA_ROOT}/graphql")
+          fi
+          python .ci/check-saleor-root-signatures.py "${ARGS[@]}"
+
+  # Dedicated, reusable functional gate for the Java GraphQL backend.
+  # Keeping this as its own job gives the check a clear name while the
+  # required Build & Test aggregate below makes it merge-blocking even when
+  # repository rulesets cannot be edited by the automation identity.
+  saleor-backend-compatibility:
+    name: Saleor Backend Compatibility Gate
+    uses: ./.github/workflows/saleor-backend-compatibility.yml
+    permissions:
+      contents: read
+
   # The app bundle's coverage gate, reconstituted on MERGED data: the 9
   # partial .exec files (8 IT shards + the unit pass) combine through the
   # jacoco merge mojo (the root pom's ci-coverage-merge profile — the
@@ -693,7 +771,7 @@ jobs:
   # shard failure from a flake retry).
   build-test:
     name: Build & Test (JDK 25)
-    needs: [ build, dependency-review, test-app, test-modules, openapi-gate, graphql-schema-gate, coverage, android-graphql ]
+    needs: [ build, dependency-review, test-app, test-modules, openapi-gate, graphql-schema-gate, coverage, android-graphql, saleor-root-contract, saleor-backend-compatibility ]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -705,4 +783,4 @@ jobs:
             echo "::error::One or more required gates did not pass — see the failed jobs in this run."
             exit 1
           fi
-          echo "All gates green: build + CycloneDX SBOM, dependency review, 8 app shards, modules suite, OpenAPI gate, GraphQL schema gate, Android GraphQL contract gate, coverage gate."
+          echo "All gates green: build + CycloneDX SBOM, dependency review, 8 app shards, modules suite, OpenAPI gate, GraphQL schema gate, Android GraphQL contract gate, Saleor root-contract guard, Saleor Backend Compatibility Gate, coverage gate."

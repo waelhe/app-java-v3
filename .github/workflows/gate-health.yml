@@ -1,0 +1,403 @@
+name: Gate Health Monitor
+
+# G5 closure — defect-knowledge enforcement-map §5 (round 21, 2026-10-27):
+# "gate-health monitoring (E-13's generalization: watch the watchers) is a
+# stated rule (B6) without a dedicated implementation." This workflow is that
+# implementation. E-13's lesson in one line: a gate can run 264 times, fail
+# 102, and still "look deployed" while producing no completed review for days
+# — because nothing distinguished watcher sickness from code verdicts.
+#
+# What this monitor adds (measured live on its first harness run, 2026-10-27
+# 16:49Z, against the real API): per-gate health over a 7-day window; every
+# recent failing CodeRabbit Gate run CLASSIFIED as content (a completed review
+# decided — fix the code) vs provider-refusal (rate limit / skipped — the
+# watcher itself is sick; re-trigger '@coderabbitai review', do NOT touch
+# code); the Production Watchdog treated as an ALARM (its failures are
+# designed paging output, not watcher sickness); independent-review freshness
+# per open PR (latest completed review, bound-to-head or stale); a fail-closed
+# presence check for every declared gate workflow on the running ref.
+#
+# Verdict model (deliberately NOT a merge-required check — it is an alarm, not
+# a blocker; provider outages must not block merges, they must be VISIBLE):
+#   RED  = declared workflow missing on the ref; OR a throughput gate with
+#          runs but zero successes in 7d (E-13's silent form); OR >=3 of the
+#          5 most recent failing CodeRabbit Gate runs are provider refusals
+#          (sustained outage — E-13's live form); OR any monitor API failure
+#          (fail closed).
+#   GREEN = watchers healthy. Content failures are reported, never red —
+#          this monitor answers "are the watchers healthy"; the CI checks
+#          themselves answer "is the code healthy".
+#
+# Trigger semantics (measured, not assumed — corrected 2026-10-27 after the
+# first landing attempt): `schedule` fires ONLY on the default branch — this
+# monitor's nightly run activates when the integration line lands on main.
+# `workflow_dispatch` requires the workflow file to exist on the DEFAULT
+# branch (measured: the API returns 404 for a workflow that never ran and
+# lives only on a non-default ref — the file must land on main first).
+# `pull_request` runs need the PR's merge commit — measured on this branch:
+# PR #723 is conflicted (mergeable: false), so pull_request-triggered runs
+# cannot fire at all while the conflict stands. `push` on the wave branch
+# is therefore the only trigger that runs this monitor DURING the campaign
+# — which is exactly when the gates are stressed and the health verdict
+# must stay live. The push trigger retires itself when the line lands on
+# main: the branch entry stops matching after the wave merges (the nightly
+# schedule takes over as the authoritative copy). Cron offset to :23
+# (never on an hour or quarter boundary) per the watchdog's documented
+# schedule-delay avoidance.
+#
+# Watched set mirrors defect-knowledge enforcement-map §2's gate inventory
+# (single source: keep both in sync). saleor-backend-compatibility.yml is
+# deliberately NOT watched: the standalone file is a superseded copy on the
+# integration line — the gate itself runs as a CI job (measured: run
+# 40529708396, job "Saleor Backend Compatibility Gate", success on 0edf0f69);
+# watching the dead copy false-alarms. The embedded monitor carries the same
+# note in its module docstring.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 3 * * *'
+  push:
+    # The wave branch carries this monitor until the line lands on main.
+    # See the trigger-semantics note above: dispatch needs default-branch
+    # presence (404 until then) and pull_request needs a clean merge commit
+    # (PR #723 is conflicted) — push on this branch is the measured way the
+    # monitor runs during the campaign. Informational only, never a
+    # merge-required check.
+    branches: [ integration/saleor-full-commerce-20261021 ]
+  pull_request:
+    branches: [main]
+
+permissions:
+  actions: read
+  checks: read
+  pull-requests: read
+  contents: read
+
+concurrency:
+  group: gate-health
+  cancel-in-progress: false
+
+jobs:
+  health:
+    name: Gate Health
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Measure gate health (provider refusal vs content failure)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+        run: |
+          # The monitor rides a quoted heredoc into python3: GitHub runs
+          # `run:` blocks with bash regardless of any embedded shebang — the
+          # shebang below is preserved as the script's own header inside the
+          # heredoc. Measured on the first run (2240b750, job 122522276809):
+          # embedding the Python source directly made bash execute the
+          # module docstring as a command (exit 127). The quoted delimiter
+          # 'GATE_HEALTH_EOF' keeps every Python line byte-exact (no shell
+          # expansion), and the harness-first rule still holds: this is the
+          # same script, unchanged, that ran against the live API locally.
+          python3 - <<'GATE_HEALTH_EOF'
+          #!/usr/bin/env python3
+          # -*- coding: utf-8 -*-
+          """Gate Health Monitor — G5 closure (defect-knowledge enforcement-map §5).
+
+          Watches the watchers (rule B6; E-13's generalization): the gates themselves get
+          a health check that DISTINGUISHES provider refusals (the watcher is sick —
+          re-trigger, do not "fix" code) from content failures (the gate failed on real
+          findings — fix the code). E-13 happened because a structurally failing gate
+          "looked deployed": 264 runs, 29 successes, no completed review for days, and
+          nothing distinguished service sickness from code verdicts.
+
+          Semantics per watched unit (deliberate, measured on this repository):
+          - THROUGHPUT gates (CI, integration, CodeQL, scans, contract gates): a gate
+            with runs but ZERO successes in the window is E-13's silent form.
+          - The CodeRabbit Gate (external-service watcher, E-13's subject): every recent
+            failing run is CLASSIFIED — a completed review on that head is a content
+            verdict; a rate-limited/skipped service status is a provider refusal.
+            >=3 provider refusals among the 5 most recent failing runs = sustained
+            outage = RED, with the explicit "NOT a code failure" remedy. (A pure
+            consecutive-streak rule is too brittle: one healthy review squeezed through
+            another PR would mask an ongoing outage — majority-of-recent is the honest
+            form, and it is exactly what E-13's 102-failure window looked like.)
+          - The Production Watchdog is an ALARM: its failures are designed output (the
+            subject — production — is sick), so zero successes is reported, not red;
+            its own sickness form is silence (no runs at all).
+          - saleor-backend-compatibility.yml is deliberately NOT watched: the standalone
+            file is a superseded copy on the integration line — the gate itself runs as
+            a CI job (measured: run 40529708396, job "Saleor Backend Compatibility
+            Gate", success on 0edf0f69); watching the dead copy false-alarms.
+
+          Tested harness-first: this exact code ran locally against the live API before
+          being embedded (unchanged) into .github/workflows/gate-health.yml.
+          """
+          import json
+          import os
+          import sys
+          import time
+          import urllib.request
+          import urllib.error
+          from collections import defaultdict
+
+          # ---------------- tunables (documented thresholds, not magic) ----------------
+          WINDOW_DAYS = 7            # E-13's observed blindness window was "days"
+          MIN_RUNS_STRUCTURAL = 3    # >=3 completed runs with ZERO successes = E-13 class
+          PROVIDER_TOP = 5           # classify the 5 most recent failing runs for the verdict
+          PROVIDER_RED = 3           # >=3 provider refusals among them = sustained outage
+          MAX_CLASSIFY = 15          # classify at most the 15 most recent failing runs (reporting)
+          MAX_PAGES = 15             # API pagination safety roof (1500 runs)
+
+          WATCHED = {
+              "ci.yml": ("throughput", "Build & Test / test shards / OpenAPI, Coverage & Saleor Backend Compatibility gates"),
+              "integration-test.yml": ("throughput", "Full Integration Test"),
+              "codeql.yml": ("throughput", "CodeQL Analyze"),
+              "container-scan.yml": ("throughput", "Trivy / Container Image Scan"),
+              "graphql-contract.yml": ("throughput", "GraphQL Schema Compatibility Gate"),
+              "android-client.yml": ("throughput", "Android GraphQL Contract Gate"),
+              "saleor-canonical-governance.yml": ("throughput", "Saleor Root Contract Gate + canonical plan/schema inventory"),
+              "coderabbit-gate.yml": ("classified", "independent-review watcher (EXTERNAL SERVICE: CodeRabbit) — E-13's subject"),
+              "watchdog.yml": ("alarm", "production probes — failures are designed output (paging)"),
+          }
+          # Deliberately NOT watched (documented): saleor-backend-compatibility.yml
+          # (superseded standalone copy; the gate runs as a CI job — see module docstring),
+          # retired-saleor-pr-guard.yml (retired, supersession markers), and release/ops
+          # tooling (maven-publish, android-release, fork-sync, openrewrite-*, railway-deploy,
+          # saleor-dashboard-upstream-e2e) which are not merge gates.
+
+          TOKEN = os.environ.get("GH_TOKEN", "")
+          REPO = os.environ.get("REPO", "waelhe/app-java-v3")
+          REF = os.environ.get("REF", "")  # the ref this monitor runs on (presence check)
+          API = f"https://api.github.com/repos/{REPO}"
+
+
+          def call(path):
+              req = urllib.request.Request(API + path, headers={
+                  "Authorization": f"Bearer {TOKEN}",
+                  "Accept": "application/vnd.github+json",
+                  "User-Agent": "gate-health-monitor",
+              })
+              with urllib.request.urlopen(req, timeout=60) as r:
+                  return json.load(r)
+
+
+          def iso_now():
+              return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+          def older_than_days(iso, days):
+              # ISO timestamps sort lexicographically within the same format
+              cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - days * 86400))
+              return iso < cutoff
+
+
+          def classify_rabbit_failure(head):
+              """Why did a CodeRabbit Gate run fail on this head?
+              Returns (bucket, note) with bucket in:
+                content          — a completed coderabbitai review exists on this head (real verdict)
+                provider-refusal — the CodeRabbit status itself says rate-limited/skipped
+                no-review        — neither: timeout/activation problem (watcher-side)
+              """
+              # 1) a completed CodeRabbit review bound to this head = the review verdict decided
+              try:
+                  prs = call(f"/commits/{head}/pulls?per_page=5")
+                  for pr in prs:
+                      reviews = call(f"/pulls/{pr['number']}/reviews?per_page=100")
+                      for rv in reviews:
+                          if (rv["user"]["login"] == "coderabbitai[bot]"
+                                  and rv.get("commit_id") == head
+                                  and rv.get("state") not in ("PENDING",)):
+                              return ("content",
+                                      f"completed review {rv['state']} on head {head[:10]} (PR #{pr['number']})")
+              except Exception as e:
+                  return ("lookup-failed", f"review lookup failed: {e}")
+              # 2) the app's own status check on the head tells provider sickness
+              try:
+                  crs = call(f"/commits/{head}/check-runs?per_page=100").get("check_runs", [])
+                  for cr in crs:
+                      if cr["name"] == "CodeRabbit":
+                          title = (cr.get("output") or {}).get("title") or ""
+                          desc = (cr.get("output") or {}).get("summary") or ""
+                          blob = f"{title} {desc}".lower()
+                          if "rate limit" in blob or "rate-limit" in blob:
+                              return ("provider-refusal", f"CodeRabbit status: '{title}' on head {head[:10]}")
+                          if "skipped" in blob:
+                              return ("provider-refusal", f"CodeRabbit status: '{title}' on head {head[:10]} (review skipped)")
+                          if "success" in blob:
+                              return ("no-review", f"CodeRabbit status success but no completed review on head {head[:10]} (gate timed out before the review landed?)")
+                          return ("no-review", f"CodeRabbit status '{title}' on head {head[:10]}")
+              except Exception as e:
+                  return ("lookup-failed", f"check-run lookup failed: {e}")
+              return ("no-review", f"no CodeRabbit status and no completed review on head {head[:10]}")
+
+
+          def main():
+              if not TOKEN:
+                  print("FAIL — no token in GH_TOKEN (fail closed).")
+                  sys.exit(1)
+              report = []
+              red = []
+
+              # ---------- 0) declared workflows exist on this ref (structural presence) ----------
+              ref = REF or "main"
+              for path in WATCHED:
+                  try:
+                      req = urllib.request.Request(
+                          f"https://api.github.com/repos/{REPO}/contents/.github/workflows/{path}?ref={ref}",
+                          headers={"Authorization": f"Bearer {TOKEN}",
+                                   "Accept": "application/vnd.github+json",
+                                   "User-Agent": "gate-health-monitor"})
+                      with urllib.request.urlopen(req, timeout=60) as r:
+                          ok = r.status == 200
+                  except urllib.error.HTTPError as e:
+                      ok = False if e.code == 404 else None
+                  except Exception:
+                      ok = None
+                  if ok is False:
+                      red.append(f"declared gate workflow MISSING on ref {ref}: .github/workflows/{path}")
+                  elif ok is None:
+                      red.append(f"presence check failed for .github/workflows/{path} (fail closed)")
+
+              # ---------- 1) collect in-window workflow runs ----------
+              runs_by_path = defaultdict(list)
+              try:
+                  for page in range(1, MAX_PAGES + 1):
+                      batch = call(f"/actions/runs?per_page=100&page={page}").get("workflow_runs", [])
+                      if not batch:
+                          break
+                      stop = True
+                      for r in batch:
+                          if older_than_days(r["created_at"], WINDOW_DAYS):
+                              continue
+                          stop = False
+                          p = (r.get("path") or "").split("/")[-1]  # basename match: "ci.yml"
+                          if p in WATCHED:
+                              runs_by_path[p].append(r)
+                      if stop:
+                          break
+              except Exception as e:
+                  print(f"FAIL — workflow-runs listing failed (fail closed): {e}")
+                  sys.exit(1)
+
+              # ---------- 2) per-gate health ----------
+              table = []
+              classified_notes = []
+              provider_recent = 0
+              for path, (semantics, role) in WATCHED.items():
+                  runs = runs_by_path.get(path, [])
+                  completed = [r for r in runs if r["status"] == "completed"]
+                  succ = [r for r in completed if r["conclusion"] == "success"]
+                  fail = [r for r in completed if r["conclusion"] == "failure"]
+                  other = [r for r in completed if r["conclusion"] not in ("success", "failure")]
+                  pending = [r for r in runs if r["status"] != "completed"]
+                  status = "GREEN"
+                  if not runs:
+                      status = ("SILENT (no runs in window — for scheduled watchers check the Actions tab; "
+                                "scheduled workflows auto-disable after 60 idle days, per GitHub's documented behavior)")
+                  elif not succ:
+                      status = "NO-SUCCESS"
+                  if semantics == "throughput" and completed and not succ and len(completed) >= MIN_RUNS_STRUCTURAL:
+                      red.append(f"{path}: {len(completed)} completed runs in {WINDOW_DAYS}d, ZERO successes — "
+                                 f"E-13's silent form (the gate — or every subject it watched — produced nothing "
+                                 f"green while looking deployed)")
+                  if semantics == "alarm" and fail:
+                      report.append(f"  - {path} [alarm-firing] {len(fail)} probe failures in window — the watchdog's "
+                                    f"VERDICT is red on its subject (production). That is designed output (paging), "
+                                    f"not watcher sickness; its own sickness form would be SILENT. Check the "
+                                    f"watchdog's incident issues for the subject's state.")
+                  if semantics == "classified":
+                      recent_fail = sorted(fail, key=lambda x: x["created_at"], reverse=True)
+                      for i, r in enumerate(recent_fail[:MAX_CLASSIFY]):
+                          bucket, note = classify_rabbit_failure(r["head_sha"])
+                          classified_notes.append(f"  - {path} [{bucket}] {note}")
+                          if i < PROVIDER_TOP and bucket == "provider-refusal":
+                              provider_recent += 1
+                  table.append((path, role, len(completed), len(succ), len(fail), len(other), len(pending), status))
+
+              # ---------- 3) sustained provider outage on the review watcher (E-13's live form) ----------
+              if provider_recent >= PROVIDER_RED:
+                  red.append(f"coderabbit-gate.yml: {provider_recent} of the {PROVIDER_TOP} most recent failing runs are "
+                             f"provider refusals (rate limit / skipped) — the independent-review watcher itself is sick "
+                             f"for the PRs it owes reviews to. This is NOT a code failure: re-trigger with "
+                             f"'@coderabbitai review' when capacity returns and re-run the gate. E-13's exact live form, "
+                             f"now visible instead of assumed away.")
+
+              # ---------- 4) independent-review freshness on open PRs (E-13's core metric) ----------
+              freshness = []
+              try:
+                  prs = call("/pulls?state=open&per_page=20")
+                  for pr in prs:
+                      head = pr["head"]["sha"]
+                      latest = None
+                      for rv in call(f"/pulls/{pr['number']}/reviews?per_page=100"):
+                          if rv["user"]["login"] == "coderabbitai[bot]" and rv.get("state") != "PENDING":
+                              if latest is None or rv["submitted_at"] > latest["submitted_at"]:
+                                  latest = rv
+                      if latest is None:
+                          freshness.append(f"PR #{pr['number']}: NO completed CodeRabbit review ever "
+                                           f"(head {head[:10]}) — the watcher has never spoken on this PR")
+                      else:
+                          bound = "bound to the CURRENT head" if latest.get("commit_id") == head \
+                              else f"STALE (review on {latest['commit_id'][:10]}, current head {head[:10]})"
+                          freshness.append(f"PR #{pr['number']}: latest completed review {latest['state']} "
+                                           f"@ {latest['submitted_at']} — {bound}")
+              except Exception as e:
+                  red.append(f"open-PR freshness lookup failed (fail closed): {e}")
+
+              # ---------- 5) emit ----------
+              lines = []
+              lines.append(f"# Gate Health Report — {iso_now()} (window: {WINDOW_DAYS} days, ref: {ref})")
+              lines.append("")
+              lines.append("| Gate workflow | Role | completed | success | failure | other | pending | health |")
+              lines.append("|---|---|---|---|---|---|---|---|")
+              for path, role, c, s, f, o, p, status in table:
+                  lines.append(f"| `{path}` | {role} | {c} | {s} | {f} | {o} | {p} | {status} |")
+              lines.append("")
+              lines.append("## Failure classification (CodeRabbit Gate — the external-service watcher)")
+              lines.append("```")
+              if classified_notes:
+                  lines.extend(classified_notes)
+              else:
+                  lines.append("  (no failing CodeRabbit Gate runs classified in window)")
+              lines.append("```")
+              lines.append("")
+              lines.append("## Watchdog & watcher notes")
+              lines.append("```")
+              if report:
+                  lines.extend(report)
+              else:
+                  lines.append("  (no alarm-class watchers firing)")
+              lines.append("```")
+              lines.append("")
+              lines.append("## Independent-review freshness (open PRs)")
+              lines.append("```")
+              if freshness:
+                  lines.extend("  " + f for f in freshness)
+              else:
+                  lines.append("  (no open PRs)")
+              lines.append("```")
+              lines.append("")
+              lines.append("## Verdict")
+              verdict = "RED — watcher sickness detected" if red else "GREEN — all watchers healthy"
+              lines.append(f"**{verdict}**")
+              if red:
+                  lines.append("")
+                  lines.extend(f"- {r}" for r in red)
+              lines.append("")
+              lines.append("Scope honestly stated: workflow-run conclusions only (not per-step logs); "
+                           "presence check limited to this ref; content failures are REPORTED, not "
+                           "red-causing — this monitor answers 'are the watchers healthy', the CI "
+                           "checks themselves answer 'is the code healthy'.")
+              text = "\n".join(lines)
+              print(text)
+              summary = os.environ.get("GITHUB_STEP_SUMMARY")
+              if summary:
+                  with open(summary, "a", encoding="utf-8") as fh:
+                      fh.write(text + "\n")
+              sys.exit(1 if red else 0)
+
+
+          if __name__ == "__main__":
+              main()
+          GATE_HEALTH_EOF
