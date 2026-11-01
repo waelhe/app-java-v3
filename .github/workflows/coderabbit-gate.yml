@@ -237,7 +237,27 @@ jobs:
                       sys.exit(1)
                   time.sleep(60)
 
-          # ---------- Human path: a completed CodeRabbit review decides (unchanged) ----------
+          # ---------- Oversized-candidate path (>100 changed files) ----------
+          # CodeRabbit refuses PRs above its per-review file ceiling (measured on
+          # #787: "Review skipped: 425 files exceed the limit of 100"), so the
+          # direct-review poll below can never succeed for such PRs. The verdict
+          # for an oversized candidate is DEFERRED to the fail-closed coverage
+          # verifier step: shard reviews + blob identity + exact one-to-one
+          # coverage — a supplement, never a bypass and never an unverified
+          # summary. This exit(0) only reaches that step; the verifier's own
+          # exit code decides the gate.
+          file_count, fpage = 0, 1
+          while True:
+              batch = call(f"/pulls/{pr}/files?per_page=100&page={fpage}")
+              file_count += len(batch)
+              if len(batch) < 100:
+                  break
+              fpage += 1
+          if file_count > 100:
+              print(f"CodeRabbit Gate: PR #{pr} carries {file_count} changed paths (> 100); a direct review of this head cannot exist by the bot's file limit. Deferring the verdict to the review-coverage verifier (fail-closed).")
+              sys.exit(0)
+
+          # ---------- Human path (<=100 files): a completed CodeRabbit review decides ----------
           BAD_STATUS = re.compile(r"rate limit|error|fail", re.I)
           deadline = time.time() + 720  # poll up to 12 minutes; re-run the gate run afterwards if it expires
           last_note = ""
@@ -281,3 +301,52 @@ jobs:
                   sys.exit(1)
               time.sleep(30)
           PY
+      - name: Resolve target PR head for coverage verification
+        id: coverage-pr
+        uses: actions/github-script@v9
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr }}
+        with:
+          script: |
+            const number = Number(process.env.PR_NUMBER);
+            if (!Number.isInteger(number) || number < 1) {
+              core.setFailed('A valid PR number is required for review coverage verification.');
+              return;
+            }
+            const { data: pull } = await github.rest.pulls.get({
+              owner: context.repo.owner, repo: context.repo.repo, pull_number: number,
+            });
+            core.setOutput('base_ref', pull.base.ref);
+            core.setOutput('base_sha', pull.base.sha);
+            core.setOutput('head_sha', pull.head.sha);
+            core.setOutput('author_login', pull.user.login);
+            core.setOutput('author_type', pull.user.type || '');
+
+      - name: Checkout trusted review coverage verifier
+        if: steps.coverage-pr.outputs.base_ref == 'main'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.coverage-pr.outputs.base_sha }}
+          path: trusted
+          persist-credentials: false
+
+      # Fetch the candidate manifest through the read-only GitHub API in the
+      # trusted verifier. No code or checkout from the candidate/fork is used.
+      # Bot-authored PRs retain the existing CodeRabbit seat exemption: the
+      # earlier job already gates them on every other required check.
+      - name: Verify exact CodeRabbit file coverage (maximum 100 per review)
+        if: ${{ steps.coverage-pr.outputs.base_ref == 'main' &&
+          steps.coverage-pr.outputs.author_type != 'Bot' &&
+          !endsWith(steps.coverage-pr.outputs.author_login, '[bot]') }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr }}
+          TRUSTED_BASE_SHA: ${{ steps.coverage-pr.outputs.base_sha }}
+        run: >-
+          python3 trusted/.ci/check_coderabbit_review_coverage.py
+          --repository "$GITHUB_REPOSITORY" --pr-number "$PR_NUMBER"
+          --manifest-path docs/governance/campaign/release/coderabbit-review-coverage.json
+          --alternative-config trusted/.ci/coderabbit-review-alternative-checks.json
+          --trusted-base-sha "$TRUSTED_BASE_SHA"
+          --max-files-per-review 100
