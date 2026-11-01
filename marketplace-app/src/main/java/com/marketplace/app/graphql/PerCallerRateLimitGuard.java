@@ -21,6 +21,7 @@ import java.time.Duration;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
@@ -44,7 +45,10 @@ import java.util.function.Function;
  * {@link RateLimiterRegistry#rateLimiter(String, String)} API, so one
  * address can only exhaust itself.</p>
  *
- * <p><b>The caller key is the RIGHTMOST raw X-Forwarded-For entry</b> (falling
+ * <p><b>The caller key is the RIGHTMOST raw X-Forwarded-For entry — of the
+ * LAST header LINE (the third-pass #806 review: {@code getHeader} answers
+ * only the FIRST line of a multi-line header — see
+ * {@link #lastForwardedLine})</b> (falling
  * back to the container's socket peer address when the header is absent) —
  * the single-trusted-proxy rule of the MDN/OWASP guidance: the rightmost
  * entry is the one the trusted edge appended, so a client-supplied spoofed
@@ -127,6 +131,22 @@ public class PerCallerRateLimitGuard {
             @Value("${marketplace.graphql.per-caller-rate-limit.max-tracked-callers:10000}")
             int maxTrackedCallers) {
         this.sharedRegistry = sharedRegistry;
+        // The third-pass #806 review (Minor · Stability): a
+        // max-tracked-callers of 0 or below (e.g. a mis-parsed
+        // environment variable) makes the LRU evict every entry the
+        // moment it is inserted — each request would then find a FRESH
+        // limiter and rate limiting would be silently disabled. Fail
+        // at startup instead: the constructor rejects the
+        // misconfiguration with IllegalArgumentException, the same
+        // contract Spring's own Assert.isTrue enforces for bean
+        // invariants (the framework fails its context on any bean
+        // construction error — a misconfigured guard can never run
+        // disabled).
+        if (maxTrackedCallers < 1) {
+            throw new IllegalArgumentException(
+                    "marketplace.graphql.per-caller-rate-limit.max-tracked-callers must be >= 1, got "
+                            + maxTrackedCallers);
+        }
         // The wave-3 review (Major · Stability): dynamically keyed
         // instances in the AUTO-CONFIGURED registry would grow without
         // bound — the official builder path with a bounded store keeps
@@ -161,9 +181,13 @@ public class PerCallerRateLimitGuard {
      * the wave-4 review (Minor · Security & Privacy): the address key is
      * alone, so an attacker distributing attempts across many addresses
      * faces no limit per victim account (credential stuffing). The key
-     * is the SHA-256 of the NORMALIZED email argument (lower-cased,
-     * trimmed — the same normalization the identity owner applies to
-     * account lookups), never the raw address: the hash is one-way and
+     * is the SHA-256 of the NORMALIZED email argument (trimmed, then
+     * lower-cased with {@link Locale#ROOT} — the identity owner's own
+     * account-lookup normalization, {@code UserAccountAdminService}'s
+     * {@code trim().toLowerCase(Locale.ROOT)}; the JVM-default-locale
+     * variant would split one account's budget across keys under
+     * locale-sensitive alphabets — the third-pass #806 review's Minor
+     * finding), never the raw address: the hash is one-way and
      * fixed-width, so the bounded registry never carries an attacker-
      * controlled key longer than the digest, and the store reveals
      * nothing about the attempted accounts.
@@ -256,7 +280,7 @@ public class PerCallerRateLimitGuard {
         }
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hashed = digest.digest(email.trim().toLowerCase()
+            byte[] hashed = digest.digest(email.trim().toLowerCase(Locale.ROOT)
                     .getBytes(StandardCharsets.UTF_8));
             StringBuilder hex = new StringBuilder(hashed.length * 2);
             for (byte b : hashed) {
@@ -325,8 +349,8 @@ public class PerCallerRateLimitGuard {
                 && webMvc.getWebRequest() instanceof ServletWebRequest servletWebRequest) {
             jakarta.servlet.http.HttpServletRequest request =
                     rootRequestOf(servletWebRequest.getRequest());
-            String forwarded = request.getHeader("X-Forwarded-For");
-            if (forwarded != null && !forwarded.isBlank()) {
+            String forwarded = lastForwardedLine(request);
+            if (forwarded != null) {
                 int lastComma = forwarded.lastIndexOf(',');
                 String rightmost = (lastComma < 0
                         ? forwarded
@@ -338,6 +362,36 @@ public class PerCallerRateLimitGuard {
             return request.getRemoteAddr();
         }
         return null;
+    }
+
+    /**
+     * The LAST X-Forwarded-For header LINE (the third-pass #806 review,
+     * Minor · Security & Privacy). The Jakarta Servlet specification's
+     * {@code getHeader(name)} answers only the FIRST line when the
+     * header arrives on multiple lines — a client-supplied first line
+     * would then displace the trusted edge's own append and key the
+     * budget on a caller-rotated value, re-opening the rotation bypass
+     * the raw-header fix closed. {@code getHeaders(name)} enumerates
+     * ALL lines in delivery order (the specification's own accessor
+     * for multi-valued headers); the LAST line carries the most recent
+     * append — proxies that join into one line (nginx's
+     * {@code $proxy_add_x_forwarded_for}) keep everything on it, and
+     * proxies that add a fresh line append after the client's — so the
+     * RIGHTMOST entry of that line stays the single-trusted-proxy key.
+     * Blank lines are skipped; null means no usable line (the socket
+     * peer fallback applies).
+     */
+    private static String lastForwardedLine(
+            jakarta.servlet.http.HttpServletRequest request) {
+        java.util.Enumeration<String> lines = request.getHeaders("X-Forwarded-For");
+        String last = null;
+        while (lines != null && lines.hasMoreElements()) {
+            String line = lines.nextElement();
+            if (line != null && !line.isBlank()) {
+                last = line;
+            }
+        }
+        return last;
     }
 
     /**
@@ -376,6 +430,13 @@ public class PerCallerRateLimitGuard {
         private final Map<String, E> delegate;
 
         BoundedLruStore(int capacity) {
+            // The class's own invariant, independent of the config
+            // boundary above: a capacity below 1 turns the store into
+            // an always-evict no-op (rate limiting silently disabled).
+            if (capacity < 1) {
+                throw new IllegalArgumentException(
+                        "BoundedLruStore capacity must be >= 1, got " + capacity);
+            }
             this.delegate = new LinkedHashMap<>(16, 0.75f, true) {
                 @Override
                 protected boolean removeEldestEntry(Map.Entry<String, E> eldest) {

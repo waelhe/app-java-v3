@@ -16,6 +16,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.context.request.ServletWebRequest;
 
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -82,15 +83,36 @@ class PerCallerRateLimitGuardTest {
 
     /**
      * A data fetcher environment whose request arrives from the given
-     * socket address (no X-Forwarded-For — the root request's peer) and
-     * carries the email argument the account key derives from. Wired
-     * through the DGS public API: the {@link DgsContext} consumer puts the
-     * context into the {@link GraphQLContext} exactly the way the DGS
-     * framework's own context builder does.
+     * socket address (no X-Forwarded-For — the root request's peer)
+     * and carries the email argument the account key derives from.
+     * Wired through the DGS public API: the {@link DgsContext}
+     * consumer puts the context into the {@link GraphQLContext}
+     * exactly the way the DGS framework's own context builder does.
      */
     private static DataFetchingEnvironment environment(String remoteAddress, String email) {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRemoteAddr(remoteAddress);
+        return environmentFor(request, email);
+    }
+
+    /**
+     * A data fetcher environment whose request carries the
+     * X-Forwarded-For header on TWO lines (the third-pass #806 review's
+     * multi-line scenario): the client-controlled first line and the
+     * trusted edge's appended last line. The servlet container peer is
+     * the edge itself.
+     */
+    private static DataFetchingEnvironment forwardedEnvironment(
+            String firstForwardedLine, String lastForwardedLine, String email) {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("10.0.0.1");
+        request.addHeader("X-Forwarded-For", firstForwardedLine);
+        request.addHeader("X-Forwarded-For", lastForwardedLine);
+        return environmentFor(request, email);
+    }
+
+    private static DataFetchingEnvironment environmentFor(
+            MockHttpServletRequest request, String email) {
         DgsRequestData requestData = new DgsWebMvcRequestData(
                 Map.of(), HttpHeaders.EMPTY, new ServletWebRequest(request));
         DgsContext dgsContext = new DgsContext(null, requestData);
@@ -177,5 +199,85 @@ class PerCallerRateLimitGuardTest {
         // stuffing defense the account budget exists for.
         assertThatThrownBy(() -> guard.acquireAccountPermit(second, SURFACE))
                 .isInstanceOf(RequestNotPermitted.class);
+    }
+
+    /**
+     * The third-pass #806 review (Minor · Stability): a
+     * max-tracked-callers of 0 or below must fail the guard's
+     * construction — under the old store an always-evicting LRU handed
+     * every request a FRESH limiter and rate limiting was silently
+     * disabled.
+     */
+    @Test
+    void maxTrackedCallersBelowOneIsRejectedAtConstruction() {
+        ObjectProvider<RateLimiterRegistry> absent = mock(ObjectProvider.class);
+        when(absent.getIfAvailable()).thenReturn(null);
+        assertThatThrownBy(() -> new PerCallerRateLimitGuard(absent, 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("max-tracked-callers");
+        assertThatThrownBy(() -> new PerCallerRateLimitGuard(absent, -3))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("max-tracked-callers");
+    }
+
+    /**
+     * The third-pass #806 review (Minor · Security & Privacy):
+     * {@code getHeader} answers only the FIRST line of a multi-line
+     * X-Forwarded-For header — a caller rotating the client-supplied
+     * first line would rotate its BUDGET KEY per request and out-run
+     * the per-caller budget entirely. The key must be derived from the
+     * LAST header line: ten requests, each with a DIFFERENT first line
+     * but the same trusted edge append on the last line, exhaust ONE
+     * caller budget — the eleventh rejects.
+     */
+    @Test
+    void theCallerKeyIsTheLastForwardedHeaderLineNeverTheFirst() {
+        PerCallerRateLimitGuard guard = guardWithDefaults();
+        for (int attempt = 0; attempt < 10; attempt++) {
+            DataFetchingEnvironment rotated = forwardedEnvironment(
+                    "spoofed-" + attempt, "203.0.113.10", VICTIM_EMAIL);
+            guard.acquirePermit(rotated, SURFACE);
+        }
+        // The eleventh request rotates its first line again but carries
+        // the SAME edge append: under a first-line key it would open a
+        // FRESH budget; under the last-line key the address budget is
+        // exhausted and the request rejects.
+        DataFetchingEnvironment eleventh = forwardedEnvironment(
+                "spoofed-10", "203.0.113.10", VICTIM_EMAIL);
+        assertThatThrownBy(() -> guard.acquirePermit(eleventh, SURFACE))
+                .isInstanceOf(RequestNotPermitted.class);
+    }
+
+    /**
+     * The third-pass #806 review (Minor · Functional Correctness): the
+     * account key's normalization must be locale-invariant. Under the
+     * Turkish default locale a {@code toLowerCase()} without a locale
+     * maps {@code I} to the dotless {@code ı}, splitting one account's
+     * budget across two keys (INFO@x.com vs info@x.com) and letting an
+     * attacker double its stuffing budget by case-mixing the email.
+     * {@link Locale#ROOT} — the identity owner's own normalization —
+     * keeps both forms on ONE budget.
+     */
+    @Test
+    void theAccountBudgetKeyIsLocaleInvariantUnderTheJvmDefaultLocale() {
+        Locale original = Locale.getDefault();
+        try {
+            Locale.setDefault(Locale.of("tr", "TR"));
+            PerCallerRateLimitGuard guard = guardWithDefaults();
+            // Exhaust the account budget (perAccountGrant 30/min) with
+            // the uppercase form — I is the locale-sensitive character.
+            for (int attempt = 0; attempt < 30; attempt++) {
+                guard.acquireAccountPermit(
+                        environment("203.0.113.10", "INFO@EXAMPLE.COM"), SURFACE);
+            }
+            // The canonical lowercase form must share the SAME budget
+            // (rejected): a default-locale normalization would have
+            // opened a fresh budget for it and accepted.
+            assertThatThrownBy(() -> guard.acquireAccountPermit(
+                    environment("198.51.100.7", "info@example.com"), SURFACE))
+                    .isInstanceOf(RequestNotPermitted.class);
+        } finally {
+            Locale.setDefault(original);
+        }
     }
 }
