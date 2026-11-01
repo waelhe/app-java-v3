@@ -45,23 +45,46 @@ import java.util.function.Function;
  * {@link RateLimiterRegistry#rateLimiter(String, String)} API, so one
  * address can only exhaust itself.</p>
  *
- * <p><b>The caller key is the RIGHTMOST raw X-Forwarded-For entry — of the
- * LAST header LINE (the third-pass #806 review: {@code getHeader} answers
- * only the FIRST line of a multi-line header — see
- * {@link #lastForwardedLine})</b> (falling
- * back to the container's socket peer address when the header is absent) —
- * the single-trusted-proxy rule of the MDN/OWASP guidance: the rightmost
- * entry is the one the trusted edge appended, so a client-supplied spoofed
- * entry (which the edge appends AFTER) can never displace it. Reading the
- * key from the WRAPPED request was the wave-4 #806 review's Major finding:
- * under FRAMEWORK the ForwardedHeaderExtractingRequest wrapper SUPPRESSES
- * the raw header ({@code getHeader} answers null — spring-web 7.0.10
- * bytecode) and answers {@code getRemoteAddr()} with the LEFTMOST XFF
- * entry ({@code ForwardedHeaderUtils#getLeftMostValue} — spring-web
- * 7.0.10 bytecode), which the client controls whenever the trusted edge
- * APPENDS its hop — the attacker rotated a spoofed header per request and
- * out-ran its budget entirely. The guard therefore reads the raw header
- * from the CONTAINER's root request (see {@link #remoteAddressOf}).</p>
+ * <p><b>The caller key follows an explicit TWO-PATH trust policy</b> (the
+ * wave-6 #806 review, Minor · Functional Correctness) — each leg grounded
+ * in a DOCUMENTED contract, never in header parsing heuristics:</p>
+ *
+ * <ul>
+ * <li><b>Internal path</b> (the ROOT request's Host ends with the Railway
+ * private-DNS suffix {@code .railway.internal}): the key is the container's
+ * socket peer address ({@code getRemoteAddr()}). The Railway platform
+ * contract (staff-confirmed, docs.railway.com private networking): requests
+ * over {@code *.railway.internal} SKIP the public edge and its header
+ * sanitization — any service in the same project environment can send its
+ * own forwarding headers, so {@code X-Forwarded-For}/{@code X-Real-IP} are
+ * read NOWHERE on this path. The socket peer IS the caller's identity
+ * inside the project-environment trust boundary (this deployment's one
+ * private caller is its own edge BFF, whose relay target
+ * {@code EDGE_BACKEND_URL=http://app-java-v3.railway.internal:8080} gives
+ * those requests their internal Host).</li>
+ * <li><b>Public path</b> (everything reaching the listener through the
+ * Railway HTTP edge): the key is {@code X-Real-IP} — the header Railway's
+ * edge OVERWRITES on every public request and documents as "the client's
+ * remote IP", its own stated key for public rate limiting — accepted ONLY
+ * when it parses as an IP literal (see {@link #isIpLiteral}); when absent
+ * (direct/local access, tests — no edge, the socket peer IS the client)
+ * the key falls back to {@code getRemoteAddr()}.</li>
+ * </ul>
+ *
+ * <p><b>{@code X-Forwarded-For} is read nowhere:</b> Railway's staff-verified
+ * contract states the edge REPLACES it (caller copies never arrive) but does
+ * NOT guarantee a fixed hop count or topology — "don't depend on the
+ * position of a value or a one-hop limit" — so the previous rightmost-entry
+ * key (the wave-4 fix) could silently collapse onto a shared proxy address
+ * (several clients, one budget), and on the unsanitized internal path a
+ * caller-influenced XFF chain would re-open the very rotation bypass the
+ * guard exists to close. Reading the key from the WRAPPED request had been
+ * the wave-4 #806 review's Major finding: under FRAMEWORK the
+ * ForwardedHeaderExtractingRequest wrapper SUPPRESSES the raw headers
+ * ({@code getHeader} answers null — spring-web 7.0.10 bytecode) and answers
+ * {@code getRemoteAddr()} with the LEFTMOST XFF entry, which the client
+ * controls. The guard therefore reads everything from the CONTAINER's root
+ * request (see {@link #remoteAddressOf}, {@link #rootRequestOf}).</p>
  *
  * <p>The thrown {@link RequestNotPermitted} flows through the surface's
  * existing classification (GraphQlExceptionResolver maps it to the RL-001
@@ -314,34 +337,46 @@ public class PerCallerRateLimitGuard {
     }
 
     /**
-     * The caller key through the DGS request context.
+     * The caller key through the DGS request context — the TWO-PATH trust
+     * policy documented on the class javadoc.
      *
-     * <p><b>The proxy contract (the wave-4 #806 review's Major finding):</b>
-     * production runs {@code server.forward-headers-strategy=FRAMEWORK}
-     * (the ForwardedHeaderFilter — the adopted plan's host/port/scheme
+     * <p><b>Why the ROOT request:</b> production runs
+     * {@code server.forward-headers-strategy=FRAMEWORK} (the
+     * ForwardedHeaderFilter — the adopted plan's host/port/scheme
      * requirement, pinned by the ForwardHeadersProdConfigTest gate), under
      * which the request is wrapped in
      * {@code ForwardedHeaderExtractingRequest}. That wrapper SUPPRESSES the
-     * raw forwarded headers ({@code getHeader("X-Forwarded-For")} answers
-     * null, {@code getHeaders} an empty enumeration — the
+     * raw forwarded headers ({@code getHeader} answers null, {@code
+     * getHeaders} an empty enumeration — the
      * {@code ForwardedHeaderRemovingRequest} parent, verified against
      * spring-web 7.0.10) and answers {@code getRemoteAddr()} with the
      * FRAMEWORK-RESOLVED address — the LEFTMOST XFF entry
      * ({@code ForwardedHeaderUtils#getLeftMostValue}, verified), which the
-     * client controls whenever the trusted edge APPENDS its own hop.
-     * Keying the budget on either of those let one caller rotate a spoofed
-     * header per request and out-run its per-caller budget entirely. The
-     * fix reads the raw edge-delivered header instead: the wrapper chain
-     * is walked to the CONTAINER's root request through the standard
-     * {@code ServletRequestWrapper.getRequest()} composition (jakarta
-     * Servlet spec — no server-specific API), where the edge-delivered
-     * X-Forwarded-For is intact, and the RIGHTMOST entry becomes the key
-     * (the MDN X-Forwarded-For and OWASP rate-limiting guidance for a
-     * SINGLE trusted proxy — a spoofed client value can only ever sit to
-     * its LEFT). With no XFF header present (direct access, tests) the
-     * root's socket peer address is the key. Host/port/scheme resolution
-     * stays the FRAMEWORK wrapper's job; only the SECURITY key's
-     * derivation reads the raw header.</p>
+     * client controls whenever the trusted edge APPENDS its own hop. The
+     * wrapper chain is therefore walked to the CONTAINER's root request
+     * through the standard {@code ServletRequestWrapper.getRequest()}
+     * composition (jakarta Servlet spec — no server-specific API), where
+     * the edge-delivered headers and the raw socket peer are intact.
+     * Host/port/scheme resolution stays the FRAMEWORK wrapper's job; only
+     * the SECURITY key's derivation reads the root.</p>
+     *
+     * <p><b>Internal path:</b> the root's {@code getServerName()} is the
+     * raw Host as delivered (the wrapper never touches it) — on the
+     * Railway private mesh it is {@code app-java-v3.railway.internal}
+     * (the edge BFF's documented relay target). The key is the socket
+     * peer; forwarded headers are not consulted at all (the platform does
+     * not sanitize headers on this path, so none of them can be trusted).</p>
+     *
+     * <p><b>Public path:</b> the key is {@code X-Real-IP} — Railway's edge
+     * overwrites it on every public request and documents it as the
+     * client's remote IP — taken from the LAST non-blank header LINE (the
+     * Jakarta Servlet specification's {@code getHeader} answers only the
+     * FIRST line of a multi-line header; {@code getHeaders(name)}
+     * enumerates ALL lines in delivery order — the same hardening the
+     * third-pass #806 review applied to the previous key), and only when
+     * it parses as an IP literal. Absent or non-literal (direct/local
+     * access, tests) → the socket peer, which on a no-edge path IS the
+     * client.</p>
      */
     private static String remoteAddressOf(DataFetchingEnvironment environment) {
         DgsRequestData requestData = DgsContext.getRequestData(environment);
@@ -349,15 +384,16 @@ public class PerCallerRateLimitGuard {
                 && webMvc.getWebRequest() instanceof ServletWebRequest servletWebRequest) {
             jakarta.servlet.http.HttpServletRequest request =
                     rootRequestOf(servletWebRequest.getRequest());
-            String forwarded = lastForwardedLine(request);
-            if (forwarded != null) {
-                int lastComma = forwarded.lastIndexOf(',');
-                String rightmost = (lastComma < 0
-                        ? forwarded
-                        : forwarded.substring(lastComma + 1)).trim();
-                if (!rightmost.isEmpty()) {
-                    return rightmost;
-                }
+            if (isRailwayInternalPath(request)) {
+                // Internal mesh: the socket peer is the calling service's
+                // identity inside the project-environment trust boundary;
+                // forwarded headers are unsanitized here (Railway's
+                // documented contract) and are read nowhere.
+                return request.getRemoteAddr();
+            }
+            String realIp = lastHeaderLine(request, "X-Real-IP");
+            if (realIp != null && isIpLiteral(realIp)) {
+                return realIp;
             }
             return request.getRemoteAddr();
         }
@@ -365,25 +401,39 @@ public class PerCallerRateLimitGuard {
     }
 
     /**
-     * The LAST X-Forwarded-For header LINE (the third-pass #806 review,
-     * Minor · Security & Privacy). The Jakarta Servlet specification's
-     * {@code getHeader(name)} answers only the FIRST line when the
-     * header arrives on multiple lines — a client-supplied first line
-     * would then displace the trusted edge's own append and key the
-     * budget on a caller-rotated value, re-opening the rotation bypass
-     * the raw-header fix closed. {@code getHeaders(name)} enumerates
-     * ALL lines in delivery order (the specification's own accessor
-     * for multi-valued headers); the LAST line carries the most recent
-     * append — proxies that join into one line (nginx's
-     * {@code $proxy_add_x_forwarded_for}) keep everything on it, and
-     * proxies that add a fresh line append after the client's — so the
-     * RIGHTMOST entry of that line stays the single-trusted-proxy key.
-     * Blank lines are skipped; null means no usable line (the socket
-     * peer fallback applies).
+     * Whether the request arrived over the Railway PRIVATE mesh: the ROOT
+     * request's {@code getServerName()} — the raw Host header as delivered
+     * to the container, port-stripped per the Servlet spec — ends with
+     * {@code .railway.internal} (the platform's documented private-DNS
+     * suffix; this deployment's internal relay target is
+     * {@code app-java-v3.railway.internal}). Compared case-insensitively
+     * under {@link Locale#ROOT} (hostnames are case-insensitive per RFC
+     * 3986 §3.2.2; the wave-4 review taught never to case-map without an
+     * explicit locale). Public edge traffic carries the public domain —
+     * never this suffix — so the suffix is the documented, stable path
+     * discriminator the reviewer's policy asks for.
      */
-    private static String lastForwardedLine(
+    private static boolean isRailwayInternalPath(
             jakarta.servlet.http.HttpServletRequest request) {
-        java.util.Enumeration<String> lines = request.getHeaders("X-Forwarded-For");
+        String host = request.getServerName();
+        return host != null
+                && host.toLowerCase(Locale.ROOT).endsWith(".railway.internal");
+    }
+
+    /**
+     * The LAST non-blank line of the named header. The Jakarta Servlet
+     * specification's {@code getHeader(name)} answers only the FIRST line
+     * when the header arrives on multiple lines — a caller-supplied first
+     * line would displace the trusted edge's value; {@code getHeaders(name)}
+     * enumerates ALL lines in delivery order (the specification's own
+     * accessor for multi-valued headers) and the LAST non-blank line
+     * carries the most recent write — on the public path the edge's
+     * overwrite. Blank lines are skipped; null means no usable line (the
+     * socket-peer fallback applies).
+     */
+    private static String lastHeaderLine(
+            jakarta.servlet.http.HttpServletRequest request, String name) {
+        java.util.Enumeration<String> lines = request.getHeaders(name);
         String last = null;
         while (lines != null && lines.hasMoreElements()) {
             String line = lines.nextElement();
@@ -391,7 +441,51 @@ public class PerCallerRateLimitGuard {
                 last = line;
             }
         }
-        return last;
+        return last == null ? null : last.trim();
+    }
+
+    /**
+     * The include-list matchers behind {@link #isIpLiteral}: all-IPv4 and
+     * all-IPv6 CIDRs through the OFFICIAL Spring Security address
+     * machinery — the same {@code InetAddressParser} the framework's own
+     * {@code IpAddressMatcher} uses for security-sensitive address
+     * decisions. Static (immutable) matchers, built once.
+     */
+    private static final org.springframework.security.util.matcher.InetAddressMatcher
+            ANY_IPV4 =
+            org.springframework.security.util.matcher.InetAddressMatchers.fromIpAddress(
+                    "0.0.0.0/0");
+    private static final org.springframework.security.util.matcher.InetAddressMatcher
+            ANY_IPV6 =
+            org.springframework.security.util.matcher.InetAddressMatchers.fromIpAddress(
+                    "::/0");
+
+    /**
+     * Whether the value parses as an IP literal (either family) — the
+     * gate the public path's {@code X-Real-IP} must pass before it can
+     * key a budget.
+     *
+     * <p><b>Why this machinery and not hand-rolled parsing or bare
+     * {@code InetAddress.getByName}:</b> Spring Security's parser guards
+     * resolution with its own hostname-rejection check (a hostname-shaped
+     * value is rejected BEFORE any resolution can be attempted) and the
+     * JDK's {@code InetAddress.getByName} performs no lookup for
+     * colon- or digit-shaped literals — so validation is DNS-free and
+     * safe on the guard's hot path, while reusing the framework's
+     * tested parser instead of a bespoke regex. Anything unparseable
+     * (hostname-shaped, out-of-range octets, junk) throws inside the
+     * matcher and lands here as {@code false} — a non-literal header
+     * value can never key a budget, exactly the reviewer's demand.</p>
+     */
+    private static boolean isIpLiteral(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        try {
+            return ANY_IPV4.matches(value) || ANY_IPV6.matches(value);
+        } catch (IllegalArgumentException notALiteral) {
+            return false;
+        }
     }
 
     /**

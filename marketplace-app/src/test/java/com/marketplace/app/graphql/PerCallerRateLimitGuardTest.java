@@ -96,18 +96,48 @@ class PerCallerRateLimitGuardTest {
     }
 
     /**
-     * A data fetcher environment whose request carries the
-     * X-Forwarded-For header on TWO lines (the third-pass #806 review's
-     * multi-line scenario): the client-controlled first line and the
-     * trusted edge's appended last line. The servlet container peer is
-     * the edge itself.
+     * A data fetcher environment whose request arrives over the RAILWAY
+     * INTERNAL mesh (the wave-6 #806 review's two-path policy): the root
+     * request's Host is the edge BFF's documented relay target
+     * {@code app-java-v3.railway.internal}, the socket peer is the edge
+     * service's mesh address, and the caller-controlled forwarding
+     * headers ({@code X-Forwarded-For}, {@code X-Real-IP}) carry whatever
+     * the relaying chain chose to send — the platform does not sanitize
+     * headers on this path.
      */
-    private static DataFetchingEnvironment forwardedEnvironment(
-            String firstForwardedLine, String lastForwardedLine, String email) {
+    private static DataFetchingEnvironment internalMeshEnvironment(
+            String forgedForwardedLine, String forgedRealIp, String email) {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRemoteAddr("10.0.0.1");
-        request.addHeader("X-Forwarded-For", firstForwardedLine);
-        request.addHeader("X-Forwarded-For", lastForwardedLine);
+        request.setServerName("app-java-v3.railway.internal");
+        request.addHeader("X-Forwarded-For", forgedForwardedLine);
+        request.addHeader("X-Real-IP", forgedRealIp);
+        return environmentFor(request, email);
+    }
+
+    /**
+     * A data fetcher environment whose request arrives over the PUBLIC
+     * Railway edge path: the Host is the public domain (no
+     * {@code .railway.internal} suffix), the socket peer is the edge
+     * proxy itself, the edge-OWNED {@code X-Real-IP} header may arrive
+     * on two lines (the third-pass #806 review's multi-line hardening
+     * now applied to the real key) and a caller-supplied
+     * {@code X-Forwarded-For} line is present — which the platform
+     * replaces on the public path and the policy must therefore ignore.
+     */
+    private static DataFetchingEnvironment publicEdgeEnvironment(
+            String firstRealIpLine, String lastRealIpLine,
+            String callerSuppliedForwardedLine, String email) {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("100.64.0.7");
+        request.setServerName("app-java-v3-production.up.railway.app");
+        if (firstRealIpLine != null) {
+            request.addHeader("X-Real-IP", firstRealIpLine);
+        }
+        if (lastRealIpLine != null) {
+            request.addHeader("X-Real-IP", lastRealIpLine);
+        }
+        request.addHeader("X-Forwarded-For", callerSuppliedForwardedLine);
         return environmentFor(request, email);
     }
 
@@ -221,31 +251,132 @@ class PerCallerRateLimitGuardTest {
     }
 
     /**
-     * The third-pass #806 review (Minor · Security & Privacy):
-     * {@code getHeader} answers only the FIRST line of a multi-line
-     * X-Forwarded-For header — a caller rotating the client-supplied
-     * first line would rotate its BUDGET KEY per request and out-run
-     * the per-caller budget entirely. The key must be derived from the
-     * LAST header line: ten requests, each with a DIFFERENT first line
-     * but the same trusted edge append on the last line, exhaust ONE
-     * caller budget — the eleventh rejects.
+     * The wave-6 #806 review (Minor · Functional Correctness), internal
+     * leg: the platform contract (staff-confirmed, docs.railway.com) is
+     * that requests over {@code *.railway.internal} SKIP the public edge
+     * and its header sanitization, so forwarded headers there are
+     * caller-influenceable and must be read NOWHERE — the key is the
+     * socket peer (the edge BFF's mesh address). Ten requests, each with
+     * a DIFFERENT forged {@code X-Forwarded-For} line AND a DIFFERENT
+     * forged {@code X-Real-IP}, must exhaust ONE budget (the socket
+     * peer's) — the eleventh rejects. Under the previous rightmost-XFF
+     * key every one of these requests would have opened a FRESH budget
+     * and sailed through.
      */
     @Test
-    void theCallerKeyIsTheLastForwardedHeaderLineNeverTheFirst() {
+    void forgedForwardedHeadersOnTheInternalMeshNeverSplitTheBudget() {
         PerCallerRateLimitGuard guard = guardWithDefaults();
         for (int attempt = 0; attempt < 10; attempt++) {
-            DataFetchingEnvironment rotated = forwardedEnvironment(
-                    "spoofed-" + attempt, "203.0.113.10", VICTIM_EMAIL);
-            guard.acquirePermit(rotated, SURFACE);
+            DataFetchingEnvironment forged = internalMeshEnvironment(
+                    "203.0.113." + attempt + ", 198.51.100.1",
+                    "203.0.113." + attempt,
+                    VICTIM_EMAIL);
+            guard.acquirePermit(forged, SURFACE);
         }
-        // The eleventh request rotates its first line again but carries
-        // the SAME edge append: under a first-line key it would open a
-        // FRESH budget; under the last-line key the address budget is
+        // The eleventh forged request: under a header-derived key it
+        // would open a FRESH budget ("203.0.113.10" was never used);
+        // under the socket-peer key the mesh caller's single budget is
         // exhausted and the request rejects.
-        DataFetchingEnvironment eleventh = forwardedEnvironment(
-                "spoofed-10", "203.0.113.10", VICTIM_EMAIL);
+        DataFetchingEnvironment eleventh = internalMeshEnvironment(
+                "203.0.113.10, 198.51.100.1", "203.0.113.10", VICTIM_EMAIL);
         assertThatThrownBy(() -> guard.acquirePermit(eleventh, SURFACE))
                 .isInstanceOf(RequestNotPermitted.class);
+    }
+
+    /**
+     * The wave-6 #806 review (Minor · Functional Correctness), public
+     * leg: the key is the edge-owned {@code X-Real-IP} — Railway's edge
+     * overwrites it on every public request and documents it as the
+     * client's remote IP — taken from the LAST header line (the
+     * multi-line hardening), with caller-supplied {@code
+     * X-Forwarded-For} ignored entirely (the platform replaces it on
+     * the public path and does not document a fixed hop count, so its
+     * rightmost entry is no identity source). Ten requests with a
+     * stable edge {@code X-Real-IP} but a DIFFERENT caller-supplied XFF
+     * line each exhaust ONE budget — the eleventh rejects.
+     */
+    @Test
+    void thePublicPathKeysOnTheEdgeSetRealIpAndIgnoresForwardedFor() {
+        PerCallerRateLimitGuard guard = guardWithDefaults();
+        for (int attempt = 0; attempt < 10; attempt++) {
+            DataFetchingEnvironment rotated = publicEdgeEnvironment(
+                    "rotated-spoofed-line", "198.51.100.23",
+                    "203.0.113." + attempt, VICTIM_EMAIL);
+            guard.acquirePermit(rotated, SURFACE);
+        }
+        // Same stable edge X-Real-IP, an eleventh rotated XFF line: the
+        // budget keyed on 198.51.100.23 is exhausted — rejected. Under a
+        // caller-influenceable XFF key every request would have opened a
+        // FRESH budget and been accepted.
+        DataFetchingEnvironment eleventh = publicEdgeEnvironment(
+                "rotated-spoofed-line", "198.51.100.23",
+                "203.0.113.10", VICTIM_EMAIL);
+        assertThatThrownBy(() -> guard.acquirePermit(eleventh, SURFACE))
+                .isInstanceOf(RequestNotPermitted.class);
+    }
+
+    /**
+     * The wave-6 #806 review's demand that the header value be verified
+     * as an IP literal BEFORE use: a non-literal {@code X-Real-IP}
+     * (here: a hostname-shaped value) can never key a budget — the key
+     * falls back to the socket peer. Ten requests, each with a
+     * DIFFERENT hostname-shaped {@code X-Real-IP}, must exhaust ONE
+     * budget (the socket peer's) — the eleventh rejects; and a VALID
+     * literal arriving afterwards from the same socket peer keys its OWN
+     * budget (accepted), proving the non-literals never became keys.
+     */
+    @Test
+    void aNonLiteralRealIpCanNeverKeyTheBudget() {
+        PerCallerRateLimitGuard guard = guardWithDefaults();
+        for (int attempt = 0; attempt < 10; attempt++) {
+            DataFetchingEnvironment junk = publicEdgeEnvironment(
+                    null, "attacker-" + attempt + ".evil.example",
+                    "203.0.113.9", VICTIM_EMAIL);
+            guard.acquirePermit(junk, SURFACE);
+        }
+        // The eleventh junk-keyed request: keyed on the socket peer
+        // (100.64.0.7), whose budget the ten requests exhausted.
+        DataFetchingEnvironment eleventh = publicEdgeEnvironment(
+                null, "attacker-10.evil.example", "203.0.113.9", VICTIM_EMAIL);
+        assertThatThrownBy(() -> guard.acquirePermit(eleventh, SURFACE))
+                .isInstanceOf(RequestNotPermitted.class);
+
+        // A VALID literal from the same socket peer keys its OWN budget:
+        // accepted — the non-literals were never used as keys.
+        DataFetchingEnvironment validLiteral = publicEdgeEnvironment(
+                null, "203.0.113.77", "203.0.113.9", VICTIM_EMAIL);
+        assertThatCode(() -> guard.acquirePermit(validLiteral, SURFACE))
+                .doesNotThrowAnyException();
+    }
+
+    /**
+     * The IP-literal gate accepts BOTH families (the reviewer's
+     * "تحقّق من أن القيمة عنوان IP حرفي" — verify the value is an IP
+     * literal): an IPv6 {@code X-Real-IP} keys its OWN budget — ten
+     * requests through the literal exhaust it (the eleventh rejects)
+     * while a DIFFERENT literal from the same socket peer is accepted,
+     * proving the key was the validated IPv6 literal and never the
+     * socket peer.
+     */
+    @Test
+    void anIpv6LiteralRealIpKeysItsOwnBudget() {
+        PerCallerRateLimitGuard guard = guardWithDefaults();
+        for (int attempt = 0; attempt < 10; attempt++) {
+            DataFetchingEnvironment v6 = publicEdgeEnvironment(
+                    null, "2001:db8::1", "203.0.113.9", VICTIM_EMAIL);
+            guard.acquirePermit(v6, SURFACE);
+        }
+        DataFetchingEnvironment eleventh = publicEdgeEnvironment(
+                null, "2001:db8::1", "203.0.113.9", VICTIM_EMAIL);
+        assertThatThrownBy(() -> guard.acquirePermit(eleventh, SURFACE))
+                .isInstanceOf(RequestNotPermitted.class);
+
+        // A different validated literal on the same socket peer: its own
+        // fresh budget — accepted.
+        DataFetchingEnvironment otherLiteral = publicEdgeEnvironment(
+                null, "2001:db8::2", "203.0.113.9", VICTIM_EMAIL);
+        assertThatCode(() -> guard.acquirePermit(otherLiteral, SURFACE))
+                .doesNotThrowAnyException();
     }
 
     /**
