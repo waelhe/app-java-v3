@@ -86,13 +86,35 @@ import java.util.function.Function;
 @Component
 public class PerCallerRateLimitGuard {
 
-    /** The shared configuration name every per-caller instance carries (yml). */
+    /** The shared configuration name every per-caller ADDRESS instance carries (yml). */
     static final String PER_CALLER_CONFIG = "perCallerGrant";
+
+    /**
+     * The shared configuration name every ACCOUNT-keyed instance carries
+     * (yml) — SEPARATE from the address budget (the wave-4 #806 review's
+     * second-cycle Major · Security & Privacy finding).
+     */
+    static final String PER_ACCOUNT_CONFIG = "perAccountGrant";
 
     /** The programmatic default when the shared registry/yml is absent (slices). */
     private static final RateLimiterConfig DEFAULT_PER_CALLER_CONFIG =
             RateLimiterConfig.custom()
                     .limitForPeriod(10)
+                    .limitRefreshPeriod(Duration.ofMinutes(1))
+                    .timeoutDuration(Duration.ZERO)
+                    .build();
+
+    /**
+     * The programmatic account-budget default: STRICTLY EXCEEDS the address
+     * budget so a single address can never alone exhaust an account's
+     * budget — the login-lockout the review demonstrated (ten
+     * {@code tokenCreate} calls with the victim's email) requires at least
+     * three addresses now, while the distributed stuffing cap against one
+     * account stays bounded.
+     */
+    private static final RateLimiterConfig DEFAULT_PER_ACCOUNT_CONFIG =
+            RateLimiterConfig.custom()
+                    .limitForPeriod(30)
                     .limitRefreshPeriod(Duration.ofMinutes(1))
                     .timeoutDuration(Duration.ZERO)
                     .build();
@@ -115,6 +137,7 @@ public class PerCallerRateLimitGuard {
         this.perCallerRegistry = RateLimiterRegistry.custom()
                 .withRegistryStore(new BoundedLruStore<>(maxTrackedCallers))
                 .addRateLimiterConfig(PER_CALLER_CONFIG, DEFAULT_PER_CALLER_CONFIG)
+                .addRateLimiterConfig(PER_ACCOUNT_CONFIG, DEFAULT_PER_ACCOUNT_CONFIG)
                 .build();
     }
 
@@ -129,7 +152,8 @@ public class PerCallerRateLimitGuard {
      *                             limiters raise
      */
     public void acquirePermit(DataFetchingEnvironment environment, String surface) {
-        acquirePermitForKey(environment, surface, remoteAddressKey(environment));
+        acquirePermitForKey(environment, surface, remoteAddressKey(environment),
+                PER_CALLER_CONFIG, DEFAULT_PER_CALLER_CONFIG);
     }
 
     /**
@@ -144,11 +168,30 @@ public class PerCallerRateLimitGuard {
      * controlled key longer than the digest, and the store reveals
      * nothing about the attempted accounts.
      *
+     * <p><b>The account budget rides its OWN {@code perAccountGrant}
+     * configuration, NEVER the address budget's {@code perCallerGrant}
+     * (the wave-4 #806 review's second-cycle Major · Security & Privacy
+     * finding).</b> Sharing the address budget's 10/min let ONE address
+     * burn the victim's ACCOUNT budget — ten {@code tokenCreate} calls
+     * with the victim's email — after which the victim's own login from
+     * their OWN address answered {@code RequestNotPermitted} from the
+     * account budget: a login lockout an unauthenticated attacker
+     * administers remotely. {@code perAccountGrant} strictly EXCEEDS the
+     * address budget (3× by default), so a single address can only ever
+     * consume a third of an account's budget and the legitimate owner
+     * keeps headroom, while distributed credential stuffing against one
+     * account remains capped at the account budget's own limit. Counting
+     * failed attempts only was evaluated and rejected at this layer: the
+     * guard is a pre-flight boundary budget and attempt OUTCOMES are the
+     * identity use case's internals — coupling the boundary to use-case
+     * outcomes would cross the module boundary the Modulith architecture
+     * pins.</p>
+     *
      * @param environment the data fetcher's environment (arguments carry
      *                    the email)
      * @param surface     the surface name — the account instances ride
      *                    {@code <surface>-account:<sha256>} keys with
-     *                    the SAME {@code perCallerGrant} config
+     *                    the SEPARATE {@code perAccountGrant} config
      * @throws RequestNotPermitted the account's own budget is exhausted
      */
     public void acquireAccountPermit(DataFetchingEnvironment environment, String surface) {
@@ -159,17 +202,29 @@ public class PerCallerRateLimitGuard {
             // budget beyond the address permit already taken.
             return;
         }
-        acquirePermitForKey(environment, surface + "-account", accountKey);
+        acquirePermitForKey(environment, surface + "-account", accountKey,
+                PER_ACCOUNT_CONFIG, DEFAULT_PER_ACCOUNT_CONFIG);
     }
 
-    private void acquirePermitForKey(DataFetchingEnvironment environment, String surface, String key) {
-        // The per-caller budget rides the yml's perCallerGrant config when
-        // the shared registry declares it (the full application context);
-        // the guard's own bounded registry owns the instances either way.
+    /**
+     * Consumes one permit of the keyed budget. The CONFIG is resolved per
+     * FAMILY — the address budget rides {@code perCallerGrant}, the account
+     * budget rides the SEPARATE {@code perAccountGrant} (the wave-4 #806
+     * review's second-cycle Major finding: a shared config let one address
+     * exhaust the victim's account budget and lock the victim's login out)
+     * — each from the shared auto-configured registry when it declares it
+     * (the full application context), else the guard's own programmatic
+     * default of that family.
+     */
+    private void acquirePermitForKey(DataFetchingEnvironment environment, String surface, String key,
+                                     String configName, RateLimiterConfig fallback) {
+        // The keyed budgets ride the yml's configs when the shared registry
+        // declares them (the full application context); the guard's own
+        // bounded registry owns the instances either way.
         RateLimiterConfig config = sharedRegistry.getIfAvailable() != null
-                ? sharedRegistry.getObject().getConfiguration(PER_CALLER_CONFIG)
-                        .orElse(DEFAULT_PER_CALLER_CONFIG)
-                : DEFAULT_PER_CALLER_CONFIG;
+                ? sharedRegistry.getObject().getConfiguration(configName)
+                        .orElse(fallback)
+                : fallback;
         RateLimiter limiter = perCallerRegistry.rateLimiter(
                 surface + "-caller:" + key, config);
         if (!limiter.acquirePermission()) {

@@ -60,12 +60,17 @@ class CheckoutGraphQlMapperTest {
     }
 
     @Test
-    void reportsTheLegacyProductLevelLineForTheOwnerSidePurge() {
-        // The wave-4 #806 review (Major · Data Integrity): the line is not
-        // representable on the wire, but a silent skip stranded it in the
-        // cart with its id undiscoverable — the render REPORTS the stale
-        // line's native id so the fetcher layer purges it through the same
-        // owner-authorized use case checkoutLineDelete rides.
+    void neverReportsTheLegacyProductLevelLineForThePurge() {
+        // The wave-4 #806 review's SECOND cycle (Major · Data Integrity):
+        // a product-level line (variantId == null — ADR-0012's deliberate
+        // legacy cart state, still created by CartController.addItem and
+        // served by the legacy REST cart surface with its id) is NOT
+        // staleness. It is excluded from the Saleor wire render (the
+        // pinned reference schema saleor/saleor@3.23.43 declares
+        // CheckoutLine.variant: ProductVariant! — never fabricated) but
+        // it must NEVER be reported for the purge: the earlier contract
+        // fed it to checkoutSpi.deleteLines on every checkout read and
+        // deleted a legitimate, purchasable line from under its owner.
         UUID lineId = UUID.randomUUID();
         CheckoutView checkout = new CheckoutView(
                 UUID.randomUUID(),
@@ -75,8 +80,49 @@ class CheckoutGraphQlMapperTest {
         CheckoutGraphQlMapper.RenderedCheckout rendered = mapper.render(checkout);
 
         assertThat(rendered.checkout().get("lines")).isEqualTo(List.of());
-        assertThat(rendered.staleLineIds()).containsExactly(lineId);
+        assertThat(rendered.checkout().get("quantity")).isEqualTo(0);
+        assertThat(rendered.staleLineIds()).isEmpty();
         verifyNoInteractions(variantReadSpi, variantMapper);
+    }
+
+    @Test
+    void distinguishesTheProductLevelLineFromTheStaleVariantLineInTheSameCart() {
+        // The two unrenderable shapes carry OPPOSITE dispositions: the
+        // product-level line stays unpurged (its home is the legacy REST
+        // surface), while the line whose variant no longer resolves is
+        // reported for the owner-authorized purge (the Saleor cascade
+        // analog). One cart carrying both plus a live line pins the
+        // discrimination the second-cycle review demanded.
+        UUID productLevelLineId = UUID.randomUUID();
+        UUID staleLineId = UUID.randomUUID();
+        UUID liveLineId = UUID.randomUUID();
+        UUID staleVariantId = UUID.randomUUID();
+        UUID liveVariantId = UUID.randomUUID();
+        when(variantReadSpi.findVariantForCheckoutLine(staleVariantId))
+                .thenReturn(Optional.empty());
+        ProductVariantView liveView = new ProductVariantView(
+                liveVariantId, "variant-name", "seller-sku", "ACTIVE",
+                new ProductView(UUID.randomUUID(), "parent-name", null, "ACTIVE"));
+        when(variantReadSpi.findVariantForCheckoutLine(liveVariantId))
+                .thenReturn(Optional.of(liveView));
+        when(variantMapper.toGraphQlProductVariant(liveView)).thenReturn(mock(ProductVariant.class));
+        when(globalIdCodec.encode(CheckoutGraphQlMapper.CHECKOUT_LINE_TYPE, liveLineId))
+                .thenReturn("live-line-global-id");
+        CheckoutView checkout = new CheckoutView(
+                UUID.randomUUID(),
+                List.of(
+                        new CheckoutView.Line(productLevelLineId, null, 3),
+                        new CheckoutView.Line(staleLineId, staleVariantId, 1),
+                        new CheckoutView.Line(liveLineId, liveVariantId, 2)),
+                6);
+
+        CheckoutGraphQlMapper.RenderedCheckout rendered = mapper.render(checkout);
+
+        assertThat(((List<?>) rendered.checkout().get("lines"))).hasSize(1);
+        assertThat(rendered.checkout().get("quantity")).isEqualTo(2);
+        assertThat(rendered.staleLineIds()).containsExactly(staleLineId);
+        verify(variantReadSpi).findVariantForCheckoutLine(staleVariantId);
+        verify(variantReadSpi).findVariantForCheckoutLine(liveVariantId);
     }
 
     @Test

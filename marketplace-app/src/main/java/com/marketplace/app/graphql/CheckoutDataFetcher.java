@@ -391,16 +391,27 @@ public class CheckoutDataFetcher {
 
     /**
      * Renders the checkout for its authorized caller and RECONCILES the
-     * persisted cart with the catalog: the lines the mapper could not
-     * render (a legacy product-level line, or a line whose variant/parent
-     * no longer resolves) are purged through the SAME owner-authorized use
-     * case {@code checkoutLineDelete} rides. Saleor's canonical cascade
-     * contract is restored — a deleted variant takes its lines with it, so
-     * the persisted cart converges with the rendered projection and no
-     * line id is ever hidden from its owner (the wave-4 #806 review's
-     * Major · Data Integrity finding: the silent skip stranded the stale
-     * line with its id undiscoverable while {@code checkoutLineDelete}
-     * demanded exactly that id).
+     * persisted cart with the catalog for the STALE VARIANT lines only —
+     * a line that carries a variant UUID whose variant no longer resolves
+     * (the Saleor cascade analog: a deleted variant takes its lines with
+     * it) is purged through the SAME owner-authorized use case
+     * {@code checkoutLineDelete} rides, so the persisted cart converges
+     * with the rendered projection and no stale line id is ever hidden
+     * from its owner.
+     *
+     * <p><b>A product-level line is NEVER purged here (the wave-4 #806
+     * review's second-cycle Major · Data Integrity finding).</b> A
+     * {@code variantId == null} line is the legacy cart model's
+     * legitimate, purchasable state (ADR-0012), not staleness — the
+     * mapper reports it for no one. It stays excluded from the Saleor
+     * wire render (the pinned reference schema saleor/saleor@3.23.43
+     * declares {@code CheckoutLine.variant: ProductVariant!} — never
+     * fabricated) and remains fully visible and manageable through the
+     * legacy REST cart surface ({@code GET /cart} carries every line
+     * with its id), the surface that created it — exactly the orders
+     * owner's own projection contract
+     * ({@code OrdersService.checkoutView}: "never deleted from the
+     * legacy cart … still served by the legacy REST surface").</p>
      *
      * <p>A purge failure against the use case's OWN documented exceptions
      * (the cart gone concurrently, a validation or conflict outcome) is

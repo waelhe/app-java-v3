@@ -682,6 +682,23 @@ resilience4j:
         limit-for-period: 10
         limit-refresh-period: 1m
         timeout-duration: 0
+      # The wave-4 #806 review (second cycle, Major · Security & Privacy):
+      # the ACCOUNT-keyed budget (PerCallerRateLimitGuard's email-hash
+      # instances — credential-stuffing defense) is SEPARATE from the
+      # address budget above. Riding perCallerGrant's own 10/min let ONE
+      # address burn the victim's ACCOUNT budget (ten tokenCreate calls
+      # with the victim's email) and lock the victim's login out of its
+      # own account for the refresh period — RequestNotPermitted from a
+      # fresh address. perAccountGrant strictly EXCEEDS the address budget
+      # (3×): a single address can only ever consume a third of an
+      # account's budget, so the legitimate owner keeps login headroom,
+      # while distributed stuffing against one account stays capped at
+      # 30 attempts/min (the per-JVM outer ceilings and the address
+      # budgets bound the aggregate).
+      perAccountGrant:
+        limit-for-period: 30
+        limit-refresh-period: 1m
+        timeout-duration: 0
     instances:
       catalog:
         base-config: default
