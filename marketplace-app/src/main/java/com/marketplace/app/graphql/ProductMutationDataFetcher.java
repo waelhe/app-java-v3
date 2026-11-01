@@ -240,15 +240,6 @@ public class ProductMutationDataFetcher {
     }
 
     /**
-     * The bulk list bound (the G4 review;
-     * {@code marketplace.graphql.bulk.max-list-items}, default 200):
-     * a list longer than the bound is rejected BEFORE any command is
-     * built or any item is iterated — the classified validation family
-     * the other transport-level guards answer, never a silent
-     * truncation.
-     */
-
-    /**
      * The per-item domain error entries onto Saleor's bulk error
      * objects — the {@code path} pointer is the item's own index + the
      * domain error's field (the registered ADAPT mapping's own pointer
@@ -271,7 +262,6 @@ public class ProductMutationDataFetcher {
      * The GraphQL Int's own widening onto the row's long minor units —
      * the codegen's Integer boundary meeting the entity's long fact.
      */
-
     private static Long toLongMinor(Integer minor) {
         return minor == null ? null : minor.longValue();
     }

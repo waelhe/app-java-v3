@@ -113,21 +113,27 @@ final class SaleorMutationErrors {
     }
 
     /**
-     * The payload message (the wave-4 review, Major · Security & Privacy):
-     * ONLY the mapped domain exceptions' messages reach the wire — every
-     * one of those is an OPERATOR-AUTHORED sentence (the fetchers' own
-     * validation text), never exception internals. An UNMAPPED throwable
-     * (a {@code DataIntegrityViolationException}'s SQL text, a library's
-     * {@code IllegalArgumentException}) answers the generic rejection —
-     * the raw {@code getMessage()} of an unmapped type is internal detail
-     * the §5 contract never leaks — and the FULL exception goes to the
-     * internal log at WARN for the operator who needs it.
+     * The payload message (the wave-4 review, Major · Security & Privacy;
+     * the wave-7 review, Minor · Security & Privacy): ONLY the mapped
+     * domain exceptions' messages reach the wire — the owner modules'
+     * {@code ApiProblemDetailException} family ({@code
+     * ResourceNotFoundException}, {@code ConflictException}), whose
+     * sentences are operator-authored by construction. JDK and library
+     * types are NEVER authored, no matter who threw them: a raw {@code
+     * getMessage()} can carry property paths, SQL text, enum names or
+     * argument values — internal detail the §5 contract never leaks — so
+     * an unmapped throwable (a {@code DataIntegrityViolationException}'s
+     * SQL text, a library's {@code IllegalArgumentException}, a bean
+     * validation's {@code ConstraintViolationException}) answers the
+     * generic rejection, and the FULL exception goes to the internal log
+     * at WARN for the operator who needs it. Any future authored
+     * validation sentence must travel a domain exception type of the
+     * owner's own API surface (added to {@code authored} below), never a
+     * JDK or library type.
      */
     private static String safeMessage(Throwable failure) {
         boolean authored = failure instanceof ResourceNotFoundException
-                || failure instanceof ConflictException
-                || failure instanceof IllegalArgumentException
-                || failure instanceof jakarta.validation.ConstraintViolationException;
+                || failure instanceof ConflictException;
         if (!authored) {
             log.warn("Mutation failure mapped to the generic payload rejection — "
                             + "the raw message stays internal: {}", failure.getMessage(),

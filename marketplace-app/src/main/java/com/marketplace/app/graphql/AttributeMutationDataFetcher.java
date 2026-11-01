@@ -336,15 +336,6 @@ public class AttributeMutationDataFetcher {
     }
 
     /**
-     * The bulk list bound (the G4 review;
-     * {@code marketplace.graphql.bulk.max-list-items}, default 200):
-     * a list longer than the bound is rejected BEFORE any command is
-     * built or any item is iterated — the classified validation family
-     * the other transport-level guards answer, never a silent
-     * truncation.
-     */
-
-    /**
      * The per-item domain error entries onto Saleor's bulk error objects
      * — the {@code path} pointer is the item's own index + the domain
      * error's field (the registered ADAPT mapping's own pointer shape).
@@ -380,7 +371,6 @@ public class AttributeMutationDataFetcher {
      * contract mirrored at the boundary (a null input is a client error,
      * never a NullPointerException).
      */
-
     private static void requireInput(Object input, String rootName) {
         if (input == null) {
             throw new IllegalArgumentException(rootName + " requires a non-null input");

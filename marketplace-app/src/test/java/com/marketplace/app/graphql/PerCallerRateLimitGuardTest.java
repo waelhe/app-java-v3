@@ -352,30 +352,35 @@ class PerCallerRateLimitGuardTest {
     /**
      * The IP-literal gate accepts BOTH families (the reviewer's
      * "تحقّق من أن القيمة عنوان IP حرفي" — verify the value is an IP
-     * literal): an IPv6 {@code X-Real-IP} keys its OWN budget — ten
-     * requests through the literal exhaust it (the eleventh rejects)
-     * while a DIFFERENT literal from the same socket peer is accepted,
-     * proving the key was the validated IPv6 literal and never the
-     * socket peer.
+     * literal), and the wave-7 review's nitpick (Trivial · Security &
+     * Privacy) keys the IPv6 budget on the /64 PREFIX, not the whole
+     * literal: a client rotating addresses INSIDE its own /64 (SLAAC /
+     * privacy extensions) meets ONE budget — ten requests through
+     * {@code 2001:db8::1} exhaust it, and the eleventh REJECTS even from
+     * a different address of that same /64 — while a literal from a
+     * DIFFERENT /64 keys a fresh budget (accepted). Without the
+     * normalization the rotation split the allowance into per-address
+     * budgets and churned the bounded caller store.
      */
     @Test
-    void anIpv6LiteralRealIpKeysItsOwnBudget() {
+    void anIpv6LiteralKeysItsSlash64PrefixBudget() {
         PerCallerRateLimitGuard guard = guardWithDefaults();
         for (int attempt = 0; attempt < 10; attempt++) {
             DataFetchingEnvironment v6 = publicEdgeEnvironment(
                     null, "2001:db8::1", "203.0.113.9", VICTIM_EMAIL);
             guard.acquirePermit(v6, SURFACE);
         }
-        DataFetchingEnvironment eleventh = publicEdgeEnvironment(
-                null, "2001:db8::1", "203.0.113.9", VICTIM_EMAIL);
-        assertThatThrownBy(() -> guard.acquirePermit(eleventh, SURFACE))
+        // Rotation INSIDE the exhausted /64: no fresh budget — the
+        // eleventh request rejects from a different address of that /64.
+        DataFetchingEnvironment rotated = publicEdgeEnvironment(
+                null, "2001:db8::2", "203.0.113.9", VICTIM_EMAIL);
+        assertThatThrownBy(() -> guard.acquirePermit(rotated, SURFACE))
                 .isInstanceOf(RequestNotPermitted.class);
 
-        // A different validated literal on the same socket peer: its own
-        // fresh budget — accepted.
-        DataFetchingEnvironment otherLiteral = publicEdgeEnvironment(
-                null, "2001:db8::2", "203.0.113.9", VICTIM_EMAIL);
-        assertThatCode(() -> guard.acquirePermit(otherLiteral, SURFACE))
+        // A DIFFERENT /64: its own fresh budget — accepted.
+        DataFetchingEnvironment otherPrefix = publicEdgeEnvironment(
+                null, "2001:db8:0:1::1", "203.0.113.9", VICTIM_EMAIL);
+        assertThatCode(() -> guard.acquirePermit(otherPrefix, SURFACE))
                 .doesNotThrowAnyException();
     }
 

@@ -66,9 +66,11 @@ import java.util.function.Function;
  * Railway HTTP edge): the key is {@code X-Real-IP} — the header Railway's
  * edge OVERWRITES on every public request and documents as "the client's
  * remote IP", its own stated key for public rate limiting — accepted ONLY
- * when it parses as an IP literal (see {@link #isIpLiteral}); when absent
- * (direct/local access, tests — no edge, the socket peer IS the client)
- * the key falls back to {@code getRemoteAddr()}.</li>
+ * when it parses as an IP literal (see {@link #isIpLiteral}) and then
+ * normalized to the caller's routable PREFIX (see {@link #budgetKeyOf}:
+ * IPv6 collapses to its /64, IPv4 stands whole); when absent (direct/local
+ * access, tests — no edge, the socket peer IS the client) the key falls
+ * back to {@code getRemoteAddr()}.</li>
  * </ul>
  *
  * <p><b>{@code X-Forwarded-For} is read nowhere:</b> Railway's staff-verified
@@ -393,7 +395,7 @@ public class PerCallerRateLimitGuard {
             }
             String realIp = lastHeaderLine(request, "X-Real-IP");
             if (realIp != null && isIpLiteral(realIp)) {
-                return realIp;
+                return budgetKeyOf(realIp);
             }
             return request.getRemoteAddr();
         }
@@ -442,6 +444,38 @@ public class PerCallerRateLimitGuard {
             }
         }
         return last == null ? null : last.trim();
+    }
+
+    /**
+     * The budget key for a VALIDATED IP literal (the wave-7 review's
+     * nitpick, Trivial · Security & Privacy): IPv4 literals pass through
+     * whole (a /32 IS the caller's own address), while IPv6 literals
+     * collapse to their <b>/64 prefix</b> — the smallest allocation an end
+     * site receives (RFC 4291's subnet boundary). Without the collapse, a
+     * single IPv6 client rotating SLAAC or privacy-extension addresses
+     * INSIDE its own /64 mints a fresh budget per address — splitting the
+     * 10-per-minute allowance into N independent budgets — and churns the
+     * bounded caller store, evicting honest callers' entries.
+     *
+     * <p>The parse is DNS-free by construction: the input has already
+     * passed {@link #isIpLiteral} (a hostname-shaped value never reaches
+     * this method), and the JDK resolves digit/colon-shaped literals
+     * locally. The internal path's socket peer needs no normalization —
+     * the mesh addresses are RFC 1918/ULA, one stable peer per edge
+     * process.</p>
+     */
+    private static String budgetKeyOf(String ipLiteral) {
+        try {
+            byte[] octets = java.net.InetAddress.getByName(ipLiteral).getAddress();
+            if (octets.length != 16) {
+                return ipLiteral; // IPv4 (4 bytes): the address itself IS the /32 key
+            }
+            byte[] prefix = octets.clone();
+            java.util.Arrays.fill(prefix, 8, 16, (byte) 0);
+            return java.net.InetAddress.getByAddress(prefix).getHostAddress();
+        } catch (java.net.UnknownHostException unparseable) {
+            return ipLiteral; // unreachable for a validated literal; fail to the literal, never DNS
+        }
     }
 
     /**

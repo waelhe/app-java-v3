@@ -301,8 +301,15 @@ public class UserManagementDataFetcher {
         return com.marketplace.app.graphql.generated.types.CustomerBulkUpdateError.newBuilder()
                 .field(null)
                 .message(result.errorMessage())
-                .code(com.marketplace.app.graphql.generated.types.CustomerBulkUpdateErrorCode
-                        .valueOf(result.errorCode()))
+                // The wave-7 review (Minor · Data Integrity): the payload's
+                // own vocabulary is the only representable surface — a
+                // native code it lacks (ALREADY_EXISTS has no
+                // CustomerBulkUpdateErrorCode constant) translated through
+                // the shared contract, never a raw valueOf that destroys
+                // the payload build.
+                .code(SaleorMutationErrors.translate(
+                        com.marketplace.app.graphql.generated.types.CustomerBulkUpdateErrorCode.class,
+                        result.errorCode()))
                 .build();
     }
 

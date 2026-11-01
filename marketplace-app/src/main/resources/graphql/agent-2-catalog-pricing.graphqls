@@ -1889,11 +1889,11 @@ input CollectionWhereInput {
 }
 
 input CollectionSortingInput {
-    """The sort direction."""
-    direction: OrderDirection
+    """The sort direction (the wave-7 review: Saleor's contract declares it non-null)."""
+    direction: OrderDirection!
 
-    """The sort field (NAME has the owning fact; PRODUCT_COUNT answers the classified error)."""
-    field: CollectionSortField
+    """The sort field (NAME has the owning fact; PRODUCT_COUNT answers the classified error). Saleor's contract declares it non-null."""
+    field: CollectionSortField!
 }
 
 enum CollectionSortField {

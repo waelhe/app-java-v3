@@ -66,6 +66,22 @@ public class CheckoutDataFetcher {
 
     private static final int MAX_LINE_QUANTITY = 1000;
 
+    /**
+     * The wire sentences (the wave-7 review, Minor · Security & Privacy):
+     * the classified CODE is the payload's contract anchor; the MESSAGE is
+     * a fixed, operator-authored sentence. The owner exceptions' own texts
+     * stay internal (logged with the full exception), never reach the
+     * client, and no change to them can ever mutate the wire contract.
+     */
+    private static final String CHECKOUT_NOT_FOUND = "Checkout not found";
+    private static final String LINE_NOT_FOUND = "Checkout line not found";
+    private static final String LINE_INVALID =
+            "The checkout line item is invalid for this operation";
+    private static final String LINE_UNAVAILABLE =
+            "A product variant is unavailable for purchase";
+    private static final String LINE_CONFLICT =
+            "The checkout line item is in a conflicting state";
+
     /** D-UUID-001: the identifiers are mutually exclusive per request. */
     private static final String ONLY_ONE_CHECKOUT_IDENTIFIER =
             "Only one checkout identifier may be supplied (id, checkoutId, or token)";
@@ -160,11 +176,14 @@ public class CheckoutDataFetcher {
         try {
             updated = checkoutSpi.addLines(cartId, requested, authentication);
         } catch (ResourceNotFoundException exception) {
-            return payload(null, List.of(error("id", exception.getMessage(), "NOT_FOUND")), true, authentication);
+            log.info("checkoutLinesAdd rejected NOT_FOUND — {}", exception.getMessage(), exception);
+            return payload(null, List.of(error("id", CHECKOUT_NOT_FOUND, "NOT_FOUND")), true, authentication);
         } catch (BadRequestException exception) {
-            return payload(null, List.of(error("lines", exception.getMessage(), "INVALID")), true, authentication);
+            log.info("checkoutLinesAdd rejected INVALID — {}", exception.getMessage(), exception);
+            return payload(null, List.of(error("lines", LINE_INVALID, "INVALID")), true, authentication);
         } catch (ConflictException exception) {
-            return payload(null, List.of(error("lines", exception.getMessage(), "PRODUCT_UNAVAILABLE_FOR_PURCHASE")), true, authentication);
+            log.info("checkoutLinesAdd rejected PRODUCT_UNAVAILABLE_FOR_PURCHASE — {}", exception.getMessage(), exception);
+            return payload(null, List.of(error("lines", LINE_UNAVAILABLE, "PRODUCT_UNAVAILABLE_FOR_PURCHASE")), true, authentication);
         }
         return payload(updated, List.of(), true, authentication);
     }
@@ -215,11 +234,14 @@ public class CheckoutDataFetcher {
         try {
             updated = checkoutSpi.updateLines(cartId, requested, authentication);
         } catch (ResourceNotFoundException exception) {
-            return payload(null, List.of(error("lines", exception.getMessage(), "NOT_FOUND")), true, authentication);
+            log.info("checkoutLinesUpdate rejected NOT_FOUND — {}", exception.getMessage(), exception);
+            return payload(null, List.of(error("lines", CHECKOUT_NOT_FOUND, "NOT_FOUND")), true, authentication);
         } catch (BadRequestException exception) {
-            return payload(null, List.of(error("lines", exception.getMessage(), "INVALID")), true, authentication);
+            log.info("checkoutLinesUpdate rejected INVALID — {}", exception.getMessage(), exception);
+            return payload(null, List.of(error("lines", LINE_INVALID, "INVALID")), true, authentication);
         } catch (ConflictException exception) {
-            return payload(null, List.of(error("lines", exception.getMessage(), "INVALID")), true, authentication);
+            log.info("checkoutLinesUpdate rejected INVALID (conflict) — {}", exception.getMessage(), exception);
+            return payload(null, List.of(error("lines", LINE_CONFLICT, "INVALID")), true, authentication);
         }
         return payload(updated, List.of(), true, authentication);
     }
@@ -253,11 +275,14 @@ public class CheckoutDataFetcher {
         try {
             updated = checkoutSpi.deleteLines(cartId, requested, authentication);
         } catch (ResourceNotFoundException exception) {
-            return payload(null, List.of(error("id", exception.getMessage(), "NOT_FOUND")), false, authentication);
+            log.info("checkoutLinesDelete rejected NOT_FOUND — {}", exception.getMessage(), exception);
+            return payload(null, List.of(error("id", CHECKOUT_NOT_FOUND, "NOT_FOUND")), false, authentication);
         } catch (BadRequestException exception) {
-            return payload(null, List.of(error("linesIds", exception.getMessage(), "INVALID")), false, authentication);
+            log.info("checkoutLinesDelete rejected INVALID — {}", exception.getMessage(), exception);
+            return payload(null, List.of(error("linesIds", LINE_INVALID, "INVALID")), false, authentication);
         } catch (ConflictException exception) {
-            return payload(null, List.of(error("linesIds", exception.getMessage(), "INVALID")), false, authentication);
+            log.info("checkoutLinesDelete rejected INVALID (conflict) — {}", exception.getMessage(), exception);
+            return payload(null, List.of(error("linesIds", LINE_CONFLICT, "INVALID")), false, authentication);
         }
         return payload(updated, List.of(), false, authentication);
     }
@@ -282,9 +307,11 @@ public class CheckoutDataFetcher {
         try {
             updated = checkoutSpi.deleteLines(cartId, List.of(decodedLineId), authentication);
         } catch (ResourceNotFoundException exception) {
-            return payload(null, List.of(error("lineId", exception.getMessage(), "NOT_FOUND")), true, authentication);
+            log.info("checkoutLineDelete rejected NOT_FOUND — {}", exception.getMessage(), exception);
+            return payload(null, List.of(error("lineId", LINE_NOT_FOUND, "NOT_FOUND")), true, authentication);
         } catch (BadRequestException | ConflictException exception) {
-            return payload(null, List.of(error("lineId", exception.getMessage(), "INVALID")), true, authentication);
+            log.info("checkoutLineDelete rejected INVALID — {}", exception.getMessage(), exception);
+            return payload(null, List.of(error("lineId", LINE_INVALID, "INVALID")), true, authentication);
         }
         return payload(updated, List.of(), true, authentication);
     }
@@ -302,7 +329,8 @@ public class CheckoutDataFetcher {
             checkoutSpi.deleteAsAdmin(cartId);
             return deletePayload(List.of());
         } catch (ResourceNotFoundException exception) {
-            return deletePayload(List.of(error("id", exception.getMessage(), "NOT_FOUND")));
+            log.info("checkoutDelete rejected NOT_FOUND — {}", exception.getMessage(), exception);
+            return deletePayload(List.of(error("id", CHECKOUT_NOT_FOUND, "NOT_FOUND")));
         }
     }
 
