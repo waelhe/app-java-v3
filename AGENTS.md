@@ -21,13 +21,14 @@ This file adds project-specific conventions.
      - community layer        → docs/neighborhood-community-plan.md
      - unified platform       → docs/unified-platform-plan.md
      - Saleor Dashboard/full commerce schema → docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md
+     - Saleor domain/skill/source/test routing → docs/governance/campaign/saleor-domain-knowledge-map.md (companion index; never overrides the canonical plan, pins, frozen contracts or divergence decisions)
      - إصلاح أخر               → الملف المعني + CODING_STANDARDS.md
 4. ثم الشجرة المستهدفة من خريطة §10
 5. نظام معرفة العيوب `docs/governance/defect-knowledge/` — **إلزامي مع كل تعديل كود**: `change-protocol.md` (قبل/أثناء/بعد) + قواعد `rulebook.md` §B المُحمّلة اختيارياً بمحفزات الخطر + `pattern-catalog.md` عند أي شك في نمط متكرر
 ```
 قاعدة: «الملف الحاكم» = المستند الذي يملك قرارات المهمة. لا يقبَل إجراء بلا إسناد صريح إليه.
 
-قاعدة خاصة بـSaleor (ملزمة): أي عمل على Dashboard/عقد التجارة/مخطط GraphQL يخضع حصريًا لـ`docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md`. الوثيقتان `saleor-dashboard-marketplace-adaptation-plan.md` و`saleor-schema-parity-plan.md` تاريخيتان فقط ولا يجوز اختيار أي منهما ملفًا حاكمًا. يتحقق CI من علامة الإلغاء ورابط الخطة الجديدة؛ لا تُحذف أدلة التاريخ. كل اختلاف عن العقد المرجعي يجب تسجيله في `docs/governance/plans/saleor-contract-divergences.csv` مع مالك واختبارات وحالة موافقة/ADR؛ لا يمر P7 مع اختلاف غير معتمد. لا تُحسب مطابقة أسماء الجذور على أنها اكتمال دلالي.
+قاعدة خاصة بـSaleor (ملزمة): أي عمل على Dashboard/عقد التجارة/مخطط GraphQL يخضع حصريًا لـ`docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md`. الوثيقتان `saleor-dashboard-marketplace-adaptation-plan.md` و`saleor-schema-parity-plan.md` تاريخيتان فقط ولا يجوز اختيار أي منهما ملفًا حاكمًا. يتحقق CI من علامة الإلغاء ورابط الخطة الجديدة؛ لا تُحذف أدلة التاريخ. كل اختلاف عن العقد المرجعي يجب تسجيله في `docs/governance/plans/saleor-contract-divergences.csv` مع مالك واختبارات وحالة موافقة/ADR؛ لا يمر P7 مع اختلاف غير معتمد. لا تُحسب مطابقة أسماء الجذور على أنها اكتمال دلالي. قبل تنفيذ أي مجال Saleor، اقرأ أيضًا `docs/governance/campaign/saleor-domain-knowledge-map.md` لتحديد مصادر الوثائق والمهارات والاختبارات والاعتماديات بين المجالات؛ هذه الخريطة لا تنشئ سجل جذور بديلًا ولا تتجاوز الخطة الحاكمة.
 
 ### 0.2 قبل أي إجراء، أعلن بنص صريح (لا ضمنياً)
 ```text
