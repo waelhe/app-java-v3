@@ -4,7 +4,6 @@ import graphql.schema.DataFetchingEnvironment;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
-import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
@@ -32,7 +31,7 @@ import org.springframework.stereotype.Component;
 @Aspect
 @Component
 @Order(PerCallerBudgetAspect.ORDER)
-public class PerCallerBudgetAspect implements Ordered {
+public class PerCallerBudgetAspect {
 
     /**
      * Precedes resilience4j's RateLimiterAspect (default order 405) — the
