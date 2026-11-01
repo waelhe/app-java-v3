@@ -623,4 +623,23 @@ class AgentOneMutationDgsTest {
                 """.formatted(globalId("User", USER_ID)), "data.accountUpdate"))
                 .hasMessageContaining("app impersonation");
     }
+    /**
+     * The 2026-11-02 #806 review (Minor · Stability): the payload
+     * vocabulary translation's own contract promises the
+     * {@code GRAPHQL_ERROR} fallback and a never-null return — an
+     * absent native code (an SPI row result's null error code) must
+     * answer the fallback, never the {@code Enum.valueOf} NPE the old
+     * lookup threw past the catch ladder.
+     */
+    @Test
+    void translateAnswersTheFallbackWhenTheNativeCodeIsAbsent() {
+        assertThat(SaleorMutationErrors.translate(
+                com.marketplace.app.graphql.generated.types.CustomerBulkUpdateErrorCode.class,
+                (String) null))
+                .isEqualTo(com.marketplace.app.graphql.generated.types.CustomerBulkUpdateErrorCode.GRAPHQL_ERROR);
+        assertThat(SaleorMutationErrors.translate(
+                com.marketplace.app.graphql.generated.types.ProductErrorCode.class,
+                (String) null))
+                .isEqualTo(com.marketplace.app.graphql.generated.types.ProductErrorCode.GRAPHQL_ERROR);
+    }
 }

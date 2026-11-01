@@ -132,26 +132,38 @@ public class UserManagementDataFetcher {
         if (customers == null || customers.isEmpty()) {
             throw new IllegalArgumentException("A list of customer updates is required");
         }
-        boolean ignoreFailed = errorPolicy == ErrorPolicyEnum.IGNORE_FAILED;
+        // The 2026-11-02 #806 review (Minor · Functional Correctness):
+        // the row-level policies are BOTH of Saleor's contract members
+        // that keep the valid rows — IGNORE_FAILED and
+        // REJECT_FAILED_ROWS ride the SAME per-row mode at the identity
+        // SPI (its boolean answers row-level vs all-or-nothing), while
+        // REJECT_EVERYTHING (the null default) alone stays
+        // all-or-nothing. Silently converting REJECT_FAILED_ROWS to the
+        // all-or-nothing mode broke the pinned contract: one
+        // unresolvable row threw and failed the whole batch instead of
+        // failing ITSELF.
+        boolean rowLevel = errorPolicy == ErrorPolicyEnum.IGNORE_FAILED
+                || errorPolicy == ErrorPolicyEnum.REJECT_FAILED_ROWS;
         List<UUID> ids = new ArrayList<>(customers.size());
         List<UserWriteFields> rows = new ArrayList<>(customers.size());
         for (CustomerBulkUpdateInput row : customers) {
             // The shard review (Minor · Functional Correctness, 2026-11-01):
-            // with IGNORE_FAILED, one unresolvable row must fail ITSELF —
-            // never the whole batch. Saleor's errorPolicy contract keeps
-            // the valid rows and reports the failure per-row in
-            // results[i].errors; a null id answers the per-row failure.
-            // The wave-3 review moved toFields INSIDE the same guard: its
-            // classified not-implemented rejections (the wave-2 honesty
-            // fix) are row-level validation failures — one bad row must
-            // fail itself, not the batch (the identity owner's
-            // bulkUpdateCustomers answers the per-row INVALID for a null
-            // id — the null-pairing path the catch ladder already uses).
+            // with a row-level policy, one unresolvable row must fail
+            // ITSELF — never the whole batch. Saleor's errorPolicy
+            // contract keeps the valid rows and reports the failure
+            // per-row in results[i].errors; a null id answers the
+            // per-row failure. The wave-3 review moved toFields INSIDE
+            // the same guard: its classified not-implemented rejections
+            // (the wave-2 honesty fix) are row-level validation
+            // failures — one bad row must fail itself, not the batch
+            // (the identity owner's bulkUpdateCustomers answers the
+            // per-row INVALID for a null id — the null-pairing path the
+            // catch ladder already uses).
             try {
                 ids.add(resolveTarget(row.getExternalReference(), row.getId()));
                 rows.add(toFields(row.getInput()));
             } catch (RuntimeException rowFailure) {
-                if (!ignoreFailed) {
+                if (!rowLevel) {
                     throw rowFailure;
                 }
                 ids.add(null);
@@ -160,7 +172,7 @@ public class UserManagementDataFetcher {
         }
         List<com.marketplace.identity.spi.BulkRowResult> results =
                 userManagementSpi.bulkUpdateCustomers(currentAuthentication(), ids, rows,
-                        ignoreFailed);
+                        rowLevel);
         List<com.marketplace.app.graphql.generated.types.CustomerBulkResult> wireResults =
                 new ArrayList<>(results.size());
         for (com.marketplace.identity.spi.BulkRowResult result : results) {

@@ -195,6 +195,19 @@ public class ProductMutationDataFetcher {
      * policy rides the command (null = the REJECT_EVERYTHING default);
      * the per-item domain outcomes render as Saleor's per-item results
      * entries.
+     *
+     * <p>The 2026-11-02 #806 review (Minor · Functional Correctness):
+     * the pinned contract's row-level policies answer at ROW level for
+     * a malformed {@code productType} reference too — a Global ID the
+     * codec refuses is a row refusal, never a batch failure. At
+     * {@code IGNORE_FAILED}/{@code REJECT_FAILED_ROWS} the refused row
+     * answers its own {@code results[i].errors} entry (the boundary's
+     * classified INVALID, the raw refusal message staying internal) and
+     * the valid rows ride the SPI batch; at REJECT_EVERYTHING the
+     * refusal still fails the whole call. A refused row NEVER reaches
+     * the SPI as a null-productType command — null means the
+     * single-row path's legitimate zero-variant create, not a refusal
+     * (the ProductWriteSpi contract licenses no such sentinel).</p>
      */
     @DgsMutation(field = DgsConstants.MUTATION.ProductBulkCreate)
     @RateLimiter(name = "graphqlStoreProductMutation")
@@ -205,24 +218,50 @@ public class ProductMutationDataFetcher {
             throw new IllegalArgumentException("productBulkCreate requires a non-empty list of products");
         }
         properties.requireBoundedList(products, "productBulkCreate");
-        List<ProductCreateCommand> commands = new ArrayList<>(products.size());
-        for (ProductBulkCreateInput product : products) {
+        boolean rowLevel = errorPolicy == ErrorPolicyEnum.IGNORE_FAILED
+                || errorPolicy == ErrorPolicyEnum.REJECT_FAILED_ROWS;
+        int size = products.size();
+        List<ProductCreateCommand> commands = new ArrayList<>(size);
+        // The per-row stage: null = the row rides the SPI batch at the
+        // next command position; non-null = the boundary refused the row
+        // (the decode refusal) and its result is fixed here.
+        @SuppressWarnings("unchecked")
+        List<ProductBulkCreateError>[] rowRefusals = new List[size];
+        for (int i = 0; i < size; i++) {
+            ProductBulkCreateInput product = products.get(i);
             if (product.getProductType() == null) {
                 throw new IllegalArgumentException(
                         "productBulkCreate requires every item to carry its productType reference");
             }
-            UUID productTypeId = globalIdCodec.decode(
-                    product.getProductType(), ProductGraphQlMapper.PRODUCT_TYPE_REFERENCE);
-            commands.add(new ProductCreateCommand(product.getName(), product.getDescription(),
-                    product.getStoreCategoryCode(), toLongMinor(product.getPriceMinor()),
-                    product.getCurrency(), productTypeId));
+            try {
+                UUID productTypeId = globalIdCodec.decode(
+                        product.getProductType(), ProductGraphQlMapper.PRODUCT_TYPE_REFERENCE);
+                commands.add(new ProductCreateCommand(product.getName(), product.getDescription(),
+                        product.getStoreCategoryCode(), toLongMinor(product.getPriceMinor()),
+                        product.getCurrency(), productTypeId));
+            } catch (RuntimeException decodeRefusal) {
+                if (!rowLevel) {
+                    throw decodeRefusal;
+                }
+                rowRefusals[i] = List.of(decodeRefusalError(i, decodeRefusal));
+            }
         }
-        List<ProductBulkOutcome> outcomes = productWriteSpi.bulkCreateProducts(
-                commands, currentAuthentication(), errorPolicy == null ? null : errorPolicy.name());
-        List<ProductBulkResult> results = new ArrayList<>(outcomes.size());
+        List<ProductBulkOutcome> outcomes = commands.isEmpty()
+                ? List.of()
+                : productWriteSpi.bulkCreateProducts(
+                        commands, currentAuthentication(),
+                        errorPolicy == null ? null : errorPolicy.name());
+        List<ProductBulkResult> results = new ArrayList<>(size);
         int count = 0;
-        for (int i = 0; i < outcomes.size(); i++) {
-            ProductBulkOutcome outcome = outcomes.get(i);
+        int commandIndex = 0;
+        for (int i = 0; i < size; i++) {
+            if (rowRefusals[i] != null) {
+                results.add(ProductBulkResult.newBuilder()
+                        .errors(rowRefusals[i])
+                        .build());
+                continue;
+            }
+            ProductBulkOutcome outcome = outcomes.get(commandIndex++);
             if (outcome.success()) {
                 count++;
             }
@@ -236,6 +275,23 @@ public class ProductMutationDataFetcher {
                 .count(count)
                 .results(results)
                 .errors(List.of())
+                .build();
+    }
+
+    /**
+     * The boundary's own per-row decode refusal — the shared mutation-
+     * error mapper renders it (the classified INVALID code; the raw
+     * codec sentence stays internal, the payload carries the generic
+     * rejection), with the pointer at the row's own {@code productType}
+     * field (the per-item ADAPT pointer shape).
+     */
+    private static ProductBulkCreateError decodeRefusalError(int index, RuntimeException decodeRefusal) {
+        SaleorMutationErrors.WireError wire =
+                SaleorMutationErrors.of(decodeRefusal, "productType");
+        return ProductBulkCreateError.newBuilder()
+                .path("products." + index + "." + wire.field())
+                .message(wire.message())
+                .code(ProductBulkCreateErrorCode.valueOf(wire.code()))
                 .build();
     }
 

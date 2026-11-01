@@ -55,6 +55,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
@@ -492,6 +493,78 @@ class UserDataFetcherDgsTest {
                 "query { me { id } }", "$"))
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
                 .hasMessageContaining("An unexpected error occurred");
+    }
+
+    /**
+     * The 2026-11-02 #806 review (Minor · Functional Correctness):
+     * REJECT_FAILED_ROWS rides the row-level mode at the identity SPI —
+     * the valid rows process, the refused row answers its own
+     * {@code results[i].errors} entry, and the batch never throws.
+     */
+    @Test
+    void customerBulkUpdateExecutesTheValidRowsAtRejectFailedRows() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        UUID targetId = UUID.randomUUID();
+        when(userManagementSpi.bulkUpdateCustomers(
+                any(org.springframework.security.core.Authentication.class),
+                argThat((List<UUID> ids) -> ids.size() == 2 && targetId.equals(ids.get(0))
+                        && ids.get(1) == null),
+                any(),
+                eq(true)))
+                .thenReturn(List.of(
+                        new com.marketplace.identity.spi.BulkRowResult(targetId, null, null),
+                        new com.marketplace.identity.spi.BulkRowResult(null, "INVALID",
+                                "The customer update was refused")));
+        when(identitySpi.findUserAccountById(eq(targetId),
+                any(org.springframework.security.core.Authentication.class)))
+                .thenReturn(java.util.Optional.of(providerView(targetId)));
+
+        String targetGlobalId = java.util.Base64.getEncoder()
+                .encodeToString(("User:" + targetId).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { customerBulkUpdate(customers: [
+                            {id: "%s", input: {firstName: "Valid"}},
+                            {id: "not-a-global-id", input: {firstName: "Broken"}}],
+                        errorPolicy: REJECT_FAILED_ROWS) {
+                    count
+                    errors { code }
+                    results { customer { email } errors { message code } }
+                } }
+                """.formatted(targetGlobalId), "data.customerBulkUpdate");
+
+        assertThat(payload.get("count")).isEqualTo(1);
+        assertThat(payload.get("errors")).isEqualTo(List.of());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> results = (List<Map<String, Object>>) payload.get("results");
+        assertThat(results).hasSize(2);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> first = (Map<String, Object>) results.get(0).get("customer");
+        assertThat(first.get("email")).isEqualTo("provider@example.com");
+        assertThat(results.get(1).get("customer")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rowErrors = (List<Map<String, Object>>) results.get(1).get("errors");
+        assertThat(rowErrors).hasSize(1);
+        assertThat(rowErrors.get(0).get("code")).isEqualTo("INVALID");
+    }
+
+    /**
+     * At REJECT_EVERYTHING (the null default) one unresolvable row
+     * still fails the whole call — the all-or-nothing contract is
+     * unchanged; the owner never sees the batch.
+     */
+    @Test
+    void customerBulkUpdateFailsTheWholeCallForAnUnresolvableRowAtRejectEverything() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { customerBulkUpdate(customers: [
+                            {id: "not-a-global-id", input: {firstName: "Broken"}}]) {
+                    count
+                } }
+                """, "$"))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("Invalid global ID");
+        org.mockito.Mockito.verifyNoInteractions(userManagementSpi);
     }
 
 }

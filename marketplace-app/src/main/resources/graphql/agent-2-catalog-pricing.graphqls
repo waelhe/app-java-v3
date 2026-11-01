@@ -331,7 +331,12 @@ input ProductCreateInput {
     """
     ID of the product's reusable goods schema (typed global ID of the
     ProductType root's type; null keeps pre-C1 and zero-variant
-    products compatible — a typed product starts as DRAFT).
+    products compatible — a typed product starts as DRAFT). The
+    nullability is the RECORDED platform divergence: Saleor 3.23.45
+    declares the field `ID!` (saleor-contract-divergences.csv, the
+    2026-11-02 #806 review) — the single-row create keeps the
+    zero-variant capability the row's own history carries, while the
+    bulk path pins its reference REQUIRED per its own contract.
     """
     productType: ID
 
@@ -1322,7 +1327,9 @@ input ProductBulkCreateInput {
     """
     ID of the product's reusable goods schema (typed global ID of the
     ProductType root's type — REQUIRED per the pinned input's own
-    contract).
+    contract; the single-row ProductCreateInput carries the SAME field
+    OPTIONAL — the recorded zero-variant compatibility divergence,
+    saleor-contract-divergences.csv).
     """
     productType: ID!
 
@@ -1878,14 +1885,32 @@ input CollectionInput {
 # The declared-but-unowned filter shapes — every field stays refused
 # with the classified validation error until an owning query
 # capability exists (the honest boundary, never a silent no-op).
+# BOUNDED closure per the ProductFilterInput/ProductWhereInput
+# precedent: every DECLARED field is the pinned Saleor 3.23.45
+# contract's own member (the 2026-11-02 #806 review — the earlier
+# singular `slug` and the where-side `name` are NOT in the contract
+# and stay undeclared), the scalar surface only; the unowned closure
+# families (published with its CollectionPublished enum, metadata
+# with its MetadataFilter rows, the AND/OR where recursion) stay
+# undeclared — recorded divergences (saleor-contract-divergences.csv),
+# never faked; a query naming one fails schema validation loudly.
 input CollectionFilterInput {
-    """The slug filtering shape (no owning query capability yet)."""
-    slug: String
+    """Filter by the search sentence (no owning query capability yet)."""
+    search: String
+
+    """Filter by the collection global IDs (no owning query capability yet)."""
+    ids: [ID!]
+
+    """Filter by the collection slugs (no owning query capability yet)."""
+    slugs: [String!]
+
+    """Filter by the channel slug (no owning query capability yet; the pinned contract marks it deprecated in favor of the root-level argument)."""
+    channel: String @deprecated(reason: "Use root-level channel argument instead.")
 }
 
 input CollectionWhereInput {
-    """The name searching shape (no owning query capability yet)."""
-    name: String
+    """Filter by the collection global IDs (no owning query capability yet)."""
+    ids: [ID!]
 }
 
 input CollectionSortingInput {

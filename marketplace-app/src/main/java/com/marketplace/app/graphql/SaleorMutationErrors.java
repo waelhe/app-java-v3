@@ -105,6 +105,14 @@ final class SaleorMutationErrors {
     }
 
     private static <E extends Enum<E>> E constantOf(Class<E> vocabulary, String name) {
+        if (name == null) {
+            // The 2026-11-02 #806 review (Minor · Stability): Enum.valueOf
+            // throws NullPointerException — not the IllegalArgumentException
+            // the catch ladder maps — so an absent name must answer before
+            // the lookup; translate then renders the GRAPHQL_ERROR fallback
+            // its own contract promises (the return is never null).
+            return null;
+        }
         try {
             return Enum.valueOf(vocabulary, name);
         } catch (IllegalArgumentException absent) {
