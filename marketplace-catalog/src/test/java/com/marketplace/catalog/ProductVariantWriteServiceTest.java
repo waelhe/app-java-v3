@@ -512,7 +512,7 @@ class ProductVariantWriteServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(0));
         when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
 
-        var outcomes = service.bulkUpdateVariants(List.of(
+        var outcomes = service.bulkUpdateVariants(parent.getId(), List.of(
                 new ProductVariantBulkUpdateItem(row.getId(),
                         new ProductVariantUpdateCommand("SKU-2", "Renamed", 500L)),
                 new ProductVariantBulkUpdateItem(UUID.randomUUID(),
@@ -524,5 +524,31 @@ class ProductVariantWriteServiceTest {
         assertThat(outcomes.get(1).errors()).singleElement()
                 .extracting(ProductVariantMutationError::code)
                 .isEqualTo(ProductVariantMutationErrorCode.NOT_FOUND);
+    }
+
+    @Test
+    void bulkUpdateRefusesAVariantOfAnotherProductAsThePerRowNotFound() {
+        // The shard review (2026-11-01, Minor · Data Integrity): the Saleor
+        // product argument is a binding ownership claim — an item whose row
+        // belongs to ANOTHER product answers the per-row NOT_FOUND, never a
+        // cross-product amendment.
+        Product parent = productOwnedBy(ProviderIds.CALLER);
+        Product otherParent = productOwnedBy(ProviderIds.CALLER);
+        ProductVariant strangerRow = variantUnder(otherParent, "SKU-OTHER");
+        when(variantRepository.findById(strangerRow.getId()))
+                .thenReturn(Optional.of(strangerRow));
+
+        var outcomes = service.bulkUpdateVariants(parent.getId(), List.of(
+                new ProductVariantBulkUpdateItem(strangerRow.getId(),
+                        new ProductVariantUpdateCommand("SKU-STOLEN", null, null))),
+                caller, "IGNORE_FAILED");
+
+        assertThat(outcomes.get(0).success()).isFalse();
+        assertThat(outcomes.get(0).errors()).singleElement()
+                .extracting(ProductVariantMutationError::code)
+                .isEqualTo(ProductVariantMutationErrorCode.NOT_FOUND);
+        assertThat(outcomes.get(0).errors()).singleElement()
+                .extracting(ProductVariantMutationError::field)
+                .isEqualTo("product");
     }
 }

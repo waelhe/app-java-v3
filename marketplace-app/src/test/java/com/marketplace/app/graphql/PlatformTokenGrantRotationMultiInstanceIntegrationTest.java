@@ -294,6 +294,69 @@ class PlatformTokenGrantRotationMultiInstanceIntegrationTest {
     // successor chains through the other instance
     // ---------------------------------------------------------------------
 
+    // ---------------------------------------------------------------------
+    // The reuse-detection demand (the shard review 2026-11-01): a LATE
+    // replay of an already-consumed value is the theft signal — the whole
+    // family dies. Within the grace window a replay stays the recorded
+    // plain rejection (the concurrent/legitimate shapes above are
+    // unchanged); past the window the family is revoked on every instance.
+    // ---------------------------------------------------------------------
+
+    @Test
+    void aLateReplayOfAConsumedTokenRevokesTheEntireFamily() {
+        PlatformTokenGrantService.IssuedTokens granted = serviceA.grant(PRINCIPAL, PASSWORD);
+        PlatformTokenGrantService.IssuedTokens rotated =
+                serviceA.refresh(granted.refreshToken());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM consumed_refresh_tokens", Integer.class))
+                .as("the completed rotation recorded the consumed value in the family ledger")
+                .isOne();
+
+        // Age the ledger entry past the reuse-detection grace window —
+        // the theft shape is a replay MINUTES after the consumption.
+        jdbcTemplate.update(
+                "UPDATE consumed_refresh_tokens SET consumed_at = now() - INTERVAL '5 minutes'");
+
+        // The stolen (consumed) value replays: rejected…
+        assertThatThrownBy(() -> serviceB.refresh(granted.refreshToken()))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessageContaining("invalid, expired or revoked");
+        // …AND the family is revoked — the attacker's own successor (won by
+        // rotating first) is dead on every instance.
+        assertThatThrownBy(() -> serviceA.refresh(rotated.refreshToken()))
+                .isInstanceOf(BadCredentialsException.class);
+        assertThatThrownBy(() -> serviceB.refresh(rotated.refreshToken()))
+                .isInstanceOf(BadCredentialsException.class);
+        // …AND the authorization row itself is gone (the ledger rows
+        // cascade with it).
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM oauth2_authorization WHERE principal_name = ?",
+                Integer.class, PRINCIPAL)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM consumed_refresh_tokens", Integer.class)).isZero();
+    }
+
+    @Test
+    void anInWindowReplayStaysAPlainRejectionAndTheSuccessorChains() {
+        PlatformTokenGrantService.IssuedTokens granted = serviceA.grant(PRINCIPAL, PASSWORD);
+        PlatformTokenGrantService.IssuedTokens rotated =
+                serviceA.refresh(granted.refreshToken());
+
+        // Inside the grace window: the replay is the concurrent/legitimate
+        // shape — a plain rejection, the family survives, the successor
+        // chains (the recorded contract, unchanged).
+        assertThatThrownBy(() -> serviceB.refresh(granted.refreshToken()))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessageContaining("invalid, expired or revoked");
+
+        PlatformTokenGrantService.IssuedTokens chained =
+                serviceB.refresh(rotated.refreshToken());
+        assertThat(chained.refreshToken()).isNotBlank();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM oauth2_authorization WHERE principal_name = ?",
+                Integer.class, PRINCIPAL)).isOne();
+    }
+
     @Test
     void aRotationConsumedOnOneInstanceIsAReplayOnTheOther() {
         PlatformTokenGrantService.IssuedTokens granted = serviceA.grant(PRINCIPAL, PASSWORD);

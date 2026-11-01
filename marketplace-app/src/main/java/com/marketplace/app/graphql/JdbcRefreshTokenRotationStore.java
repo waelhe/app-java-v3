@@ -1,5 +1,6 @@
 package com.marketplace.app.graphql;
 
+import java.time.Duration;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
@@ -54,12 +55,45 @@ import org.springframework.transaction.annotation.Transactional;
 @Component
 public class JdbcRefreshTokenRotationStore implements RefreshTokenRotationStore {
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(JdbcRefreshTokenRotationStore.class);
+
     /**
      * V13's official table; the consumption predicate is the presented
      * refresh token value itself — the value is the concurrency token.
      */
     private static final String CONSUME_ROTATED_REFRESH_TOKEN =
             "UPDATE oauth2_authorization SET refresh_token_value = ? WHERE id = ? AND refresh_token_value = ?";
+
+    /**
+     * The reuse-detection ledger (V296): every completed rotation records
+     * the CONSUMED value's SHA-256 under its authorization family — the
+     * oauth2_authorization row IS the family.
+     */
+    private static final String RECORD_CONSUMED_REFRESH_TOKEN =
+            "INSERT INTO consumed_refresh_tokens (authorization_id, token_hash) VALUES (?, ?)";
+
+    /**
+     * The theft-signal predicate: a consumed value presented again MORE
+     * THAN THE GRACE WINDOW after its consumption. The window (30s)
+     * reconciles the two recorded contracts: a CONCURRENT double-spend
+     * (two tabs racing the same refresh — the loser's rejection lands
+     * milliseconds after the winner's commit) stays a plain rejection, so
+     * the winner's successor keeps the platform's recorded multi-instance
+     * contract alive; a LATE replay (the theft shape: the attacker rotated
+     * first, the legitimate client replays the stolen value minutes later)
+     * is the family-revoking signal.
+     */
+    private static final Duration REUSE_DETECTION_GRACE = Duration.ofSeconds(30);
+
+    private static final String FIND_STALE_FAMILY_OF_PRESENTED = """
+            SELECT authorization_id FROM consumed_refresh_tokens
+            WHERE token_hash = ? AND consumed_at < now() - make_interval(secs => ?)
+            """;
+
+    /** Family revocation — one statement removes the whole token family. */
+    private static final String REVOKE_FAMILY =
+            "DELETE FROM oauth2_authorization WHERE id = ?";
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectProvider<OAuth2AuthorizationService> authorizationService;
@@ -80,14 +114,52 @@ public class JdbcRefreshTokenRotationStore implements RefreshTokenRotationStore 
         if (consumed == 0) {
             // The presented value is gone from the row: a replay after a
             // completed rotation, or a concurrent rotation that won on
-            // another instance. This caller did NOT consume it — reject.
+            // another instance. This caller did NOT consume it — reject…
+            detectAndRevokeReuse(presentedRefreshToken);
             return false;
         }
-        // The consumption won: complete the rotation's full row (the
+        // The consumption won: record the consumed value's hash in the
+        // family ledger (V296) and complete the rotation's full row (the
         // successor pair's columns) on the same row lock, in the same
         // transaction — all-or-nothing with the consumption itself.
+        jdbcTemplate.update(RECORD_CONSUMED_REFRESH_TOKEN,
+                rotated.getId(), sha256(presentedRefreshToken));
         authorizationService().save(rotated);
         return true;
+    }
+
+    /**
+     * The shard review (2026-11-01, Security & Privacy): an already-consumed
+     * value presented again is a THEFT SIGNAL, not just an invalid token —
+     * an attacker who rotated first left the legitimate user failing
+     * silently while the attacker's successor stayed valid. When the ledger
+     * recognizes the value, the ENTIRE family is revoked (the authorization
+     * row — access token, successor refresh tokens and all) and a security
+     * event is logged (family id only: never a token value). An unknown
+     * value stays a plain rejection.
+     */
+    private void detectAndRevokeReuse(String presentedRefreshToken) {
+        java.util.List<String> family = jdbcTemplate.queryForList(
+                FIND_STALE_FAMILY_OF_PRESENTED, String.class,
+                sha256(presentedRefreshToken), REUSE_DETECTION_GRACE.toSeconds());
+        if (family.isEmpty()) {
+            return;
+        }
+        String familyId = family.getFirst();
+        int revoked = jdbcTemplate.update(REVOKE_FAMILY, familyId);
+        log.warn("SECURITY refresh-token reuse detected: authorization family {} revoked"
+                + " ({} authorization row(s) removed); the presented value was already"
+                + " consumed by an earlier rotation", familyId, revoked);
+    }
+
+    /** SHA-256 of the token value — the ledger never stores a bearer secret. */
+    private static byte[] sha256(String value) {
+        try {
+            return java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } catch (java.security.NoSuchAlgorithmException unavailable) {
+            throw new IllegalStateException("SHA-256 is unavailable", unavailable);
+        }
     }
 
     private OAuth2AuthorizationService authorizationService() {

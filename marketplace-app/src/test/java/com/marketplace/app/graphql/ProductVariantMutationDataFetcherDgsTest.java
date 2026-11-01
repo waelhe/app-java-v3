@@ -50,6 +50,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.verify;
@@ -557,7 +558,7 @@ class ProductVariantMutationDataFetcherDgsTest {
         authenticateAs("dgs-provider-subject", "PROVIDER");
         UUID productId = UUID.randomUUID();
         UUID rowId = UUID.randomUUID();
-        when(productVariantWriteSpi.bulkUpdateVariants(anyList(), any(), any())).thenReturn(List.of(
+        when(productVariantWriteSpi.bulkUpdateVariants(any(), anyList(), any(), any())).thenReturn(List.of(
                 new ProductVariantBulkOutcome(variantView(rowId, productId, "SKU-2"), List.of())));
 
         Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
@@ -571,8 +572,9 @@ class ProductVariantMutationDataFetcherDgsTest {
                 "data.productVariantBulkUpdate");
 
         assertThat(payload.get("count")).isEqualTo(1);
-        verify(productVariantWriteSpi).bulkUpdateVariants(argThat((List<ProductVariantBulkUpdateItem> items) ->
-                items.size() == 1 && items.get(0).id().equals(rowId)
-                        && "SKU-2".equals(items.get(0).fields().sku())), any(), any());
+        verify(productVariantWriteSpi).bulkUpdateVariants(eq(productId),
+                argThat((List<ProductVariantBulkUpdateItem> items) ->
+                        items.size() == 1 && items.get(0).id().equals(rowId)
+                                && "SKU-2".equals(items.get(0).fields().sku())), any(), any());
     }
 }

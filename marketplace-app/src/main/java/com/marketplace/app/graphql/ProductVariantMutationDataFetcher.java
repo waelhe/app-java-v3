@@ -210,7 +210,7 @@ public class ProductVariantMutationDataFetcher {
         if (ids == null || ids.isEmpty()) {
             throw new IllegalArgumentException("productVariantBulkDelete requires a non-empty list of ids");
         }
-        requireBoundedList(ids, "productVariantBulkDelete");
+        properties.requireBoundedList(ids, "productVariantBulkDelete");
         List<UUID> nativeIds = new ArrayList<>(ids.size());
         for (String id : ids) {
             nativeIds.add(globalIdCodec.decode(id, ProductVariantGraphQlMapper.PRODUCT_VARIANT_TYPE));
@@ -246,7 +246,7 @@ public class ProductVariantMutationDataFetcher {
             throw new IllegalArgumentException(
                     "productVariantBulkCreate requires a non-empty list of variants");
         }
-        requireBoundedList(variants, "productVariantBulkCreate");
+        properties.requireBoundedList(variants, "productVariantBulkCreate");
         UUID productId = globalIdCodec.decode(product, ProductGraphQlMapper.PRODUCT_TYPE);
         List<ProductVariantCreateCommand> commands = new ArrayList<>(variants.size());
         for (ProductVariantBulkCreateInput variant : variants) {
@@ -302,8 +302,8 @@ public class ProductVariantMutationDataFetcher {
             throw new IllegalArgumentException(
                     "productVariantBulkUpdate requires a non-empty list of variants");
         }
-        requireBoundedList(variants, "productVariantBulkUpdate");
-        globalIdCodec.decode(product, ProductGraphQlMapper.PRODUCT_TYPE);
+        properties.requireBoundedList(variants, "productVariantBulkUpdate");
+        UUID productId = globalIdCodec.decode(product, ProductGraphQlMapper.PRODUCT_TYPE);
         List<ProductVariantBulkUpdateItem> items = new ArrayList<>(variants.size());
         for (ProductVariantBulkUpdateInput variant : variants) {
             if (variant.getId() == null) {
@@ -316,7 +316,8 @@ public class ProductVariantMutationDataFetcher {
                             toLongMinor(variant.getPriceMinor()))));
         }
         List<ProductVariantBulkOutcome> outcomes = variantWriteSpi.bulkUpdateVariants(
-                items, currentAuthentication(), errorPolicy == null ? null : errorPolicy.name());
+                productId, items, currentAuthentication(),
+                errorPolicy == null ? null : errorPolicy.name());
         List<ProductVariantBulkResult> results = new ArrayList<>(outcomes.size());
         int count = 0;
         for (int i = 0; i < outcomes.size(); i++) {
@@ -376,14 +377,6 @@ public class ProductVariantMutationDataFetcher {
      * the other transport-level guards answer, never a silent
      * truncation.
      */
-    private void requireBoundedList(List<?> items, String rootName) {
-        int maxListItems = properties.bulk().maxListItems();
-        if (items.size() > maxListItems) {
-            throw new IllegalArgumentException(rootName + " rejects a list of " + items.size()
-                    + " items: the bulk list bound is " + maxListItems
-                    + " (marketplace.graphql.bulk.max-list-items)");
-        }
-    }
 
     /**
      * The GraphQL Int's own widening onto the row's long minor units —
