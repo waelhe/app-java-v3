@@ -83,6 +83,11 @@ public class CollectionMutationDataFetcher {
     @RateLimiter(name = "graphqlCollectionMutation")
     public CollectionCreate collectionCreate(@InputArgument CollectionCreateInput input) {
         requireInput(input, "collectionCreate");
+        // The shard review (Minor · Performance & Scalability, 2026-11-01
+        // wave 2): the sibling membership root (collectionAddProducts)
+        // bounds its products list; the create root let the same list ride
+        // unbounded through decodeProductIds.
+        properties.requireBoundedList(input.getProducts(), "collectionCreate");
         CollectionMutationResult result = collectionWriteSpi.createCollection(
                 new CollectionCreateCommand(input.getName(), input.getSlug(),
                         input.getIsPublished(), decodeProductIds(input.getProducts())));

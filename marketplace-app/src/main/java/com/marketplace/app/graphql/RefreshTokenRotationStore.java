@@ -95,4 +95,21 @@ public interface RefreshTokenRotationStore {
      *         recognized AND its family revoked
      */
     boolean revokeFamilyIfConsumed(String presentedRefreshToken);
+
+    /**
+     * The ledger's bounded lifetime (the shard review's nitpick,
+     * 2026-11-01 wave 2): deletes the consumed-value rows whose
+     * reuse-detection meaning has expired — a consumed value matters only
+     * while the successor it was replaced by can still be alive, so a row
+     * older than the refresh TTL past its consumption is inert (a replay
+     * of that value dies at {@code findByToken} as an unknown token long
+     * before the ledger row matters). The ON DELETE CASCADE cannot bound
+     * the table on its own: an ACTIVE family rotates forever, and every
+     * rotation adds a row.
+     *
+     * @param cutoff rows with {@code consumed_at} strictly before this
+     *               instant are deleted
+     * @return the number of rows deleted
+     */
+    int purgeConsumedBefore(java.time.Instant cutoff);
 }

@@ -198,7 +198,8 @@ class PlatformTokenGrantRotationMultiInstanceIntegrationTest {
                 provider(jwtDecoder),
                 identitySpi,
                 AUDIENCE,
-                CLIENT_ID);
+                CLIENT_ID,
+                java.time.Duration.ofDays(30).toSeconds());
         serviceB = new PlatformTokenGrantService(
                 provider(authenticationConfiguration),
                 provider(authorizationService),
@@ -209,7 +210,8 @@ class PlatformTokenGrantRotationMultiInstanceIntegrationTest {
                 provider(jwtDecoder),
                 identitySpi,
                 AUDIENCE,
-                CLIENT_ID);
+                CLIENT_ID,
+                java.time.Duration.ofDays(30).toSeconds());
     }
 
     // ---------------------------------------------------------------------

@@ -78,15 +78,18 @@ public class CheckoutDataFetcher {
     private final OrderCommandSpi orderCommandSpi;
     private final CheckoutGraphQlMapper mapper;
     private final SaleorGlobalIdCodec globalIdCodec;
+    private final GraphQlProperties properties;
 
     public CheckoutDataFetcher(CheckoutSpi checkoutSpi,
                                OrderCommandSpi orderCommandSpi,
                                CheckoutGraphQlMapper mapper,
-                               SaleorGlobalIdCodec globalIdCodec) {
+                               SaleorGlobalIdCodec globalIdCodec,
+                               GraphQlProperties properties) {
         this.checkoutSpi = checkoutSpi;
         this.orderCommandSpi = orderCommandSpi;
         this.mapper = mapper;
         this.globalIdCodec = globalIdCodec;
+        this.properties = properties;
     }
 
     @DgsQuery(field = "checkout")
@@ -112,6 +115,11 @@ public class CheckoutDataFetcher {
                                                 @InputArgument String checkoutId,
                                                 DataFetchingEnvironment environment,
                                                 @InputArgument List<Map<String, Object>> lines) {
+        // The shard review (Minor · Performance & Scalability, 2026-11-01
+        // wave 2): the line lists ride decode loops into the SPI — the
+        // G4 unbounded-list bound every bulk root applies (same as
+        // orderBulkCancel: the IAE classifies as a validation error).
+        properties.requireBoundedList(lines, "checkoutLinesAdd");
         Authentication authentication = currentAuthentication();
         UUID token = checkoutToken(environment);
         final UUID cartId;
@@ -161,6 +169,9 @@ public class CheckoutDataFetcher {
                                                    @InputArgument String checkoutId,
                                                    DataFetchingEnvironment environment,
                                                    @InputArgument List<Map<String, Object>> lines) {
+        // The shard review (2026-11-01 wave 2): the same G4 bound the add
+        // root applies — the update list decodes per line into the SPI.
+        properties.requireBoundedList(lines, "checkoutLinesUpdate");
         Authentication authentication = currentAuthentication();
         UUID token = checkoutToken(environment);
         final UUID cartId;
@@ -212,6 +223,9 @@ public class CheckoutDataFetcher {
     public Map<String, Object> checkoutLinesDelete(@InputArgument String id,
                                                    DataFetchingEnvironment environment,
                                                    @InputArgument List<String> linesIds) {
+        // The shard review (2026-11-01 wave 2): the delete list decodes a
+        // global ID per entry — the same G4 bound as the add/update roots.
+        properties.requireBoundedList(linesIds, "checkoutLinesDelete");
         Authentication authentication = currentAuthentication();
         UUID token = checkoutToken(environment);
         final UUID cartId;

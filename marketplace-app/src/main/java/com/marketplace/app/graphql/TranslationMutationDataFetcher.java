@@ -212,6 +212,17 @@ public class TranslationMutationDataFetcher {
         }
         List<TranslationBulkItem> items = new ArrayList<>(translations.size());
         for (AttributeBulkTranslateInput translation : translations) {
+            // The shard review (Minor · Data Integrity, 2026-11-01 wave 2):
+            // the SDL promises a classified validation error for a supplied
+            // externalReference — the loop never read it, so a request
+            // carrying BOTH id and externalReference passed and the service
+            // silently ignored the reference (the file's own
+            // never-a-silent-no-op rule).
+            if (translation.getExternalReference() != null) {
+                throw new IllegalArgumentException(
+                        "attributeBulkTranslate externalReference is not implemented on this "
+                                + "platform yet");
+            }
             requireInput(translation.getTranslationFields(), "attributeBulkTranslate translationFields");
             if (translation.getId() == null) {
                 throw new IllegalArgumentException(
@@ -260,6 +271,14 @@ public class TranslationMutationDataFetcher {
         }
         List<TranslationBulkItem> items = new ArrayList<>(translations.size());
         for (AttributeValueBulkTranslateInput translation : translations) {
+            // The shard review (2026-11-01 wave 2): the same classified
+            // rejection the attribute loop carries — the value loop's
+            // externalReference was equally silent.
+            if (translation.getExternalReference() != null) {
+                throw new IllegalArgumentException(
+                        "attributeValueBulkTranslate externalReference is not implemented on this "
+                                + "platform yet");
+            }
             requireInput(translation.getTranslationFields(), "attributeValueBulkTranslate translationFields");
             if (translation.getId() == null) {
                 throw new IllegalArgumentException(

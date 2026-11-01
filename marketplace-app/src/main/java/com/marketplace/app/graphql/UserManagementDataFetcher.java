@@ -300,11 +300,29 @@ public class UserManagementDataFetcher {
     }
 
     private UserWriteFields toFields(UserCreateInput input) {
+        // The shard review (Minor · Functional Correctness, 2026-11-01
+        // wave 2): the SDL declares defaultBillingAddress/
+        // defaultShippingAddress/customerType, but the identity owner's
+        // write fields carry none of them — a supplied value was a SILENT
+        // no-op (the file's own never-a-silent-no-op rule, the
+        // rejectChannel precedent). The classified rejection keeps the
+        // wire contract honest.
+        rejectUnimplementedUserInputFields(
+                input.getDefaultBillingAddress(), input.getDefaultShippingAddress(),
+                input.getCustomerType(), "userCreate");
         return new UserWriteFields(input.getEmail(),
                 input.getFirstName(), input.getLastName(), input.getIsActive());
     }
 
     private UserWriteFields toFields(CustomerInput input) {
+        // The shard review (2026-11-01 wave 2): the same classified
+        // rejection the UserCreateInput conversion carries — the customer
+        // amendment's address/customerType fields are equally unowned.
+        if (input != null) {
+            rejectUnimplementedUserInputFields(
+                    input.getDefaultBillingAddress(), input.getDefaultShippingAddress(),
+                    input.getCustomerType(), "customerCreate/customerUpdate");
+        }
         return new UserWriteFields(input == null ? null : input.getEmail(),
                 input == null ? null : input.getFirstName(),
                 input == null ? null : input.getLastName(),
@@ -312,13 +330,51 @@ public class UserManagementDataFetcher {
     }
 
     private UserWriteFields toFields(StaffCreateInput input) {
+        // The shard review (2026-11-01 wave 2): the SDL declares
+        // StaffCreateInput.addGroups — a supplied group list was silently
+        // dropped (an admin granting a permission group got errors:[] and
+        // no change, the exact silent no-op the file bans).
+        if (input.getAddGroups() != null && !input.getAddGroups().isEmpty()) {
+            throw new IllegalArgumentException(
+                    "staffCreate addGroups is not implemented on this platform yet");
+        }
         return new UserWriteFields(input.getEmail(), input.getFirstName(), input.getLastName(),
                 input.getIsActive());
     }
 
     private UserWriteFields toFields(StaffUpdateInput input) {
+        // The shard review (2026-11-01 wave 2): addGroups/removeGroups —
+        // the same classified rejection the create path carries.
+        if ((input.getAddGroups() != null && !input.getAddGroups().isEmpty())
+                || (input.getRemoveGroups() != null && !input.getRemoveGroups().isEmpty())) {
+            throw new IllegalArgumentException(
+                    "staffUpdate addGroups/removeGroups is not implemented on this platform yet");
+        }
         return new UserWriteFields(input.getEmail(), input.getFirstName(), input.getLastName(),
                 input.getIsActive());
+    }
+
+    /**
+     * The shared never-a-silent-no-op rejection for the user-surface's
+     * unowned input fields (the shard review 2026-11-01 wave 2): a SUPPLIED
+     * value answers the classified validation error, an absent one passes
+     * — the file's own rejectChannel vocabulary.
+     */
+    private static void rejectUnimplementedUserInputFields(
+            Object defaultBillingAddress, Object defaultShippingAddress,
+            Object customerType, String root) {
+        if (defaultBillingAddress != null) {
+            throw new IllegalArgumentException(
+                    root + " defaultBillingAddress is not implemented on this platform yet");
+        }
+        if (defaultShippingAddress != null) {
+            throw new IllegalArgumentException(
+                    root + " defaultShippingAddress is not implemented on this platform yet");
+        }
+        if (customerType != null) {
+            throw new IllegalArgumentException(
+                    root + " customerType is not implemented on this platform yet");
+        }
     }
 
     private com.marketplace.app.graphql.generated.types.User userById(UUID userId) {

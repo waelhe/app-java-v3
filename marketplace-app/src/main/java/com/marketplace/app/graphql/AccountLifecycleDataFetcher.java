@@ -39,23 +39,37 @@ public class AccountLifecycleDataFetcher {
     private final IdentitySpi identitySpi;
     private final AgentOneGraphQlMappers mappers;
     private final UserGraphQlMapper userMapper;
+    private final PerCallerRateLimitGuard perCallerRateLimitGuard;
 
     public AccountLifecycleDataFetcher(AccountLifecycleSpi accountLifecycleSpi,
                                        IdentitySpi identitySpi,
                                        AgentOneGraphQlMappers mappers,
-                                       UserGraphQlMapper userMapper) {
+                                       UserGraphQlMapper userMapper,
+                                       PerCallerRateLimitGuard perCallerRateLimitGuard) {
         this.accountLifecycleSpi = accountLifecycleSpi;
         this.identitySpi = identitySpi;
         this.mappers = mappers;
         this.userMapper = userMapper;
+        this.perCallerRateLimitGuard = perCallerRateLimitGuard;
     }
 
-    /** Saleor {@code requestPasswordReset(channel, email, redirectUrl)} — enumeration-safe. */
+    /**
+     * Saleor {@code requestPasswordReset(channel, email, redirectUrl)} —
+     * enumeration-safe.
+     *
+     * <p>The shard review (Major · Stability & Availability, 2026-11-01
+     * wave 2): the ANONYMOUS account roots leave the shared
+     * graphqlAccountMutation budget — a flood here must never starve the
+     * authenticated customer/staff admin mutations — and the email
+     * senders carry their own per-CALLER budget besides (the guard).</p>
+     */
     @DgsMutation(field = DgsConstants.MUTATION.RequestPasswordReset)
-    @RateLimiter(name = "graphqlAccountMutation")
+    @RateLimiter(name = "graphqlAccountAnonymousMutation")
     public RequestPasswordReset requestPasswordReset(@InputArgument String channel,
                                                      @InputArgument String email,
-                                                     @InputArgument String redirectUrl) {
+                                                     @InputArgument String redirectUrl,
+                                                     graphql.schema.DataFetchingEnvironment environment) {
+        perCallerRateLimitGuard.acquirePermit(environment, "graphqlAccountAnonymousMutation");
         rejectChannel(channel);
         if (email == null || email.isBlank()) {
             throw new IllegalArgumentException("An email is required");
@@ -64,11 +78,17 @@ public class AccountLifecycleDataFetcher {
         return RequestPasswordReset.newBuilder().errors(mappers.emptyAccountErrors()).build();
     }
 
-    /** Saleor {@code sendConfirmationEmail(channel, redirectUrl)}. */
+    /**
+     * Saleor {@code sendConfirmationEmail(channel, redirectUrl)} — the
+     * same anonymous email-sender class the reset request carries (the
+     * wave-2 review's per-caller set).
+     */
     @DgsMutation(field = DgsConstants.MUTATION.SendConfirmationEmail)
-    @RateLimiter(name = "graphqlAccountMutation")
+    @RateLimiter(name = "graphqlAccountAnonymousMutation")
     public SendConfirmationEmail sendConfirmationEmail(@InputArgument String channel,
-                                                       @InputArgument String redirectUrl) {
+                                                       @InputArgument String redirectUrl,
+                                                       graphql.schema.DataFetchingEnvironment environment) {
+        perCallerRateLimitGuard.acquirePermit(environment, "graphqlAccountAnonymousMutation");
         rejectChannel(channel);
         // The verification flow's own key: the address of the account whose
         // pending hold the caller re-arms — on this platform the login
@@ -77,9 +97,9 @@ public class AccountLifecycleDataFetcher {
         return SendConfirmationEmail.newBuilder().errors(mappers.emptyAccountErrors()).build();
     }
 
-    /** Saleor {@code confirmAccount(email, password, token)}. */
+    /** Saleor {@code confirmAccount(email, password, token)} — token-proofed. */
     @DgsMutation(field = DgsConstants.MUTATION.ConfirmAccount)
-    @RateLimiter(name = "graphqlAccountMutation")
+    @RateLimiter(name = "graphqlAccountAnonymousMutation")
     public ConfirmAccount confirmAccount(@InputArgument String email,
                                          @InputArgument String password,
                                          @InputArgument String token) {
@@ -102,7 +122,7 @@ public class AccountLifecycleDataFetcher {
 
     /** Saleor {@code setPassword(email, password, token)} — the reset redemption. */
     @DgsMutation(field = DgsConstants.MUTATION.SetPassword)
-    @RateLimiter(name = "graphqlAccountMutation")
+    @RateLimiter(name = "graphqlAccountAnonymousMutation")
     public SetPassword setPassword(@InputArgument String email,
                                    @InputArgument String password,
                                    @InputArgument String token) {
@@ -157,10 +177,16 @@ public class AccountLifecycleDataFetcher {
                 .build();
     }
 
-    /** Saleor {@code accountRegister(input)} — the standing registration flow. */
+    /**
+     * Saleor {@code accountRegister(input)} — the standing registration
+     * flow. The wave-2 review's per-caller set: the registration root is
+     * the second anonymous flood surface (after the grant path).
+     */
     @DgsMutation(field = DgsConstants.MUTATION.AccountRegister)
-    @RateLimiter(name = "graphqlAccountMutation")
-    public AccountRegister accountRegister(@InputArgument AccountRegisterInput input) {
+    @RateLimiter(name = "graphqlAccountAnonymousMutation")
+    public AccountRegister accountRegister(@InputArgument AccountRegisterInput input,
+                                           graphql.schema.DataFetchingEnvironment environment) {
+        perCallerRateLimitGuard.acquirePermit(environment, "graphqlAccountAnonymousMutation");
         if (input == null || input.getEmail() == null || input.getEmail().isBlank()
                 || input.getPassword() == null || input.getPassword().isBlank()) {
             throw new IllegalArgumentException("An email and a password are required");

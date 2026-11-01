@@ -207,6 +207,12 @@ public class AttributeMutationDataFetcher {
     @RateLimiter(name = "graphqlAttributeMutation")
     public AttributeReorderValues attributeReorderValues(@InputArgument String attributeId,
                                                           @InputArgument List<ReorderInput> moves) {
+        // The shard review (Minor · Performance & Scalability, 2026-11-01
+        // wave 2): the sibling reorder roots (productTypeReorderAttributes)
+        // bound their moves first; this root accepted an unbounded list —
+        // one authenticated request could push thousands of decode+SPI
+        // moves through a rate limiter that counts requests, not items.
+        properties.requireBoundedList(moves, "attributeReorderValues");
         if (attributeId == null) {
             throw new IllegalArgumentException(
                     "attributeReorderValues requires the attributeId of the values to reorder");

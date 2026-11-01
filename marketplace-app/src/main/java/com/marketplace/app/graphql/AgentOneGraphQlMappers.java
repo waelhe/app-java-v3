@@ -63,9 +63,7 @@ class AgentOneGraphQlMappers {
                 .cityArea(nullToEmpty(view.cityArea()))
                 .postalCode(nullToEmpty(view.postalCode()))
                 .country(com.marketplace.app.graphql.generated.types.CountryDisplay.newBuilder()
-                        .code(view.country() == null ? null
-                                : com.marketplace.app.graphql.generated.types.CountryCode
-                                        .valueOf(view.country()))
+                        .code(countryCodeOf(view.country()))
                         .country(countryName(view.country()))
                         .build())
                 .countryArea(nullToEmpty(view.countryArea()))
@@ -198,6 +196,36 @@ class AgentOneGraphQlMappers {
     }
 
     private static String countryName(String code) {
-        return new Locale("", code == null ? "" : code).getDisplayCountry(Locale.ENGLISH);
+        // The shard review (Minor · Functional Correctness, 2026-11-01
+        // wave 2): the deprecated-for-removal Locale constructor (JDK 19+)
+        // is replaced by the official factory Locale.of — identical
+        // behavior on this JDK 25 runtime.
+        return Locale.of("", code == null ? "" : code)
+                .getDisplayCountry(Locale.ENGLISH);
+    }
+
+    /**
+     * The SDL pins {@code CountryDisplay.code: CountryCode!} — the read
+     * path must answer a member of the enum, never a null. The platform's
+     * OWN write path guarantees it (AddressInput.country is the enum
+     * itself and the identity owner rejects anything but ^[A-Z]{2}$,
+     * verified against AddressFields); this guard is the defense-in-depth
+     * for legacy/imported rows: a missing or unknown code answers the
+     * classified validation error (the surface's error taxonomy), not a
+     * raw non-null violation or a bare valueOf IAE from deep inside the
+     * mapper.
+     */
+    private static com.marketplace.app.graphql.generated.types.CountryCode countryCodeOf(
+            String code) {
+        if (code == null) {
+            throw new IllegalArgumentException(
+                    "A stored address is missing its country code (data integrity)");
+        }
+        try {
+            return com.marketplace.app.graphql.generated.types.CountryCode.valueOf(code);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException(
+                    "A stored address carries an unknown country code: " + code);
+        }
     }
 }

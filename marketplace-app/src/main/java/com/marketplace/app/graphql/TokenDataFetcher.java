@@ -51,19 +51,22 @@ public class TokenDataFetcher {
     private final AgentOneGraphQlMappers mappers;
     private final UserGraphQlMapper userMapper;
     private final JsonMapper jsonMapper;
+    private final PerCallerRateLimitGuard perCallerRateLimitGuard;
 
     public TokenDataFetcher(PlatformTokenGrantService tokenGrantService,
                             AccountLifecycleSpi accountLifecycleSpi,
                             com.marketplace.identity.spi.IdentitySpi identitySpi,
                             AgentOneGraphQlMappers mappers,
                             UserGraphQlMapper userMapper,
-                            JsonMapper jsonMapper) {
+                            JsonMapper jsonMapper,
+                            PerCallerRateLimitGuard perCallerRateLimitGuard) {
         this.tokenGrantService = tokenGrantService;
         this.accountLifecycleSpi = accountLifecycleSpi;
         this.identitySpi = identitySpi;
         this.mappers = mappers;
         this.userMapper = userMapper;
         this.jsonMapper = jsonMapper;
+        this.perCallerRateLimitGuard = perCallerRateLimitGuard;
     }
 
     /** Saleor {@code tokenCreate(audience, email, password)} — the password grant. */
@@ -71,7 +74,14 @@ public class TokenDataFetcher {
     @RateLimiter(name = "graphqlTokenMutation")
     public CreateToken tokenCreate(@InputArgument String audience,
                                    @InputArgument String email,
-                                   @InputArgument String password) {
+                                   @InputArgument String password,
+                                   graphql.schema.DataFetchingEnvironment environment) {
+        // The shard review (Major · Stability & Availability, 2026-11-01
+        // wave 2): the per-CALLER budget on the grant path — the named
+        // instance is per-JVM (the yml's recorded contract), so a single
+        // anonymous client could starve every legitimate login. The
+        // guard gives each caller address its own fail-fast budget.
+        perCallerRateLimitGuard.acquirePermit(environment, "graphqlTokenMutation");
         if (audience != null && !audience.isBlank()) {
             // Saleor's custom-audience prefix is a JWT customization this
             // platform's single-audience contract does not carry — the
@@ -103,7 +113,12 @@ public class TokenDataFetcher {
     @DgsMutation(field = DgsConstants.MUTATION.TokenRefresh)
     @RateLimiter(name = "graphqlTokenMutation")
     public RefreshToken tokenRefresh(@InputArgument String csrfToken,
-                                     @InputArgument String refreshToken) {
+                                     @InputArgument String refreshToken,
+                                     graphql.schema.DataFetchingEnvironment environment) {
+        // The shard review (2026-11-01 wave 2): the same per-caller budget
+        // the grant path carries — the rotation is an anonymous surface
+        // too (the proof IS the payload).
+        perCallerRateLimitGuard.acquirePermit(environment, "graphqlTokenMutation");
         // The CSRF token is Saleor's cookie-mode refresh protection; the
         // platform returns the refresh token in the payload (no cookie
         // mode), so the argument stays declared-but-unexecuted — the

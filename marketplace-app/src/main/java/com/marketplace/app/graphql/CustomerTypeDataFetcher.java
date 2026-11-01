@@ -141,12 +141,22 @@ public class CustomerTypeDataFetcher {
     public CustomerTypeReorderAttributes customerTypeReorderAttributes(
             @InputArgument String customerTypeId,
             @InputArgument List<ReorderInput> moves) {
+        // The shard review (Minor · Stability & Availability, 2026-11-01
+        // wave 2): the sibling root (pageTypeReorderAttributes) bounds its
+        // moves before any decode; this root accepted an unbounded list,
+        // and a null move id reached the codec as a bare NPE instead of
+        // the surface's classified validation error.
+        properties.requireBoundedList(moves, "customerTypeReorderAttributes");
         if (moves == null || moves.isEmpty()) {
             throw new IllegalArgumentException("A list of reorder moves is required");
         }
         List<UUID> attributeIds = new ArrayList<>(moves.size());
         List<Integer> deltas = new ArrayList<>(moves.size());
         for (ReorderInput move : moves) {
+            if (move.getId() == null) {
+                throw new IllegalArgumentException(
+                        "customerTypeReorderAttributes requires each move's attribute id");
+            }
             attributeIds.add(globalIdCodec.decode(move.getId(), "Attribute"));
             deltas.add(move.getSortOrder());
         }

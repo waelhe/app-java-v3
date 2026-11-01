@@ -101,6 +101,17 @@ public class PlatformTokenGrantService {
     /** The roles attribute's key on the authorization rows. */
     private static final String ROLES_ATTRIBUTE = "platform.roles";
 
+    /**
+     * The shard review (Major · Security & Privacy, 2026-11-01 wave 2):
+     * the family's OWN birth time on the authorization row — every
+     * rotation re-issues the refresh token (now + TTL), so the token's
+     * issuedAt can never bound the family's age; the attribute does. A
+     * legacy row (pre-attribute) is seeded from the presented token's
+     * issuedAt at its next rotation — the conservative floor (the family
+     * is at least as old as the presented token).
+     */
+    private static final String FAMILY_CREATED_ATTRIBUTE = "platform.family.created";
+
     // The #392 module-slice shape (the UserService/PasswordResetService
     // precedent verbatim): the security-infrastructure beans live outside
     // the GraphQL adapter slice — resolved lazily so every package-slice
@@ -116,6 +127,7 @@ public class PlatformTokenGrantService {
     private final IdentitySpi identitySpi;
     private final String audience;
     private final String publicClientId;
+    private final java.time.Duration refreshFamilyMaxAge;
 
     public PlatformTokenGrantService(
             ObjectProvider<AuthenticationConfiguration> authenticationConfiguration,
@@ -128,7 +140,9 @@ public class PlatformTokenGrantService {
             IdentitySpi identitySpi,
             @Value("${marketplace.security.jwt.audience:marketplace-api}") String audience,
             @Value("${marketplace.security.oauth2.public-client.client-id:"
-                    + "10b588c6-4e85-43ec-9ecf-c588676774d7}") String publicClientId) {
+                    + "10b588c6-4e85-43ec-9ecf-c588676774d7}") String publicClientId,
+            @Value("${marketplace.security.token.refresh-family-max-age-seconds:2592000}")
+            long refreshFamilyMaxAgeSeconds) {
         this.authenticationConfiguration = authenticationConfiguration;
         this.authorizationService = authorizationService;
         this.refreshTokenRotationStore = refreshTokenRotationStore;
@@ -139,6 +153,10 @@ public class PlatformTokenGrantService {
         this.identitySpi = identitySpi;
         this.audience = audience;
         this.publicClientId = publicClientId;
+        // The absolute session bound (default 30d = 2× the 14d refresh
+        // TTL): a family kept alive by rotation forever is the reviewer's
+        // exact finding — the cap forces a fresh password grant.
+        this.refreshFamilyMaxAge = java.time.Duration.ofSeconds(refreshFamilyMaxAgeSeconds);
     }
 
     /** The issued pair + the caller's own account projection. */
@@ -182,7 +200,14 @@ public class PlatformTokenGrantService {
         // principal is the caller-supplied email — never INFO-log it (PII
         // leakage into logs); the internal account id identifies the grant.
         log.info("Platform password grant issued: userId={}", user == null ? null : user.id());
-        return new IssuedTokens(accessToken, refreshToken, opaqueToken(), user);
+        // The shard review (Minor · Functional Correctness, 2026-11-01
+        // wave 2): the csrfToken was a random value NO path verifies —
+        // tokenRefresh REJECTS any non-blank csrfToken (the platform's
+        // own classified message), so a Saleor-protocol client returning
+        // it was punished for following the protocol. The honest answer
+        // is null: this surface does not implement CSRF proof (the
+        // nullable SDL field).
+        return new IssuedTokens(accessToken, refreshToken, null, user);
     }
 
     /**
@@ -271,6 +296,31 @@ public class PlatformTokenGrantService {
         Set<String> roles = (Set<String>) authorization.getAttributes()
                 .getOrDefault(ROLES_ATTRIBUTE, Set.of());
         Instant now = Instant.now();
+        // The shard review (Major · Security & Privacy, 2026-11-01 wave 2):
+        // the ABSOLUTE family-age cap. Each rotation re-issues the refresh
+        // token (now + TTL) so the token's own issuedAt can never bound
+        // the family — without this cap a session kept alive by rotation
+        // NEVER expires. The family's birth time rides the authorization
+        // row's attributes (written at grant); a legacy row predating the
+        // attribute is bounded from the presented token's issuedAt (the
+        // conservative floor) and seeded onto the row by THIS rotation,
+        // so every legacy family converges under the cap within one
+        // refresh. (The account-state side of the finding is the identity
+        // owner's own recorded contract: account disable/email change/
+        // self-deletion and role revoke DELETE the principal's
+        // oauth2_authorization rows in the same transaction — UserService
+        // and RoleAssignmentService's own DELETE statements — so a
+        // disabled account cannot refresh; NO parallel per-refresh
+        // account read is added here, per the reviewer's own guidance.)
+        Instant familyCreated = authorization.getAttributes()
+                .get(FAMILY_CREATED_ATTRIBUTE) instanceof Instant recorded ? recorded : null;
+        Instant familyStart = familyCreated != null ? familyCreated
+                : authorization.getRefreshToken().getToken().getIssuedAt();
+        if (familyStart != null
+                && Duration.between(familyStart, now).compareTo(refreshFamilyMaxAge) > 0) {
+            throw new org.springframework.security.authentication.BadCredentialsException(
+                    "The session exceeded its maximum age — sign in again");
+        }
         String accessToken = mintAccessToken(principal, roles, now);
         OAuth2AccessToken accessTokenToken = new OAuth2AccessToken(
                 OAuth2AccessToken.TokenType.BEARER, accessToken, now, now.plus(ACCESS_TOKEN_TTL));
@@ -281,12 +331,20 @@ public class PlatformTokenGrantService {
         String successor = opaqueToken();
         OAuth2RefreshToken refreshTokenToken = new OAuth2RefreshToken(successor, now,
                 now.plus(REFRESH_TOKEN_TTL));
-        OAuth2Authorization refreshed = OAuth2Authorization.from(authorization)
+        OAuth2Authorization.Builder rotation = OAuth2Authorization.from(authorization)
                 .token(accessTokenToken, metadata ->
                         metadata.put(OAuth2Authorization.Token.INVALIDATED_METADATA_NAME, false))
                 .token(refreshTokenToken, metadata ->
-                        metadata.put(OAuth2Authorization.Token.INVALIDATED_METADATA_NAME, false))
-                .build();
+                        metadata.put(OAuth2Authorization.Token.INVALIDATED_METADATA_NAME, false));
+        if (familyCreated == null && familyStart != null) {
+            // The legacy row's convergence: the family birth attribute is
+            // seeded from the presented token's issuedAt (the conservative
+            // floor — the family is at least this old), so the NEXT refresh
+            // enforces the true family age from the same attribute every
+            // new grant carries.
+            rotation.attribute(FAMILY_CREATED_ATTRIBUTE, familyStart);
+        }
+        OAuth2Authorization refreshed = rotation.build();
         // THE atomic boundary: the store arbitrates the consumption —
         // one conditional UPDATE on the shared row, in the database's
         // row lock, serialized across every instance sharing the store.
@@ -300,7 +358,9 @@ public class PlatformTokenGrantService {
                         new UsernamePasswordAuthenticationToken(principal, null, java.util.List.of()))
                 .orElse(null);
         log.info("Platform token refresh rotated: userId={}", user == null ? null : user.id());
-        return new IssuedTokens(accessToken, successor, opaqueToken(), user);
+        // The shard review (2026-11-01 wave 2): the csrfToken honesty fix —
+        // the rotation's answer carries null, exactly like the grant.
+        return new IssuedTokens(accessToken, successor, null, user);
     }
 
     /**
@@ -357,6 +417,10 @@ public class PlatformTokenGrantService {
                 .token(accessTokenToken)
                 .refreshToken(refreshTokenToken)
                 .attribute(ROLES_ATTRIBUTE, roles)
+                // The family's birth time (the wave-2 review's absolute
+                // session cap) — written once at grant; rotations preserve
+                // it (OAuth2Authorization.from copies the attributes).
+                .attribute(FAMILY_CREATED_ATTRIBUTE, issuedAt)
                 .build();
     }
 

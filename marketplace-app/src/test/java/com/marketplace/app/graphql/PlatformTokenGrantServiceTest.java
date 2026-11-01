@@ -159,7 +159,8 @@ class PlatformTokenGrantServiceTest {
                 provider(jwtDecoder),
                 identitySpi,
                 "marketplace-api",
-                PUBLIC_CLIENT_ID);
+                PUBLIC_CLIENT_ID,
+                java.time.Duration.ofDays(30).toSeconds());
     }
 
     // -------------------------------------------------------------------
@@ -177,7 +178,10 @@ class PlatformTokenGrantServiceTest {
                 .isNotBlank()
                 .isNotEqualTo(granted.refreshToken());
         assertThat(rotated.accessToken()).isNotBlank();
-        assertThat(rotated.csrfToken()).isNotBlank();
+        // The shard review (Minor · Functional Correctness, 2026-11-01
+        // wave 2): csrfToken answers null — no path verifies it and
+        // tokenRefresh REJECTS a non-blank one (the honest contract).
+        assertThat(rotated.csrfToken()).isNull();
         assertThat(rotated.user()).isNotNull();
         assertThat(rotated.user().email()).isEqualTo(PRINCIPAL);
 
@@ -516,6 +520,14 @@ class PlatformTokenGrantServiceTest {
          * window — the concurrent double-spend or immediate-replay shape —
          * nothing is written; an unknown value answers false.
          */
+        @Override
+        public int purgeConsumedBefore(java.time.Instant cutoff) {
+            // The in-memory ledger mirrors the production TTL bound; the
+            // unit suite never exercises the purge job itself.
+            consumedByHash.values().removeIf(consumed -> consumed.consumedAt().isBefore(cutoff));
+            return 0;
+        }
+
         @Override
         public synchronized boolean revokeFamilyIfConsumed(String presentedRefreshToken) {
             Consumed consumed = consumedByHash.get(sha256(presentedRefreshToken));

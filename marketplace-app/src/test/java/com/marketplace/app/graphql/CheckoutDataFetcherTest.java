@@ -58,7 +58,12 @@ class CheckoutDataFetcherTest {
         mapper = mock(CheckoutGraphQlMapper.class);
         orderCommandSpi = mock(OrderCommandSpi.class);
         codec = new SaleorGlobalIdCodec();
-        fetcher = new CheckoutDataFetcher(checkoutSpi, orderCommandSpi, mapper, codec);
+        // The shard review (2026-11-01 wave 2) wired the bulk-list bound
+        // into the line roots — the same bound-constructor shape
+        // OrderMutationDataFetcherTest uses.
+        GraphQlProperties properties = new GraphQlProperties(
+                null, null, null, new GraphQlProperties.Bulk(200));
+        fetcher = new CheckoutDataFetcher(checkoutSpi, orderCommandSpi, mapper, codec, properties);
         SecurityContextHolder.getContext().setAuthentication(
                 UsernamePasswordAuthenticationToken.authenticated("checkout-owner", "n/a",
                         List.of(new SimpleGrantedAuthority("ROLE_USER"))));

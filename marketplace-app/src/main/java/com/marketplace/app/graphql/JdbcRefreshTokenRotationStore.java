@@ -166,6 +166,14 @@ public class JdbcRefreshTokenRotationStore implements RefreshTokenRotationStore 
         return revoked > 0;
     }
 
+    /** The ledger's bounded-lifetime purge (V297's index serves the predicate). */
+    @Override
+    public int purgeConsumedBefore(java.time.Instant cutoff) {
+        return jdbcTemplate.update(
+                "DELETE FROM consumed_refresh_tokens WHERE consumed_at < ?",
+                java.sql.Timestamp.from(cutoff));
+    }
+
     /** SHA-256 of the token value — the ledger never stores a bearer secret. */
     private static byte[] sha256(String value) {
         try {

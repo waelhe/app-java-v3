@@ -346,7 +346,7 @@ public class CmsPageDataFetcher {
         if (requested <= 0) {
             return PageCountableConnection.newBuilder()
                     .edges(List.of())
-                    .pageInfo(pageInfoOf(false))
+                    .pageInfo(pageInfoOf(null, null, false, false))
                     .build();
         }
         String field = sortBy == null ? "SLUG" : sortBy.getField() == null
@@ -354,10 +354,11 @@ public class CmsPageDataFetcher {
         boolean ascending = sortBy == null || sortBy.getDirection() == null
                 || com.marketplace.app.graphql.generated.types.OrderDirection.ASC
                         .equals(sortBy.getDirection());
+        KeysetScrollPosition position = keysetPosition(after, field);
         CmsPageSpi.PageWindow window = cmsPageSpi.scrollPages(currentAuthentication(), field,
-                ascending, keysetPosition(after, field),
+                ascending, position,
                 Limit.of(Math.min(requested, properties.pagination().maxPageSize())));
-        return toConnection(window, PageCountableConnection.newBuilder(), field);
+        return toConnection(window, PageCountableConnection.newBuilder(), position);
     }
 
     @DgsQuery(field = DgsConstants.QUERY.PageType)
@@ -388,7 +389,7 @@ public class CmsPageDataFetcher {
         if (requested <= 0) {
             return PageTypeCountableConnection.newBuilder()
                     .edges(List.of())
-                    .pageInfo(pageInfoOf(false))
+                    .pageInfo(pageInfoOf(null, null, false, false))
                     .build();
         }
         String field = sortBy == null ? "NAME" : sortBy.getField() == null
@@ -396,10 +397,11 @@ public class CmsPageDataFetcher {
         boolean ascending = sortBy == null || sortBy.getDirection() == null
                 || com.marketplace.app.graphql.generated.types.OrderDirection.ASC
                         .equals(sortBy.getDirection());
+        KeysetScrollPosition typePosition = keysetPosition(after, field);
         CmsPageSpi.PageTypeWindow window = cmsPageSpi.scrollPageTypes(currentAuthentication(),
-                field, ascending, keysetPosition(after, field),
+                field, ascending, typePosition,
                 Limit.of(Math.min(requested, properties.pagination().maxPageSize())));
-        return toTypeConnection(window);
+        return toTypeConnection(window, typePosition);
     }
 
     // ---------------------------------------------------------------------
@@ -438,7 +440,7 @@ public class CmsPageDataFetcher {
 
     private PageCountableConnection toConnection(CmsPageSpi.PageWindow window,
                                                  PageCountableConnection.Builder builder,
-                                                 String sortField) {
+                                                 KeysetScrollPosition position) {
         List<com.marketplace.app.graphql.generated.types.PageCountableEdge> edges =
                 new ArrayList<>(window.window().getContent().size());
         for (int i = 0; i < window.window().getContent().size(); i++) {
@@ -447,13 +449,21 @@ public class CmsPageDataFetcher {
                     .cursor(cursorStrategy.toCursor(window.window().positionAt(i)))
                     .build());
         }
+        // The shard review (Minor · Functional Correctness, 2026-11-01
+        // wave 2): the Relay envelope — cursors from the first/last edge,
+        // hasPreviousPage from the REQUESTED scroll position (the
+        // PermissionGroupDataFetcher.toConnection pattern).
+        String start = edges.isEmpty() ? null : edges.get(0).getCursor();
+        String end = edges.isEmpty() ? null : edges.get(edges.size() - 1).getCursor();
         return builder.edges(edges)
-                .pageInfo(pageInfoOf(window.window().hasNext()))
+                .pageInfo(pageInfoOf(start, end, window.window().hasNext(),
+                        !position.isInitial()))
                 .totalCount((int) Math.min(window.total(), Integer.MAX_VALUE))
                 .build();
     }
 
-    private PageTypeCountableConnection toTypeConnection(CmsPageSpi.PageTypeWindow window) {
+    private PageTypeCountableConnection toTypeConnection(CmsPageSpi.PageTypeWindow window,
+                                                          KeysetScrollPosition position) {
         List<com.marketplace.app.graphql.generated.types.PageTypeCountableEdge> edges =
                 new ArrayList<>(window.window().getContent().size());
         for (int i = 0; i < window.window().getContent().size(); i++) {
@@ -462,17 +472,29 @@ public class CmsPageDataFetcher {
                     .cursor(cursorStrategy.toCursor(window.window().positionAt(i)))
                     .build());
         }
+        String start = edges.isEmpty() ? null : edges.get(0).getCursor();
+        String end = edges.isEmpty() ? null : edges.get(edges.size() - 1).getCursor();
         return PageTypeCountableConnection.newBuilder()
                 .edges(edges)
-                .pageInfo(pageInfoOf(window.window().hasNext()))
+                .pageInfo(pageInfoOf(start, end, window.window().hasNext(),
+                        !position.isInitial()))
                 .totalCount((int) Math.min(window.total(), Integer.MAX_VALUE))
                 .build();
     }
 
-    private static com.marketplace.app.graphql.generated.types.PageInfo pageInfoOf(boolean hasNext) {
+    /**
+     * The connection envelope's page info — the PermissionGroupDataFetcher
+     * toConnection pattern (the shard review 2026-11-01 wave 2): the Relay
+     * cursors from the first/last edge and hasPreviousPage from the
+     * REQUESTED scroll position.
+     */
+    private static com.marketplace.app.graphql.generated.types.PageInfo pageInfoOf(
+            String startCursor, String endCursor, boolean hasNext, boolean hasPrevious) {
         return com.marketplace.app.graphql.generated.types.PageInfo.newBuilder()
                 .hasNextPage(hasNext)
-                .hasPreviousPage(false)
+                .hasPreviousPage(hasPrevious)
+                .startCursor(startCursor)
+                .endCursor(endCursor)
                 .build();
     }
 
