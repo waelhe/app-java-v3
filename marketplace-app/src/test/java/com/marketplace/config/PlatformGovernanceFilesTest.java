@@ -897,6 +897,87 @@ class PlatformGovernanceFilesTest {
     }
 
     @Test
+    void saleorReleasePinsAreCurrentAndCanonicalCiUsesTheManifest() throws Exception {
+        JsonNode pins = new ObjectMapper().readTree(
+                read("docs", "governance", "plans", "saleor-source-pins.json"));
+
+        JsonNode core = pins.path("referenceSchema");
+        assertThat(core.path("repository").asText()).isEqualTo("saleor/saleor");
+        assertThat(core.path("ref").asText()).isEqualTo("3.23.45");
+        assertThat(core.path("path").asText()).isEqualTo("saleor/graphql/schema.graphql");
+        assertThat(core.path("gitBlobSha1").asText())
+                .isEqualTo("b8fa0dd809081f76dc2834bb5c286561e5783276");
+        assertThat(core.path("totalRoots").asInt()).isEqualTo(458);
+
+        JsonNode dashboard = pins.path("dashboard");
+        assertThat(dashboard.path("tag").asText()).isEqualTo("3.23.41");
+        assertThat(dashboard.path("commit").asText())
+                .isEqualTo("ae7697bc635c46392d2fca5f88a34970097679f7");
+
+        String canonicalPlan = read("docs", "governance", "plans",
+                "saleor-dashboard-full-commerce-canonical-plan.md");
+        assertThat(canonicalPlan)
+                .contains("tag 3.23.41")
+                .contains("saleor/saleor@3.23.45:saleor/graphql/schema.graphql")
+                .contains("Official Saleor AI documentation and agent resources")
+                .contains("https://docs.saleor.io/developer/ai");
+
+        String knowledgeMap = read("docs", "governance", "campaign",
+                "saleor-domain-knowledge-map.md");
+        assertThat(knowledgeMap)
+                .contains("saleor/saleor@" + core.path("ref").asText())
+                .contains("saleor/saleor-dashboard@" + dashboard.path("tag").asText())
+                .contains(dashboard.path("commit").asText())
+                .doesNotContain("3.23.43", "3.23.39",
+                        "bc75e988da0fa4fbc3d47378a888d859d070746f");
+
+        String[] activeSaleorGuidance = {
+                read("docs", "governance", "campaign",
+                        "commerce-main-promotion-and-saleor-skills-plan.md"),
+                read("docs", "governance", "campaign",
+                        "saleor-agent-skills-semantic-audit-directive.md"),
+                read("docs", "governance", "campaign",
+                        "saleor-agent-skills-source-provenance-proposal.md"),
+                read("docs", "governance", "campaign",
+                        "saleor-multi-agent-execution-playbook.md"),
+                read("docs", "governance", "campaign",
+                        "A0-EXECUTION-DIRECTIVE-20261028.md"),
+                read("docs", "governance", "campaign", "README.md"),
+                read("docs", "governance", "campaign", "frozen-contracts.md"),
+                read("docs", "governance", "campaign", "agent-tasks",
+                        "agent-1-identity-cms-navigation.md"),
+                read("docs", "governance", "campaign", "agent-tasks",
+                        "agent-2-catalog-pricing.md"),
+                read("docs", "governance", "campaign", "agent-tasks",
+                        "agent-3-orders-payments-events.md"),
+                read("docs", "governance", "plans",
+                        "saleor-contract-divergences.csv")
+        };
+        for (String guidanceDocument : activeSaleorGuidance) {
+            assertThat(guidanceDocument)
+                    .doesNotContain("3.23.43", "3.23.39",
+                            "bc75e988da0fa4fbc3d47378a888d859d070746f");
+        }
+
+        String skillPolicy = read("docs", "governance", "agent-skills-policy.md");
+        assertThat(skillPolicy)
+                .contains("3.23.45 reference schema (blob-verified)")
+                .contains("current official skill discovery/distribution source is "
+                        + "`saleor/saleor-docs`")
+                .doesNotContain("Official Saleor source: `saleor/agent-skills`");
+
+        assertThat(canonicalPlan)
+                .contains("https://docs.saleor.io/agent-readability.json")
+                .doesNotContain("https://docs.saleor.io/.well-known/agent-readability.json");
+
+        String workflow = read(".github", "workflows", "saleor-canonical-governance.yml");
+        assertThat(workflow)
+                .contains("['referenceSchema']['ref']")
+                .contains("saleor-source-pins.json")
+                .doesNotContain("SALEOR_REF: \"3.23.43\"");
+    }
+
+    @Test
     void agentSkillsVendoredContentIsRegisteredAndDriftIsDetected() throws Exception {
         // The .agents/skills surface vendors external agent skills (Neon
         // platform operations; the Saleor behavior reference) directly into

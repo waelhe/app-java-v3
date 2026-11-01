@@ -58,7 +58,8 @@ class ServiceDataFetcherTest {
     private final GraphQlProperties properties = new GraphQlProperties(
             new GraphQlProperties.Errors(false),
             new GraphQlProperties.Pagination(20, 100),
-            new GraphQlProperties.Limits(10, 200));
+            new GraphQlProperties.Limits(10, 200),
+            new GraphQlProperties.Bulk(200));
 
     /**
      * The connection-cursor codec under test — the exact construction the
