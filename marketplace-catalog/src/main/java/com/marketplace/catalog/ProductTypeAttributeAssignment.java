@@ -44,6 +44,36 @@ public class ProductTypeAttributeAssignment extends BaseEntity {
                 scope, required, position);
     }
 
+    /**
+     * The assignment's scope-move seam — the ADMIN assignment-update use
+     * case's own seam (the Saleor {@code productAttributeAssignmentUpdate}
+     * root mapped onto the row's scope column: flipping the
+     * variant-selection flag moves the assignment between the VARIANT and
+     * VARIANT_SELECTION scopes). The VARIANT_SELECTION invariants (the
+     * CHOICE value shape, the two-option floor, the required-every-
+     * variant law) are the SERVICE's own re-checks before this seam —
+     * {@code required} rides the scope's own law here (a VARIANT_SELECTION
+     * assignment is required for every variant, the platform's own
+     * invariant).
+     */
+    void moveToScope(ProductTypeAttributeScope target) {
+        if (target == null) throw new IllegalArgumentException("target scope is required");
+        this.scope = target;
+        this.required = target == ProductTypeAttributeScope.VARIANT_SELECTION;
+    }
+
+    /**
+     * The assignment's position-move seam — the ADMIN reorder use case's
+     * own seam (the Saleor {@code productTypeReorderAttributes} root).
+     * The new position is the SERVICE's own compacted derivation (the
+     * relative-move algorithm's outcome); the position-uniqueness column
+     * remains the concurrent-write backstop.
+     */
+    void reposition(int newPosition) {
+        if (newPosition < 0) throw new IllegalArgumentException("position must be non-negative");
+        this.position = newPosition;
+    }
+
     @Override public UUID getId() { return id; }
     public UUID getProductTypeId() { return productTypeId; }
     public UUID getAttributeDefinitionId() { return attributeDefinitionId; }
