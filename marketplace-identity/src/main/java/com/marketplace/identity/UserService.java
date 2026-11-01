@@ -248,6 +248,14 @@ public class UserService implements IdentitySpi {
      *                          honest 409 before any store is written
      */
     public User register(String email, String rawPassword, String displayName) {
+        // The shared password-shape gate FIRST (PasswordPolicy — 8..72
+        // characters AND at most 72 UTF-8 bytes, the bcrypt ceiling): the
+        // DTO's @Size counts characters only, so a compact-but-long
+        // multi-byte password must be rejected here — the honest 400
+        // before any store is read or written, never an encoder-time 500.
+        if (!PasswordPolicy.withinSharedPolicy(rawPassword)) {
+            throw PasswordPolicy.violation();
+        }
         String subject = email;
         if (userRepository.existsBySubject(subject)
                 || userDetailsManager.userExists(subject)) {

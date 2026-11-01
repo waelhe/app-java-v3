@@ -178,7 +178,10 @@ public class PlatformTokenGrantService {
         UserAccountView user = identitySpi.findCurrentUserAccount(
                         new UsernamePasswordAuthenticationToken(principal, null, java.util.List.of()))
                 .orElse(null);
-        log.info("Platform password grant issued: principal={}, roles={}", principal, roles);
+        // The shard review (Minor · Security & Privacy, 2026-11-01): the
+        // principal is the caller-supplied email — never INFO-log it (PII
+        // leakage into logs); the internal account id identifies the grant.
+        log.info("Platform password grant issued: userId={}", user == null ? null : user.id());
         return new IssuedTokens(accessToken, refreshToken, opaqueToken(), user);
     }
 
@@ -277,7 +280,7 @@ public class PlatformTokenGrantService {
         UserAccountView user = identitySpi.findCurrentUserAccount(
                         new UsernamePasswordAuthenticationToken(principal, null, java.util.List.of()))
                 .orElse(null);
-        log.info("Platform token refresh rotated: principal={}", principal);
+        log.info("Platform token refresh rotated: userId={}", user == null ? null : user.id());
         return new IssuedTokens(accessToken, successor, opaqueToken(), user);
     }
 

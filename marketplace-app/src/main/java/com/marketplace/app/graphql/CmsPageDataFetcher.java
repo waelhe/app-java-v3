@@ -93,6 +93,7 @@ public class CmsPageDataFetcher {
         if (input == null || input.getTitle() == null || input.getTitle().isBlank()) {
             throw new IllegalArgumentException("A page title is required");
         }
+        rejectPublishedAt(input.getPublishedAt());
         return PageCreate.newBuilder()
                 .page(toGraphQlPage(cmsPageSpi.createPage(currentAuthentication(),
                         input.getTitle(), input.getSlug(), input.getContent(),
@@ -108,6 +109,7 @@ public class CmsPageDataFetcher {
     public PageUpdate pageUpdate(@InputArgument String id,
                                  @InputArgument PageInput input) {
         requireInput(input);
+        rejectPublishedAt(input.getPublishedAt());
         return PageUpdate.newBuilder()
                 .page(toGraphQlPage(cmsPageSpi.updatePage(currentAuthentication(),
                         decodeId(id, PAGE_TYPE_TAG, "A page ID is required"),
@@ -130,6 +132,7 @@ public class CmsPageDataFetcher {
     @DgsMutation(field = DgsConstants.MUTATION.PageBulkDelete)
     @RateLimiter(name = "graphqlCmsMutation")
     public PageBulkDelete pageBulkDelete(@InputArgument List<String> ids) {
+        properties.requireBoundedList(ids, "pageBulkDelete");
         int count = cmsPageSpi.bulkDeletePages(currentAuthentication(),
                 decodeIds(ids, PAGE_TYPE_TAG, "A list of page IDs is required"));
         return PageBulkDelete.newBuilder()
@@ -142,6 +145,7 @@ public class CmsPageDataFetcher {
     @RateLimiter(name = "graphqlCmsMutation")
     public PageBulkPublish pageBulkPublish(@InputArgument List<String> ids,
                                            @InputArgument Boolean isPublished) {
+        properties.requireBoundedList(ids, "pageBulkPublish");
         if (isPublished == null) {
             throw new IllegalArgumentException("The isPublished flag is required");
         }
@@ -230,6 +234,7 @@ public class CmsPageDataFetcher {
     @RateLimiter(name = "graphqlCmsMutation")
     public com.marketplace.app.graphql.generated.types.PageTypeBulkDelete pageTypeBulkDelete(
             @InputArgument List<String> ids) {
+        properties.requireBoundedList(ids, "pageTypeBulkDelete");
         int count = cmsPageSpi.bulkDeletePageTypes(currentAuthentication(),
                 decodeIds(ids, PAGE_TYPE_TYPE_TAG, "A list of page type IDs is required"));
         return com.marketplace.app.graphql.generated.types.PageTypeBulkDelete.newBuilder()
@@ -242,6 +247,7 @@ public class CmsPageDataFetcher {
     @RateLimiter(name = "graphqlCmsMutation")
     public PageAttributeAssign pageAttributeAssign(@InputArgument List<String> attributeIds,
                                                    @InputArgument String pageTypeId) {
+        properties.requireBoundedList(attributeIds, "pageAttributeAssign");
         return PageAttributeAssign.newBuilder()
                 .pageType(toGraphQlPageType(cmsPageSpi.assignPageTypeAttributes(
                         currentAuthentication(),
@@ -255,6 +261,7 @@ public class CmsPageDataFetcher {
     @RateLimiter(name = "graphqlCmsMutation")
     public PageAttributeUnassign pageAttributeUnassign(@InputArgument List<String> attributeIds,
                                                        @InputArgument String pageTypeId) {
+        properties.requireBoundedList(attributeIds, "pageAttributeUnassign");
         return PageAttributeUnassign.newBuilder()
                 .pageType(toGraphQlPageType(cmsPageSpi.unassignPageTypeAttributes(
                         currentAuthentication(),
@@ -269,6 +276,7 @@ public class CmsPageDataFetcher {
     public PageTypeReorderAttributes pageTypeReorderAttributes(
             @InputArgument List<ReorderInput> moves,
             @InputArgument String pageTypeId) {
+        properties.requireBoundedList(moves, "pageTypeReorderAttributes");
         if (moves == null || moves.isEmpty()) {
             throw new IllegalArgumentException("A list of reorder moves is required");
         }
@@ -523,6 +531,23 @@ public class CmsPageDataFetcher {
     private static void requireInput(Object input) {
         if (input == null) {
             throw new IllegalArgumentException("An input is required");
+        }
+    }
+
+    /**
+     * The shard review (Minor · Functional Correctness, 2026-11-01): the
+     * SDL declares {@code publishedAt} on the page inputs, but the owning
+     * {@code CmsPageSpi} has no scheduled-publication capability — the
+     * value was accepted and silently dropped (a successful
+     * {@code errors: []} response that saved nothing the caller asked
+     * for). The file's own contract for unimplemented inputs
+     * ({@code rejectChannel}/{@code slugLanguageCode}) is explicit
+     * rejection: never a silent no-op.
+     */
+    private static void rejectPublishedAt(String publishedAt) {
+        if (publishedAt != null && !publishedAt.isBlank()) {
+            throw new IllegalArgumentException(
+                    "page publishedAt is not implemented on this platform yet");
         }
     }
 

@@ -183,7 +183,7 @@ public class AttributeMutationDataFetcher {
         if (ids == null || ids.isEmpty()) {
             throw new IllegalArgumentException("attributeBulkDelete requires a non-empty list of ids");
         }
-        requireBoundedList(ids, "attributeBulkDelete");
+        properties.requireBoundedList(ids, "attributeBulkDelete");
         List<UUID> nativeIds = new ArrayList<>(ids.size());
         for (String id : ids) {
             nativeIds.add(globalIdCodec.decode(id, AttributeGraphQlMapper.ATTRIBUTE_TYPE));
@@ -250,7 +250,7 @@ public class AttributeMutationDataFetcher {
         if (attributes == null || attributes.isEmpty()) {
             throw new IllegalArgumentException("attributeBulkCreate requires a non-empty list of attributes");
         }
-        requireBoundedList(attributes, "attributeBulkCreate");
+        properties.requireBoundedList(attributes, "attributeBulkCreate");
         List<AttributeCreateCommand> commands = new ArrayList<>(attributes.size());
         for (AttributeCreateInput attribute : attributes) {
             commands.add(new AttributeCreateCommand(
@@ -295,7 +295,7 @@ public class AttributeMutationDataFetcher {
         if (attributes == null || attributes.isEmpty()) {
             throw new IllegalArgumentException("attributeBulkUpdate requires a non-empty list of attributes");
         }
-        requireBoundedList(attributes, "attributeBulkUpdate");
+        properties.requireBoundedList(attributes, "attributeBulkUpdate");
         List<AttributeBulkUpdateItem> items = new ArrayList<>(attributes.size());
         for (AttributeBulkUpdateInput attribute : attributes) {
             if (attribute.getId() == null) {
@@ -337,14 +337,6 @@ public class AttributeMutationDataFetcher {
      * the other transport-level guards answer, never a silent
      * truncation.
      */
-    private void requireBoundedList(List<?> items, String rootName) {
-        int maxListItems = properties.bulk().maxListItems();
-        if (items.size() > maxListItems) {
-            throw new IllegalArgumentException(rootName + " rejects a list of " + items.size()
-                    + " items: the bulk list bound is " + maxListItems
-                    + " (marketplace.graphql.bulk.max-list-items)");
-        }
-    }
 
     /**
      * The per-item domain error entries onto Saleor's bulk error objects

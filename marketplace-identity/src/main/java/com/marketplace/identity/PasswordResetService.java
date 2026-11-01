@@ -115,12 +115,9 @@ public class PasswordResetService {
      * burnt on an encoder failure the caller cannot answer.
      */
     private static boolean passwordWithinSharedPolicy(String password) {
-        if (password == null || password.length() < 8 || password.length() > 72) {
-            return false;
-        }
-        // The bcrypt byte ceiling (Spring Security's own bound): at most 72
-        // UTF-8 bytes of password material reach the hasher.
-        return password.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= 72;
+        // The shared shape policy (the identity owner's single bound — the
+        // same PasswordPolicy every password entry point applies).
+        return PasswordPolicy.withinSharedPolicy(password);
     }
 
     private final UserRepository userRepository;

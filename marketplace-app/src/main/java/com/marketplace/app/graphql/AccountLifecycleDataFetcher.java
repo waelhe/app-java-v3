@@ -188,8 +188,17 @@ public class AccountLifecycleDataFetcher {
                     "A valid email address of at most 50 characters is required");
         }
         String password = input.getPassword();
-        if (password.length() < 8 || password.length() > 72) {
-            throw new IllegalArgumentException("The password must be between 8 and 72 characters");
+        // The shard review (CodeRabbit 2026-11-01, Minor · Security): bcrypt's
+        // documented input ceiling is 72 BYTES of UTF-8 — never 72 UTF-16
+        // characters. A 40-character Arabic password is ~80 UTF-8 bytes: it
+        // passed the old character count while silently exceeding the bcrypt
+        // limit. The byte-encoded length is the real ceiling (rejected
+        // here, never silently truncated by the encoder).
+        int passwordBytes = password.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        if (password.length() < 8 || passwordBytes > 72) {
+            throw new IllegalArgumentException(
+                    "The password must be at least 8 characters and at most 72 bytes"
+                            + " (the bcrypt byte ceiling)");
         }
         accountLifecycleSpi.register(email, password,
                 composeDisplayName(input.getFirstName(), input.getLastName()));

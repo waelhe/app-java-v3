@@ -52,13 +52,16 @@ public class VoucherMutationDataFetcher {
     private final VoucherWriteSpi voucherWriteSpi;
     private final VoucherGraphQlMapper voucherMapper;
     private final SaleorGlobalIdCodec globalIdCodec;
+    private final GraphQlProperties properties;
 
     public VoucherMutationDataFetcher(VoucherWriteSpi voucherWriteSpi,
                                       VoucherGraphQlMapper voucherMapper,
-                                      SaleorGlobalIdCodec globalIdCodec) {
+                                      SaleorGlobalIdCodec globalIdCodec,
+                                      GraphQlProperties properties) {
         this.voucherWriteSpi = voucherWriteSpi;
         this.voucherMapper = voucherMapper;
         this.globalIdCodec = globalIdCodec;
+        this.properties = properties;
     }
 
     /**
@@ -144,6 +147,7 @@ public class VoucherMutationDataFetcher {
     @DgsMutation(field = DgsConstants.MUTATION.VoucherBulkDelete)
     @RateLimiter(name = "graphqlVoucherMutation")
     public VoucherBulkDelete voucherBulkDelete(@InputArgument List<String> ids) {
+        properties.requireBoundedList(ids, "voucherBulkDelete");
         if (ids == null || ids.isEmpty()) {
             throw new IllegalArgumentException("voucherBulkDelete requires a non-empty list of ids");
         }

@@ -133,7 +133,12 @@ public class TokenDataFetcher {
      * never was).
      */
     @DgsMutation(field = DgsConstants.MUTATION.TokenVerify)
-    @RateLimiter(name = "graphqlTokenMutation")
+    // The shard review (Major · Stability, 2026-11-01): tokenVerify is a
+    // cheap read-shaped verification that PreLoginGraphQlGate admits for
+    // anonymous callers — sharing the 10/min grant budget with
+    // tokenCreate/tokenRefresh let one caller's verification traffic
+    // starve every grant (and vice versa). It now owns its own budget.
+    @RateLimiter(name = "graphqlTokenVerify")
     public VerifyToken tokenVerify(@InputArgument String token) {
         if (token == null || token.isBlank()) {
             throw new IllegalArgumentException("A token is required");
@@ -154,7 +159,9 @@ public class TokenDataFetcher {
 
     /** Saleor {@code tokensDeactivateAll} — the caller's sign-out-everywhere. */
     @DgsMutation(field = DgsConstants.MUTATION.TokensDeactivateAll)
-    @RateLimiter(name = "graphqlTokenMutation")
+    // The same review: the authenticated sign-out-everywhere leg must not
+    // compete with anonymous grant traffic for one shared budget.
+    @RateLimiter(name = "graphqlTokenDeactivate")
     public DeactivateAllUserTokens tokensDeactivateAll() {
         Authentication caller = currentAuthentication();
         accountLifecycleSpi.deactivateAllTokens(caller);

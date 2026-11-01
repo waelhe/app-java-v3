@@ -258,7 +258,11 @@ public class ProductDataFetcher {
     // rename here fails the real-SDL productType selections in the DGS and
     // integration suites immediately, never silently.
     @DgsData(parentType = "Product", field = "productType")
-    @RateLimiter(name = "graphqlCatalogRead")
+    // The shard review (Major · Stability, 2026-11-01): NO rate limiting on
+    // FIELD fetchers — a field-level limiter consumed one permit PER PARENT
+    // OBJECT, so an ordinary page of products exhausted graphqlCatalogRead
+    // (50/period) mid-page and surfaced as data errors. Rate limiting owns
+    // the ROOT resolvers only.
     public ProductType productType(DataFetchingEnvironment environment) {
         Product source = environment.getSource();
         if (source.getProductType() == null) {

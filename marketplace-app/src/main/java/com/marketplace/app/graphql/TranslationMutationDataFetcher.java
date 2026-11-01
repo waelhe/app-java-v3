@@ -74,17 +74,20 @@ public class TranslationMutationDataFetcher {
     private final AttributeGraphQlMapper attributeMapper;
     private final CollectionGraphQlMapper collectionMapper;
     private final SaleorGlobalIdCodec globalIdCodec;
+    private final GraphQlProperties properties;
 
     public TranslationMutationDataFetcher(TranslationWriteSpi translationWriteSpi,
                                           CategoryGraphQlMapper categoryMapper,
                                           AttributeGraphQlMapper attributeMapper,
                                           CollectionGraphQlMapper collectionMapper,
-                                          SaleorGlobalIdCodec globalIdCodec) {
+                                          SaleorGlobalIdCodec globalIdCodec,
+                                          GraphQlProperties properties) {
         this.translationWriteSpi = translationWriteSpi;
         this.categoryMapper = categoryMapper;
         this.attributeMapper = attributeMapper;
         this.collectionMapper = collectionMapper;
         this.globalIdCodec = globalIdCodec;
+        this.properties = properties;
     }
 
     /**
@@ -203,6 +206,7 @@ public class TranslationMutationDataFetcher {
     public AttributeBulkTranslate attributeBulkTranslate(
             @InputArgument String errorPolicy,
             @InputArgument List<AttributeBulkTranslateInput> translations) {
+        properties.requireBoundedList(translations, "attributeBulkTranslate");
         if (translations == null || translations.isEmpty()) {
             throw new IllegalArgumentException("attributeBulkTranslate requires a non-empty list of translations");
         }
@@ -249,6 +253,7 @@ public class TranslationMutationDataFetcher {
     public AttributeValueBulkTranslate attributeValueBulkTranslate(
             @InputArgument String errorPolicy,
             @InputArgument List<AttributeValueBulkTranslateInput> translations) {
+        properties.requireBoundedList(translations, "attributeValueBulkTranslate");
         if (translations == null || translations.isEmpty()) {
             throw new IllegalArgumentException(
                     "attributeValueBulkTranslate requires a non-empty list of translations");

@@ -110,7 +110,7 @@ class AgentOneGraphQlMappers {
     // ---------------------------------------------------------------------
 
     <T> CustomerTypeCountableConnection toCustomerTypeConnection(Window<CustomerTypeView> window,
-                                                                  long total) {
+                                                                  long total, boolean hasPreviousPage) {
         List<CustomerTypeCountableEdge> edges = new ArrayList<>(window.getContent().size());
         for (int i = 0; i < window.getContent().size(); i++) {
             edges.add(CustomerTypeCountableEdge.newBuilder()
@@ -122,7 +122,7 @@ class AgentOneGraphQlMappers {
                 .edges(edges)
                 .pageInfo(PageInfo.newBuilder()
                         .hasNextPage(window.hasNext())
-                        .hasPreviousPage(false)
+                        .hasPreviousPage(hasPreviousPage)
                         .startCursor(edges.isEmpty() ? null : edges.get(0).getCursor())
                         .endCursor(edges.isEmpty() ? null : edges.get(edges.size() - 1).getCursor())
                         .build())

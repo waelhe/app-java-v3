@@ -52,17 +52,20 @@ public class UserManagementDataFetcher {
     private final AgentOneGraphQlMappers mappers;
     private final UserGraphQlMapper userMapper;
     private final SaleorGlobalIdCodec globalIdCodec;
+    private final GraphQlProperties properties;
 
     public UserManagementDataFetcher(UserManagementSpi userManagementSpi,
                                      IdentitySpi identitySpi,
                                      AgentOneGraphQlMappers mappers,
                                      UserGraphQlMapper userMapper,
-                                     SaleorGlobalIdCodec globalIdCodec) {
+                                     SaleorGlobalIdCodec globalIdCodec,
+                                     GraphQlProperties properties) {
         this.userManagementSpi = userManagementSpi;
         this.identitySpi = identitySpi;
         this.mappers = mappers;
         this.userMapper = userMapper;
         this.globalIdCodec = globalIdCodec;
+        this.properties = properties;
     }
 
     // ---------------------------------------------------------------------
@@ -111,6 +114,7 @@ public class UserManagementDataFetcher {
     @DgsMutation(field = DgsConstants.MUTATION.CustomerBulkDelete)
     @RateLimiter(name = "graphqlAccountMutation")
     public CustomerBulkDelete customerBulkDelete(@InputArgument List<String> ids) {
+        properties.requireBoundedList(ids, "customerBulkDelete");
         List<UUID> targets = decodeIds(ids, "A list of customer IDs is required");
         int count = userManagementSpi.bulkDeleteCustomers(currentAuthentication(), targets);
         return CustomerBulkDelete.newBuilder()
@@ -124,6 +128,7 @@ public class UserManagementDataFetcher {
     public CustomerBulkUpdate customerBulkUpdate(
             @InputArgument List<CustomerBulkUpdateInput> customers,
             @InputArgument ErrorPolicyEnum errorPolicy) {
+        properties.requireBoundedList(customers, "customerBulkUpdate");
         if (customers == null || customers.isEmpty()) {
             throw new IllegalArgumentException("A list of customer updates is required");
         }
@@ -131,7 +136,19 @@ public class UserManagementDataFetcher {
         List<UUID> ids = new ArrayList<>(customers.size());
         List<UserWriteFields> rows = new ArrayList<>(customers.size());
         for (CustomerBulkUpdateInput row : customers) {
-            ids.add(resolveTarget(row.getExternalReference(), row.getId()));
+            // The shard review (Minor · Functional Correctness, 2026-11-01):
+            // with IGNORE_FAILED, one unresolvable row must fail ITSELF —
+            // never the whole batch. Saleor's errorPolicy contract keeps
+            // the valid rows and reports the failure per-row in
+            // results[i].errors; a null id answers the per-row failure.
+            try {
+                ids.add(resolveTarget(row.getExternalReference(), row.getId()));
+            } catch (RuntimeException rowFailure) {
+                if (!ignoreFailed) {
+                    throw rowFailure;
+                }
+                ids.add(null);
+            }
             rows.add(toFields(row.getInput()));
         }
         List<com.marketplace.identity.spi.BulkRowResult> results =
@@ -197,6 +214,7 @@ public class UserManagementDataFetcher {
     @DgsMutation(field = DgsConstants.MUTATION.StaffBulkDelete)
     @RateLimiter(name = "graphqlAccountMutation")
     public StaffBulkDelete staffBulkDelete(@InputArgument List<String> ids) {
+        properties.requireBoundedList(ids, "staffBulkDelete");
         List<UUID> targets = decodeIds(ids, "A list of staff user IDs is required");
         int count = userManagementSpi.bulkDeleteStaff(currentAuthentication(), targets);
         return StaffBulkDelete.newBuilder()
@@ -209,6 +227,7 @@ public class UserManagementDataFetcher {
     @RateLimiter(name = "graphqlAccountMutation")
     public UserBulkSetActive userBulkSetActive(@InputArgument List<String> ids,
                                               @InputArgument Boolean isActive) {
+        properties.requireBoundedList(ids, "userBulkSetActive");
         List<UUID> targets = decodeIds(ids, "A list of user IDs is required");
         if (isActive == null) {
             throw new IllegalArgumentException("The isActive flag is required");

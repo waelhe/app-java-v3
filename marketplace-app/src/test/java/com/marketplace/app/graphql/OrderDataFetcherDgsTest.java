@@ -55,6 +55,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -280,6 +282,30 @@ class OrderDataFetcherDgsTest {
      * the lifecycle ADAPT mapping rendering the platform's PLACED as
      * upstream's UNCONFIRMED) ride the same envelope.
      */
+    /**
+     * The shard review (2026-11-01, Minor · Security & Privacy): the empty
+     * page for a non-positive {@code first} answered BEFORE the ADMIN
+     * decision — a non-ADMIN caller received a success-shaped empty
+     * connection instead of the AUTHZ-001 rejection. The permission
+     * decision now comes FIRST.
+     */
+    @Test
+    void ordersNonPositiveFirstStillAnswersThePermissionDecisionFirst() {
+        authenticateAs("dgs-consumer-subject", "CONSUMER");
+        doThrow(new org.springframework.security.access.AccessDeniedException("denied"))
+                .when(orderCommandSpi).requireAdmin();
+
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                query { orders(first: 0) { edges { node { id } } } }
+                """, "data.orders"))
+                .hasMessageContaining("denied");
+
+        verify(orderCommandSpi).requireAdmin();
+        verify(orderReadSpi, never()).scrollOrders(
+                any(org.springframework.security.core.Authentication.class),
+                any(OrderSort.class), any(), any(Limit.class));
+    }
+
     @Test
     void ordersSerializesTheSaleorConnectionEnvelopeWithKeysetCursors() {
         authenticateAs("dgs-admin-subject", "ADMIN");

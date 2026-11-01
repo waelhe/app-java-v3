@@ -37,6 +37,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -260,6 +261,25 @@ class AgentOneMutationDgsTest {
                 } }
                 """, "data.requestPasswordReset.errors");
         verify(accountLifecycleSpi).requestPasswordReset("who@example.com");
+    }
+
+    /**
+     * The shard review (2026-11-01, Minor · Security): bcrypt's ceiling is
+     * 72 UTF-8 BYTES, never 72 characters — a 40-character Arabic password
+     * is ~80 bytes and passed the old character-only count. The byte
+     * ceiling must reject it (never a silent truncation).
+     */
+    @Test
+    void accountRegisterRejectsACompactPasswordThatExceedsTheBcryptByteCeiling() {
+        String fortyArabicCharacters = "ط".repeat(40);
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { accountRegister(input: { email: "bytes@example.com",
+                        password: "%s" }) {
+                    errors { code }
+                } }
+                """.formatted(fortyArabicCharacters), "data.accountRegister.errors"))
+                .hasMessageContaining("72 bytes");
+        verify(accountLifecycleSpi, never()).register(any(), any(), any());
     }
 
     @Test

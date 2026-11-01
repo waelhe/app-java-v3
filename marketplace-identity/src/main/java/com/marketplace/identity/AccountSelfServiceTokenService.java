@@ -16,7 +16,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
-import java.util.regex.Pattern;
 
 /**
  * Agent 1 (the Saleor 458-root campaign, assignment packet PR #696): the
@@ -50,7 +49,6 @@ public class AccountSelfServiceTokenService {
     private static final Logger log = LoggerFactory.getLogger(AccountSelfServiceTokenService.class);
 
     static final Duration DELETION_TTL = Duration.ofHours(24);
-    private static final Pattern PASSWORD_SHAPE = Pattern.compile("^.{8,72}$");
 
     private final UserRepository userRepository;
     private final UserDetailsManager userDetailsManager;
@@ -118,9 +116,8 @@ public class AccountSelfServiceTokenService {
         if (oldPassword == null) {
             throw new IllegalArgumentException("The current password is required to change it");
         }
-        if (newPassword == null || !PASSWORD_SHAPE.matcher(newPassword).matches()) {
-            throw new IllegalArgumentException(
-                    "The new password must be 8 to 72 characters long");
+        if (!PasswordPolicy.withinSharedPolicy(newPassword)) {
+            throw PasswordPolicy.violation();
         }
         UserDetails stored;
         try {

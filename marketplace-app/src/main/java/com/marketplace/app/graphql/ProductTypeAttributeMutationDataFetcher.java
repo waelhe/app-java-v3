@@ -58,13 +58,16 @@ public class ProductTypeAttributeMutationDataFetcher {
     private final ProductTypeAttributeWriteSpi schemaWriteSpi;
     private final ProductTypeGraphQlMapper productTypeMapper;
     private final SaleorGlobalIdCodec globalIdCodec;
+    private final GraphQlProperties properties;
 
     public ProductTypeAttributeMutationDataFetcher(ProductTypeAttributeWriteSpi schemaWriteSpi,
                                                    ProductTypeGraphQlMapper productTypeMapper,
-                                                   SaleorGlobalIdCodec globalIdCodec) {
+                                                   SaleorGlobalIdCodec globalIdCodec,
+                                                   GraphQlProperties properties) {
         this.schemaWriteSpi = schemaWriteSpi;
         this.productTypeMapper = productTypeMapper;
         this.globalIdCodec = globalIdCodec;
+        this.properties = properties;
     }
 
     /**
@@ -81,6 +84,7 @@ public class ProductTypeAttributeMutationDataFetcher {
     public ProductAttributeAssign productAttributeAssign(
             @InputArgument List<ProductAttributeAssignInput> operations,
             @InputArgument String productTypeId) {
+        properties.requireBoundedList(operations, "productAttributeAssign");
         if (productTypeId == null) {
             throw new IllegalArgumentException(
                     "productAttributeAssign requires the productTypeId of the schema to amend");
@@ -118,6 +122,7 @@ public class ProductTypeAttributeMutationDataFetcher {
     public ProductAttributeAssignmentUpdate productAttributeAssignmentUpdate(
             @InputArgument List<ProductAttributeAssignmentUpdateInput> operations,
             @InputArgument String productTypeId) {
+        properties.requireBoundedList(operations, "productAttributeAssignmentUpdate");
         if (productTypeId == null) {
             throw new IllegalArgumentException(
                     "productAttributeAssignmentUpdate requires the productTypeId of the schema to amend");
@@ -154,6 +159,7 @@ public class ProductTypeAttributeMutationDataFetcher {
     public ProductAttributeUnassign productAttributeUnassign(
             @InputArgument List<String> attributeIds,
             @InputArgument String productTypeId) {
+        properties.requireBoundedList(attributeIds, "productAttributeUnassign");
         if (productTypeId == null) {
             throw new IllegalArgumentException(
                     "productAttributeUnassign requires the productTypeId of the schema to amend");
@@ -189,6 +195,7 @@ public class ProductTypeAttributeMutationDataFetcher {
             @InputArgument List<ReorderInput> moves,
             @InputArgument String productTypeId,
             @InputArgument ProductAttributeType type) {
+        properties.requireBoundedList(moves, "productTypeReorderAttributes");
         if (productTypeId == null) {
             throw new IllegalArgumentException(
                     "productTypeReorderAttributes requires the productTypeId of the schema to reorder");

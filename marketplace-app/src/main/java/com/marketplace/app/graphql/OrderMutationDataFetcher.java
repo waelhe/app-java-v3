@@ -31,13 +31,16 @@ public class OrderMutationDataFetcher {
     private final OrderCommandSpi orderCommandSpi;
     private final OrderGraphQlMapper mapper;
     private final SaleorGlobalIdCodec globalIdCodec;
+    private final GraphQlProperties properties;
 
     public OrderMutationDataFetcher(OrderCommandSpi orderCommandSpi,
                                     OrderGraphQlMapper mapper,
-                                    SaleorGlobalIdCodec globalIdCodec) {
+                                    SaleorGlobalIdCodec globalIdCodec,
+                                    GraphQlProperties properties) {
         this.orderCommandSpi = orderCommandSpi;
         this.mapper = mapper;
         this.globalIdCodec = globalIdCodec;
+        this.properties = properties;
     }
 
     /**
@@ -50,6 +53,10 @@ public class OrderMutationDataFetcher {
         // Permission is decided before any caller-supplied ID is decoded, and
         // before an empty request can return a success-shaped payload.
         orderCommandSpi.requireAdmin();
+        // The shard review (2026-11-01): the shared bulk-list bound — the
+        // G4 unbounded-list defense every bulk root applies (a rate limiter
+        // counts the request, never the items).
+        properties.requireBoundedList(ids, "orderBulkCancel");
         List<String> submittedIds = ids == null ? List.of() : ids;
         final List<UUID> orderIds = new ArrayList<>(submittedIds.size());
         for (String id : submittedIds) {

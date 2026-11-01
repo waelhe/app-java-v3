@@ -115,9 +115,10 @@ public class CmsNavigationDataFetcher {
             throw new IllegalArgumentException("A menu input is required");
         }
         return MenuUpdate.newBuilder()
-                .menu(toGraphQlMenu(navigationPort.updateMenu(currentAuthentication(),
-                        decodeId(id, MENU_TAG, "A menu ID is required"), input.getName(),
-                        input.getSlug())))
+                .menu(toMenuWithItems(currentAuthentication(),
+                        navigationPort.updateMenu(currentAuthentication(),
+                                decodeId(id, MENU_TAG, "A menu ID is required"), input.getName(),
+                                input.getSlug())))
                 .errors(mappersEmpty())
                 .build();
     }
@@ -240,10 +241,16 @@ public class CmsNavigationDataFetcher {
                     : decodeId(move.getParentId(), MENU_ITEM_TAG, "A parent item ID"));
             sortOrders.add(move.getSortOrder());
         }
-        navigationPort.moveMenuItems(currentAuthentication(), menuId, itemIds, parentIds,
-                sortOrders);
+        Authentication caller = currentAuthentication();
+        navigationPort.moveMenuItems(caller, menuId, itemIds, parentIds, sortOrders);
+        // The shard review (Major · Functional Correctness, 2026-11-01): the
+        // fabricated MenuView(menuId, null, null) answered name:""/slug:""/items:[]
+        // — the caller needs the ACTUAL tree after the move. Re-read the
+        // menu and render it through the same items-carrying mapper the
+        // single-menu reads use.
         return MenuItemMove.newBuilder()
-                .menu(toGraphQlMenu(new CmsNavigationSpi.MenuView(menuId, null, null)))
+                .menu(navigationPort.findMenuById(caller, menuId)
+                        .map(view -> toMenuWithItems(caller, view)).orElse(null))
                 .errors(mappersEmpty())
                 .build();
     }
@@ -308,11 +315,19 @@ public class CmsNavigationDataFetcher {
         CmsNavigationSpi.MenuWindow window = navigationPort.scrollMenus(currentAuthentication(),
                 field, ascending, keysetPosition(after, field),
                 Limit.of(Math.min(requested, properties.pagination().maxPageSize())));
+        // The shard review (Major · Functional Correctness, 2026-11-01):
+        // the connection rendered every node through toGraphQlMenu — items
+        // ALWAYS empty — so menus { edges { node { items } } } answered []
+        // even for menus that carry items. Each node now renders through
+        // the same items-carrying mapper the single-menu reads use (the
+        // page is bounded by max-list-items/max-page-size, the same bound
+        // every per-node field resolution on this surface already pays).
+        Authentication menusCaller = currentAuthentication();
         List<com.marketplace.app.graphql.generated.types.MenuCountableEdge> edges =
                 new ArrayList<>(window.window().getContent().size());
         for (int i = 0; i < window.window().getContent().size(); i++) {
             edges.add(com.marketplace.app.graphql.generated.types.MenuCountableEdge.newBuilder()
-                    .node(toGraphQlMenu(window.window().getContent().get(i)))
+                    .node(toMenuWithItems(menusCaller, window.window().getContent().get(i)))
                     .cursor(cursorStrategy.toCursor(window.window().positionAt(i)))
                     .build());
         }

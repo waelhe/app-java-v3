@@ -206,7 +206,11 @@ public class CustomerTypeDataFetcher {
         CustomerTypeSpi.CustomerTypePage page = customerTypeSpi.scroll(currentAuthentication(),
                 sort, position, Limit.of(Math.min(requested, properties.pagination().maxPageSize())),
                 search);
-        return mappers.toCustomerTypeConnection(page.window(), page.total());
+        // The shard review (Minor · Functional Correctness, 2026-11-01):
+        // the connection pinned hasPreviousPage=false, breaking the Relay
+        // contract every other catalog root honors (position-aware).
+        return mappers.toCustomerTypeConnection(page.window(), page.total(),
+                !position.isInitial());
     }
 
     // ---------------------------------------------------------------------

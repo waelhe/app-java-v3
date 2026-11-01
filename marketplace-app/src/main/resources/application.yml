@@ -1041,6 +1041,35 @@ resilience4j:
         base-config: default
         limit-for-period: 10
         timeout-duration: 0
+      # The shard review (Minor · Functional Correctness, 2026-11-01): the
+      # three names below are annotated 70x across the account/CMS fetchers
+      # but were never declared — every call silently fell back to the
+      # default instance's limits instead of the intended per-surface
+      # budgets. graphqlAccountMutation and graphqlCmsMutation follow the
+      # mutation shape (10/min, fail fast); graphqlCmsQuery follows the
+      # read shape (50/min). graphqlTokenVerify (the read-shaped
+      # verification leg) and graphqlTokenDeactivate (the authenticated
+      # sign-out leg) are the budget split the same review required.
+      graphqlAccountMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlCmsMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlCmsQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      graphqlTokenVerify:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      graphqlTokenDeactivate:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
       # Agent 2 (campaign-b5/a — the catalog/pricing write roots): each
       # mutation family its own instance at the same write budget, so one
       # family's burst cannot exhaust another's window.

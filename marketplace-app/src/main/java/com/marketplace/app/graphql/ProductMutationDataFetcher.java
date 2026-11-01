@@ -173,7 +173,7 @@ public class ProductMutationDataFetcher {
         if (ids == null || ids.isEmpty()) {
             throw new IllegalArgumentException("productBulkDelete requires a non-empty list of ids");
         }
-        requireBoundedList(ids, "productBulkDelete");
+        properties.requireBoundedList(ids, "productBulkDelete");
         List<UUID> nativeIds = new ArrayList<>(ids.size());
         for (String id : ids) {
             nativeIds.add(globalIdCodec.decode(id, ProductGraphQlMapper.PRODUCT_TYPE));
@@ -204,7 +204,7 @@ public class ProductMutationDataFetcher {
         if (products == null || products.isEmpty()) {
             throw new IllegalArgumentException("productBulkCreate requires a non-empty list of products");
         }
-        requireBoundedList(products, "productBulkCreate");
+        properties.requireBoundedList(products, "productBulkCreate");
         List<ProductCreateCommand> commands = new ArrayList<>(products.size());
         for (ProductBulkCreateInput product : products) {
             if (product.getProductType() == null) {
@@ -247,14 +247,6 @@ public class ProductMutationDataFetcher {
      * the other transport-level guards answer, never a silent
      * truncation.
      */
-    private void requireBoundedList(List<?> items, String rootName) {
-        int maxListItems = properties.bulk().maxListItems();
-        if (items.size() > maxListItems) {
-            throw new IllegalArgumentException(rootName + " rejects a list of " + items.size()
-                    + " items: the bulk list bound is " + maxListItems
-                    + " (marketplace.graphql.bulk.max-list-items)");
-        }
-    }
 
     /**
      * The per-item domain error entries onto Saleor's bulk error
