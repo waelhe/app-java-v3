@@ -39,18 +39,15 @@ public class AccountLifecycleDataFetcher {
     private final IdentitySpi identitySpi;
     private final AgentOneGraphQlMappers mappers;
     private final UserGraphQlMapper userMapper;
-    private final PerCallerRateLimitGuard perCallerRateLimitGuard;
 
     public AccountLifecycleDataFetcher(AccountLifecycleSpi accountLifecycleSpi,
                                        IdentitySpi identitySpi,
                                        AgentOneGraphQlMappers mappers,
-                                       UserGraphQlMapper userMapper,
-                                       PerCallerRateLimitGuard perCallerRateLimitGuard) {
+                                       UserGraphQlMapper userMapper) {
         this.accountLifecycleSpi = accountLifecycleSpi;
         this.identitySpi = identitySpi;
         this.mappers = mappers;
         this.userMapper = userMapper;
-        this.perCallerRateLimitGuard = perCallerRateLimitGuard;
     }
 
     /**
@@ -64,12 +61,12 @@ public class AccountLifecycleDataFetcher {
      * senders carry their own per-CALLER budget besides (the guard).</p>
      */
     @DgsMutation(field = DgsConstants.MUTATION.RequestPasswordReset)
+    @PerCallerBudget(surface = "graphqlAccountAnonymousMutation")
     @RateLimiter(name = "graphqlAccountAnonymousMutation")
     public RequestPasswordReset requestPasswordReset(@InputArgument String channel,
                                                      @InputArgument String email,
                                                      @InputArgument String redirectUrl,
                                                      graphql.schema.DataFetchingEnvironment environment) {
-        perCallerRateLimitGuard.acquirePermit(environment, "graphqlAccountAnonymousMutation");
         rejectChannel(channel);
         if (email == null || email.isBlank()) {
             throw new IllegalArgumentException("An email is required");
@@ -84,11 +81,11 @@ public class AccountLifecycleDataFetcher {
      * wave-2 review's per-caller set).
      */
     @DgsMutation(field = DgsConstants.MUTATION.SendConfirmationEmail)
+    @PerCallerBudget(surface = "graphqlAccountAnonymousMutation")
     @RateLimiter(name = "graphqlAccountAnonymousMutation")
     public SendConfirmationEmail sendConfirmationEmail(@InputArgument String channel,
                                                        @InputArgument String redirectUrl,
                                                        graphql.schema.DataFetchingEnvironment environment) {
-        perCallerRateLimitGuard.acquirePermit(environment, "graphqlAccountAnonymousMutation");
         rejectChannel(channel);
         // The verification flow's own key: the address of the account whose
         // pending hold the caller re-arms — on this platform the login
@@ -106,12 +103,12 @@ public class AccountLifecycleDataFetcher {
      * token-guessing surface gets its own per-address budget besides).
      */
     @DgsMutation(field = DgsConstants.MUTATION.ConfirmAccount)
+    @PerCallerBudget(surface = "graphqlAccountAnonymousMutation")
     @RateLimiter(name = "graphqlAccountAnonymousMutation")
     public ConfirmAccount confirmAccount(@InputArgument String email,
                                          @InputArgument String password,
                                          @InputArgument String token,
                                          graphql.schema.DataFetchingEnvironment environment) {
-        perCallerRateLimitGuard.acquirePermit(environment, "graphqlAccountAnonymousMutation");
         if (token == null || token.isBlank()) {
             throw new IllegalArgumentException("A confirmation token is required");
         }
@@ -135,12 +132,12 @@ public class AccountLifecycleDataFetcher {
      * confirmAccount carries.
      */
     @DgsMutation(field = DgsConstants.MUTATION.SetPassword)
+    @PerCallerBudget(surface = "graphqlAccountAnonymousMutation")
     @RateLimiter(name = "graphqlAccountAnonymousMutation")
     public SetPassword setPassword(@InputArgument String email,
                                    @InputArgument String password,
                                    @InputArgument String token,
                                    graphql.schema.DataFetchingEnvironment environment) {
-        perCallerRateLimitGuard.acquirePermit(environment, "graphqlAccountAnonymousMutation");
         if (token == null || token.isBlank() || password == null || password.isBlank()) {
             throw new IllegalArgumentException("A token and a new password are required");
         }
@@ -178,9 +175,18 @@ public class AccountLifecycleDataFetcher {
 
     /** Saleor {@code confirmEmailChange(channel, token)}. */
     @DgsMutation(field = DgsConstants.MUTATION.ConfirmEmailChange)
-    @RateLimiter(name = "graphqlAccountMutation")
+    // The wave-4 review (Major · Stability & Availability): both roots are
+    // anonymous-reachable (PreLoginGraphQlGate PRE_LOGIN_OPERATIONS) yet
+    // rode the SHARED authenticated graphqlAccountMutation budget with no
+    // per-caller guard — one anonymous flood could exhaust the documented
+    // customer*/staff*/address* budget for every user. They now ride the
+    // anonymous surface with the per-caller budget, the exact shape
+    // confirmAccount/setPassword already carry.
+    @PerCallerBudget(surface = "graphqlAccountAnonymousMutation")
+    @RateLimiter(name = "graphqlAccountAnonymousMutation")
     public ConfirmEmailChange confirmEmailChange(@InputArgument String channel,
-                                                 @InputArgument String token) {
+                                                 @InputArgument String token,
+                                                 graphql.schema.DataFetchingEnvironment environment) {
         rejectChannel(channel);
         if (token == null || token.isBlank()) {
             throw new IllegalArgumentException("A token is required");
@@ -198,10 +204,10 @@ public class AccountLifecycleDataFetcher {
      * the second anonymous flood surface (after the grant path).
      */
     @DgsMutation(field = DgsConstants.MUTATION.AccountRegister)
+    @PerCallerBudget(surface = "graphqlAccountAnonymousMutation")
     @RateLimiter(name = "graphqlAccountAnonymousMutation")
     public AccountRegister accountRegister(@InputArgument AccountRegisterInput input,
                                            graphql.schema.DataFetchingEnvironment environment) {
-        perCallerRateLimitGuard.acquirePermit(environment, "graphqlAccountAnonymousMutation");
         if (input == null || input.getEmail() == null || input.getEmail().isBlank()
                 || input.getPassword() == null || input.getPassword().isBlank()) {
             throw new IllegalArgumentException("An email and a password are required");
@@ -285,8 +291,17 @@ public class AccountLifecycleDataFetcher {
 
     /** Saleor {@code accountDelete(token)} — the redemption through the standing erasure. */
     @DgsMutation(field = DgsConstants.MUTATION.AccountDelete)
-    @RateLimiter(name = "graphqlAccountMutation")
-    public AccountDelete accountDelete(@InputArgument String token) {
+    // The wave-4 review (Major · Stability & Availability): both roots are
+    // anonymous-reachable (PreLoginGraphQlGate PRE_LOGIN_OPERATIONS) yet
+    // rode the SHARED authenticated graphqlAccountMutation budget with no
+    // per-caller guard — one anonymous flood could exhaust the documented
+    // customer*/staff*/address* budget for every user. They now ride the
+    // anonymous surface with the per-caller budget, the exact shape
+    // confirmAccount/setPassword already carry.
+    @PerCallerBudget(surface = "graphqlAccountAnonymousMutation")
+    @RateLimiter(name = "graphqlAccountAnonymousMutation")
+    public AccountDelete accountDelete(@InputArgument String token,
+                                       graphql.schema.DataFetchingEnvironment environment) {
         if (token == null || token.isBlank()) {
             throw new IllegalArgumentException("A deletion token is required");
         }

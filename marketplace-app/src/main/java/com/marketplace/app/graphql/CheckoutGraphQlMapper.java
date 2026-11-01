@@ -5,6 +5,7 @@ import com.marketplace.catalog.spi.ProductVariantReadSpi;
 import com.marketplace.orders.spi.CheckoutView;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,9 +41,28 @@ public class CheckoutGraphQlMapper {
     }
 
     public Map<String, Object> toGraphQlCheckout(CheckoutView view) {
-        List<Map<String, Object>> lines = view.lines().stream()
-                .map(this::toGraphQlLine)
-                .toList();
+        // The wave-4 review (Major · Stability & Availability, agent-3
+        // orders-events SDL line 117): a stale line (no variantId) or a
+        // line pointing at a deleted variant previously THREW during the
+        // whole-checkout conversion — the checkout query AND every
+        // line-mutation payload failed, the buyer could neither read the
+        // checkout nor delete the offending line, and checkoutDelete
+        // demands ADMIN. Saleor's canonical contract never surfaces such
+        // a line at all: its CheckoutLine.variant FK cascades, so a
+        // deleted variant takes its lines with it and every checkout
+        // read answers only REPRESENTABLE lines. This mapper adopts the
+        // same surface contract: dead lines are SKIPPED (never thrown
+        // into an unreadable checkout), the rendered total is the sum of
+        // the rendered lines (the honest wire quantity), and the line
+        // stays deletable by id through checkoutLineDelete for the
+        // owner-side reconciliation.
+        List<Map<String, Object>> lines = new ArrayList<>();
+        for (CheckoutView.Line line : view.lines()) {
+            Map<String, Object> rendered = toGraphQlLine(line);
+            if (rendered != null) {
+                lines.add(rendered);
+            }
+        }
         Map<String, Object> checkout = new LinkedHashMap<>();
         checkout.put("id", globalIdCodec.encode(CHECKOUT_TYPE, view.id()));
         // Saleor Checkout.token is the same native UUID primary key, not a
@@ -50,28 +70,33 @@ public class CheckoutGraphQlMapper {
         // before this mapper is reached.
         checkout.put("token", view.id().toString());
         checkout.put("lines", lines);
-        checkout.put("quantity", view.quantity());
+        checkout.put("quantity", lines.stream()
+                .mapToInt(rendered -> ((Number) rendered.get("quantity")).intValue())
+                .sum());
         return checkout;
     }
 
+    /**
+     * The representable form of one checkout line — {@code null} when the
+     * line is NOT representable (the stale/deleted-variant case the
+     * wave-4 review measured): the {@code CheckoutLine.variant} field is
+     * {@code ProductVariant!} (non-null in the vendored Saleor SDL), so
+     * an unrepresentable line cannot be served as a weaker shape — it is
+     * absent instead, per the cascade contract above.
+     */
     private Map<String, Object> toGraphQlLine(CheckoutView.Line line) {
         if (line.variantId() == null) {
-            throw unresolvableCheckoutVariant();
+            return null;
         }
-        com.marketplace.app.graphql.generated.types.ProductVariant variant =
-                variantReadSpi.findVariantForCheckoutLine(line.variantId())
-                        .map(variantMapper::toGraphQlProductVariant)
-                        .orElseThrow(CheckoutGraphQlMapper::unresolvableCheckoutVariant);
-
-        Map<String, Object> mapped = new LinkedHashMap<>();
-        mapped.put("id", globalIdCodec.encode(CHECKOUT_LINE_TYPE, line.id()));
-        mapped.put("variant", variant);
-        mapped.put("quantity", line.quantity());
-        return mapped;
-    }
-
-    private static IllegalStateException unresolvableCheckoutVariant() {
-        return new IllegalStateException(
-                "Checkout line cannot be represented because its product variant or parent record is unavailable");
+        return variantReadSpi.findVariantForCheckoutLine(line.variantId())
+                .map(variantMapper::toGraphQlProductVariant)
+                .map(variant -> {
+                    Map<String, Object> mapped = new LinkedHashMap<>();
+                    mapped.put("id", globalIdCodec.encode(CHECKOUT_LINE_TYPE, line.id()));
+                    mapped.put("variant", variant);
+                    mapped.put("quantity", line.quantity());
+                    return mapped;
+                })
+                .orElse(null);
     }
 }

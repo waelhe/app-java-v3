@@ -135,7 +135,7 @@ class AgentOneGraphQlMappers {
     List<AccountError> accountErrors(Throwable failure) {
         return List.of(AccountError.newBuilder()
                 .field(null).message(SaleorMutationErrors.of(failure).message())
-                .code(AccountErrorCode.valueOf(SaleorMutationErrors.codeOf(failure)))
+                .code(SaleorMutationErrors.translate(AccountErrorCode.class, SaleorMutationErrors.codeOf(failure)))
                 .build());
     }
 
@@ -146,7 +146,7 @@ class AgentOneGraphQlMappers {
     List<StaffError> staffErrors(Throwable failure) {
         return List.of(StaffError.newBuilder()
                 .field(null).message(SaleorMutationErrors.of(failure).message())
-                .code(AccountErrorCode.valueOf(SaleorMutationErrors.codeOf(failure)))
+                .code(SaleorMutationErrors.translate(AccountErrorCode.class, SaleorMutationErrors.codeOf(failure)))
                 .build());
     }
 
@@ -157,7 +157,7 @@ class AgentOneGraphQlMappers {
     List<ShopError> shopErrors(Throwable failure) {
         return List.of(ShopError.newBuilder()
                 .field(null).message(SaleorMutationErrors.of(failure).message())
-                .code(ShopErrorCode.valueOf(SaleorMutationErrors.codeOf(failure)))
+                .code(SaleorMutationErrors.translate(ShopErrorCode.class, SaleorMutationErrors.codeOf(failure)))
                 .build());
     }
 
@@ -168,7 +168,7 @@ class AgentOneGraphQlMappers {
     List<PageError> pageErrors(Throwable failure) {
         return List.of(PageError.newBuilder()
                 .field(null).message(SaleorMutationErrors.of(failure).message())
-                .code(PageErrorCode.valueOf(SaleorMutationErrors.codeOf(failure)))
+                .code(SaleorMutationErrors.translate(PageErrorCode.class, SaleorMutationErrors.codeOf(failure)))
                 .build());
     }
 
@@ -179,7 +179,7 @@ class AgentOneGraphQlMappers {
     List<MenuError> menuErrors(Throwable failure) {
         return List.of(MenuError.newBuilder()
                 .field(null).message(SaleorMutationErrors.of(failure).message())
-                .code(MenuErrorCode.valueOf(SaleorMutationErrors.codeOf(failure)))
+                .code(SaleorMutationErrors.translate(MenuErrorCode.class, SaleorMutationErrors.codeOf(failure)))
                 .build());
     }
 

@@ -134,6 +134,11 @@ server:
   # ForwardedHeaderFilter, registered at Ordered.HIGHEST_PRECEDENCE) covers both
   # the RFC 7239 "Forwarded" header and the full X-Forwarded-* set — including
   # host and port, which NATIVE (Tomcat RemoteIpValve) does not honor.
+  # The wave-4 review's rate-limit-key finding: FRAMEWORK's resolved
+  # remoteAddr is the LEFTMOST X-Forwarded-For entry (spoofable when the
+  # edge appends) — the PerCallerRateLimitGuard therefore keys on the
+  # RIGHTMOST XFF entry (the one this trusted edge appended) with the
+  # socket-peer fallback; the strategy itself stays FRAMEWORK.
   forward-headers-strategy: FRAMEWORK
   tomcat:
     # Official javadoc: "When using SSL terminated at a proxy, this property

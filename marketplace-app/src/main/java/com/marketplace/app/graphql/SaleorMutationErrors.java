@@ -2,6 +2,8 @@ package com.marketplace.app.graphql;
 
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.access.AccessDeniedException;
 
 /**
@@ -16,6 +18,10 @@ import org.springframework.security.access.AccessDeniedException;
  * taxonomy) — the boundary the read roots already ride.</p>
  */
 final class SaleorMutationErrors {
+
+    private static final Logger log = LoggerFactory.getLogger(SaleorMutationErrors.class);
+
+    private static final String GENERIC_REJECTION = "The operation was rejected";
 
     private SaleorMutationErrors() {
     }
@@ -56,10 +62,80 @@ final class SaleorMutationErrors {
         return new WireError(field, safeMessage(failure), codeOf(failure));
     }
 
-    /** No internal detail ever leaks (the codec precedent's uniform message rule). */
+    /**
+     * The payload vocabulary translation (the wave-4 review, Minor · Data
+     * Integrity): each mutation's payload carries its OWN Saleor error
+     * enum, and the vocabularies DIVERGE — {@code MenuErrorCode} carries
+     * no {@code ALREADY_EXISTS}, and {@code ShopErrorCode},
+     * {@code PageErrorCode} and {@code MenuErrorCode} carry no
+     * {@code OUT_OF_SCOPE_PERMISSION}. A raw {@code valueOf} on a native
+     * code a vocabulary lacks throws {@code IllegalArgumentException} and
+     * destroys the payload build.
+     *
+     * <p>The translation contract: a code the vocabulary CARRIES passes
+     * through verbatim; the duplicate-creation code translates to the
+     * vocabulary's own {@code UNIQUE} (the Saleor SDL's duplicate-code
+     * for exactly the menus family); every other gap answers the
+     * universal {@code GRAPHQL_ERROR} fallback. The mapping is data
+     * driven off the enum itself — no per-vocabulary tables to drift.</p>
+     *
+     * @param vocabulary the payload's own error enum
+     * @param nativeCode the platform-native code from {@link #codeOf}
+     * @param <E>        the payload error enum type
+     * @return the representable vocabulary constant, never null
+     */
+    static <E extends Enum<E>> E translate(Class<E> vocabulary, String nativeCode) {
+        E direct = constantOf(vocabulary, nativeCode);
+        if (direct != null) {
+            return direct;
+        }
+        if ("ALREADY_EXISTS".equals(nativeCode)) {
+            E unique = constantOf(vocabulary, "UNIQUE");
+            if (unique != null) {
+                return unique;
+            }
+        }
+        E fallback = constantOf(vocabulary, "GRAPHQL_ERROR");
+        if (fallback != null) {
+            return fallback;
+        }
+        throw new IllegalStateException(
+                "The payload error vocabulary carries no GRAPHQL_ERROR fallback: "
+                        + vocabulary.getName());
+    }
+
+    private static <E extends Enum<E>> E constantOf(Class<E> vocabulary, String name) {
+        try {
+            return Enum.valueOf(vocabulary, name);
+        } catch (IllegalArgumentException absent) {
+            return null;
+        }
+    }
+
+    /**
+     * The payload message (the wave-4 review, Major · Security & Privacy):
+     * ONLY the mapped domain exceptions' messages reach the wire — every
+     * one of those is an OPERATOR-AUTHORED sentence (the fetchers' own
+     * validation text), never exception internals. An UNMAPPED throwable
+     * (a {@code DataIntegrityViolationException}'s SQL text, a library's
+     * {@code IllegalArgumentException}) answers the generic rejection —
+     * the raw {@code getMessage()} of an unmapped type is internal detail
+     * the §5 contract never leaks — and the FULL exception goes to the
+     * internal log at WARN for the operator who needs it.
+     */
     private static String safeMessage(Throwable failure) {
+        boolean authored = failure instanceof ResourceNotFoundException
+                || failure instanceof ConflictException
+                || failure instanceof IllegalArgumentException
+                || failure instanceof jakarta.validation.ConstraintViolationException;
+        if (!authored) {
+            log.warn("Mutation failure mapped to the generic payload rejection — "
+                            + "the raw message stays internal: {}", failure.getMessage(),
+                    failure);
+            return GENERIC_REJECTION;
+        }
         String message = failure.getMessage();
         return message == null || message.isBlank()
-                ? "The operation was rejected" : message;
+                ? GENERIC_REJECTION : message;
     }
 }

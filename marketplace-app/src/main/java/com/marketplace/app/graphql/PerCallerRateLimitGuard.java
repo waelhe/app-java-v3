@@ -14,6 +14,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.ServletWebRequest;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -41,17 +44,14 @@ import java.util.function.Function;
  * {@link RateLimiterRegistry#rateLimiter(String, String)} API, so one
  * address can only exhaust itself.</p>
  *
- * <p><b>The caller key is the socket peer address</b> ({@code getRemoteAddr()}
- * through the DGS request context — the official
- * {@code DgsContext.getRequestData(...).getWebRequest()} API on the WebMVC
- * stack). The address is unspoofable; behind a reverse proxy it is the
- * proxy's address, so the per-caller budget degrades to the SAME shared
- * behavior the named instances already had — never worse. The documented
- * upgrade path for a proxied deployment is Spring Boot's own
- * {@code server.forward-headers-strategy=native} +
- * {@code server.tomcat.remoteip.internal-proxies} (the official mechanism):
- * once configured, {@code getRemoteAddr()} answers the resolved client
- * address and this guard becomes truly per-client with no code change.</p>
+ * <p><b>The caller key is the RIGHTMOST X-Forwarded-For entry</b> (falling
+ * back to the socket peer address when the header is absent) — the
+ * single-trusted-proxy rule of the MDN/OWASP guidance: the rightmost
+ * entry is the one the trusted edge appended, so a client-supplied
+ * spoofed entry (which the edge appends AFTER) can never displace it.
+ * Keying on the FRAMEWORK-resolved leftmost entry was the wave-4
+ * review's Major finding: a caller could rotate a spoofed header per
+ * request and out-run its budget entirely.</p>
  *
  * <p>The thrown {@link RequestNotPermitted} flows through the surface's
  * existing classification (GraphQlExceptionResolver maps it to the RL-001
@@ -123,10 +123,40 @@ public class PerCallerRateLimitGuard {
      *                             limiters raise
      */
     public void acquirePermit(DataFetchingEnvironment environment, String surface) {
-        String remoteAddress = remoteAddressOf(environment);
-        // An unresolvable context (a non-HTTP execution, e.g. the test
-        // executor) shares ONE bucket — the fail-safe direction.
-        String caller = remoteAddress == null ? "unknown" : remoteAddress;
+        acquirePermitForKey(environment, surface, remoteAddressKey(environment));
+    }
+
+    /**
+     * Consumes one permit of the ACCOUNT's own budget for the surface —
+     * the wave-4 review (Minor · Security & Privacy): the address key is
+     * alone, so an attacker distributing attempts across many addresses
+     * faces no limit per victim account (credential stuffing). The key
+     * is the SHA-256 of the NORMALIZED email argument (lower-cased,
+     * trimmed — the same normalization the identity owner applies to
+     * account lookups), never the raw address: the hash is one-way and
+     * fixed-width, so the bounded registry never carries an attacker-
+     * controlled key longer than the digest, and the store reveals
+     * nothing about the attempted accounts.
+     *
+     * @param environment the data fetcher's environment (arguments carry
+     *                    the email)
+     * @param surface     the surface name — the account instances ride
+     *                    {@code <surface>-account:<sha256>} keys with
+     *                    the SAME {@code perCallerGrant} config
+     * @throws RequestNotPermitted the account's own budget is exhausted
+     */
+    public void acquireAccountPermit(DataFetchingEnvironment environment, String surface) {
+        String accountKey = accountKeyOf(environment);
+        if (accountKey == null) {
+            // No email argument on this request (a malformed input the
+            // root's own validation rejects right after) — nothing to
+            // budget beyond the address permit already taken.
+            return;
+        }
+        acquirePermitForKey(environment, surface + "-account", accountKey);
+    }
+
+    private void acquirePermitForKey(DataFetchingEnvironment environment, String surface, String key) {
         // The per-caller budget rides the yml's perCallerGrant config when
         // the shared registry declares it (the full application context);
         // the guard's own bounded registry owns the instances either way.
@@ -135,22 +165,107 @@ public class PerCallerRateLimitGuard {
                         .orElse(DEFAULT_PER_CALLER_CONFIG)
                 : DEFAULT_PER_CALLER_CONFIG;
         RateLimiter limiter = perCallerRegistry.rateLimiter(
-                surface + "-caller:" + caller, config);
+                surface + "-caller:" + key, config);
         if (!limiter.acquirePermission()) {
             throw RequestNotPermitted.createRequestNotPermitted(limiter);
         }
     }
 
     /**
-     * The caller's socket address through the DGS request context — the
-     * servlet request's own remote address (see the class javadoc for the
-     * proxy-deployment contract).
+     * The caller key for the surface's address budget: the socket peer
+     * address, or the unresolvable-context bucket (a non-HTTP execution,
+     * e.g. the test executor — the fail-safe shared direction).
+     */
+    private static String remoteAddressKey(DataFetchingEnvironment environment) {
+        String remoteAddress = remoteAddressOf(environment);
+        return remoteAddress == null ? "unknown" : remoteAddress;
+    }
+
+    /**
+     * The account budget key: the SHA-256 hex of the NORMALIZED email
+     * argument (lower-cased, trimmed) — or null when this request carries
+     * no email argument. Handles both the flat argument shape (the
+     * {@code tokenCreate(email: ...)} root) and the nested-input shape
+     * ({@code input.email} / {@code input.emailAddress}).
+     */
+    private static String accountKeyOf(DataFetchingEnvironment environment) {
+        String email = argumentEmail(environment);
+        if (email == null || email.isBlank()) {
+            return null;
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hashed = digest.digest(email.trim().toLowerCase()
+                    .getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(hashed.length * 2);
+            for (byte b : hashed) {
+                hex.append(Character.forDigit((b >> 4) & 0xF, 16))
+                        .append(Character.forDigit(b & 0xF, 16));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException impossible) {
+            // Every JDK carries SHA-256 (MessageDigest requirements).
+            throw new IllegalStateException("SHA-256 digest unavailable", impossible);
+        }
+    }
+
+    private static String argumentEmail(DataFetchingEnvironment environment) {
+        Object flat = environment.getArgument("email");
+        if (flat instanceof String text && !text.isBlank()) {
+            return text;
+        }
+        for (String container : new String[] {"input", "emailInput"}) {
+            Object nested = environment.getArgument(container);
+            if (nested instanceof Map<?, ?> map) {
+                for (String field : new String[] {"email", "emailAddress"}) {
+                    Object value = map.get(field);
+                    if (value instanceof String text && !text.isBlank()) {
+                        return text;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The caller key through the DGS request context.
+     *
+     * <p><b>The proxy contract (the wave-4 review's Major finding):</b>
+     * production runs {@code server.forward-headers-strategy=FRAMEWORK}
+     * (the ForwardedHeaderFilter — the adopted plan's host/port/scheme
+     * requirement), under which {@code getRemoteAddr()} answers the
+     * FRAMEWORK-RESOLVED address — the LEFTMOST X-Forwarded-For entry —
+     * and a client-supplied entry reaches the application untouched when
+     * the trusted edge APPENDS its own hop. Keying the budget on that
+     * leftmost value let one caller rotate a spoofed header per request
+     * and out-run its per-caller budget entirely. The fix is the
+     * rightmost-entry rule (the MDN X-Forwarded-For and OWASP
+     * rate-limiting guidance for a SINGLE trusted proxy): the RIGHTMOST
+     * XFF entry is the one the trusted edge itself appended — a spoofed
+     * client value can only ever sit to its LEFT — so the key reads
+     * that entry, falling back to the socket peer address when no XFF
+     * header is present (direct access, tests, the un-proxied slices).
+     * Host/port resolution stays the FRAMEWORK filter's job; only the
+     * SECURITY key's derivation changes.</p>
      */
     private static String remoteAddressOf(DataFetchingEnvironment environment) {
         DgsRequestData requestData = DgsContext.getRequestData(environment);
         if (requestData instanceof DgsWebMvcRequestData webMvc
                 && webMvc.getWebRequest() instanceof ServletWebRequest servletWebRequest) {
-            return servletWebRequest.getRequest().getRemoteAddr();
+            jakarta.servlet.http.HttpServletRequest request =
+                    servletWebRequest.getRequest();
+            String forwarded = request.getHeader("X-Forwarded-For");
+            if (forwarded != null && !forwarded.isBlank()) {
+                int lastComma = forwarded.lastIndexOf(',');
+                String rightmost = (lastComma < 0
+                        ? forwarded
+                        : forwarded.substring(lastComma + 1)).trim();
+                if (!rightmost.isEmpty()) {
+                    return rightmost;
+                }
+            }
+            return request.getRemoteAddr();
         }
         return null;
     }

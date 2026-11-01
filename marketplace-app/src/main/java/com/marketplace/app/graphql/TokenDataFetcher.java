@@ -51,37 +51,36 @@ public class TokenDataFetcher {
     private final AgentOneGraphQlMappers mappers;
     private final UserGraphQlMapper userMapper;
     private final JsonMapper jsonMapper;
-    private final PerCallerRateLimitGuard perCallerRateLimitGuard;
 
     public TokenDataFetcher(PlatformTokenGrantService tokenGrantService,
                             AccountLifecycleSpi accountLifecycleSpi,
                             com.marketplace.identity.spi.IdentitySpi identitySpi,
                             AgentOneGraphQlMappers mappers,
                             UserGraphQlMapper userMapper,
-                            JsonMapper jsonMapper,
-                            PerCallerRateLimitGuard perCallerRateLimitGuard) {
+                            JsonMapper jsonMapper) {
         this.tokenGrantService = tokenGrantService;
         this.accountLifecycleSpi = accountLifecycleSpi;
         this.identitySpi = identitySpi;
         this.mappers = mappers;
         this.userMapper = userMapper;
         this.jsonMapper = jsonMapper;
-        this.perCallerRateLimitGuard = perCallerRateLimitGuard;
     }
 
     /** Saleor {@code tokenCreate(audience, email, password)} — the password grant. */
     @DgsMutation(field = DgsConstants.MUTATION.TokenCreate)
+    // The wave-4 review (Major · Stability): the per-caller permit now rides
+    // @PerCallerBudget — the aspect's ORDER (100) precedes resilience4j's
+    // RateLimiterAspect (405), so the caller's own budget is consumed BEFORE
+    // the shared graphqlTokenMutation permit: a rejected flood can no longer
+    // burn the shared budget for every other caller (the exact starvation
+    // the review demonstrated). perAccount adds the credential-stuffing
+    // budget keyed by the normalized email hash.
+    @PerCallerBudget(surface = "graphqlTokenMutation", perAccount = true)
     @RateLimiter(name = "graphqlTokenMutation")
     public CreateToken tokenCreate(@InputArgument String audience,
                                    @InputArgument String email,
                                    @InputArgument String password,
                                    graphql.schema.DataFetchingEnvironment environment) {
-        // The shard review (Major · Stability & Availability, 2026-11-01
-        // wave 2): the per-CALLER budget on the grant path — the named
-        // instance is per-JVM (the yml's recorded contract), so a single
-        // anonymous client could starve every legitimate login. The
-        // guard gives each caller address its own fail-fast budget.
-        perCallerRateLimitGuard.acquirePermit(environment, "graphqlTokenMutation");
         if (audience != null && !audience.isBlank()) {
             // Saleor's custom-audience prefix is a JWT customization this
             // platform's single-audience contract does not carry — the
@@ -111,14 +110,14 @@ public class TokenDataFetcher {
      * after this call (the presented one is gone from the store).
      */
     @DgsMutation(field = DgsConstants.MUTATION.TokenRefresh)
+    // The same wave-4 ordering fix: the per-caller budget rides the aspect,
+    // ahead of the shared permit (the rotation is an anonymous surface —
+    // the proof IS the payload).
+    @PerCallerBudget(surface = "graphqlTokenMutation")
     @RateLimiter(name = "graphqlTokenMutation")
     public RefreshToken tokenRefresh(@InputArgument String csrfToken,
                                      @InputArgument String refreshToken,
                                      graphql.schema.DataFetchingEnvironment environment) {
-        // The shard review (2026-11-01 wave 2): the same per-caller budget
-        // the grant path carries — the rotation is an anonymous surface
-        // too (the proof IS the payload).
-        perCallerRateLimitGuard.acquirePermit(environment, "graphqlTokenMutation");
         // The CSRF token is Saleor's cookie-mode refresh protection; the
         // platform returns the refresh token in the payload (no cookie
         // mode), so the argument stays declared-but-unexecuted — the
@@ -153,8 +152,16 @@ public class TokenDataFetcher {
     // anonymous callers — sharing the 10/min grant budget with
     // tokenCreate/tokenRefresh let one caller's verification traffic
     // starve every grant (and vice versa). It now owns its own budget.
+    // The wave-4 review (Minor · Stability & Availability): the shared
+    // JVM-wide graphqlTokenVerify budget alone still let ONE anonymous
+    // client exhaust it for every OTHER caller (the Dashboard's
+    // verification fails platform-wide) — the per-caller budget (the
+    // aspect, ahead of the shared permit) gives each address its own
+    // fail-fast slice, the same shape tokenCreate/tokenRefresh carry.
+    @PerCallerBudget(surface = "graphqlTokenVerify")
     @RateLimiter(name = "graphqlTokenVerify")
-    public VerifyToken tokenVerify(@InputArgument String token) {
+    public VerifyToken tokenVerify(@InputArgument String token,
+                                   graphql.schema.DataFetchingEnvironment environment) {
         if (token == null || token.isBlank()) {
             throw new IllegalArgumentException("A token is required");
         }

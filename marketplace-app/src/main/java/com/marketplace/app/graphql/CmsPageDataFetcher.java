@@ -510,6 +510,13 @@ public class CmsPageDataFetcher {
         if (attributeIds == null || attributeIds.isEmpty()) {
             return List.of();
         }
+        // The wave-4 review (Minor · Performance & Scalability): the bound
+        // moves INSIDE — pageTypeCreate/Update hand their add/remove
+        // attribute lists straight here without a requireBoundedList call,
+        // and each entry costs the owner one findAttributeById read; the
+        // check covers every caller from this one place (the same policy
+        // the page roots already enforce for their own lists).
+        properties.requireBoundedList(attributeIds, "pageType attributes");
         Authentication caller = currentAuthentication();
         List<UUID> decoded = attributeIds.stream()
                 .map(id -> globalIdCodec.decode(id, "Attribute"))

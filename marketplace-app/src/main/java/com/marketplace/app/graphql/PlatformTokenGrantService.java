@@ -103,17 +103,32 @@ public class PlatformTokenGrantService {
 
     /**
      * The shard review (Major · Security & Privacy, 2026-11-01 wave 2;
-     * representation hardened in wave 3): the family's OWN birth time on
-     * the authorization row — every rotation re-issues the refresh token
-     * (now + TTL), so the token's issuedAt can never bound the family's
-     * age; the attribute does. Stored as **epoch millis (Long)** — a
-     * basic JSON scalar with no typing subtleties on the authorization
-     * store's polymorphic deserialization (the wave-3 review's
-     * robustness demand; the Long representation is unconditionally
-     * safe across every Jackson/PTV configuration). A legacy row
-     * (pre-attribute) is seeded from the presented token's issuedAt at
-     * its next rotation — the conservative floor (the family is at
-     * least as old as the presented token).
+     * representation hardened in wave 3, CORRECTED in wave 4): the
+     * family's OWN birth time on the authorization row — every rotation
+     * re-issues the refresh token (now + TTL), so the token's issuedAt
+     * can never bound the family's age; the attribute does.
+     *
+     * <p><b>Representation — String of epoch millis (the wave-4 CI
+     * evidence):</b> wave 3 recorded the value as a {@link Long} and
+     * asserted the scalar "unconditionally safe across every
+     * Jackson/PTV configuration". The platform's own CI falsified that
+     * claim: {@code JdbcOAuth2AuthorizationService}'s Jackson 3 row
+     * mapper deserializes the attributes map through a
+     * {@code BasicPolymorphicTypeValidator} that DENIES the
+     * {@code java.lang.Long} type id the write side embeds, so every
+     * read of such a row failed with
+     * {@code Could not resolve type id 'java.lang.Long'} (7 red tests
+     * across the shard matrix and the Saleor Backend Compatibility
+     * Gate, 2026-11-01). The official contract for the authorization
+     * store's JSON metadata is Jackson's own: only the PTV-allowlisted
+     * subtypes round-trip, and plain {@link String} values are stored
+     * WITHOUT any type id at all — the representation every
+     * configuration accepts. The read side honors all three recorded
+     * shapes (String, Long, Instant) so no live row ever breaks.</p>
+     *
+     * <p>A legacy row (pre-attribute) is seeded from the presented
+     * token's issuedAt at its next rotation — the conservative floor
+     * (the family is at least as old as the presented token).</p>
      */
     private static final String FAMILY_CREATED_ATTRIBUTE = "platform.family.created";
 
@@ -346,7 +361,10 @@ public class PlatformTokenGrantService {
             // floor — the family is at least this old), so the NEXT refresh
             // enforces the true family age from the same attribute every
             // new grant carries.
-            rotation.attribute(FAMILY_CREATED_ATTRIBUTE, familyStart.toEpochMilli());
+            // String-of-millis on the authorization store (the wave-4 CI
+            // evidence: the row mapper's PTV denies the Long type id —
+            // see the constant's javadoc).
+            rotation.attribute(FAMILY_CREATED_ATTRIBUTE, String.valueOf(familyStart.toEpochMilli()));
         }
         OAuth2Authorization refreshed = rotation.build();
         // THE atomic boundary: the store arbitrates the consumption —
@@ -403,10 +421,13 @@ public class PlatformTokenGrantService {
 
     /**
      * Reads the family's birth time from the authorization attributes —
-     * epoch millis (Long) is the recorded representation; an Instant
-     * value is still honored (an interim-build row would carry one, and
+     * the recorded representation is the String-of-epoch-millis the
+     * write side stores (the wave-4 CI evidence: the Long embedding
+     * never survives the row mapper's PTV); a Number or an Instant
+     * value is still honored (interim-build rows would carry one, and
      * the honest read never breaks a live session over a
-     * representation difference).
+     * representation difference). An unparseable String answers null —
+     * the conservative floor — never a thrown parse failure.
      */
     private static Instant familyCreatedAt(OAuth2Authorization authorization) {
         Object raw = authorization.getAttributes().get(FAMILY_CREATED_ATTRIBUTE);
@@ -415,6 +436,13 @@ public class PlatformTokenGrantService {
         }
         if (raw instanceof Instant recorded) {
             return recorded;
+        }
+        if (raw instanceof String text) {
+            try {
+                return Instant.ofEpochMilli(Long.parseLong(text.trim()));
+            } catch (NumberFormatException tolerated) {
+                return null;
+            }
         }
         return null;
     }
@@ -440,11 +468,12 @@ public class PlatformTokenGrantService {
                 .refreshToken(refreshTokenToken)
                 .attribute(ROLES_ATTRIBUTE, roles)
                 // The family's birth time (the wave-2 review's absolute
-                // session cap) — written once at grant as EPOCH MILLIS (the
-                // wave-3 hardening: a basic scalar, no polymorphic
-                // deserialization subtleties); rotations preserve it
-                // (OAuth2Authorization.from copies the attributes).
-                .attribute(FAMILY_CREATED_ATTRIBUTE, issuedAt.toEpochMilli())
+                // session cap) — written once at grant as the String of
+                // epoch millis (the wave-4 CI correction: the row mapper's
+                // PTV denies the Long type id — see the constant's javadoc);
+                // rotations preserve it (OAuth2Authorization.from copies
+                // the attributes).
+                .attribute(FAMILY_CREATED_ATTRIBUTE, String.valueOf(issuedAt.toEpochMilli()))
                 .build();
     }
 
