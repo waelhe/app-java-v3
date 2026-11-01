@@ -1,3 +1,7 @@
+# Central compatibility scalar for the pinned Saleor 3.23.43 checkout UUID.
+# Runtime coercion is provided by the single platform-owned UuidScalar (@DgsScalar).
+scalar UUID
+
 type Query {
     # Dashboard's provider-owned catalog surface. This is a journey contract, not
     # a mirror of the catalog tables; the fetchers delegate to ProductAdminSpi.
@@ -200,6 +204,664 @@ type Query {
     last: Int
 ): UserCountableConnection
 
+
+    # "List of permission groups." — the Saleor group list with its
+    # countable-connection envelope (edges/pageInfo/totalCount, byte-shape
+    # from the pinned schema). FORWARD-ONLY keyset paging on this first
+    # slice: first/after ride the platform's ScrollPosition keyset
+    # contract (the staffUsers/storeProducts/services precedent — cursors
+    # identify a row's sort key (name, id), never an absolute offset);
+    # before/last stay declared (the exact Saleor argument shape) but
+    # answer an explicit classified error until a backward scroll exists —
+    # a recorded, tested boundary, not a silent no-op. filter is likewise
+    # the declared wire shape with an explicit not-yet-supported error.
+    # The sort vocabulary is Saleor's single-value PermissionGroupSortField
+    # enum (NAME — owned): it executes as the real keyset sort,
+    # deterministic with the id tiebreaker. MANAGE_STAFF on Saleor →
+    # ADMIN here (the owning use case's gate).
+    permissionGroups(
+    """Filtering options for permission groups."""
+    filter: PermissionGroupFilterInput
+
+    """Sort permission groups."""
+    sortBy: PermissionGroupSortingInput
+
+    """Return the elements in the list that come before the specified cursor."""
+    before: String
+
+    """Return the elements in the list that come after the specified cursor."""
+    after: String
+
+    """Retrieve the first n elements from the list."""
+    first: Int
+
+    """Retrieve the last n elements from the list."""
+    last: Int
+    ): GroupCountableConnection
+
+    # "Look up permission group by ID." — the staff lookup over the typed
+    # global ID (Saleor requires MANAGE_STAFF → ADMIN here, enforced in the
+    # owning identity use case). An unknown but well-formed ID answers
+    # null (the safe absence); a malformed or mistyped global ID answers
+    # the codec's classified validation error — never a raw UUID fallback.
+    permissionGroup(
+    """ID of the group."""
+    id: ID!
+    ): Group
+
+
+    # "List of the shop's product types." — the Saleor product-type list
+    # with its countable-connection envelope (edges/pageInfo/totalCount,
+    # byte-shape from the pinned schema). FORWARD-ONLY keyset paging on
+    # this first slice: first/after ride the platform's ScrollPosition
+    # keyset contract (the staffUsers/permissionGroups precedent —
+    # cursors identify a row's sort key (name, id), never an absolute
+    # offset); before/last stay declared (the exact Saleor argument
+    # shape) but answer an explicit classified error until a backward
+    # scroll exists — a recorded, tested boundary, not a silent no-op.
+    # filter is likewise the declared wire shape with an explicit
+    # not-yet-supported error. The sort vocabulary is Saleor's
+    # ProductTypeSortField enum: NAME executes as the real keyset sort,
+    # deterministic with the id tiebreaker; DIGITAL/SHIPPING_REQUIRED
+    # answer the explicit not-implemented error.
+    productTypes(
+    """Filtering options for product types."""
+    filter: ProductTypeFilterInput
+
+    """Sort product types."""
+    sortBy: ProductTypeSortingInput
+
+    """Return the elements in the list that come before the specified cursor."""
+    before: String
+
+    """Return the elements in the list that come after the specified cursor."""
+    after: String
+
+    """Retrieve the first n elements from the list."""
+    first: Int
+
+    """Retrieve the last n elements from the list."""
+    last: Int
+    ): ProductTypeCountableConnection
+
+    # "Look up a product type by ID." — the staff lookup over the typed
+    # global ID (Saleor requires staff permissions → ADMIN here, enforced
+    # in the owning catalog use case). An unknown but well-formed ID
+    # answers null (the safe absence); a malformed or mistyped global ID
+    # answers the codec's classified validation error — never a raw UUID
+    # fallback.
+    productType(
+    """ID of the product type."""
+    id: ID!
+    ): ProductType
+
+    # === Campaign packet campaign-b3-a1b (integrated by A0 — the SDL steward) ===
+    # "List of the shop's customers. This list includes all users who
+    # registered through the accountRegister mutation." — the Saleor
+    # customer list with its countable-connection envelope (edges/
+    # pageInfo/totalCount, byte-shape from the pinned schema). On this
+    # platform the population is the single identity store's
+    # customer-account slice (the CONSUMER primary role — the closed
+    # vocabulary's customer/consumer concept), the complementary
+    # population of the SAME store the staffUsers roster reads.
+    # FORWARD-ONLY keyset paging on this first slice: first/after ride
+    # the platform's ScrollPosition keyset contract (the staffUsers/
+    # permissionGroups precedent — cursors identify a row's sort key
+    # (email|createdAt|updatedAt, id), never an absolute offset);
+    # before/last stay declared (the exact Saleor argument shape) but
+    # answer an explicit classified error until a backward scroll
+    # exists — a recorded, tested boundary, not a silent no-op. filter
+    # (deprecated upstream in favor of where — the pinned schema's own
+    # directive kept), where and search are likewise the declared wire
+    # shape with explicit not-yet-supported errors. Sort vocabulary is
+    # the EXISTING shared UserSortField enum: the owned subset executes
+    # as real keyset sorts, the rest answer the same explicit error.
+    # MANAGE_ORDERS/MANAGE_USERS on Saleor → ADMIN here (the owning
+    # identity use case's gate).
+    customers(
+    """Filtering options for customers."""
+    filter: CustomerFilterInput @deprecated(reason: "Use `where` filter instead.")
+
+    """Where filtering options for customers."""
+    where: CustomerWhereInput
+
+    """Sort customers."""
+    sortBy: UserSortingInput
+
+    """Search customers."""
+    search: String
+
+    """Return the elements in the list that come before the specified cursor."""
+    before: String
+
+    """Return the elements in the list that come after the specified cursor."""
+    after: String
+
+    """Retrieve the first n elements from the list."""
+    first: Int
+
+    """Retrieve the last n elements from the list."""
+    last: Int
+): UserCountableConnection
+
+    # === Campaign packet campaign-b3-a2b (integrated by A0 — the SDL steward) ===
+    # "List of the shop's attributes." — the typed attribute reference
+    # collection with its countable-connection envelope (edges/pageInfo/
+    # totalCount, byte-shape from the pinned schema). FORWARD-ONLY
+    # keyset paging on this first slice: first/after ride the platform's
+    # ScrollPosition keyset contract (the staffUsers/permissionGroups/
+    # productTypes precedent — cursors identify a row's sort key (the
+    # executed sort field, id), never an absolute offset); before/last
+    # stay declared (the exact Saleor argument shape) but answer an
+    # explicit classified error until a backward scroll exists — a
+    # recorded, tested boundary, not a silent no-op. filter (deprecated
+    # upstream), where, search and channel are likewise the declared
+    # wire shapes with explicit not-yet-supported errors. The sort
+    # vocabulary is Saleor's own AttributeSortField enum: NAME and SLUG
+    # execute as real keyset sorts, deterministic with the id
+    # tiebreaker; the other seven values answer the explicit
+    # not-implemented error.
+    attributes(
+    """Filtering options for attributes."""
+    filter: AttributeFilterInput @deprecated(reason: "Use `where` filter instead.")
+
+    """Where filtering options for attributes."""
+    where: AttributeWhereInput
+
+    """Search attributes."""
+    search: String
+
+    """Sorting options for attributes."""
+    sortBy: AttributeSortingInput
+
+    """Slug of a channel for which the data should be returned."""
+    channel: String
+
+    """Return the elements in the list that come before the specified cursor."""
+    before: String
+
+    """Return the elements in the list that come after the specified cursor."""
+    after: String
+
+    """Retrieve the first n elements from the list."""
+    first: Int
+
+    """Retrieve the last n elements from the list."""
+    last: Int
+    ): AttributeCountableConnection
+
+    # "Look up an attribute by ID, slug or external reference." — the
+    # staff lookup over the typed global ID (Saleor requires staff
+    # permissions → ADMIN here, enforced in the owning catalog use
+    # case). id executes through the typed global-ID codec; slug
+    # executes through the owner's code lookup (upstream's id-first
+    # precedence when both are sent). An unknown but well-formed key
+    # answers null (the safe absence); a malformed or mistyped global ID
+    # answers the codec's classified validation error — never a raw UUID
+    # fallback. externalReference has no owning capability and answers
+    # the explicit classified error whenever it is sent; a keyless call
+    # answers the classified validation error (the recorded divergence
+    # from upstream's null answer).
+    attribute(
+    """ID of the attribute."""
+    id: ID
+
+    """Slug of the attribute."""
+    slug: String
+
+    """External ID of the attribute."""
+    externalReference: String
+    ): Attribute
+
+    # === Campaign packet campaign-b3-a3 (integrated by A0 — the SDL steward) ===
+    # "Look up a voucher by ID or external reference." — the Saleor
+    # voucher lookup (MANAGE_DISCOUNTS → ADMIN here, enforced in the
+    # owning pricing use case). The id executes through the typed
+    # global-ID codec: an unknown but well-formed ID answers null (the
+    # safe absence); a malformed or mistyped global ID answers the
+    # codec's classified validation error — never a raw UUID fallback.
+    # externalReference (no external-ID column) and channel (no
+    # channel model — the PENDING-ADR row) stay declared (the exact
+    # Saleor argument shape) but answer an explicit classified error —
+    # a recorded, tested boundary, not a silent no-op.
+    voucher(
+    """ID of the voucher."""
+    id: ID
+
+    """
+    External ID of the voucher (no external-ID column on this platform — an explicit classified error).
+    """
+    externalReference: String
+
+    """Slug of a channel for which the data should be returned (no channel model on this platform — an explicit classified error)."""
+    channel: String
+    ): Voucher
+
+    # "List of the shop's vouchers." — the Saleor voucher list with its
+    # countable-connection envelope (edges/pageInfo/totalCount,
+    # byte-shape from the pinned schema). FORWARD-ONLY keyset paging on
+    # this first slice: first/after ride the platform's ScrollPosition
+    # keyset contract (the staffUsers/permissionGroups/productTypes
+    # precedent — cursors identify a row's sort key (code, id), never
+    # an absolute offset); before/last stay declared (the exact Saleor
+    # argument shape) but answer an explicit classified error until a
+    # backward scroll exists. filter, the deprecated query and channel
+    # are likewise the declared wire shape with an explicit
+    # not-yet-supported error. The sort vocabulary is Saleor's
+    # VoucherSortField enum: CODE (deprecated upstream) executes as the
+    # real keyset sort, deterministic with the id tiebreaker; every
+    # other field answers the explicit not-implemented error.
+    vouchers(
+    """Filtering options for vouchers."""
+    filter: VoucherFilterInput
+
+    """Sort voucher."""
+    sortBy: VoucherSortingInput
+
+    """Search vouchers by name or code."""
+    query: String @deprecated(reason: "Use `filter.search` input instead.")
+
+    """Slug of a channel for which the data should be returned."""
+    channel: String
+
+    """Return the elements in the list that come before the specified cursor."""
+    before: String
+
+    """Return the elements in the list that come after the specified cursor."""
+    after: String
+
+    """Retrieve the first n elements from the list."""
+    first: Int
+
+    """Retrieve the last n elements from the list."""
+    last: Int
+    ): VoucherCountableConnection
+
+    # "Look up a promotion by ID or external reference." — the Saleor
+    # promotion lookup (MANAGE_DISCOUNTS → ADMIN here, enforced in the
+    # owning pricing use case). The id executes through the typed
+    # global-ID codec: an unknown but well-formed ID answers null (the
+    # safe absence); a malformed or mistyped global ID answers the
+    # codec's classified validation error — never a raw UUID fallback.
+    # externalReference (no external-ID column) stays declared (the
+    # exact Saleor argument shape) but answers an explicit classified
+    # error — a recorded, tested boundary, not a silent no-op.
+    promotion(
+    """ID of the promotion."""
+    id: ID
+
+    """
+    External ID of the promotion (no external-ID column on this platform — an explicit classified error).
+    """
+    externalReference: String
+    ): Promotion
+
+    # "List of the promotions." — the Saleor promotion list with its
+    # countable-connection envelope (edges/pageInfo/totalCount,
+    # byte-shape from the pinned schema). FORWARD-ONLY keyset paging on
+    # this first slice: first/after ride the platform's ScrollPosition
+    # keyset contract (the staffUsers/permissionGroups/productTypes
+    # precedent — cursors identify a row's sort key (name|createdAt,
+    # id), never an absolute offset); before/last stay declared (the
+    # exact Saleor argument shape) but answer an explicit classified
+    # error until a backward scroll exists. where is likewise the
+    # declared wire shape with an explicit not-yet-supported error.
+    # The sort vocabulary is Saleor's PromotionSortField enum: NAME and
+    # CREATED_AT (the owning non-null keyset columns) execute as the
+    # real keyset sorts, deterministic with the id tiebreaker;
+    # START_DATE/END_DATE (the optional policy-window columns) answer
+    # the explicit not-implemented error.
+    promotions(
+    """Where filtering options for promotions."""
+    where: PromotionWhereInput
+
+    """Sort promotions."""
+    sortBy: PromotionSortingInput
+
+    """Return the elements in the list that come before the specified cursor."""
+    before: String
+
+    """Return the elements in the list that come after the specified cursor."""
+    after: String
+
+    """Retrieve the first n elements from the list."""
+    first: Int
+
+    """Retrieve the last n elements from the list."""
+    last: Int
+    ): PromotionCountableConnection
+
+# === Campaign packet campaign-b4-a: the Saleor category read roots ===
+# "List of the shop's categories." — the listing-category registry (the
+# controlled vocabulary the listing category column references) with
+# its countable-connection envelope (edges/pageInfo/totalCount,
+# byte-shape from the pinned schema). FORWARD-ONLY keyset paging on
+# this first slice: first/after ride the platform's ScrollPosition
+# keyset contract (the staffUsers/permissionGroups/productTypes/
+# attributes precedent — cursors identify a row's sort key (name, id),
+# never an absolute offset); before/last stay declared (the exact
+# Saleor argument shape) but answer an explicit classified error until
+# a backward scroll exists — a recorded, tested boundary, not a silent
+# no-op. filter (deprecated upstream), where and level (the flat
+# registry owns NO nesting tree) are likewise the declared wire shapes
+# with explicit not-yet-supported errors. These are Saleor PUBLIC
+# storefront roots: the pinned contract requires no permission for
+# published categories and the platform registry carries no publication
+# flag (every ACTIVE row is published reference data), so there is no
+# role gate and no include-unpublished surface to map — the platform's
+# authentication boundary for this surface is the /graphql chain itself
+# (the registered public-root mapping divergence). The sort vocabulary
+# is Saleor's own CategorySortField enum: NAME executes as the real
+# keyset sort (the rendered bilingual name, deterministic with the id
+# tiebreaker); PRODUCT_COUNT and SUBCATEGORY_COUNT (a products
+# connection and a category tree the flat registry does not own)
+# answer the explicit not-implemented error.
+categories(
+"""Filtering options for categories."""
+filter: CategoryFilterInput @deprecated(reason: "Use `where` filter instead.")
+
+"""Where filtering options for categories."""
+where: CategoryWhereInput
+
+"""Sort categories."""
+sortBy: CategorySortingInput
+
+"""Filter categories by the nesting level in the category tree (no tree on this platform — an explicit classified error)."""
+level: Int
+
+"""Return the elements in the list that come before the specified cursor."""
+before: String
+
+"""Return the elements in the list that come after the specified cursor."""
+after: String
+
+"""Retrieve the first n elements from the list."""
+first: Int
+
+"""Retrieve the last n elements from the list."""
+last: Int
+): CategoryCountableConnection
+
+# "Look up a category by ID, slug, slug language code or external reference." —
+# the public storefront lookup (no permission for published content —
+# the public-root mapping divergence above). id executes through the
+# typed global-ID codec; slug executes through the owner's code lookup
+# (upstream's id-first precedence when both are sent). An unknown but
+# well-formed key answers null (the safe absence); a malformed or
+# mistyped global ID answers the codec's classified validation error —
+# never a raw UUID fallback. slugLanguageCode (no translation owner —
+# the bounded AR/EN enum below is the registry's own bilingual fact)
+# and externalReference (no external-ID column) answer the explicit
+# classified error whenever they are sent; a keyless call answers the
+# classified validation error (the recorded divergence from upstream's
+# null answer).
+category(
+"""ID of the category."""
+id: ID
+
+"""Slug of the category."""
+slug: String
+
+"""Slug language code (no translation owner — an explicit classified error)."""
+slugLanguageCode: LanguageCodeEnum
+
+"""External ID of the category (no external-ID column — an explicit classified error)."""
+externalReference: String
+): Category
+
+# === Campaign packet campaign-b4-c: the Saleor products read roots ===
+# "List of the shop's products." — the store's product population (the
+# authoritative products root the legacy platform roots read — never a
+# duplicate store) with its countable-connection envelope (edges/
+# pageInfo/totalCount, byte-shape from the pinned schema). These are
+# Saleor PUBLIC storefront roots whose include-unpublished variant
+# requires MANAGE_ORDERS/MANAGE_DISCOUNTS/MANAGE_PRODUCTS — mapped
+# through the platform's ADMIN capability (the SaleorPermissionCatalog
+# contract): the public population is the ACTIVE display-lifecycle
+# slice; an ADMIN caller's scroll and lookup widen to every state —
+# the registered permission-aware population mapping. FORWARD-ONLY
+# keyset paging on this first slice: first/after ride the platform's
+# REAL SQL keyset scroll (the staffUsers repository-keyset precedent —
+# cursors identify a row's sort key (name, id), never an absolute
+# offset); before/last stay declared (the exact Saleor argument shape)
+# but answer an explicit classified error until a backward scroll
+# exists — a recorded, tested boundary, not a silent no-op. filter
+# (deprecated upstream), where, search and channel (no channel model —
+# the PENDING-ADR commercial-context row) are likewise the declared
+# wire shapes with explicit not-yet-supported errors. The sort
+# vocabulary is Saleor's own ProductOrderField enum: NAME (the
+# product's own title column) executes as the real keyset sort,
+# deterministic with the id tiebreaker; the attributeId sort leg and
+# the other thirteen fields answer the explicit not-implemented error.
+products(
+"""Filtering options for products."""
+filter: ProductFilterInput @deprecated(reason: "Use `where` filter instead.")
+
+"""Where filtering options for products."""
+where: ProductWhereInput
+
+"""Sort products."""
+sortBy: ProductOrder
+
+"""Search products."""
+search: String
+
+"""Slug of a channel for which the data should be returned."""
+channel: String
+
+"""Return the elements in the list that come before the specified cursor."""
+before: String
+
+"""Return the elements in the list that come after the specified cursor."""
+after: String
+
+"""Retrieve the first n elements from the list."""
+first: Int
+
+"""Retrieve the last n elements from the list."""
+last: Int
+): ProductCountableConnection
+
+# "Look up a product by ID, slug, slug language code, external reference or channel." —
+# the storefront lookup over the owning use case's permission-aware
+# readable population: an unknown but well-formed id answers null; a
+# KNOWN but unpublished row (SUSPENDED/ARCHIVED/DRAFT) answers null
+# for non-ADMIN callers — the data-scope boundary the owning use case
+# enforces, never an error and never a leak. id executes through the
+# typed global-ID codec (a malformed or mistyped global ID answers the
+# codec's classified validation error — never a raw UUID fallback).
+# slug (no slug column), slugLanguageCode (no translation owner),
+# externalReference (no external-ID column) and channel (no channel
+# model) answer the explicit classified error whenever they are sent;
+# a keyless call answers the classified validation error (the recorded
+# divergence from upstream's null answer).
+product(
+"""ID of the product."""
+id: ID
+
+"""Slug of the product (no slug column on this platform — an explicit classified error)."""
+slug: String
+
+"""Slug language code (no translation owner — an explicit classified error)."""
+slugLanguageCode: LanguageCodeEnum
+
+"""External ID of the product (no external-ID column — an explicit classified error)."""
+externalReference: String
+
+"""Slug of a channel for which the data should be returned (no channel model — an explicit classified error)."""
+channel: String
+): Product
+
+# === Campaign packet campaign-b5-a: the Saleor product-variant read roots ===
+# "List of product variants. Requires one of the following permissions to
+# include the unpublished items: MANAGE_ORDERS, MANAGE_DISCOUNTS,
+# MANAGE_PRODUCTS." — the store's variant population (the SAME
+# authoritative product_variants rows the cart's reservation arithmetic
+# writes — never a duplicate store) with its countable-connection envelope
+# (edges/pageInfo/totalCount, byte-shape from the pinned schema). These
+# are Saleor PUBLIC storefront roots whose include-unpublished variant
+# maps through the platform's ADMIN capability (the SaleorPermissionCatalog
+# contract): the public population is the TWO-ROW gate the platform's own
+# reservation write carries verbatim (the variant's ACTIVE shelf AND the
+# parent product's ACTIVE shelf); an ADMIN caller's scroll and lookup
+# widen to every state and every parent — the registered
+# permission-aware population mapping. FORWARD-ONLY keyset paging on this
+# first slice: first/after ride the platform's REAL SQL keyset scroll (the
+# staffUsers repository-keyset precedent — cursors identify a row's sort
+# key (updatedAt/id or the unique id), never an absolute offset);
+# before/last stay declared (the exact Saleor argument shape) but answer
+# an explicit classified error until a backward scroll exists — a
+# recorded, tested boundary, not a silent no-op. ids (no owning id-set
+# query capability yet), filter (deprecated upstream), where, search (no
+# owning search capability) and channel (no channel model — the
+# PENDING-ADR commercial-context row) are likewise the declared wire
+# shapes with explicit not-yet-supported errors. The sort vocabulary is
+# Saleor's own ProductVariantSortField enum and BOTH its values execute:
+# LAST_MODIFIED_AT (the entity's own non-null updated_at audit column,
+# id tiebreaker) and ID (the unique key — the pinned enum's own 3.23
+# value).
+productVariants(
+"""Filter product variants by given IDs (no owning id-set query capability yet — an explicit classified error)."""
+ids: [ID!]
+
+"""Slug of a channel for which the data should be returned (no channel model — an explicit classified error)."""
+channel: String
+
+"""Filtering options for product variants (no owning query capability yet — an explicit classified error)."""
+filter: ProductVariantFilterInput @deprecated(reason: "Use `where` filter instead.")
+
+"""Where filtering options for product variants (no owning query capability yet — an explicit classified error)."""
+where: ProductVariantWhereInput
+
+"""Search product variants (no owning search capability — an explicit classified error)."""
+search: String
+
+"""Sort products variants (both pinned fields execute as real keyset sorts)."""
+sortBy: ProductVariantSortingInput
+
+"""Return the elements in the list that come before the specified cursor (forward-only on this platform — an explicit classified error)."""
+before: String
+
+"""Return the elements in the list that come after the specified cursor."""
+after: String
+
+"""Retrieve the first n elements from the list."""
+first: Int
+
+"""Retrieve the last n elements from the list (forward-only on this platform — an explicit classified error)."""
+last: Int
+): ProductVariantCountableConnection
+
+# "Look up a product variant by ID or SKU. Requires one of the following
+# permissions to include the unpublished items: MANAGE_ORDERS,
+# MANAGE_DISCOUNTS, MANAGE_PRODUCTS." — the storefront lookup over the
+# owning use case's permission-aware readable population: an unknown but
+# well-formed id answers null; a KNOWN row outside the caller's
+# population — a non-ACTIVE variant, or an ACTIVE variant under a
+# non-ACTIVE parent product — answers null for non-ADMIN callers (the
+# two-row data-scope boundary the owning use case enforces), never an
+# error and never a leak. id executes through the typed global-ID codec
+# (a malformed or mistyped global ID answers the codec's classified
+# validation error — never a raw UUID fallback). sku (the platform's SKU
+# is seller-namespaced by the V219 uq_product_variants_provider_sku
+# index, not globally unique — a bare global lookup is ambiguous),
+# externalReference (no external-ID column) and channel (no channel
+# model) answer the explicit classified error whenever they are sent; a
+# keyless call answers the classified validation error (the recorded
+# divergence from upstream's null answer).
+productVariant(
+"""ID of the product variant."""
+id: ID
+
+"""SKU of the product variant (seller-namespaced on this platform, not globally unique — an explicit classified error)."""
+sku: String
+
+"""External ID of the product (no external-ID column — an explicit classified error)."""
+externalReference: String
+
+"""Slug of a channel for which the data should be returned (no channel model — an explicit classified error)."""
+channel: String
+): ProductVariant
+
+# === Campaign packet campaign-b5-b: the Saleor order read roots ===
+# "List of orders. The query will not initiate any external requests,
+# including filtering available shipping methods, or performing
+# external tax calculations. Requires one of the following permissions:
+# MANAGE_ORDERS." — the store's order population (the SAME
+# authoritative orders rows the placement machine writes — never a
+# duplicate store) with its countable-connection envelope (edges/
+# pageInfo/totalCount, byte-shape from the pinned schema). These are
+# Saleor MANAGEMENT roots: MANAGE_ORDERS maps through the platform's
+# ADMIN capability (the SaleorPermissionCatalog contract) enforced at
+# the owning use-case boundary by Spring Security's method security —
+# there is NO public population on this root (a non-ADMIN caller
+# answers the AUTHZ-001 authorization failure; the buyer's own-order
+# surface is the User.orders field's own later slice). FORWARD-ONLY
+# keyset paging on this first slice: first/after ride the platform's
+# REAL SQL keyset scroll (the staffUsers repository-keyset precedent —
+# cursors identify a row's sort key (placedAt/updatedAt/status, id),
+# never an absolute offset); before/last stay declared (the exact
+# Saleor argument shape) but answer an explicit classified error until
+# a backward scroll exists — a recorded, tested boundary, not a silent
+# no-op. filter (deprecated upstream), where, search (no owning search
+# capability) and channel (no channel model — the PENDING-ADR
+# commercial-context row) are likewise the declared wire shapes with
+# explicit not-yet-supported errors. The sort vocabulary is Saleor's
+# own OrderSortField enum: CREATED_AT (the placement instant — the
+# D-N5 complete ordering key's own column; the deprecated
+# CREATION_DATE alias rides the SAME executed sort), LAST_MODIFIED_AT
+# (the entity's own audit column) and STATUS (the stored lifecycle
+# text) execute as real keyset sorts; NUMBER (no order-number column),
+# RANK (search-scoped upstream), CUSTOMER (an identity-side join this
+# surface does not own), PAYMENT and FULFILLMENT_STATUS (deprecated
+# upstream) answer the explicit not-implemented error.
+orders(
+"""Sort orders."""
+sortBy: OrderSortingInput
+
+"""Filtering options for orders (no owning query capability yet — an explicit classified error)."""
+filter: OrderFilterInput @deprecated(reason: "Use `where` filter instead.")
+
+"""Where filtering options for orders (no owning query capability yet — an explicit classified error)."""
+where: OrderWhereInput
+
+"""Slug of a channel for which the data should be returned (no channel model — an explicit classified error)."""
+channel: String
+
+"""Search orders (no owning search capability — an explicit classified error)."""
+search: String
+
+"""Return the elements in the list that come before the specified cursor (forward-only on this platform — an explicit classified error)."""
+before: String
+
+"""Return the elements in the list that come after the specified cursor."""
+after: String
+
+"""Retrieve the first n elements from the list."""
+first: Int
+
+"""Retrieve the last n elements from the list (forward-only on this platform — an explicit classified error)."""
+last: Int
+): OrderCountableConnection
+
+# "Look up an order by ID or external reference." — the management
+# lookup over the owning use case's ADMIN-enforced read (MANAGE_ORDERS
+# maps to the platform's ADMIN capability — the AUTHZ-001 denial for
+# every non-ADMIN caller, proven in the integration suite). id
+# executes through the typed global-ID codec (an unknown but
+# well-formed lookup answers null — the safe absence; a malformed or
+# mistyped global ID answers the codec's classified validation error —
+# never a raw UUID fallback). externalReference (no external-ID column
+# on this platform) answers the explicit classified error whenever it
+# is sent; a keyless call answers the classified validation error (the
+# recorded divergence from upstream's null answer).
+order(
+"""ID of an order."""
+id: ID
+
+"""External ID of an order (no external-ID column — an explicit classified error)."""
+externalReference: String
+): Order
 }
 
 type Mutation {
@@ -750,4 +1412,1219 @@ enum OrderDirection {
 
     """Specifies a descending sort order."""
     DESC
+}
+
+# ---------------------------------------------------------------------
+# The bounded Group projection — see the block comment above for the
+# closure policy. id is the typed global ID over the owner's
+# deterministic per-role native handle; name is the platform role's
+# display name; permissions is the server-enforced capability rendering
+# (SaleorPermissionCatalog — the platform RBAC rendered in Saleor's
+# permission vocabulary, the divergence-registry RBAC row); userCanManage
+# is the honest manage-right fact (true exactly for the ADMIN caller —
+# the only caller the ADMIN-enforced roots admit).
+# ---------------------------------------------------------------------
+type Group {
+    """The ID of the group — typed global ID (opaque, never a raw UUID)."""
+    id: ID!
+
+    """The name of the group (the platform role's display name)."""
+    name: String!
+
+    """List of group permissions (the granted permission codes)."""
+    permissions: [Permission!]
+
+    """
+    True, if the currently authenticated user has rights to manage a group
+    (the platform ADMIN capability — the same right the role grant/revoke
+    commands gate).
+    """
+    userCanManage: Boolean!
+}
+
+# Saleor's Permission object — the friendly form of one granted
+# permission. Freshly declared for the Group surface (the User read
+# surface's UserPermission shape stays its own declaration; the shared
+# PermissionEnum stays the single closed code vocabulary).
+type Permission {
+    """Internal code for permission."""
+    code: PermissionEnum!
+
+    """Describe action(s) allowed to do by permission."""
+    name: String!
+}
+
+# Saleor's connection envelope for countable group lists — declared (not
+# runtime-generated) so the exact Saleor shape stands, including
+# totalCount. Spring's ConnectionTypeDefinitionConfigurer skips
+# already-declared connection types (the measured declared-types-skip
+# behavior the UserCountableConnection declaration recorded), so this
+# declaration wins and the generated connections elsewhere are untouched.
+# pageInfo reuses the EXISTING shared PageInfo type — not redeclared.
+type GroupCountableConnection {
+    """Pagination data for this connection."""
+    pageInfo: PageInfo!
+
+    edges: [GroupCountableEdge!]!
+
+    """A total count of items in the collection."""
+    totalCount: Int
+}
+
+type GroupCountableEdge {
+    """The item at the end of the edge."""
+    node: Group!
+
+    """A cursor for use in pagination (the row's keyset sort key)."""
+    cursor: String!
+}
+
+# Saleor's permission-group filter input — the declared wire shape of the
+# filter argument (see permissionGroups: an explicit classified error
+# until the owning query capability exists).
+input PermissionGroupFilterInput {
+    search: String
+    ids: [ID!]
+}
+
+# Saleor's permission-group sorting input and field vocabulary — the full
+# pinned closure is the single NAME value, and it is owned (the executed
+# keyset sort's own field); there is no unowned sort-field branch on this
+# surface. direction reuses the EXISTING shared OrderDirection enum —
+# not redeclared.
+input PermissionGroupSortingInput {
+    """Specifies the direction in which to sort permission group."""
+    direction: OrderDirection!
+
+    """Sort permission group by the selected field."""
+    field: PermissionGroupSortField!
+}
+
+"""Sorting options for permission groups."""
+enum PermissionGroupSortField {
+    """Sort permission group accounts by name."""
+    NAME
+}
+
+# ---------------------------------------------------------------------
+# The bounded ProductType projection — see the block comment above for
+# the closure policy. id is the typed global ID over the native
+# product_types key; name is the bilingual row's rendered primary
+# display name; slug is the row's immutable public code.
+# ---------------------------------------------------------------------
+type ProductType {
+    """The ID of the product type — typed global ID (opaque, never a raw UUID)."""
+    id: ID!
+
+    """Name of the product type (the rendered primary display name)."""
+    name: String!
+
+    """Slug of the product type (the row's immutable public code)."""
+    slug: String!
+}
+
+# Saleor's connection envelope for countable product-type lists —
+# declared (not runtime-generated) so the exact Saleor shape stands,
+# including totalCount. Spring's ConnectionTypeDefinitionConfigurer skips
+# already-declared connection types (the measured declared-types-skip
+# behavior the UserCountableConnection/GroupCountableConnection
+# declarations recorded), so this declaration wins and the generated
+# connections elsewhere are untouched. pageInfo reuses the EXISTING
+# shared PageInfo type — not redeclared.
+type ProductTypeCountableConnection {
+    """Pagination data for this connection."""
+    pageInfo: PageInfo!
+
+    edges: [ProductTypeCountableEdge!]!
+
+    """A total count of items in the collection."""
+    totalCount: Int
+}
+
+type ProductTypeCountableEdge {
+    """The item at the end of the edge."""
+    node: ProductType!
+
+    """A cursor for use in pagination (the row's keyset sort key)."""
+    cursor: String!
+}
+
+# Saleor's product-type filter input — the declared wire shape of the
+# filter argument (see productTypes: an explicit classified error until
+# the owning query capability exists). BOUNDED closure: search/ids/slugs
+# carry the scalar filter surface; configurable (deprecated upstream,
+# no effect), metadata (its heavy MetadataFilter closure), kind and
+# productType (tied to unowned ProductTypeKind/digital facts) stay
+# undeclared until an owning capability exists — any filter use answers
+# the classified not-implemented error before field-level semantics
+# matter, and a Dashboard query naming an undeclared sub-field fails
+# schema validation loudly (never a silent no-op).
+input ProductTypeFilterInput {
+    search: String
+    ids: [ID!]
+    slugs: [String!]
+}
+
+# Saleor's product-type sorting input and field vocabulary — the full
+# pinned enum is declared verbatim (NAME/DIGITAL/SHIPPING_REQUIRED with
+# upstream's own deprecation note on DIGITAL); NAME executes as the real
+# keyset sort, the other two answer the explicit not-implemented error.
+# direction reuses the EXISTING shared OrderDirection enum — not
+# redeclared.
+input ProductTypeSortingInput {
+    """Specifies the direction in which to sort product types."""
+    direction: OrderDirection!
+
+    """Sort product types by the selected field."""
+    field: ProductTypeSortField!
+}
+
+enum ProductTypeSortField {
+    """Sort products by name."""
+    NAME
+
+    """Sort products by type."""
+    DIGITAL @deprecated(reason: "DIGITAL will removed in Saleor 3.24.0. Use SHIPPING_REQUIRED instead.")
+
+    """Sort products by shipping."""
+    SHIPPING_REQUIRED
+}
+
+# === Campaign packet campaign-b3-a1b: bounded type declarations (integrated by A0) ===
+# ---------------------------------------------------------------------
+# The bounded customer filter inputs — the platform-shaped declarations
+# of the pinned Saleor filter arguments (see the block comment above
+# for every undeclared field's reason). Declared-but-unexecuted wire
+# shapes: ANY non-null filter/where value answers the explicit
+# classified not-implemented error at runtime — the StaffUserInput
+# precedent.
+# ---------------------------------------------------------------------
+input CustomerFilterInput {
+    search: String
+    ids: [ID!]
+}
+
+input CustomerWhereInput {
+    ids: [ID!]
+    isActive: Boolean
+}
+
+# === Campaign packet campaign-b3-a2b: bounded type declarations (integrated by A0) ===
+# ---------------------------------------------------------------------
+# The bounded Attribute projection — see the block comment above for
+# the closure policy. id is the typed global ID over the native
+# catalog_attribute_definitions key; name is the bilingual row's
+# rendered primary display name; slug is the row's immutable public
+# code; inputType is the closed domain value shape's Saleor rendering;
+# withChoices is the CHOICE-typed fact.
+# ---------------------------------------------------------------------
+type Attribute {
+    """The ID of the attribute — typed global ID (opaque, never a raw UUID)."""
+    id: ID!
+
+    """Name of the attribute (the rendered primary display name)."""
+    name: String!
+
+    """Slug of the attribute (the row's immutable public code)."""
+    slug: String!
+
+    """The input type to use for entering attribute values in the dashboard (the closed domain value shape's rendering)."""
+    inputType: AttributeInputTypeEnum
+
+    """Flag indicating that attribute has predefined choices (the definition is CHOICE-typed)."""
+    withChoices: Boolean!
+}
+
+# Saleor's connection envelope for countable attribute lists —
+# declared (not runtime-generated) so the exact Saleor shape stands,
+# including totalCount. Spring's ConnectionTypeDefinitionConfigurer skips
+# already-declared connection types (the measured declared-types-skip
+# behavior the UserCountableConnection/GroupCountableConnection/
+# ProductTypeCountableConnection declarations recorded), so this
+# declaration wins and the generated connections elsewhere are
+# untouched. pageInfo reuses the EXISTING shared PageInfo type — not
+# redeclared.
+type AttributeCountableConnection {
+    """Pagination data for this connection."""
+    pageInfo: PageInfo!
+
+    edges: [AttributeCountableEdge!]!
+
+    """A total count of items in the collection."""
+    totalCount: Int
+}
+
+type AttributeCountableEdge {
+    """The item at the end of the edge."""
+    node: Attribute!
+
+    """A cursor for use in pagination (the row's keyset sort key)."""
+    cursor: String!
+}
+
+# The bounded input-type vocabulary — only the four values the closed
+# domain value shape (TEXT/NUMBER/BOOLEAN/CHOICE, V237's
+# chk_catalog_attr_type) renders; the other eight upstream values stay
+# undeclared until an owning value shape exists (see the block comment
+# above).
+enum AttributeInputTypeEnum {
+    """Predefined choices selected from a dropdown (the CHOICE value shape)."""
+    DROPDOWN
+
+    """A numeric value (the NUMBER value shape)."""
+    NUMERIC
+
+    """A plain text value (the TEXT value shape — plain, never rich text)."""
+    PLAIN_TEXT
+
+    """A boolean value (the BOOLEAN value shape)."""
+    BOOLEAN
+}
+
+# Saleor's attribute filter input — the declared wire shape of the
+# deprecated filter argument (see attributes: an explicit classified
+# error until the owning query capability exists). BOUNDED closure:
+# search/ids/slugs carry the scalar filter surface; valueRequired (an
+# assignment-level fact), isVariantOnly and visibleInStorefront (no
+# owning columns), metadata (its heavy MetadataFilter closure), type
+# (the unowned PRODUCT_TYPE/PAGE_TYPE/CUSTOMER_TYPE classification),
+# inCollection/inCategory (no collection/category relation on
+# definitions) and the deprecated no-effect flags stay undeclared until
+# an owning capability exists — any filter use answers the classified
+# not-implemented error before field-level semantics matter, and a
+# Dashboard query naming an undeclared sub-field fails schema
+# validation loudly (never a silent no-op).
+input AttributeFilterInput {
+    search: String
+    ids: [ID!]
+    slugs: [String!]
+}
+
+# Saleor's attribute where input — the declared wire shape of the where
+# argument (see attributes: an explicit classified error until the
+# owning query capability exists). BOUNDED closure: ids and withChoices
+# carry the owned scalar facts; metadata (its heavy MetadataFilter
+# closure), name/slug (the generic StringFilterInput input is not yet
+# declared by any integrated slice), inputType/entityType/type/unit
+# (enum filter inputs over unowned facts), inCollection/inCategory,
+# valueRequired (assignment-level fact), visibleInStorefront, the
+# deprecated filterableInDashboard flag and the AND/OR composition
+# capability stay undeclared until an owning capability exists — any
+# where use answers the classified not-implemented error.
+input AttributeWhereInput {
+    ids: [ID!]
+    withChoices: Boolean
+}
+
+# Saleor's attribute sorting input and field vocabulary — the full
+# pinned enum is declared verbatim (nine values with upstream's own
+# deprecation notes); NAME and SLUG execute as real keyset sorts, the
+# other seven answer the explicit not-implemented error. direction
+# reuses the EXISTING shared OrderDirection enum — not redeclared.
+input AttributeSortingInput {
+    """Specifies the direction in which to sort attributes."""
+    direction: OrderDirection!
+
+    """Sort attributes by the selected field."""
+    field: AttributeSortField!
+}
+
+enum AttributeSortField {
+    """Sort attributes by name"""
+    NAME
+
+    """Sort attributes by slug"""
+    SLUG
+
+    """Sort attributes by the value required flag"""
+    VALUE_REQUIRED
+
+    """Sort attributes by the variant only flag"""
+    IS_VARIANT_ONLY
+
+    """Sort attributes by visibility in the storefront"""
+    VISIBLE_IN_STOREFRONT
+
+    """Sort attributes by the filterable in storefront flag"""
+    FILTERABLE_IN_STOREFRONT @deprecated(reason: "This flag is not used by Saleor. Keep the logic in the storefront or use `Attribute` metadata instead.")
+
+    """Sort attributes by the filterable in dashboard flag"""
+    FILTERABLE_IN_DASHBOARD @deprecated(reason: "This flag is not used by Saleor. Keep the logic in the dashboard or use `Attribute` metadata instead.")
+
+    """Sort attributes by their position in storefront"""
+    STOREFRONT_SEARCH_POSITION @deprecated(reason: "This flag is not used by Saleor. Keep the logic in the storefront or use `Attribute` metadata instead.")
+
+    """Sort attributes based on whether they can be displayed or not in a product grid."""
+    AVAILABLE_IN_GRID @deprecated(reason: "This flag is not used by Saleor. Keep the logic in the storefront or use `Attribute` metadata instead.")
+}
+
+# === Campaign packet campaign-b4-a: bounded type declarations (integrated in-branch by A0 — the sequential single-writer flow) ===
+# ---------------------------------------------------------------------
+# The bounded Category projection — see the block comment above for
+# the closure policy. id is the typed global ID over the native
+# categories key; name is the rendered primary display name
+# (nameEn else nameAr — NULLABLE because the registry's own columns
+# carry no at-least-one constraint, the registered nullability
+# divergence from Saleor's String!); slug is the row's immutable
+# public code (the code-as-slug mapping the attribute slice
+# recorded). nameAr and position are PLATFORM EXTENSION facts the
+# registry owns and the Saleor wire shape does not carry — preserved
+# per the governing matrix's own "platform-only fields as extensions"
+# policy. Unowned Saleor fields stay undeclared with reasons: the
+# metadata family (no metadata store), seoTitle/seoDescription (no
+# owning columns), description/fullDescription/descriptionJson
+# (rich-text JSON — no owning column and no JSONString scalar),
+# externalReference (no external-ID column), updatedAt (no typed
+# DateTime scalar on this surface — the house no-new-scalar
+# decision), parent/children/ancestors/level (the registry is FLAT —
+# no nesting tree), products (the products connection is the P2
+# products slice's own later fact) and translation (no translation
+# owner).
+# ---------------------------------------------------------------------
+type Category {
+    """The ID of the category — typed global ID (opaque, never a raw UUID)."""
+    id: ID!
+
+    """Name of the category (the rendered primary display name; null only for a registry row carrying neither bilingual name — the registered nullability divergence)."""
+    name: String
+
+    """The registry's Arabic display name (a platform extension fact)."""
+    nameAr: String
+
+    """Slug of the category (the row's immutable public code)."""
+    slug: String!
+
+    """The registry's own display order, ascending (a platform extension fact)."""
+    position: Int!
+}
+
+# Saleor's connection envelope for countable category lists —
+# declared (not runtime-generated) so the exact Saleor shape stands,
+# including totalCount. Spring's ConnectionTypeDefinitionConfigurer
+# skips already-declared connection types (the measured
+# declared-types-skip behavior the UserCountableConnection/
+# AttributeCountableConnection declarations recorded), so this
+# declaration wins and the generated connections elsewhere are
+# untouched. pageInfo reuses the EXISTING shared PageInfo type — not
+# redeclared.
+type CategoryCountableConnection {
+    """Pagination data for this connection."""
+    pageInfo: PageInfo!
+
+    edges: [CategoryCountableEdge!]!
+
+    """A total count of items in the collection."""
+    totalCount: Int
+}
+
+type CategoryCountableEdge {
+    """The item at the end of the edge."""
+    node: Category!
+
+    """A cursor for use in pagination (the row's keyset sort key)."""
+    cursor: String!
+}
+
+# The bounded language vocabulary — the registry's own bilingual fact
+# (nameEn/nameAr, the platform's two declared languages). Saleor's
+# full 3.23 closure stays undeclared until a translation owner exists
+# (the P5 translation roots' own decision); the category root's
+# slugLanguageCode argument answers the explicit classified error
+# whenever it is sent — the enum exists so the argument's declared
+# wire shape is honest, never a silently ignored argument.
+enum LanguageCodeEnum {
+    """Arabic — the primary market's language."""
+    AR
+
+    """English — the storefront's default language."""
+    EN
+}
+
+# Saleor's category filter input — the declared wire shape of the
+# deprecated filter argument (see categories: an explicit classified
+# error until the owning query capability exists). BOUNDED closure:
+# search/ids/slugs carry the scalar filter surface; metadata (its
+# heavy MetadataFilter closure) and updatedAt (the
+# DateTimeRangeInput family — not yet declared by any integrated
+# slice) stay undeclared until an owning capability exists — any
+# filter use answers the classified not-implemented error before
+# field-level semantics matter, and a Dashboard query naming an
+# undeclared sub-field fails schema validation loudly (never a
+# silent no-op).
+input CategoryFilterInput {
+    search: String
+    ids: [ID!]
+    slugs: [String!]
+}
+
+# Saleor's category where input — the declared wire shape of the
+# where argument (see categories: an explicit classified error until
+# the owning query capability exists). BOUNDED closure: ids carry the
+# owned scalar facts; metadata (its heavy MetadataFilter closure) and
+# the AND/OR composition capability stay undeclared until an owning
+# capability exists — any where use answers the classified
+# not-implemented error.
+input CategoryWhereInput {
+    ids: [ID!]
+}
+
+# Saleor's category sorting input and field vocabulary — the full
+# pinned enum is declared verbatim; NAME executes as the real keyset
+# sort (the rendered bilingual name with the id tiebreaker);
+# PRODUCT_COUNT and SUBCATEGORY_COUNT (a products connection and a
+# category tree the flat registry does not own) answer the explicit
+# not-implemented error. direction reuses the EXISTING shared
+# OrderDirection enum — not redeclared.
+input CategorySortingInput {
+    """Specifies the direction in which to sort categories."""
+    direction: OrderDirection!
+
+    """Sort categories by the selected field."""
+    field: CategorySortField!
+}
+
+enum CategorySortField {
+    """Sort categories by name"""
+    NAME
+
+    """Sort categories by product count"""
+    PRODUCT_COUNT
+
+    """Sort categories by subcategory count"""
+    SUBCATEGORY_COUNT
+}
+
+# === Campaign packet campaign-b4-c: bounded type declarations (integrated in-branch by A0 — the sequential single-writer flow) ===
+# ---------------------------------------------------------------------
+# The bounded Product projection — see the block comment above for
+# the closure policy. id is the typed global ID over the native
+# products key; name is the product's own display title; productType
+# renders the optional reusable-goods-schema reference as the typed
+# global ID of the EXISTING ProductType root's type (the campaign-b2-
+# a2 slice's own wire type — one codec, one ID vocabulary); status is
+# a PLATFORM EXTENSION fact the entity owns and the Saleor wire shape
+# does not carry (the display lifecycle ACTIVE/SUSPENDED/ARCHIVED/
+# DRAFT), preserved per the governing matrix's own "platform-only
+# fields as extensions" policy. Unowned Saleor fields stay undeclared
+# with reasons: the metadata family (no metadata store), seoTitle/
+# seoDescription (no owning columns), description/descriptionJson
+# (rich-text JSON — no owning rich-text capability and no JSONString
+# scalar), slug (no slug column), externalReference (no external-ID
+# column), updatedAt (no typed DateTime scalar on this surface — the
+# house no-new-scalar decision), the pricing connection (money
+# surfaces stay off the wire per the frozen money contract — the
+# registered Decimal/PositiveDecimal row), chargeTaxes/taxType/
+# taxClass-related fields (the tax-class family is BLOCKED_BY_DECISION
+# D-TAX-001), variants/defaultVariant/digitalContent/media/attributes
+# (the P2 variant/media/attribute-assignment slices' own later facts),
+# category (the product's own dictionary is the STORE-categories
+# vocabulary — a different legacy store, never conflated with the
+# Saleor Category registry), weight/sku/rating (no owning columns)
+# and translation (no translation owner).
+# ---------------------------------------------------------------------
+type Product {
+    """The ID of the product — typed global ID (opaque, never a raw UUID)."""
+    id: ID!
+
+    """Name of the product (the entity's own display title)."""
+    name: String!
+
+    """The product's reusable goods schema as the ProductType object it references (id/name/slug resolve through the product-type owner when selected; null keeps pre-C1 and zero-variant products compatible)."""
+    productType: ProductType
+
+    """The product's display lifecycle state (a platform extension fact: ACTIVE/SUSPENDED/ARCHIVED/DRAFT)."""
+    status: String!
+}
+
+# Saleor's connection envelope for countable product lists —
+# declared (not runtime-generated) so the exact Saleor shape stands,
+# including totalCount. Spring's ConnectionTypeDefinitionConfigurer
+# skips already-declared connection types (the measured
+# declared-types-skip behavior the UserCountableConnection/
+# CategoryCountableConnection declarations recorded), so this
+# declaration wins and the generated connections elsewhere are
+# untouched. pageInfo reuses the EXISTING shared PageInfo type — not
+# redeclared.
+type ProductCountableConnection {
+    """Pagination data for this connection."""
+    pageInfo: PageInfo!
+
+    edges: [ProductCountableEdge!]!
+
+    """A total count of items in the collection (the caller-scope population's own count)."""
+    totalCount: Int
+}
+
+type ProductCountableEdge {
+    """The item at the end of the edge."""
+    node: Product!
+
+    """A cursor for use in pagination (the row's keyset sort key)."""
+    cursor: String!
+}
+
+# Saleor's product filter input — the declared wire shape of the
+# deprecated filter argument (see products: an explicit classified
+# error until the owning query capability exists). BOUNDED closure:
+# search/ids/slugs carry the scalar filter surface; the heavy closure
+# families (isPublished/publicationDate/channel, productTypes/categories/
+# collections/attributes, price ranges, stocks, metadata, the
+# hasCategory/hasCollection composition) stay undeclared until owning
+# capabilities exist — any filter use answers the classified
+# not-implemented error before field-level semantics matter, and a
+# Dashboard query naming an undeclared sub-field fails schema
+# validation loudly (never a silent no-op).
+input ProductFilterInput {
+    search: String
+    ids: [ID!]
+    slugs: [String!]
+}
+
+# Saleor's product where input — the declared wire shape of the where
+# argument (see products: an explicit classified error until the
+# owning query capability exists). BOUNDED closure: ids carry the
+# owned scalar facts; every other closure family stays undeclared
+# until an owning capability exists — any where use answers the
+# classified not-implemented error.
+input ProductWhereInput {
+    ids: [ID!]
+}
+
+# Saleor's product sorting input and field vocabulary — the full
+# pinned enum is declared verbatim (fourteen values with upstream's
+# own deprecation notes); NAME (the product's own title column)
+# executes as the real keyset sort (deterministic with the id
+# tiebreaker); the attributeId leg and the other thirteen fields
+# answer the explicit not-implemented error. direction reuses the
+# EXISTING shared OrderDirection enum — not redeclared.
+input ProductOrder {
+    """Specifies the direction in which to sort products."""
+    direction: OrderDirection!
+
+    """Specifies the channel in which to sort the data (no channel model — an explicit classified error)."""
+    channel: String @deprecated(reason: "Use root-level channel argument instead.")
+
+    """Sort product by the selected attribute's values (no attribute sort owner — an explicit classified error)."""
+    attributeId: ID
+
+    """Sort products by the selected field."""
+    field: ProductOrderField
+}
+
+enum ProductOrderField {
+    """Sort products by name"""
+    NAME
+
+    """Sort products by rank. Note: This option is available only with the `search` filter."""
+    RANK
+
+    """
+    Sort products by price.
+
+    This option requires a channel filter to work as the values can vary between channels.
+    """
+    PRICE
+
+    """
+    Sort products by a minimal price of a product's variant.
+
+    This option requires a channel filter to work as the values can vary between channels.
+    """
+    MINIMAL_PRICE
+
+    """Sort products by update date."""
+    LAST_MODIFIED @deprecated(reason: "Use `LAST_MODIFIED_AT` instead.")
+
+    """Sort products by update date."""
+    DATE @deprecated(reason: "Use `LAST_MODIFIED_AT` instead.")
+
+    """Sort products by type"""
+    TYPE
+
+    """
+    Sort products by publication status.
+
+    This option requires a channel filter to work as the values can vary between channels.
+    """
+    PUBLISHED
+
+    """
+    Sort products by publication date.
+
+    This option requires a channel filter to work as the values can vary between channels.
+    """
+    PUBLICATION_DATE @deprecated(reason: "Use `PUBLISHED_AT` instead.")
+
+    """
+    Sort products by publication date.
+
+    This option requires a channel filter to work as the values can vary between channels.
+    """
+    PUBLISHED_AT
+
+    """Sort products by update date"""
+    LAST_MODIFIED_AT
+
+    """Sort products by collection. Note: This option is available only for the `Collection.products` query."""
+    COLLECTION
+
+    """Sort products by rating"""
+    RATING @deprecated(reason: "Product rating is deprecated and will be removed. Use a numeric attribute instead.")
+
+    """Sort products by creation date"""
+    CREATED_AT
+}
+
+# === Campaign packet campaign-b3-a3: bounded type declarations (integrated by A0) ===
+# ---------------------------------------------------------------------
+# The bounded Promotion projection — see the block comment above for
+# the closure policy. id is the typed global ID over the native
+# promotions key; type is ORDER (every platform promotion is an
+# order-level policy by the entity's own contract); the window and
+# audit instants are ISO-8601 strings (the house no-new-scalar
+# decision), with startDate OPTIONAL on the platform (the registered
+# nullability divergence).
+# ---------------------------------------------------------------------
+type Promotion {
+    """The ID of the promotion — typed global ID (opaque, never a raw UUID)."""
+    id: ID!
+
+    """Name of the promotion (the policy row's own name)."""
+    name: String!
+
+    """
+    The type of the promotion — ORDER on this platform: every promotion row is an order-level policy (the entity's own contract).
+    """
+    type: PromotionTypeEnum
+
+    """Start date of the promotion (ISO-8601; null when the policy row opens an unbounded window)."""
+    startDate: String
+
+    """End date of the promotion (ISO-8601; null when the policy row has no end)."""
+    endDate: String
+
+    """Date time of promotion creation (ISO-8601)."""
+    createdAt: String!
+
+    """Date time of last update of promotion (ISO-8601)."""
+    updatedAt: String!
+}
+
+# ---------------------------------------------------------------------
+# The bounded Voucher projection — see the block comment above for
+# the closure policy. id is the typed global ID over the native
+# vouchers key; used is the redemption-row count (the owner's own
+# accounting seam); applyOncePerCustomer is the truthful flattening of
+# the per-user limit (true exactly when the limit is 1); the window
+# instants are ISO-8601 strings, both OPTIONAL on the platform (the
+# registered nullability divergence).
+# ---------------------------------------------------------------------
+type Voucher {
+    """The ID of the voucher — typed global ID (opaque, never a raw UUID)."""
+    id: ID!
+
+    """The name of the voucher (null when the policy row carries none)."""
+    name: String
+
+    """The code of the voucher (the row's normalized uppercase code)."""
+    code: String
+
+    """
+    The number of times a voucher can be used (the row's global redemption limit; null = unlimited).
+    """
+    usageLimit: Int
+
+    """Usage count of the voucher (redemption rows counted — never a stored counter)."""
+    used: Int!
+
+    """The start date and time of voucher (ISO-8601; null when the policy row opens an unbounded window)."""
+    startDate: String
+
+    """The end date and time of voucher (ISO-8601; null when the policy row has no end)."""
+    endDate: String
+
+    """
+    Determine if the voucher usage should be limited to one use per customer (the row's per-user limit == 1; a limit of N>1 or unlimited renders false).
+    """
+    applyOncePerCustomer: Boolean!
+
+    """Determines a type of discount for voucher - value or percentage."""
+    discountValueType: DiscountValueTypeEnum!
+
+    """Currency code for voucher (the policy row's own ISO-4217 denomination)."""
+    currency: String
+}
+
+# Saleor's connection envelope for countable promotion lists —
+# declared (not runtime-generated) so the exact Saleor shape stands,
+# including totalCount. Spring's ConnectionTypeDefinitionConfigurer
+# skips already-declared connection types (the measured
+# declared-types-skip behavior the UserCountableConnection/
+# GroupCountableConnection/ProductTypeCountableConnection
+# declarations recorded), so this declaration wins and the generated
+# connections elsewhere are untouched. pageInfo reuses the EXISTING
+# shared PageInfo type — not redeclared.
+type PromotionCountableConnection {
+    """Pagination data for this connection."""
+    pageInfo: PageInfo!
+
+    edges: [PromotionCountableEdge!]!
+
+    """A total count of items in the collection."""
+    totalCount: Int
+}
+
+type PromotionCountableEdge {
+    """The item at the end of the edge."""
+    node: Promotion!
+
+    """A cursor for use in pagination (the row's keyset sort key)."""
+    cursor: String!
+}
+
+# Saleor's connection envelope for countable voucher lists — same
+# declared-not-generated rule as PromotionCountableConnection above;
+# pageInfo reuses the EXISTING shared PageInfo type — not redeclared.
+type VoucherCountableConnection {
+    """Pagination data for this connection."""
+    pageInfo: PageInfo!
+
+    edges: [VoucherCountableEdge!]!
+
+    """A total count of items in the collection."""
+    totalCount: Int
+}
+
+type VoucherCountableEdge {
+    """The item at the end of the edge."""
+    node: Voucher!
+
+    """A cursor for use in pagination (the row's keyset sort key)."""
+    cursor: String!
+}
+
+# Saleor's promotion where-filter input — the declared wire shape of
+# the where argument (see promotions: an explicit classified error
+# until the owning query capability exists). BOUNDED closure: ids
+# carries the scalar filter surface; name (its StringFilterInput
+# closure), startDate/endDate (DateTimeFilterInput), isOldSale, type
+# (PromotionTypeEnumFilterInput), metadata (its heavy MetadataFilter
+# closure) and the AND/OR combinators stay undeclared until an owning
+# capability exists — any where use answers the classified
+# not-implemented error before field-level semantics matter, and a
+# Dashboard query naming an undeclared sub-field fails schema
+# validation loudly (never a silent no-op).
+input PromotionWhereInput {
+    ids: [ID!]
+}
+
+# Saleor's voucher filter input — the declared wire shape of the
+# filter argument (see vouchers: an explicit classified error until
+# the owning query capability exists). BOUNDED closure: search/ids
+# carry the scalar filter surface; status (DiscountStatusEnum list),
+# timesUsed (IntRangeInput), discountType (VoucherDiscountType list),
+# started (DateTimeRangeInput) and metadata (its heavy MetadataFilter
+# closure) stay undeclared until an owning capability exists — the
+# same declared-shape rule the StaffUserInput/ProductTypeFilterInput
+# precedents established.
+input VoucherFilterInput {
+    search: String
+    ids: [ID!]
+}
+
+# Saleor's promotion sorting input and field vocabulary — the full
+# pinned enum is declared verbatim; NAME and CREATED_AT execute as
+# the real forward-only keyset sorts (the owning non-null columns,
+# id tiebreaker); START_DATE/END_DATE (the optional policy-window
+# columns) answer the explicit not-implemented error. direction
+# reuses the EXISTING shared OrderDirection enum — not redeclared.
+input PromotionSortingInput {
+    """Specifies the direction in which to sort promotions."""
+    direction: OrderDirection!
+
+    """Sort promotions by the selected field."""
+    field: PromotionSortField!
+}
+
+enum PromotionSortField {
+    """Sort promotions by name."""
+    NAME
+
+    """Sort promotions by start date."""
+    START_DATE
+
+    """Sort promotions by end date."""
+    END_DATE
+
+    """Sort promotions by creation date."""
+    CREATED_AT
+}
+
+# Saleor's promotion type vocabulary — declared verbatim; ORDER is the
+# owning fact (every platform promotion is an order-level policy),
+# CATALOGUE stays inert SDL vocabulary (never emitted by this
+# platform).
+enum PromotionTypeEnum {
+    CATALOGUE
+    ORDER
+}
+
+# Saleor's discount value type vocabulary — declared verbatim; the
+# owner's PERCENTAGE/FIXED row vocabulary renders through it exactly.
+enum DiscountValueTypeEnum {
+    FIXED
+    PERCENTAGE
+}
+
+# Saleor's voucher sorting input and field vocabulary — the full
+# pinned enum is declared verbatim (CODE deprecated upstream with no
+# reason string in the pinned schema); CODE executes as the real
+# forward-only keyset sort (the row's non-null normalized code, id
+# tiebreaker); NAME/START_DATE/END_DATE (optional columns),
+# VALUE/MINIMUM_SPENT_AMOUNT (channel-scoped money upstream + the
+# frozen money contract), TYPE (no voucher-type discrimination) and
+# USAGE_LIMIT (optional column) answer the explicit not-implemented
+# error, as does the deprecated nested channel. direction reuses the
+# EXISTING shared OrderDirection enum — not redeclared.
+input VoucherSortingInput {
+    """Specifies the direction in which to sort vouchers."""
+    direction: OrderDirection!
+
+    """Specifies the channel in which to sort the data."""
+    channel: String @deprecated(reason: "Use root-level channel argument instead.")
+
+    """Sort vouchers by the selected field."""
+    field: VoucherSortField!
+}
+
+enum VoucherSortField {
+    """Sort vouchers by code."""
+    CODE @deprecated
+
+    """
+    Sort vouchers by name.
+
+    Added in Saleor 3.18.
+    """
+    NAME
+
+    """Sort vouchers by start date."""
+    START_DATE
+
+    """Sort vouchers by end date."""
+    END_DATE
+
+    """
+    Sort vouchers by value.
+
+    This option requires a channel filter to work as the values can vary between channels.
+    """
+    VALUE
+
+    """Sort vouchers by type."""
+    TYPE
+
+    """Sort vouchers by usage limit."""
+    USAGE_LIMIT
+
+    """
+    Sort vouchers by minimum spent amount.
+
+    This option requires a channel filter to work as the values can vary between channels.
+    """
+    MINIMUM_SPENT_AMOUNT
+}
+
+
+# === Campaign packet campaign-b5-a: the Saleor product-variant wire types ===
+# "Represents a version of a product such as different size or color." —
+# the BOUNDED closure over the catalog owner's product_variants row: id
+# (the typed global ID), name (the variant's own optional display column —
+# NULLABLE on the wire because the row's own column carries no
+# non-null constraint; the registered nullable-name divergence from
+# upstream's non-null name), sku (the seller's own SKU — non-null on
+# this platform, nullable upstream stays compatible), product (the
+# parent's bounded projection through the EXISTING Product wire type —
+# one Product shape across the product roots and the variant roots),
+# and status (a PLATFORM EXTENSION fact: the variant's own
+# ACTIVE/SUSPENDED/ARCHIVED availability lifecycle). Unowned Saleor
+# fields (the metadata family, the channel-scoped pricing/
+# channelListings family, weight, the attribute selections,
+# quantityOrdered/revenue reporting, media, translations, updatedAt,
+# trackInventory, quantityLimitPerCustomer, preorder facts) stay
+# undeclared until an owning capability exists — never faked.
+type ProductVariant {
+    """The ID of the product variant — typed global ID (opaque, never a raw UUID)."""
+    id: ID!
+
+    """Name of the product variant (the entity's own optional display column — the honest null of a legacy free-form variant)."""
+    name: String
+
+    """The seller's own SKU (non-null on this platform)."""
+    sku: String
+
+    """The product to which the variant belongs (the parent's bounded projection — the SAME Product wire type the product roots serve)."""
+    product: Product!
+
+    """The variant's availability lifecycle (a platform extension fact: ACTIVE/SUSPENDED/ARCHIVED)."""
+    status: String!
+}
+
+# Saleor's connection envelope for countable product-variant lists —
+# declared (not runtime-generated) so the exact Saleor shape stands,
+# including totalCount. Spring's ConnectionTypeDefinitionConfigurer
+# skips already-declared connection types (the measured
+# declared-types-skip behavior the ProductCountableConnection
+# declaration recorded), so this declaration wins and the generated
+# connections elsewhere are untouched. pageInfo reuses the EXISTING
+# shared PageInfo type — not redeclared.
+type ProductVariantCountableConnection {
+    """Pagination data for this connection."""
+    pageInfo: PageInfo!
+
+    edges: [ProductVariantCountableEdge!]!
+
+    """A total count of items in the collection (the caller-scope population's own count)."""
+    totalCount: Int
+}
+
+# Saleor's edge for the countable product-variant connection — the
+# node/cursor pair the keyset scroll emits (per-element opaque cursors
+# over the executed sort's own keys).
+type ProductVariantCountableEdge {
+    """The item at the end of the edge."""
+    node: ProductVariant!
+
+    """A cursor for use in pagination."""
+    cursor: String!
+}
+
+# Saleor's product-variant filter input — the declared wire shape of the
+# filter argument (see productVariants: an explicit classified error
+# until the owning query capability exists). BOUNDED closure: search and
+# sku carry the scalar filter surface; metadata (its heavy MetadataFilter
+# closure), isPreorder (the deprecated preorder fact) and updatedAt
+# (DateTimeRangeInput) stay undeclared until an owning capability exists
+# — the same declared-shape rule the ProductTypeFilterInput precedents
+# established.
+input ProductVariantFilterInput {
+    search: String
+    sku: [String!]
+}
+
+# Saleor's product-variant where input — the declared wire shape of the
+# where argument (see productVariants: an explicit classified error
+# until the owning query capability exists). BOUNDED closure: ids
+# carries the scalar filter surface; sku (its StringFilterInput closure),
+# updatedAt (DateTimeRangeInput), metadata (its heavy MetadataFilter
+# closure), attributes (the AssignedAttributeWhereInput family) and the
+# AND/OR combinators stay undeclared until an owning capability exists —
+# any where use answers the classified not-implemented error before
+# field-level semantics matter, and a Dashboard query naming an
+# undeclared sub-field fails schema validation loudly (never a silent
+# no-op).
+input ProductVariantWhereInput {
+    ids: [ID!]
+}
+
+# Saleor's product-variant sorting input — the full pinned vocabulary
+# (upstream's own two values, verbatim): BOTH fields execute as the real
+# forward-only keyset sorts (LAST_MODIFIED_AT over the entity's own
+# non-null updated_at audit column, ID over the unique key), in both
+# directions, deterministic with the id tiebreaker where the sort field
+# is not already unique. direction reuses the EXISTING shared
+# OrderDirection enum — not redeclared.
+input ProductVariantSortingInput {
+    """Specifies the direction in which to sort productVariants."""
+    direction: OrderDirection!
+
+    """Sort productVariants by the selected field."""
+    field: ProductVariantSortField!
+}
+
+enum ProductVariantSortField {
+    """Sort product variants by last modification date."""
+    LAST_MODIFIED_AT
+
+    """
+    Sort product variants by ID.
+
+    Added in Saleor 3.23.
+    """
+    ID
+}
+
+# === Campaign packet campaign-b5-b: the Saleor order wire types ===
+# "Represents a fulfillment order." — the BOUNDED closure over the
+# orders owner's own rows: id (the typed global ID), created (the
+# placement instant as the ISO-8601 string the house's deliberate
+# no-new-scalar decision carries on the whole surface — the locked
+# Boot 4.1.1 -> spring-graphql 2.0.5 -> graphql-java 25.0 chain adds
+# no temporal scalar; the registered divergence from upstream's
+# DateTime scalar), and status (the platform machine's own lifecycle
+# rendered through Saleor's OrderStatus vocabulary by the registered
+# ADAPT mapping: PLACED renders UNCONFIRMED, CONFIRMED renders
+# UNFULFILLED, FULFILLED and CANCELLED render their upstream
+# spellings; the other five upstream values stay inert SDL vocabulary
+# this platform never emits). Unowned Saleor fields (the metadata
+# family, number — no human-readable order-number column, user — the
+# identity projection lands with the buyer-surface slice, the
+# channel-scoped money/tax totals — money stays off the wire per the
+# frozen money contract, billing/shipping addresses — no address
+# store, the D-ADDR-001 decision, lines/fulfillments/deliveries,
+# trackingClientId, languageCode, externalReference, updatedAt,
+# events, discounts, payments, giftCards, invoices) stay undeclared
+# until an owning capability exists — never faked.
+type Order {
+    """The ID of the order — typed global ID (opaque, never a raw UUID)."""
+    id: ID!
+
+    """Date and time when the order was created (the placement instant, ISO-8601 string — the no-new-scalar house decision)."""
+    created: String!
+
+    """Status of the order (the platform lifecycle rendered through Saleor's own vocabulary)."""
+    status: OrderStatus!
+}
+
+# Saleor's connection envelope for countable order lists — declared
+# (not runtime-generated) so the exact Saleor shape stands, including
+# totalCount. Spring's ConnectionTypeDefinitionConfigurer skips
+# already-declared connection types (the measured declared-types-skip
+# behavior the ProductCountableConnection declaration recorded), so
+# this declaration wins and the generated connections elsewhere are
+# untouched. pageInfo reuses the EXISTING shared PageInfo type — not
+# redeclared.
+type OrderCountableConnection {
+    """Pagination data for this connection."""
+    pageInfo: PageInfo!
+
+    edges: [OrderCountableEdge!]!
+
+    """A total count of items in the collection (the whole live order population's own count)."""
+    totalCount: Int
+}
+
+# Saleor's edge for the countable order connection — the node/cursor
+# pair the keyset scroll emits (per-element opaque cursors over the
+# executed sort's own keys).
+type OrderCountableEdge {
+    """The item at the end of the edge."""
+    node: Order!
+
+    """A cursor for use in pagination."""
+    cursor: String!
+}
+
+# Saleor's order filter input — the declared wire shape of the filter
+# argument (see orders: an explicit classified error until the owning
+# query capability exists). BOUNDED closure: search and ids carry the
+# scalar filter surface; status (OrderStatusFilter list),
+# paymentStatus/authorizeStatus/chargeStatus (the deprecated legacy
+# payments family), customer, created (DateRangeInput),
+# channels/checkoutTokens/checkoutIds (the channel model the platform
+# does not own), updatedAt (DateTimeRangeInput), isClickAndCollect,
+# isPreorder, giftCardUsed/giftCardBought, numbers, metadata (its
+# heavy MetadataFilter closure) stay undeclared until an owning
+# capability exists — the same declared-shape rule the
+# ProductTypeFilterInput precedents established.
+input OrderFilterInput {
+    search: String
+    ids: [ID!]
+}
+
+# Saleor's order where input — the declared wire shape of the where
+# argument (see orders: an explicit classified error until the owning
+# query capability exists). BOUNDED closure: ids carries the scalar
+# filter surface; everything else stays undeclared until an owning
+# capability exists — any where use answers the classified
+# not-implemented error before field-level semantics matter.
+input OrderWhereInput {
+    ids: [ID!]
+}
+
+# Saleor's order sorting input — the full pinned vocabulary verbatim.
+# THREE fields execute as the real forward-only keyset sorts:
+# CREATED_AT (the placement instant, id tiebreaker — with the
+# deprecated CREATION_DATE alias riding the SAME executed sort,
+# exactly upstream's own deprecation mapping), LAST_MODIFIED_AT (the
+# entity's own audit column) and STATUS (the stored lifecycle text);
+# NUMBER, RANK, CUSTOMER, PAYMENT and FULFILLMENT_STATUS answer the
+# explicit not-implemented error. direction reuses the EXISTING
+# shared OrderDirection enum — not redeclared.
+input OrderSortingInput {
+    """Specifies the direction in which to sort orders."""
+    direction: OrderDirection!
+
+    """Sort orders by the selected field."""
+    field: OrderSortField!
+}
+
+enum OrderSortField {
+    """Sort orders by number (no order-number column on this platform — an explicit classified error)."""
+    NUMBER
+
+    """Sort orders by rank. Note that this option is available only with the `search` filter (search-scoped upstream — an explicit classified error)."""
+    RANK
+
+    """Sort orders by creation date (the deprecated alias of CREATED_AT — rides the SAME executed placement-instant sort)."""
+    CREATION_DATE @deprecated(reason: "Use `CREATED_AT` instead.")
+
+    """Sort orders by creation date (the placement instant)."""
+    CREATED_AT
+
+    """Sort orders by last modified date."""
+    LAST_MODIFIED_AT
+
+    """Sort orders by customer (an identity-side join this surface does not own — an explicit classified error)."""
+    CUSTOMER
+
+    """Sort orders by payment status (deprecated upstream against the legacy Payments API — an explicit classified error)."""
+    PAYMENT @deprecated(reason: "The legacy Payments API is deprecated and will be removed. Use the Transactions API instead.")
+
+    """Sort orders by fulfillment status (deprecated upstream — an explicit classified error)."""
+    FULFILLMENT_STATUS @deprecated(reason: "Use `STATUS` instead.")
+
+    """
+    Sort orders by order status.
+
+    Added in Saleor 3.22.
+    """
+    STATUS
+}
+
+# Saleor's order status vocabulary — declared VERBATIM (the full
+# pinned enum); the platform machine's own four states render through
+# it by the registered ADAPT mapping (PLACED -> UNCONFIRMED, CONFIRMED
+# -> UNFULFILLED, FULFILLED -> FULFILLED, CANCELLED -> CANCELED), and
+# the other five values stay inert SDL vocabulary this platform never
+# emits (DRAFT/EXPIRED have no platform lifecycle counterpart;
+# PARTIALLY_FULFILLED/PARTIALLY_RETURNED/RETURNED land with the
+# fulfillment/returns projections' own later slices).
+enum OrderStatus {
+    """The order is a draft (never emitted by this platform)."""
+    DRAFT
+
+    """The order is placed but not yet confirmed (the platform's PLACED)."""
+    UNCONFIRMED
+
+    """The order is confirmed but not yet fulfilled (the platform's CONFIRMED)."""
+    UNFULFILLED
+
+    """The order is partially fulfilled (never emitted by this platform yet)."""
+    PARTIALLY_FULFILLED
+
+    """The order is partially returned (never emitted by this platform yet)."""
+    PARTIALLY_RETURNED
+
+    """The order is returned (never emitted by this platform yet)."""
+    RETURNED
+
+    """The order is fulfilled (the platform's FULFILLED)."""
+    FULFILLED
+
+    """The order is canceled (the platform's CANCELLED)."""
+    CANCELED
+
+    """The order is expired (never emitted by this platform)."""
+    EXPIRED
 }
