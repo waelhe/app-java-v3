@@ -101,6 +101,7 @@ class PlatformTokenGrantServiceTest {
     private static JwtDecoder jwtDecoder;
 
     private final InMemoryRowStore authorizationStore = new InMemoryRowStore();
+    private InMemoryRotationStore rotationStore;
     private PlatformTokenGrantService service;
 
     @BeforeAll
@@ -150,7 +151,7 @@ class PlatformTokenGrantServiceTest {
         service = new PlatformTokenGrantService(
                 provider(authenticationConfiguration),
                 provider(authorizationStore),
-                provider(new InMemoryRotationStore(authorizationStore)),
+                provider(rotationStore = new InMemoryRotationStore(authorizationStore)),
                 provider(clientRepository),
                 provider(jwkSource),
                 provider(AuthorizationServerSettings.builder()
@@ -300,6 +301,64 @@ class PlatformTokenGrantServiceTest {
     }
 
     // -------------------------------------------------------------------
+    // The reuse-detection rule (the OAuth 2.0 Security BCP's
+    // refresh-token-rotation demand, RFC 9700 §2.4.2): a LATE replay of
+    // a consumed value is the theft signal — the whole family dies;
+    // an in-window replay stays the recorded plain rejection and the
+    // successor keeps chaining. The unit-level mirror of the
+    // multi-instance suite's contract (which CI executes against real
+    // PostgreSQL; this one runs everywhere, Docker or not).
+    // -------------------------------------------------------------------
+
+    @Test
+    void aLateReplayOfAConsumedRefreshTokenRevokesTheWholeFamily() {
+        PlatformTokenGrantService.IssuedTokens granted = service.grant(PRINCIPAL, PASSWORD);
+        PlatformTokenGrantService.IssuedTokens rotated = service.refresh(granted.refreshToken());
+
+        // The theft shape's LATENESS: the replay arrives past the grace
+        // window (the attacker rotated first; the legitimate client
+        // replays the stolen value minutes later).
+        rotationStore.advanceClockBeyondGraceWindow();
+
+        // The stolen (consumed) value replays: rejected — with the SAME
+        // message as an unknown token (the response reveals nothing)…
+        assertThatThrownBy(() -> service.refresh(granted.refreshToken()))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessageContaining("invalid, expired or revoked");
+        // …AND the family is revoked: the attacker's own successor (won
+        // by rotating first) is dead.
+        assertThatThrownBy(() -> service.refresh(rotated.refreshToken()))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessageContaining("invalid, expired or revoked");
+        // …AND the family's authorization row is gone entirely (the
+        // ledger entries cascaded with it).
+        assertThat(authorizationStore.findByToken(rotated.refreshToken(),
+                new OAuth2TokenType(OAuth2TokenType.REFRESH_TOKEN.getValue())))
+                .as("the revoked family no longer resolves anywhere")
+                .isNull();
+    }
+
+    @Test
+    void anInWindowReplayStaysAPlainRejectionAndTheSuccessorChains() {
+        PlatformTokenGrantService.IssuedTokens granted = service.grant(PRINCIPAL, PASSWORD);
+        PlatformTokenGrantService.IssuedTokens rotated = service.refresh(granted.refreshToken());
+
+        // Inside the grace window: the concurrent/immediate shape — a
+        // plain rejection, the family SURVIVES, the successor chains
+        // (the recorded contract, unchanged by reuse detection).
+        assertThatThrownBy(() -> service.refresh(granted.refreshToken()))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessageContaining("invalid, expired or revoked");
+
+        PlatformTokenGrantService.IssuedTokens chained = service.refresh(rotated.refreshToken());
+        assertThat(chained.refreshToken()).isNotBlank();
+        assertThat(authorizationStore.findByToken(chained.refreshToken(),
+                new OAuth2TokenType(OAuth2TokenType.REFRESH_TOKEN.getValue())))
+                .as("the family row is alive and carries the chained successor")
+                .isNotNull();
+    }
+
+    // -------------------------------------------------------------------
     // The deactivation rule (tokensDeactivateAll reaches the successor)
     // -------------------------------------------------------------------
 
@@ -386,6 +445,10 @@ class PlatformTokenGrantServiceTest {
             rows.values().removeIf(row -> row.getPrincipalName().equals(principal));
         }
 
+        boolean removeById(String id) {
+            return rows.remove(id) != null;
+        }
+
         private static boolean matchesAccessToken(OAuth2Authorization row, String token) {
             return row.getAccessToken() != null
                     && row.getAccessToken().getToken().getTokenValue().equals(token);
@@ -410,7 +473,19 @@ class PlatformTokenGrantServiceTest {
      */
     static final class InMemoryRotationStore implements RefreshTokenRotationStore {
 
+        /** The production grace window, mirrored (see JdbcRefreshTokenRotationStore). */
+        private static final java.time.Duration REUSE_DETECTION_GRACE =
+                java.time.Duration.ofSeconds(30);
+
         private final InMemoryRowStore store;
+
+        /** The family ledger, in memory: consumed value hash → family + consumption time. */
+        private final java.util.Map<String, Consumed> consumedByHash =
+                new java.util.concurrent.ConcurrentHashMap<>();
+
+        /** The test's clock skew — advanced to simulate the theft shape's LATENESS. */
+        private final java.util.concurrent.atomic.AtomicReference<java.time.Duration> clockAdvance =
+                new java.util.concurrent.atomic.AtomicReference<>(java.time.Duration.ZERO);
 
         InMemoryRotationStore(InMemoryRowStore store) {
             this.store = store;
@@ -421,10 +496,57 @@ class PlatformTokenGrantServiceTest {
             OAuth2Authorization row = store.findById(rotated.getId());
             if (row == null || row.getRefreshToken() == null
                     || !row.getRefreshToken().getToken().getTokenValue().equals(presentedRefreshToken)) {
+                // The loser leg of a concurrent double-spend — the same
+                // rejection-site the production store consults the ledger
+                // from (in-window: revokes nothing, by the grace window).
+                revokeFamilyIfConsumed(presentedRefreshToken);
                 return false;
             }
             store.save(rotated);
+            consumedByHash.put(sha256(presentedRefreshToken),
+                    new Consumed(rotated.getId(), now()));
             return true;
+        }
+
+        /**
+         * Faithful to the production {@link JdbcRefreshTokenRotationStore}:
+         * the ledger recognizes the value's hash; beyond the grace window
+         * the family is revoked (the row is removed; the ledger entries
+         * cascade with it, as V296's FK does in the database); within the
+         * window — the concurrent double-spend or immediate-replay shape —
+         * nothing is written; an unknown value answers false.
+         */
+        @Override
+        public synchronized boolean revokeFamilyIfConsumed(String presentedRefreshToken) {
+            Consumed consumed = consumedByHash.get(sha256(presentedRefreshToken));
+            if (consumed == null
+                    || now().isBefore(consumed.consumedAt().plus(REUSE_DETECTION_GRACE))) {
+                return false;
+            }
+            consumedByHash.values().removeIf(entry -> entry.familyId().equals(consumed.familyId()));
+            return store.removeById(consumed.familyId());
+        }
+
+        /** The test seam for the theft shape: move the clock PAST the grace window. */
+        void advanceClockBeyondGraceWindow() {
+            clockAdvance.updateAndGet(skew -> skew.plus(REUSE_DETECTION_GRACE).plusSeconds(1));
+        }
+
+        private java.time.Instant now() {
+            return java.time.Instant.now().plus(clockAdvance.get());
+        }
+
+        private record Consumed(String familyId, java.time.Instant consumedAt) {
+        }
+
+        private static String sha256(String value) {
+            try {
+                return java.util.HexFormat.of().formatHex(
+                        java.security.MessageDigest.getInstance("SHA-256")
+                                .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+            } catch (java.security.NoSuchAlgorithmException unavailable) {
+                throw new IllegalStateException("SHA-256 is unavailable", unavailable);
+            }
         }
     }
 

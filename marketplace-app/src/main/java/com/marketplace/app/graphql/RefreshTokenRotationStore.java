@@ -50,4 +50,49 @@ public interface RefreshTokenRotationStore {
      *         rotation that consumed the value
      */
     boolean rotate(OAuth2Authorization rotated, String presentedRefreshToken);
+
+    /**
+     * The reuse-detection boundary (the OAuth 2.0 Security BCP's
+     * refresh-token-rotation demand, RFC 9700 §2.4.2): a refresh token
+     * value the caller PRESENTED that the authorization row no longer
+     * carries may be a value an earlier rotation already CONSUMED —
+     * the theft shape. The store consults its family ledger (V296):
+     * <ul>
+     *   <li><b>Recognized, consumed beyond the grace window</b> — the
+     *       LATE replay (the theft shape: the attacker rotated first,
+     *       the legitimate client replays the stolen value minutes
+     *       later): the ENTIRE token family is revoked (the
+     *       {@code oauth2_authorization} row — access token, successor
+     *       refresh tokens and all; the ledger rows cascade with it)
+     *       and a security event is logged (family id only: never a
+     *       token value). Answers {@code true}.</li>
+     *   <li><b>Recognized, consumed within the grace window</b> — the
+     *       CONCURRENT double-spend shape (two tabs racing the same
+     *       refresh; the loser's rejection lands milliseconds after the
+     *       winner's commit) or an immediate replay: NOTHING is
+     *       written; the caller's plain rejection is the whole outcome.
+     *       Answers {@code false}.</li>
+     *   <li><b>Not recognized</b> (an unknown or never-consumed value):
+     *       NOTHING is written; answers {@code false}.</li>
+     * </ul>
+     *
+     * <p><b>Why the caller consults this on the resolution-failure
+     * path:</b> a completed rotation REPLACES the presented value in
+     * the shared row, so a replayed consumed value can only ever
+     * surface as {@code findByToken(presented) == null} — it never
+     * reaches {@link #rotate} (only a concurrent double-spend does,
+     * whose loser leg detects reuse the same way). The check is
+     * therefore wired at BOTH rejection sites: the store's own
+     * {@code rotate == false} verdict, and the caller's
+     * failed-resolution branch. The rejection the caller raises is
+     * IDENTICAL in every case — the caller must never reveal whether
+     * the ledger recognized the value.</p>
+     *
+     * @param presentedRefreshToken the refresh token value the caller
+     *                              presented (whose consumed state is
+     *                              in question)
+     * @return {@code true} only when a stale consumed value was
+     *         recognized AND its family revoked
+     */
+    boolean revokeFamilyIfConsumed(String presentedRefreshToken);
 }

@@ -218,6 +218,25 @@ public class PlatformTokenGrantService {
         if (authorization == null
                 || authorization.getRefreshToken() == null
                 || !authorization.getRefreshToken().isActive()) {
+            // A LATE replay of a consumed value dies HERE, never reaching
+            // the rotation's consumption boundary: the completed rotation
+            // already REPLACED the presented value in the shared row, so
+            // the replayed value cannot resolve (findByToken answers
+            // null). That is exactly the theft shape the OAuth 2.0
+            // Security BCP's refresh-token rotation (RFC 9700 §2.4.2)
+            // reuse detection exists for — an attacker who rotated first
+            // leaves the legitimate client failing silently while the
+            // attacker's successor stayed valid. Before the plain
+            // rejection, the family ledger is consulted: a value
+            // recognized as consumed BEYOND the grace window revokes the
+            // ENTIRE family. The rejection message is IDENTICAL either
+            // way — the response never reveals whether the ledger
+            // recognized the value (the in-window concurrent
+            // double-spend and the unknown token keep their recorded
+            // plain rejection; the store's grace window arbitrates).
+            if (authorization == null) {
+                refreshTokenRotationStore().revokeFamilyIfConsumed(refreshToken);
+            }
             throw new org.springframework.security.authentication.BadCredentialsException(
                     "The refresh token is invalid, expired or revoked");
         }
