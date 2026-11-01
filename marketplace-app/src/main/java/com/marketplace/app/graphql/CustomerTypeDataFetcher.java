@@ -15,7 +15,9 @@ import com.marketplace.app.graphql.generated.types.CustomerTypeUpdateInput;
 import com.marketplace.app.graphql.generated.types.CustomerTypeWhereInput;
 import com.marketplace.app.graphql.generated.types.ReorderInput;
 import com.marketplace.identity.spi.CustomerTypeSpi;
+import com.marketplace.identity.spi.CustomerTypeView;
 import com.netflix.graphql.dgs.DgsComponent;
+import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
@@ -50,19 +52,65 @@ public class CustomerTypeDataFetcher {
     private final SaleorGlobalIdCodec globalIdCodec;
     private final EncodingCursorStrategy<ScrollPosition> cursorStrategy;
     private final GraphQlProperties properties;
+    private final AttributeGraphQlMapper attributeMapper;
 
     public CustomerTypeDataFetcher(CustomerTypeSpi customerTypeSpi,
                                    com.marketplace.catalog.spi.AttributeReadSpi attributeReadSpi,
                                    AgentOneGraphQlMappers mappers,
                                    SaleorGlobalIdCodec globalIdCodec,
                                    EncodingCursorStrategy<ScrollPosition> cursorStrategy,
-                                   GraphQlProperties properties) {
+                                   GraphQlProperties properties,
+                                   AttributeGraphQlMapper attributeMapper) {
         this.customerTypeSpi = customerTypeSpi;
         this.attributeReadSpi = attributeReadSpi;
         this.mappers = mappers;
         this.globalIdCodec = globalIdCodec;
         this.cursorStrategy = cursorStrategy;
         this.properties = properties;
+        this.attributeMapper = attributeMapper;
+    }
+
+    /**
+     * The {@code CustomerType.attributes} read-back — the wave-4 #806
+     * review's Minor · Functional Correctness fix applied to its SAME-CLASS
+     * instance (the shared mapper hard-codes the field to null exactly like
+     * the page-type projection did): {@code customerTypeCreate},
+     * {@code customerTypeUpdate}, {@code customerTypeAssignAttributes},
+     * {@code customerTypeUnassignAttributes} and
+     * {@code customerTypeReorderAttributes} answer the SAVED attributes.
+     * The ids ride the owning projection in position order; an attribute
+     * deleted concurrently answers the honest absence, and a type deleted
+     * concurrently answers null. FIELD-level completion resolver — the
+     * caller reads from the REQUEST-SCOPED context (the ThreadLocal does
+     * not reach the engine's completion threads); an absent caller answers
+     * the honest null floor.
+     */
+    @DgsData(parentType = DgsConstants.CUSTOMERTYPE.TYPE_NAME,
+             field = DgsConstants.CUSTOMERTYPE.Attributes)
+    public List<com.marketplace.app.graphql.generated.types.Attribute> customerTypeAttributes(
+            graphql.schema.DataFetchingEnvironment environment) {
+        com.marketplace.app.graphql.generated.types.CustomerType source =
+                environment.getSource();
+        if (source == null || source.getId() == null) {
+            return null;
+        }
+        Authentication caller = MarketplaceGraphQlContext.callerOf(environment);
+        if (caller == null || !caller.isAuthenticated()) {
+            return null;
+        }
+        return customerTypeSpi.find(caller, decodeTypeId(source.getId()))
+                .map(CustomerTypeView::attributeIds)
+                .map(ids -> {
+                    List<com.marketplace.app.graphql.generated.types.Attribute> attributes =
+                            new ArrayList<>(ids.size());
+                    for (UUID attributeId : ids) {
+                        attributeReadSpi.findAttributeById(attributeId, caller)
+                                .map(attributeMapper::toGraphQlAttribute)
+                                .ifPresent(attributes::add);
+                    }
+                    return List.copyOf(attributes);
+                })
+                .orElse(null);
     }
 
     // ---------------------------------------------------------------------

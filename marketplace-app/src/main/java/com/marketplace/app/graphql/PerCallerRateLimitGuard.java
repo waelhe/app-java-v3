@@ -44,14 +44,20 @@ import java.util.function.Function;
  * {@link RateLimiterRegistry#rateLimiter(String, String)} API, so one
  * address can only exhaust itself.</p>
  *
- * <p><b>The caller key is the RIGHTMOST X-Forwarded-For entry</b> (falling
- * back to the socket peer address when the header is absent) — the
- * single-trusted-proxy rule of the MDN/OWASP guidance: the rightmost
- * entry is the one the trusted edge appended, so a client-supplied
- * spoofed entry (which the edge appends AFTER) can never displace it.
- * Keying on the FRAMEWORK-resolved leftmost entry was the wave-4
- * review's Major finding: a caller could rotate a spoofed header per
- * request and out-run its budget entirely.</p>
+ * <p><b>The caller key is the RIGHTMOST raw X-Forwarded-For entry</b> (falling
+ * back to the container's socket peer address when the header is absent) —
+ * the single-trusted-proxy rule of the MDN/OWASP guidance: the rightmost
+ * entry is the one the trusted edge appended, so a client-supplied spoofed
+ * entry (which the edge appends AFTER) can never displace it. Reading the
+ * key from the WRAPPED request was the wave-4 #806 review's Major finding:
+ * under FRAMEWORK the ForwardedHeaderExtractingRequest wrapper SUPPRESSES
+ * the raw header ({@code getHeader} answers null — spring-web 7.0.10
+ * bytecode) and answers {@code getRemoteAddr()} with the LEFTMOST XFF
+ * entry ({@code ForwardedHeaderUtils#getLeftMostValue} — spring-web
+ * 7.0.10 bytecode), which the client controls whenever the trusted edge
+ * APPENDS its hop — the attacker rotated a spoofed header per request and
+ * out-ran its budget entirely. The guard therefore reads the raw header
+ * from the CONTAINER's root request (see {@link #remoteAddressOf}).</p>
  *
  * <p>The thrown {@link RequestNotPermitted} flows through the surface's
  * existing classification (GraphQlExceptionResolver maps it to the RL-001
@@ -231,30 +237,39 @@ public class PerCallerRateLimitGuard {
     /**
      * The caller key through the DGS request context.
      *
-     * <p><b>The proxy contract (the wave-4 review's Major finding):</b>
+     * <p><b>The proxy contract (the wave-4 #806 review's Major finding):</b>
      * production runs {@code server.forward-headers-strategy=FRAMEWORK}
      * (the ForwardedHeaderFilter — the adopted plan's host/port/scheme
-     * requirement), under which {@code getRemoteAddr()} answers the
-     * FRAMEWORK-RESOLVED address — the LEFTMOST X-Forwarded-For entry —
-     * and a client-supplied entry reaches the application untouched when
-     * the trusted edge APPENDS its own hop. Keying the budget on that
-     * leftmost value let one caller rotate a spoofed header per request
-     * and out-run its per-caller budget entirely. The fix is the
-     * rightmost-entry rule (the MDN X-Forwarded-For and OWASP
-     * rate-limiting guidance for a SINGLE trusted proxy): the RIGHTMOST
-     * XFF entry is the one the trusted edge itself appended — a spoofed
-     * client value can only ever sit to its LEFT — so the key reads
-     * that entry, falling back to the socket peer address when no XFF
-     * header is present (direct access, tests, the un-proxied slices).
-     * Host/port resolution stays the FRAMEWORK filter's job; only the
-     * SECURITY key's derivation changes.</p>
+     * requirement, pinned by the ForwardHeadersProdConfigTest gate), under
+     * which the request is wrapped in
+     * {@code ForwardedHeaderExtractingRequest}. That wrapper SUPPRESSES the
+     * raw forwarded headers ({@code getHeader("X-Forwarded-For")} answers
+     * null, {@code getHeaders} an empty enumeration — the
+     * {@code ForwardedHeaderRemovingRequest} parent, verified against
+     * spring-web 7.0.10) and answers {@code getRemoteAddr()} with the
+     * FRAMEWORK-RESOLVED address — the LEFTMOST XFF entry
+     * ({@code ForwardedHeaderUtils#getLeftMostValue}, verified), which the
+     * client controls whenever the trusted edge APPENDS its own hop.
+     * Keying the budget on either of those let one caller rotate a spoofed
+     * header per request and out-run its per-caller budget entirely. The
+     * fix reads the raw edge-delivered header instead: the wrapper chain
+     * is walked to the CONTAINER's root request through the standard
+     * {@code ServletRequestWrapper.getRequest()} composition (jakarta
+     * Servlet spec — no server-specific API), where the edge-delivered
+     * X-Forwarded-For is intact, and the RIGHTMOST entry becomes the key
+     * (the MDN X-Forwarded-For and OWASP rate-limiting guidance for a
+     * SINGLE trusted proxy — a spoofed client value can only ever sit to
+     * its LEFT). With no XFF header present (direct access, tests) the
+     * root's socket peer address is the key. Host/port/scheme resolution
+     * stays the FRAMEWORK wrapper's job; only the SECURITY key's
+     * derivation reads the raw header.</p>
      */
     private static String remoteAddressOf(DataFetchingEnvironment environment) {
         DgsRequestData requestData = DgsContext.getRequestData(environment);
         if (requestData instanceof DgsWebMvcRequestData webMvc
                 && webMvc.getWebRequest() instanceof ServletWebRequest servletWebRequest) {
             jakarta.servlet.http.HttpServletRequest request =
-                    servletWebRequest.getRequest();
+                    rootRequestOf(servletWebRequest.getRequest());
             String forwarded = request.getHeader("X-Forwarded-For");
             if (forwarded != null && !forwarded.isBlank()) {
                 int lastComma = forwarded.lastIndexOf(',');
@@ -268,6 +283,29 @@ public class PerCallerRateLimitGuard {
             return request.getRemoteAddr();
         }
         return null;
+    }
+
+    /**
+     * The CONTAINER's root request. The FRAMEWORK strategy's
+     * {@code ForwardedHeaderExtractingRequest} hides the raw forwarded
+     * headers from the wrapped view and resolves
+     * {@code getRemoteAddr()} to the client-controllable LEFTMOST XFF
+     * entry (both verified against spring-web 7.0.10 bytecode; Boot 4.1.2
+     * registers the filter at {@code Integer.MIN_VALUE}, so no filter can
+     * precede the wrapper to capture the raw header) — the SECURITY key
+     * therefore walks the wrapper chain to the root request through the
+     * standard {@code ServletRequestWrapper#getRequest()} composition and
+     * reads the edge-delivered header there. The loop terminates at the
+     * first non-wrapper by construction (the container's own request
+     * object), whatever the wrapper stack above it looks like.
+     */
+    private static jakarta.servlet.http.HttpServletRequest rootRequestOf(
+            jakarta.servlet.http.HttpServletRequest request) {
+        jakarta.servlet.ServletRequest current = request;
+        while (current instanceof jakarta.servlet.ServletRequestWrapper wrapper) {
+            current = wrapper.getRequest();
+        }
+        return (jakarta.servlet.http.HttpServletRequest) current;
     }
 
     /**

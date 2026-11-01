@@ -11,6 +11,8 @@ import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import graphql.schema.DataFetchingEnvironment;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -58,6 +60,9 @@ import java.util.UUID;
  */
 @DgsComponent
 public class CheckoutDataFetcher {
+
+    private static final Logger log =
+            LoggerFactory.getLogger(CheckoutDataFetcher.class);
 
     private static final int MAX_LINE_QUANTITY = 1000;
 
@@ -107,7 +112,7 @@ public class CheckoutDataFetcher {
         } catch (ResourceNotFoundException exception) {
             return null;
         }
-        return mapper.toGraphQlCheckout(view);
+        return renderedCheckout(view, authentication);
     }
 
     @DgsMutation(field = "checkoutLinesAdd")
@@ -126,7 +131,7 @@ public class CheckoutDataFetcher {
         try {
             cartId = requireCheckoutIdentifier(id, checkoutId, token);
         } catch (IllegalArgumentException exception) {
-            return payload(null, List.of(error("id", exception.getMessage(), "INVALID")), true);
+            return payload(null, List.of(error("id", exception.getMessage(), "INVALID")), true, authentication);
         }
 
         List<CheckoutSpi.LineAdd> requested = new ArrayList<>();
@@ -134,20 +139,20 @@ public class CheckoutDataFetcher {
             Integer quantity = integer(line, "quantity");
             String variantId = string(line, "variantId");
             if (quantity == null || quantity < 1) {
-                return payload(null, List.of(error("lines", "A positive quantity is required", "ZERO_QUANTITY")), true);
+                return payload(null, List.of(error("lines", "A positive quantity is required", "ZERO_QUANTITY")), true, authentication);
             }
             if (quantity > MAX_LINE_QUANTITY) {
-                return payload(null, List.of(error("lines", "Quantity exceeds the supported maximum", "INVALID")), true);
+                return payload(null, List.of(error("lines", "Quantity exceeds the supported maximum", "INVALID")), true, authentication);
             }
             if (variantId == null || variantId.isBlank()) {
-                return payload(null, List.of(error("lines", "A product variant is required", "REQUIRED")), true);
+                return payload(null, List.of(error("lines", "A product variant is required", "REQUIRED")), true, authentication);
             }
             try {
                 requested.add(new CheckoutSpi.LineAdd(
                         globalIdCodec.decode(variantId, ProductVariantGraphQlMapper.PRODUCT_VARIANT_TYPE),
                         quantity));
             } catch (IllegalArgumentException exception) {
-                return payload(null, List.of(error("lines", "Invalid product variant global ID", "INVALID")), true);
+                return payload(null, List.of(error("lines", "Invalid product variant global ID", "INVALID")), true, authentication);
             }
         }
 
@@ -155,13 +160,13 @@ public class CheckoutDataFetcher {
         try {
             updated = checkoutSpi.addLines(cartId, requested, authentication);
         } catch (ResourceNotFoundException exception) {
-            return payload(null, List.of(error("id", exception.getMessage(), "NOT_FOUND")), true);
+            return payload(null, List.of(error("id", exception.getMessage(), "NOT_FOUND")), true, authentication);
         } catch (BadRequestException exception) {
-            return payload(null, List.of(error("lines", exception.getMessage(), "INVALID")), true);
+            return payload(null, List.of(error("lines", exception.getMessage(), "INVALID")), true, authentication);
         } catch (ConflictException exception) {
-            return payload(null, List.of(error("lines", exception.getMessage(), "PRODUCT_UNAVAILABLE_FOR_PURCHASE")), true);
+            return payload(null, List.of(error("lines", exception.getMessage(), "PRODUCT_UNAVAILABLE_FOR_PURCHASE")), true, authentication);
         }
-        return payload(updated, List.of(), true);
+        return payload(updated, List.of(), true, authentication);
     }
 
     @DgsMutation(field = "checkoutLinesUpdate")
@@ -178,20 +183,20 @@ public class CheckoutDataFetcher {
         try {
             cartId = requireCheckoutIdentifier(id, checkoutId, token);
         } catch (IllegalArgumentException exception) {
-            return payload(null, List.of(error("id", exception.getMessage(), "INVALID")), true);
+            return payload(null, List.of(error("id", exception.getMessage(), "INVALID")), true, authentication);
         }
 
         List<CheckoutSpi.LineUpdate> requested = new ArrayList<>();
         for (Map<String, Object> line : safe(lines)) {
             Integer quantity = integer(line, "quantity");
             if (quantity == null) {
-                return payload(null, List.of(error("lines", "A quantity is required", "REQUIRED")), true);
+                return payload(null, List.of(error("lines", "A quantity is required", "REQUIRED")), true, authentication);
             }
             if (quantity == 0) {
-                return payload(null, List.of(error("lines", "Use checkoutLinesDelete to remove a line", "ZERO_QUANTITY")), true);
+                return payload(null, List.of(error("lines", "Use checkoutLinesDelete to remove a line", "ZERO_QUANTITY")), true, authentication);
             }
             if (quantity < 0 || quantity > MAX_LINE_QUANTITY) {
-                return payload(null, List.of(error("lines", "Quantity is outside the supported range", "INVALID")), true);
+                return payload(null, List.of(error("lines", "Quantity is outside the supported range", "INVALID")), true, authentication);
             }
 
             String lineId = string(line, "lineId");
@@ -202,7 +207,7 @@ public class CheckoutDataFetcher {
                         variantId == null ? null : globalIdCodec.decode(variantId, ProductVariantGraphQlMapper.PRODUCT_VARIANT_TYPE),
                         quantity));
             } catch (IllegalArgumentException exception) {
-                return payload(null, List.of(error("lines", "Invalid checkout line or product variant global ID", "INVALID")), true);
+                return payload(null, List.of(error("lines", "Invalid checkout line or product variant global ID", "INVALID")), true, authentication);
             }
         }
 
@@ -210,13 +215,13 @@ public class CheckoutDataFetcher {
         try {
             updated = checkoutSpi.updateLines(cartId, requested, authentication);
         } catch (ResourceNotFoundException exception) {
-            return payload(null, List.of(error("lines", exception.getMessage(), "NOT_FOUND")), true);
+            return payload(null, List.of(error("lines", exception.getMessage(), "NOT_FOUND")), true, authentication);
         } catch (BadRequestException exception) {
-            return payload(null, List.of(error("lines", exception.getMessage(), "INVALID")), true);
+            return payload(null, List.of(error("lines", exception.getMessage(), "INVALID")), true, authentication);
         } catch (ConflictException exception) {
-            return payload(null, List.of(error("lines", exception.getMessage(), "INVALID")), true);
+            return payload(null, List.of(error("lines", exception.getMessage(), "INVALID")), true, authentication);
         }
-        return payload(updated, List.of(), true);
+        return payload(updated, List.of(), true, authentication);
     }
 
     @DgsMutation(field = "checkoutLinesDelete")
@@ -232,7 +237,7 @@ public class CheckoutDataFetcher {
         try {
             cartId = requireCheckoutIdentifier(id, null, token);
         } catch (IllegalArgumentException exception) {
-            return payload(null, List.of(error("id", exception.getMessage(), "INVALID")), false);
+            return payload(null, List.of(error("id", exception.getMessage(), "INVALID")), false, authentication);
         }
 
         List<UUID> requested = new ArrayList<>();
@@ -240,7 +245,7 @@ public class CheckoutDataFetcher {
             try {
                 requested.add(globalIdCodec.decode(lineId, CheckoutGraphQlMapper.CHECKOUT_LINE_TYPE));
             } catch (IllegalArgumentException exception) {
-                return payload(null, List.of(error("linesIds", "Invalid checkout line global ID", "INVALID")), false);
+                return payload(null, List.of(error("linesIds", "Invalid checkout line global ID", "INVALID")), false, authentication);
             }
         }
 
@@ -248,13 +253,13 @@ public class CheckoutDataFetcher {
         try {
             updated = checkoutSpi.deleteLines(cartId, requested, authentication);
         } catch (ResourceNotFoundException exception) {
-            return payload(null, List.of(error("id", exception.getMessage(), "NOT_FOUND")), false);
+            return payload(null, List.of(error("id", exception.getMessage(), "NOT_FOUND")), false, authentication);
         } catch (BadRequestException exception) {
-            return payload(null, List.of(error("linesIds", exception.getMessage(), "INVALID")), false);
+            return payload(null, List.of(error("linesIds", exception.getMessage(), "INVALID")), false, authentication);
         } catch (ConflictException exception) {
-            return payload(null, List.of(error("linesIds", exception.getMessage(), "INVALID")), false);
+            return payload(null, List.of(error("linesIds", exception.getMessage(), "INVALID")), false, authentication);
         }
-        return payload(updated, List.of(), false);
+        return payload(updated, List.of(), false, authentication);
     }
 
     @DgsMutation(field = "checkoutLineDelete")
@@ -270,18 +275,18 @@ public class CheckoutDataFetcher {
             cartId = requireCheckoutIdentifier(id, checkoutId, token);
             decodedLineId = globalIdCodec.decode(lineId, CheckoutGraphQlMapper.CHECKOUT_LINE_TYPE);
         } catch (IllegalArgumentException exception) {
-            return payload(null, List.of(error("lineId", exception.getMessage(), "INVALID")), true);
+            return payload(null, List.of(error("lineId", exception.getMessage(), "INVALID")), true, authentication);
         }
 
         final CheckoutView updated;
         try {
             updated = checkoutSpi.deleteLines(cartId, List.of(decodedLineId), authentication);
         } catch (ResourceNotFoundException exception) {
-            return payload(null, List.of(error("lineId", exception.getMessage(), "NOT_FOUND")), true);
+            return payload(null, List.of(error("lineId", exception.getMessage(), "NOT_FOUND")), true, authentication);
         } catch (BadRequestException | ConflictException exception) {
-            return payload(null, List.of(error("lineId", exception.getMessage(), "INVALID")), true);
+            return payload(null, List.of(error("lineId", exception.getMessage(), "INVALID")), true, authentication);
         }
-        return payload(updated, List.of(), true);
+        return payload(updated, List.of(), true, authentication);
     }
 
     @DgsMutation(field = "checkoutDelete")
@@ -373,14 +378,49 @@ public class CheckoutDataFetcher {
 
     private Map<String, Object> payload(CheckoutView view,
                                         List<Map<String, Object>> errors,
-                                        boolean deprecatedAlias) {
+                                        boolean deprecatedAlias,
+                                        Authentication authentication) {
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("checkout", view == null ? null : mapper.toGraphQlCheckout(view));
+        result.put("checkout", view == null ? null : renderedCheckout(view, authentication));
         if (deprecatedAlias) {
             result.put("checkoutErrors", errors);
         }
         result.put("errors", errors);
         return result;
+    }
+
+    /**
+     * Renders the checkout for its authorized caller and RECONCILES the
+     * persisted cart with the catalog: the lines the mapper could not
+     * render (a legacy product-level line, or a line whose variant/parent
+     * no longer resolves) are purged through the SAME owner-authorized use
+     * case {@code checkoutLineDelete} rides. Saleor's canonical cascade
+     * contract is restored — a deleted variant takes its lines with it, so
+     * the persisted cart converges with the rendered projection and no
+     * line id is ever hidden from its owner (the wave-4 #806 review's
+     * Major · Data Integrity finding: the silent skip stranded the stale
+     * line with its id undiscoverable while {@code checkoutLineDelete}
+     * demanded exactly that id).
+     *
+     * <p>A purge failure against the use case's OWN documented exceptions
+     * (the cart gone concurrently, a validation or conflict outcome) is
+     * logged at WARN and leaves the read intact — the rendered projection
+     * already IS the honest post-cascade answer, and the next read retries
+     * the purge (self-healing). Any OTHER failure propagates through the
+     * surface's normal error classification.</p>
+     */
+    private Map<String, Object> renderedCheckout(CheckoutView view,
+                                                 Authentication authentication) {
+        CheckoutGraphQlMapper.RenderedCheckout rendered = mapper.render(view);
+        if (!rendered.staleLineIds().isEmpty()) {
+            try {
+                checkoutSpi.deleteLines(view.id(), rendered.staleLineIds(), authentication);
+            } catch (ResourceNotFoundException | BadRequestException | ConflictException exception) {
+                log.warn("Checkout line purge deferred: cart {} lines {} — {}",
+                        view.id(), rendered.staleLineIds(), exception.getMessage());
+            }
+        }
+        return rendered.checkout();
     }
 
     private static Map<String, Object> deletePayload(List<Map<String, Object>> errors) {

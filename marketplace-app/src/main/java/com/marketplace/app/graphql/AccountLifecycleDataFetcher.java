@@ -61,7 +61,14 @@ public class AccountLifecycleDataFetcher {
      * senders carry their own per-CALLER budget besides (the guard).</p>
      */
     @DgsMutation(field = DgsConstants.MUTATION.RequestPasswordReset)
-    @PerCallerBudget(surface = "graphqlAccountAnonymousMutation")
+    // The wave-4 #806 review (Minor · Security & Privacy): the reset request
+    // carries the victim's email, so the caller-keyed budget alone lets an
+    // attacker distribute requests across many addresses and flood ONE
+    // mailbox. perAccount adds the second, email-hash-keyed permit — the
+    // credential-stuffing defense tokenCreate already carries — so a single
+    // account address carries its OWN bounded budget no matter how many
+    // caller addresses the flood rotates through.
+    @PerCallerBudget(surface = "graphqlAccountAnonymousMutation", perAccount = true)
     @RateLimiter(name = "graphqlAccountAnonymousMutation")
     public RequestPasswordReset requestPasswordReset(@InputArgument String channel,
                                                      @InputArgument String email,

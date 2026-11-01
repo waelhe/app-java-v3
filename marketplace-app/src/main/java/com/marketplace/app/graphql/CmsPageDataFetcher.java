@@ -19,6 +19,7 @@ import com.marketplace.app.graphql.generated.types.PageTypeDelete;
 import com.marketplace.app.graphql.generated.types.PageTypeSortingInput;
 import com.marketplace.app.graphql.generated.types.PageTypeUpdate;
 import com.marketplace.app.graphql.generated.types.PageTypeUpdateInput;
+import com.marketplace.app.graphql.generated.types.Attribute;
 import com.marketplace.app.graphql.generated.types.PageUpdate;
 import com.marketplace.app.graphql.generated.types.PageBulkDelete;
 import com.marketplace.app.graphql.generated.types.PageBulkPublish;
@@ -28,9 +29,11 @@ import com.marketplace.app.graphql.generated.types.PageTypeReorderAttributes;
 import com.marketplace.app.graphql.generated.types.ReorderInput;
 import com.marketplace.console.spi.CmsPageSpi;
 import com.netflix.graphql.dgs.DgsComponent;
+import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
+import graphql.schema.DataFetchingEnvironment;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import org.springframework.data.domain.KeysetScrollPosition;
 import org.springframework.data.domain.Limit;
@@ -68,6 +71,7 @@ public class CmsPageDataFetcher {
     private final EncodingCursorStrategy<ScrollPosition> cursorStrategy;
     private final GraphQlProperties properties;
     private final CmsPageGraphQlMapper pageMapper;
+    private final AttributeGraphQlMapper attributeMapper;
 
     public CmsPageDataFetcher(CmsPageSpi cmsPageSpi,
                               com.marketplace.catalog.spi.AttributeReadSpi attributeReadSpi,
@@ -75,7 +79,8 @@ public class CmsPageDataFetcher {
                               SaleorGlobalIdCodec globalIdCodec,
                               EncodingCursorStrategy<ScrollPosition> cursorStrategy,
                               GraphQlProperties properties,
-                              CmsPageGraphQlMapper pageMapper) {
+                              CmsPageGraphQlMapper pageMapper,
+                              AttributeGraphQlMapper attributeMapper) {
         this.cmsPageSpi = cmsPageSpi;
         this.attributeReadSpi = attributeReadSpi;
         this.mappers = mappers;
@@ -83,6 +88,7 @@ public class CmsPageDataFetcher {
         this.cursorStrategy = cursorStrategy;
         this.properties = properties;
         this.pageMapper = pageMapper;
+        this.attributeMapper = attributeMapper;
     }
 
     // ---------------------------------------------------------------------
@@ -423,8 +429,55 @@ public class CmsPageDataFetcher {
                 .id(globalIdCodec.encode(PAGE_TYPE_TYPE_TAG, view.id()))
                 .name(view.name() == null ? "" : view.name())
                 .slug(view.slug() == null ? "" : view.slug())
+                // The attributes field belongs to pageTypeAttributes below
+                // (the DGS field-fetcher model — the projection cost is paid
+                // only when the client actually selects the field).
                 .attributes(null)
                 .build();
+    }
+
+    /**
+     * The {@code PageType.attributes} read-back — the wave-4 #806 review's
+     * Minor · Functional Correctness fix: the base projection leaves the
+     * field to THIS resolver, so {@code pageTypeCreate},
+     * {@code pageTypeUpdate}, {@code pageAttributeAssign},
+     * {@code pageAttributeUnassign} and {@code pageTypeReorderAttributes}
+     * answer the SAVED attributes instead of a hard-coded null. The ids
+     * ride the owning projection in position order (the SPI's documented
+     * contract) and each renders through the catalog module's shared
+     * attribute mapper; an attribute deleted concurrently answers the
+     * honest absence (the SPI's never-a-fabricated-attribute contract),
+     * and a type deleted concurrently answers null.
+     *
+     * <p>This is a FIELD-level completion resolver — the caller reads from
+     * the REQUEST-SCOPED context (the {@code menuItemParent} precedent this
+     * same review measured: the ThreadLocal does not reach the engine's
+     * completion threads); an absent caller answers the honest null floor.</p>
+     */
+    @DgsData(parentType = DgsConstants.PAGETYPE.TYPE_NAME,
+             field = DgsConstants.PAGETYPE.Attributes)
+    public List<Attribute> pageTypeAttributes(DataFetchingEnvironment environment) {
+        PageType source = environment.getSource();
+        if (source == null || source.getId() == null) {
+            return null;
+        }
+        Authentication caller = MarketplaceGraphQlContext.callerOf(environment);
+        if (caller == null || !caller.isAuthenticated()) {
+            return null;
+        }
+        return cmsPageSpi.findPageTypeById(caller,
+                        decodeId(source.getId(), PAGE_TYPE_TYPE_TAG, "A page type ID is required"))
+                .map(CmsPageSpi.PageTypeView::attributeIds)
+                .map(ids -> {
+                    List<Attribute> attributes = new ArrayList<>(ids.size());
+                    for (UUID attributeId : ids) {
+                        attributeReadSpi.findAttributeById(attributeId, caller)
+                                .map(attributeMapper::toGraphQlAttribute)
+                                .ifPresent(attributes::add);
+                    }
+                    return List.copyOf(attributes);
+                })
+                .orElse(null);
     }
 
     private PageCountableConnection toConnection(CmsPageSpi.PageWindow window,

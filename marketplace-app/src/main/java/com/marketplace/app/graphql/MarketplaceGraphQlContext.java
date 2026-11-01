@@ -4,6 +4,7 @@ import com.netflix.graphql.dgs.context.DgsContext;
 import com.netflix.graphql.dgs.context.DgsCustomContextBuilderWithRequest;
 import graphql.schema.DataFetchingEnvironment;
 import org.springframework.http.HttpHeaders;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -58,8 +59,19 @@ public record MarketplaceGraphQlContext(Authentication authentication) {
         public MarketplaceGraphQlContext build(Map<String, ? extends Object> extensions,
                                                HttpHeaders headers,
                                                WebRequest webRequest) {
+            // The wave-4 #806 review (Minor · Security & Privacy): an anonymous
+            // request carries an AnonymousAuthenticationToken whose
+            // isAuthenticated() is TRUE — storing it as-is made the context
+            // answer "authenticated anonymous" and every honest-absence branch
+            // (the null-caller floors below) never fired for anonymous
+            // callers. The context's own contract is authentication OR NULL,
+            // so the anonymous token normalizes to null exactly where the
+            // contract is declared — the capture point.
+            Authentication authentication =
+                    SecurityContextHolder.getContext().getAuthentication();
             return new MarketplaceGraphQlContext(
-                    SecurityContextHolder.getContext().getAuthentication());
+                    authentication instanceof AnonymousAuthenticationToken
+                            ? null : authentication);
         }
     }
 

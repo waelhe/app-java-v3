@@ -713,7 +713,18 @@ public class CmsNavigationDataFetcher {
         if (item == null || item.getParent() == null || item.getParent().getId() == null) {
             return null;
         }
-        Authentication caller = currentAuthentication();
+        // The wave-4 #806 review (Minor · Stability & Availability): this is
+        // a FIELD-level completion resolver — the engine fans it out onto
+        // threads the SecurityContextHolder ThreadLocal does not reach (the
+        // wave-4 INT-001 evidence), so the ThreadLocal read both breaks and
+        // (before the context's anonymous normalization) could answer an
+        // AnonymousAuthenticationToken. The request-scoped context is the
+        // sanctioned read (the AddressDataFetcher.userAddresses precedent);
+        // an absent or anonymous caller answers the honest null floor.
+        Authentication caller = MarketplaceGraphQlContext.callerOf(environment);
+        if (caller == null || !caller.isAuthenticated()) {
+            return null;
+        }
         return navigationPort.findMenuItemById(caller,
                         decodeId(item.getParent().getId(), MENU_ITEM_TAG, "A parent item ID"))
                 .map(parent -> {
