@@ -22,8 +22,18 @@ on:
     # post-merge truth-sync exactly as its own comment prescribed —
     # inert weight otherwise. PRs targeting main gate through the
     # pull_request event as before.
-        # Temporary stacked Saleor PR target pattern; retire after #677-#681 are reconciled.
-    branches: [ main, feat/saleor-commerce-product-keyset-pagination, 'feat/saleor-*' ]
+        # Saleor full-commerce campaign wave (2026-10-21): every PR of this
+        # wave (#696/#697 already merged into the base; #698 open on it, with
+        # the stacked #708 auto-retargeting here once #698 merges) targets
+        # exactly one integration base,
+        # integration/saleor-full-commerce-20261021 — listed by its exact
+        # name on purpose, no glob, so the gates gate every push to those
+        # PRs through the pull_request event itself: automatic management,
+        # never a manual workflow_dispatch standing in for the trigger the
+        # base list forgot (the agent-3-gate-trigger-proposal.md measured
+        # gap). Retire this exact entry when the wave merges to main,
+        # exactly as the stacked-wave entries above retired with theirs.
+    branches: [ main, feat/saleor-commerce-product-keyset-pagination, 'feat/saleor-*', integration/saleor-full-commerce-20261021 ]
 
 
 # One test round per ref: a newer push supersedes the older round and
@@ -214,28 +224,31 @@ jobs:
           jq -e '.errorCode == "AUTHN-001" and .type == "https://marketplace.com/errors/unauthorized"' /tmp/smoke-write.json > /dev/null \
             || fail "the 401 body is not the AUTHN-001 problem contract ($(cat /tmp/smoke-write.json))"
 
-          echo "=== [4/5] The GraphQL surface is protected: anonymous introspection is rejected ==="
-          # Measured contract (this PR's first CI run): POST /graphql without
-          # a token answers 401 — /graphql sits in the resource-server
-          # chain's securityMatcher with no permitAll line covering it, so
-          # anyRequest().authenticated() applies (SecurityConfig chain 2).
-          # The old probe's `curl -sf | jq .` masked this 401: jq exits 0 on
-          # curl's empty output, so the step "passed" while the endpoint
-          # rejected the request — the exact lie this composed scenario
-          # exists to retire. Public introspection would be a security
-          # posture decision, not a smoke default; this leg pins the
-          # boundary as built — the same AUTHN-001 problem contract as
-          # legs 3 and 5.
+          echo "=== [4/5] The GraphQL surface is walled by the pre-login gate: anonymous introspection is refused before dispatch ==="
+          # The reopened contract (A0's landing of the Saleor campaign's
+          # handoff-a0-prelogin-graphql-security.md): the anonymous POST
+          # passes the security chain (the register/password-reset
+          # public-POST precedent family) and PreLoginGraphQlGate — the
+          # WebGraphQlInterceptor the app module ships — is the wall: it
+          # parses the ACTUAL document and lets an anonymous caller reach
+          # execution ONLY for the enumerated pre-login family. Introspection
+          # is NOT in the family, so the gate answers the classified
+          # AUTHN-001 GraphQL error envelope (HTTP 200 + application/json,
+          # the error before dispatch) — the same taxonomy pair every other
+          # classified GraphQL failure carries. The surface is exactly as
+          # wide as the Saleor authentication contract, not one operation
+          # wider.
           answer=$(curl -s -o /tmp/smoke-graphql.json -w '%{http_code} %{content_type}' -X POST "$BASE/graphql" \
             -H 'Content-Type: application/json' \
             -d '{"query":"{ __schema { queryType { name } } }"}')
           echo "POST /graphql (introspection, anonymous) -> $answer"
           code=${answer%% *}
           ctype=${answer#* }
-          [ "$code" = "401" ] || fail "anonymous GraphQL introspection answered $code (expected the protected-surface 401)"
-          case "$ctype" in application/problem+json*) ;; *) fail "the GraphQL 401 content type is $ctype (expected application/problem+json)";; esac
-          jq -e '.errorCode == "AUTHN-001"' /tmp/smoke-graphql.json > /dev/null \
-            || fail "the GraphQL 401 body is not the AUTHN-001 problem contract ($(cat /tmp/smoke-graphql.json))"
+          [ "$code" = "200" ] || fail "anonymous GraphQL introspection answered $code (expected the gate's 200 + classified error envelope)"
+          case "$ctype" in application/json*) ;; *) fail "the GraphQL gate answer's content type is $ctype (expected application/json)";; esac
+          jq -e '.errors[0].extensions.errorCode == "AUTHN-001"' /tmp/smoke-graphql.json > /dev/null \
+            || fail "the GraphQL gate answer is not the AUTHN-001 GraphQL error envelope ($(cat /tmp/smoke-graphql.json))"
+
 
           echo "=== [5/5] The API chain's catch-all rejects an unrouted anonymous path ==="
           # Measured fact: Spring Data REST is not on the classpath, so /api is

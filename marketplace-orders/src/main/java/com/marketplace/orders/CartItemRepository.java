@@ -34,6 +34,9 @@ public interface CartItemRepository extends JpaRepository<CartItem, UUID> {
      */
     Optional<CartItem> findByCartIdAndProductIdAndVariantId(UUID cartId, UUID productId, UUID variantId);
 
+    /** The deprecated checkout-line selector: the cart's line for one variant. */
+    Optional<CartItem> findByCartIdAndVariantId(UUID cartId, UUID variantId);
+
     /**
      * The product-level line's union lookup — {@code variant_id IS NULL}
      * is its own query shape (a derived {@code = NULL} predicate never

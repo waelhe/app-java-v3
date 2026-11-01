@@ -1,0 +1,491 @@
+# =====================================================================
+# Saleor Discounts domain — P3 wave, packet A3: the promotion/voucher
+# read roots (the canonical plan §5-P3: "discounts, gift cards ... map
+# to the existing pricing owner"). PROPOSAL to A0 (the one SDL
+# steward): the Query fields below append to the shared root type
+# Query; every other declaration in this fragment is a PURE ADDITION —
+# no existing shared type is redeclared (PageInfo, OrderDirection,
+# PermissionEnum, the User/Group families, the ProductType family and
+# the StoreProduct*/Service*/Discovery*/Neighborhood* legacy roots
+# keep their existing declarations).
+# Root names, argument names/types/nullability and the connection
+# envelope are the pinned Saleor 3.23.43 wire contract
+# (saleor/graphql/schema.graphql, blob b8fa0dd8 — the measured roots
+# voucher/vouchers at schema lines 1198/1218 and promotion/promotions
+# at 1253/1270, the Voucher type at line 11315, DiscountValueTypeEnum
+# at 11643, VoucherCountableConnection/Edge at 17268/17277,
+# VoucherFilterInput at 17285, VoucherSortingInput at 17301,
+# VoucherSortField at 17312, the Promotion type at 17353,
+# PromotionTypeEnum at 17433, PromotionCountableConnection/Edge at
+# 17707/17716, PromotionWhereInput at 17724, PromotionSortingInput at
+# 17754, PromotionSortField at 17762); the platform's pricing owner
+# remains the single source of truth behind them. The GLOBAL IDs on
+# this surface are the typed Relay-style codec's
+# (SaleorGlobalIdCodec): opaque base64("Promotion:<uuid>") /
+# base64("Voucher:<uuid>") values — never raw UUIDs.
+#
+# PERMISSIONS (verified against the pinned schema, not the ledger):
+# all four roots carry Saleor's own annotation "Requires one of the
+# following permissions: MANAGE_DISCOUNTS" (schema lines 1194/1214/
+# 1249/1267). The campaign ledger's row for `promotions` says
+# MANAGE_PRODUCTS — a transcription error reported to A0 in the
+# completion report; either staff requirement maps to the platform's
+# ADMIN capability at the pricing use-case boundary (the RBAC mapping
+# registry row), never a UI route guard.
+#
+# The bounded Promotion/Voucher projections (the honest method the
+# User/Group/ProductType read slices established): the platform's
+# authoritative discount-policy rows (V223 promotions/vouchers +
+# voucher_redemptions accounting) own the facts; DECLARED fields are
+# owned facts only:
+#   Promotion: id (typed global ID over the native key); name (the
+#   row's own non-null name); type (ORDER — every platform promotion
+#   is an order-level policy by the entity's own contract; CATALOGUE
+#   stays inert enum vocabulary); startDate/endDate (the policy
+#   window — OPTIONAL on the platform, so the wire nullability
+#   diverges from Saleor's non-null startDate: the registered
+#   nullability divergence row, never a fabricated epoch); createdAt/
+#   updatedAt (the audit instants every BaseEntity row owns).
+#   Voucher: id; name (optional row fact); code (the row's normalized
+#   non-null code); usageLimit (the row's global redemption limit,
+#   null = unlimited); used (the redemption-row COUNT — the owner's
+#   own accounting seam, never a stored counter); startDate/endDate
+#   (same optional-window nullability divergence);
+#   applyOncePerCustomer (the truthful flattening of the row's
+#   per-user limit — true exactly when the limit is 1; the richer
+#   N-per-customer fact stays with the owner's admin surface: the
+#   registered flattening divergence row); discountValueType (the
+#   owner's PERCENTAGE/FIXED vocabulary, verbatim);
+#   currency (the policy row's own ISO-4217 denomination).
+# UNDECLARED fields, each with its reason (a declared-but-fake field
+# would be the violation, not the absence):
+#   Promotion.rules: the platform's promotion is ONE flat order-level
+#   policy row, not Saleor's rule-based model — the reward
+#   value/type/min-spend facts have no owning rule closure here yet.
+#   Promotion/Voucher money surfaces (the voucher's discountValue:
+#   Float and minSpent: Money, the rule rewardValue upstream): the
+#   frozen money contract forbids binary float for authoritative
+#   amounts (minor-unit integers stay authoritative internally);
+#   declared only when the exact-decimal rendering decision lands —
+#   the registry's "Decimal / PositiveDecimal money" row.
+#   Voucher.type (VoucherTypeEnum SHIPPING/ENTIRE_ORDER/
+#   SPECIFIC_PRODUCT): no voucher-type discrimination exists — every
+#   platform voucher is an order-level subtotal discount.
+#   Voucher.applyOncePerOrder: upstream semantics = applied to a
+#   single cheapest eligible PRODUCT; the platform's own once-per-
+#   order law is the redemption idempotency unique index — a
+#   different fact, undeclared to avoid a false equality.
+#   Voucher.singleUse / codes: the multi-code feature-preview model
+#   has no owner (the platform's voucher carries ONE code with usage
+#   limits — the `code` field carries it).
+#   Voucher.onlyForStaff / minCheckoutItemsQuantity / categories /
+#   collections / products / variants / countries: no owning facts.
+#   Voucher.channelListings + the channel ROOT arguments: no channel
+#   model exists (the PENDING-ADR commercial-context row).
+#   Promotion/Voucher.externalReference: no external-ID column exists
+#   on either policy row.
+#   The metadata family (metadata/privateMetadata/metafield(s)) on
+#   both types: no owning metadata capability yet.
+#   Both translations + Promotion.events/ description: JSON: no
+#   translation owner, no promotion event log, no description fact.
+# TEMPORAL RENDERING: Saleor's DateTime scalar renders as ISO-8601
+# String (the house no-new-scalar decision the User.dateJoined /
+# NeighborhoodPost.createdAt declarations established — the registered
+# DateTime scalar divergence row).
+# The declared-but-unexecuted root arguments (externalReference,
+# channel, where/filter, the deprecated query, before/last) answer
+# explicit classified IllegalArgumentExceptions at runtime — the
+# staffUsers precedent — never a silent no-op, never fake success.
+# The sort vocabularies are Saleor's own enums, declared verbatim:
+# promotions executes NAME and CREATED_AT (the owning NON-NULL keyset
+# columns; START_DATE/END_DATE are the optional window columns that
+# cannot carry deterministic keyset cursors under the house map-based
+# cursor contract and answer the explicit classified error); vouchers
+# executes CODE alone (deprecated upstream but the only owned
+# deterministic keyset field) — NAME/START_DATE/END_DATE (optional
+# columns), VALUE/MINIMUM_SPENT_AMOUNT (channel-scoped money upstream
+# + the frozen money contract), TYPE (no discrimination) and
+# USAGE_LIMIT (optional column) answer the explicit classified error,
+# as does the deprecated nested sortBy.channel.
+# =====================================================================
+
+# ---------------------------------------------------------------------
+# Query additions (append to the shared root type Query)
+# ---------------------------------------------------------------------
+type Query {
+    # "Look up a voucher by ID or external reference." — the Saleor
+    # voucher lookup (MANAGE_DISCOUNTS → ADMIN here, enforced in the
+    # owning pricing use case). The id executes through the typed
+    # global-ID codec: an unknown but well-formed ID answers null (the
+    # safe absence); a malformed or mistyped global ID answers the
+    # codec's classified validation error — never a raw UUID fallback.
+    # externalReference (no external-ID column) and channel (no
+    # channel model — the PENDING-ADR row) stay declared (the exact
+    # Saleor argument shape) but answer an explicit classified error —
+    # a recorded, tested boundary, not a silent no-op.
+    voucher(
+    """ID of the voucher."""
+    id: ID
+
+    """
+    External ID of the voucher (no external-ID column on this platform — an explicit classified error).
+    """
+    externalReference: String
+
+    """Slug of a channel for which the data should be returned (no channel model on this platform — an explicit classified error)."""
+    channel: String
+    ): Voucher
+
+    # "List of the shop's vouchers." — the Saleor voucher list with its
+    # countable-connection envelope (edges/pageInfo/totalCount,
+    # byte-shape from the pinned schema). FORWARD-ONLY keyset paging on
+    # this first slice: first/after ride the platform's ScrollPosition
+    # keyset contract (the staffUsers/permissionGroups/productTypes
+    # precedent — cursors identify a row's sort key (code, id), never
+    # an absolute offset); before/last stay declared (the exact Saleor
+    # argument shape) but answer an explicit classified error until a
+    # backward scroll exists. filter, the deprecated query and channel
+    # are likewise the declared wire shape with an explicit
+    # not-yet-supported error. The sort vocabulary is Saleor's
+    # VoucherSortField enum: CODE (deprecated upstream) executes as the
+    # real keyset sort, deterministic with the id tiebreaker; every
+    # other field answers the explicit not-implemented error.
+    vouchers(
+    """Filtering options for vouchers."""
+    filter: VoucherFilterInput
+
+    """Sort voucher."""
+    sortBy: VoucherSortingInput
+
+    """Search vouchers by name or code."""
+    query: String @deprecated(reason: "Use `filter.search` input instead.")
+
+    """Slug of a channel for which the data should be returned."""
+    channel: String
+
+    """Return the elements in the list that come before the specified cursor."""
+    before: String
+
+    """Return the elements in the list that come after the specified cursor."""
+    after: String
+
+    """Retrieve the first n elements from the list."""
+    first: Int
+
+    """Retrieve the last n elements from the list."""
+    last: Int
+    ): VoucherCountableConnection
+
+    # "Look up a promotion by ID or external reference." — the Saleor
+    # promotion lookup (MANAGE_DISCOUNTS → ADMIN here, enforced in the
+    # owning pricing use case). The id executes through the typed
+    # global-ID codec: an unknown but well-formed ID answers null (the
+    # safe absence); a malformed or mistyped global ID answers the
+    # codec's classified validation error — never a raw UUID fallback.
+    # externalReference (no external-ID column) stays declared (the
+    # exact Saleor argument shape) but answers an explicit classified
+    # error — a recorded, tested boundary, not a silent no-op.
+    promotion(
+    """ID of the promotion."""
+    id: ID
+
+    """
+    External ID of the promotion (no external-ID column on this platform — an explicit classified error).
+    """
+    externalReference: String
+    ): Promotion
+
+    # "List of the promotions." — the Saleor promotion list with its
+    # countable-connection envelope (edges/pageInfo/totalCount,
+    # byte-shape from the pinned schema). FORWARD-ONLY keyset paging on
+    # this first slice: first/after ride the platform's ScrollPosition
+    # keyset contract (the staffUsers/permissionGroups/productTypes
+    # precedent — cursors identify a row's sort key (name|createdAt,
+    # id), never an absolute offset); before/last stay declared (the
+    # exact Saleor argument shape) but answer an explicit classified
+    # error until a backward scroll exists. where is likewise the
+    # declared wire shape with an explicit not-yet-supported error.
+    # The sort vocabulary is Saleor's PromotionSortField enum: NAME and
+    # CREATED_AT (the owning non-null keyset columns) execute as the
+    # real keyset sorts, deterministic with the id tiebreaker;
+    # START_DATE/END_DATE (the optional policy-window columns) answer
+    # the explicit not-implemented error.
+    promotions(
+    """Where filtering options for promotions."""
+    where: PromotionWhereInput
+
+    """Sort promotions."""
+    sortBy: PromotionSortingInput
+
+    """Return the elements in the list that come before the specified cursor."""
+    before: String
+
+    """Return the elements in the list that come after the specified cursor."""
+    after: String
+
+    """Retrieve the first n elements from the list."""
+    first: Int
+
+    """Retrieve the last n elements from the list."""
+    last: Int
+    ): PromotionCountableConnection
+}
+
+# ---------------------------------------------------------------------
+# The bounded Promotion projection — see the block comment above for
+# the closure policy. id is the typed global ID over the native
+# promotions key; type is ORDER (every platform promotion is an
+# order-level policy by the entity's own contract); the window and
+# audit instants are ISO-8601 strings (the house no-new-scalar
+# decision), with startDate OPTIONAL on the platform (the registered
+# nullability divergence).
+# ---------------------------------------------------------------------
+type Promotion {
+    """The ID of the promotion — typed global ID (opaque, never a raw UUID)."""
+    id: ID!
+
+    """Name of the promotion (the policy row's own name)."""
+    name: String!
+
+    """
+    The type of the promotion — ORDER on this platform: every promotion row is an order-level policy (the entity's own contract).
+    """
+    type: PromotionTypeEnum
+
+    """Start date of the promotion (ISO-8601; null when the policy row opens an unbounded window)."""
+    startDate: String
+
+    """End date of the promotion (ISO-8601; null when the policy row has no end)."""
+    endDate: String
+
+    """Date time of promotion creation (ISO-8601)."""
+    createdAt: String!
+
+    """Date time of last update of promotion (ISO-8601)."""
+    updatedAt: String!
+}
+
+# ---------------------------------------------------------------------
+# The bounded Voucher projection — see the block comment above for
+# the closure policy. id is the typed global ID over the native
+# vouchers key; used is the redemption-row count (the owner's own
+# accounting seam); applyOncePerCustomer is the truthful flattening of
+# the per-user limit (true exactly when the limit is 1); the window
+# instants are ISO-8601 strings, both OPTIONAL on the platform (the
+# registered nullability divergence).
+# ---------------------------------------------------------------------
+type Voucher {
+    """The ID of the voucher — typed global ID (opaque, never a raw UUID)."""
+    id: ID!
+
+    """The name of the voucher (null when the policy row carries none)."""
+    name: String
+
+    """The code of the voucher (the row's normalized uppercase code)."""
+    code: String
+
+    """
+    The number of times a voucher can be used (the row's global redemption limit; null = unlimited).
+    """
+    usageLimit: Int
+
+    """Usage count of the voucher (redemption rows counted — never a stored counter)."""
+    used: Int!
+
+    """The start date and time of voucher (ISO-8601; null when the policy row opens an unbounded window)."""
+    startDate: String
+
+    """The end date and time of voucher (ISO-8601; null when the policy row has no end)."""
+    endDate: String
+
+    """
+    Determine if the voucher usage should be limited to one use per customer (the row's per-user limit == 1; a limit of N>1 or unlimited renders false).
+    """
+    applyOncePerCustomer: Boolean!
+
+    """Determines a type of discount for voucher - value or percentage."""
+    discountValueType: DiscountValueTypeEnum!
+
+    """Currency code for voucher (the policy row's own ISO-4217 denomination)."""
+    currency: String
+}
+
+# Saleor's connection envelope for countable promotion lists —
+# declared (not runtime-generated) so the exact Saleor shape stands,
+# including totalCount. Spring's ConnectionTypeDefinitionConfigurer
+# skips already-declared connection types (the measured
+# declared-types-skip behavior the UserCountableConnection/
+# GroupCountableConnection/ProductTypeCountableConnection
+# declarations recorded), so this declaration wins and the generated
+# connections elsewhere are untouched. pageInfo reuses the EXISTING
+# shared PageInfo type — not redeclared.
+type PromotionCountableConnection {
+    """Pagination data for this connection."""
+    pageInfo: PageInfo!
+
+    edges: [PromotionCountableEdge!]!
+
+    """A total count of items in the collection."""
+    totalCount: Int
+}
+
+type PromotionCountableEdge {
+    """The item at the end of the edge."""
+    node: Promotion!
+
+    """A cursor for use in pagination (the row's keyset sort key)."""
+    cursor: String!
+}
+
+# Saleor's connection envelope for countable voucher lists — same
+# declared-not-generated rule as PromotionCountableConnection above;
+# pageInfo reuses the EXISTING shared PageInfo type — not redeclared.
+type VoucherCountableConnection {
+    """Pagination data for this connection."""
+    pageInfo: PageInfo!
+
+    edges: [VoucherCountableEdge!]!
+
+    """A total count of items in the collection."""
+    totalCount: Int
+}
+
+type VoucherCountableEdge {
+    """The item at the end of the edge."""
+    node: Voucher!
+
+    """A cursor for use in pagination (the row's keyset sort key)."""
+    cursor: String!
+}
+
+# Saleor's promotion where-filter input — the declared wire shape of
+# the where argument (see promotions: an explicit classified error
+# until the owning query capability exists). BOUNDED closure: ids
+# carries the scalar filter surface; name (its StringFilterInput
+# closure), startDate/endDate (DateTimeFilterInput), isOldSale, type
+# (PromotionTypeEnumFilterInput), metadata (its heavy MetadataFilter
+# closure) and the AND/OR combinators stay undeclared until an owning
+# capability exists — any where use answers the classified
+# not-implemented error before field-level semantics matter, and a
+# Dashboard query naming an undeclared sub-field fails schema
+# validation loudly (never a silent no-op).
+input PromotionWhereInput {
+    ids: [ID!]
+}
+
+# Saleor's voucher filter input — the declared wire shape of the
+# filter argument (see vouchers: an explicit classified error until
+# the owning query capability exists). BOUNDED closure: search/ids
+# carry the scalar filter surface; status (DiscountStatusEnum list),
+# timesUsed (IntRangeInput), discountType (VoucherDiscountType list),
+# started (DateTimeRangeInput) and metadata (its heavy MetadataFilter
+# closure) stay undeclared until an owning capability exists — the
+# same declared-shape rule the StaffUserInput/ProductTypeFilterInput
+# precedents established.
+input VoucherFilterInput {
+    search: String
+    ids: [ID!]
+}
+
+# Saleor's promotion sorting input and field vocabulary — the full
+# pinned enum is declared verbatim; NAME and CREATED_AT execute as
+# the real forward-only keyset sorts (the owning non-null columns,
+# id tiebreaker); START_DATE/END_DATE (the optional policy-window
+# columns) answer the explicit not-implemented error. direction
+# reuses the EXISTING shared OrderDirection enum — not redeclared.
+input PromotionSortingInput {
+    """Specifies the direction in which to sort promotions."""
+    direction: OrderDirection!
+
+    """Sort promotions by the selected field."""
+    field: PromotionSortField!
+}
+
+enum PromotionSortField {
+    """Sort promotions by name."""
+    NAME
+
+    """Sort promotions by start date."""
+    START_DATE
+
+    """Sort promotions by end date."""
+    END_DATE
+
+    """Sort promotions by creation date."""
+    CREATED_AT
+}
+
+# Saleor's promotion type vocabulary — declared verbatim; ORDER is the
+# owning fact (every platform promotion is an order-level policy),
+# CATALOGUE stays inert SDL vocabulary (never emitted by this
+# platform).
+enum PromotionTypeEnum {
+    CATALOGUE
+    ORDER
+}
+
+# Saleor's discount value type vocabulary — declared verbatim; the
+# owner's PERCENTAGE/FIXED row vocabulary renders through it exactly.
+enum DiscountValueTypeEnum {
+    FIXED
+    PERCENTAGE
+}
+
+# Saleor's voucher sorting input and field vocabulary — the full
+# pinned enum is declared verbatim (CODE deprecated upstream with no
+# reason string in the pinned schema); CODE executes as the real
+# forward-only keyset sort (the row's non-null normalized code, id
+# tiebreaker); NAME/START_DATE/END_DATE (optional columns),
+# VALUE/MINIMUM_SPENT_AMOUNT (channel-scoped money upstream + the
+# frozen money contract), TYPE (no voucher-type discrimination) and
+# USAGE_LIMIT (optional column) answer the explicit not-implemented
+# error, as does the deprecated nested channel. direction reuses the
+# EXISTING shared OrderDirection enum — not redeclared.
+input VoucherSortingInput {
+    """Specifies the direction in which to sort vouchers."""
+    direction: OrderDirection!
+
+    """Specifies the channel in which to sort the data."""
+    channel: String @deprecated(reason: "Use root-level channel argument instead.")
+
+    """Sort vouchers by the selected field."""
+    field: VoucherSortField!
+}
+
+enum VoucherSortField {
+    """Sort vouchers by code."""
+    CODE @deprecated
+
+    """
+    Sort vouchers by name.
+
+    Added in Saleor 3.18.
+    """
+    NAME
+
+    """Sort vouchers by start date."""
+    START_DATE
+
+    """Sort vouchers by end date."""
+    END_DATE
+
+    """
+    Sort vouchers by value.
+
+    This option requires a channel filter to work as the values can vary between channels.
+    """
+    VALUE
+
+    """Sort vouchers by type."""
+    TYPE
+
+    """Sort vouchers by usage limit."""
+    USAGE_LIMIT
+
+    """
+    Sort vouchers by minimum spent amount.
+
+    This option requires a channel filter to work as the values can vary between channels.
+    """
+    MINIMUM_SPENT_AMOUNT
+}
