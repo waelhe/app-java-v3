@@ -1,6 +1,5 @@
 package com.marketplace.app.graphql;
 
-import com.marketplace.app.graphql.generated.types.ProductVariant;
 import com.marketplace.catalog.spi.ProductVariantReadSpi;
 import com.marketplace.orders.spi.CheckoutView;
 import org.springframework.stereotype.Component;
