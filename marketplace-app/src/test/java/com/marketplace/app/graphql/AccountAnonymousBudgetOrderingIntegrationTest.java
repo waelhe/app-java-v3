@@ -53,8 +53,20 @@ import static org.mockito.Mockito.when;
  * {@code graphqlAccountMutation} surface) still executes its domain flow
  * without any rate-limit error — the shared budget survived the flood
  * untouched.</p>
+ *
+ * <p><b>Schema source (the suite's own recorded trap):</b> this test
+ * seeds {@code users} with raw SQL — the test profile's default schema
+ * is JPA create-drop (Flyway off), whose Hibernate-built {@code users}
+ * carries no {@code is_deleted} default and answers the seed with a
+ * phantom NOT NULL violation (the UserGraphQlIntegrationTest Javadoc's
+ * own recorded failure mode). The pair below is the suite's established
+ * contract for every raw-SQL integration test: Flyway owns the schema,
+ * JPA validates nothing.</p>
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
+        "spring.flyway.enabled=true",
+        "spring.jpa.hibernate.ddl-auto=none",
+})
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
 class AccountAnonymousBudgetOrderingIntegrationTest {
