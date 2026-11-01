@@ -1,20 +1,27 @@
 package com.marketplace.app.graphql;
 
-import com.netflix.graphql.dgs.context.DgsCustomContextBuilderWithRequestData;
-import com.netflix.graphql.dgs.internal.DgsRequestData;
+import com.netflix.graphql.dgs.context.DgsContext;
+import com.netflix.graphql.dgs.context.DgsCustomContextBuilderWithRequest;
+import graphql.schema.DataFetchingEnvironment;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
+import org.springframework.web.context.request.WebRequest;
 
 import java.util.Map;
 
 /**
  * The request-scoped GraphQL context — the official DGS mechanism
- * ({@code DgsCustomContextBuilderWithRequestData}, the DGS docs' custom
- * context) that captures the caller's {@link Authentication} ONCE, on the
- * request-processing thread the security filter chain populated, and
- * hands it to EVERY datafetcher through the request-scoped
- * {@code DgsContext} object.
+ * ({@code DgsCustomContextBuilderWithRequest}, the custom-context
+ * extension point of the DGS version in use, graphql-dgs 12.1.0) that
+ * captures the caller's {@link Authentication} ONCE, on the servlet
+ * request thread the security filter chain populated
+ * ({@code DgsWebMvcGraphQLInterceptor.intercept} builds the context
+ * synchronously while that thread's {@code RequestContextHolder} and
+ * {@code SecurityContextHolder} are bound), and hands it to EVERY
+ * datafetcher through the request-scoped {@code DgsContext} attached
+ * to the ExecutionInput's GraphQLContext.
  *
  * <p><b>Why this exists (the wave-4 CI evidence, INT-001 on
  * {@code menuItemCreate.menuItem.menu}):</b> with
@@ -45,12 +52,12 @@ public record MarketplaceGraphQlContext(Authentication authentication) {
 
     /** The builder DGS consults per request (the official extension point). */
     @Component
-    public static class Builder implements DgsCustomContextBuilderWithRequestData<MarketplaceGraphQlContext> {
+    public static class Builder implements DgsCustomContextBuilderWithRequest<MarketplaceGraphQlContext> {
 
         @Override
-        public MarketplaceGraphQlContext build(DgsRequestData requestData,
-                                               Map<String, Object> extensions,
-                                               Object principal) {
+        public MarketplaceGraphQlContext build(Map<String, ? extends Object> extensions,
+                                               HttpHeaders headers,
+                                               WebRequest webRequest) {
             return new MarketplaceGraphQlContext(
                     SecurityContextHolder.getContext().getAuthentication());
         }
@@ -62,7 +69,7 @@ public record MarketplaceGraphQlContext(Authentication authentication) {
      * on threads the holder does not reach (the wave-4 CI evidence).
      */
     public static Authentication callerOf(DataFetchingEnvironment environment) {
-        Object custom = com.netflix.graphql.dgs.context.DgsContext.getCustomContext(environment);
+        Object custom = DgsContext.getCustomContext(environment);
         return custom instanceof MarketplaceGraphQlContext context
                 ? context.authentication()
                 : null;
