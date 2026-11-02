@@ -594,14 +594,25 @@ class OrderDataFetcherDgsTest {
                         .containsEntry("errorCode", "VAL-001"));
     }
 
-    /** The unauthenticated guard: no security context answers the credentials error, never a silent read. */
+    /**
+     * The unauthenticated guard: no security context answers the
+     * credentials error, never a silent read. The masked sentence is the
+     * resolver's own leakage policy — the credentials failure lands in the
+     * classified internal family (INT-001), so the proof carries BOTH the
+     * masking sentence and the canonical extensions pair, never a silent
+     * read and never an unclassified leak.
+     */
     @Test
     void unauthenticatedCallerAnswersTheCredentialsError() {
         SecurityContextHolder.clearContext();
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
                 "query { orders(first: 1) { totalCount } }", "$"))
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
-                .hasMessageContaining("An unexpected error occurred");
+                .hasMessageContaining("An unexpected error occurred")
+                .satisfies(ex -> assertThat(
+                                ((com.netflix.graphql.dgs.exceptions.QueryException) ex).getErrors().get(0)
+                                        .getExtensions())
+                        .containsEntry("errorCode", "INT-001"));
     }
 
     /**

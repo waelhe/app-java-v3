@@ -119,8 +119,13 @@ class PreLoginGraphQlGateTest {
         anonymous();
         // The gate reads the DOCUMENT only — the client-controlled
         // operationName parameter ("tokenCreate" riding a protected query)
-        // never influences the decision.
-        when(request.getDocument()).thenReturn("{ services(first: 1) { edges { node { id } } } }");
+        // never influences the decision. The request now really carries the
+        // spoofed name (a named protected operation + the operationName
+        // field), so the refusal proves the protected-field scan decides,
+        // not the operation name alone.
+        when(request.getDocument()).thenReturn(
+                "query tokenCreate { services(first: 1) { edges { node { id } } } }");
+        when(request.getOperationName()).thenReturn("tokenCreate");
 
         assertDeniedWithAuthn();
     }

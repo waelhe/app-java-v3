@@ -227,11 +227,11 @@ class PlatformTokenGrantRotationMultiInstanceIntegrationTest {
         ExecutorService pool = Executors.newFixedThreadPool(2);
         CyclicBarrier startTogether = new CyclicBarrier(2);
         Callable<PlatformTokenGrantService.IssuedTokens> onInstanceA = () -> {
-            startTogether.await();
+            startTogether.await(30, java.util.concurrent.TimeUnit.SECONDS);
             return serviceA.refresh(presented);
         };
         Callable<PlatformTokenGrantService.IssuedTokens> onInstanceB = () -> {
-            startTogether.await();
+            startTogether.await(30, java.util.concurrent.TimeUnit.SECONDS);
             return serviceB.refresh(presented);
         };
         try {
@@ -240,14 +240,16 @@ class PlatformTokenGrantRotationMultiInstanceIntegrationTest {
             int successes = 0;
             String survivor = null;
             try {
-                PlatformTokenGrantService.IssuedTokens won = first.get();
+                PlatformTokenGrantService.IssuedTokens won =
+                        first.get(60, java.util.concurrent.TimeUnit.SECONDS);
                 successes++;
                 survivor = won.refreshToken();
             } catch (java.util.concurrent.ExecutionException expected) {
                 assertThat(expected.getCause()).isInstanceOf(BadCredentialsException.class);
             }
             try {
-                PlatformTokenGrantService.IssuedTokens won = second.get();
+                PlatformTokenGrantService.IssuedTokens won =
+                        second.get(60, java.util.concurrent.TimeUnit.SECONDS);
                 successes++;
                 survivor = won.refreshToken();
             } catch (java.util.concurrent.ExecutionException expected) {

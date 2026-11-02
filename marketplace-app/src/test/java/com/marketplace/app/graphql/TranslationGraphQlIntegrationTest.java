@@ -261,8 +261,11 @@ class TranslationGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> assertThat(errors)
-                        .anySatisfy(error -> assertThat(error.getMessage())
-                                .contains("Access Denied")));
+                        .anySatisfy(error -> {
+                            assertThat(error.getMessage()).contains("Access Denied");
+                            assertThat(error.getExtensions())
+                                    .containsEntry("errorCode", "AUTHZ-001");
+                        }));
 
         assertThat(categoryRepository.findById(rowId).orElseThrow().getNameAr()).isNull();
     }
@@ -336,7 +339,10 @@ class TranslationGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> assertThat(errors)
-                        .anySatisfy(error -> assertThat(error.getMessage())
-                                .contains("Invalid global ID")));
+                        .anySatisfy(error -> {
+                            assertThat(error.getMessage()).contains("Invalid global ID");
+                            assertThat(error.getExtensions())
+                                    .containsEntry("errorCode", "VAL-001");
+                        }));
     }
 }

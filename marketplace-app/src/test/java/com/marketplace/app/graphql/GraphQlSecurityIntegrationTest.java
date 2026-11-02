@@ -128,13 +128,6 @@ class GraphQlSecurityIntegrationTest {
     }
 
     /**
-     * Leg 1 of the tripartite anonymous contract: a POST carrying a
-     * perfectly valid GraphQL query must be answered by the security
-     * chain's 401 problem+json (AUTHN-001) with the RFC 6750 §3.1 bare
-     * realm challenge — validity of the query is irrelevant before
-     * authentication, and the body never reaches the GraphQL handler.
-     */
-    /**
      * Leg 1 of the reopened contract: a POST carrying a perfectly valid
      * GraphQL query is now answered by the GATE — the pre-login
      * operation wall parses the document, finds {@code services} outside

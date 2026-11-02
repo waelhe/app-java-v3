@@ -523,6 +523,7 @@ class ProductTypeGraphQlIntegrationTest {
         // name-only command.
         ProductType row = productTypeRepository.findById(rowId).orElseThrow();
         assertThat(row.getNameEn()).isEqualTo("P2 Updated Schema");
+        assertThat(row.getCode()).isEqualTo("p2-test-alpha");
     }
 
     @Test

@@ -450,7 +450,7 @@ class TranslationMutationDataFetcherDgsTest {
                     attributeValue { id }
                 } }
                 """, "$"))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class);
         org.mockito.Mockito.verifyNoInteractions(translationWriteSpi);
     }
 
@@ -465,7 +465,7 @@ class TranslationMutationDataFetcherDgsTest {
                     category { id }
                 } }
                 """.formatted(categoryGlobalId(UUID.randomUUID())), "$"))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class);
         org.mockito.Mockito.verifyNoInteractions(translationWriteSpi);
     }
 
@@ -551,6 +551,7 @@ class TranslationMutationDataFetcherDgsTest {
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
                 mutation { attributeBulkTranslate(translations: []) { count } }
                 """, "data.attributeBulkTranslate"))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class);
+        org.mockito.Mockito.verifyNoInteractions(translationWriteSpi);
     }
 }

@@ -429,7 +429,9 @@ class ProductMediaGraphQlIntegrationTest {
                         """.formatted(productMediaGlobalId(UUID.randomUUID())))
                 .execute()
                 .errors()
-                .satisfy(errors -> assertThat(errors).isNotEmpty());
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getExtensions())
+                                .containsEntry("errorCode", "AUTHZ-001")));
     }
 
     @Test
@@ -442,7 +444,9 @@ class ProductMediaGraphQlIntegrationTest {
                 .variable("id", UUID.randomUUID().toString())
                 .execute()
                 .errors()
-                .satisfy(errors -> assertThat(errors).isNotEmpty());
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getExtensions())
+                                .containsEntry("errorCode", "VAL-001")));
     }
 
     @Test
@@ -455,6 +459,8 @@ class ProductMediaGraphQlIntegrationTest {
                 .variable("id", productGlobalId(UUID.randomUUID()))
                 .execute()
                 .errors()
-                .satisfy(errors -> assertThat(errors).isNotEmpty());
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getExtensions())
+                                .containsEntry("errorCode", "VAL-001")));
     }
 }
