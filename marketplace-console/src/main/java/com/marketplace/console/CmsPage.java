@@ -1,5 +1,7 @@
 package com.marketplace.console;
 
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
 import com.marketplace.shared.jpa.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -20,13 +22,21 @@ import java.util.UUID;
  *
  * <p>{@code content} is the serialized rich-text JSON document
  * (EditorJS-shaped) stored as-is (JSONB) and rendered on the wire as a
- * String (the no-new-scalar house decision). The base row IS the primary
+ * String (the no-new-scalar house decision) — the write paths keep the
+ * stored text a valid JSON document on every path (the SystemSetting
+ * discipline): a plain (unquoted) string is the caller's classified
+ * VAL-001, never the store's INT-001. The base row IS the primary
  * language; every other language rides {@link CmsPageTranslation}.</p>
  */
 @Entity
 @Table(name = "cms_pages")
 @Audited
 public class CmsPage extends BaseEntity {
+
+    /** The stateless document parser of the content guard (the
+     * SystemSetting precedent: the write side keeps the stored text
+     * valid JSON on every path). */
+    private static final JsonMapper CONTENT_JSON = JsonMapper.builder().build();
 
     @Id
     private UUID id;
@@ -117,7 +127,7 @@ public class CmsPage extends BaseEntity {
             this.title = title.trim();
         }
         if (content != null) {
-            this.content = content;
+            this.content = requireSerializedJsonDocument(content, "page");
         }
         if (published != null) {
             setPublished(published);
@@ -128,6 +138,24 @@ public class CmsPage extends BaseEntity {
         if (seoDescription != null) {
             this.seoDescription = seoDescription.isBlank() ? null : seoDescription.trim();
         }
+    }
+
+    /**
+     * The jsonb column accepts only a serialized JSON document — a plain
+     * (unquoted) string is rejected by PostgreSQL (22P02: invalid input
+     * syntax for type json) and leaks on the wire as the internal INT-001.
+     * The guard answers the caller's honest classified VAL-001 instead,
+     * on every write path.
+     */
+    private static String requireSerializedJsonDocument(String content, String owner) {
+        try {
+            CONTENT_JSON.readTree(content);
+        } catch (JacksonException malformed) {
+            throw new IllegalArgumentException(
+                    "The " + owner + " content must be a serialized JSON document (rich text): "
+                            + malformed.getOriginalMessage());
+        }
+        return content;
     }
 
     /** The publication lifecycle: publishing stamps the publication time. */

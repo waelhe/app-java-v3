@@ -60,7 +60,7 @@ class CmsPageAdminServiceTest {
         when(pageTypeRepository.existsById(typeId)).thenReturn(true);
         when(pageRepository.existsBySlug("about-us")).thenReturn(false);
 
-        var view = service.createPage(admin, "About Us", null, "content", true, null, null, typeId);
+        var view = service.createPage(admin, "About Us", null, "{\"blocks\":[]}", true, null, null, typeId);
 
         assertThat(view.slug()).isEqualTo("about-us");
         assertThat(view.published()).isTrue();
@@ -229,7 +229,7 @@ class CmsPageAdminServiceTest {
         assertThatThrownBy(() -> service.updatePage(admin, id, "New", "taken", null, null, null, null))
                 .isInstanceOf(ConflictException.class);
 
-        service.updatePage(admin, id, "New", "new-slug", "content", false, "SEO", "desc");
+        service.updatePage(admin, id, "New", "new-slug", "{\"blocks\":[]}", false, "SEO", "desc");
         assertThat(page.getTitle()).isEqualTo("New");
         assertThat(page.getSlug()).isEqualTo("new-slug");
         assertThat(page.isPublished()).isFalse();
@@ -245,8 +245,9 @@ class CmsPageAdminServiceTest {
                 .thenReturn(Optional.of(standing))
                 .thenReturn(Optional.of(standing));
 
-        service.translatePage(admin, id, "ar", "من", "عن", "محتوى", null, null);
-        service.translatePage(admin, id, "ar", "من2", "عن2", "محتوى2", "SEO", null);
+        service.translatePage(admin, id, "ar", "من", "عن", "{\"blocks\":[]}", null, null);
+        service.translatePage(admin, id, "ar", "من2", "عن2",
+                "{\"blocks\":[{\"type\":\"paragraph\"}]}", "SEO", null);
 
         assertThat(standing.getTitle()).isEqualTo("عن2");
     }
