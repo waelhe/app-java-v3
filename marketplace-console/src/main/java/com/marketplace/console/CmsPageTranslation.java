@@ -1,5 +1,7 @@
 package com.marketplace.console;
 
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
 import com.marketplace.shared.jpa.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -15,12 +17,20 @@ import java.util.UUID;
  * Agent 1 (the Saleor 458-root campaign, assignment packet PR #696): the
  * per-language page translation — every language except the page's own
  * primary row (the base table). The (page, language) pair is unique over
- * live rows (V281); the apply semantics are the house "null keeps" rule.
+ * live rows (V281); the apply semantics are the house "null keeps" rule,
+ * and the content guard keeps the stored text a valid JSON document on
+ * every path (the base row's own discipline — a plain unquoted string
+ * is the caller's VAL-001, never the store's INT-001).
  */
 @Entity
 @Table(name = "cms_page_translations")
 @Audited
 public class CmsPageTranslation extends BaseEntity {
+
+    /** The stateless document parser of the content guard (the
+     * SystemSetting precedent: the write side keeps the stored text
+     * valid JSON on every path). */
+    private static final JsonMapper CONTENT_JSON = JsonMapper.builder().build();
 
     @Id
     private UUID id;
@@ -101,7 +111,7 @@ public class CmsPageTranslation extends BaseEntity {
             this.title = title.trim();
         }
         if (content != null) {
-            this.content = content;
+            this.content = requireSerializedJsonDocument(content);
         }
         if (seoTitle != null) {
             this.seoTitle = seoTitle.isBlank() ? null : seoTitle.trim();
@@ -109,5 +119,23 @@ public class CmsPageTranslation extends BaseEntity {
         if (seoDescription != null) {
             this.seoDescription = seoDescription.isBlank() ? null : seoDescription.trim();
         }
+    }
+
+    /**
+     * The jsonb column accepts only a serialized JSON document — a plain
+     * (unquoted) string is rejected by PostgreSQL (22P02: invalid input
+     * syntax for type json) and leaks on the wire as the internal INT-001
+     * (the wave-13 shard-2/8 evidence). The guard answers the caller's
+     * honest classified VAL-001 instead, on every write path.
+     */
+    private static String requireSerializedJsonDocument(String content) {
+        try {
+            CONTENT_JSON.readTree(content);
+        } catch (JacksonException malformed) {
+            throw new IllegalArgumentException(
+                    "The page translation content must be a serialized JSON document"
+                            + " (rich text): " + malformed.getOriginalMessage());
+        }
+        return content;
     }
 }

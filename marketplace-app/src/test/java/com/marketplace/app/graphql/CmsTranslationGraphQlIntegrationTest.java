@@ -17,7 +17,10 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+import com.marketplace.shared.api.ApiErrorTaxonomy;
 import test.config.IntegrationContainers;
+
+import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -57,6 +60,17 @@ class CmsTranslationGraphQlIntegrationTest {
     private static final UUID ADMIN_ROW_ID =
             UUID.fromString("61616161-6161-4616-8616-616161616724");
     private static final String ADMIN_SUBJECT = "saleor-translation-contract-admin";
+
+    /** The stateless document parser of the content round-trip assertion. */
+    private static final JsonMapper JSON = JsonMapper.builder().build();
+
+    /** The SDL's wire contract: {@code content} is the SERIALIZED rich-text
+     * JSON document (EditorJS-shaped) — a plain (unquoted) string is not a
+     * document and is refused by the owning store with the classified
+     * VAL-001 (never the store's INT-001). */
+    private static final String CONTENT_DOCUMENT =
+            "{\"time\":0,\"blocks\":[{\"type\":\"paragraph\","
+                    + "\"data\":{\"text\":\"محتوى مترجم\"}}]}";
     private static final String ADMIN_EMAIL = "saleor-translation-contract-admin@example.com";
 
     @Container
@@ -114,37 +128,7 @@ class CmsTranslationGraphQlIntegrationTest {
     void pageTranslationRoundTripsThroughTheOwningReadSourceWithATypedRowIdentity() {
         HttpGraphQlTester admin = testerFor(ADMIN_SUBJECT, "ADMIN");
         String suffix = suffix();
-
-        var pageTypeResponse = admin.document("""
-                mutation {
-                    pageTypeCreate(input: { name: "Translation Page Type", slug: "tt-%s" }) {
-                        pageType { id }
-                        errors { code }
-                    }
-                }
-                """.formatted(suffix)).execute();
-        pageTypeResponse.errors().verify();
-        pageTypeResponse.path("pageTypeCreate.errors").entityList(Object.class).hasSize(0);
-        String pageTypeId = pageTypeResponse.path("pageTypeCreate.pageType.id")
-                .entity(String.class).get();
-
-        var pageResponse = admin.document("""
-                mutation($input: PageCreateInput!) {
-                    pageCreate(input: $input) {
-                        page { id title }
-                        errors { code }
-                    }
-                }
-                """)
-                .variable("input", Map.of(
-                        "title", "Translation Page",
-                        "slug", "tp-" + suffix,
-                        "pageType", pageTypeId,
-                        "isPublished", true))
-                .execute();
-        pageResponse.errors().verify();
-        pageResponse.path("pageCreate.errors").entityList(Object.class).hasSize(0);
-        String pageId = pageResponse.path("pageCreate.page.id").entity(String.class).get();
+        String pageId = createTranslatablePage(admin, suffix);
 
         var translateResponse = admin.document("""
                 mutation($id: ID!, $input: PageTranslationInput!) {
@@ -156,7 +140,7 @@ class CmsTranslationGraphQlIntegrationTest {
                 .variable("id", pageId)
                 .variable("input", Map.of(
                         "title", "صفحة مترجمة",
-                        "content", "محتوى مترجم",
+                        "content", CONTENT_DOCUMENT,
                         "seoTitle", "SEO مترجم"))
                 .execute();
         translateResponse.errors().verify();
@@ -177,8 +161,11 @@ class CmsTranslationGraphQlIntegrationTest {
                 .isEqualTo("Translation Page");
         assertThat(readBack.path("page.translation.title").entity(String.class).get())
                 .isEqualTo("صفحة مترجمة");
-        assertThat(readBack.path("page.translation.content").entity(String.class).get())
-                .isEqualTo("محتوى مترجم");
+        // The document round-trips semantically — jsonb's canonical text is
+        // the store's own normalization; the parsed document is what answers.
+        assertThat(JSON.readTree(readBack.path("page.translation.content")
+                .entity(String.class).get()))
+                .isEqualTo(JSON.readTree(CONTENT_DOCUMENT));
         assertThat(readBack.path("page.translation.seoTitle").entity(String.class).get())
                 .isEqualTo("SEO مترجم");
         assertThat(readBack.path("page.translation.language").entity(String.class).get())
@@ -224,6 +211,75 @@ class CmsTranslationGraphQlIntegrationTest {
                   AND t.title = ? AND t.seo_title = ?
                 """, Integer.class, "tp-" + suffix, "صفحة مترجمة", "SEO مترجم");
         assertThat(persisted).isEqualTo(1);
+    }
+
+    /**
+     * The owning store keeps its jsonb document contract on every path: a
+     * plain (unquoted) string is the caller's classified VAL-001 — the
+     * honest 400, never the store's INT-001 (the wave-13 shard-2/8
+     * evidence: PostgreSQL answered 22P02 and the wire surfaced the
+     * internal error).
+     */
+    @Test
+    void pageTranslateRefusesAPlainStringThatIsNotADocument() {
+        HttpGraphQlTester admin = testerFor(ADMIN_SUBJECT, "ADMIN");
+        String pageId = createTranslatablePage(admin, suffix());
+
+        var refused = admin.document("""
+                mutation($id: ID!, $input: PageTranslationInput!) {
+                    pageTranslate(id: $id, input: $input, languageCode: AR) {
+                        errors { code }
+                    }
+                }
+                """)
+                .variable("id", pageId)
+                .variable("input", Map.of(
+                        "title", "صفحة مترجمة",
+                        "content", "نص خام ليس وثيقة JSON",
+                        "seoTitle", "SEO مترجم"))
+                .execute();
+        refused.errors().satisfy(errors -> {
+            var error = errors.getFirst();
+            assertThat(error.getExtensions())
+                    .containsEntry("errorCode", ApiErrorTaxonomy.VALIDATION.errorCode());
+            assertThat(error.getExtensions())
+                    .containsEntry("category", ApiErrorTaxonomy.VALIDATION.category());
+        });
+    }
+
+    /** The pageTypeCreate + pageCreate dance under ONE suffix; answers the
+     * new page's global ID (the persisted SQL check joins on the same slug). */
+    private String createTranslatablePage(HttpGraphQlTester admin, String suffix) {
+        var pageTypeResponse = admin.document("""
+                mutation {
+                    pageTypeCreate(input: { name: "Translation Page Type", slug: "tt-%s" }) {
+                        pageType { id }
+                        errors { code }
+                    }
+                }
+                """.formatted(suffix)).execute();
+        pageTypeResponse.errors().verify();
+        pageTypeResponse.path("pageTypeCreate.errors").entityList(Object.class).hasSize(0);
+        String pageTypeId = pageTypeResponse.path("pageTypeCreate.pageType.id")
+                .entity(String.class).get();
+
+        var pageResponse = admin.document("""
+                mutation($input: PageCreateInput!) {
+                    pageCreate(input: $input) {
+                        page { id title }
+                        errors { code }
+                    }
+                }
+                """)
+                .variable("input", Map.of(
+                        "title", "Translation Page",
+                        "slug", "tp-" + suffix,
+                        "pageType", pageTypeId,
+                        "isPublished", true))
+                .execute();
+        pageResponse.errors().verify();
+        pageResponse.path("pageCreate.errors").entityList(Object.class).hasSize(0);
+        return pageResponse.path("pageCreate.page.id").entity(String.class).get();
     }
 
     @Test

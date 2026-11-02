@@ -602,10 +602,16 @@ jobs:
 
       - name: Download, verify and compare against the pinned Saleor contract
         env:
-          SALEOR_REF: "3.23.43"
           GITHUB_BASE_REF: ${{ github.base_ref }}
         run: |
           set -euo pipefail
+          # Single source of truth: the Saleor ref is read from
+          # saleor-source-pins.json (referenceSchema.ref) exactly like the
+          # saleor-canonical-governance.yml download step — no second,
+          # hand-maintained pin in this workflow (the wave-13 gap closure:
+          # this env pin still said 3.23.43 while the registry pins 3.23.45;
+          # the blob-identical tags let it pass, a moved tag would not).
+          SALEOR_REF="$(python -c "import json; print(json.load(open('docs/governance/plans/saleor-source-pins.json'))['referenceSchema']['ref'])")"
           REFERENCE_SCHEMA="${RUNNER_TEMP}/saleor-reference.graphql"
           curl --fail --silent --show-error --location \
             "https://raw.githubusercontent.com/saleor/saleor/${SALEOR_REF}/saleor/graphql/schema.graphql" \

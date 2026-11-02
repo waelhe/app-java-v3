@@ -51,7 +51,9 @@ IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 # These input objects are on active CMS mutation paths. Root-field signature
 # checks alone cannot catch drift inside an input object, so pin their fields
-# and nullability to Saleor 3.23.43 until type-closure parity is generalized.
+# and nullability to the pinned Saleor reference schema (the exact ref and
+# blob recorded in docs/governance/plans/saleor-source-pins.json) until
+# type-closure parity is generalized.
 INPUT_FIELD_CONTRACTS = {
     "MenuItemCreateInput": {
         "name": "String!",
