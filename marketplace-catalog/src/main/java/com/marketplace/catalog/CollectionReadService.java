@@ -205,6 +205,20 @@ public class CollectionReadService implements CollectionReadSpi {
             throw new IllegalArgumentException("A collection id is required");
         }
         boolean staff = staffCaller(authentication);
+        // The wave-19 #808 review's publication gate, enforced before the
+        // membership registry is ever consulted: a non-ADMIN caller's
+        // scroll over an unknown or unpublished collection answers the
+        // same safe empty page the lookup answers (the visibleTo law's
+        // own row filter) — never a product exposure through a collection
+        // the same caller cannot read, and never a registry probe that
+        // would disclose the shelf's existence.
+        if (!staff && !collectionRepository.findById(collectionId)
+                .map(row -> visibleTo(row, authentication))
+                .orElse(false)) {
+            return new CollectionProductsPage(
+                    Window.from(List.<ProductView>of(), index ->
+                            ScrollPosition.forward(Map.of("position", 0)), false), 0);
+        }
         List<CollectionProduct> membership =
                 collectionProductRepository.findByCollectionIdOrderByPositionAscIdAsc(collectionId);
         List<ProductView> visible = new ArrayList<>(membership.size());

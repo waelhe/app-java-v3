@@ -214,6 +214,13 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
         if (!errors.isEmpty()) {
             return ProductVariantMutationResult.failure(errors);
         }
+        // The wave-19 #808 review's own law, enforced before any write:
+        // the parent's soft delete takes the variant's shelf away — the
+        // amendment answers the classified NOT_FOUND (the read side's own
+        // safe-absence shape) and never persists an orphan revision.
+        if (productRepository.findById(row.getProductId()).isEmpty()) {
+            return parentAbsentRefusal();
+        }
         row.reviseDetails(mergedSku, mergedName, mergedPriceMinor);
         ProductVariant saved = variantRepository.save(row);
         return resolveView(saved)

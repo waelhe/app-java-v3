@@ -307,11 +307,15 @@ class CollectionReadServiceTest {
         // the membership registry is never consulted.
         UUID collectionId = UUID.randomUUID();
         UUID activeId = UUID.randomUUID();
+        // The collaborator is built BEFORE the stubbing line — a mock
+        // never gets created and stubbed inside another stubbing's
+        // thenReturn argument (the CI's own UnfinishedStubbing evidence).
+        Product active = activeProduct(activeId);
         when(collectionRepository.findById(collectionId)).thenReturn(Optional.of(
                 Collection.create("hidden-slug", "Hidden", "المخفية", false)));
         when(membershipRepository.findByCollectionIdOrderByPositionAscIdAsc(collectionId))
                 .thenReturn(List.of(CollectionProduct.create(collectionId, activeId, 1)));
-        when(productRepository.findById(activeId)).thenReturn(Optional.of(activeProduct(activeId)));
+        when(productRepository.findById(activeId)).thenReturn(Optional.of(active));
 
         CollectionProductsPage page = service.scrollCollectionProducts(
                 collectionId, ScrollPosition.keyset(), Limit.of(10), member);
