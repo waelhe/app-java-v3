@@ -332,7 +332,7 @@ input ProductCreateInput {
     ID of the product's reusable goods schema (typed global ID of the
     ProductType root's type; null keeps pre-C1 and zero-variant
     products compatible — a typed product starts as DRAFT). The
-    nullability is the RECORDED platform divergence: Saleor 3.23.45
+    nullability is the RECORDED platform divergence: Saleor 3.23.43
     declares the field `ID!` (saleor-contract-divergences.csv, the
     2026-11-02 #806 review) — the single-row create keeps the
     zero-variant capability the row's own history carries, while the
@@ -1886,7 +1886,7 @@ input CollectionInput {
 # with the classified validation error until an owning query
 # capability exists (the honest boundary, never a silent no-op).
 # BOUNDED closure per the ProductFilterInput/ProductWhereInput
-# precedent: every DECLARED field is the pinned Saleor 3.23.45
+# precedent: every DECLARED field is the pinned Saleor 3.23.43
 # contract's own member (the 2026-11-02 #806 review — the earlier
 # singular `slug` and the where-side `name` are NOT in the contract
 # and stay undeclared), the scalar surface only; the unowned closure

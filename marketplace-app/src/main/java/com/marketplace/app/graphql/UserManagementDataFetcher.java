@@ -24,6 +24,7 @@ import com.marketplace.app.graphql.generated.types.UserCreateInput;
 import com.marketplace.identity.spi.IdentitySpi;
 import com.marketplace.identity.spi.UserManagementSpi;
 import com.marketplace.identity.spi.UserWriteFields;
+import com.marketplace.shared.api.ResourceNotFoundException;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
@@ -162,7 +163,20 @@ public class UserManagementDataFetcher {
             try {
                 ids.add(resolveTarget(row.getExternalReference(), row.getId()));
                 rows.add(toFields(row.getInput()));
-            } catch (RuntimeException rowFailure) {
+            } catch (IllegalArgumentException
+                    | ResourceNotFoundException rowFailure) {
+                // The narrowed catch (the 2026-11-02 #806 review, Minor ·
+                // Stability & Availability): ONLY the two semantic
+                // row-failure classes the helpers above actually throw —
+                // the codec's malformed-global-ID IAE, the classified
+                // not-implemented rejections, and the unresolvable
+                // external reference's NOT_FOUND — answer the row-level
+                // null-pairing. Repository and infrastructure failures
+                // (the DataAccessException family) propagate to the
+                // classified GraphQL error surface in every mode instead
+                // of masquerading as a failed row with paired nulls. The
+                // SDL pins [CustomerBulkUpdateInput!]! — non-null
+                // elements — so no null-element NPE can reach this loop.
                 if (!rowLevel) {
                     throw rowFailure;
                 }

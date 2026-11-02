@@ -133,19 +133,36 @@ final class SaleorMutationErrors {
      * an unmapped throwable (a {@code DataIntegrityViolationException}'s
      * SQL text, a library's {@code IllegalArgumentException}, a bean
      * validation's {@code ConstraintViolationException}) answers the
-     * generic rejection, and the FULL exception goes to the internal log
-     * at WARN for the operator who needs it. Any future authored
-     * validation sentence must travel a domain exception type of the
-     * owner's own API surface (added to {@code authored} below), never a
-     * JDK or library type.
+     * generic rejection, and the exception goes to the internal log at
+     * the level its taxonomy earns: WARN with the stack trace for the
+     * unexpected, DEBUG for the classified client-input pair — a
+     * row-level bulk policy answers one malformed row per client
+     * mistake, the per-row wire error is the report, and a
+     * WARN-plus-stack per row would flood the operator log (the
+     * 2026-11-02 #806 review, Minor · Performance & Scalability). Any
+     * future authored validation sentence must travel a domain exception
+     * type of the owner's own API surface (added to {@code authored}
+     * below), never a JDK or library type.
      */
     private static String safeMessage(Throwable failure) {
         boolean authored = failure instanceof ResourceNotFoundException
                 || failure instanceof ConflictException;
         if (!authored) {
-            log.warn("Mutation failure mapped to the generic payload rejection — "
-                            + "the raw message stays internal: {}", failure.getMessage(),
-                    failure);
+            if (failure instanceof IllegalArgumentException
+                    || failure instanceof jakarta.validation.ConstraintViolationException) {
+                // The client-input pair the codeOf ladder already
+                // classifies (REQUIRED/INVALID): a row-level bulk policy
+                // answers one malformed row per client mistake — the
+                // per-row wire error is the report, so the stack trace
+                // rides DEBUG (never a WARN-plus-stack per row) and the
+                // message is not interpolated back (the exception
+                // carries it).
+                log.debug("Client input rejected; the raw message stays internal",
+                        failure);
+            } else {
+                log.warn("Mutation failure mapped to the generic payload "
+                        + "rejection; the raw message stays internal", failure);
+            }
             return GENERIC_REJECTION;
         }
         String message = failure.getMessage();
