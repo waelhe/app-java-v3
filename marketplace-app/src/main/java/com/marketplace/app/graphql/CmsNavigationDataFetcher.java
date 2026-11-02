@@ -268,7 +268,9 @@ public class CmsNavigationDataFetcher {
         CmsNavigationSpi.MenuItemView translated = navigationPort.translateMenuItem(
                 caller,
                 decodeId(id, MENU_ITEM_TAG, "A menu item ID is required"),
-                languageCode.name(), input.getName());
+                // the wire enum's upper-case name (AR/EN) converts to the owning
+                // store's lower-case language currency ('ar'/'en') at this boundary
+                languageCode.name().toLowerCase(java.util.Locale.ROOT), input.getName());
         MenuTreeContext translatedContext = menuTreeContextOf(caller, translated.menuId());
         return MenuItemTranslate.newBuilder()
                 .menuItem(toGraphQlMenuItem(translated, translatedContext.byParent(),
@@ -772,7 +774,9 @@ public class CmsNavigationDataFetcher {
         }
         return navigationPort.findMenuItemById(caller,
                         decodeId(item.getId(), MENU_ITEM_TAG, "A menu item ID is required"))
-                .map(view -> view.translations().get(languageCode.name()))
+                // the projection's translation map is keyed by the stored
+                // lower-case codes; the wire form converts at this boundary
+                .map(view -> view.translations().get(languageCode.name().toLowerCase(java.util.Locale.ROOT)))
                 .map(translation -> MenuItemTranslation.newBuilder()
                         .id(globalIdCodec.encode("MenuItemTranslation", translation.id()))
                         .name(translation.name())

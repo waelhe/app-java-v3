@@ -178,7 +178,9 @@ public class CmsPageDataFetcher {
         return PageTranslate.newBuilder()
                 .page(toGraphQlPage(cmsPageSpi.translatePage(currentAuthentication(),
                         decodeId(id, PAGE_TYPE_TAG, "A page ID is required"),
-                        languageCode.name(), input.getSlug(), input.getTitle(),
+                // the wire enum's upper-case name (AR/EN) converts to the owning
+                // store's lower-case language currency ('ar'/'en') at this boundary
+                        languageCode.name().toLowerCase(java.util.Locale.ROOT), input.getSlug(), input.getTitle(),
                         input.getContent(), input.getSeoTitle(), input.getSeoDescription())))
                 .errors(mappers.emptyPageErrors())
                 .build();
@@ -517,7 +519,9 @@ public class CmsPageDataFetcher {
         }
         return cmsPageSpi.findPageById(caller,
                         decodeId(source.getId(), PAGE_TYPE_TAG, "A page ID is required"))
-                .map(view -> view.translations().get(languageCode.name()))
+                // the projection's translation map is keyed by the stored
+                // lower-case codes; the wire form converts at this boundary
+                .map(view -> view.translations().get(languageCode.name().toLowerCase(java.util.Locale.ROOT)))
                 .map(translation -> PageTranslation.newBuilder()
                         .id(globalIdCodec.encode("PageTranslation", translation.id()))
                         .seoTitle(translation.seoTitle())
