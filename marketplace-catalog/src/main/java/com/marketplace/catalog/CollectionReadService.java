@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -215,11 +216,19 @@ public class CollectionReadService implements CollectionReadSpi {
 
         // The deterministic ordering — the membership's own (position, id)
         // key, ascending only (the display order's own law; the Saleor
-        // products field's forward-only pagination contract).
+        // products field's forward-only pagination contract). The member
+        // positions are read from ONE map built up front: the comparator,
+        // the cursor filter and the cursor builder all look up by id in
+        // O(1) instead of re-scanning the membership list linearly.
+        Map<UUID, Integer> memberPositions = new HashMap<>(membership.size() * 2);
+        for (CollectionProduct member : membership) {
+            memberPositions.put(member.getProductId(), member.getPosition());
+        }
         Comparator<Integer> positionOrder = Comparator.naturalOrder();
         Comparator<UUID> idOrder = Comparator.naturalOrder();
         visible.sort(Comparator
-                .comparing((ProductView product) -> positionOf(membership, product.id()), positionOrder)
+                .comparing((ProductView product) ->
+                        memberPositions.getOrDefault(product.id(), Integer.MAX_VALUE), positionOrder)
                 .thenComparing(ProductView::id, idOrder));
 
         List<ProductView> scrollable = visible;
@@ -230,7 +239,8 @@ public class CollectionReadService implements CollectionReadSpi {
             scrollable = visible.stream()
                     .filter(product -> {
                         int byPosition = Integer.compare(
-                                positionOf(membership, product.id()), cursorPosition);
+                                memberPositions.getOrDefault(product.id(), Integer.MAX_VALUE),
+                                cursorPosition);
                         return byPosition != 0 ? byPosition > 0
                                 : idOrder.compare(product.id(), cursorId) > 0;
                     })
@@ -244,7 +254,8 @@ public class CollectionReadService implements CollectionReadSpi {
         List<ProductView> content = scrollable.subList(0, pageSize);
         Window<ProductView> window = Window.from(content, index ->
                 ScrollPosition.forward(Map.of(
-                        "position", positionOf(membership, content.get(index).id()),
+                        "position", memberPositions.getOrDefault(
+                                content.get(index).id(), Integer.MAX_VALUE),
                         "id", content.get(index).id())),
                 hasNext);
         return new CollectionProductsPage(window, visible.size());
@@ -313,18 +324,6 @@ public class CollectionReadService implements CollectionReadSpi {
                     malformed instanceof RuntimeException runtime ? runtime
                             : new IllegalArgumentException(String.valueOf(malformed)));
         }
-    }
-
-    /** The member's own position fact from the membership registry. */
-    private static int positionOf(List<CollectionProduct> membership, UUID productId) {
-        for (CollectionProduct member : membership) {
-            if (member.getProductId().equals(productId)) {
-                return member.getPosition();
-            }
-        }
-        // The visible member always holds a membership row (the scroll's
-        // own source); the unreachable default keeps the comparator total.
-        return Integer.MAX_VALUE;
     }
 
     /**
