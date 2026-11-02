@@ -63,6 +63,7 @@ public class CmsNavigationDataFetcher {
 
     static final String MENU_TAG = "Menu";
     static final String MENU_ITEM_TAG = "MenuItem";
+    static final String MENU_ITEM_TRANSLATION_TAG = "MenuItemTranslation";
 
     private final CmsNavigationSpi navigationPort;
     private final SaleorGlobalIdCodec globalIdCodec;
@@ -700,6 +701,49 @@ public class CmsNavigationDataFetcher {
     }
 
     /**
+     * The {@code MenuItem.translation} read-back — the wave-11 #806
+     * review: the SDL declared the field with no resolver while the
+     * owning {@link CmsNavigationSpi} read source carries the per-language
+     * translation rows (the console module's
+     * {@code cms_menu_item_translations} store, the same store
+     * {@code menuItemTranslate} writes). The field is served from the
+     * owning use case exactly like the {@code MenuItem.category} and
+     * {@code MenuItem.page} read-backs above: the caller comes from the
+     * REQUEST-SCOPED context (the wave-4 CI evidence — the holder
+     * ThreadLocal does not reach field-level completion threads), an item
+     * without the requested language's translation row answers the
+     * field's honest null, and the rendered identity is the TRANSLATION
+     * ROW's own UUID as the typed global ID — never the parent item's
+     * (Saleor's own-row-identity semantics).
+     */
+    @DgsData(parentType = DgsConstants.MENUITEM.TYPE_NAME,
+             field = DgsConstants.MENUITEM.Translation)
+    public MenuItemTranslation menuItemTranslation(DataFetchingEnvironment environment,
+                                                   @InputArgument("languageCode")
+                                                   LanguageCodeEnum languageCode) {
+        MenuItem item = environment.getSource();
+        if (item == null || item.getId() == null) {
+            return null;
+        }
+        if (languageCode == null) {
+            throw new IllegalArgumentException("A language code is required");
+        }
+        Authentication caller = MarketplaceGraphQlContext.callerOf(environment);
+        if (caller == null || !caller.isAuthenticated()) {
+            return null;
+        }
+        return navigationPort.findMenuItemById(caller,
+                        decodeId(item.getId(), MENU_ITEM_TAG, "A menu item ID is required"))
+                .map(view -> view.translations().get(languageCode.name()))
+                .map(translation -> MenuItemTranslation.newBuilder()
+                        .id(globalIdCodec.encode(MENU_ITEM_TRANSLATION_TAG, translation.id()))
+                        .name(translation.name())
+                        .language(languageCode)
+                        .build())
+                .orElse(null);
+    }
+
+    /**
      * The {@code MenuItem.parent} read-back — the honest no-parent stays
      * the mapper's null (the field is nullable on the wire; a parentless
      * item answers null, never a fabricated stub). A parent that resolves
@@ -732,52 +776,6 @@ public class CmsNavigationDataFetcher {
                     MenuTreeContext context = menuTreeContextOf(caller, parent.menuId());
                     return toGraphQlMenuItem(parent, context.byParent(), context.levels());
                 })
-                .orElse(null);
-    }
-
-    /**
-     * The {@code MenuItem.translation(languageCode)} read-back — the wave-11
-     * #806 review (Major · Functional Correctness): the SDL declared the
-     * field but no resolver ever wired it, so every selection answered the
-     * mapper's silent null. The owning read source EXISTS — the item
-     * projection carries the per-locale name translations the console owner
-     * loads (keyed by language code, each with its owning row id) — so the
-     * field resolves through the SAME seam every menu-item read uses: the
-     * source item's id re-reads via {@code findMenuItemById} and the
-     * addressed language's translation renders with its row id (the Saleor
-     * {@code MenuItemTranslation.id} identity — the attribute-translation
-     * precedent's encode scheme). A language with no translation answers the
-     * honest null (Saleor's own semantics); an item deleted concurrently
-     * answers null too.
-     *
-     * <p>This is a FIELD-level completion resolver — the caller reads from
-     * the REQUEST-SCOPED context (the wave-4 INT-001 evidence: the
-     * SecurityContext ThreadLocal does not reach the engine's completion
-     * threads); an absent caller answers the honest null floor. The per-node
-     * re-read joins the pageTypeAttributes/Collection.products guarded-N+1
-     * advisory class (maxPageSize caps the fan-out).</p>
-     */
-    @DgsData(parentType = DgsConstants.MENUITEM.TYPE_NAME,
-             field = DgsConstants.MENUITEM.Translation)
-    public MenuItemTranslation menuItemTranslation(DataFetchingEnvironment environment,
-                                                   @InputArgument("languageCode")
-                                                   LanguageCodeEnum languageCode) {
-        MenuItem item = environment.getSource();
-        if (item == null || item.getId() == null || languageCode == null) {
-            return null;
-        }
-        Authentication caller = MarketplaceGraphQlContext.callerOf(environment);
-        if (caller == null || !caller.isAuthenticated()) {
-            return null;
-        }
-        return navigationPort.findMenuItemById(caller,
-                        decodeId(item.getId(), MENU_ITEM_TAG, "A menu item ID is required"))
-                .map(view -> view.translations().get(languageCode.name()))
-                .map(translation -> MenuItemTranslation.newBuilder()
-                        .id(globalIdCodec.encode("MenuItemTranslation", translation.id()))
-                        .name(translation.name())
-                        .language(languageCode)
-                        .build())
                 .orElse(null);
     }
 

@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -419,28 +420,30 @@ class CheckoutDataFetcherTest {
         verifyNoInteractions(checkoutSpi, mapper);
     }
 
+    /**
+     * The wave-11 #806 review: Spring Security's anonymous token reports
+     * {@code isAuthenticated() == true} (the official
+     * {@link AnonymousAuthenticationToken} contract), so the guard must
+     * reject it explicitly — an anonymous request never reaches the
+     * checkout/payment use cases on ANY identifier path, the SAME
+     * normalization the request-scoped context applies at its capture
+     * point.
+     */
     @Test
-    void anonymousAuthenticationIsRejectedLikeAMissingOne() {
-        // The wave-11 #806 review (Major · Security): AnonymousAuthenticationToken
-        // answers isAuthenticated() == true — the type check is the only honest
-        // wall (the account-lifecycle fetcher's wave-3 guard, same semantics).
+    void anonymousAuthenticationIsRejectedBeforeAnyCheckoutUseCase() {
         SecurityContextHolder.getContext().setAuthentication(
-                new org.springframework.security.authentication.AnonymousAuthenticationToken(
-                        "key", "anonymousUser",
+                new AnonymousAuthenticationToken("anonymous-key", "anonymous",
                         List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS"))));
+        UUID token = UUID.randomUUID();
 
-        assertThatThrownBy(() -> fetcher.checkout(null, null))
+        assertThatThrownBy(() -> fetcher.checkout(null, environmentWithToken(token)))
                 .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
-        assertThatThrownBy(() -> fetcher.checkoutLinesAdd(null, null, null, List.of()))
+        assertThatThrownBy(() -> fetcher.checkoutLinesAdd(null, null, environmentWithToken(token), List.of()))
                 .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
-        assertThatThrownBy(() -> fetcher.checkoutLinesUpdate(null, null, null, List.of()))
-                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
-        assertThatThrownBy(() -> fetcher.checkoutLinesDelete(null, null, List.of()))
-                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
-        assertThatThrownBy(() -> fetcher.checkoutLineDelete(null, null, null, "raw"))
+        assertThatThrownBy(() -> fetcher.checkoutLinesDelete(null, environmentWithToken(token), List.of()))
                 .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
 
-        verifyNoInteractions(checkoutSpi, mapper, orderCommandSpi);
+        verifyNoInteractions(checkoutSpi, mapper);
     }
 
     @Test

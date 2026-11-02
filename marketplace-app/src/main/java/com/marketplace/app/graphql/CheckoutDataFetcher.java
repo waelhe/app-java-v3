@@ -13,6 +13,7 @@ import com.netflix.graphql.dgs.InputArgument;
 import graphql.schema.DataFetchingEnvironment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -490,18 +491,21 @@ public class CheckoutDataFetcher {
         return values == null ? List.of() : values;
     }
 
+    /**
+     * The wave-11 #806 review: Spring Security's anonymous token reports
+     * {@code isAuthenticated() == true} (the official
+     * {@link AnonymousAuthenticationToken} contract), so the
+     * missing/unauthenticated guard alone let an anonymous request reach
+     * the checkout and payment operations. The anonymous token is now
+     * rejected explicitly — the SAME normalization the request-scoped
+     * {@link MarketplaceGraphQlContext.Builder} has applied since the
+     * wave-4 review (authentication OR null at the capture point);
+     * authenticated principals keep their behavior unchanged.
+     */
     private Authentication currentAuthentication() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        // The wave-11 #806 review (Major · Security): AnonymousAuthenticationToken
-        // answers isAuthenticated() == true — the type check is the only honest
-        // wall, the same guard the account-lifecycle fetcher adopted in wave 3.
-        // The checkout family reaches cart-owning and payment-adjacent use
-        // cases; an anonymous caller must never pass as an authenticated one
-        // (the PreLoginGraphQlGate keeps these roots staff/customer-gated, but
-        // the guard must not silently accept an anonymous caller if the
-        // gate's allowlist ever widens).
         if (authentication == null || !authentication.isAuthenticated()
-                || authentication instanceof org.springframework.security.authentication.AnonymousAuthenticationToken) {
+                || authentication instanceof AnonymousAuthenticationToken) {
             throw new AuthenticationCredentialsNotFoundException(
                     "Authentication is required for checkout operations");
         }
