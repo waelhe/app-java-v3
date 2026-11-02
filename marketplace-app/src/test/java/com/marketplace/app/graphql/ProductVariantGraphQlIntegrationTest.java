@@ -940,4 +940,24 @@ class ProductVariantGraphQlIntegrationTest {
 
         assertThat(variantRepository.findById(owned)).isEmpty();
     }
+
+    @Test
+    void thePublicIdScrollsExecuteTheirFirstPageWithANullCursor() {
+        // The wave-19 #808 review (Major · Stability): the ID-sort public
+        // scrolls' IS NULL occurrence carries the explicit uuid CAST — the
+        // untyped null bind against the uuid column failed the first page
+        // before the query even executed. The evidence is the REAL
+        // PostgreSQL execution: both directions answer their rows on the
+        // null-cursor (initial) page.
+        List<ProductVariant> ascending =
+                variantRepository.scrollPublicByIdAsc(null, 10);
+        List<ProductVariant> descending =
+                variantRepository.scrollPublicByIdDesc(null, 10);
+
+        assertThat(ascending).isNotEmpty();
+        assertThat(descending).isNotEmpty();
+        // The two directions read the same population in mirrored order.
+        assertThat(ascending.get(0).getId())
+                .isEqualTo(descending.get(descending.size() - 1).getId());
+    }
 }

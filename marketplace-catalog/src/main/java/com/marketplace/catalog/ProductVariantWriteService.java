@@ -66,6 +66,10 @@ import java.util.UUID;
 @Service
 public class ProductVariantWriteService implements ProductVariantWriteSpi {
 
+    static final String POLICY_REJECT_EVERYTHING = "REJECT_EVERYTHING";
+    static final String POLICY_IGNORE_FAILED = "IGNORE_FAILED";
+    static final String POLICY_REJECT_FAILED_ROWS = "REJECT_FAILED_ROWS";
+
     /** The row's own column ceilings (the entity's own length contracts). */
     private static final int SKU_MAX_LENGTH = 100;
     private static final int NAME_MAX_LENGTH = 200;
@@ -161,7 +165,14 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
                     "id", ProductVariantMutationErrorCode.NOT_FOUND, "No product variant found for the id")));
         }
         if (command.isEmpty()) {
-            return ProductVariantMutationResult.success(resolveView(addressed.get()));
+            // The wave-19 #808 review (Major · Stability): the parent
+            // product's soft delete takes the variant's shelf away — the
+            // projection answers the classified NOT_FOUND (the read
+            // side's own safe-absence shape), never the parent-absent
+            // throw the raw orElseThrow produced.
+            return resolveView(addressed.get())
+                    .map(ProductVariantMutationResult::success)
+                    .orElseGet(ProductVariantWriteService::parentAbsentRefusal);
         }
         ProductVariant row = addressed.get();
         if (row.getStatus() == ProductStatus.ARCHIVED) {
@@ -204,7 +215,10 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
             return ProductVariantMutationResult.failure(errors);
         }
         row.reviseDetails(mergedSku, mergedName, mergedPriceMinor);
-        return ProductVariantMutationResult.success(resolveView(variantRepository.save(row)));
+        ProductVariant saved = variantRepository.save(row);
+        return resolveView(saved)
+                .map(ProductVariantMutationResult::success)
+                .orElseGet(ProductVariantWriteService::parentAbsentRefusal);
     }
 
     @Override
@@ -217,9 +231,15 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
                     "id", ProductVariantMutationErrorCode.NOT_FOUND, "No product variant found for the id")));
         }
         ProductVariant row = addressed.get();
-        ProductVariantView lastKnown = resolveView(row);
+        Optional<ProductVariantView> lastKnown = resolveView(row);
+        if (lastKnown.isEmpty()) {
+            // The wave-19 #808 review: a variant whose parent product is
+            // soft-deleted answers the classified NOT_FOUND — the same
+            // safe absence the read surface answers, never a raw throw.
+            return parentAbsentRefusal();
+        }
         variantRepository.delete(row);
-        return ProductVariantMutationResult.success(lastKnown);
+        return ProductVariantMutationResult.success(lastKnown.get());
     }
 
     @Override
@@ -252,6 +272,13 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
                                                               Authentication authentication,
                                                               String errorPolicy) {
         List<ProductVariantBulkOutcome> outcomes = new ArrayList<>(commands.size());
+        ProductVariantMutationError policyError = unknownPolicyError(errorPolicy);
+        if (policyError != null) {
+            for (ProductVariantCreateCommand command : commands) {
+                outcomes.add(new ProductVariantBulkOutcome(null, List.of(policyError)));
+            }
+            return outcomes;
+        }
         for (ProductVariantCreateCommand command : commands) {
             // Self-invocation joins THIS transaction (the bulk boundary
             // owns the authorization and the policy); the single-item
@@ -265,6 +292,7 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
         if (atomic(errorPolicy) && outcomes.stream().anyMatch(outcome -> !outcome.success())) {
             org.springframework.transaction.interceptor.TransactionAspectSupport
                     .currentTransactionStatus().setRollbackOnly();
+            outcomes = rewriteRolledBackOutcomes(outcomes);
         }
         return outcomes;
     }
@@ -297,13 +325,47 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
         if (atomic(errorPolicy) && outcomes.stream().anyMatch(outcome -> !outcome.success())) {
             org.springframework.transaction.interceptor.TransactionAspectSupport
                     .currentTransactionStatus().setRollbackOnly();
+            outcomes = rewriteRolledBackOutcomes(outcomes);
         }
         return outcomes;
     }
 
     /** The pinned default policy's own verdict — REJECT_EVERYTHING unless another member is sent. */
     private static boolean atomic(String errorPolicy) {
-        return errorPolicy == null || "REJECT_EVERYTHING".equals(errorPolicy);
+        return errorPolicy == null || POLICY_REJECT_EVERYTHING.equals(errorPolicy);
+    }
+
+    /** The unknown-policy refusal — the classified INVALID entry, null for a known member. */
+    private static ProductVariantMutationError unknownPolicyError(String errorPolicy) {
+        if (errorPolicy == null || POLICY_REJECT_EVERYTHING.equals(errorPolicy)
+                || POLICY_IGNORE_FAILED.equals(errorPolicy)
+                || POLICY_REJECT_FAILED_ROWS.equals(errorPolicy)) {
+            return null;
+        }
+        return new ProductVariantMutationError("errorPolicy", ProductVariantMutationErrorCode.INVALID,
+                "The error policy is REJECT_EVERYTHING, IGNORE_FAILED or REJECT_FAILED_ROWS");
+    }
+
+    /** The rollback's outcome rewrite — no phantom projection survives the batch's own refusal. */
+    private static List<ProductVariantBulkOutcome> rewriteRolledBackOutcomes(
+            List<ProductVariantBulkOutcome> outcomes) {
+        List<ProductVariantBulkOutcome> rewritten = new ArrayList<>(outcomes.size());
+        for (ProductVariantBulkOutcome outcome : outcomes) {
+            if (outcome.success()) {
+                rewritten.add(new ProductVariantBulkOutcome(null, List.of(
+                        new ProductVariantMutationError("errorPolicy", ProductVariantMutationErrorCode.INVALID,
+                                "The batch was rolled back by the REJECT_EVERYTHING policy; this item was not persisted"))));
+            } else {
+                rewritten.add(outcome);
+            }
+        }
+        return rewritten;
+    }
+
+    /** The parent-absent refusal — the classified NOT_FOUND (the read side's safe absence). */
+    private static ProductVariantMutationResult parentAbsentRefusal() {
+        return ProductVariantMutationResult.failure(List.of(new ProductVariantMutationError(
+                "id", ProductVariantMutationErrorCode.NOT_FOUND, "No product variant found for the id")));
     }
 
     /**
@@ -324,11 +386,14 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
     /**
      * The bounded projection with the parent product's own bounded
      * projection — the read service's own rendering rule (one
-     * projection, one vocabulary, never a second shape).
+     * projection, one vocabulary, never a second shape). The wave-19
+     * #808 review: the parent's soft delete makes the lookup honestly
+     * empty — the answer is the safe absence (an Optional), never an
+     * orphan-shelf throw.
      */
-    private ProductVariantView resolveView(ProductVariant variant) {
-        Product parent = productRepository.findById(variant.getProductId()).orElseThrow();
-        return toView(variant, parent);
+    private Optional<ProductVariantView> resolveView(ProductVariant variant) {
+        return productRepository.findById(variant.getProductId())
+                .map(parent -> toView(variant, parent));
     }
 
     private static ProductVariantView toView(ProductVariant variant, Product parent) {

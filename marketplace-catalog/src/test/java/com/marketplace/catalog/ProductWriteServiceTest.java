@@ -9,8 +9,11 @@ import com.marketplace.catalog.spi.ProductWriteSpi;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
 
 import java.util.List;
 import java.util.Optional;
@@ -51,6 +54,7 @@ class ProductWriteServiceTest {
     private ProductRepository productRepository;
     private StoreCategoryRepository storeCategoryRepository;
     private ProductTypeRepository productTypeRepository;
+    private ProductVariantRepository variantRepository;
     private CurrentUserProvider currentUserProvider;
     private ProductWriteSpi service;
     private final Authentication caller = new TestingAuthenticationToken("provider-subject", "n/a", "ROLE_PROVIDER");
@@ -60,9 +64,10 @@ class ProductWriteServiceTest {
         productRepository = mock(ProductRepository.class);
         storeCategoryRepository = mock(StoreCategoryRepository.class);
         productTypeRepository = mock(ProductTypeRepository.class);
+        variantRepository = mock(ProductVariantRepository.class);
         currentUserProvider = mock(CurrentUserProvider.class);
         service = new ProductWriteService(productRepository, storeCategoryRepository,
-                productTypeRepository, currentUserProvider);
+                productTypeRepository, variantRepository, currentUserProvider);
         when(currentUserProvider.getCurrentUserId(any(Authentication.class))).thenReturn(ProviderIds.CALLER);
         // The reference dictionary row is present by default so each
         // ladder test isolates ITS own field's error (the unknown-code
@@ -354,6 +359,25 @@ class ProductWriteServiceTest {
     }
 
     @Test
+    void deleteCascadesTheProductVariantsWithTheProduct() {
+        // The wave-19 #808 review's preferred law (Major · Stability): the
+        // variants' shelf IS the product's — a deleted product's live
+        // variants cascade to the same soft delete, never left as an
+        // owned orphan shelf the write side still reaches.
+        Product owned = rowOwnedBy(ProviderIds.CALLER);
+        ProductVariant variant = ProductVariant.register(owned, "orphan-sku", "Orphan", 100L);
+        when(productRepository.findById(owned.getId())).thenReturn(Optional.of(owned));
+        when(variantRepository.findByProductIdOrderBySkuAsc(owned.getId()))
+                .thenReturn(List.of(variant));
+
+        ProductMutationResult result = service.deleteProduct(owned.getId(), caller);
+
+        assertThat(result.success()).isTrue();
+        verify(productRepository).delete(owned);
+        verify(variantRepository).delete(variant);
+    }
+
+    @Test
     void bulkDeleteAnswersTheHonestOwnedCount() {
         Product first = rowOwnedBy(ProviderIds.CALLER);
         Product strangers = rowOwnedBy(ProviderIds.STRANGER);
@@ -402,5 +426,53 @@ class ProductWriteServiceTest {
                 .extracting(ProductMutationError::code)
                 .isEqualTo(ProductMutationErrorCode.NOT_FOUND);
         verify(productRepository, org.mockito.Mockito.times(2)).save(any(Product.class));
+    }
+
+    @Test
+    void bulkCreateWithAnUnknownPolicyRefusesEveryItemWithoutAnyWrite() {
+        var outcomes = service.bulkCreateProducts(List.of(
+                create("Bulk Widget One", null, "widgets", 1000L, "SAR", null)),
+                caller, "reject_everything");
+
+        assertThat(outcomes.get(0).success()).isFalse();
+        assertThat(outcomes.get(0).product()).isNull();
+        assertThat(outcomes.get(0).errors()).singleElement()
+                .extracting(ProductMutationError::code, ProductMutationError::field)
+                .containsExactly(ProductMutationErrorCode.INVALID, "errorPolicy");
+        verify(productRepository, never()).save(any(Product.class));
+    }
+
+    @Test
+    void rejectEverythingRollbackRebuildsTheSuccessfulOutcomesWithoutAView() {
+        // The wave-19 #808 review (Major): the rollback erased every row
+        // the passing items claim — the outcomes are rebuilt with no view
+        // and the batch's own classified refusal (the Saleor
+        // REJECT_EVERYTHING contract: no item returns a saved entity).
+        when(storeCategoryRepository.findByCode("widgets")).thenReturn(Optional.of(mock(StoreCategory.class)));
+        when(storeCategoryRepository.findByCode("missing")).thenReturn(Optional.empty());
+        when(productRepository.save(any(Product.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        try (MockedStatic<TransactionAspectSupport> transaction =
+                     org.mockito.Mockito.mockStatic(TransactionAspectSupport.class)) {
+            transaction.when(TransactionAspectSupport::currentTransactionStatus)
+                    .thenReturn(mock(TransactionStatus.class));
+
+            var outcomes = service.bulkCreateProducts(List.of(
+                    create("Bulk Widget Ok", null, "widgets", 1000L, "SAR", null),
+                    create("Bulk Missing", null, "missing", 1000L, "SAR", null)),
+                    caller, "REJECT_EVERYTHING");
+
+            assertThat(outcomes).hasSize(2);
+            assertThat(outcomes.get(0).success()).isFalse();
+            assertThat(outcomes.get(0).product()).isNull();
+            assertThat(outcomes.get(0).errors()).singleElement()
+                    .extracting(ProductMutationError::code, ProductMutationError::field)
+                    .containsExactly(ProductMutationErrorCode.INVALID, "errorPolicy");
+            assertThat(outcomes.get(1).success()).isFalse();
+            assertThat(outcomes.get(1).errors()).singleElement()
+                    .extracting(ProductMutationError::code)
+                    .isEqualTo(ProductMutationErrorCode.NOT_FOUND);
+        }
     }
 }

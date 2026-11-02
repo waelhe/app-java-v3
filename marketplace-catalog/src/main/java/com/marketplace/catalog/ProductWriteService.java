@@ -19,7 +19,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
-
 /**
  * P2 (the canonical Saleor plan §5-P2 — the Saleor
  * {@code productCreate}, {@code productUpdate}, {@code productDelete}
@@ -67,15 +66,18 @@ public class ProductWriteService implements ProductWriteSpi {
     private final ProductRepository productRepository;
     private final StoreCategoryRepository storeCategoryRepository;
     private final ProductTypeRepository productTypeRepository;
+    private final ProductVariantRepository variantRepository;
     private final CurrentUserProvider currentUserProvider;
 
     public ProductWriteService(ProductRepository productRepository,
                                StoreCategoryRepository storeCategoryRepository,
                                ProductTypeRepository productTypeRepository,
+                               ProductVariantRepository variantRepository,
                                CurrentUserProvider currentUserProvider) {
         this.productRepository = productRepository;
         this.storeCategoryRepository = storeCategoryRepository;
         this.productTypeRepository = productTypeRepository;
+        this.variantRepository = variantRepository;
         this.currentUserProvider = currentUserProvider;
     }
 
@@ -195,6 +197,12 @@ public class ProductWriteService implements ProductWriteSpi {
         Product row = addressed.get();
         ProductView lastKnown = toView(row);
         productRepository.delete(row);
+        // The wave-19 #808 review's preferred law (Major · Stability): the
+        // variants' shelf IS the product's — a deleted product's variants
+        // cascade to the same soft delete (they are unreachable otherwise:
+        // the read side answers the safe absence while the write side
+        // still owned them). Inside the same transaction, all-or-nothing.
+        deleteVariantsOf(row.getId());
         return ProductMutationResult.success(lastKnown);
     }
 
@@ -214,10 +222,23 @@ public class ProductWriteService implements ProductWriteSpi {
             Optional<Product> addressed = ownedRow(id, authentication);
             if (addressed.isPresent()) {
                 productRepository.delete(addressed.get());
+                // The single delete's cascade (the same wave-19 law).
+                deleteVariantsOf(id);
                 deleted++;
             }
         }
         return deleted;
+    }
+
+    /**
+     * The product's live variant rows — soft-deleted WITH the product
+     * (the wave-19 #808 review's cascade: a deleted product never leaves
+     * an owned orphan shelf behind).
+     */
+    private void deleteVariantsOf(UUID productId) {
+        for (ProductVariant variant : variantRepository.findByProductIdOrderBySkuAsc(productId)) {
+            variantRepository.delete(variant);
+        }
     }
 
     @Override
@@ -226,6 +247,16 @@ public class ProductWriteService implements ProductWriteSpi {
     public List<ProductBulkOutcome> bulkCreateProducts(List<ProductCreateCommand> commands,
                                                        Authentication authentication, String errorPolicy) {
         List<ProductBulkOutcome> outcomes = new ArrayList<>(commands.size());
+        // The wave-19 #808 review (Minor): an unknown policy name is the
+        // classified INVALID refusal for every item — never the silent
+        // non-atomic persistence path.
+        ProductMutationError policyError = unknownPolicyError(errorPolicy);
+        if (policyError != null) {
+            for (ProductCreateCommand command : commands) {
+                outcomes.add(new ProductBulkOutcome(null, List.of(policyError)));
+            }
+            return outcomes;
+        }
         for (ProductCreateCommand command : commands) {
             // Self-invocation joins THIS transaction (the bulk boundary
             // owns the authorization and the policy); the single-item
@@ -234,14 +265,49 @@ public class ProductWriteService implements ProductWriteSpi {
             ProductMutationResult result = createProduct(command, authentication);
             outcomes.add(new ProductBulkOutcome(result.product(), result.errors()));
         }
-        if ((errorPolicy == null || "REJECT_EVERYTHING".equals(errorPolicy))
-                && outcomes.stream().anyMatch(outcome -> !outcome.success())) {
+        if (atomic(errorPolicy) && outcomes.stream().anyMatch(outcome -> !outcome.success())) {
             // The pinned default policy: one refused item refuses the
             // whole batch — the official rollback-marking mechanism.
             org.springframework.transaction.interceptor.TransactionAspectSupport
                     .currentTransactionStatus().setRollbackOnly();
+            // The wave-19 #808 review (Major): the rollback erased every
+            // row the passing items claim — the outcomes are rebuilt with
+            // no view (the Saleor REJECT_EVERYTHING contract: no item
+            // returns a saved entity when the batch is refused).
+            outcomes = rewriteRolledBackOutcomes(outcomes);
         }
         return outcomes;
+    }
+
+    /** The pinned default policy's own verdict — REJECT_EVERYTHING unless another member is sent. */
+    private static boolean atomic(String errorPolicy) {
+        return errorPolicy == null || "REJECT_EVERYTHING".equals(errorPolicy);
+    }
+
+    /** The unknown-policy refusal — the classified INVALID entry, null for a known member. */
+    private static ProductMutationError unknownPolicyError(String errorPolicy) {
+        if (errorPolicy == null || "REJECT_EVERYTHING".equals(errorPolicy)
+                || "IGNORE_FAILED".equals(errorPolicy)
+                || "REJECT_FAILED_ROWS".equals(errorPolicy)) {
+            return null;
+        }
+        return new ProductMutationError("errorPolicy", ProductMutationErrorCode.INVALID,
+                "The error policy is REJECT_EVERYTHING, IGNORE_FAILED or REJECT_FAILED_ROWS");
+    }
+
+    /** The rollback's outcome rewrite — no phantom projection survives the batch's own refusal. */
+    private static List<ProductBulkOutcome> rewriteRolledBackOutcomes(List<ProductBulkOutcome> outcomes) {
+        List<ProductBulkOutcome> rewritten = new ArrayList<>(outcomes.size());
+        for (ProductBulkOutcome outcome : outcomes) {
+            if (outcome.success()) {
+                rewritten.add(new ProductBulkOutcome(null, List.of(
+                        new ProductMutationError("errorPolicy", ProductMutationErrorCode.INVALID,
+                                "The batch was rolled back by the REJECT_EVERYTHING policy; this item was not persisted"))));
+            } else {
+                rewritten.add(outcome);
+            }
+        }
+        return rewritten;
     }
 
     /**

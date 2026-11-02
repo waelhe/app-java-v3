@@ -110,7 +110,10 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
     // soft-delete filters explicit (native SQL gets no @SoftDelete).
     // The keyset predicate is the expanded row-value comparison over
     // the executed sort keys; :lastUpdatedAt/:lastId bind NULL on the
-    // initial page so the predicate passes every row. Each method
+    // initial page so the predicate passes every row — the IS NULL
+    // occurrences carry the explicit uuid CAST (the wave-19 #808
+    // review: the untyped null bind against the uuid column could fail
+    // the first page before the query even executes). Each method
     // fetches :fetchCount rows (the service passes pageSize+1) — a full
     // fetch is the database's own hasNext answer.
     // ------------------------------------------------------------------
@@ -167,7 +170,7 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
                             WHERE p.id = v.product_id
                               AND p.product_status = 'ACTIVE'
                               AND p.is_deleted = FALSE)
-               AND (:lastId IS NULL OR v.id > :lastId)
+               AND (CAST(:lastId AS uuid) IS NULL OR v.id > :lastId)
              ORDER BY v.id ASC
              LIMIT :fetchCount
             """, nativeQuery = true)
@@ -185,7 +188,7 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
                             WHERE p.id = v.product_id
                               AND p.product_status = 'ACTIVE'
                               AND p.is_deleted = FALSE)
-               AND (:lastId IS NULL OR v.id < :lastId)
+               AND (CAST(:lastId AS uuid) IS NULL OR v.id < :lastId)
              ORDER BY v.id DESC
              LIMIT :fetchCount
             """, nativeQuery = true)

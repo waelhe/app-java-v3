@@ -16,8 +16,11 @@ import com.marketplace.catalog.spi.TranslationAmendCommand;
 import com.marketplace.catalog.spi.TranslationWriteSpi;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
 
 import java.util.List;
 import java.util.Optional;
@@ -453,5 +456,116 @@ class TranslationWriteServiceTest {
             assertThat(outcome.name()).isEqualTo("Crimson");
             assertThat(outcome.languageCode()).isEqualTo("EN");
         });
+    }
+
+    // ------------------------------------------------------------------
+    // the wave-19 #808 review — the bulk policy's own classified laws
+    // ------------------------------------------------------------------
+
+    @Test
+    void unknownErrorPolicyRefusesEveryTranslationItemWithoutAnyWrite() {
+        // The wave-19 #808 review (Minor): a misspelt (or lower-cased)
+        // policy name is the classified INVALID refusal for every item —
+        // it never falls through to the non-atomic persistence path.
+        UUID rowId = UUID.randomUUID();
+
+        List<TranslationBulkOutcome> outcomes = service.bulkTranslateAttributes(
+                List.of(new TranslationBulkItem(rowId, new TranslationAmendCommand("Amended", "EN"))),
+                "reject_everything");
+
+        assertThat(outcomes).hasSize(1);
+        assertThat(outcomes.get(0).success()).isFalse();
+        assertThat(outcomes.get(0).name()).isNull();
+        assertThat(outcomes.get(0).errors()).singleElement()
+                .extracting(AttributeMutationError::code, AttributeMutationError::field)
+                .containsExactly(AttributeMutationErrorCode.INVALID, "errorPolicy");
+        verify(attributeDefinitionRepository, never()).save(any());
+    }
+
+    @Test
+    void bulkValueTranslationWithAnUnknownPolicyRefusesEveryItemWithoutAnyWrite() {
+        UUID rowId = UUID.randomUUID();
+
+        List<TranslationBulkOutcome> outcomes = service.bulkTranslateAttributeValues(
+                List.of(new TranslationBulkItem(rowId, new TranslationAmendCommand("Amended", "EN"))),
+                "REJECT_EVRYTHING");
+
+        assertThat(outcomes.get(0).success()).isFalse();
+        assertThat(outcomes.get(0).errors()).singleElement()
+                .extracting(AttributeMutationError::code, AttributeMutationError::field)
+                .containsExactly(AttributeMutationErrorCode.INVALID, "errorPolicy");
+        verify(attributeOptionRepository, never()).save(any());
+    }
+
+    @Test
+    void rejectEverythingRollbackRewritesTheSuccessfulNamesWithoutAPhantom() {
+        // The wave-19 #808 review (Major): the rollback erased every
+        // translation the passing items claim — no phantom amended name
+        // survives the batch's own refusal; every item answers the
+        // batch's classified INVALID entry.
+        CatalogAttributeDefinition okRow = CatalogAttributeDefinition.create(
+                "ok-attr", "Base Name", null, CatalogAttributeType.TEXT, null);
+        CatalogAttributeDefinition missingRow = CatalogAttributeDefinition.create(
+                "ghost-attr", "Ghost", null, CatalogAttributeType.TEXT, null);
+        when(attributeDefinitionRepository.findById(okRow.getId())).thenReturn(Optional.of(okRow));
+        when(attributeDefinitionRepository.save(any(CatalogAttributeDefinition.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        try (MockedStatic<TransactionAspectSupport> transaction =
+                     org.mockito.Mockito.mockStatic(TransactionAspectSupport.class)) {
+            transaction.when(TransactionAspectSupport::currentTransactionStatus)
+                    .thenReturn(mock(TransactionStatus.class));
+
+            List<TranslationBulkOutcome> outcomes = service.bulkTranslateAttributes(
+                    List.of(new TranslationBulkItem(okRow.getId(), new TranslationAmendCommand("Amended", "EN")),
+                            new TranslationBulkItem(missingRow.getId(), new TranslationAmendCommand("Amended", "EN"))),
+                    "REJECT_EVERYTHING");
+
+            assertThat(outcomes).hasSize(2);
+            assertThat(outcomes.get(0).success()).isFalse();
+            assertThat(outcomes.get(0).name()).isNull();
+            assertThat(outcomes.get(0).errors()).singleElement()
+                    .extracting(AttributeMutationError::code, AttributeMutationError::field)
+                    .containsExactly(AttributeMutationErrorCode.INVALID, "errorPolicy");
+            assertThat(outcomes.get(1).success()).isFalse();
+            assertThat(outcomes.get(1).errors()).singleElement()
+                    .extracting(AttributeMutationError::code)
+                    .isEqualTo(AttributeMutationErrorCode.NOT_FOUND);
+        }
+    }
+
+    @Test
+    void rejectEverythingRollbackRewritesTheValueOutcomesToo() {
+        CatalogAttributeDefinition parent = CatalogAttributeDefinition.create(
+                "parent-attr", "Parent", null, CatalogAttributeType.CHOICE, null);
+        CatalogAttributeOption okRow = CatalogAttributeOption.create(
+                parent.getId(), "ok-opt", "Option", null, 1);
+        UUID missingId = UUID.randomUUID();
+        when(attributeOptionRepository.findById(okRow.getId())).thenReturn(Optional.of(okRow));
+        when(attributeOptionRepository.save(any(CatalogAttributeOption.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(attributeDefinitionRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+
+        try (MockedStatic<TransactionAspectSupport> transaction =
+                     org.mockito.Mockito.mockStatic(TransactionAspectSupport.class)) {
+            transaction.when(TransactionAspectSupport::currentTransactionStatus)
+                    .thenReturn(mock(TransactionStatus.class));
+
+            List<TranslationBulkOutcome> outcomes = service.bulkTranslateAttributeValues(
+                    List.of(new TranslationBulkItem(okRow.getId(), new TranslationAmendCommand("Amended", "EN")),
+                            new TranslationBulkItem(missingId, new TranslationAmendCommand("Amended", "EN"))),
+                    "REJECT_EVERYTHING");
+
+            assertThat(outcomes).hasSize(2);
+            assertThat(outcomes.get(0).success()).isFalse();
+            assertThat(outcomes.get(0).name()).isNull();
+            assertThat(outcomes.get(0).errors()).singleElement()
+                    .extracting(AttributeMutationError::code, AttributeMutationError::field)
+                    .containsExactly(AttributeMutationErrorCode.INVALID, "errorPolicy");
+            assertThat(outcomes.get(1).success()).isFalse();
+            assertThat(outcomes.get(1).errors()).singleElement()
+                    .extracting(AttributeMutationError::code)
+                    .isEqualTo(AttributeMutationErrorCode.NOT_FOUND);
+        }
     }
 }

@@ -68,6 +68,13 @@ public interface ProductRepository extends JpaRepository<Product, UUID>, JpaSpec
     long countByStatus(StoreProductStatus status);
 
     /**
+     * The goods-schema's live-product probe — the product-type delete
+     * gate's own read (the wave-19 #808 review: a schema with products
+     * answers the classified INVALID, never an orphaning delete).
+     */
+    boolean existsByProductTypeId(UUID productTypeId);
+
+    /**
      * Reserves {@code qty} units of an ACTIVE product whose free stock
      * covers it — the placement's write.
      *

@@ -192,6 +192,17 @@ public class TranslationWriteService implements TranslationWriteSpi {
     public List<TranslationBulkOutcome> bulkTranslateAttributes(List<TranslationBulkItem> items,
                                                                 String errorPolicy) {
         List<TranslationBulkOutcome> outcomes = new ArrayList<>(items.size());
+        // The wave-19 #808 review (Minor): an unknown policy name is the
+        // classified INVALID refusal for every item — never the silent
+        // non-atomic persistence path.
+        AttributeMutationError policyError = unknownPolicyError(errorPolicy);
+        if (policyError != null) {
+            for (TranslationBulkItem item : items) {
+                outcomes.add(new TranslationBulkOutcome(item.rowId(), item.command().languageCode(),
+                        null, List.of(policyError)));
+            }
+            return outcomes;
+        }
         for (TranslationBulkItem item : items) {
             // Self-invocation joins THIS transaction (the bulk boundary
             // owns the authorization and the policy); the single-item
@@ -208,6 +219,10 @@ public class TranslationWriteService implements TranslationWriteSpi {
             // whole batch — the official rollback-marking mechanism.
             org.springframework.transaction.interceptor.TransactionAspectSupport
                     .currentTransactionStatus().setRollbackOnly();
+            // The wave-19 #808 review (Major): the rollback erased every
+            // translation the passing items claim — no phantom name
+            // survives the batch's own refusal.
+            outcomes = rewriteRolledBackOutcomes(outcomes);
         }
         return outcomes;
     }
@@ -218,6 +233,14 @@ public class TranslationWriteService implements TranslationWriteSpi {
     public List<TranslationBulkOutcome> bulkTranslateAttributeValues(List<TranslationBulkItem> items,
                                                                      String errorPolicy) {
         List<TranslationBulkOutcome> outcomes = new ArrayList<>(items.size());
+        AttributeMutationError policyError = unknownPolicyError(errorPolicy);
+        if (policyError != null) {
+            for (TranslationBulkItem item : items) {
+                outcomes.add(new TranslationBulkOutcome(item.rowId(), item.command().languageCode(),
+                        null, List.of(policyError)));
+            }
+            return outcomes;
+        }
         for (TranslationBulkItem item : items) {
             AttributeValueMutationResult result = translateAttributeValue(item.rowId(), item.command());
             String name = result.value() == null ? null
@@ -229,6 +252,7 @@ public class TranslationWriteService implements TranslationWriteSpi {
         if (atomic(errorPolicy) && outcomes.stream().anyMatch(outcome -> !outcome.success())) {
             org.springframework.transaction.interceptor.TransactionAspectSupport
                     .currentTransactionStatus().setRollbackOnly();
+            outcomes = rewriteRolledBackOutcomes(outcomes);
         }
         return outcomes;
     }
@@ -236,6 +260,33 @@ public class TranslationWriteService implements TranslationWriteSpi {
     /** The pinned default policy's own verdict — REJECT_EVERYTHING unless another member is sent. */
     private static boolean atomic(String errorPolicy) {
         return errorPolicy == null || "REJECT_EVERYTHING".equals(errorPolicy);
+    }
+
+    /** The unknown-policy refusal — the classified INVALID entry, null for a known member. */
+    private static AttributeMutationError unknownPolicyError(String errorPolicy) {
+        if (errorPolicy == null || "REJECT_EVERYTHING".equals(errorPolicy)
+                || "IGNORE_FAILED".equals(errorPolicy)
+                || "REJECT_FAILED_ROWS".equals(errorPolicy)) {
+            return null;
+        }
+        return new AttributeMutationError("errorPolicy", AttributeMutationErrorCode.INVALID,
+                "The error policy is REJECT_EVERYTHING, IGNORE_FAILED or REJECT_FAILED_ROWS");
+    }
+
+    /** The rollback's outcome rewrite — no phantom translation name survives the batch's refusal. */
+    private static List<TranslationBulkOutcome> rewriteRolledBackOutcomes(
+            List<TranslationBulkOutcome> outcomes) {
+        List<TranslationBulkOutcome> rewritten = new ArrayList<>(outcomes.size());
+        for (TranslationBulkOutcome outcome : outcomes) {
+            if (outcome.success()) {
+                rewritten.add(new TranslationBulkOutcome(outcome.rowId(), outcome.languageCode(), null,
+                        List.of(new AttributeMutationError("errorPolicy", AttributeMutationErrorCode.INVALID,
+                                "The batch was rolled back by the REJECT_EVERYTHING policy; this item was not persisted"))));
+            } else {
+                rewritten.add(outcome);
+            }
+        }
+        return rewritten;
     }
 
     /** The per-item outcome — the amended name in the addressed dimension, or the item's errors. */

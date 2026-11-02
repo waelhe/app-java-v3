@@ -171,6 +171,57 @@ class ProductTypeAttributeWriteServiceTest {
     }
 
     @Test
+    void aDuplicateAttributeWithinOneRequestAnswersTheAlreadyExistsDomainError() {
+        // The wave-19 #808 review (Major): the existsBy probe reads the
+        // DATABASE only — it cannot see the rows this request has already
+        // staged. The in-memory pending ledger refuses the second staging
+        // of the same attribute (the unique index would otherwise answer
+        // with an unclassified constraint throw).
+        CatalogAttributeDefinition attribute = definition("attr", CatalogAttributeType.TEXT);
+        when(attributeDefinitionRepository.findById(attribute.getId())).thenReturn(Optional.of(attribute));
+        when(assignmentRepository.existsByProductTypeIdAndAttributeDefinitionId(type.getId(), attribute.getId()))
+                .thenReturn(false);
+
+        ProductTypeMutationResult result = service.assignAttributes(type.getId(), List.of(
+                new ProductTypeAttributeAssignOperation(attribute.getId(), "PRODUCT", null),
+                new ProductTypeAttributeAssignOperation(attribute.getId(), "PRODUCT", null)));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductTypeMutationError::code, ProductTypeMutationError::field)
+                .containsExactly(ProductTypeMutationErrorCode.ALREADY_EXISTS, "id");
+        verify(assignmentRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void twoAssignmentsInTheSameScopeWithinOneRequestRideRunningPositions() {
+        // The wave-19 #808 review (Major): the append position is derived
+        // per (product type, scope) bucket — two operations staged in the
+        // same request read the same database max, so the in-memory
+        // running position gives them max+1 and max+2 (the unique index
+        // would otherwise refuse the saveAll with a constraint throw).
+        CatalogAttributeDefinition first = definition("first-attr", CatalogAttributeType.TEXT);
+        CatalogAttributeDefinition second = definition("second-attr", CatalogAttributeType.TEXT);
+        when(attributeDefinitionRepository.findById(first.getId())).thenReturn(Optional.of(first));
+        when(attributeDefinitionRepository.findById(second.getId())).thenReturn(Optional.of(second));
+        when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
+                .thenReturn(List.of());
+        when(assignmentRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ProductTypeMutationResult result = service.assignAttributes(type.getId(), List.of(
+                new ProductTypeAttributeAssignOperation(first.getId(), "PRODUCT", null),
+                new ProductTypeAttributeAssignOperation(second.getId(), "PRODUCT", null)));
+
+        assertThat(result.success()).isTrue();
+        verify(assignmentRepository).saveAll(argThat((List<ProductTypeAttributeAssignment> saved) ->
+                saved.size() == 2
+                        && saved.get(0).getAttributeDefinitionId().equals(first.getId())
+                        && saved.get(0).getPosition() == 1
+                        && saved.get(1).getAttributeDefinitionId().equals(second.getId())
+                        && saved.get(1).getPosition() == 2));
+    }
+
+    @Test
     void theHappyAssignDerivesTheScopeAndTheAppendPosition() {
         CatalogAttributeDefinition text = definition("text-attr", CatalogAttributeType.TEXT);
         CatalogAttributeDefinition choice = definition("choice-attr", CatalogAttributeType.CHOICE);
@@ -251,6 +302,35 @@ class ProductTypeAttributeWriteServiceTest {
         verify(assignmentRepository).saveAll(argThat((List<ProductTypeAttributeAssignment> saved) ->
                 saved.get(0).getScope() == ProductTypeAttributeScope.VARIANT_SELECTION
                         && saved.get(0).isRequired()));
+    }
+
+    @Test
+    void theScopeMoveRepositionsInsideTheTargetScopeBeforeTheWrite() {
+        // The wave-19 #808 review (Major): the moved row's position is
+        // derived from the TARGET scope (its own max+1) — the old VARIANT
+        // position would collide with the target scope's own position-1
+        // row and the unique index would refuse the UPDATE with an
+        // unclassified constraint throw.
+        CatalogAttributeDefinition choice = definition("choice-attr", CatalogAttributeType.CHOICE);
+        ProductTypeAttributeAssignment moved = assigned(choice, ProductTypeAttributeScope.VARIANT, 1);
+        ProductTypeAttributeAssignment targetHolder = assigned(
+                definition("other-choice", CatalogAttributeType.CHOICE),
+                ProductTypeAttributeScope.VARIANT_SELECTION, 1);
+        when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
+                .thenReturn(List.of(moved, targetHolder));
+        when(attributeDefinitionRepository.findById(choice.getId())).thenReturn(Optional.of(choice));
+        when(attributeOptionRepository.countByAttributeDefinitionId(choice.getId())).thenReturn(2L);
+        when(assignmentRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ProductTypeMutationResult result = service.updateAssignments(type.getId(),
+                List.of(new ProductTypeAttributeAssignmentUpdateOperation(choice.getId(), true)));
+
+        assertThat(result.success()).isTrue();
+        verify(assignmentRepository).saveAll(argThat((List<ProductTypeAttributeAssignment> saved) ->
+                saved.size() == 1
+                        && saved.get(0).getId().equals(moved.getId())
+                        && saved.get(0).getScope() == ProductTypeAttributeScope.VARIANT_SELECTION
+                        && saved.get(0).getPosition() == 2));
     }
 
     @Test

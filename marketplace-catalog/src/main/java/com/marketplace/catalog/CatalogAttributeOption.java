@@ -55,8 +55,11 @@ public class CatalogAttributeOption extends BaseEntity {
      * registry's bilingual columns; the {@code Category.revise}
      * precedent). Each argument is the ALREADY-VALIDATED replacement
      * value (the use case owns validation and the immutable-code
-     * contract); {@code null} preserves the column (partial update, the
-     * Saleor input's omit-to-preserve semantics). The code, the owning
+     * contract). The wave-19 #808 review corrected this contract's
+     * documentation: a {@code null} (or blank) argument CLEARS the
+     * column ({@code blankToNull} applies directly — there is no
+     * preserve-on-null here); the callers pre-merge the standing values
+     * and pass the full replacement pair. The code, the owning
      * attribute reference and the position are stable identity — never
      * amended here (position moves only through the reorder root's own
      * seam).

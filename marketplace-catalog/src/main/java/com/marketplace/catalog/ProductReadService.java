@@ -87,6 +87,15 @@ public class ProductReadService implements ProductReadSpi {
         if (sort == null || sort.field() == null) {
             throw new IllegalArgumentException("A product sort is required");
         }
+        if (limit == null || !limit.isLimited() || limit.max() <= 0) {
+            // The installed Spring Data 4.1.1 Limit contract: max() is only
+            // readable on a limited instance (Unlimited.max() throws) — and
+            // the keyset scroll REQUIRES a bounded page (an unlimited fetch
+            // would replace the SQL keyset with an unbounded load). The
+            // wave-19 #808 review: the same guard the variant scroll owns,
+            // so both read surfaces answer one contract.
+            throw new IllegalArgumentException("A positive page size is required");
+        }
         Window<Product> window;
         long total;
         if (isAdmin(authentication)) {

@@ -81,13 +81,20 @@ public class AttributeWriteService implements AttributeWriteSpi {
     private static final int CODE_MAX_LENGTH = 50;
     private static final int NAME_MAX_LENGTH = 100;
 
+    static final String POLICY_REJECT_EVERYTHING = "REJECT_EVERYTHING";
+    static final String POLICY_IGNORE_FAILED = "IGNORE_FAILED";
+    static final String POLICY_REJECT_FAILED_ROWS = "REJECT_FAILED_ROWS";
+
     private final CatalogAttributeDefinitionRepository attributeDefinitionRepository;
     private final CatalogAttributeOptionRepository attributeOptionRepository;
+    private final ProductTypeAttributeAssignmentRepository assignmentRepository;
 
     public AttributeWriteService(CatalogAttributeDefinitionRepository attributeDefinitionRepository,
-                                 CatalogAttributeOptionRepository attributeOptionRepository) {
+                                 CatalogAttributeOptionRepository attributeOptionRepository,
+                                 ProductTypeAttributeAssignmentRepository assignmentRepository) {
         this.attributeDefinitionRepository = attributeDefinitionRepository;
         this.attributeOptionRepository = attributeOptionRepository;
+        this.assignmentRepository = assignmentRepository;
     }
 
     @Override
@@ -201,6 +208,15 @@ public class AttributeWriteService implements AttributeWriteSpi {
         }
         CatalogAttributeDefinition row = addressed.get();
         AttributeView lastKnown = toView(row);
+        // The wave-19 #808 review (Major · Data Integrity): the soft delete
+        // updates only the definition's own is_deleted flag — the live
+        // option and assignment rows would keep referencing a deleted
+        // attribute (the FK never fires on a soft delete), and a later
+        // option translation would hit the parent-absent throw. The delete
+        // cascades to the attribute's own children (the Saleor
+        // attributeDelete semantics — values and type assignments go with
+        // the attribute), inside the same transaction.
+        deleteAttributeChildren(row.getId());
         attributeDefinitionRepository.delete(row);
         return AttributeMutationResult.success(lastKnown);
     }
@@ -221,6 +237,9 @@ public class AttributeWriteService implements AttributeWriteSpi {
                     ? Optional.empty()
                     : attributeDefinitionRepository.findById(id);
             if (addressed.isPresent()) {
+                // The single delete's cascade (the same wave-19 law): the
+                // children go with every deleted attribute row.
+                deleteAttributeChildren(id);
                 attributeDefinitionRepository.delete(addressed.get());
                 deleted++;
             }
@@ -317,6 +336,16 @@ public class AttributeWriteService implements AttributeWriteSpi {
     public List<AttributeBulkOutcome> bulkCreateAttributes(List<AttributeCreateCommand> commands,
                                                            String errorPolicy) {
         List<AttributeBulkOutcome> outcomes = new ArrayList<>(commands.size());
+        // The wave-19 #808 review (Minor): an unknown policy name is the
+        // classified INVALID refusal for every item — never the silent
+        // non-atomic persistence path the old atomic() predicate implied.
+        AttributeMutationError policyError = unknownPolicyError(errorPolicy);
+        if (policyError != null) {
+            for (AttributeCreateCommand command : commands) {
+                outcomes.add(new AttributeBulkOutcome(null, List.of(policyError)));
+            }
+            return outcomes;
+        }
         for (AttributeCreateCommand command : commands) {
             // Self-invocation joins THIS transaction (the bulk boundary
             // owns the authorization and the policy); the single-item
@@ -329,6 +358,12 @@ public class AttributeWriteService implements AttributeWriteSpi {
             // whole batch — the official rollback-marking mechanism.
             org.springframework.transaction.interceptor.TransactionAspectSupport
                     .currentTransactionStatus().setRollbackOnly();
+            // The wave-19 #808 review (Major): the rollback erased every
+            // row the passing items claim — a success outcome would hand
+            // the client ids that do not exist (the Saleor REJECT_EVERYTHING
+            // contract returns no saved entity for any item). The successful
+            // outcomes are rewritten to the batch's own classified refusal.
+            outcomes = rewriteRolledBackOutcomes(outcomes);
         }
         return outcomes;
     }
@@ -339,6 +374,13 @@ public class AttributeWriteService implements AttributeWriteSpi {
     public List<AttributeBulkOutcome> bulkUpdateAttributes(List<AttributeBulkUpdateItem> items,
                                                             String errorPolicy) {
         List<AttributeBulkOutcome> outcomes = new ArrayList<>(items.size());
+        AttributeMutationError policyError = unknownPolicyError(errorPolicy);
+        if (policyError != null) {
+            for (AttributeBulkUpdateItem item : items) {
+                outcomes.add(new AttributeBulkOutcome(null, List.of(policyError)));
+            }
+            return outcomes;
+        }
         for (AttributeBulkUpdateItem item : items) {
             AttributeMutationResult result = updateAttribute(item.id(), item.fields());
             outcomes.add(new AttributeBulkOutcome(result.attribute(), result.errors()));
@@ -346,13 +388,65 @@ public class AttributeWriteService implements AttributeWriteSpi {
         if (atomic(errorPolicy) && outcomes.stream().anyMatch(outcome -> !outcome.success())) {
             org.springframework.transaction.interceptor.TransactionAspectSupport
                     .currentTransactionStatus().setRollbackOnly();
+            outcomes = rewriteRolledBackOutcomes(outcomes);
         }
         return outcomes;
     }
 
     /** The pinned default policy's own verdict — REJECT_EVERYTHING unless another member is sent. */
     private static boolean atomic(String errorPolicy) {
-        return errorPolicy == null || "REJECT_EVERYTHING".equals(errorPolicy);
+        return errorPolicy == null || POLICY_REJECT_EVERYTHING.equals(errorPolicy);
+    }
+
+    /**
+     * The unknown-policy refusal — null when the policy is a known member
+     * (or the default), the classified INVALID entry otherwise (the
+     * wave-19 #808 review: an unknown policy name never falls through to
+     * the non-atomic path).
+     */
+    private static AttributeMutationError unknownPolicyError(String errorPolicy) {
+        if (errorPolicy == null || POLICY_REJECT_EVERYTHING.equals(errorPolicy)
+                || POLICY_IGNORE_FAILED.equals(errorPolicy)
+                || POLICY_REJECT_FAILED_ROWS.equals(errorPolicy)) {
+            return null;
+        }
+        return new AttributeMutationError("errorPolicy", AttributeMutationErrorCode.INVALID,
+                "The error policy is REJECT_EVERYTHING, IGNORE_FAILED or REJECT_FAILED_ROWS");
+    }
+
+    /**
+     * The rollback's outcome rewrite — every success outcome loses its
+     * phantom projection (the row it names was never persisted) and
+     * carries the batch's own classified refusal instead; the already-
+     * failed outcomes stay exactly as the per-item ladder answered them.
+     */
+    private static List<AttributeBulkOutcome> rewriteRolledBackOutcomes(List<AttributeBulkOutcome> outcomes) {
+        List<AttributeBulkOutcome> rewritten = new ArrayList<>(outcomes.size());
+        for (AttributeBulkOutcome outcome : outcomes) {
+            if (outcome.success()) {
+                rewritten.add(new AttributeBulkOutcome(null, List.of(
+                        new AttributeMutationError("errorPolicy", AttributeMutationErrorCode.INVALID,
+                                "The batch was rolled back by the REJECT_EVERYTHING policy; this item was not persisted"))));
+            } else {
+                rewritten.add(outcome);
+            }
+        }
+        return rewritten;
+    }
+
+    /**
+     * The attribute's own child rows — the live options and the live
+     * product-type assignments. Soft-deleted WITH the attribute (the
+     * wave-19 #808 review's cascade; never left referencing a deleted
+     * parent).
+     */
+    private void deleteAttributeChildren(UUID attributeId) {
+        List<CatalogAttributeOption> options = attributeOptionRepository
+                .findAllByAttributeDefinitionIdOrderByPositionAsc(attributeId);
+        attributeOptionRepository.deleteAll(options);
+        List<ProductTypeAttributeAssignment> assignments = assignmentRepository
+                .findAllByAttributeDefinitionId(attributeId);
+        assignmentRepository.deleteAll(assignments);
     }
 
     /** The bounded projection — the read service's own rendering rule. */

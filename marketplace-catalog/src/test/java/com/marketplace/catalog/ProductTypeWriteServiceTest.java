@@ -45,12 +45,16 @@ import static org.mockito.Mockito.when;
 class ProductTypeWriteServiceTest {
 
     private ProductTypeRepository repository;
+    private ProductRepository productRepository;
+    private ProductTypeAttributeAssignmentRepository assignmentRepository;
     private ProductTypeWriteSpi service;
 
     @BeforeEach
     void setUp() {
         repository = mock(ProductTypeRepository.class);
-        service = new ProductTypeWriteService(repository);
+        productRepository = mock(ProductRepository.class);
+        assignmentRepository = mock(ProductTypeAttributeAssignmentRepository.class);
+        service = new ProductTypeWriteService(repository, productRepository, assignmentRepository);
     }
 
     private static ProductType row(String code, String nameEn) {
@@ -302,6 +306,42 @@ class ProductTypeWriteServiceTest {
     }
 
     @Test
+    void deleteOfAReferencedTypeAnswersTheInvalidDomainError() {
+        // The wave-19 #808 review (Minor · Data Integrity): a product type
+        // with a live product (or assignment) reference answers the
+        // classified INVALID refusal — the soft delete would leave the
+        // publish path reading a schema the admin surface no longer
+        // shows. No cascade: the references own their own lifecycle.
+        ProductType existing = row("used-type", "Used");
+        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(productRepository.existsByProductTypeId(existing.getId())).thenReturn(true);
+
+        ProductTypeMutationResult result = service.deleteProductType(existing.getId());
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductTypeMutationError::code, ProductTypeMutationError::field)
+                .containsExactly(ProductTypeMutationErrorCode.INVALID, "id");
+        verify(repository, never()).delete(any(ProductType.class));
+    }
+
+    @Test
+    void deleteOfAnAssignmentReferencedTypeAnswersTheInvalidDomainError() {
+        ProductType existing = row("assigned-type", "Assigned");
+        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(productRepository.existsByProductTypeId(existing.getId())).thenReturn(false);
+        when(assignmentRepository.existsByProductTypeId(existing.getId())).thenReturn(true);
+
+        ProductTypeMutationResult result = service.deleteProductType(existing.getId());
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductTypeMutationError::code)
+                .isEqualTo(ProductTypeMutationErrorCode.INVALID);
+        verify(repository, never()).delete(any(ProductType.class));
+    }
+
+    @Test
     void bulkDeleteAnswersTheHonestCount() {
         ProductType first = row("first-type", "First");
         ProductType second = row("second-type", "Second");
@@ -316,6 +356,25 @@ class ProductTypeWriteServiceTest {
         assertThat(count).isEqualTo(2);
         verify(repository).delete(first);
         verify(repository).delete(second);
+    }
+
+    @Test
+    void bulkDeleteSkipsTheReferencedTypesInTheHonestCount() {
+        // The wave-19 #808 review: a referenced product type is NOT
+        // deleted and NOT counted — the honest count answers only what
+        // the registry itself deleted.
+        ProductType free = row("free-type", "Free");
+        ProductType referenced = row("referenced-type", "Referenced");
+        when(repository.findById(free.getId())).thenReturn(Optional.of(free));
+        when(repository.findById(referenced.getId())).thenReturn(Optional.of(referenced));
+        when(productRepository.existsByProductTypeId(referenced.getId())).thenReturn(true);
+
+        int count = service.deleteProductTypes(java.util.Arrays.asList(
+                free.getId(), referenced.getId()));
+
+        assertThat(count).isEqualTo(1);
+        verify(repository).delete(free);
+        verify(repository, never()).delete(referenced);
     }
 
     @Test

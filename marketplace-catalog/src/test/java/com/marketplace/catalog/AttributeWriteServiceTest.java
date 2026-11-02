@@ -11,6 +11,9 @@ import com.marketplace.catalog.spi.AttributeWriteSpi;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
+import org.mockito.MockedStatic;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
+import org.springframework.transaction.TransactionStatus;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -54,13 +57,15 @@ class AttributeWriteServiceTest {
 
     private CatalogAttributeDefinitionRepository repository;
     private CatalogAttributeOptionRepository optionRepository;
+    private ProductTypeAttributeAssignmentRepository assignmentRepository;
     private AttributeWriteSpi service;
 
     @BeforeEach
     void setUp() {
         repository = mock(CatalogAttributeDefinitionRepository.class);
         optionRepository = mock(CatalogAttributeOptionRepository.class);
-        service = new AttributeWriteService(repository, optionRepository);
+        assignmentRepository = mock(ProductTypeAttributeAssignmentRepository.class);
+        service = new AttributeWriteService(repository, optionRepository, assignmentRepository);
     }
 
     private static CatalogAttributeDefinition row(String code, String nameEn) {
@@ -327,6 +332,50 @@ class AttributeWriteServiceTest {
     }
 
     @Test
+    void deleteCascadesTheLiveOptionsAndAssignmentsWithTheAttribute() {
+        // The wave-19 #808 review (Major · Data Integrity): the soft
+        // delete's children go WITH the attribute — a live option or
+        // assignment row left behind keeps referencing a deleted parent
+        // (the FK never fires on a soft delete) and a later option
+        // translation hits the parent-absent throw.
+        CatalogAttributeDefinition existing = row("gone-attr", "Gone");
+        CatalogAttributeOption option = CatalogAttributeOption.create(
+                existing.getId(), "gone-opt", "Gone Opt", null, 1);
+        ProductTypeAttributeAssignment assignment = ProductTypeAttributeAssignment.create(
+                UUID.randomUUID(), existing.getId(), ProductTypeAttributeScope.PRODUCT, false, 1);
+        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(optionRepository.findAllByAttributeDefinitionIdOrderByPositionAsc(existing.getId()))
+                .thenReturn(List.of(option));
+        when(assignmentRepository.findAllByAttributeDefinitionId(existing.getId()))
+                .thenReturn(List.of(assignment));
+
+        AttributeMutationResult result = service.deleteAttribute(existing.getId());
+
+        assertThat(result.success()).isTrue();
+        verify(optionRepository).deleteAll(List.of(option));
+        verify(assignmentRepository).deleteAll(List.of(assignment));
+        verify(repository).delete(existing);
+    }
+
+    @Test
+    void bulkDeleteCascadesTheChildrenPerDeletedRow() {
+        CatalogAttributeDefinition first = row("first-attr", "First");
+        CatalogAttributeOption firstOption = CatalogAttributeOption.create(
+                first.getId(), "first-opt", "First Opt", null, 1);
+        when(repository.findById(first.getId())).thenReturn(Optional.of(first));
+        when(optionRepository.findAllByAttributeDefinitionIdOrderByPositionAsc(first.getId()))
+                .thenReturn(List.of(firstOption));
+        when(assignmentRepository.findAllByAttributeDefinitionId(first.getId()))
+                .thenReturn(List.of());
+
+        int count = service.deleteAttributes(java.util.Arrays.asList(first.getId(), UUID.randomUUID()));
+
+        assertThat(count).isEqualTo(1);
+        verify(optionRepository).deleteAll(List.of(firstOption));
+        verify(repository).delete(first);
+    }
+
+    @Test
     void bulkDeleteAnswersTheHonestCount() {
         CatalogAttributeDefinition first = row("first-attr", "First");
         CatalogAttributeDefinition second = row("second-attr", "Second");
@@ -524,5 +573,74 @@ class AttributeWriteServiceTest {
         assertThat(outcomes.get(1).errors()).singleElement()
                 .extracting(AttributeMutationError::code)
                 .isEqualTo(AttributeMutationErrorCode.NOT_FOUND);
+    }
+
+    @Test
+    void unknownErrorPolicyRefusesEveryItemWithoutAnyWrite() {
+        // The wave-19 #808 review (Minor): an unknown (misspelt or
+        // lower-cased) policy name is the classified INVALID refusal for
+        // every item — it never falls through to the non-atomic
+        // persistence path the old atomic() predicate implied.
+        var outcomes = service.bulkCreateAttributes(List.of(
+                new AttributeCreateCommand("Bulk One", "bulk-one", CatalogAttributeType.TEXT)),
+                "reject_everything");
+
+        assertThat(outcomes).hasSize(1);
+        assertThat(outcomes.get(0).success()).isFalse();
+        assertThat(outcomes.get(0).attribute()).isNull();
+        assertThat(outcomes.get(0).errors()).singleElement()
+                .extracting(AttributeMutationError::code, AttributeMutationError::field)
+                .containsExactly(AttributeMutationErrorCode.INVALID, "errorPolicy");
+        verify(repository, never()).save(any(CatalogAttributeDefinition.class));
+    }
+
+    @Test
+    void bulkUpdateWithAnUnknownPolicyRefusesEveryItemWithoutAnyWrite() {
+        var outcomes = service.bulkUpdateAttributes(List.of(
+                new AttributeBulkUpdateItem(UUID.randomUUID(), new AttributeUpdateCommand("Ghost", null))),
+                "REJECT_EVRYTHING");
+
+        assertThat(outcomes.get(0).success()).isFalse();
+        assertThat(outcomes.get(0).errors()).singleElement()
+                .extracting(AttributeMutationError::code, AttributeMutationError::field)
+                .containsExactly(AttributeMutationErrorCode.INVALID, "errorPolicy");
+        verify(repository, never()).save(any(CatalogAttributeDefinition.class));
+    }
+
+    @Test
+    void rejectEverythingRollbackRewritesTheSuccessfulOutcomesWithoutAProjection() {
+        // The wave-19 #808 review (Major): when the REJECT_EVERYTHING
+        // policy rolls the batch back, the passing items' outcomes lose
+        // their phantom projections — a success outcome would hand the
+        // client ids that were never persisted.
+        when(repository.findByCode("bulk-ok")).thenReturn(Optional.empty());
+        when(repository.findByCode("bulk-bad")).thenReturn(Optional.of(row("bulk-bad", "Bad")));
+        when(repository.save(any(CatalogAttributeDefinition.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        try (MockedStatic<TransactionAspectSupport> transaction =
+                     org.mockito.Mockito.mockStatic(TransactionAspectSupport.class)) {
+            transaction.when(TransactionAspectSupport::currentTransactionStatus)
+                    .thenReturn(mock(TransactionStatus.class));
+
+            var outcomes = service.bulkCreateAttributes(List.of(
+                    new AttributeCreateCommand("Bulk Ok", "bulk-ok", CatalogAttributeType.TEXT),
+                    new AttributeCreateCommand("Taken", "bulk-bad", CatalogAttributeType.TEXT)),
+                    "REJECT_EVERYTHING");
+
+            assertThat(outcomes).hasSize(2);
+            // NO item carries a success outcome: the rollback erased the
+            // saved row, so the passing item answers the batch's own
+            // classified refusal with no projection at all.
+            assertThat(outcomes.get(0).success()).isFalse();
+            assertThat(outcomes.get(0).attribute()).isNull();
+            assertThat(outcomes.get(0).errors()).singleElement()
+                    .extracting(AttributeMutationError::code, AttributeMutationError::field)
+                    .containsExactly(AttributeMutationErrorCode.INVALID, "errorPolicy");
+            assertThat(outcomes.get(1).success()).isFalse();
+            assertThat(outcomes.get(1).errors()).singleElement()
+                    .extracting(AttributeMutationError::code)
+                    .isEqualTo(AttributeMutationErrorCode.ALREADY_EXISTS);
+        }
     }
 }

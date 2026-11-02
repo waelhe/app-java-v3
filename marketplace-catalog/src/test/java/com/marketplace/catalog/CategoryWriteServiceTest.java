@@ -133,6 +133,25 @@ class CategoryWriteServiceTest {
     }
 
     @Test
+    void theNextPositionRidesTheHighestLivePositionAfterAMidRegistryDelete() {
+        // The wave-19 #808 review (Minor): after a mid-registry delete
+        // the live positions carry a GAP — the tail is the HIGHEST
+        // position plus one, never size+1 (which would collide with the
+        // last row's own position and make the position order non-
+        // deterministic between them).
+        when(repository.findByCode("fresh-code")).thenReturn(Optional.empty());
+        when(repository.findAllByOrderByPositionAsc())
+                .thenReturn(List.of(row("a", "A", 1), row("b", "B", 5)));
+        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CategoryMutationResult result = service.createCategory(
+                new CategoryCreateCommand("Fresh Code", "fresh-code"));
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.category().position()).isEqualTo(6);
+    }
+
+    @Test
     void createNormalizesTheSlugToTheRegistrysOwnLowercaseContract() {
         when(repository.findByCode("mixed-case")).thenReturn(Optional.empty());
         when(repository.findAllByOrderByPositionAsc()).thenReturn(List.of());
@@ -182,15 +201,33 @@ class CategoryWriteServiceTest {
     void providedFieldsReplaceTheColumns() {
         Category existing = row("old-code", "Old", 4);
         when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
-        when(repository.findByCode("new-code")).thenReturn(Optional.empty());
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CategoryMutationResult result = service.updateCategory(existing.getId(),
+                new CategoryUpdateCommand("New", null));
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.category().slug()).isEqualTo("old-code");
+        assertThat(result.category().name()).isEqualTo("New");
+    }
+
+    @Test
+    void aDifferentSlugAnswersTheImmutableDomainError() {
+        // The wave-19 #808 review (Major · Functional Correctness): the
+        // code is the category's stable reference identity — a different
+        // slug command answers the classified INVALID domain error, never
+        // a silent code move that strands the standing references.
+        Category existing = row("old-code", "Old", 4);
+        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
 
         CategoryMutationResult result = service.updateCategory(existing.getId(),
                 new CategoryUpdateCommand("New", "NEW-CODE"));
 
-        assertThat(result.success()).isTrue();
-        assertThat(result.category().slug()).isEqualTo("new-code");
-        assertThat(result.category().name()).isEqualTo("New");
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(CategoryMutationError::code, CategoryMutationError::field)
+                .containsExactly(CategoryMutationErrorCode.INVALID, "slug");
+        verify(repository, never()).save(any());
     }
 
     @Test
@@ -209,7 +246,10 @@ class CategoryWriteServiceTest {
     }
 
     @Test
-    void duplicateSlugExcludingTheRowsOwnIdAnswersAlreadyExists() {
+    void aDifferentSlugNeverAnswersTheAlreadyExistsVocabulary() {
+        // The wave-19 #808 review: the immutable-code law answers BEFORE
+        // any duplicate consideration — a slug different from the row's
+        // own code is the classified INVALID refusal.
         Category existing = row("own-code", "Old", 4);
         Category other = row("other-code", "Other", 5);
         when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
@@ -221,7 +261,7 @@ class CategoryWriteServiceTest {
         assertThat(result.success()).isFalse();
         assertThat(result.errors()).singleElement()
                 .extracting(CategoryMutationError::code, CategoryMutationError::field)
-                .containsExactly(CategoryMutationErrorCode.ALREADY_EXISTS, "slug");
+                .containsExactly(CategoryMutationErrorCode.INVALID, "slug");
     }
 
     @Test

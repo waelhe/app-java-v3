@@ -134,19 +134,27 @@ public class CategoryWriteService implements CategoryWriteSpi {
                 errors.add(new CategoryMutationError("slug", CategoryMutationErrorCode.INVALID,
                         "A category slug is lowercase latin letters, digits and dashes (at most "
                                 + CODE_MAX_LENGTH + " characters)"));
-            } else {
-                categoryRepository.findByCode(code)
-                        .filter(existing -> !existing.getId().equals(id))
-                        .ifPresent(existing -> errors.add(new CategoryMutationError(
-                                "slug", CategoryMutationErrorCode.ALREADY_EXISTS,
-                                "A category with the slug already exists")));
             }
         }
         if (!errors.isEmpty()) {
             return CategoryMutationResult.failure(errors);
         }
         Category row = addressed.get();
-        row.revise(code, name);
+        // The wave-19 #808 review (Major · Functional Correctness): the
+        // code is the category's stable reference identity — the entity's
+        // own contract pins it immutable. A slug command equal to the
+        // row's own code is the idempotent re-send (it preserves the
+        // column); any DIFFERENT slug answers the classified INVALID
+        // domain error — never a silent code move that strands the
+        // standing references.
+        if (code != null && !code.equals(row.getCode())) {
+            errors.add(new CategoryMutationError("slug", CategoryMutationErrorCode.INVALID,
+                    "A category slug is immutable; it cannot change after creation"));
+        }
+        if (!errors.isEmpty()) {
+            return CategoryMutationResult.failure(errors);
+        }
+        row.revise(null, name);
         Category updated = categoryRepository.save(row);
         return CategoryMutationResult.success(toView(updated));
     }
@@ -190,10 +198,16 @@ public class CategoryWriteService implements CategoryWriteSpi {
     /**
      * The new row's display position — after the registry's current tail
      * (the platform extension column's honest deterministic choice for a
-     * create; a reorder capability is its own future root).
+     * create; a reorder capability is its own future root). The tail is
+     * the HIGHEST live position plus one (the wave-19 #808 review: after
+     * any mid-registry delete a size+1 derivation would collide with the
+     * last row's own position and make the position order non-
+     * deterministic between them).
      */
     private int nextPosition() {
-        return categoryRepository.findAllByOrderByPositionAsc().size() + 1;
+        return categoryRepository.findAllByOrderByPositionAsc().stream()
+                .mapToInt(Category::getPosition)
+                .max().orElse(0) + 1;
     }
 
     /** The bounded projection — the read service's own rendering rule. */

@@ -13,10 +13,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -89,6 +92,16 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
         }
         List<ProductTypeMutationError> errors = new ArrayList<>();
         List<ProductTypeAttributeAssignment> toSave = new ArrayList<>();
+        // The wave-19 #808 review (Major · Functional Correctness): the
+        // append position is derived per (product type, scope) bucket and
+        // the duplicate probe reads the DATABASE only — neither sees the
+        // rows this request has already staged. The in-memory pending
+        // ledger closes both doors: every staged scope carries its own
+        // running position, and every staged attribute id refuses a
+        // second assignment inside the same request (the unique index
+        // would otherwise answer with an unclassified constraint throw).
+        Map<ProductTypeAttributeScope, Integer> pendingNextPosition = new HashMap<>();
+        Set<UUID> pendingAttributeIds = new HashSet<>();
         for (ProductTypeAttributeAssignOperation operation : operations) {
             String typeMember = operation.attributeType();
             boolean variantSelection = Boolean.TRUE.equals(operation.variantSelection());
@@ -129,14 +142,19 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
                 }
             }
             if (assignmentRepository.existsByProductTypeIdAndAttributeDefinitionId(
-                    productTypeId, operation.attributeId())) {
+                    productTypeId, operation.attributeId())
+                    || pendingAttributeIds.contains(operation.attributeId())) {
                 errors.add(new ProductTypeMutationError("id", ProductTypeMutationErrorCode.ALREADY_EXISTS,
                         "The attribute is already assigned to this product type"));
                 continue;
             }
+            int position = pendingNextPosition.computeIfAbsent(scope,
+                    candidate -> nextPosition(productTypeId, candidate));
+            pendingNextPosition.put(scope, position + 1);
+            pendingAttributeIds.add(operation.attributeId());
             toSave.add(ProductTypeAttributeAssignment.create(productTypeId, operation.attributeId(),
                     scope, scope == ProductTypeAttributeScope.VARIANT_SELECTION,
-                    nextPosition(productTypeId, scope)));
+                    position));
         }
         if (!errors.isEmpty()) {
             return ProductTypeMutationResult.failure(errors);
@@ -161,6 +179,15 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
         }
         List<ProductTypeMutationError> errors = new ArrayList<>();
         List<ProductTypeAttributeAssignment> toSave = new ArrayList<>();
+        // The wave-19 #808 review (Major · Functional Correctness): the
+        // moved row's position must be derived from the TARGET scope
+        // BEFORE the move (after moveToScope the moved row itself sits in
+        // the target bucket with its old position, so the max+1 read
+        // would stride over it), and two moves staged into the same
+        // target scope share the in-memory running position — the unique
+        // index (product_type_id, scope, position) stays behind the
+        // classified INVALID vocabulary, never a constraint throw.
+        Map<ProductTypeAttributeScope, Integer> pendingNextPosition = new HashMap<>();
         for (ProductTypeAttributeAssignmentUpdateOperation operation : operations) {
             Optional<ProductTypeAttributeAssignment> addressed = findAssignment(
                     productTypeId, operation.attributeId());
@@ -199,7 +226,11 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
                 }
             }
             if (assignment.getScope() != target) {
+                int targetPosition = pendingNextPosition.computeIfAbsent(target,
+                        candidate -> nextPosition(productTypeId, candidate));
+                pendingNextPosition.put(target, targetPosition + 1);
                 assignment.moveToScope(target);
+                assignment.reposition(targetPosition);
                 toSave.add(assignment);
             }
         }

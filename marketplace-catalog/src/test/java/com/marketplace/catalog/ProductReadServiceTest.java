@@ -146,6 +146,25 @@ class ProductReadServiceTest {
     }
 
     @Test
+    void anUnboundedOrNonPositivePageSizeAnswersTheClassifiedError() {
+        // The wave-19 #808 review (Minor): the keyset scroll REQUIRES a
+        // bounded page — the same guard the variant scroll owns, so an
+        // unlimited (or non-positive) limit is refused at the boundary,
+        // never silently degraded into an unbounded load.
+        assertThatThrownBy(() -> service.scrollProducts(publicCaller,
+                ProductSort.of(ProductSort.Field.NAME, true),
+                ScrollPosition.keyset(), null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("positive page size");
+        assertThatThrownBy(() -> service.scrollProducts(publicCaller,
+                ProductSort.of(ProductSort.Field.NAME, true),
+                ScrollPosition.keyset(), Limit.unlimited()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("positive page size");
+        verifyNoInteractions(repository);
+    }
+
+    @Test
     void publicCallerScrollsTheActivePopulationWithItsOwnCount() {
         Window<Product> window = Window.from(List.<Product>of(), index -> ScrollPosition.keyset(), false);
         when(repository.findByStatusOrderByTitleAscIdAsc(any(StoreProductStatus.class),

@@ -272,6 +272,11 @@ class CollectionReadServiceTest {
         UUID collectionId = UUID.randomUUID();
         UUID activeId = UUID.randomUUID();
         UUID draftId = UUID.randomUUID();
+        // The wave-19 #808 review's gate: the member-products scroll reads
+        // the collection's own publication fact FIRST (a live stub for the
+        // published collection the caller may read).
+        when(collectionRepository.findById(collectionId)).thenReturn(Optional.of(
+                Collection.create("member-slug", "Members", "الأعضاء", true)));
         when(membershipRepository.findByCollectionIdOrderByPositionAscIdAsc(collectionId))
                 .thenReturn(List.of(
                         CollectionProduct.create(collectionId, activeId, 1),
@@ -287,6 +292,46 @@ class CollectionReadServiceTest {
         assertThat(page.total()).isEqualTo(1);
         assertThat(page.window().getContent()).extracting(product -> product.id())
                 .containsExactly(activeId);
+    }
+
+    @Test
+    void thePlainCallersScrollOverAnUnpublishedCollectionAnswersTheSafeAbsence() {
+        // The wave-19 #808 review (Major · Security & Privacy): the
+        // collection's publication fact gates the member-products scroll —
+        // a non-ADMIN caller's scroll over an unpublished collection
+        // answers the same safe absence as the lookup (never a product
+        // exposure through a collection the same caller cannot read), and
+        // the membership registry is never consulted.
+        UUID collectionId = UUID.randomUUID();
+        UUID activeId = UUID.randomUUID();
+        when(collectionRepository.findById(collectionId)).thenReturn(Optional.of(
+                Collection.create("hidden-slug", "Hidden", "المخفية", false)));
+        when(membershipRepository.findByCollectionIdOrderByPositionAscIdAsc(collectionId))
+                .thenReturn(List.of(CollectionProduct.create(collectionId, activeId, 1)));
+        when(productRepository.findById(activeId)).thenReturn(Optional.of(activeProduct(activeId)));
+
+        CollectionProductsPage page = service.scrollCollectionProducts(
+                collectionId, ScrollPosition.keyset(), Limit.of(10), member);
+
+        assertThat(page.total()).isZero();
+        assertThat(page.window().getContent()).isEmpty();
+        verify(membershipRepository, never()).findByCollectionIdOrderByPositionAscIdAsc(any());
+    }
+
+    @Test
+    void thePlainCallersScrollOverAnUnknownCollectionAnswersTheSafeAbsence() {
+        // The gate's unknown-id shape: the same empty page an unknown but
+        // well-formed collection lookup answers — never an existence
+        // disclosure through the products scroll.
+        UUID collectionId = UUID.randomUUID();
+        when(collectionRepository.findById(collectionId)).thenReturn(Optional.empty());
+
+        CollectionProductsPage page = service.scrollCollectionProducts(
+                collectionId, ScrollPosition.keyset(), Limit.of(10), member);
+
+        assertThat(page.total()).isZero();
+        assertThat(page.window().getContent()).isEmpty();
+        verify(membershipRepository, never()).findByCollectionIdOrderByPositionAscIdAsc(any());
     }
 
     @Test

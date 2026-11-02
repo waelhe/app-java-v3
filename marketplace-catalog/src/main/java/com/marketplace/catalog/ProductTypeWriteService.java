@@ -75,9 +75,15 @@ public class ProductTypeWriteService implements ProductTypeWriteSpi {
     private static final int NAME_MAX_LENGTH = 100;
 
     private final ProductTypeRepository productTypeRepository;
+    private final ProductRepository productRepository;
+    private final ProductTypeAttributeAssignmentRepository assignmentRepository;
 
-    public ProductTypeWriteService(ProductTypeRepository productTypeRepository) {
+    public ProductTypeWriteService(ProductTypeRepository productTypeRepository,
+                                   ProductRepository productRepository,
+                                   ProductTypeAttributeAssignmentRepository assignmentRepository) {
         this.productTypeRepository = productTypeRepository;
+        this.productRepository = productRepository;
+        this.assignmentRepository = assignmentRepository;
     }
 
     @Override
@@ -185,6 +191,17 @@ public class ProductTypeWriteService implements ProductTypeWriteSpi {
                     "id", ProductTypeMutationErrorCode.NOT_FOUND, "No product type found for the id")));
         }
         ProductType row = addressed.get();
+        // The wave-19 #808 review (Minor · Data Integrity): a product type
+        // with live references (products built on the schema, or attribute
+        // assignments) answers the classified INVALID refusal — the soft
+        // delete would leave the publish path and the attribute-value
+        // replacement reading a schema the admin surface no longer shows.
+        // No cascade: the references own their own lifecycle.
+        if (hasLiveReferences(row.getId())) {
+            return ProductTypeMutationResult.failure(List.of(new ProductTypeMutationError(
+                    "id", ProductTypeMutationErrorCode.INVALID,
+                    "A product type with live product or attribute-assignment references cannot be deleted")));
+        }
         ProductTypeView lastKnown = toView(row);
         productTypeRepository.delete(row);
         return ProductTypeMutationResult.success(lastKnown);
@@ -205,12 +222,27 @@ public class ProductTypeWriteService implements ProductTypeWriteSpi {
             Optional<ProductType> addressed = id == null
                     ? Optional.empty()
                     : productTypeRepository.findById(id);
-            if (addressed.isPresent()) {
+            if (addressed.isPresent() && !hasLiveReferences(id)) {
+                // The single delete's refusal law (the wave-19 #808
+                // review): a referenced product type is NOT deleted and
+                // NOT counted — the honest count answers only what the
+                // registry itself deleted.
                 productTypeRepository.delete(addressed.get());
                 deleted++;
             }
         }
         return deleted;
+    }
+
+    /**
+     * The live-reference probe — products built on the schema or
+     * attribute assignments referencing it (the wave-19 #808 review's
+     * delete gate; the references own their own lifecycle, never a
+     * cascade).
+     */
+    private boolean hasLiveReferences(UUID productTypeId) {
+        return productRepository.existsByProductTypeId(productTypeId)
+                || assignmentRepository.existsByProductTypeId(productTypeId);
     }
 
     /** The bounded projection — the read service's own rendering rule. */

@@ -10,8 +10,11 @@ import com.marketplace.catalog.spi.ProductVariantWriteSpi;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
 
 import java.util.List;
 import java.util.Optional;
@@ -445,6 +448,44 @@ class ProductVariantWriteServiceTest {
     }
 
     @Test
+    void anUpdateOfAVariantWhoseParentIsSoftDeletedAnswersTheClassifiedNotFound() {
+        // The wave-19 #808 review (Major · Stability): the product's soft
+        // delete takes the variant's shelf away — the projection answers
+        // the classified NOT_FOUND (the read side's own safe-absence
+        // shape), never the parent-absent NoSuchElementException throw
+        // the raw orElseThrow produced.
+        Product parent = productOwnedBy(ProviderIds.CALLER);
+        ProductVariant row = variantUnder(parent, "SKU-ORPHAN");
+        when(variantRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(productRepository.findById(parent.getId())).thenReturn(Optional.empty());
+
+        ProductVariantMutationResult result = service.updateVariant(row.getId(),
+                new ProductVariantUpdateCommand("Renamed", null, null), caller);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
+                .containsExactly(ProductVariantMutationErrorCode.NOT_FOUND, "id");
+        verify(variantRepository, never()).save(any(ProductVariant.class));
+    }
+
+    @Test
+    void aDeleteOfAVariantWhoseParentIsSoftDeletedAnswersTheClassifiedNotFound() {
+        Product parent = productOwnedBy(ProviderIds.CALLER);
+        ProductVariant row = variantUnder(parent, "SKU-ORPHAN");
+        when(variantRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(productRepository.findById(parent.getId())).thenReturn(Optional.empty());
+
+        ProductVariantMutationResult result = service.deleteVariant(row.getId(), caller);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
+                .containsExactly(ProductVariantMutationErrorCode.NOT_FOUND, "id");
+        verify(variantRepository, never()).delete(any(ProductVariant.class));
+    }
+
+    @Test
     void theBulkDeleteAnswersTheHonestCountOverUnknownAndStrangerIds() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant owned = variantUnder(parent, "SKU-1");
@@ -550,5 +591,60 @@ class ProductVariantWriteServiceTest {
         assertThat(outcomes.get(0).errors()).singleElement()
                 .extracting(ProductVariantMutationError::field)
                 .isEqualTo("product");
+    }
+
+    @Test
+    void bulkCreateVariantsWithAnUnknownPolicyRefusesEveryItemWithoutAnyWrite() {
+        // The wave-19 #808 review (Minor): an unknown policy name is the
+        // classified INVALID refusal for every item — never the silent
+        // non-atomic persistence path.
+        Product parent = productOwnedBy(ProviderIds.CALLER);
+
+        var outcomes = service.bulkCreateVariants(parent.getId(), List.of(
+                new ProductVariantCreateCommand(null, "SKU-A", "A", 100L)),
+                caller, "reject_everything");
+
+        assertThat(outcomes.get(0).success()).isFalse();
+        assertThat(outcomes.get(0).variant()).isNull();
+        assertThat(outcomes.get(0).errors()).singleElement()
+                .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
+                .containsExactly(ProductVariantMutationErrorCode.INVALID, "errorPolicy");
+        verify(variantRepository, never()).save(any(ProductVariant.class));
+    }
+
+    @Test
+    void rejectEverythingRollbackRewritesTheSuccessfulVariantOutcomesWithoutAProjection() {
+        // The wave-19 #808 review (Major): the rollback erased every row
+        // the passing items claim — the outcomes are rebuilt with no view
+        // and the batch's own classified refusal.
+        Product parent = productOwnedBy(ProviderIds.CALLER);
+        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(variantRepository.findByProviderIdAndSku(ProviderIds.CALLER, "SKU-A")).thenReturn(Optional.empty());
+        when(variantRepository.findByProviderIdAndSku(ProviderIds.CALLER, "SKU-9")).thenReturn(
+                Optional.of(variantUnder(parent, "SKU-9")));
+        when(variantRepository.save(any(ProductVariant.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        try (MockedStatic<TransactionAspectSupport> transaction =
+                     org.mockito.Mockito.mockStatic(TransactionAspectSupport.class)) {
+            transaction.when(TransactionAspectSupport::currentTransactionStatus)
+                    .thenReturn(mock(TransactionStatus.class));
+
+            var outcomes = service.bulkCreateVariants(parent.getId(), List.of(
+                    new ProductVariantCreateCommand(null, "SKU-A", "A", 100L),
+                    new ProductVariantCreateCommand(null, "SKU-9", "Nine", 300L)),
+                    caller, "REJECT_EVERYTHING");
+
+            assertThat(outcomes).hasSize(2);
+            assertThat(outcomes.get(0).success()).isFalse();
+            assertThat(outcomes.get(0).variant()).isNull();
+            assertThat(outcomes.get(0).errors()).singleElement()
+                    .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
+                    .containsExactly(ProductVariantMutationErrorCode.INVALID, "errorPolicy");
+            assertThat(outcomes.get(1).success()).isFalse();
+            assertThat(outcomes.get(1).errors()).singleElement()
+                    .extracting(ProductVariantMutationError::code)
+                    .isEqualTo(ProductVariantMutationErrorCode.ALREADY_EXISTS);
+        }
     }
 }
