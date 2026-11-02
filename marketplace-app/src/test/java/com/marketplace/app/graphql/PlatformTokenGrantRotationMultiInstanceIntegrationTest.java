@@ -261,8 +261,12 @@ class PlatformTokenGrantRotationMultiInstanceIntegrationTest {
 
             // The winner's survivor is live through BOTH instances, and
             // the presented token is dead on BOTH (the consumption is
-            // visible in the shared row itself).
-            assertThat(serviceB.refresh(survivor).refreshToken()).isNotBlank();
+            // visible in the shared row itself). The survivor's grant
+            // carries the SAME principal — the rotation never reissues
+            // another caller's identity.
+            PlatformTokenGrantService.IssuedTokens next = serviceB.refresh(survivor);
+            assertThat(next.refreshToken()).isNotBlank();
+            assertThat(next.user().email()).isEqualTo(PRINCIPAL);
             assertThatThrownBy(() -> serviceA.refresh(presented))
                     .isInstanceOf(BadCredentialsException.class)
                     .hasMessageContaining("invalid, expired or revoked");
@@ -356,6 +360,7 @@ class PlatformTokenGrantRotationMultiInstanceIntegrationTest {
         PlatformTokenGrantService.IssuedTokens chained =
                 serviceB.refresh(rotated.refreshToken());
         assertThat(chained.refreshToken()).isNotBlank();
+        assertThat(chained.user().email()).isEqualTo(PRINCIPAL);
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM oauth2_authorization WHERE principal_name = ?",
                 Integer.class, PRINCIPAL)).isOne();
