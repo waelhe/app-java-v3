@@ -959,6 +959,41 @@ class PlatformGovernanceFilesTest {
                             "bc75e988da0fa4fbc3d47378a888d859d070746f");
         }
 
+        // The 2026-11-02 #806 review follow-through (wave 10): the same
+        // stale-pin ban the governance documents carry also guards the LIVE
+        // SDL surface and the GraphQL adapter sources — the live schema
+        // files had kept the superseded historical 3.23.43 measurement
+        // while every governing document pinned 3.23.45 (blob b8fa0dd8,
+        // identical across both tags, so the declared signatures were
+        // byte-correct and only the pin string was stale). The adapter's
+        // own javaDoc pin references ride the same guard: a future stale
+        // pin can never regress into the live surface silently.
+        String[] liveSaleorSurfaces = {
+                read("marketplace-app", "src", "main", "resources", "graphql",
+                        "schema.graphqls"),
+                read("marketplace-app", "src", "main", "resources", "graphql",
+                        "agent-1-identity-cms.graphqls"),
+                read("marketplace-app", "src", "main", "resources", "graphql",
+                        "agent-2-catalog-pricing.graphqls"),
+                read("marketplace-app", "src", "main", "resources", "graphql",
+                        "agent-3-orders-events.graphqls"),
+                read("marketplace-app", "src", "main", "java", "com", "marketplace",
+                        "app", "graphql", "CheckoutDataFetcher.java"),
+                read("marketplace-app", "src", "main", "java", "com", "marketplace",
+                        "app", "graphql", "CheckoutGraphQlMapper.java"),
+                read("marketplace-app", "src", "main", "java", "com", "marketplace",
+                        "app", "graphql", "CmsPageDataFetcher.java"),
+                read("marketplace-app", "src", "main", "java", "com", "marketplace",
+                        "app", "graphql", "ProductMediaMutationDataFetcher.java"),
+                read("marketplace-catalog", "src", "main", "java", "com", "marketplace",
+                        "catalog", "spi", "ProductVariantSort.java")
+        };
+        for (String liveSurface : liveSaleorSurfaces) {
+            assertThat(liveSurface)
+                    .doesNotContain("3.23.43", "3.23.39",
+                            "bc75e988da0fa4fbc3d47378a888d859d070746f");
+        }
+
         String skillPolicy = read("docs", "governance", "agent-skills-policy.md");
         assertThat(skillPolicy)
                 .contains("3.23.45 reference schema (blob-verified)")

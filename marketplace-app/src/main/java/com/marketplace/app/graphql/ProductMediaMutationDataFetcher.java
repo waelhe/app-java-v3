@@ -35,7 +35,7 @@ import java.util.UUID;
  * cases through the declared {@code ProductMediaWriteSpi} seam. This
  * class owns ONLY transport mapping: typed global-ID decode, the
  * bounded result-to-payload mapping and the domain errors onto the
- * pinned payloads' own {@code ProductError} family (the pinned 3.23.43
+ * pinned payloads' own {@code ProductError} family (the pinned 3.23.45
  * shapes' own choice — the product family's shared error entries).
  * Authorization lives in the owning use case
  * ({@code @PreAuthorize("hasRole('PROVIDER')")} — the MANAGE_PRODUCTS

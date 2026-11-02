@@ -206,7 +206,7 @@ public class CmsPageDataFetcher {
     public PageTypeUpdate pageTypeUpdate(@InputArgument String id,
                                          @InputArgument PageTypeUpdateInput input) {
         requireInput(input);
-        // Saleor 3.23.43 declares this ID nullable. DeprecatedModelMutation's
+        // Saleor 3.23.45 declares this ID nullable. DeprecatedModelMutation's
         // official get_instance/perform_mutation path creates a fresh model when
         // ID is absent, even for an *Update mutation. Mirror that wire behavior
         // rather than imposing a stricter ID! contract at the resolver boundary.

@@ -34,7 +34,7 @@ import java.util.UUID;
  * pre-login security contract keep them.
  *
  * <p>D-UUID-001 (decided by A0 2026-10-23, Option A): in the pinned Saleor
- * 3.23.43 contract {@code Checkout.token} is the checkout's UUID primary
+ * 3.23.45 contract {@code Checkout.token} is the checkout's UUID primary
  * key, so {@code token} maps to the native cart UUID without any second
  * store, {@code id}/{@code checkoutId} decode through
  * {@link SaleorGlobalIdCodec}, and the identifiers are MUTUALLY EXCLUSIVE —
@@ -354,7 +354,7 @@ public class CheckoutDataFetcher {
      * cart UUID (D-UUID-001 Option A): {@code id} and the deprecated
      * {@code checkoutId} decode through the typed global-ID codec, the
      * deprecated {@code token} IS the native checkout UUID (the pinned
-     * Saleor 3.23.43 primary key — centrally coerced by the shared UUID
+     * Saleor 3.23.45 primary key — centrally coerced by the shared UUID
      * scalar, never decoded here).
      *
      * <p>PRESENCE and VALIDITY are separate concerns (the A0 review of
@@ -432,7 +432,7 @@ public class CheckoutDataFetcher {
      * {@code variantId == null} line is the legacy cart model's
      * legitimate, purchasable state (ADR-0012), not staleness — the
      * mapper reports it for no one. It stays excluded from the Saleor
-     * wire render (the pinned reference schema saleor/saleor@3.23.43
+     * wire render (the pinned reference schema saleor/saleor@3.23.45
      * declares {@code CheckoutLine.variant: ProductVariant!} — never
      * fabricated) and remains fully visible and manageable through the
      * legacy REST cart surface ({@code GET /cart} carries every line

@@ -6,7 +6,7 @@ package com.marketplace.catalog.spi;
  * executed product-variant sort — the owning field with the requested
  * direction (the {@code ProductSort}/{@code CategorySort} precedent).
  * The Saleor {@code ProductVariantSortField} vocabulary closes over
- * exactly TWO values in the pinned 3.23.43 schema, and BOTH have an
+ * exactly TWO values in the pinned 3.23.45 schema, and BOTH have an
  * owning keyset fact on this platform: {@code LAST_MODIFIED_AT} (the
  * entity's own non-null {@code updated_at} audit column — the
  * {@code BaseEntity} contract, deterministic with the {@code id}

@@ -18,7 +18,7 @@ import java.util.UUID;
  * storefront ProductVariant reads.
  *
  * <p><b>The canonical constraint (the pinned reference schema —
- * saleor/saleor@3.23.43, {@code saleor/graphql/schema.graphql}):</b>
+ * saleor/saleor@3.23.45, {@code saleor/graphql/schema.graphql}):</b>
  * {@code CheckoutLine.variant} is {@code ProductVariant!} — non-null. A
  * cart line that carries no variant can never be rendered as a
  * {@code CheckoutLine} without fabricating a variant, which this mapper
@@ -133,7 +133,7 @@ public class CheckoutGraphQlMapper {
      * line's variant no longer resolves (the stale/deleted-variant case
      * the wave-4 review measured): the {@code CheckoutLine.variant} field
      * is {@code ProductVariant!} (non-null in the vendored Saleor SDL and
-     * in the pinned reference schema saleor/saleor@3.23.43), so the line
+     * in the pinned reference schema saleor/saleor@3.23.45), so the line
      * cannot be served as a weaker shape — it is absent from the render
      * and REPORTED for the owner-side purge instead, per the cascade
      * contract above. The product-level ({@code variantId == null}) shape

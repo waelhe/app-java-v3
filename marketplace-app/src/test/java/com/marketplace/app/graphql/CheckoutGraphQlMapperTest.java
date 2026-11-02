@@ -66,7 +66,7 @@ class CheckoutGraphQlMapperTest {
         // legacy cart state, still created by CartController.addItem and
         // served by the legacy REST cart surface with its id) is NOT
         // staleness. It is excluded from the Saleor wire render (the
-        // pinned reference schema saleor/saleor@3.23.43 declares
+        // pinned reference schema saleor/saleor@3.23.45 declares
         // CheckoutLine.variant: ProductVariant! — never fabricated) but
         // it must NEVER be reported for the purge: the earlier contract
         // fed it to checkoutSpi.deleteLines on every checkout read and

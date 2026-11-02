@@ -1,4 +1,4 @@
-# Central compatibility scalar for the pinned Saleor 3.23.43 checkout UUID.
+# Central compatibility scalar for the pinned Saleor 3.23.45 checkout UUID.
 # Runtime coercion is provided by the single platform-owned UuidScalar (@DgsScalar).
 scalar UUID
 
@@ -142,7 +142,7 @@ type Query {
     # Saleor Users domain — P1 wave (the canonical plan §5-P1: "retained
     # Dashboard user/profile and permission operations using existing
     # identity and console owners"). Root names, argument shapes and the
-    # connection envelope are the pinned Saleor 3.23.43 wire contract
+    # connection envelope are the pinned Saleor 3.23.45 wire contract
     # (saleor/graphql/schema.graphql, blob b8fa0dd8 — the measured roots
     # me/user/staffUsers); the platform's identity owner remains the
     # single source of truth behind them. The GLOBAL IDs on this surface
@@ -1282,7 +1282,7 @@ type UserPermission {
     name: String!
 }
 
-# The full Saleor 3.23.43 permission vocabulary — the closed wire enum
+# The full Saleor 3.23.45 permission vocabulary — the closed wire enum
 # the platform renders its RBAC capabilities into. Values the platform
 # does not yet grant any role stay inert SDL vocabulary (never emitted);
 # the granted subset is the tested SaleorPermissionCatalog mapping.

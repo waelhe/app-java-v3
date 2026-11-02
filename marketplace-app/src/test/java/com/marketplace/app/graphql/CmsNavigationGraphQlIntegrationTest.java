@@ -28,7 +28,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 /**
- * End-to-end proof of the pinned Saleor 3.23.43 menu-item creation contract.
+ * End-to-end proof of the pinned Saleor 3.23.45 menu-item creation contract.
  * The official operation takes exactly one MenuItemCreateInput argument;
  * menu and parent IDs live inside that input. The HTTP GraphQL request runs
  * through the real Spring Security/DGS chain and writes to Flyway-backed
