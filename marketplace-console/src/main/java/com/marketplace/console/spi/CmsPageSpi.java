@@ -39,13 +39,11 @@ import java.util.UUID;
 @org.springframework.modulith.NamedInterface("console-spi")
 public interface CmsPageSpi {
 
-    /**
-     * The page translation projection. The wave-11 #806 review: the
-     * translation row's own native UUID leads the projection — it is the
-     * identity the GraphQL {@code PageTranslation.id} renders as the typed
-     * global ID (never the parent page's), mirroring Saleor's
-     * own-row-identity semantics for {@code PageTranslation}.
-     */
+    /** The page translation projection — the owning row's id rides the view
+     * so the GraphQL surface can render the Saleor {@code PageTranslation.id}
+     * identity honestly (the wave-11 #806 review: the field was declared but
+     * never wired; the read source is the owning repository row, and its id
+     * IS the translation's id). */
     record PageTranslationView(UUID id, String languageCode, String slug, String title,
                                String content, String seoTitle, String seoDescription) {
     }

@@ -455,8 +455,8 @@ public class CmsPageAdminService implements CmsPageSpi {
         for (CmsPageTranslation translation : translationRepository.findAllByPageId(row.getId())) {
             translations.put(translation.getLanguageCode(), new PageTranslationView(
                     translation.getId(), translation.getLanguageCode(), translation.getSlug(),
-                    translation.getTitle(), translation.getContent(), translation.getSeoTitle(),
-                    translation.getSeoDescription()));
+                    translation.getTitle(), translation.getContent(),
+                    translation.getSeoTitle(), translation.getSeoDescription()));
         }
         CmsPageType pageType = pageTypeRepository.findById(row.getPageTypeId()).orElse(null);
         return new PageView(row.getId(), row.getPageTypeId(),

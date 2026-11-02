@@ -64,7 +64,6 @@ public class CmsPageDataFetcher {
 
     static final String PAGE_TYPE_TAG = "Page";
     static final String PAGE_TYPE_TYPE_TAG = "PageType";
-    static final String PAGE_TRANSLATION_TYPE_TAG = "PageTranslation";
 
     private final CmsPageSpi cmsPageSpi;
     private final com.marketplace.catalog.spi.AttributeReadSpi attributeReadSpi;
@@ -483,19 +482,25 @@ public class CmsPageDataFetcher {
     }
 
     /**
-     * The {@code Page.translation} read-back — the wave-11 #806 review:
-     * the SDL declared the field with no resolver while the owning
-     * {@link CmsPageSpi} read source carries the per-language translation
-     * rows (the console module's {@code cms_page_translations} store, the
-     * same store {@code pageTranslate} writes). The field is served from
-     * the owning use case exactly like the {@code PageType.attributes}
-     * read-back above: the caller comes from the REQUEST-SCOPED context
-     * (the wave-4 CI evidence — the holder ThreadLocal does not reach
-     * field-level completion threads), a page without the requested
-     * language's translation row answers the field's honest null, and the
-     * rendered identity is the TRANSLATION ROW's own UUID as the typed
-     * global ID — never the parent page's (Saleor's own-row-identity
-     * semantics).
+     * The {@code Page.translation(languageCode)} read-back — the wave-11
+     * #806 review (Major · Functional Correctness): the SDL declared the
+     * field but no resolver ever wired it, so every selection answered the
+     * mapper's silent null. The owning read source EXISTS — the page
+     * projection carries the per-locale translations the console owner
+     * loads (keyed by language code) — so the field resolves through the
+     * SAME seam every page read uses: the source page's id re-reads via
+     * {@code findPageById} and the addressed language's translation renders
+     * with its owning row id (the Saleor {@code PageTranslation.id}
+     * identity — the attribute-translation precedent's encode scheme). A
+     * language with no translation answers the honest null (Saleor's own
+     * semantics); a page deleted concurrently answers null too.
+     *
+     * <p>This is a FIELD-level completion resolver — the caller reads from
+     * the REQUEST-SCOPED context (the wave-4 INT-001 evidence: the
+     * SecurityContext ThreadLocal does not reach the engine's completion
+     * threads); an absent caller answers the honest null floor. The
+     * per-node re-read joins the pageTypeAttributes/Collection.products
+     * guarded-N+1 advisory class (maxPageSize caps the fan-out).</p>
      */
     @DgsData(parentType = DgsConstants.PAGE.TYPE_NAME,
              field = DgsConstants.PAGE.Translation)
@@ -503,11 +508,8 @@ public class CmsPageDataFetcher {
                                            @InputArgument("languageCode")
                                            LanguageCodeEnum languageCode) {
         Page source = environment.getSource();
-        if (source == null || source.getId() == null) {
+        if (source == null || source.getId() == null || languageCode == null) {
             return null;
-        }
-        if (languageCode == null) {
-            throw new IllegalArgumentException("A language code is required");
         }
         Authentication caller = MarketplaceGraphQlContext.callerOf(environment);
         if (caller == null || !caller.isAuthenticated()) {
@@ -517,7 +519,7 @@ public class CmsPageDataFetcher {
                         decodeId(source.getId(), PAGE_TYPE_TAG, "A page ID is required"))
                 .map(view -> view.translations().get(languageCode.name()))
                 .map(translation -> PageTranslation.newBuilder()
-                        .id(globalIdCodec.encode(PAGE_TRANSLATION_TYPE_TAG, translation.id()))
+                        .id(globalIdCodec.encode("PageTranslation", translation.id()))
                         .seoTitle(translation.seoTitle())
                         .seoDescription(translation.seoDescription())
                         .title(translation.title())

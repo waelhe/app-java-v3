@@ -519,7 +519,7 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
         Map<String, MenuItemTranslationView> translations = new HashMap<>();
         for (var translation : itemTranslationRepository.findAllByMenuItemId(row.getId())) {
             translations.put(translation.getLanguageCode(), new MenuItemTranslationView(
-                    translation.getId(), translation.getName()));
+                    translation.getId(), translation.getLanguageCode(), translation.getName()));
         }
         return new MenuItemView(row.getId(), row.getMenuId(), row.getParentId(), row.getName(),
                 row.getUrl(), row.getCategoryId(), row.getPageId(), row.getPosition(),
