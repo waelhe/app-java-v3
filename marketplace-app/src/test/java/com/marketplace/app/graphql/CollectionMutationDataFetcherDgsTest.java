@@ -373,7 +373,8 @@ class CollectionMutationDataFetcherDgsTest {
                     errors { field } collection { id }
                 } }
                 """, "data.collectionUpdate"))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("externalReference is not implemented");
         verify(collectionWriteSpi, org.mockito.Mockito.never()).updateCollection(any(), any());
     }
 
@@ -536,7 +537,8 @@ class CollectionMutationDataFetcherDgsTest {
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
                 "mutation($id: ID!) { collectionDelete(id: $id) { errors { field } } }",
                 "data.collectionDelete", Map.of("id", UUID.randomUUID().toString())))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("Invalid global ID");
         verify(collectionWriteSpi, org.mockito.Mockito.never()).deleteCollection(any());
     }
 
@@ -551,7 +553,8 @@ class CollectionMutationDataFetcherDgsTest {
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
                 "mutation { collectionDelete { errors { field } } }",
                 "data.collectionDelete"))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("requires the id of the collection to delete");
         verify(collectionWriteSpi, org.mockito.Mockito.never()).deleteCollection(any());
     }
 
@@ -568,7 +571,8 @@ class CollectionMutationDataFetcherDgsTest {
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
                 "mutation($id: ID!) { collectionDelete(id: $id) { errors { field } } }",
                 "data.collectionDelete", Map.of("id", productGlobalId(productId))))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("Invalid global ID");
         verify(collectionWriteSpi, org.mockito.Mockito.never()).deleteCollection(any());
     }
 }

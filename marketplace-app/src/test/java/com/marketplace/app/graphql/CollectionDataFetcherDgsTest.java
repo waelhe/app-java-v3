@@ -481,7 +481,8 @@ class CollectionDataFetcherDgsTest {
                 query { collections(first: 2, sortBy: { field: PRODUCT_COUNT }) { totalCount } }
                 """,
                 "data.collections"))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("sort field PRODUCT_COUNT is not implemented");
         verify(collectionReadSpi, org.mockito.Mockito.never()).scrollCollections(
                 any(org.springframework.security.core.Authentication.class),
                 any(CollectionSort.class), any(), any(Limit.class));
@@ -498,7 +499,8 @@ class CollectionDataFetcherDgsTest {
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
                 "query { collections(first: 2, filter: { slug: \"x\" }) { totalCount } }",
                 "data.collections"))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("filter is not implemented");
         verify(collectionReadSpi, org.mockito.Mockito.never()).scrollCollections(
                 any(org.springframework.security.core.Authentication.class),
                 any(CollectionSort.class), any(), any(Limit.class));
@@ -515,7 +517,8 @@ class CollectionDataFetcherDgsTest {
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
                 "query { collections(last: 2) { totalCount } }",
                 "data.collections"))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("forward-only pagination");
         verify(collectionReadSpi, org.mockito.Mockito.never()).scrollCollections(
                 any(org.springframework.security.core.Authentication.class),
                 any(CollectionSort.class), any(), any(Limit.class));
@@ -532,7 +535,8 @@ class CollectionDataFetcherDgsTest {
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
                 "query { collections(first: 2, channel: \"c\") { totalCount } }",
                 "data.collections"))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("channel is not implemented");
     }
 
     /**
@@ -547,7 +551,8 @@ class CollectionDataFetcherDgsTest {
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
                 "query($id: ID!) { collection(id: $id) { id } }",
                 "data.collection", Map.of("id", UUID.randomUUID().toString())))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("Invalid global ID");
         verify(collectionReadSpi, org.mockito.Mockito.never()).findCollectionById(
                 any(), any(org.springframework.security.core.Authentication.class));
     }
@@ -563,7 +568,8 @@ class CollectionDataFetcherDgsTest {
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
                 "query { collection { id } }",
                 "data.collection"))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("requires one of id or slug");
     }
 
     /**
@@ -577,6 +583,7 @@ class CollectionDataFetcherDgsTest {
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
                 "query { collections(first: 1) { totalCount } }",
                 "data.collections"))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("An unexpected error occurred");
     }
 }

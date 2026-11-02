@@ -337,7 +337,8 @@ class ProductMediaMutationDataFetcherDgsTest {
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
                 mutation { productMediaDelete(id: "%s") { errors { field } media { id } } }
                 """.formatted(raw), "data.productMediaDelete"))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("Invalid global ID");
         verify(productMediaWriteSpi, never()).deleteProductMedia(any(UUID.class), any());
     }
 
@@ -353,7 +354,8 @@ class ProductMediaMutationDataFetcherDgsTest {
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
                 mutation { productMediaDelete(id: "%s") { errors { field } media { id } } }
                 """.formatted(productGlobalId(foreign)), "data.productMediaDelete"))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("Invalid global ID");
         verify(productMediaWriteSpi, never()).deleteProductMedia(any(UUID.class), any());
     }
 
@@ -398,7 +400,8 @@ class ProductMediaMutationDataFetcherDgsTest {
                 mutation { productMediaBulkDelete(ids: ["%s", "%s"]) { count errors { field } } }
                 """.formatted(productMediaGlobalId(owned), "not-a-global-id"),
                 "data.productMediaBulkDelete"))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("Invalid global ID");
         verify(productMediaWriteSpi, never()).bulkDeleteProductMedia(anyList(), any());
     }
 
@@ -487,7 +490,7 @@ class ProductMediaMutationDataFetcherDgsTest {
                 mutation { productMediaReorder(mediaIds: ["%s"]) { errors { field } media { id } } }
                 """.formatted(productMediaGlobalId(UUID.randomUUID())),
                 "data.productMediaReorder"))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class);
         verify(productMediaWriteSpi, never()).reorderProductMedia(any(), anyList(), any());
     }
 }

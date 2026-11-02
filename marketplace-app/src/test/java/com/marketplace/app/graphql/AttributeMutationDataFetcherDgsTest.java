@@ -593,7 +593,12 @@ class AttributeMutationDataFetcherDgsTest {
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
                 mutation { attributeBulkCreate(attributes: []) { count errors { code } results { errors { path } } } }
                 """, "$"))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("requires a non-empty list")
+                .satisfies(ex -> assertThat(
+                                ((com.netflix.graphql.dgs.exceptions.QueryException) ex).getErrors().get(0)
+                                        .getExtensions())
+                        .containsEntry("errorCode", "VAL-001"));
         org.mockito.Mockito.verifyNoInteractions(attributeWriteSpi);
     }
 }

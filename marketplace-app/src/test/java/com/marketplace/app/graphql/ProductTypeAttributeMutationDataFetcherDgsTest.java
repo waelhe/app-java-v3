@@ -500,7 +500,7 @@ class ProductTypeAttributeMutationDataFetcherDgsTest {
                     productType { id }
                 } }
                 """.formatted(productTypeGlobalId(UUID.randomUUID())), "$"))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class);
         org.mockito.Mockito.verifyNoInteractions(productTypeAttributeWriteSpi);
     }
 }
