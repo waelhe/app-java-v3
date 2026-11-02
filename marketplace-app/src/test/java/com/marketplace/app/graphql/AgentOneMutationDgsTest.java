@@ -500,6 +500,11 @@ class AgentOneMutationDgsTest {
     // The wave-11 #806 review (Major · Functional Correctness): the declared
     // Page.translation / MenuItem.translation fields — wired to the owning
     // read seam, with the row id as the Saleor translation identity.
+    // The stubbed projections speak the owning console services' storage
+    // currency — lower-case language codes ('ar'/'en', the (page, language)
+    // column shape requireLanguage enforces) — while the wire query speaks
+    // the SDL enum's upper-case form (AR/EN); the fetcher converts at the
+    // boundary, so a stub keyed by the stored form proves the conversion.
     // ---------------------------------------------------------------------
 
     @Test
@@ -508,12 +513,12 @@ class AgentOneMutationDgsTest {
         UUID pageId = UUID.randomUUID();
         UUID translationRowId = UUID.randomUUID();
         CmsPageSpi.PageTranslationView arabic = new CmsPageSpi.PageTranslationView(
-                translationRowId, "AR", "ar-slug", "\u0639\u0646\u0648\u0627\u0646",
+                translationRowId, "ar", "ar-slug", "\u0639\u0646\u0648\u0627\u0646",
                 "\u0645\u062d\u062a\u0648\u0649", "seo-ar", "seo-desc-ar");
         when(cmsPageSpi.findPageById(any(), eq(pageId))).thenReturn(Optional.of(
                 new CmsPageSpi.PageView(pageId, UUID.randomUUID(), "About", "about",
                         "about", "About", "content", true, null, null, null, null,
-                        Map.of("AR", arabic))));
+                        Map.of("ar", arabic))));
 
         Object title = dgsQueryExecutor.executeAndExtractJsonPath("""
                 query {
@@ -558,8 +563,8 @@ class AgentOneMutationDgsTest {
         when(cmsNavigationSpi.findMenuItemById(any(), eq(itemId))).thenReturn(Optional.of(
                 new CmsNavigationSpi.MenuItemView(itemId, UUID.randomUUID(), null,
                         "Home", "/home", null, null, 0,
-                        Map.of("AR", new CmsNavigationSpi.MenuItemTranslationView(
-                                translationRowId, "AR", "\u0627\u0644\u0631\u0626\u064a\u0633\u064a\u0629")))));
+                        Map.of("ar", new CmsNavigationSpi.MenuItemTranslationView(
+                                translationRowId, "ar", "\u0627\u0644\u0631\u0626\u064a\u0633\u064a\u0629")))));
 
         Object name = dgsQueryExecutor.executeAndExtractJsonPath("""
                 query {
