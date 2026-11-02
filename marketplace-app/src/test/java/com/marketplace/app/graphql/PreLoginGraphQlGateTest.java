@@ -125,7 +125,10 @@ class PreLoginGraphQlGateTest {
         // not the operation name alone.
         when(request.getDocument()).thenReturn(
                 "query tokenCreate { services(first: 1) { edges { node { id } } } }");
-        when(request.getOperationName()).thenReturn("tokenCreate");
+        // The spoofed field is carried but never consulted — exactly the
+        // contract under test — so the stub is lenient: strict stubs would
+        // otherwise reject the very proof that the gate ignores it.
+        lenient().when(request.getOperationName()).thenReturn("tokenCreate");
 
         assertDeniedWithAuthn();
     }
