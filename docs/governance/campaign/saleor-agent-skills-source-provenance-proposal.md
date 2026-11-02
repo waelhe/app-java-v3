@@ -1,12 +1,12 @@
-# Saleor Agent-Skills Source-Provenance Proposal — the Five Official Skills
+# Saleor Agent-Skills Source-Provenance Evidence and Adoption Proposal — the Five Official Skills
 
-**Status:** Proposal (§10.5 of the promotion plan `commerce-main-promotion-and-saleor-skills-plan.md`). No skill file was vendored, updated, or removed by this document. Execution requires the dedicated, reviewable provenance PR defined in plan §3.1.
+**Status (measured 2026-10-31):** The source-discovery and archive-verification spike is complete. The proposed `saleor-core` provenance migration is implemented by PR #786, which is open against the integration branch at the time of this record. This document preserves the evidence and adoption rationale; it is not itself the file migration. PR #786 updates the existing `saleor-core` README/provenance registry/policy/governance test and resource-surface record; it does not bulk-install the other four skills.
 **Measured:** 2026-10-31 (all evidence below was captured live on this date; SHA-pinned, never a symbolic `main`).
 **A0 role:** Contract Steward / provenance spike author.
 
 ## 1. Why this proposal exists
 
-The promotion plan §3 records the upstream change: Saleor's official agent-skills distribution moved from `saleor/agent-skills` to `saleor/saleor-docs` (skills live with the documentation), with a machine-readable discovery index. Our current registry (`docs/governance/plans/agent-skills-pins.json`, from PR #771) pins `saleor-core` to `saleor/agent-skills@fb1a57255f58950962f6e474ccba1cade40f5163`. This spike measures the new official source exactly, verifies every advertised bundle digest, and proposes the source migration — without touching a single vendored byte.
+The promotion plan §3 records the upstream change: Saleor's official agent-skills distribution moved from `saleor/agent-skills` to `saleor/saleor-docs` (skills live with the documentation), with a machine-readable discovery index. At the time of the spike, the registry from PR #771 pinned `saleor-core` to `saleor/agent-skills@fb1a57255f58950962f6e474ccba1cade40f5163`. This spike measured the new official source, verified every advertised bundle digest and proposed the source migration. PR #786 carries that migration into the repository through the reviewed pin/policy/test update; the remaining four skills stay unadopted.
 
 ## 2. Discovery index — measured response
 
@@ -77,15 +77,15 @@ c68109c572d21e0fdec9e5e55084b24be8208f2b6092d744127d6fac90106858  LICENSE
 
 ## 6. License evidence — recorded separately, no reconciliation invented
 
-- **Per-skill `LICENSE`** (all five skills, identical 1,766-byte file): BSD 3-Clause, "Copyright (c) 2026, Saleor Commerce".
-- **`saleor/saleor-docs` root `LICENSE`**: BSD 3-Clause (Saleor Commerce, 2019-2024) **plus** an ISC-license notice for bundled Lucide icons (irrelevant to the skills trees). GitHub's API classifies the root as `NOASSERTION` (custom text).
-- **Measured difference from the old source:** our registry's record for `saleor/agent-skills` states "BSD-3-Clause AND CC-BY-4.0 (repository root)"; the new root LICENSE text carries **no CC-BY-4.0 statement**. Both statements are recorded here as measured facts. Per plan §3.1.5, no legal reconciliation is invented; the migration PR records the new source's evidence in its own registry fields.
+- **Per-skill `LICENSE`** (all five skill directories, identical 1,766-byte file): BSD 3-Clause terms followed by a CC-BY-4.0 notice specifically for artwork; the file is byte-identical to the legacy `saleor/agent-skills` license snapshot.
+- **`saleor/saleor-docs` repository-root `LICENSE`** is a different file: BSD 3-Clause plus an ISC-license notice for bundled Lucide icons. GitHub classifies that custom root license as `NOASSERTION`.
+- **Skill frontmatter:** each `SKILL.md` independently self-declares MIT. These are three distinct pieces of source evidence: per-skill LICENSE, SKILL.md frontmatter, and repository-root LICENSE. The root-license difference from the old repository must not be misreported as removal of CC-BY-4.0 from the skill package, because the per-skill LICENSE still carries that artwork notice. Per plan §3.1.5, no legal precedence is inferred; the registry records the statements separately.
 
 ## 7. Proposed dispositions
 
 | Skill | Disposition | Rationale |
 |---|---|---|
-| `saleor-core` | **Provenance migration now** — re-pin the registry source from `saleor/agent-skills@fb1a5725` to `saleor/saleor-docs@2cdf6590` through the reviewed §3.1 PR (registry, per-file hashes, license evidence, errata carry-over, governance test, and the 1-line README vendored update — all in the same PR) | Byte-identical authority surface; upstream itself declares the import from our pinned SHA; the old repository is no longer the official distribution channel |
+| `saleor-core` | **Implemented in PR #786 (pending its integration merge)** — re-pin from `saleor/agent-skills@fb1a5725` to `saleor/saleor-docs@2cdf6590` with the registry, per-file hashes, license evidence, errata carry-over, governance test and behavior-neutral README update in one reviewed change | The three behavior rules and SKILL.md are byte-identical; upstream records the import from the historical SHA; the old repository is no longer the official distribution channel |
 | `saleor-storefront` | **Applicability catalog** (measured digest + inventory above); vendoring deferred until A2/A3/A4 request adoption through §3.1 | Consumer/API usage reference per plan §4; adoption is a workstream-triggered decision, not a blanket install |
 | `saleor-app` | **Applicability catalog**; conditional reference for A4/A5 real app/webhook protocol work only | Plan §4 boundary: no app registry, no AppBridge runtime, no second integration authority |
 | `saleor-configurator` | **Applicability catalog**; read-only design reference for A0/A3/A5 | Plan §4 boundary: never run against Saleor, no second configuration authority |
@@ -93,15 +93,17 @@ c68109c572d21e0fdec9e5e55084b24be8208f2b6092d744127d6fac90106858  LICENSE
 
 No unadopted skill becomes a fake vendored registry entry (plan §3.1.7).
 
-## 8. Execution checklist for the migration PR (maps 1:1 to plan §3.1)
+## 8. Implementation and verification record for PR #786 (maps 1:1 to plan §3.1)
 
-1. Pin the exact snapshot `2cdf6590…` (or a fresher reviewed capture — re-verify digests if so).
-2. Record the discovery-index response and the five advertised digests (§2 above is the capture).
-3. Vendor the reviewed snapshot files; per-file SHA-256, source path, repository, commit, version metadata, license/attribution (§5 hashes for `saleor-core`).
-4. Publish the behavior-level change report (§5 — zero behavior change; one README line).
-5. Preserve the seven known-upstream-errata entries unchanged; record the new license evidence separately (§6).
-6. Update pin registry, policy/catalog, per-file hashes, license/attribution, and the fail-closed governance test in the same PR.
-7. Keep the four unadopted skills in the applicability catalog with their measured digests (§2/§4).
-8. Never run `npx skills add` in this repository (unchanged rule).
+1. **Done in the PR:** pin the exact `saleor/saleor-docs@2cdf6590e838929c3f74c16e982cfdc11073c2d8` snapshot; no symbolic `main` is used for vendored bytes.
+2. **Done in the evidence record:** retain the discovery-index response and all five advertised bundle digests (§2 and `saleor-ai-resource-surface.json`).
+3. **Done in the PR/registry:** retain source path, repository, commit, version metadata, per-file SHA-256 and license/attribution for the adopted `saleor-core` snapshot. Unchanged files are verified, not needlessly rewritten.
+4. **Done in the evidence record:** publish the behavior-level comparison (§5 — zero change to behavior files; one behavior-neutral README line).
+5. **Done in the registry:** preserve all seven known upstream errata and record the new license evidence separately (§6).
+6. **Done in the PR:** update the pin registry, policy/catalog, resource-surface file and fail-closed governance test together.
+7. **Done in the PR:** keep the four other skills in the applicability catalog only; do not install or register them as adopted.
+8. **Unchanged guard:** never run `npx skills add` in this repository.
+
+PR #786 must still pass its final-head CI, Integration Test, security and review gates before an owner-authorized merge into integration.
 
 **Boundaries (unchanged):** this proposal changes no wire contract, no Saleor 3.23.45 source pin, no Dashboard 3.23.41 pin, no SDL, no root disposition, no approved divergence. Skills remain specialist reference material, never a wire-contract authority.

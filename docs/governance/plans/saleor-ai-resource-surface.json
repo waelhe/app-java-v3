@@ -1,0 +1,187 @@
+{
+  "version": 1,
+  "measuredAt": "2026-10-31",
+  "sourceSnapshot": {
+    "repository": "saleor/saleor-docs",
+    "commit": "2cdf6590e838929c3f74c16e982cfdc11073c2d8",
+    "commitDate": "2026-10-30T11:50:24Z",
+    "commitUrl": "https://github.com/saleor/saleor-docs/commit/2cdf6590e838929c3f74c16e982cfdc11073c2d8",
+    "aiDocumentationUrl": "https://docs.saleor.io/developer/ai",
+    "skillsReadmeUrl": "https://github.com/saleor/saleor-docs/blob/2cdf6590e838929c3f74c16e982cfdc11073c2d8/skills/README.md",
+    "discoverySchema": "https://schemas.agentskills.io/discovery/0.2.0/schema.json",
+    "note": "The skills README at this snapshot states that the original skill directories were imported from saleor/agent-skills@fb1a57255f58950962f6e474ccba1cade40f5163; storefront-builder is part of the five-skill docs distribution."
+  },
+  "discoveryIndex": {
+    "url": "https://docs.saleor.io/.well-known/agent-skills/index.json",
+    "observedSkillCount": 5,
+    "mutableLiveIndex": true,
+    "snapshotCommitForSourceFiles": "2cdf6590e838929c3f74c16e982cfdc11073c2d8",
+    "bundles": [
+      {
+        "name": "saleor-app",
+        "version": "1.0.0",
+        "directoryTreeSha1": "3af0789f85dfefa3343a3345b6ec03106606fa14",
+        "skillMdBlobSha1": "516c53e61c243f8b8eefb31bc2cbf6dfe2d344ed",
+        "digestSha256": "6d59d82871be13ff661a377b0d727c706bb7d5ee0f924900700e583db78d993f",
+        "archiveBytes": 22117,
+        "archiveUrl": "https://docs.saleor.io/.well-known/agent-skills/saleor-app.tar.gz",
+        "digestVerification": "MATCH_RECORDED_IN_SOURCE_PROVENANCE_SPIKE",
+        "adoptionState": "NOT_ADOPTED",
+        "localPath": null
+      },
+      {
+        "name": "saleor-configurator",
+        "version": "1.0.0",
+        "directoryTreeSha1": "d7e2a11cca21ae1c98d7225b33cb1173a2144ddd",
+        "skillMdBlobSha1": "85da8d39a1aad276a6bff5d49809df3c42af4895",
+        "digestSha256": "060bd86bed738043064c79279c657095d85434a88c2a148532e46604679b1c48",
+        "archiveBytes": 10760,
+        "archiveUrl": "https://docs.saleor.io/.well-known/agent-skills/saleor-configurator.tar.gz",
+        "digestVerification": "MATCH_RECORDED_IN_SOURCE_PROVENANCE_SPIKE",
+        "adoptionState": "NOT_ADOPTED",
+        "localPath": null
+      },
+      {
+        "name": "saleor-core",
+        "version": "1.2.0",
+        "directoryTreeSha1": "4676012cb685e2dbf8986fd3d44de9a57367a55a",
+        "skillMdBlobSha1": "2db2c66276fffbf0ba79c15942b87ca0ea0476c7",
+        "digestSha256": "257525713919a5f7490e65cbfad7e1d99fc6f93378c957b11289275ae545c6af",
+        "archiveBytes": 13146,
+        "archiveUrl": "https://docs.saleor.io/.well-known/agent-skills/saleor-core.tar.gz",
+        "digestVerification": "MATCH_RECORDED_IN_SOURCE_PROVENANCE_SPIKE",
+        "adoptionState": "ADOPTED_PINNED",
+        "localPath": ".agents/skills/saleor-core",
+        "priorSource": "saleor/agent-skills@fb1a57255f58950962f6e474ccba1cade40f5163"
+      },
+      {
+        "name": "saleor-storefront",
+        "version": "1.0.0",
+        "directoryTreeSha1": "cf1f5250bc898c7e7d230fd1e01cb0c7e052c532",
+        "skillMdBlobSha1": "3932e32b621d9f566e6e4615df80fe8fdabdb152",
+        "digestSha256": "f4949c787717a549a42ee2ff6289e77796296c522366eb11882bace242c7661d",
+        "archiveBytes": 24826,
+        "archiveUrl": "https://docs.saleor.io/.well-known/agent-skills/saleor-storefront.tar.gz",
+        "digestVerification": "MATCH_RECORDED_IN_SOURCE_PROVENANCE_SPIKE",
+        "adoptionState": "NOT_ADOPTED",
+        "localPath": null
+      },
+      {
+        "name": "storefront-builder",
+        "version": "2.0.0",
+        "directoryTreeSha1": "16f2f3b8d4a49403b86cbb29ed813f5414f28527",
+        "skillMdBlobSha1": "b54f7490554cee670caa938d89c9da3273f86b5b",
+        "digestSha256": "e6cafd7686b459a5b268c876a3a428a963bd99b80acaaaf3ac2761f8ab341b50",
+        "archiveBytes": 8278,
+        "archiveUrl": "https://docs.saleor.io/.well-known/agent-skills/storefront-builder.tar.gz",
+        "digestVerification": "MATCH_RECORDED_IN_SOURCE_PROVENANCE_SPIKE",
+        "adoptionState": "NOT_ADOPTED",
+        "localPath": null
+      }
+    ],
+    "digestEvidence": {
+      "recordedByCommit": "435b895d2c98ada7dc2c9661bb2973c7774f78b4",
+      "evidencePath": "docs/governance/campaign/saleor-agent-skills-source-provenance-proposal.md",
+      "method": "SHA-256 of each downloaded official tar.gz compared with the upstream discovery index; extracted source inventory and individual file SHA-256 recorded in the proposal.",
+      "caveat": "The digest values are upstream-advertised and the MATCH result is the recorded 2026-10-31 measurement; this resource catalog does not fetch or revalidate remote archives during CI."
+    }
+  },
+  "documentationMcp": {
+    "endpoint": "https://docs.saleor.io/mcp",
+    "discoveryManifest": "https://docs.saleor.io/.well-known/mcp.json",
+    "serverCard": "https://docs.saleor.io/.well-known/mcp/server-card.json",
+    "name": "io.saleor.docs/saleor-documentation",
+    "version": "2.0.3",
+    "transport": "streamable-http",
+    "readOnly": true,
+    "doesNotConnectToSaleorInstance": true,
+    "executesGraphqlOperations": false,
+    "liveProtocolInvocationStatus": "METADATA_INSPECTED_ONLY",
+    "tools": [
+      {
+        "name": "search_docs",
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      {
+        "name": "get_page",
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      {
+        "name": "list_pages",
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      {
+        "name": "get_navigation",
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    ],
+    "usePolicy": "Discovery and documentation retrieval only. Verify behavior claims in pinned Saleor source/tests and platform tests. Do not confuse this documentation server with a separately configured GraphQL MCP."
+  },
+  "documentationIndexes": {
+    "llmsTxt": {
+      "url": "https://docs.saleor.io/llms.txt",
+      "observedRenderedLineCount": 2637,
+      "measuredAt": "2026-10-31",
+      "mutable": true,
+      "lineCountIsContract": false
+    },
+    "apiReference": "https://docs.saleor.io/api-reference",
+    "apiSectionIndexes": "Discover current per-domain reference links from llms.txt; do not pin a live generated index as the wire contract."
+  },
+  "schema": {
+    "sourceRepository": "saleor/saleor-docs",
+    "sourceCommit": "2cdf6590e838929c3f74c16e982cfdc11073c2d8",
+    "sourcePath": "schema/saleor.graphql",
+    "publicCopyPath": "public/schema/saleor.graphql",
+    "gitBlobSha1": "b8fa0dd809081f76dc2834bb5c286561e5783276",
+    "bytes": 1101635,
+    "matchesPinnedReferenceSchema": true,
+    "pinnedSaleorRepository": "saleor/saleor",
+    "pinnedSaleorVersion": "3.23.45",
+    "pinnedSaleorPath": "saleor/graphql/schema.graphql",
+    "contractAuthority": "docs/governance/plans/saleor-source-pins.json"
+  },
+  "skillsLicenseEvidence": {
+    "perSkillLicenseFile": "BSD 3-Clause license text with a CC-BY-4.0 artwork notice",
+    "skillFrontmatter": "Each of the five SKILL.md files self-declares MIT in its frontmatter.",
+    "sourceRepositoryRootLicense": "The saleor/saleor-docs repository root LICENSE is separately recorded as BSD-3-Clause with an ISC notice for bundled icons.",
+    "handling": "Preserve each text statement and attribution as evidence; do not invent legal precedence or claim legal reconciliation."
+  },
+  "marketplaceRecipe": {
+    "url": "https://docs.saleor.io/recipes/marketplace",
+    "lastUpdated": "2026-08-17",
+    "status": "REFERENCE_ONLY",
+    "authorityForPlatformArchitecture": false,
+    "topics": [
+      "Saleor's recipe models vendors using custom models; vendor is not a built-in Saleor entity.",
+      "Commodity-marketplace and boutique-marketplace approaches have different product/offer modeling implications.",
+      "Vendor resource ownership must be enforced by application-level authorization; identity tokens alone do not provide object-level isolation.",
+      "Order-line vendor association can inform independent vendor fulfillment and shipping analysis.",
+      "Customer payments and vendor payouts are separate concerns; the recipe describes asynchronous payouts after successful payment.",
+      "Tax calculation may require vendor-specific rules."
+    ],
+    "workstreamPrompts": {
+      "A1": "Test seller/tenant ownership isolation on every relevant mutation and read path.",
+      "A3": "Review the chosen product/offer, pricing, commission and vendor-specific tax semantics against approved platform contracts.",
+      "A4": "Test mixed-vendor orders, immutable line-to-vendor ownership, split fulfillment, refund/recovery, payout idempotency and reconciliation where these capabilities are in approved scope.",
+      "A5": "Use app/webhook details only for actual approved provider-integration boundaries.",
+      "A7": "Ensure seller/operator administration journeys respect separate role and ownership scopes."
+    },
+    "exclusions": [
+      "Do not import Saleor Model/Attribute as a mandatory platform data model.",
+      "Do not assume Stripe Connect or any provider recommendation is the platform payment decision.",
+      "Do not create a Saleor runtime, Dashboard vendor portal, or second source of truth."
+    ]
+  },
+  "consumptionProtocol": [
+    "Discover the relevant page/rule through llms.txt or Documentation MCP.",
+    "Pin its source repository, commit, path, symbol and relevant upstream test.",
+    "Verify intended Saleor behavior in pinned Saleor 3.23.45 source/tests and Dashboard 3.23.41 where relevant.",
+    "Map the behavior to the existing platform domain owner and approved SPI/ADR.",
+    "Prove the platform behavior with JUnit, integration/security and Dashboard E2E tests; log divergences instead of silently adopting them."
+  ]
+}
