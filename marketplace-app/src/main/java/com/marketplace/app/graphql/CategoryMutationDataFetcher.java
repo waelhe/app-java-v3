@@ -52,13 +52,16 @@ public class CategoryMutationDataFetcher {
     private final CategoryWriteSpi categoryWriteSpi;
     private final CategoryGraphQlMapper categoryMapper;
     private final SaleorGlobalIdCodec globalIdCodec;
+    private final GraphQlProperties properties;
 
     public CategoryMutationDataFetcher(CategoryWriteSpi categoryWriteSpi,
                                        CategoryGraphQlMapper categoryMapper,
-                                       SaleorGlobalIdCodec globalIdCodec) {
+                                       SaleorGlobalIdCodec globalIdCodec,
+                                       GraphQlProperties properties) {
         this.categoryWriteSpi = categoryWriteSpi;
         this.categoryMapper = categoryMapper;
         this.globalIdCodec = globalIdCodec;
+        this.properties = properties;
     }
 
     /**
@@ -153,6 +156,7 @@ public class CategoryMutationDataFetcher {
     @DgsMutation(field = DgsConstants.MUTATION.CategoryBulkDelete)
     @RateLimiter(name = "graphqlCategoryMutation")
     public CategoryBulkDelete categoryBulkDelete(@InputArgument List<String> ids) {
+        properties.requireBoundedList(ids, "categoryBulkDelete");
         if (ids == null || ids.isEmpty()) {
             throw new IllegalArgumentException("categoryBulkDelete requires a non-empty list of ids");
         }

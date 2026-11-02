@@ -10,6 +10,7 @@ import com.marketplace.app.graphql.generated.types.PageDelete;
 import com.marketplace.app.graphql.generated.types.PageInput;
 import com.marketplace.app.graphql.generated.types.PageSortingInput;
 import com.marketplace.app.graphql.generated.types.PageTranslate;
+import com.marketplace.app.graphql.generated.types.PageTranslation;
 import com.marketplace.app.graphql.generated.types.PageTranslationInput;
 import com.marketplace.app.graphql.generated.types.PageType;
 import com.marketplace.app.graphql.generated.types.PageTypeCountableConnection;
@@ -19,6 +20,7 @@ import com.marketplace.app.graphql.generated.types.PageTypeDelete;
 import com.marketplace.app.graphql.generated.types.PageTypeSortingInput;
 import com.marketplace.app.graphql.generated.types.PageTypeUpdate;
 import com.marketplace.app.graphql.generated.types.PageTypeUpdateInput;
+import com.marketplace.app.graphql.generated.types.Attribute;
 import com.marketplace.app.graphql.generated.types.PageUpdate;
 import com.marketplace.app.graphql.generated.types.PageBulkDelete;
 import com.marketplace.app.graphql.generated.types.PageBulkPublish;
@@ -28,9 +30,11 @@ import com.marketplace.app.graphql.generated.types.PageTypeReorderAttributes;
 import com.marketplace.app.graphql.generated.types.ReorderInput;
 import com.marketplace.console.spi.CmsPageSpi;
 import com.netflix.graphql.dgs.DgsComponent;
+import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
+import graphql.schema.DataFetchingEnvironment;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import org.springframework.data.domain.KeysetScrollPosition;
 import org.springframework.data.domain.Limit;
@@ -39,7 +43,6 @@ import org.springframework.graphql.data.pagination.EncodingCursorStrategy;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -68,19 +71,25 @@ public class CmsPageDataFetcher {
     private final SaleorGlobalIdCodec globalIdCodec;
     private final EncodingCursorStrategy<ScrollPosition> cursorStrategy;
     private final GraphQlProperties properties;
+    private final CmsPageGraphQlMapper pageMapper;
+    private final AttributeGraphQlMapper attributeMapper;
 
     public CmsPageDataFetcher(CmsPageSpi cmsPageSpi,
                               com.marketplace.catalog.spi.AttributeReadSpi attributeReadSpi,
                               AgentOneGraphQlMappers mappers,
                               SaleorGlobalIdCodec globalIdCodec,
                               EncodingCursorStrategy<ScrollPosition> cursorStrategy,
-                              GraphQlProperties properties) {
+                              GraphQlProperties properties,
+                              CmsPageGraphQlMapper pageMapper,
+                              AttributeGraphQlMapper attributeMapper) {
         this.cmsPageSpi = cmsPageSpi;
         this.attributeReadSpi = attributeReadSpi;
         this.mappers = mappers;
         this.globalIdCodec = globalIdCodec;
         this.cursorStrategy = cursorStrategy;
         this.properties = properties;
+        this.pageMapper = pageMapper;
+        this.attributeMapper = attributeMapper;
     }
 
     // ---------------------------------------------------------------------
@@ -93,6 +102,7 @@ public class CmsPageDataFetcher {
         if (input == null || input.getTitle() == null || input.getTitle().isBlank()) {
             throw new IllegalArgumentException("A page title is required");
         }
+        rejectPublishedAt(input.getPublishedAt());
         return PageCreate.newBuilder()
                 .page(toGraphQlPage(cmsPageSpi.createPage(currentAuthentication(),
                         input.getTitle(), input.getSlug(), input.getContent(),
@@ -108,6 +118,7 @@ public class CmsPageDataFetcher {
     public PageUpdate pageUpdate(@InputArgument String id,
                                  @InputArgument PageInput input) {
         requireInput(input);
+        rejectPublishedAt(input.getPublishedAt());
         return PageUpdate.newBuilder()
                 .page(toGraphQlPage(cmsPageSpi.updatePage(currentAuthentication(),
                         decodeId(id, PAGE_TYPE_TAG, "A page ID is required"),
@@ -130,6 +141,7 @@ public class CmsPageDataFetcher {
     @DgsMutation(field = DgsConstants.MUTATION.PageBulkDelete)
     @RateLimiter(name = "graphqlCmsMutation")
     public PageBulkDelete pageBulkDelete(@InputArgument List<String> ids) {
+        properties.requireBoundedList(ids, "pageBulkDelete");
         int count = cmsPageSpi.bulkDeletePages(currentAuthentication(),
                 decodeIds(ids, PAGE_TYPE_TAG, "A list of page IDs is required"));
         return PageBulkDelete.newBuilder()
@@ -142,6 +154,7 @@ public class CmsPageDataFetcher {
     @RateLimiter(name = "graphqlCmsMutation")
     public PageBulkPublish pageBulkPublish(@InputArgument List<String> ids,
                                            @InputArgument Boolean isPublished) {
+        properties.requireBoundedList(ids, "pageBulkPublish");
         if (isPublished == null) {
             throw new IllegalArgumentException("The isPublished flag is required");
         }
@@ -165,7 +178,9 @@ public class CmsPageDataFetcher {
         return PageTranslate.newBuilder()
                 .page(toGraphQlPage(cmsPageSpi.translatePage(currentAuthentication(),
                         decodeId(id, PAGE_TYPE_TAG, "A page ID is required"),
-                        languageCode.name(), input.getSlug(), input.getTitle(),
+                // the wire enum's upper-case name (AR/EN) converts to the owning
+                // store's lower-case language currency ('ar'/'en') at this boundary
+                        languageCode.name().toLowerCase(java.util.Locale.ROOT), input.getSlug(), input.getTitle(),
                         input.getContent(), input.getSeoTitle(), input.getSeoDescription())))
                 .errors(mappers.emptyPageErrors())
                 .build();
@@ -194,7 +209,7 @@ public class CmsPageDataFetcher {
     public PageTypeUpdate pageTypeUpdate(@InputArgument String id,
                                          @InputArgument PageTypeUpdateInput input) {
         requireInput(input);
-        // Saleor 3.23.43 declares this ID nullable. DeprecatedModelMutation's
+        // Saleor 3.23.45 declares this ID nullable. DeprecatedModelMutation's
         // official get_instance/perform_mutation path creates a fresh model when
         // ID is absent, even for an *Update mutation. Mirror that wire behavior
         // rather than imposing a stricter ID! contract at the resolver boundary.
@@ -230,6 +245,7 @@ public class CmsPageDataFetcher {
     @RateLimiter(name = "graphqlCmsMutation")
     public com.marketplace.app.graphql.generated.types.PageTypeBulkDelete pageTypeBulkDelete(
             @InputArgument List<String> ids) {
+        properties.requireBoundedList(ids, "pageTypeBulkDelete");
         int count = cmsPageSpi.bulkDeletePageTypes(currentAuthentication(),
                 decodeIds(ids, PAGE_TYPE_TYPE_TAG, "A list of page type IDs is required"));
         return com.marketplace.app.graphql.generated.types.PageTypeBulkDelete.newBuilder()
@@ -242,6 +258,7 @@ public class CmsPageDataFetcher {
     @RateLimiter(name = "graphqlCmsMutation")
     public PageAttributeAssign pageAttributeAssign(@InputArgument List<String> attributeIds,
                                                    @InputArgument String pageTypeId) {
+        properties.requireBoundedList(attributeIds, "pageAttributeAssign");
         return PageAttributeAssign.newBuilder()
                 .pageType(toGraphQlPageType(cmsPageSpi.assignPageTypeAttributes(
                         currentAuthentication(),
@@ -255,6 +272,7 @@ public class CmsPageDataFetcher {
     @RateLimiter(name = "graphqlCmsMutation")
     public PageAttributeUnassign pageAttributeUnassign(@InputArgument List<String> attributeIds,
                                                        @InputArgument String pageTypeId) {
+        properties.requireBoundedList(attributeIds, "pageAttributeUnassign");
         return PageAttributeUnassign.newBuilder()
                 .pageType(toGraphQlPageType(cmsPageSpi.unassignPageTypeAttributes(
                         currentAuthentication(),
@@ -269,6 +287,7 @@ public class CmsPageDataFetcher {
     public PageTypeReorderAttributes pageTypeReorderAttributes(
             @InputArgument List<ReorderInput> moves,
             @InputArgument String pageTypeId) {
+        properties.requireBoundedList(moves, "pageTypeReorderAttributes");
         if (moves == null || moves.isEmpty()) {
             throw new IllegalArgumentException("A list of reorder moves is required");
         }
@@ -338,7 +357,7 @@ public class CmsPageDataFetcher {
         if (requested <= 0) {
             return PageCountableConnection.newBuilder()
                     .edges(List.of())
-                    .pageInfo(pageInfoOf(false))
+                    .pageInfo(pageInfoOf(null, null, false, false))
                     .build();
         }
         String field = sortBy == null ? "SLUG" : sortBy.getField() == null
@@ -346,10 +365,11 @@ public class CmsPageDataFetcher {
         boolean ascending = sortBy == null || sortBy.getDirection() == null
                 || com.marketplace.app.graphql.generated.types.OrderDirection.ASC
                         .equals(sortBy.getDirection());
+        KeysetScrollPosition position = keysetPosition(after, field);
         CmsPageSpi.PageWindow window = cmsPageSpi.scrollPages(currentAuthentication(), field,
-                ascending, keysetPosition(after, field),
+                ascending, position,
                 Limit.of(Math.min(requested, properties.pagination().maxPageSize())));
-        return toConnection(window, PageCountableConnection.newBuilder(), field);
+        return toConnection(window, PageCountableConnection.newBuilder(), position);
     }
 
     @DgsQuery(field = DgsConstants.QUERY.PageType)
@@ -380,7 +400,7 @@ public class CmsPageDataFetcher {
         if (requested <= 0) {
             return PageTypeCountableConnection.newBuilder()
                     .edges(List.of())
-                    .pageInfo(pageInfoOf(false))
+                    .pageInfo(pageInfoOf(null, null, false, false))
                     .build();
         }
         String field = sortBy == null ? "NAME" : sortBy.getField() == null
@@ -388,10 +408,11 @@ public class CmsPageDataFetcher {
         boolean ascending = sortBy == null || sortBy.getDirection() == null
                 || com.marketplace.app.graphql.generated.types.OrderDirection.ASC
                         .equals(sortBy.getDirection());
+        KeysetScrollPosition typePosition = keysetPosition(after, field);
         CmsPageSpi.PageTypeWindow window = cmsPageSpi.scrollPageTypes(currentAuthentication(),
-                field, ascending, keysetPosition(after, field),
+                field, ascending, typePosition,
                 Limit.of(Math.min(requested, properties.pagination().maxPageSize())));
-        return toTypeConnection(window);
+        return toTypeConnection(window, typePosition);
     }
 
     // ---------------------------------------------------------------------
@@ -399,24 +420,11 @@ public class CmsPageDataFetcher {
     // ---------------------------------------------------------------------
 
     private Page toGraphQlPage(CmsPageSpi.PageView view) {
-        return Page.newBuilder()
-                .id(globalIdCodec.encode(PAGE_TYPE_TAG, view.id()))
-                .seoTitle(view.seoTitle())
-                .seoDescription(view.seoDescription())
-                .title(view.title())
-                .content(view.content())
-                .isPublished(view.published())
-                .publishedAt(view.publishedAt() == null ? null
-                        : DateTimeFormatter.ISO_INSTANT.format(view.publishedAt()))
-                .slug(view.slug())
-                .created(view.createdAt() == null ? null
-                        : DateTimeFormatter.ISO_INSTANT.format(view.createdAt()))
-                .pageType(PageType.newBuilder()
-                        .id(globalIdCodec.encode(PAGE_TYPE_TYPE_TAG, view.pageTypeId()))
-                        .name(view.pageTypeName() == null ? "" : view.pageTypeName())
-                        .slug(view.pageTypeSlug() == null ? "" : view.pageTypeSlug())
-                        .build())
-                .build();
+        // The wave-3 review's MenuItem.page binding: the mapping moved to
+        // the shared CmsPageGraphQlMapper (the package's *GraphQlMapper
+        // component precedent) so the navigation fetcher's field resolver
+        // renders the SAME page projection — one mapping, every surface.
+        return pageMapper.toGraphQlPage(view);
     }
 
     PageType toGraphQlPageType(CmsPageSpi.PageTypeView view) {
@@ -424,13 +432,110 @@ public class CmsPageDataFetcher {
                 .id(globalIdCodec.encode(PAGE_TYPE_TYPE_TAG, view.id()))
                 .name(view.name() == null ? "" : view.name())
                 .slug(view.slug() == null ? "" : view.slug())
+                // The attributes field belongs to pageTypeAttributes below
+                // (the DGS field-fetcher model — the projection cost is paid
+                // only when the client actually selects the field).
                 .attributes(null)
                 .build();
     }
 
+    /**
+     * The {@code PageType.attributes} read-back — the wave-4 #806 review's
+     * Minor · Functional Correctness fix: the base projection leaves the
+     * field to THIS resolver, so {@code pageTypeCreate},
+     * {@code pageTypeUpdate}, {@code pageAttributeAssign},
+     * {@code pageAttributeUnassign} and {@code pageTypeReorderAttributes}
+     * answer the SAVED attributes instead of a hard-coded null. The ids
+     * ride the owning projection in position order (the SPI's documented
+     * contract) and each renders through the catalog module's shared
+     * attribute mapper; an attribute deleted concurrently answers the
+     * honest absence (the SPI's never-a-fabricated-attribute contract),
+     * and a type deleted concurrently answers null.
+     *
+     * <p>This is a FIELD-level completion resolver — the caller reads from
+     * the REQUEST-SCOPED context (the {@code menuItemParent} precedent this
+     * same review measured: the ThreadLocal does not reach the engine's
+     * completion threads); an absent caller answers the honest null floor.</p>
+     */
+    @DgsData(parentType = DgsConstants.PAGETYPE.TYPE_NAME,
+             field = DgsConstants.PAGETYPE.Attributes)
+    public List<Attribute> pageTypeAttributes(DataFetchingEnvironment environment) {
+        PageType source = environment.getSource();
+        if (source == null || source.getId() == null) {
+            return null;
+        }
+        Authentication caller = MarketplaceGraphQlContext.callerOf(environment);
+        if (caller == null || !caller.isAuthenticated()) {
+            return null;
+        }
+        return cmsPageSpi.findPageTypeById(caller,
+                        decodeId(source.getId(), PAGE_TYPE_TYPE_TAG, "A page type ID is required"))
+                .map(CmsPageSpi.PageTypeView::attributeIds)
+                .map(ids -> {
+                    List<Attribute> attributes = new ArrayList<>(ids.size());
+                    for (UUID attributeId : ids) {
+                        attributeReadSpi.findAttributeById(attributeId, caller)
+                                .map(attributeMapper::toGraphQlAttribute)
+                                .ifPresent(attributes::add);
+                    }
+                    return List.copyOf(attributes);
+                })
+                .orElse(null);
+    }
+
+    /**
+     * The {@code Page.translation(languageCode)} read-back — the wave-11
+     * #806 review (Major · Functional Correctness): the SDL declared the
+     * field but no resolver ever wired it, so every selection answered the
+     * mapper's silent null. The owning read source EXISTS — the page
+     * projection carries the per-locale translations the console owner
+     * loads (keyed by language code) — so the field resolves through the
+     * SAME seam every page read uses: the source page's id re-reads via
+     * {@code findPageById} and the addressed language's translation renders
+     * with its owning row id (the Saleor {@code PageTranslation.id}
+     * identity — the attribute-translation precedent's encode scheme). A
+     * language with no translation answers the honest null (Saleor's own
+     * semantics); a page deleted concurrently answers null too.
+     *
+     * <p>This is a FIELD-level completion resolver — the caller reads from
+     * the REQUEST-SCOPED context (the wave-4 INT-001 evidence: the
+     * SecurityContext ThreadLocal does not reach the engine's completion
+     * threads); an absent caller answers the honest null floor. The
+     * per-node re-read joins the pageTypeAttributes/Collection.products
+     * guarded-N+1 advisory class (maxPageSize caps the fan-out).</p>
+     */
+    @DgsData(parentType = DgsConstants.PAGE.TYPE_NAME,
+             field = DgsConstants.PAGE.Translation)
+    public PageTranslation pageTranslation(DataFetchingEnvironment environment,
+                                           @InputArgument("languageCode")
+                                           LanguageCodeEnum languageCode) {
+        Page source = environment.getSource();
+        if (source == null || source.getId() == null || languageCode == null) {
+            return null;
+        }
+        Authentication caller = MarketplaceGraphQlContext.callerOf(environment);
+        if (caller == null || !caller.isAuthenticated()) {
+            return null;
+        }
+        return cmsPageSpi.findPageById(caller,
+                        decodeId(source.getId(), PAGE_TYPE_TAG, "A page ID is required"))
+                // the projection's translation map is keyed by the stored
+                // lower-case codes; the wire form converts at this boundary
+                .map(view -> view.translations().get(languageCode.name().toLowerCase(java.util.Locale.ROOT)))
+                .map(translation -> PageTranslation.newBuilder()
+                        .id(globalIdCodec.encode("PageTranslation", translation.id()))
+                        .seoTitle(translation.seoTitle())
+                        .seoDescription(translation.seoDescription())
+                        .title(translation.title())
+                        .content(translation.content())
+                        .language(languageCode)
+                        .build())
+                .orElse(null);
+    }
+
     private PageCountableConnection toConnection(CmsPageSpi.PageWindow window,
                                                  PageCountableConnection.Builder builder,
-                                                 String sortField) {
+                                                 KeysetScrollPosition position) {
         List<com.marketplace.app.graphql.generated.types.PageCountableEdge> edges =
                 new ArrayList<>(window.window().getContent().size());
         for (int i = 0; i < window.window().getContent().size(); i++) {
@@ -439,13 +544,21 @@ public class CmsPageDataFetcher {
                     .cursor(cursorStrategy.toCursor(window.window().positionAt(i)))
                     .build());
         }
+        // The shard review (Minor · Functional Correctness, 2026-11-01
+        // wave 2): the Relay envelope — cursors from the first/last edge,
+        // hasPreviousPage from the REQUESTED scroll position (the
+        // PermissionGroupDataFetcher.toConnection pattern).
+        String start = edges.isEmpty() ? null : edges.get(0).getCursor();
+        String end = edges.isEmpty() ? null : edges.get(edges.size() - 1).getCursor();
         return builder.edges(edges)
-                .pageInfo(pageInfoOf(window.window().hasNext()))
+                .pageInfo(pageInfoOf(start, end, window.window().hasNext(),
+                        !position.isInitial()))
                 .totalCount((int) Math.min(window.total(), Integer.MAX_VALUE))
                 .build();
     }
 
-    private PageTypeCountableConnection toTypeConnection(CmsPageSpi.PageTypeWindow window) {
+    private PageTypeCountableConnection toTypeConnection(CmsPageSpi.PageTypeWindow window,
+                                                          KeysetScrollPosition position) {
         List<com.marketplace.app.graphql.generated.types.PageTypeCountableEdge> edges =
                 new ArrayList<>(window.window().getContent().size());
         for (int i = 0; i < window.window().getContent().size(); i++) {
@@ -454,17 +567,29 @@ public class CmsPageDataFetcher {
                     .cursor(cursorStrategy.toCursor(window.window().positionAt(i)))
                     .build());
         }
+        String start = edges.isEmpty() ? null : edges.get(0).getCursor();
+        String end = edges.isEmpty() ? null : edges.get(edges.size() - 1).getCursor();
         return PageTypeCountableConnection.newBuilder()
                 .edges(edges)
-                .pageInfo(pageInfoOf(window.window().hasNext()))
+                .pageInfo(pageInfoOf(start, end, window.window().hasNext(),
+                        !position.isInitial()))
                 .totalCount((int) Math.min(window.total(), Integer.MAX_VALUE))
                 .build();
     }
 
-    private static com.marketplace.app.graphql.generated.types.PageInfo pageInfoOf(boolean hasNext) {
+    /**
+     * The connection envelope's page info — the PermissionGroupDataFetcher
+     * toConnection pattern (the shard review 2026-11-01 wave 2): the Relay
+     * cursors from the first/last edge and hasPreviousPage from the
+     * REQUESTED scroll position.
+     */
+    private static com.marketplace.app.graphql.generated.types.PageInfo pageInfoOf(
+            String startCursor, String endCursor, boolean hasNext, boolean hasPrevious) {
         return com.marketplace.app.graphql.generated.types.PageInfo.newBuilder()
                 .hasNextPage(hasNext)
-                .hasPreviousPage(false)
+                .hasPreviousPage(hasPrevious)
+                .startCursor(startCursor)
+                .endCursor(endCursor)
                 .build();
     }
 
@@ -491,6 +616,13 @@ public class CmsPageDataFetcher {
         if (attributeIds == null || attributeIds.isEmpty()) {
             return List.of();
         }
+        // The wave-4 review (Minor · Performance & Scalability): the bound
+        // moves INSIDE — pageTypeCreate/Update hand their add/remove
+        // attribute lists straight here without a requireBoundedList call,
+        // and each entry costs the owner one findAttributeById read; the
+        // check covers every caller from this one place (the same policy
+        // the page roots already enforce for their own lists).
+        properties.requireBoundedList(attributeIds, "pageType attributes");
         Authentication caller = currentAuthentication();
         List<UUID> decoded = attributeIds.stream()
                 .map(id -> globalIdCodec.decode(id, "Attribute"))
@@ -523,6 +655,23 @@ public class CmsPageDataFetcher {
     private static void requireInput(Object input) {
         if (input == null) {
             throw new IllegalArgumentException("An input is required");
+        }
+    }
+
+    /**
+     * The shard review (Minor · Functional Correctness, 2026-11-01): the
+     * SDL declares {@code publishedAt} on the page inputs, but the owning
+     * {@code CmsPageSpi} has no scheduled-publication capability — the
+     * value was accepted and silently dropped (a successful
+     * {@code errors: []} response that saved nothing the caller asked
+     * for). The file's own contract for unimplemented inputs
+     * ({@code rejectChannel}/{@code slugLanguageCode}) is explicit
+     * rejection: never a silent no-op.
+     */
+    private static void rejectPublishedAt(String publishedAt) {
+        if (publishedAt != null && !publishedAt.isBlank()) {
+            throw new IllegalArgumentException(
+                    "page publishedAt is not implemented on this platform yet");
         }
     }
 

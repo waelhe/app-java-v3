@@ -37,6 +37,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -262,6 +264,25 @@ class AgentOneMutationDgsTest {
         verify(accountLifecycleSpi).requestPasswordReset("who@example.com");
     }
 
+    /**
+     * The shard review (2026-11-01, Minor · Security): bcrypt's ceiling is
+     * 72 UTF-8 BYTES, never 72 characters — a 40-character Arabic password
+     * is ~80 bytes and passed the old character-only count. The byte
+     * ceiling must reject it (never a silent truncation).
+     */
+    @Test
+    void accountRegisterRejectsACompactPasswordThatExceedsTheBcryptByteCeiling() {
+        String fortyArabicCharacters = "ط".repeat(40);
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { accountRegister(input: { email: "bytes@example.com",
+                        password: "%s" }) {
+                    errors { code }
+                } }
+                """.formatted(fortyArabicCharacters), "data.accountRegister.errors"))
+                .hasMessageContaining("72 bytes");
+        verify(accountLifecycleSpi, never()).register(any(), any(), any());
+    }
+
     @Test
     void accountRegisterDelegatesWithTheComposedDisplayName() {
         dgsQueryExecutor.executeAndExtractJsonPath("""
@@ -475,6 +496,108 @@ class AgentOneMutationDgsTest {
                 .hasMessageContaining("A menu ID, slug or name is required");
     }
 
+    // ---------------------------------------------------------------------
+    // The wave-11 #806 review (Major · Functional Correctness): the declared
+    // Page.translation / MenuItem.translation fields — wired to the owning
+    // read seam, with the row id as the Saleor translation identity.
+    // The stubbed projections speak the owning console services' storage
+    // currency — lower-case language codes ('ar'/'en', the (page, language)
+    // column shape requireLanguage enforces) — while the wire query speaks
+    // the SDL enum's upper-case form (AR/EN); the fetcher converts at the
+    // boundary, so a stub keyed by the stored form proves the conversion.
+    // ---------------------------------------------------------------------
+
+    @Test
+    void pageTranslationResolvesTheAddressedLanguageThroughTheOwningReadSeam() {
+        actAs("agent-one-admin@example.com", "ADMIN");
+        UUID pageId = UUID.randomUUID();
+        UUID translationRowId = UUID.randomUUID();
+        CmsPageSpi.PageTranslationView arabic = new CmsPageSpi.PageTranslationView(
+                translationRowId, "ar", "ar-slug", "\u0639\u0646\u0648\u0627\u0646",
+                "\u0645\u062d\u062a\u0648\u0649", "seo-ar", "seo-desc-ar");
+        when(cmsPageSpi.findPageById(any(), eq(pageId))).thenReturn(Optional.of(
+                new CmsPageSpi.PageView(pageId, UUID.randomUUID(), "About", "about",
+                        "about", "About", "content", true, null, null, null, null,
+                        Map.of("ar", arabic))));
+
+        Object title = dgsQueryExecutor.executeAndExtractJsonPath("""
+                query {
+                    page(id: "%s") {
+                        title
+                        translation(languageCode: AR) { title language }
+                    }
+                }
+                """.formatted(globalId("Page", pageId)), "data.page.translation.title");
+
+        assertThat(title).isEqualTo("\u0639\u0646\u0648\u0627\u0646");
+        // The root read AND the field-level completion both flow through the
+        // SAME owning seam (findPageById) — the resolver re-reads the source.
+        verify(cmsPageSpi, atLeastOnce()).findPageById(any(), eq(pageId));
+    }
+
+    @Test
+    void pageTranslationAnswersTheHonestNullForAnUntranslatedLanguage() {
+        actAs("agent-one-admin@example.com", "ADMIN");
+        UUID pageId = UUID.randomUUID();
+        when(cmsPageSpi.findPageById(any(), eq(pageId))).thenReturn(Optional.of(
+                new CmsPageSpi.PageView(pageId, UUID.randomUUID(), "About", "about",
+                        "about", "About", "content", true, null, null, null, null,
+                        Map.of())));
+
+        Object translation = dgsQueryExecutor.executeAndExtractJsonPath("""
+                query {
+                    page(id: "%s") {
+                        translation(languageCode: AR) { title }
+                    }
+                }
+                """.formatted(globalId("Page", pageId)), "data.page.translation");
+
+        assertThat(translation).isNull();
+    }
+
+    @Test
+    void menuItemTranslationResolvesTheAddressedLanguageThroughTheOwningReadSeam() {
+        actAs("agent-one-admin@example.com", "ADMIN");
+        UUID itemId = UUID.randomUUID();
+        UUID translationRowId = UUID.randomUUID();
+        when(cmsNavigationSpi.findMenuItemById(any(), eq(itemId))).thenReturn(Optional.of(
+                new CmsNavigationSpi.MenuItemView(itemId, UUID.randomUUID(), null,
+                        "Home", "/home", null, null, 0,
+                        Map.of("ar", new CmsNavigationSpi.MenuItemTranslationView(
+                                translationRowId, "ar", "\u0627\u0644\u0631\u0626\u064a\u0633\u064a\u0629")))));
+
+        Object name = dgsQueryExecutor.executeAndExtractJsonPath("""
+                query {
+                    menuItem(id: "%s") {
+                        name
+                        translation(languageCode: AR) { name language }
+                    }
+                }
+                """.formatted(globalId("MenuItem", itemId)), "data.menuItem.translation.name");
+
+        assertThat(name).isEqualTo("\u0627\u0644\u0631\u0626\u064a\u0633\u064a\u0629");
+        verify(cmsNavigationSpi, atLeastOnce()).findMenuItemById(any(), eq(itemId));
+    }
+
+    @Test
+    void menuItemTranslationAnswersTheHonestNullForAnUntranslatedLanguage() {
+        actAs("agent-one-admin@example.com", "ADMIN");
+        UUID itemId = UUID.randomUUID();
+        when(cmsNavigationSpi.findMenuItemById(any(), eq(itemId))).thenReturn(Optional.of(
+                new CmsNavigationSpi.MenuItemView(itemId, UUID.randomUUID(), null,
+                        "Home", "/home", null, null, 0, Map.of())));
+
+        Object translation = dgsQueryExecutor.executeAndExtractJsonPath("""
+                query {
+                    menuItem(id: "%s") {
+                        translation(languageCode: AR) { name }
+                    }
+                }
+                """.formatted(globalId("MenuItem", itemId)), "data.menuItem.translation");
+
+        assertThat(translation).isNull();
+    }
+
     @Test
     void assignNavigationRejectsARawMenuIdThroughTheCodec() {
         actAs("agent-one-admin@example.com", "ADMIN");
@@ -602,5 +725,24 @@ class AgentOneMutationDgsTest {
                 mutation { accountUpdate(customerId: "%s", input: { firstName: "X" }) { user { id } } }
                 """.formatted(globalId("User", USER_ID)), "data.accountUpdate"))
                 .hasMessageContaining("app impersonation");
+    }
+    /**
+     * The 2026-11-02 #806 review (Minor · Stability): the payload
+     * vocabulary translation's own contract promises the
+     * {@code GRAPHQL_ERROR} fallback and a never-null return — an
+     * absent native code (an SPI row result's null error code) must
+     * answer the fallback, never the {@code Enum.valueOf} NPE the old
+     * lookup threw past the catch ladder.
+     */
+    @Test
+    void translateAnswersTheFallbackWhenTheNativeCodeIsAbsent() {
+        assertThat(SaleorMutationErrors.translate(
+                com.marketplace.app.graphql.generated.types.CustomerBulkUpdateErrorCode.class,
+                (String) null))
+                .isEqualTo(com.marketplace.app.graphql.generated.types.CustomerBulkUpdateErrorCode.GRAPHQL_ERROR);
+        assertThat(SaleorMutationErrors.translate(
+                com.marketplace.app.graphql.generated.types.ProductErrorCode.class,
+                (String) null))
+                .isEqualTo(com.marketplace.app.graphql.generated.types.ProductErrorCode.GRAPHQL_ERROR);
     }
 }

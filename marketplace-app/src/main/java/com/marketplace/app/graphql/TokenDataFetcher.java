@@ -68,10 +68,19 @@ public class TokenDataFetcher {
 
     /** Saleor {@code tokenCreate(audience, email, password)} — the password grant. */
     @DgsMutation(field = DgsConstants.MUTATION.TokenCreate)
+    // The wave-4 review (Major · Stability): the per-caller permit now rides
+    // @PerCallerBudget — the aspect's ORDER (100) precedes resilience4j's
+    // RateLimiterAspect (405), so the caller's own budget is consumed BEFORE
+    // the shared graphqlTokenMutation permit: a rejected flood can no longer
+    // burn the shared budget for every other caller (the exact starvation
+    // the review demonstrated). perAccount adds the credential-stuffing
+    // budget keyed by the normalized email hash.
+    @PerCallerBudget(surface = "graphqlTokenMutation", perAccount = true)
     @RateLimiter(name = "graphqlTokenMutation")
     public CreateToken tokenCreate(@InputArgument String audience,
                                    @InputArgument String email,
-                                   @InputArgument String password) {
+                                   @InputArgument String password,
+                                   graphql.schema.DataFetchingEnvironment environment) {
         if (audience != null && !audience.isBlank()) {
             // Saleor's custom-audience prefix is a JWT customization this
             // platform's single-audience contract does not carry — the
@@ -101,9 +110,14 @@ public class TokenDataFetcher {
      * after this call (the presented one is gone from the store).
      */
     @DgsMutation(field = DgsConstants.MUTATION.TokenRefresh)
+    // The same wave-4 ordering fix: the per-caller budget rides the aspect,
+    // ahead of the shared permit (the rotation is an anonymous surface —
+    // the proof IS the payload).
+    @PerCallerBudget(surface = "graphqlTokenMutation")
     @RateLimiter(name = "graphqlTokenMutation")
     public RefreshToken tokenRefresh(@InputArgument String csrfToken,
-                                     @InputArgument String refreshToken) {
+                                     @InputArgument String refreshToken,
+                                     graphql.schema.DataFetchingEnvironment environment) {
         // The CSRF token is Saleor's cookie-mode refresh protection; the
         // platform returns the refresh token in the payload (no cookie
         // mode), so the argument stays declared-but-unexecuted — the
@@ -133,8 +147,21 @@ public class TokenDataFetcher {
      * never was).
      */
     @DgsMutation(field = DgsConstants.MUTATION.TokenVerify)
-    @RateLimiter(name = "graphqlTokenMutation")
-    public VerifyToken tokenVerify(@InputArgument String token) {
+    // The shard review (Major · Stability, 2026-11-01): tokenVerify is a
+    // cheap read-shaped verification that PreLoginGraphQlGate admits for
+    // anonymous callers — sharing the 10/min grant budget with
+    // tokenCreate/tokenRefresh let one caller's verification traffic
+    // starve every grant (and vice versa). It now owns its own budget.
+    // The wave-4 review (Minor · Stability & Availability): the shared
+    // JVM-wide graphqlTokenVerify budget alone still let ONE anonymous
+    // client exhaust it for every OTHER caller (the Dashboard's
+    // verification fails platform-wide) — the per-caller budget (the
+    // aspect, ahead of the shared permit) gives each address its own
+    // fail-fast slice, the same shape tokenCreate/tokenRefresh carry.
+    @PerCallerBudget(surface = "graphqlTokenVerify")
+    @RateLimiter(name = "graphqlTokenVerify")
+    public VerifyToken tokenVerify(@InputArgument String token,
+                                   graphql.schema.DataFetchingEnvironment environment) {
         if (token == null || token.isBlank()) {
             throw new IllegalArgumentException("A token is required");
         }
@@ -154,7 +181,9 @@ public class TokenDataFetcher {
 
     /** Saleor {@code tokensDeactivateAll} — the caller's sign-out-everywhere. */
     @DgsMutation(field = DgsConstants.MUTATION.TokensDeactivateAll)
-    @RateLimiter(name = "graphqlTokenMutation")
+    // The same review: the authenticated sign-out-everywhere leg must not
+    // compete with anonymous grant traffic for one shared budget.
+    @RateLimiter(name = "graphqlTokenDeactivate")
     public DeactivateAllUserTokens tokensDeactivateAll() {
         Authentication caller = currentAuthentication();
         accountLifecycleSpi.deactivateAllTokens(caller);

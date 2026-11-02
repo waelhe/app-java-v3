@@ -24,6 +24,7 @@ import com.marketplace.app.graphql.generated.types.UserCreateInput;
 import com.marketplace.identity.spi.IdentitySpi;
 import com.marketplace.identity.spi.UserManagementSpi;
 import com.marketplace.identity.spi.UserWriteFields;
+import com.marketplace.shared.api.ResourceNotFoundException;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
@@ -52,17 +53,20 @@ public class UserManagementDataFetcher {
     private final AgentOneGraphQlMappers mappers;
     private final UserGraphQlMapper userMapper;
     private final SaleorGlobalIdCodec globalIdCodec;
+    private final GraphQlProperties properties;
 
     public UserManagementDataFetcher(UserManagementSpi userManagementSpi,
                                      IdentitySpi identitySpi,
                                      AgentOneGraphQlMappers mappers,
                                      UserGraphQlMapper userMapper,
-                                     SaleorGlobalIdCodec globalIdCodec) {
+                                     SaleorGlobalIdCodec globalIdCodec,
+                                     GraphQlProperties properties) {
         this.userManagementSpi = userManagementSpi;
         this.identitySpi = identitySpi;
         this.mappers = mappers;
         this.userMapper = userMapper;
         this.globalIdCodec = globalIdCodec;
+        this.properties = properties;
     }
 
     // ---------------------------------------------------------------------
@@ -111,6 +115,7 @@ public class UserManagementDataFetcher {
     @DgsMutation(field = DgsConstants.MUTATION.CustomerBulkDelete)
     @RateLimiter(name = "graphqlAccountMutation")
     public CustomerBulkDelete customerBulkDelete(@InputArgument List<String> ids) {
+        properties.requireBoundedList(ids, "customerBulkDelete");
         List<UUID> targets = decodeIds(ids, "A list of customer IDs is required");
         int count = userManagementSpi.bulkDeleteCustomers(currentAuthentication(), targets);
         return CustomerBulkDelete.newBuilder()
@@ -124,19 +129,64 @@ public class UserManagementDataFetcher {
     public CustomerBulkUpdate customerBulkUpdate(
             @InputArgument List<CustomerBulkUpdateInput> customers,
             @InputArgument ErrorPolicyEnum errorPolicy) {
+        properties.requireBoundedList(customers, "customerBulkUpdate");
         if (customers == null || customers.isEmpty()) {
             throw new IllegalArgumentException("A list of customer updates is required");
         }
-        boolean ignoreFailed = errorPolicy == ErrorPolicyEnum.IGNORE_FAILED;
+        // The 2026-11-02 #806 review (Minor · Functional Correctness):
+        // the row-level policies are BOTH of Saleor's contract members
+        // that keep the valid rows — IGNORE_FAILED and
+        // REJECT_FAILED_ROWS ride the SAME per-row mode at the identity
+        // SPI (its boolean answers row-level vs all-or-nothing), while
+        // REJECT_EVERYTHING (the null default) alone stays
+        // all-or-nothing. Silently converting REJECT_FAILED_ROWS to the
+        // all-or-nothing mode broke the pinned contract: one
+        // unresolvable row threw and failed the whole batch instead of
+        // failing ITSELF.
+        boolean rowLevel = errorPolicy == ErrorPolicyEnum.IGNORE_FAILED
+                || errorPolicy == ErrorPolicyEnum.REJECT_FAILED_ROWS;
         List<UUID> ids = new ArrayList<>(customers.size());
         List<UserWriteFields> rows = new ArrayList<>(customers.size());
         for (CustomerBulkUpdateInput row : customers) {
-            ids.add(resolveTarget(row.getExternalReference(), row.getId()));
-            rows.add(toFields(row.getInput()));
+            // The shard review (Minor · Functional Correctness, 2026-11-01):
+            // with a row-level policy, one unresolvable row must fail
+            // ITSELF — never the whole batch. Saleor's errorPolicy
+            // contract keeps the valid rows and reports the failure
+            // per-row in results[i].errors; a null id answers the
+            // per-row failure. The wave-3 review moved toFields INSIDE
+            // the same guard: its classified not-implemented rejections
+            // (the wave-2 honesty fix) are row-level validation
+            // failures — one bad row must fail itself, not the batch
+            // (the identity owner's bulkUpdateCustomers answers the
+            // per-row INVALID for a null id — the null-pairing path the
+            // catch ladder already uses).
+            try {
+                ids.add(resolveTarget(row.getExternalReference(), row.getId()));
+                rows.add(toFields(row.getInput()));
+            } catch (IllegalArgumentException
+                    | ResourceNotFoundException rowFailure) {
+                // The narrowed catch (the 2026-11-02 #806 review, Minor ·
+                // Stability & Availability): ONLY the two semantic
+                // row-failure classes the helpers above actually throw —
+                // the codec's malformed-global-ID IAE, the classified
+                // not-implemented rejections, and the unresolvable
+                // external reference's NOT_FOUND — answer the row-level
+                // null-pairing. Repository and infrastructure failures
+                // (the DataAccessException family) propagate to the
+                // classified GraphQL error surface in every mode instead
+                // of masquerading as a failed row with paired nulls. The
+                // SDL pins [CustomerBulkUpdateInput!]! — non-null
+                // elements — so no null-element NPE can reach this loop.
+                if (!rowLevel) {
+                    throw rowFailure;
+                }
+                ids.add(null);
+                rows.add(null);
+            }
         }
         List<com.marketplace.identity.spi.BulkRowResult> results =
                 userManagementSpi.bulkUpdateCustomers(currentAuthentication(), ids, rows,
-                        ignoreFailed);
+                        rowLevel);
         List<com.marketplace.app.graphql.generated.types.CustomerBulkResult> wireResults =
                 new ArrayList<>(results.size());
         for (com.marketplace.identity.spi.BulkRowResult result : results) {
@@ -197,6 +247,7 @@ public class UserManagementDataFetcher {
     @DgsMutation(field = DgsConstants.MUTATION.StaffBulkDelete)
     @RateLimiter(name = "graphqlAccountMutation")
     public StaffBulkDelete staffBulkDelete(@InputArgument List<String> ids) {
+        properties.requireBoundedList(ids, "staffBulkDelete");
         List<UUID> targets = decodeIds(ids, "A list of staff user IDs is required");
         int count = userManagementSpi.bulkDeleteStaff(currentAuthentication(), targets);
         return StaffBulkDelete.newBuilder()
@@ -209,6 +260,7 @@ public class UserManagementDataFetcher {
     @RateLimiter(name = "graphqlAccountMutation")
     public UserBulkSetActive userBulkSetActive(@InputArgument List<String> ids,
                                               @InputArgument Boolean isActive) {
+        properties.requireBoundedList(ids, "userBulkSetActive");
         List<UUID> targets = decodeIds(ids, "A list of user IDs is required");
         if (isActive == null) {
             throw new IllegalArgumentException("The isActive flag is required");
@@ -275,17 +327,42 @@ public class UserManagementDataFetcher {
         return com.marketplace.app.graphql.generated.types.CustomerBulkUpdateError.newBuilder()
                 .field(null)
                 .message(result.errorMessage())
-                .code(com.marketplace.app.graphql.generated.types.CustomerBulkUpdateErrorCode
-                        .valueOf(result.errorCode()))
+                // The wave-7 review (Minor · Data Integrity): the payload's
+                // own vocabulary is the only representable surface — a
+                // native code it lacks (ALREADY_EXISTS has no
+                // CustomerBulkUpdateErrorCode constant) translated through
+                // the shared contract, never a raw valueOf that destroys
+                // the payload build.
+                .code(SaleorMutationErrors.translate(
+                        com.marketplace.app.graphql.generated.types.CustomerBulkUpdateErrorCode.class,
+                        result.errorCode()))
                 .build();
     }
 
     private UserWriteFields toFields(UserCreateInput input) {
+        // The shard review (Minor · Functional Correctness, 2026-11-01
+        // wave 2): the SDL declares defaultBillingAddress/
+        // defaultShippingAddress/customerType, but the identity owner's
+        // write fields carry none of them — a supplied value was a SILENT
+        // no-op (the file's own never-a-silent-no-op rule, the
+        // rejectChannel precedent). The classified rejection keeps the
+        // wire contract honest.
+        rejectUnimplementedUserInputFields(
+                input.getDefaultBillingAddress(), input.getDefaultShippingAddress(),
+                input.getCustomerType(), "userCreate");
         return new UserWriteFields(input.getEmail(),
                 input.getFirstName(), input.getLastName(), input.getIsActive());
     }
 
     private UserWriteFields toFields(CustomerInput input) {
+        // The shard review (2026-11-01 wave 2): the same classified
+        // rejection the UserCreateInput conversion carries — the customer
+        // amendment's address/customerType fields are equally unowned.
+        if (input != null) {
+            rejectUnimplementedUserInputFields(
+                    input.getDefaultBillingAddress(), input.getDefaultShippingAddress(),
+                    input.getCustomerType(), "customerCreate/customerUpdate");
+        }
         return new UserWriteFields(input == null ? null : input.getEmail(),
                 input == null ? null : input.getFirstName(),
                 input == null ? null : input.getLastName(),
@@ -293,13 +370,51 @@ public class UserManagementDataFetcher {
     }
 
     private UserWriteFields toFields(StaffCreateInput input) {
+        // The shard review (2026-11-01 wave 2): the SDL declares
+        // StaffCreateInput.addGroups — a supplied group list was silently
+        // dropped (an admin granting a permission group got errors:[] and
+        // no change, the exact silent no-op the file bans).
+        if (input.getAddGroups() != null && !input.getAddGroups().isEmpty()) {
+            throw new IllegalArgumentException(
+                    "staffCreate addGroups is not implemented on this platform yet");
+        }
         return new UserWriteFields(input.getEmail(), input.getFirstName(), input.getLastName(),
                 input.getIsActive());
     }
 
     private UserWriteFields toFields(StaffUpdateInput input) {
+        // The shard review (2026-11-01 wave 2): addGroups/removeGroups —
+        // the same classified rejection the create path carries.
+        if ((input.getAddGroups() != null && !input.getAddGroups().isEmpty())
+                || (input.getRemoveGroups() != null && !input.getRemoveGroups().isEmpty())) {
+            throw new IllegalArgumentException(
+                    "staffUpdate addGroups/removeGroups is not implemented on this platform yet");
+        }
         return new UserWriteFields(input.getEmail(), input.getFirstName(), input.getLastName(),
                 input.getIsActive());
+    }
+
+    /**
+     * The shared never-a-silent-no-op rejection for the user-surface's
+     * unowned input fields (the shard review 2026-11-01 wave 2): a SUPPLIED
+     * value answers the classified validation error, an absent one passes
+     * — the file's own rejectChannel vocabulary.
+     */
+    private static void rejectUnimplementedUserInputFields(
+            Object defaultBillingAddress, Object defaultShippingAddress,
+            Object customerType, String root) {
+        if (defaultBillingAddress != null) {
+            throw new IllegalArgumentException(
+                    root + " defaultBillingAddress is not implemented on this platform yet");
+        }
+        if (defaultShippingAddress != null) {
+            throw new IllegalArgumentException(
+                    root + " defaultShippingAddress is not implemented on this platform yet");
+        }
+        if (customerType != null) {
+            throw new IllegalArgumentException(
+                    root + " customerType is not implemented on this platform yet");
+        }
     }
 
     private com.marketplace.app.graphql.generated.types.User userById(UUID userId) {

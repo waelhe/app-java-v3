@@ -63,9 +63,7 @@ class AgentOneGraphQlMappers {
                 .cityArea(nullToEmpty(view.cityArea()))
                 .postalCode(nullToEmpty(view.postalCode()))
                 .country(com.marketplace.app.graphql.generated.types.CountryDisplay.newBuilder()
-                        .code(view.country() == null ? null
-                                : com.marketplace.app.graphql.generated.types.CountryCode
-                                        .valueOf(view.country()))
+                        .code(countryCodeOf(view.country()))
                         .country(countryName(view.country()))
                         .build())
                 .countryArea(nullToEmpty(view.countryArea()))
@@ -110,7 +108,7 @@ class AgentOneGraphQlMappers {
     // ---------------------------------------------------------------------
 
     <T> CustomerTypeCountableConnection toCustomerTypeConnection(Window<CustomerTypeView> window,
-                                                                  long total) {
+                                                                  long total, boolean hasPreviousPage) {
         List<CustomerTypeCountableEdge> edges = new ArrayList<>(window.getContent().size());
         for (int i = 0; i < window.getContent().size(); i++) {
             edges.add(CustomerTypeCountableEdge.newBuilder()
@@ -122,7 +120,7 @@ class AgentOneGraphQlMappers {
                 .edges(edges)
                 .pageInfo(PageInfo.newBuilder()
                         .hasNextPage(window.hasNext())
-                        .hasPreviousPage(false)
+                        .hasPreviousPage(hasPreviousPage)
                         .startCursor(edges.isEmpty() ? null : edges.get(0).getCursor())
                         .endCursor(edges.isEmpty() ? null : edges.get(edges.size() - 1).getCursor())
                         .build())
@@ -137,7 +135,7 @@ class AgentOneGraphQlMappers {
     List<AccountError> accountErrors(Throwable failure) {
         return List.of(AccountError.newBuilder()
                 .field(null).message(SaleorMutationErrors.of(failure).message())
-                .code(AccountErrorCode.valueOf(SaleorMutationErrors.codeOf(failure)))
+                .code(SaleorMutationErrors.translate(AccountErrorCode.class, SaleorMutationErrors.codeOf(failure)))
                 .build());
     }
 
@@ -148,7 +146,7 @@ class AgentOneGraphQlMappers {
     List<StaffError> staffErrors(Throwable failure) {
         return List.of(StaffError.newBuilder()
                 .field(null).message(SaleorMutationErrors.of(failure).message())
-                .code(AccountErrorCode.valueOf(SaleorMutationErrors.codeOf(failure)))
+                .code(SaleorMutationErrors.translate(AccountErrorCode.class, SaleorMutationErrors.codeOf(failure)))
                 .build());
     }
 
@@ -159,7 +157,7 @@ class AgentOneGraphQlMappers {
     List<ShopError> shopErrors(Throwable failure) {
         return List.of(ShopError.newBuilder()
                 .field(null).message(SaleorMutationErrors.of(failure).message())
-                .code(ShopErrorCode.valueOf(SaleorMutationErrors.codeOf(failure)))
+                .code(SaleorMutationErrors.translate(ShopErrorCode.class, SaleorMutationErrors.codeOf(failure)))
                 .build());
     }
 
@@ -170,7 +168,7 @@ class AgentOneGraphQlMappers {
     List<PageError> pageErrors(Throwable failure) {
         return List.of(PageError.newBuilder()
                 .field(null).message(SaleorMutationErrors.of(failure).message())
-                .code(PageErrorCode.valueOf(SaleorMutationErrors.codeOf(failure)))
+                .code(SaleorMutationErrors.translate(PageErrorCode.class, SaleorMutationErrors.codeOf(failure)))
                 .build());
     }
 
@@ -181,7 +179,7 @@ class AgentOneGraphQlMappers {
     List<MenuError> menuErrors(Throwable failure) {
         return List.of(MenuError.newBuilder()
                 .field(null).message(SaleorMutationErrors.of(failure).message())
-                .code(MenuErrorCode.valueOf(SaleorMutationErrors.codeOf(failure)))
+                .code(SaleorMutationErrors.translate(MenuErrorCode.class, SaleorMutationErrors.codeOf(failure)))
                 .build());
     }
 
@@ -198,6 +196,36 @@ class AgentOneGraphQlMappers {
     }
 
     private static String countryName(String code) {
-        return new Locale("", code == null ? "" : code).getDisplayCountry(Locale.ENGLISH);
+        // The shard review (Minor · Functional Correctness, 2026-11-01
+        // wave 2): the deprecated-for-removal Locale constructor (JDK 19+)
+        // is replaced by the official factory Locale.of — identical
+        // behavior on this JDK 25 runtime.
+        return Locale.of("", code == null ? "" : code)
+                .getDisplayCountry(Locale.ENGLISH);
+    }
+
+    /**
+     * The SDL pins {@code CountryDisplay.code: CountryCode!} — the read
+     * path must answer a member of the enum, never a null. The platform's
+     * OWN write path guarantees it (AddressInput.country is the enum
+     * itself and the identity owner rejects anything but ^[A-Z]{2}$,
+     * verified against AddressFields); this guard is the defense-in-depth
+     * for legacy/imported rows: a missing or unknown code answers the
+     * classified validation error (the surface's error taxonomy), not a
+     * raw non-null violation or a bare valueOf IAE from deep inside the
+     * mapper.
+     */
+    private static com.marketplace.app.graphql.generated.types.CountryCode countryCodeOf(
+            String code) {
+        if (code == null) {
+            throw new IllegalArgumentException(
+                    "A stored address is missing its country code (data integrity)");
+        }
+        try {
+            return com.marketplace.app.graphql.generated.types.CountryCode.valueOf(code);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException(
+                    "A stored address carries an unknown country code: " + code);
+        }
     }
 }

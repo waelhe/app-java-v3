@@ -13,7 +13,7 @@
 #  - Metadata/privateMetadata fields are absent-by-design on every type here
 #    (no metadata subsystem exists; recorded in the divergence proposals —
 #    absent beats inert, the User.firstName precedent).
-#  - Saleor 3.23.43 pinned schema (blob b8fa0dd809081f76dc2834bb5c286561e5783276)
+#  - Saleor 3.23.45 pinned schema (blob b8fa0dd809081f76dc2834bb5c286561e5783276)
 #    is the signature authority; every declared root below carries its exact
 #    argument names/nullability minus the absent-by-design fields.
 #  - BLOCKED roots stay UNDECLARED on the wire (the frozen blocked-roots

@@ -135,13 +135,20 @@ public interface ProductVariantWriteSpi {
      * pinned {@code id + fields} items over the single-item amendment
      * ladder; the same one-transaction/policy semantics).
      *
+     * @param productId      the OWNING product's native id — every item
+     *                       must belong to it (the Saleor {@code product:
+     *                       ID!} argument's own law: a variant of another
+     *                       product answers the per-row NOT_FOUND, never a
+     *                       cross-product amendment — the shard review
+     *                       2026-11-01, Minor · Data Integrity)
      * @param items          the update items (row id + the partial fields)
      * @param authentication the caller's authentication
      * @param errorPolicy    the pinned policy member name (null = the
      *                       REJECT_EVERYTHING default)
      * @return the per-item outcomes
      */
-    List<ProductVariantBulkOutcome> bulkUpdateVariants(List<ProductVariantBulkUpdateItem> items,
+    List<ProductVariantBulkOutcome> bulkUpdateVariants(UUID productId,
+                                                       List<ProductVariantBulkUpdateItem> items,
                                                        org.springframework.security.core.Authentication authentication,
                                                        String errorPolicy);
 }

@@ -15,7 +15,6 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -49,7 +48,7 @@ class CheckoutGraphQlMapperTest {
         when(variantReadSpi.findVariantForCheckoutLine(variantId)).thenReturn(Optional.of(view));
         when(variantMapper.toGraphQlProductVariant(view)).thenReturn(wireVariant);
 
-        Map<String, Object> mapped = mapper.toGraphQlCheckout(checkout);
+        Map<String, Object> mapped = mapper.render(checkout).checkout();
         @SuppressWarnings("unchecked")
         Map<String, Object> mappedLine = (Map<String, Object>) ((List<?>) mapped.get("lines")).get(0);
 
@@ -61,29 +60,85 @@ class CheckoutGraphQlMapperTest {
     }
 
     @Test
-    void failsClosedForLegacyProductLevelCartLineWithoutVariantId() {
+    void neverReportsTheLegacyProductLevelLineForThePurge() {
+        // The wave-4 #806 review's SECOND cycle (Major · Data Integrity):
+        // a product-level line (variantId == null — ADR-0012's deliberate
+        // legacy cart state, still created by CartController.addItem and
+        // served by the legacy REST cart surface with its id) is NOT
+        // staleness. It is excluded from the Saleor wire render (the
+        // pinned reference schema saleor/saleor@3.23.45 declares
+        // CheckoutLine.variant: ProductVariant! — never fabricated) but
+        // it must NEVER be reported for the purge: the earlier contract
+        // fed it to checkoutSpi.deleteLines on every checkout read and
+        // deleted a legitimate, purchasable line from under its owner.
+        UUID lineId = UUID.randomUUID();
         CheckoutView checkout = new CheckoutView(
                 UUID.randomUUID(),
-                List.of(new CheckoutView.Line(UUID.randomUUID(), null, 1)),
+                List.of(new CheckoutView.Line(lineId, null, 1)),
                 1);
 
-        assertThatThrownBy(() -> mapper.toGraphQlCheckout(checkout))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("product variant or parent record is unavailable");
+        CheckoutGraphQlMapper.RenderedCheckout rendered = mapper.render(checkout);
+
+        assertThat(rendered.checkout().get("lines")).isEqualTo(List.of());
+        assertThat(rendered.checkout().get("quantity")).isEqualTo(0);
+        assertThat(rendered.staleLineIds()).isEmpty();
         verifyNoInteractions(variantReadSpi, variantMapper);
     }
 
     @Test
-    void failsClosedWhenVariantOrParentNoLongerResolves() {
+    void distinguishesTheProductLevelLineFromTheStaleVariantLineInTheSameCart() {
+        // The two unrenderable shapes carry OPPOSITE dispositions: the
+        // product-level line stays unpurged (its home is the legacy REST
+        // surface), while the line whose variant no longer resolves is
+        // reported for the owner-authorized purge (the Saleor cascade
+        // analog). One cart carrying both plus a live line pins the
+        // discrimination the second-cycle review demanded.
+        UUID productLevelLineId = UUID.randomUUID();
+        UUID staleLineId = UUID.randomUUID();
+        UUID liveLineId = UUID.randomUUID();
+        UUID staleVariantId = UUID.randomUUID();
+        UUID liveVariantId = UUID.randomUUID();
+        when(variantReadSpi.findVariantForCheckoutLine(staleVariantId))
+                .thenReturn(Optional.empty());
+        ProductVariantView liveView = new ProductVariantView(
+                liveVariantId, "variant-name", "seller-sku", "ACTIVE",
+                new ProductView(UUID.randomUUID(), "parent-name", null, "ACTIVE"));
+        when(variantReadSpi.findVariantForCheckoutLine(liveVariantId))
+                .thenReturn(Optional.of(liveView));
+        when(variantMapper.toGraphQlProductVariant(liveView)).thenReturn(mock(ProductVariant.class));
+        when(globalIdCodec.encode(CheckoutGraphQlMapper.CHECKOUT_LINE_TYPE, liveLineId))
+                .thenReturn("live-line-global-id");
+        CheckoutView checkout = new CheckoutView(
+                UUID.randomUUID(),
+                List.of(
+                        new CheckoutView.Line(productLevelLineId, null, 3),
+                        new CheckoutView.Line(staleLineId, staleVariantId, 1),
+                        new CheckoutView.Line(liveLineId, liveVariantId, 2)),
+                6);
+
+        CheckoutGraphQlMapper.RenderedCheckout rendered = mapper.render(checkout);
+
+        assertThat(((List<?>) rendered.checkout().get("lines"))).hasSize(1);
+        assertThat(rendered.checkout().get("quantity")).isEqualTo(2);
+        assertThat(rendered.staleLineIds()).containsExactly(staleLineId);
+        verify(variantReadSpi).findVariantForCheckoutLine(staleVariantId);
+        verify(variantReadSpi).findVariantForCheckoutLine(liveVariantId);
+    }
+
+    @Test
+    void reportsTheLineWhoseVariantNoLongerResolvesForTheOwnerSidePurge() {
+        UUID lineId = UUID.randomUUID();
         UUID variantId = UUID.randomUUID();
         when(variantReadSpi.findVariantForCheckoutLine(variantId)).thenReturn(Optional.empty());
         CheckoutView checkout = new CheckoutView(
                 UUID.randomUUID(),
-                List.of(new CheckoutView.Line(UUID.randomUUID(), variantId, 1)),
+                List.of(new CheckoutView.Line(lineId, variantId, 1)),
                 1);
 
-        assertThatThrownBy(() -> mapper.toGraphQlCheckout(checkout))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("product variant or parent record is unavailable");
+        CheckoutGraphQlMapper.RenderedCheckout rendered = mapper.render(checkout);
+
+        assertThat(rendered.checkout().get("lines")).isEqualTo(List.of());
+        assertThat(rendered.staleLineIds()).containsExactly(lineId);
+        verify(variantReadSpi).findVariantForCheckoutLine(variantId);
     }
 }

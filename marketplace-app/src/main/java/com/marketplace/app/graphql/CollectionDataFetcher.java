@@ -241,7 +241,10 @@ public class CollectionDataFetcher {
      * model), and the backward pagination.</p>
      */
     @DgsData(parentType = DgsConstants.COLLECTION.TYPE_NAME, field = DgsConstants.COLLECTION.Products)
-    @RateLimiter(name = "graphqlCollectionQuery")
+    // The shard review (Major · Stability, 2026-11-01): NO rate limiting on
+    // FIELD fetchers — the products field consumed one graphqlCollectionQuery
+    // permit PER COLLECTION resolved, so a page of collections failed
+    // mid-page. Rate limiting owns the ROOT resolvers only.
     public ProductCountableConnection products(
             com.netflix.graphql.dgs.DgsDataFetchingEnvironment dataFetchingEnvironment,
             @InputArgument ProductFilterInput filter,

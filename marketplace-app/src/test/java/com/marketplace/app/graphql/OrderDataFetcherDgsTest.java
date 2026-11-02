@@ -55,6 +55,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -280,6 +282,30 @@ class OrderDataFetcherDgsTest {
      * the lifecycle ADAPT mapping rendering the platform's PLACED as
      * upstream's UNCONFIRMED) ride the same envelope.
      */
+    /**
+     * The shard review (2026-11-01, Minor · Security & Privacy): the empty
+     * page for a non-positive {@code first} answered BEFORE the ADMIN
+     * decision — a non-ADMIN caller received a success-shaped empty
+     * connection instead of the AUTHZ-001 rejection. The permission
+     * decision now comes FIRST.
+     */
+    @Test
+    void ordersNonPositiveFirstStillAnswersThePermissionDecisionFirst() {
+        authenticateAs("dgs-consumer-subject", "CONSUMER");
+        doThrow(new org.springframework.security.access.AccessDeniedException("denied"))
+                .when(orderCommandSpi).requireAdmin();
+
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                query { orders(first: 0) { edges { node { id } } } }
+                """, "data.orders"))
+                .hasMessageContaining("denied");
+
+        verify(orderCommandSpi).requireAdmin();
+        verify(orderReadSpi, never()).scrollOrders(
+                any(org.springframework.security.core.Authentication.class),
+                any(OrderSort.class), any(), any(Limit.class));
+    }
+
     @Test
     void ordersSerializesTheSaleorConnectionEnvelopeWithKeysetCursors() {
         authenticateAs("dgs-admin-subject", "ADMIN");
@@ -693,7 +719,12 @@ class OrderDataFetcherDgsTest {
     }
 
     @Test
-    void checkoutFailsClosedWhenALineVariantIsNoLongerReadable() {
+    void checkoutPurgesTheLineWhoseVariantIsNoLongerReadable() {
+        // The wave-4 #806 review (Major · Data Integrity): the stale line is
+        // skipped from the wire render AND purged through the same
+        // owner-authorized use case checkoutLineDelete rides — the persisted
+        // cart converges with the rendered projection and no line id is ever
+        // hidden from its owner.
         authenticateAs("checkout-owner-subject");
         UUID checkoutId = UUID.randomUUID(), lineId = UUID.randomUUID(), variantId = UUID.randomUUID();
         when(checkoutSpi.findCheckout(eq(checkoutId), any(org.springframework.security.core.Authentication.class)))
@@ -701,15 +732,18 @@ class OrderDataFetcherDgsTest {
         when(variantReadSpi.findVariantForCheckoutLine(variantId))
                 .thenReturn(java.util.Optional.empty());
 
-        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
-                "query($id: ID!) { checkout(id: $id) { id lines { variant { id } } } }",
-                "data.checkout", Map.of("id", agent3GlobalId("Checkout", checkoutId))))
-                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
-                .hasMessageContaining("product variant or parent record is unavailable");
+        Map<String, Object> checkout = dgsQueryExecutor.executeAndExtractJsonPath(
+                "query($id: ID!) { checkout(id: $id) { id quantity lines { id } } }",
+                "data.checkout", Map.of("id", agent3GlobalId("Checkout", checkoutId)));
+
+        assertThat(checkout.get("quantity")).isEqualTo(0);
+        assertThat((List<?>) checkout.get("lines")).isEmpty();
+        verify(checkoutSpi).deleteLines(eq(checkoutId), eq(List.of(lineId)),
+                any(org.springframework.security.core.Authentication.class));
     }
 
     @Test
-    void checkoutLinesAddKeepsTheCommittedCommandAndFailsClosedOnTheUnavailableVariantProjection() {
+    void checkoutLinesAddKeepsTheCommittedCommandAndPurgesTheUnavailableVariantProjection() {
         authenticateAs("checkout-owner-subject");
         UUID checkoutId = UUID.randomUUID(), lineId = UUID.randomUUID(), variantId = UUID.randomUUID();
         when(checkoutSpi.addLines(eq(checkoutId), any(),
@@ -718,14 +752,19 @@ class OrderDataFetcherDgsTest {
         when(variantReadSpi.findVariantForCheckoutLine(variantId))
                 .thenReturn(java.util.Optional.empty());
 
-        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
-                "mutation($id: ID!, $lines: [CheckoutLineInput!]!) { checkoutLinesAdd(id: $id, lines: $lines) { checkout { id lines { variant { id } } } checkoutErrors { code } errors { code } } }",
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath(
+                "mutation($id: ID!, $lines: [CheckoutLineInput!]!) { checkoutLinesAdd(id: $id, lines: $lines) { checkout { id quantity lines { id } } checkoutErrors { code } errors { code } } }",
                 "data.checkoutLinesAdd",
                 Map.of("id", agent3GlobalId("Checkout", checkoutId),
-                        "lines", List.of(Map.of("variantId", agent3GlobalId("ProductVariant", variantId), "quantity", 2)))))
-                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
-                .hasMessageContaining("product variant or parent record is unavailable");
+                        "lines", List.of(Map.of("variantId", agent3GlobalId("ProductVariant", variantId), "quantity", 2))));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> checkout = (Map<String, Object>) payload.get("checkout");
+        assertThat(checkout.get("quantity")).isEqualTo(0);
+        assertThat((List<?>) checkout.get("lines")).isEmpty();
         verify(checkoutSpi).addLines(eq(checkoutId), any(),
+                any(org.springframework.security.core.Authentication.class));
+        verify(checkoutSpi).deleteLines(eq(checkoutId), eq(List.of(lineId)),
                 any(org.springframework.security.core.Authentication.class));
     }
 

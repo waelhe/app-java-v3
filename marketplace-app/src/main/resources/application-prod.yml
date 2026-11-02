@@ -131,9 +131,19 @@ server:
   # the application runs behind a trusted TLS-terminating proxy, so forwarded
   # headers must be honored (official Spring Boot how-to "Running Behind a
   # Front-end Proxy Server" + Spring Security 7.1.1 reference). FRAMEWORK (the
-  # ForwardedHeaderFilter, registered at Ordered.HIGHEST_PRECEDENCE) covers both
-  # the RFC 7239 "Forwarded" header and the full X-Forwarded-* set — including
-  # host and port, which NATIVE (Tomcat RemoteIpValve) does not honor.
+  # ForwardedHeaderFilter) covers both the RFC 7239 "Forwarded" header and the
+  # full X-Forwarded-* set — including host and port, which NATIVE (Tomcat
+  # RemoteIpValve) does not honor.
+  # The wave-4 #806 review's rate-limit-key finding: under FRAMEWORK the
+  # request wrapper SUPPRESSES the raw X-Forwarded-For headers entirely and
+  # its resolved remoteAddr is the LEFTMOST XFF entry (spoofable when the
+  # edge appends) — the PerCallerRateLimitGuard therefore keys on the
+  # RIGHTMOST XFF entry (the one this trusted edge appended) or the true
+  # socket peer address, read from the CONTAINER's root request (the guard
+  # unwraps the standard ServletRequestWrapper chain because Boot 4.1.2
+  # registers the forwarded filter at Integer.MIN_VALUE — no filter can
+  # precede the wrapper to capture the raw header); the strategy itself
+  # stays FRAMEWORK.
   forward-headers-strategy: FRAMEWORK
   tomcat:
     # Official javadoc: "When using SSL terminated at a proxy, this property

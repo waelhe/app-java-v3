@@ -126,4 +126,26 @@ public record GraphQlProperties(
             @Min(1) @Max(10_000) @DefaultValue("200") int maxListItems
     ) {
     }
+
+    /**
+     * The bulk-list bound EVERY list-accepting GraphQL root applies before
+     * any per-item decode or SPI work — the G4 unbounded-list defense,
+     * extracted here as the single shared guard (the shard review
+     * 2026-11-01, Minor · Performance: the bound existed only on three
+     * fetchers while ~27 bulk roots accepted unbounded lists; a RateLimiter
+     * counts the REQUEST, never the items, so a single authenticated call
+     * could push thousands of ids through decode + SPI). Null-tolerant:
+     * the root's own presence validation answers the null/empty shape.
+     */
+    public void requireBoundedList(java.util.List<?> items, String rootName) {
+        if (items == null) {
+            return;
+        }
+        int maxListItems = bulk.maxListItems();
+        if (items.size() > maxListItems) {
+            throw new IllegalArgumentException(rootName + " rejects a list of " + items.size()
+                    + " items: the bulk list bound is " + maxListItems
+                    + " (marketplace.graphql.bulk.max-list-items)");
+        }
+    }
 }

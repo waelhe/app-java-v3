@@ -39,7 +39,9 @@ class OrderMutationDataFetcherTest {
 
     @BeforeEach
     void setUp() {
-        fetcher = new OrderMutationDataFetcher(orderCommandSpi, mapper, codec);
+        GraphQlProperties properties = new GraphQlProperties(
+                null, null, null, new GraphQlProperties.Bulk(200));
+        fetcher = new OrderMutationDataFetcher(orderCommandSpi, mapper, codec, properties);
     }
 
     @Test

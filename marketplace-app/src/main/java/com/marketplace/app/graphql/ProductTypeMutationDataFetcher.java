@@ -53,13 +53,16 @@ public class ProductTypeMutationDataFetcher {
     private final ProductTypeWriteSpi productTypeWriteSpi;
     private final ProductTypeGraphQlMapper productTypeMapper;
     private final SaleorGlobalIdCodec globalIdCodec;
+    private final GraphQlProperties properties;
 
     public ProductTypeMutationDataFetcher(ProductTypeWriteSpi productTypeWriteSpi,
                                           ProductTypeGraphQlMapper productTypeMapper,
-                                          SaleorGlobalIdCodec globalIdCodec) {
+                                          SaleorGlobalIdCodec globalIdCodec,
+                                          GraphQlProperties properties) {
         this.productTypeWriteSpi = productTypeWriteSpi;
         this.productTypeMapper = productTypeMapper;
         this.globalIdCodec = globalIdCodec;
+        this.properties = properties;
     }
 
     /**
@@ -139,6 +142,7 @@ public class ProductTypeMutationDataFetcher {
     @DgsMutation(field = DgsConstants.MUTATION.ProductTypeBulkDelete)
     @RateLimiter(name = "graphqlProductTypeMutation")
     public ProductTypeBulkDelete productTypeBulkDelete(@InputArgument List<String> ids) {
+        properties.requireBoundedList(ids, "productTypeBulkDelete");
         if (ids == null || ids.isEmpty()) {
             throw new IllegalArgumentException("productTypeBulkDelete requires a non-empty list of ids");
         }

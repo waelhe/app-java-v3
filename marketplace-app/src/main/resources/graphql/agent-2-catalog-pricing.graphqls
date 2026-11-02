@@ -2,8 +2,8 @@
 # Agent 2 — Catalog / Pricing / Discounts (P2 + P3) bounded SDL
 #
 # The agent-2 packet's own schema fragment (the campaign's SDL
-# isolation rule): every root below carries the EXACT Saleor 3.23.43
-# pinned signature (repository saleor/saleor, ref 3.23.43,
+# isolation rule): every root below carries the EXACT Saleor 3.23.45
+# pinned signature (repository saleor/saleor, ref 3.23.45,
 # saleor/graphql/schema.graphql, blob b8fa0dd809081f76dc2834bb5c286561e
 # 5783276) for the arguments the platform's house no-new-scalar SDL can
 # declare. Saleor-only directives (@doc/@webhookEventsInfo) and fields
@@ -148,7 +148,7 @@ type ProductError {
     code: ProductErrorCode!
 }
 
-# The pinned Saleor 3.23.43 ProductErrorCode membership set — the
+# The pinned Saleor 3.23.45 ProductErrorCode membership set — the
 # Products-domain mutation payload error vocabulary (declared whole:
 # enum members are wire vocabulary, not owned capabilities; this
 # surface currently answers REQUIRED/INVALID/NOT_FOUND/ALREADY_EXISTS).
@@ -180,7 +180,7 @@ enum ProductErrorCode {
 # =====================================================================
 # The product-type mutation roots — the catalog owner's goods-schema
 # ADMIN write use case over the EXISTING product_types table (no new
-# migration). Signatures are the pinned 3.23.43 shapes (note the pinned
+# migration). Signatures are the pinned 3.23.45 shapes (note the pinned
 # root's own REQUIRED id arguments — unlike the category roots, Saleor's
 # productTypeDelete/productTypeUpdate carry no externalReference
 # argument at all).
@@ -255,7 +255,7 @@ type ProductTypeBulkDelete {
 # =====================================================================
 # The product mutation roots — the catalog owner's PROVIDER-scoped
 # product write use case over the EXISTING products table (no new
-# migration). Signatures are the pinned 3.23.43 shapes; the
+# migration). Signatures are the pinned 3.23.45 shapes; the
 # declared-but-unowned arguments (externalReference — no external-ID
 # column) answer the classified validation error when sent. The
 # platform's ownership law for provider-owned rows rides the owning
@@ -331,7 +331,12 @@ input ProductCreateInput {
     """
     ID of the product's reusable goods schema (typed global ID of the
     ProductType root's type; null keeps pre-C1 and zero-variant
-    products compatible — a typed product starts as DRAFT).
+    products compatible — a typed product starts as DRAFT). The
+    nullability is the RECORDED platform divergence: Saleor 3.23.45
+    declares the field `ID!` (saleor-contract-divergences.csv, the
+    2026-11-02 #806 review) — the single-row create keeps the
+    zero-variant capability the row's own history carries, while the
+    bulk path pins its reference REQUIRED per its own contract.
     """
     productType: ID
 
@@ -397,7 +402,7 @@ type ProductBulkDelete {
 # =====================================================================
 # The product-variant mutation roots — the catalog owner's variant
 # write use case over the EXISTING product_variants table (V219, the
-# ADR-0012 registry). Signatures are the pinned 3.23.43 shapes for the
+# ADR-0012 registry). Signatures are the pinned 3.23.45 shapes for the
 # owned argument set; the declared-but-unowned arguments
 # (externalReference — no external-ID column; sku/skus — the id is the
 # addressing key on this platform, the SKU is seller-namespaced)
@@ -560,7 +565,7 @@ type ProductVariantBulkDelete {
 # =====================================================================
 # The voucher mutation roots — the pricing owner's voucher-policy ADMIN
 # write use case over the EXISTING vouchers table (V223). Signatures are
-# the pinned 3.23.43 shapes; the declared-but-unowned arguments
+# the pinned 3.23.45 shapes; the declared-but-unowned arguments
 # (externalReference — no external-ID column) answer the classified
 # validation error when sent.
 # =====================================================================
@@ -697,7 +702,7 @@ type DiscountError {
     code: DiscountErrorCode!
 }
 
-# The pinned Saleor 3.23.43 DiscountErrorCode membership set (the
+# The pinned Saleor 3.23.45 DiscountErrorCode membership set (the
 # Discounts-domain payload error vocabulary; this surface currently
 # answers REQUIRED/INVALID/NOT_FOUND/ALREADY_EXISTS/VOUCHER_ALREADY_USED).
 enum DiscountErrorCode {
@@ -715,7 +720,7 @@ enum DiscountErrorCode {
 # =====================================================================
 # The attribute mutation roots — the catalog owner's typed attribute
 # ADMIN write use case over the EXISTING catalog_attribute_definitions
-# table (no new migration). Signatures are the pinned 3.23.43 shapes
+# table (no new migration). Signatures are the pinned 3.23.45 shapes
 # (attributeDelete/attributeUpdate carry the externalReference argument
 # — no external-ID column exists on this platform, so a non-null value
 # answers the classified validation error, never a silent no-op).
@@ -843,7 +848,7 @@ type AttributeError {
     code: AttributeErrorCode!
 }
 
-# The pinned Saleor 3.23.43 AttributeErrorCode membership set (the
+# The pinned Saleor 3.23.45 AttributeErrorCode membership set (the
 # Attributes-domain payload error vocabulary; this surface currently
 # answers REQUIRED/INVALID/NOT_FOUND/ALREADY_EXISTS).
 enum AttributeErrorCode {
@@ -859,7 +864,7 @@ enum AttributeErrorCode {
 # The attribute-value mutation roots — the catalog owner's CHOICE-
 # attribute option-value ADMIN write use case over the EXISTING
 # catalog_attribute_options table (no new migration). Signatures are
-# the pinned 3.23.43 shapes (attributeValueDelete/attributeValueUpdate
+# the pinned 3.23.45 shapes (attributeValueDelete/attributeValueUpdate
 # carry the externalReference argument — no external-ID column exists
 # on this platform, so a non-null value answers the classified
 # validation error, never a silent no-op).
@@ -1006,7 +1011,7 @@ type AttributeValueBulkDelete {
 # (name_en/name_ar) ARE the platform's translation storage — AR
 # addresses the name_ar dimension, EN the name_en dimension (the
 # central schema's own two-member LanguageCodeEnum). Signatures are
-# the pinned 3.23.43 shapes for the owned field set; the unowned
+# the pinned 3.23.45 shapes for the owned field set; the unowned
 # input members (the JSONString description family, the SEO fields,
 # the richText/plainText pair) have no owning capabilities on this
 # surface and stay undeclared — recorded divergences, never faked.
@@ -1322,7 +1327,9 @@ input ProductBulkCreateInput {
     """
     ID of the product's reusable goods schema (typed global ID of the
     ProductType root's type — REQUIRED per the pinned input's own
-    contract).
+    contract; the single-row ProductCreateInput carries the SAME field
+    OPTIONAL — the recorded zero-variant compatibility divergence,
+    saleor-contract-divergences.csv).
     """
     productType: ID!
 
@@ -1575,7 +1582,7 @@ enum ProductVariantBulkErrorCode {
 # migration): the collection/collections read roots, the
 # Collection.products field, and the collectionCreate/Update/Delete/
 # BulkDelete/Translate/AddProducts/RemoveProducts/ReorderProducts
-# mutation roots. Every root carries the EXACT Saleor 3.23.43 pinned
+# mutation roots. Every root carries the EXACT Saleor 3.23.45 pinned
 # signature for the arguments the platform's house no-new-scalar SDL
 # can declare; Saleor-only directives and fields whose scalar owners
 # do not exist on this surface (Upload, JSONString) stay undeclared —
@@ -1878,22 +1885,40 @@ input CollectionInput {
 # The declared-but-unowned filter shapes — every field stays refused
 # with the classified validation error until an owning query
 # capability exists (the honest boundary, never a silent no-op).
+# BOUNDED closure per the ProductFilterInput/ProductWhereInput
+# precedent: every DECLARED field is the pinned Saleor 3.23.45
+# contract's own member (the 2026-11-02 #806 review — the earlier
+# singular `slug` and the where-side `name` are NOT in the contract
+# and stay undeclared), the scalar surface only; the unowned closure
+# families (published with its CollectionPublished enum, metadata
+# with its MetadataFilter rows, the AND/OR where recursion) stay
+# undeclared — recorded divergences (saleor-contract-divergences.csv),
+# never faked; a query naming one fails schema validation loudly.
 input CollectionFilterInput {
-    """The slug filtering shape (no owning query capability yet)."""
-    slug: String
+    """Filter by the search sentence (no owning query capability yet)."""
+    search: String
+
+    """Filter by the collection global IDs (no owning query capability yet)."""
+    ids: [ID!]
+
+    """Filter by the collection slugs (no owning query capability yet)."""
+    slugs: [String!]
+
+    """Filter by the channel slug (no owning query capability yet; the pinned contract marks it deprecated in favor of the root-level argument)."""
+    channel: String @deprecated(reason: "Use root-level channel argument instead.")
 }
 
 input CollectionWhereInput {
-    """The name searching shape (no owning query capability yet)."""
-    name: String
+    """Filter by the collection global IDs (no owning query capability yet)."""
+    ids: [ID!]
 }
 
 input CollectionSortingInput {
-    """The sort direction."""
-    direction: OrderDirection
+    """The sort direction (the wave-7 review: Saleor's contract declares it non-null)."""
+    direction: OrderDirection!
 
-    """The sort field (NAME has the owning fact; PRODUCT_COUNT answers the classified error)."""
-    field: CollectionSortField
+    """The sort field (NAME has the owning fact; PRODUCT_COUNT answers the classified error). Saleor's contract declares it non-null."""
+    field: CollectionSortField!
 }
 
 enum CollectionSortField {

@@ -159,7 +159,7 @@ class AccountSelfServiceTokenServiceTest {
     void changePasswordEnforcesTheShapeContract() {
         assertThatThrownBy(() -> service.changePassword(caller, "old", "short"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("8 to 72 characters");
+                .hasMessageContaining("at most 72 bytes");
         assertThatThrownBy(() -> service.changePassword(caller, null, "new-password-1"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("current password is required");

@@ -11,6 +11,7 @@ import com.marketplace.app.graphql.generated.types.OrderWhereInput;
 import com.marketplace.app.graphql.generated.types.PageInfo;
 import com.marketplace.app.graphql.generated.types.OrderDirection;
 import com.marketplace.orders.spi.OrderPage;
+import com.marketplace.orders.spi.OrderCommandSpi;
 import com.marketplace.orders.spi.OrderReadSpi;
 import com.marketplace.orders.spi.OrderSort;
 import com.marketplace.orders.spi.OrderView;
@@ -84,17 +85,20 @@ public class OrderDataFetcher {
             OrderSort.of(OrderSort.Field.CREATED_AT, false);
 
     private final OrderReadSpi orderReadSpi;
+    private final OrderCommandSpi orderCommandSpi;
     private final OrderGraphQlMapper mapper;
     private final GraphQlProperties properties;
     private final EncodingCursorStrategy<ScrollPosition> cursorStrategy;
     private final SaleorGlobalIdCodec globalIdCodec;
 
     public OrderDataFetcher(OrderReadSpi orderReadSpi,
+                            OrderCommandSpi orderCommandSpi,
                             OrderGraphQlMapper mapper,
                             GraphQlProperties properties,
                             EncodingCursorStrategy<ScrollPosition> cursorStrategy,
                             SaleorGlobalIdCodec globalIdCodec) {
         this.orderReadSpi = orderReadSpi;
+        this.orderCommandSpi = orderCommandSpi;
         this.mapper = mapper;
         this.properties = properties;
         this.cursorStrategy = cursorStrategy;
@@ -155,6 +159,14 @@ public class OrderDataFetcher {
         OrderSort sort = toOwnerSort(sortBy);
         int requested = first == null ? properties.pagination().defaultPageSize() : first;
         if (requested <= 0) {
+            // The shard review (Minor · Security & Privacy, 2026-11-01):
+            // the empty page answered BEFORE the ADMIN decision, so a
+            // non-ADMIN caller received a success-shaped response instead
+            // of the AUTHZ-001 rejection the contract promises. The
+            // permission decision comes FIRST — the same order
+            // orderBulkCancel applies (authorization before any
+            // success-shaped response).
+            orderCommandSpi.requireAdmin();
             return OrderCountableConnection.newBuilder()
                     .edges(List.of())
                     .pageInfo(PageInfo.newBuilder()

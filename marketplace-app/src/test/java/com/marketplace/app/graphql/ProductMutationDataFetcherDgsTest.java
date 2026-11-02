@@ -609,4 +609,79 @@ class ProductMutationDataFetcherDgsTest {
         assertThat(itemErrors.get(0).get("path")).isEqualTo("products.1.storeCategoryCode");
         assertThat(itemErrors.get(0).get("code")).isEqualTo("NOT_FOUND");
     }
+
+    /**
+     * The 2026-11-02 #806 review (Minor · Functional Correctness): a
+     * malformed productType reference is a ROW refusal at the row-level
+     * policies — the valid rows ride the SPI batch, the refused row
+     * answers its own {@code results[i].errors} entry (the classified
+     * INVALID through the shared mutation-error mapper; the raw codec
+     * sentence stays internal), and no null-productType command
+     * reaches the owner (null means the single-row path's legitimate
+     * zero-variant create, never a refusal sentinel).
+     */
+    @Test
+    void productBulkCreateAnswersThePerRowRefusalForAMalformedProductTypeAtRowLevelPolicies() {
+        authenticateAs("dgs-provider-subject", "PROVIDER");
+        UUID typeId = UUID.randomUUID();
+        when(productWriteSpi.bulkCreateProducts(anyList(), any(), any())).thenReturn(List.of(
+                new ProductBulkOutcome(
+                        new ProductView(UUID.randomUUID(), "Bulk Widget", typeId, "ACTIVE"), List.of())));
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { productBulkCreate(products: [
+                            {name: "Bulk Widget", productType: "%s", storeCategoryCode: "widgets",
+                             priceMinor: 1250, currency: "SAR"},
+                            {name: "Bulk Broken", productType: "not-a-global-id",
+                             storeCategoryCode: "widgets", priceMinor: 1250, currency: "SAR"}],
+                        errorPolicy: IGNORE_FAILED) {
+                    count
+                    errors { code }
+                    results { product { name } errors { path message code } }
+                } }
+                """.formatted(productTypeGlobalId(typeId)), "data.productBulkCreate");
+
+        assertThat(payload.get("count")).isEqualTo(1);
+        assertThat(payload.get("errors")).isEqualTo(List.of());
+        verify(productWriteSpi).bulkCreateProducts(argThat((List<ProductCreateCommand> commands) ->
+                        commands.size() == 1 && typeId.equals(commands.get(0).productTypeId())),
+                any(), any());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> results = (List<Map<String, Object>>) payload.get("results");
+        assertThat(results).hasSize(2);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> first = (Map<String, Object>) results.get(0).get("product");
+        assertThat(first.get("name")).isEqualTo("Bulk Widget");
+        assertThat(results.get(1).get("product")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rowErrors = (List<Map<String, Object>>) results.get(1).get("errors");
+        assertThat(rowErrors).hasSize(1);
+        assertThat(rowErrors.get(0).get("path")).isEqualTo("products.1.productType");
+        assertThat(rowErrors.get(0).get("message")).isEqualTo("The operation was rejected");
+        assertThat(rowErrors.get(0).get("code")).isEqualTo("INVALID");
+    }
+
+    /**
+     * At REJECT_EVERYTHING (the null default) the malformed reference
+     * still fails the whole call — the batch contract is unchanged; the
+     * owner never sees the batch.
+     */
+    @Test
+    void productBulkCreateFailsTheWholeCallForAMalformedProductTypeAtRejectEverything() {
+        authenticateAs("dgs-provider-subject", "PROVIDER");
+        UUID typeId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { productBulkCreate(products: [
+                            {name: "Bulk Widget", productType: "%s", storeCategoryCode: "widgets",
+                             priceMinor: 1250, currency: "SAR"},
+                            {name: "Bulk Broken", productType: "not-a-global-id",
+                             storeCategoryCode: "widgets", priceMinor: 1250, currency: "SAR"}]) {
+                    count
+                } }
+                """.formatted(productTypeGlobalId(typeId)), "$"))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("Invalid global ID");
+        org.mockito.Mockito.verifyNoInteractions(productWriteSpi);
+    }
 }

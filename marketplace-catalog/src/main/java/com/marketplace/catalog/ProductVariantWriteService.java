@@ -272,11 +272,25 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
     @Override
     @PreAuthorize("hasRole('PROVIDER')")
     @Transactional
-    public List<ProductVariantBulkOutcome> bulkUpdateVariants(List<ProductVariantBulkUpdateItem> items,
+    public List<ProductVariantBulkOutcome> bulkUpdateVariants(UUID productId,
+                                                              List<ProductVariantBulkUpdateItem> items,
                                                               Authentication authentication,
                                                               String errorPolicy) {
         List<ProductVariantBulkOutcome> outcomes = new ArrayList<>(items.size());
         for (ProductVariantBulkUpdateItem item : items) {
+            // The shard review (2026-11-01, Minor · Data Integrity): the
+            // Saleor product argument is a BINDING ownership claim — an
+            // item whose row belongs to another product answers the
+            // per-row NOT_FOUND (the safe absence, the same vocabulary
+            // ownedRow uses), never a cross-product amendment.
+            if (productId == null || variantRepository.findById(item.id())
+                    .map(row -> !productId.equals(row.getProductId())).orElse(true)) {
+                outcomes.add(new ProductVariantBulkOutcome(null, List.of(
+                        new ProductVariantMutationError("product",
+                                ProductVariantMutationErrorCode.NOT_FOUND,
+                                "The variant does not belong to the addressed product"))));
+                continue;
+            }
             ProductVariantMutationResult result = updateVariant(item.id(), item.fields(), authentication);
             outcomes.add(new ProductVariantBulkOutcome(result.variant(), result.errors()));
         }

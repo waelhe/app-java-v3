@@ -28,6 +28,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -313,18 +314,38 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
     private CheckoutView checkoutView(Cart cart) {
         List<CartItem> items =
                 cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId());
-        List<CheckoutView.Line> lines = items.stream()
-                .map(item -> {
-                    if (item.getVariantId() == null) {
-                        throw new ConflictException("Checkout " + cart.getId()
-                                + " contains a product-level line; a checkout line must reference "
-                                + "a product variant");
-                    }
-                    return new CheckoutView.Line(item.getId(), item.getVariantId(),
-                            item.getQuantity());
-                })
-                .toList();
-        int quantity = items.stream().mapToInt(CartItem::getQuantity).sum();
+        // The shard review (Major · Functional Correctness, 2026-11-01): the
+        // Saleor checkout projection must carry only REPRESENTABLE lines.
+        // One stale line used to fail the WHOLE checkout read/mutation —
+        // after the owning use case had already committed its own work.
+        // Two legitimate unrepresentable shapes are EXCLUDED from this
+        // projection (never deleted from the legacy cart, never fabricated
+        // as variants):
+        //  - a product-level line (variantId == null — the legacy cart
+        //    model's deliberate product-level state, still served by the
+        //    legacy REST surface, not representable on the Saleor checkout
+        //    wire where every line carries a variant);
+        //  - a stale variant line (the variant or its parent product row no
+        //    longer resolves — the SAME representability predicate the
+        //    composition mapper's findVariantForCheckoutLine applies,
+        //    verified here through the pricing port's authoritative
+        //    resolution, so the mapper's fail-loud guards stay
+        //    defense-in-depth and never fire for live data).
+        List<CheckoutView.Line> lines = new ArrayList<>(items.size());
+        int quantity = 0;
+        for (CartItem item : items) {
+            if (item.getVariantId() == null) {
+                continue;
+            }
+            try {
+                productPricingPort.priceOfVariant(item.getVariantId());
+            } catch (ResourceNotFoundException staleLine) {
+                continue;
+            }
+            lines.add(new CheckoutView.Line(item.getId(), item.getVariantId(),
+                    item.getQuantity()));
+            quantity += item.getQuantity();
+        }
         return new CheckoutView(cart.getId(), lines, quantity);
     }
 

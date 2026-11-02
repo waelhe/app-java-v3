@@ -35,7 +35,7 @@ import java.util.UUID;
  * cases through the declared {@code ProductMediaWriteSpi} seam. This
  * class owns ONLY transport mapping: typed global-ID decode, the
  * bounded result-to-payload mapping and the domain errors onto the
- * pinned payloads' own {@code ProductError} family (the pinned 3.23.43
+ * pinned payloads' own {@code ProductError} family (the pinned 3.23.45
  * shapes' own choice — the product family's shared error entries).
  * Authorization lives in the owning use case
  * ({@code @PreAuthorize("hasRole('PROVIDER')")} — the MANAGE_PRODUCTS
@@ -63,15 +63,18 @@ public class ProductMediaMutationDataFetcher {
     private final ProductReadSpi productReadSpi;
     private final ProductGraphQlMapper productMapper;
     private final SaleorGlobalIdCodec globalIdCodec;
+    private final GraphQlProperties properties;
 
     public ProductMediaMutationDataFetcher(ProductMediaWriteSpi productMediaWriteSpi,
                                            ProductReadSpi productReadSpi,
                                            ProductGraphQlMapper productMapper,
-                                           SaleorGlobalIdCodec globalIdCodec) {
+                                           SaleorGlobalIdCodec globalIdCodec,
+                                           GraphQlProperties properties) {
         this.productMediaWriteSpi = productMediaWriteSpi;
         this.productReadSpi = productReadSpi;
         this.productMapper = productMapper;
         this.globalIdCodec = globalIdCodec;
+        this.properties = properties;
     }
 
     /**
@@ -108,6 +111,7 @@ public class ProductMediaMutationDataFetcher {
     @DgsMutation(field = DgsConstants.MUTATION.ProductMediaBulkDelete)
     @RateLimiter(name = "graphqlProductMediaMutation")
     public ProductMediaBulkDelete productMediaBulkDelete(@InputArgument List<String> ids) {
+        properties.requireBoundedList(ids, "productMediaBulkDelete");
         if (ids == null || ids.isEmpty()) {
             throw new IllegalArgumentException("productMediaBulkDelete requires a non-empty list of ids");
         }
@@ -134,6 +138,7 @@ public class ProductMediaMutationDataFetcher {
     @RateLimiter(name = "graphqlProductMediaMutation")
     public ProductMediaReorder productMediaReorder(@InputArgument List<String> mediaIds,
                                                     @InputArgument String productId) {
+        properties.requireBoundedList(mediaIds, "productMediaReorder");
         if (productId == null) {
             throw new IllegalArgumentException("productMediaReorder requires the productId");
         }

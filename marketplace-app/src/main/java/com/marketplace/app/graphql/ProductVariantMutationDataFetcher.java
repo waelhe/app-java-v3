@@ -210,7 +210,7 @@ public class ProductVariantMutationDataFetcher {
         if (ids == null || ids.isEmpty()) {
             throw new IllegalArgumentException("productVariantBulkDelete requires a non-empty list of ids");
         }
-        requireBoundedList(ids, "productVariantBulkDelete");
+        properties.requireBoundedList(ids, "productVariantBulkDelete");
         List<UUID> nativeIds = new ArrayList<>(ids.size());
         for (String id : ids) {
             nativeIds.add(globalIdCodec.decode(id, ProductVariantGraphQlMapper.PRODUCT_VARIANT_TYPE));
@@ -246,7 +246,7 @@ public class ProductVariantMutationDataFetcher {
             throw new IllegalArgumentException(
                     "productVariantBulkCreate requires a non-empty list of variants");
         }
-        requireBoundedList(variants, "productVariantBulkCreate");
+        properties.requireBoundedList(variants, "productVariantBulkCreate");
         UUID productId = globalIdCodec.decode(product, ProductGraphQlMapper.PRODUCT_TYPE);
         List<ProductVariantCreateCommand> commands = new ArrayList<>(variants.size());
         for (ProductVariantBulkCreateInput variant : variants) {
@@ -302,25 +302,59 @@ public class ProductVariantMutationDataFetcher {
             throw new IllegalArgumentException(
                     "productVariantBulkUpdate requires a non-empty list of variants");
         }
-        requireBoundedList(variants, "productVariantBulkUpdate");
-        globalIdCodec.decode(product, ProductGraphQlMapper.PRODUCT_TYPE);
-        List<ProductVariantBulkUpdateItem> items = new ArrayList<>(variants.size());
-        for (ProductVariantBulkUpdateInput variant : variants) {
+        properties.requireBoundedList(variants, "productVariantBulkUpdate");
+        UUID productId = globalIdCodec.decode(product, ProductGraphQlMapper.PRODUCT_TYPE);
+        // The 2026-11-02 #806 review (Minor · Functional Correctness):
+        // the row-level policies answer at ROW level for a malformed row
+        // id too — the pinned contract keeps the valid rows and reports
+        // the refused row in its own results[i].errors, never letting a
+        // decode exception escape the batch before the SPI rides. The
+        // root product: argument stays a whole-call fact (the owning
+        // context, not a row).
+        boolean rowLevel = errorPolicy == ErrorPolicyEnum.IGNORE_FAILED
+                || errorPolicy == ErrorPolicyEnum.REJECT_FAILED_ROWS;
+        int size = variants.size();
+        List<ProductVariantBulkUpdateItem> items = new ArrayList<>(size);
+        // The per-row stage: null = the row rides the SPI batch at the
+        // next item position; non-null = the boundary refused the row
+        // (the id decode refusal) and its result is fixed here.
+        @SuppressWarnings("unchecked")
+        List<ProductVariantBulkError>[] rowRefusals = new List[size];
+        for (int i = 0; i < size; i++) {
+            ProductVariantBulkUpdateInput variant = variants.get(i);
             if (variant.getId() == null) {
                 throw new IllegalArgumentException(
                         "productVariantBulkUpdate requires every item to carry the id of the variant to update");
             }
-            items.add(new ProductVariantBulkUpdateItem(
-                    globalIdCodec.decode(variant.getId(), ProductVariantGraphQlMapper.PRODUCT_VARIANT_TYPE),
-                    new ProductVariantUpdateCommand(variant.getSku(), variant.getName(),
-                            toLongMinor(variant.getPriceMinor()))));
+            try {
+                UUID variantId = globalIdCodec.decode(variant.getId(),
+                        ProductVariantGraphQlMapper.PRODUCT_VARIANT_TYPE);
+                items.add(new ProductVariantBulkUpdateItem(variantId,
+                        new ProductVariantUpdateCommand(variant.getSku(), variant.getName(),
+                                toLongMinor(variant.getPriceMinor()))));
+            } catch (RuntimeException decodeRefusal) {
+                if (!rowLevel) {
+                    throw decodeRefusal;
+                }
+                rowRefusals[i] = List.of(decodeRefusalError(i, decodeRefusal));
+            }
         }
-        List<ProductVariantBulkOutcome> outcomes = variantWriteSpi.bulkUpdateVariants(
-                items, currentAuthentication(), errorPolicy == null ? null : errorPolicy.name());
-        List<ProductVariantBulkResult> results = new ArrayList<>(outcomes.size());
+        List<ProductVariantBulkOutcome> outcomes = items.isEmpty()
+                ? List.of()
+                : variantWriteSpi.bulkUpdateVariants(
+                        productId, items, currentAuthentication(),
+                        errorPolicy == null ? null : errorPolicy.name());
+        List<ProductVariantBulkResult> results = new ArrayList<>(size);
         int count = 0;
-        for (int i = 0; i < outcomes.size(); i++) {
-            ProductVariantBulkOutcome outcome = outcomes.get(i);
+        int itemIndex = 0;
+        for (int i = 0; i < size; i++) {
+            if (rowRefusals[i] != null) {
+                results.add(ProductVariantBulkResult.newBuilder()
+                        .errors(rowRefusals[i])
+                        .build());
+                continue;
+            }
+            ProductVariantBulkOutcome outcome = outcomes.get(itemIndex++);
             if (outcome.success()) {
                 count++;
             }
@@ -334,6 +368,24 @@ public class ProductVariantMutationDataFetcher {
                 .count(count)
                 .results(results)
                 .errors(List.of())
+                .build();
+    }
+
+    /**
+     * The boundary's own per-row decode refusal — the shared mutation-
+     * error mapper renders it (the classified INVALID code; the raw
+     * codec sentence stays internal, the payload carries the generic
+     * rejection), with the pointer at the row's own {@code id} field
+     * (the per-item ADAPT pointer shape).
+     */
+    private static ProductVariantBulkError decodeRefusalError(int index, RuntimeException decodeRefusal) {
+        SaleorMutationErrors.WireError wire =
+                SaleorMutationErrors.of(decodeRefusal, "id");
+        return ProductVariantBulkError.newBuilder()
+                .field(wire.field())
+                .path("variants." + index + "." + wire.field())
+                .message(wire.message())
+                .code(ProductVariantBulkErrorCode.valueOf(wire.code()))
                 .build();
     }
 
@@ -369,27 +421,9 @@ public class ProductVariantMutationDataFetcher {
     }
 
     /**
-     * The bulk list bound (the G4 review;
-     * {@code marketplace.graphql.bulk.max-list-items}, default 200):
-     * a list longer than the bound is rejected BEFORE any command is
-     * built or any item is iterated — the classified validation family
-     * the other transport-level guards answer, never a silent
-     * truncation.
-     */
-    private void requireBoundedList(List<?> items, String rootName) {
-        int maxListItems = properties.bulk().maxListItems();
-        if (items.size() > maxListItems) {
-            throw new IllegalArgumentException(rootName + " rejects a list of " + items.size()
-                    + " items: the bulk list bound is " + maxListItems
-                    + " (marketplace.graphql.bulk.max-list-items)");
-        }
-    }
-
-    /**
      * The GraphQL Int's own widening onto the row's long minor units —
      * the codegen's Integer boundary meeting the entity's long fact.
      */
-
     private static Long toLongMinor(Integer minor) {
         return minor == null ? null : minor.longValue();
     }

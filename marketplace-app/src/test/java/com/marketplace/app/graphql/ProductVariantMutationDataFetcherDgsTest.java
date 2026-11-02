@@ -50,6 +50,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.verify;
@@ -557,7 +558,7 @@ class ProductVariantMutationDataFetcherDgsTest {
         authenticateAs("dgs-provider-subject", "PROVIDER");
         UUID productId = UUID.randomUUID();
         UUID rowId = UUID.randomUUID();
-        when(productVariantWriteSpi.bulkUpdateVariants(anyList(), any(), any())).thenReturn(List.of(
+        when(productVariantWriteSpi.bulkUpdateVariants(any(), anyList(), any(), any())).thenReturn(List.of(
                 new ProductVariantBulkOutcome(variantView(rowId, productId, "SKU-2"), List.of())));
 
         Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
@@ -571,8 +572,78 @@ class ProductVariantMutationDataFetcherDgsTest {
                 "data.productVariantBulkUpdate");
 
         assertThat(payload.get("count")).isEqualTo(1);
-        verify(productVariantWriteSpi).bulkUpdateVariants(argThat((List<ProductVariantBulkUpdateItem> items) ->
-                items.size() == 1 && items.get(0).id().equals(rowId)
-                        && "SKU-2".equals(items.get(0).fields().sku())), any(), any());
+        verify(productVariantWriteSpi).bulkUpdateVariants(eq(productId),
+                argThat((List<ProductVariantBulkUpdateItem> items) ->
+                        items.size() == 1 && items.get(0).id().equals(rowId)
+                                && "SKU-2".equals(items.get(0).fields().sku())), any(), any());
+    }
+
+    /**
+     * The 2026-11-02 #806 review (Minor · Functional Correctness): a
+     * malformed row id is a ROW refusal at the row-level policies — the
+     * valid rows ride the SPI batch, the refused row answers its own
+     * {@code results[i].errors} entry through the shared mutation-error
+     * mapper (the raw codec sentence stays internal), and no decode
+     * exception escapes the batch before the owner rides.
+     */
+    @Test
+    void productVariantBulkUpdateAnswersThePerRowRefusalForAMalformedRowAtRowLevelPolicies() {
+        authenticateAs("dgs-provider-subject", "PROVIDER");
+        UUID productId = UUID.randomUUID();
+        UUID rowId = UUID.randomUUID();
+        when(productVariantWriteSpi.bulkUpdateVariants(any(), anyList(), any(), any())).thenReturn(List.of(
+                new ProductVariantBulkOutcome(variantView(rowId, productId, "SKU-2"), List.of())));
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { productVariantBulkUpdate(product: "%s",
+                        variants: [{id: "%s", sku: "SKU-2", priceMinor: 999},
+                                   {id: "not-a-global-id", sku: "SKU-B", priceMinor: 100}],
+                        errorPolicy: IGNORE_FAILED) {
+                    count
+                    errors { code }
+                    results { productVariant { sku } errors { path message code } }
+                } }
+                """.formatted(productGlobalId(productId), variantGlobalId(rowId)),
+                "data.productVariantBulkUpdate");
+
+        assertThat(payload.get("count")).isEqualTo(1);
+        assertThat(payload.get("errors")).isEqualTo(List.of());
+        verify(productVariantWriteSpi).bulkUpdateVariants(eq(productId),
+                argThat((List<ProductVariantBulkUpdateItem> items) ->
+                        items.size() == 1 && items.get(0).id().equals(rowId)), any(), any());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> results = (List<Map<String, Object>>) payload.get("results");
+        assertThat(results).hasSize(2);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> first = (Map<String, Object>) results.get(0).get("productVariant");
+        assertThat(first.get("sku")).isEqualTo("SKU-2");
+        assertThat(results.get(1).get("productVariant")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rowErrors = (List<Map<String, Object>>) results.get(1).get("errors");
+        assertThat(rowErrors).hasSize(1);
+        assertThat(rowErrors.get(0).get("path")).isEqualTo("variants.1.id");
+        assertThat(rowErrors.get(0).get("message")).isEqualTo("The operation was rejected");
+        assertThat(rowErrors.get(0).get("code")).isEqualTo("INVALID");
+    }
+
+    /**
+     * At REJECT_EVERYTHING (the null default) the malformed row id
+     * still fails the whole call — the batch contract is unchanged; the
+     * owner never sees the batch.
+     */
+    @Test
+    void productVariantBulkUpdateFailsTheWholeCallForAMalformedRowAtRejectEverything() {
+        authenticateAs("dgs-provider-subject", "PROVIDER");
+        UUID productId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { productVariantBulkUpdate(product: "%s",
+                        variants: [{id: "not-a-global-id", sku: "SKU-B", priceMinor: 100}]) {
+                    count
+                } }
+                """.formatted(productGlobalId(productId)), "$"))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("Invalid global ID");
+        org.mockito.Mockito.verifyNoInteractions(productVariantWriteSpi);
     }
 }

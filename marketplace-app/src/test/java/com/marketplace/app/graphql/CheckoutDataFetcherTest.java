@@ -26,6 +26,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -58,7 +59,18 @@ class CheckoutDataFetcherTest {
         mapper = mock(CheckoutGraphQlMapper.class);
         orderCommandSpi = mock(OrderCommandSpi.class);
         codec = new SaleorGlobalIdCodec();
-        fetcher = new CheckoutDataFetcher(checkoutSpi, orderCommandSpi, mapper, codec);
+        // The shard review (2026-11-01 wave 2) wired the bulk-list bound
+        // into the line roots — the same bound-constructor shape
+        // OrderMutationDataFetcherTest uses.
+        GraphQlProperties properties = new GraphQlProperties(
+                null, null, null, new GraphQlProperties.Bulk(200));
+        fetcher = new CheckoutDataFetcher(checkoutSpi, orderCommandSpi, mapper, codec, properties);
+        // The wave-4 #806 remediation: the fetcher renders through
+        // mapper.render(view) (which also reports the stale lines for the
+        // owner-side purge) — the default answers a healthy empty render;
+        // individual tests stub their own checkout projection.
+        lenient().when(mapper.render(any())).thenReturn(
+                new CheckoutGraphQlMapper.RenderedCheckout(Map.of(), List.of()));
         SecurityContextHolder.getContext().setAuthentication(
                 UsernamePasswordAuthenticationToken.authenticated("checkout-owner", "n/a",
                         List.of(new SimpleGrantedAuthority("ROLE_USER"))));
@@ -192,7 +204,8 @@ class CheckoutDataFetcherTest {
         UUID token = UUID.randomUUID();
         CheckoutView view = new CheckoutView(token, List.of(), 0);
         when(checkoutSpi.findCheckout(eq(token), any())).thenReturn(view);
-        when(mapper.toGraphQlCheckout(view)).thenReturn(Map.of("id", checkoutGlobalId(token)));
+        when(mapper.render(view)).thenReturn(new CheckoutGraphQlMapper.RenderedCheckout(
+                Map.of("id", checkoutGlobalId(token)), List.of()));
 
         assertThat(fetcher.checkout(null, environmentWithToken(token))).isNotNull();
 
@@ -404,6 +417,30 @@ class CheckoutDataFetcherTest {
                 .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
 
         verifyNoInteractions(checkoutSpi, mapper);
+    }
+
+    @Test
+    void anonymousAuthenticationIsRejectedLikeAMissingOne() {
+        // The wave-11 #806 review (Major · Security): AnonymousAuthenticationToken
+        // answers isAuthenticated() == true — the type check is the only honest
+        // wall (the account-lifecycle fetcher's wave-3 guard, same semantics).
+        SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.AnonymousAuthenticationToken(
+                        "key", "anonymousUser",
+                        List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS"))));
+
+        assertThatThrownBy(() -> fetcher.checkout(null, null))
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+        assertThatThrownBy(() -> fetcher.checkoutLinesAdd(null, null, null, List.of()))
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+        assertThatThrownBy(() -> fetcher.checkoutLinesUpdate(null, null, null, List.of()))
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+        assertThatThrownBy(() -> fetcher.checkoutLinesDelete(null, null, List.of()))
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+        assertThatThrownBy(() -> fetcher.checkoutLineDelete(null, null, null, "raw"))
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+
+        verifyNoInteractions(checkoutSpi, mapper, orderCommandSpi);
     }
 
     @Test

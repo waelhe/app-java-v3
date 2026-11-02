@@ -28,16 +28,32 @@ import java.util.UUID;
 @DgsComponent
 public class OrderMutationDataFetcher {
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(OrderMutationDataFetcher.class);
+
+    /**
+     * The wire sentences (the wave-7 review, Minor · Security & Privacy):
+     * fixed, operator-authored, keyed to the payload codes — the owner
+     * exceptions'/failures' own texts stay internal (logged), never reach
+     * the client.
+     */
+    private static final String ORDER_NOT_FOUND = "Order not found";
+    private static final String ORDER_CANNOT_CANCEL =
+            "Order cannot be canceled in its current state";
+
     private final OrderCommandSpi orderCommandSpi;
     private final OrderGraphQlMapper mapper;
     private final SaleorGlobalIdCodec globalIdCodec;
+    private final GraphQlProperties properties;
 
     public OrderMutationDataFetcher(OrderCommandSpi orderCommandSpi,
                                     OrderGraphQlMapper mapper,
-                                    SaleorGlobalIdCodec globalIdCodec) {
+                                    SaleorGlobalIdCodec globalIdCodec,
+                                    GraphQlProperties properties) {
         this.orderCommandSpi = orderCommandSpi;
         this.mapper = mapper;
         this.globalIdCodec = globalIdCodec;
+        this.properties = properties;
     }
 
     /**
@@ -50,6 +66,10 @@ public class OrderMutationDataFetcher {
         // Permission is decided before any caller-supplied ID is decoded, and
         // before an empty request can return a success-shaped payload.
         orderCommandSpi.requireAdmin();
+        // The shard review (2026-11-01): the shared bulk-list bound — the
+        // G4 unbounded-list defense every bulk root applies (a rate limiter
+        // counts the request, never the items).
+        properties.requireBoundedList(ids, "orderBulkCancel");
         List<String> submittedIds = ids == null ? List.of() : ids;
         final List<UUID> orderIds = new ArrayList<>(submittedIds.size());
         for (String id : submittedIds) {
@@ -66,7 +86,13 @@ public class OrderMutationDataFetcher {
         List<Map<String, Object>> errors = outcome.failures().stream()
                 .map(failure -> orderError(
                         "id",
-                        failure.message(),
+                        // The wave-7 review (Minor · Security & Privacy): the
+                        // row's message is the owner's own text — the wire
+                        // sentence keys off failure.kind() alone.
+                        switch (failure.kind()) {
+                            case NOT_FOUND -> ORDER_NOT_FOUND;
+                            case CONFLICT -> ORDER_CANNOT_CANCEL;
+                        },
                         switch (failure.kind()) {
                             case NOT_FOUND -> "NOT_FOUND";
                             case CONFLICT -> "CANNOT_CANCEL_ORDER";
@@ -94,10 +120,12 @@ public class OrderMutationDataFetcher {
             OrderView cancelled = orderCommandSpi.cancelAsAdmin(orderId);
             return payload(mapper.toGraphQlOrder(cancelled), List.of());
         } catch (ResourceNotFoundException exception) {
-            return payload(null, List.of(orderError("id", exception.getMessage(), "NOT_FOUND")));
+            log.info("orderCancel rejected NOT_FOUND — {}", exception.getMessage(), exception);
+            return payload(null, List.of(orderError("id", ORDER_NOT_FOUND, "NOT_FOUND")));
         } catch (ConflictException exception) {
+            log.info("orderCancel rejected CANNOT_CANCEL_ORDER — {}", exception.getMessage(), exception);
             return payload(null, List.of(orderError(
-                    "id", exception.getMessage(), "CANNOT_CANCEL_ORDER")));
+                    "id", ORDER_CANNOT_CANCEL, "CANNOT_CANCEL_ORDER")));
         }
     }
 

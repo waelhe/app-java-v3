@@ -34,6 +34,20 @@ reviews:
   high_level_summary: true
   path_filters:
     - "!**/package-lock.json"
+    # The wave-11 coverage-gate fix: CodeRabbit's DEFAULT ignored paths exclude
+    # `!**/*.csv` and `!**/*.json` (docs.coderabbit.ai/configuration/
+    # path-instructions — "Default ignored paths"), so the campaign's
+    # governance data files (the divergence ledger, the root-inventory and
+    # agent-handoff CSVs, the source-pins registry — all candidate-changed
+    # paths) could never appear in any review's processed-file list, while
+    # the trusted coverage verifier requires EVERY shard file to be processed
+    # by its review. The officially documented override is the exact default
+    # pattern WITHOUT the leading `!` — it disables that single default
+    # without restricting the review scope (a broad include would turn the
+    # list into an allowlist; these exact-pattern overrides do not), and
+    # "exclusions win" keeps the explicit package-lock exclusion above.
+    - "**/*.csv"
+    - "**/*.json"
   auto_review:
     enabled: true
     drafts: true

@@ -18,6 +18,7 @@ import com.marketplace.app.graphql.generated.types.MenuItemInput;
 import com.marketplace.app.graphql.generated.types.MenuItemMove;
 import com.marketplace.app.graphql.generated.types.MenuItemMoveInput;
 import com.marketplace.app.graphql.generated.types.MenuItemTranslate;
+import com.marketplace.app.graphql.generated.types.MenuItemTranslation;
 import com.marketplace.app.graphql.generated.types.MenuItemUpdate;
 import com.marketplace.app.graphql.generated.types.MenuSortingInput;
 import com.marketplace.app.graphql.generated.types.MenuUpdate;
@@ -25,10 +26,12 @@ import com.marketplace.app.graphql.generated.types.NameTranslationInput;
 import com.marketplace.app.graphql.generated.types.NavigationType;
 import com.marketplace.console.spi.CmsNavigationSpi;
 import com.netflix.graphql.dgs.DgsComponent;
+import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
+import graphql.schema.DataFetchingEnvironment;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.ScrollPosition;
 import org.springframework.graphql.data.pagination.EncodingCursorStrategy;
@@ -65,15 +68,27 @@ public class CmsNavigationDataFetcher {
     private final SaleorGlobalIdCodec globalIdCodec;
     private final EncodingCursorStrategy<ScrollPosition> cursorStrategy;
     private final GraphQlProperties properties;
+    private final com.marketplace.catalog.spi.CategoryReadSpi categoryReadSpi;
+    private final CategoryGraphQlMapper categoryMapper;
+    private final com.marketplace.console.spi.CmsPageSpi cmsPageSpi;
+    private final CmsPageGraphQlMapper pageMapper;
 
     public CmsNavigationDataFetcher(CmsNavigationSpi navigationPort,
                                     SaleorGlobalIdCodec globalIdCodec,
                                     EncodingCursorStrategy<ScrollPosition> cursorStrategy,
-                                    GraphQlProperties properties) {
+                                    GraphQlProperties properties,
+                                    com.marketplace.catalog.spi.CategoryReadSpi categoryReadSpi,
+                                    CategoryGraphQlMapper categoryMapper,
+                                    com.marketplace.console.spi.CmsPageSpi cmsPageSpi,
+                                    CmsPageGraphQlMapper pageMapper) {
         this.navigationPort = navigationPort;
         this.globalIdCodec = globalIdCodec;
         this.cursorStrategy = cursorStrategy;
         this.properties = properties;
+        this.categoryReadSpi = categoryReadSpi;
+        this.categoryMapper = categoryMapper;
+        this.cmsPageSpi = cmsPageSpi;
+        this.pageMapper = pageMapper;
     }
 
     // ---------------------------------------------------------------------
@@ -100,6 +115,17 @@ public class CmsNavigationDataFetcher {
         if (input == null || input.getName() == null || input.getName().isBlank()) {
             throw new IllegalArgumentException("A menu name is required");
         }
+        // The shard review (Minor · Functional Correctness, 2026-11-01
+        // wave 2): the SDL declares MenuCreateInput.items, but the create
+        // root only carries name/slug — a supplied items list was a SILENT
+        // no-op (the file's own never-a-silent-no-op rule, the
+        // rejectCollectionTarget pattern). The classified rejection keeps
+        // the wire contract honest: create the menu, then add items.
+        if (input.getItems() != null && !input.getItems().isEmpty()) {
+            throw new IllegalArgumentException(
+                    "menuCreate items is not implemented on this platform yet — "
+                            + "create the menu, then use menuItemCreate");
+        }
         return MenuCreate.newBuilder()
                 .menu(toGraphQlMenu(navigationPort.createMenu(currentAuthentication(),
                         input.getName(), input.getSlug())))
@@ -115,9 +141,10 @@ public class CmsNavigationDataFetcher {
             throw new IllegalArgumentException("A menu input is required");
         }
         return MenuUpdate.newBuilder()
-                .menu(toGraphQlMenu(navigationPort.updateMenu(currentAuthentication(),
-                        decodeId(id, MENU_TAG, "A menu ID is required"), input.getName(),
-                        input.getSlug())))
+                .menu(toMenuWithItems(currentAuthentication(),
+                        navigationPort.updateMenu(currentAuthentication(),
+                                decodeId(id, MENU_TAG, "A menu ID is required"), input.getName(),
+                                input.getSlug())))
                 .errors(mappersEmpty())
                 .build();
     }
@@ -136,6 +163,10 @@ public class CmsNavigationDataFetcher {
     @RateLimiter(name = "graphqlCmsMutation")
     public com.marketplace.app.graphql.generated.types.MenuBulkDelete menuBulkDelete(
             @InputArgument List<String> ids) {
+        // The shard review (Minor · Stability & Availability, 2026-11-01
+        // wave 2): the page siblings (pageBulkDelete) bound their ids
+        // first; this root accepted an unbounded list into the owner.
+        properties.requireBoundedList(ids, "menuBulkDelete");
         int count = navigationPort.bulkDeleteMenus(currentAuthentication(),
                 decodeIds(ids, MENU_TAG, "A list of menu IDs is required"));
         return com.marketplace.app.graphql.generated.types.MenuBulkDelete.newBuilder()
@@ -151,14 +182,22 @@ public class CmsNavigationDataFetcher {
             throw new IllegalArgumentException("A menu item name is required");
         }
         rejectCollectionTarget(input.getCollection());
+        Authentication caller = currentAuthentication();
+        CmsNavigationSpi.MenuItemView created = navigationPort.createMenuItem(caller,
+                decodeId(input.getMenu(), MENU_TAG, "A menu ID is required"),
+                input.getParent() == null || input.getParent().isBlank() ? null
+                        : decodeId(input.getParent(), MENU_ITEM_TAG, "A parent item ID"),
+                input.getName(), input.getUrl(),
+                decodeNullableId(input.getCategory(), "Category"),
+                decodeNullableId(input.getPage(), "Page"));
+        // The wave-4 review (Minor · Functional Correctness): the returned
+        // item renders through its own tree context — level and children
+        // match what a menu read answers for the same item (the wave-4 CI
+        // red pinned this path end to end).
+        MenuTreeContext createdContext = menuTreeContextOf(caller, created.menuId());
         return MenuItemCreate.newBuilder()
-                .menuItem(toGraphQlMenuItem(navigationPort.createMenuItem(currentAuthentication(),
-                        decodeId(input.getMenu(), MENU_TAG, "A menu ID is required"),
-                        input.getParent() == null || input.getParent().isBlank() ? null
-                                : decodeId(input.getParent(), MENU_ITEM_TAG, "A parent item ID"),
-                        input.getName(), input.getUrl(),
-                        decodeNullableId(input.getCategory(), "Category"),
-                        decodeNullableId(input.getPage(), "Page"))))
+                .menuItem(toGraphQlMenuItem(created, createdContext.byParent(),
+                        createdContext.levels()))
                 .errors(mappersEmpty())
                 .build();
     }
@@ -171,12 +210,16 @@ public class CmsNavigationDataFetcher {
             throw new IllegalArgumentException("A menu item input is required");
         }
         rejectCollectionTarget(input.getCollection());
+        Authentication caller = currentAuthentication();
+        CmsNavigationSpi.MenuItemView updated = navigationPort.updateMenuItem(caller,
+                decodeId(id, MENU_ITEM_TAG, "A menu item ID is required"),
+                input.getName(), input.getUrl(),
+                decodeNullableId(input.getCategory(), "Category"),
+                decodeNullableId(input.getPage(), "Page"));
+        MenuTreeContext updatedContext = menuTreeContextOf(caller, updated.menuId());
         return MenuItemUpdate.newBuilder()
-                .menuItem(toGraphQlMenuItem(navigationPort.updateMenuItem(currentAuthentication(),
-                        decodeId(id, MENU_ITEM_TAG, "A menu item ID is required"),
-                        input.getName(), input.getUrl(),
-                        decodeNullableId(input.getCategory(), "Category"),
-                        decodeNullableId(input.getPage(), "Page"))))
+                .menuItem(toGraphQlMenuItem(updated, updatedContext.byParent(),
+                        updatedContext.levels()))
                 .errors(mappersEmpty())
                 .build();
     }
@@ -184,9 +227,13 @@ public class CmsNavigationDataFetcher {
     @DgsMutation(field = DgsConstants.MUTATION.MenuItemDelete)
     @RateLimiter(name = "graphqlCmsMutation")
     public MenuItemDelete menuItemDelete(@InputArgument String id) {
+        Authentication caller = currentAuthentication();
+        CmsNavigationSpi.MenuItemView deleted = navigationPort.deleteMenuItem(caller,
+                decodeId(id, MENU_ITEM_TAG, "A menu item ID is required"));
+        MenuTreeContext deletedContext = menuTreeContextOf(caller, deleted.menuId());
         return MenuItemDelete.newBuilder()
-                .menuItem(toGraphQlMenuItem(navigationPort.deleteMenuItem(currentAuthentication(),
-                        decodeId(id, MENU_ITEM_TAG, "A menu item ID is required"))))
+                .menuItem(toGraphQlMenuItem(deleted, deletedContext.byParent(),
+                        deletedContext.levels()))
                 .errors(mappersEmpty())
                 .build();
     }
@@ -195,6 +242,9 @@ public class CmsNavigationDataFetcher {
     @RateLimiter(name = "graphqlCmsMutation")
     public com.marketplace.app.graphql.generated.types.MenuItemBulkDelete menuItemBulkDelete(
             @InputArgument List<String> ids) {
+        // The shard review (2026-11-01 wave 2): the same G4 bound the
+        // menu/page bulk-delete siblings apply.
+        properties.requireBoundedList(ids, "menuItemBulkDelete");
         int count = navigationPort.bulkDeleteMenuItems(currentAuthentication(),
                 decodeIds(ids, MENU_ITEM_TAG, "A list of menu item IDs is required"));
         return com.marketplace.app.graphql.generated.types.MenuItemBulkDelete.newBuilder()
@@ -214,11 +264,17 @@ public class CmsNavigationDataFetcher {
         if (languageCode == null) {
             throw new IllegalArgumentException("A language code is required");
         }
+        Authentication caller = currentAuthentication();
+        CmsNavigationSpi.MenuItemView translated = navigationPort.translateMenuItem(
+                caller,
+                decodeId(id, MENU_ITEM_TAG, "A menu item ID is required"),
+                // the wire enum's upper-case name (AR/EN) converts to the owning
+                // store's lower-case language currency ('ar'/'en') at this boundary
+                languageCode.name().toLowerCase(java.util.Locale.ROOT), input.getName());
+        MenuTreeContext translatedContext = menuTreeContextOf(caller, translated.menuId());
         return MenuItemTranslate.newBuilder()
-                .menuItem(toGraphQlMenuItem(navigationPort.translateMenuItem(
-                        currentAuthentication(),
-                        decodeId(id, MENU_ITEM_TAG, "A menu item ID is required"),
-                        languageCode.name(), input.getName())))
+                .menuItem(toGraphQlMenuItem(translated, translatedContext.byParent(),
+                        translatedContext.levels()))
                 .errors(mappersEmpty())
                 .build();
     }
@@ -227,6 +283,10 @@ public class CmsNavigationDataFetcher {
     @RateLimiter(name = "graphqlCmsMutation")
     public MenuItemMove menuItemMove(@InputArgument String menu,
                                      @InputArgument List<MenuItemMoveInput> moves) {
+        // The shard review (2026-11-01 wave 2): every move decodes two
+        // global IDs into the owner's cycle-guarded batch — the same G4
+        // bound the reorder roots apply.
+        properties.requireBoundedList(moves, "menuItemMove");
         if (moves == null || moves.isEmpty()) {
             throw new IllegalArgumentException("A list of move operations is required");
         }
@@ -240,10 +300,16 @@ public class CmsNavigationDataFetcher {
                     : decodeId(move.getParentId(), MENU_ITEM_TAG, "A parent item ID"));
             sortOrders.add(move.getSortOrder());
         }
-        navigationPort.moveMenuItems(currentAuthentication(), menuId, itemIds, parentIds,
-                sortOrders);
+        Authentication caller = currentAuthentication();
+        navigationPort.moveMenuItems(caller, menuId, itemIds, parentIds, sortOrders);
+        // The shard review (Major · Functional Correctness, 2026-11-01): the
+        // fabricated MenuView(menuId, null, null) answered name:""/slug:""/items:[]
+        // — the caller needs the ACTUAL tree after the move. Re-read the
+        // menu and render it through the same items-carrying mapper the
+        // single-menu reads use.
         return MenuItemMove.newBuilder()
-                .menu(toGraphQlMenu(new CmsNavigationSpi.MenuView(menuId, null, null)))
+                .menu(navigationPort.findMenuById(caller, menuId)
+                        .map(view -> toMenuWithItems(caller, view)).orElse(null))
                 .errors(mappersEmpty())
                 .build();
     }
@@ -297,7 +363,7 @@ public class CmsNavigationDataFetcher {
         if (requested <= 0) {
             return MenuCountableConnection.newBuilder()
                     .edges(List.of())
-                    .pageInfo(pageInfoOf(false))
+                    .pageInfo(pageInfoOf(null, null, false, false))
                     .build();
         }
         String field = sortBy == null ? "NAME" : sortBy.getField() == null
@@ -305,20 +371,39 @@ public class CmsNavigationDataFetcher {
         boolean ascending = sortBy == null || sortBy.getDirection() == null
                 || com.marketplace.app.graphql.generated.types.OrderDirection.ASC
                         .equals(sortBy.getDirection());
+        org.springframework.data.domain.KeysetScrollPosition position = keysetPosition(after, field);
         CmsNavigationSpi.MenuWindow window = navigationPort.scrollMenus(currentAuthentication(),
-                field, ascending, keysetPosition(after, field),
+                field, ascending, position,
                 Limit.of(Math.min(requested, properties.pagination().maxPageSize())));
+        // The shard review (Major · Functional Correctness, 2026-11-01):
+        // the connection rendered every node through toGraphQlMenu — items
+        // ALWAYS empty — so menus { edges { node { items } } } answered []
+        // even for menus that carry items. Each node now renders through
+        // the same items-carrying mapper the single-menu reads use (the
+        // page is bounded by max-list-items/max-page-size, the same bound
+        // every per-node field resolution on this surface already pays).
+        Authentication menusCaller = currentAuthentication();
         List<com.marketplace.app.graphql.generated.types.MenuCountableEdge> edges =
                 new ArrayList<>(window.window().getContent().size());
         for (int i = 0; i < window.window().getContent().size(); i++) {
             edges.add(com.marketplace.app.graphql.generated.types.MenuCountableEdge.newBuilder()
-                    .node(toGraphQlMenu(window.window().getContent().get(i)))
+                    .node(toMenuWithItems(menusCaller, window.window().getContent().get(i)))
                     .cursor(cursorStrategy.toCursor(window.window().positionAt(i)))
                     .build());
         }
+        // The shard review (Minor · Functional Correctness, 2026-11-01
+        // wave 2): the connection envelope omitted the Relay cursors and
+        // pinned hasPreviousPage=false — a client following endCursor
+        // (Apollo's relayStylePagination) could never advance. The
+        // PermissionGroupDataFetcher.toConnection envelope is the
+        // surface's declared pattern: cursors from the first/last edge,
+        // hasPreviousPage from the REQUESTED scroll position.
+        String menusStart = edges.isEmpty() ? null : edges.get(0).getCursor();
+        String menusEnd = edges.isEmpty() ? null : edges.get(edges.size() - 1).getCursor();
         return MenuCountableConnection.newBuilder()
                 .edges(edges)
-                .pageInfo(pageInfoOf(window.window().hasNext()))
+                .pageInfo(pageInfoOf(menusStart, menusEnd,
+                        window.window().hasNext(), !position.isInitial()))
                 .totalCount((int) Math.min(window.total(), Integer.MAX_VALUE))
                 .build();
     }
@@ -328,9 +413,18 @@ public class CmsNavigationDataFetcher {
     public MenuItem menuItem(@InputArgument String channel,
                              @InputArgument String id) {
         rejectChannel(channel);
-        return navigationPort.findMenuItemById(currentAuthentication(),
+        Authentication caller = currentAuthentication();
+        return navigationPort.findMenuItemById(caller,
                         decodeId(id, MENU_ITEM_TAG, "A menu item ID is required"))
-                .map(this::toGraphQlMenuItem).orElse(null);
+                .map(view -> {
+                    // The wave-4 review (Minor · Functional Correctness):
+                    // the flat mapper answered level 0 with no children for
+                    // EVERY item — the root now resolves the item's own
+                    // tree context exactly like a rendered menu node.
+                    MenuTreeContext context = menuTreeContextOf(caller, view.menuId());
+                    return toGraphQlMenuItem(view, context.byParent(), context.levels());
+                })
+                .orElse(null);
     }
 
     @DgsQuery(field = DgsConstants.QUERY.MenuItems)
@@ -355,23 +449,40 @@ public class CmsNavigationDataFetcher {
         if (requested <= 0) {
             return MenuItemCountableConnection.newBuilder()
                     .edges(List.of())
-                    .pageInfo(pageInfoOf(false))
+                    .pageInfo(pageInfoOf(null, null, false, false))
                     .build();
         }
+        org.springframework.data.domain.KeysetScrollPosition position = keysetPosition(after, "NAME");
         CmsNavigationSpi.MenuItemWindow window = navigationPort.scrollMenuItems(
-                currentAuthentication(), "NAME", true, keysetPosition(after, "NAME"),
+                currentAuthentication(), "NAME", true, position,
                 Limit.of(Math.min(requested, properties.pagination().maxPageSize())));
+        // The wave-4 review (Minor · Functional Correctness): the page's
+        // items may span several menus — the tree context is built ONCE
+        // per menuId (the window content is menu-ordered) and every node
+        // renders with its real level/children.
+        Authentication caller = currentAuthentication();
+        Map<UUID, MenuTreeContext> contexts = new HashMap<>();
         List<com.marketplace.app.graphql.generated.types.MenuItemCountableEdge> edges =
                 new ArrayList<>(window.window().getContent().size());
         for (int i = 0; i < window.window().getContent().size(); i++) {
+            CmsNavigationSpi.MenuItemView item = window.window().getContent().get(i);
+            MenuTreeContext context = contexts.computeIfAbsent(item.menuId(),
+                    menuId -> menuTreeContextOf(caller, menuId));
             edges.add(com.marketplace.app.graphql.generated.types.MenuItemCountableEdge.newBuilder()
-                    .node(toGraphQlMenuItem(window.window().getContent().get(i)))
+                    .node(toGraphQlMenuItem(item, context.byParent(), context.levels()))
                     .cursor(cursorStrategy.toCursor(window.window().positionAt(i)))
                     .build());
         }
+        // The shard review (2026-11-01 wave 2): the same Relay envelope the
+        // menus connection carries (the PermissionGroup toConnection
+        // pattern — cursors from the edges, hasPreviousPage from the
+        // requested scroll position).
+        String itemsStart = edges.isEmpty() ? null : edges.get(0).getCursor();
+        String itemsEnd = edges.isEmpty() ? null : edges.get(edges.size() - 1).getCursor();
         return MenuItemCountableConnection.newBuilder()
                 .edges(edges)
-                .pageInfo(pageInfoOf(window.window().hasNext()))
+                .pageInfo(pageInfoOf(itemsStart, itemsEnd,
+                        window.window().hasNext(), !position.isInitial()))
                 .totalCount((int) Math.min(window.total(), Integer.MAX_VALUE))
                 .build();
     }
@@ -397,9 +508,20 @@ public class CmsNavigationDataFetcher {
                 KeysetCursorGate::textValue, "the connection with the same sortBy");
     }
 
-    private Menu toMenuWithItems(Authentication caller, CmsNavigationSpi.MenuView view) {
-        List<CmsNavigationSpi.MenuItemView> items = navigationPort.listMenuItems(caller,
-                view.id());
+    /**
+     * The menu's item-tree context — the by-parent grouping and the
+     * computed levels one menu's whole item set carries. Shared by the
+     * menu node rendering ({@link #toMenuWithItems}) and the
+     * {@code MenuItem.parent} field resolution (the shard review
+     * 2026-11-01 wave 2: the parent's own level/children need the tree
+     * context, exactly like a rendered menu node).
+     */
+    private record MenuTreeContext(Map<UUID, List<CmsNavigationSpi.MenuItemView>> byParent,
+                                    Map<UUID, Integer> levels) {
+    }
+
+    private MenuTreeContext menuTreeContextOf(Authentication caller, UUID menuId) {
+        List<CmsNavigationSpi.MenuItemView> items = navigationPort.listMenuItems(caller, menuId);
         Map<UUID, List<CmsNavigationSpi.MenuItemView>> byParent = new HashMap<>();
         for (CmsNavigationSpi.MenuItemView item : items) {
             byParent.computeIfAbsent(item.parentId(), key -> new ArrayList<>()).add(item);
@@ -408,8 +530,13 @@ public class CmsNavigationDataFetcher {
         for (CmsNavigationSpi.MenuItemView item : items) {
             levels.put(item.id(), levelOf(item, byParent));
         }
-        List<MenuItem> roots = byParent.getOrDefault(null, List.of()).stream()
-                .map(item -> toGraphQlMenuItem(item, byParent, levels))
+        return new MenuTreeContext(byParent, levels);
+    }
+
+    private Menu toMenuWithItems(Authentication caller, CmsNavigationSpi.MenuView view) {
+        MenuTreeContext context = menuTreeContextOf(caller, view.id());
+        List<MenuItem> roots = context.byParent().getOrDefault(null, List.of()).stream()
+                .map(item -> toGraphQlMenuItem(item, context.byParent(), context.levels()))
                 .toList();
         return Menu.newBuilder()
                 .id(globalIdCodec.encode(MENU_TAG, view.id()))
@@ -423,17 +550,21 @@ public class CmsNavigationDataFetcher {
                                Map<UUID, List<CmsNavigationSpi.MenuItemView>> byParent) {
         // The flat set is ordered by (parent, position); levels computed by
         // walking the parent chain — the owner's cycle guard guarantees it
-        // terminates.
+        // terminates. The wave-4 review's quadratic-scan nitpick: the
+        // parent LOOKUP rides an id-indexed view built once per call
+        // (O(1) per hop) instead of a full values() scan per hop.
+        Map<UUID, CmsNavigationSpi.MenuItemView> byId = new HashMap<>();
+        for (List<CmsNavigationSpi.MenuItemView> siblings : byParent.values()) {
+            for (CmsNavigationSpi.MenuItemView candidate : siblings) {
+                byId.put(candidate.id(), candidate);
+            }
+        }
         int level = 0;
         UUID parentId = item.parentId();
         while (parentId != null && level < 64) {
             level++;
-            UUID current = parentId;
-            parentId = byParent.values().stream()
-                    .flatMap(List::stream)
-                    .filter(candidate -> candidate.id().equals(current))
-                    .map(CmsNavigationSpi.MenuItemView::parentId)
-                    .findFirst().orElse(null);
+            CmsNavigationSpi.MenuItemView parent = byId.get(parentId);
+            parentId = parent == null ? null : parent.parentId();
         }
         return level;
     }
@@ -448,16 +579,25 @@ public class CmsNavigationDataFetcher {
         List<MenuItem> children = byParent.getOrDefault(view.id(), List.of()).stream()
                 .map(child -> toGraphQlMenuItem(child, byParent, levels))
                 .toList();
+        // The shard review (Minor · Functional Correctness, 2026-11-01
+        // wave 2): the SDL pins Menu.items: [MenuItem!]! — the embedded
+        // menu stub left it unset (a non-null violation the moment a
+        // client selected menuItem { menu { items { id } } }), and the
+        // fabricated name:""/slug:"" reached the wire whenever the stub
+        // itself was served. The stub is now the representable FLOOR (id +
+        // items:[]) and the real menu/parent resolve through the field
+        // resolvers below (menuItemMenu/menuItemParent) when selected.
         return MenuItem.newBuilder()
                 .id(globalIdCodec.encode(MENU_ITEM_TAG, view.id()))
                 .menu(Menu.newBuilder()
                         .id(globalIdCodec.encode(MENU_TAG, view.menuId()))
                         .name("").slug("")
+                        .items(List.of())
                         .build())
                 ._parent(view.parentId() == null ? null : MenuItem.newBuilder()
                         .id(globalIdCodec.encode(MENU_ITEM_TAG, view.parentId()))
                         .menu(Menu.newBuilder().id(globalIdCodec.encode(MENU_TAG, view.menuId()))
-                                .name("").slug("").build())
+                                .name("").slug("").items(List.of()).build())
                         .name("")
                         .level(levels.getOrDefault(view.parentId(), 0))
                         .build())
@@ -466,6 +606,183 @@ public class CmsNavigationDataFetcher {
                 .level(levels.getOrDefault(view.id(), 0))
                 .children(children.isEmpty() ? null : children)
                 .build();
+    }
+
+    /**
+     * The {@code MenuItem.menu} read-back — the field resolver the DGS
+     * engine calls ONLY when the selection asks for the item's menu (the
+     * AddressDataFetcher User.addresses precedent). The stub the mapper
+     * builds carries the menu's typed global id; the resolver decodes it
+     * and renders the REAL menu (name/slug/items) through the same
+     * items-carrying mapper the menu reads use. A menu deleted
+     * concurrently answers the stub floor (id + items:[]) — the menu
+     * field is non-null on the wire.
+     *
+     * <p>NO rate limiting on FIELD fetchers (the wave-1 Collection.products
+     * lesson): the root resolver already paid the query budget — a page of
+     * items must not fail mid-page.</p>
+     */
+    @DgsData(parentType = DgsConstants.MENUITEM.TYPE_NAME, field = DgsConstants.MENUITEM.Menu)
+    public Menu menuItemMenu(DataFetchingEnvironment environment) {
+        MenuItem item = environment.getSource();
+        if (item == null || item.getMenu() == null || item.getMenu().getId() == null) {
+            return null;
+        }
+        // The wave-4 CI evidence (INT-001 on menuItemCreate.menuItem.menu):
+        // field-level completion runs on threads the SecurityContextHolder
+        // ThreadLocal does not reach — the caller rides the request-scoped
+        // MarketplaceGraphQlContext (the official DGS custom context), the
+        // userAddresses precedent's thread-free completion shape.
+        Authentication caller = MarketplaceGraphQlContext.callerOf(environment);
+        if (caller == null || !caller.isAuthenticated()) {
+            return item.getMenu();
+        }
+        return navigationPort.findMenuById(caller,
+                        decodeId(item.getMenu().getId(), MENU_TAG, "A menu ID is required"))
+                .map(view -> toMenuWithItems(caller, view))
+                .orElse(item.getMenu());
+    }
+
+    /**
+     * The {@code MenuItem.category} read-back — the wave-3 review (Minor ·
+     * Functional Correctness): the write paths (menuItemCreate/Update)
+     * accept and persist the category binding, but no path ever rendered
+     * it — the field answered null even when set. The resolver re-reads
+     * the item (the view carries the categoryId) and resolves the REAL
+     * category through the catalog owner's own lookup; an item without a
+     * category answers null (the nullable field's honest absence). No
+     * rate limiting on field fetchers (the wave-1 lesson).
+     */
+    @DgsData(parentType = DgsConstants.MENUITEM.TYPE_NAME, field = DgsConstants.MENUITEM.Category)
+    public com.marketplace.app.graphql.generated.types.Category menuItemCategory(
+            DataFetchingEnvironment environment) {
+        MenuItem item = environment.getSource();
+        if (item == null || item.getId() == null) {
+            return null;
+        }
+        // The request-scoped caller (the wave-4 CI evidence — the holder
+        // ThreadLocal is absent on field-level completion threads).
+        Authentication caller = MarketplaceGraphQlContext.callerOf(environment);
+        if (caller == null || !caller.isAuthenticated()) {
+            return null;
+        }
+        return navigationPort.findMenuItemById(caller,
+                        decodeId(item.getId(), MENU_ITEM_TAG, "A menu item ID is required"))
+                .flatMap(view -> view.categoryId() == null ? java.util.Optional.empty()
+                        : categoryReadSpi.findCategoryById(view.categoryId(), caller))
+                .map(categoryMapper::toGraphQlCategory)
+                .orElse(null);
+    }
+
+    /**
+     * The {@code MenuItem.page} read-back — the same wave-3 finding: the
+     * page binding renders through the shared CmsPageGraphQlMapper (the
+     * mapping extracted from CmsPageDataFetcher for exactly this reuse);
+     * an item without a page answers null.
+     */
+    @DgsData(parentType = DgsConstants.MENUITEM.TYPE_NAME, field = DgsConstants.MENUITEM.Page)
+    public com.marketplace.app.graphql.generated.types.Page menuItemPage(
+            DataFetchingEnvironment environment) {
+        MenuItem item = environment.getSource();
+        if (item == null || item.getId() == null) {
+            return null;
+        }
+        // The request-scoped caller (the wave-4 CI evidence — the holder
+        // ThreadLocal is absent on field-level completion threads).
+        Authentication caller = MarketplaceGraphQlContext.callerOf(environment);
+        if (caller == null || !caller.isAuthenticated()) {
+            return null;
+        }
+        return navigationPort.findMenuItemById(caller,
+                        decodeId(item.getId(), MENU_ITEM_TAG, "A menu item ID is required"))
+                .flatMap(view -> view.pageId() == null ? java.util.Optional.empty()
+                        : cmsPageSpi.findPageById(caller, view.pageId()))
+                .map(pageMapper::toGraphQlPage)
+                .orElse(null);
+    }
+
+    /**
+     * The {@code MenuItem.parent} read-back — the honest no-parent stays
+     * the mapper's null (the field is nullable on the wire; a parentless
+     * item answers null, never a fabricated stub). A parent that resolves
+     * renders through the SAME tree context a rendered menu node uses
+     * (its own level and children are real, not the flat level-0/no-
+     * children stub); a parent deleted concurrently answers null — the
+     * honest absence.
+     */
+    @DgsData(parentType = DgsConstants.MENUITEM.TYPE_NAME, field = DgsConstants.MENUITEM.Parent)
+    public MenuItem menuItemParent(DataFetchingEnvironment environment) {
+        MenuItem item = environment.getSource();
+        if (item == null || item.getParent() == null || item.getParent().getId() == null) {
+            return null;
+        }
+        // The wave-4 #806 review (Minor · Stability & Availability): this is
+        // a FIELD-level completion resolver — the engine fans it out onto
+        // threads the SecurityContextHolder ThreadLocal does not reach (the
+        // wave-4 INT-001 evidence), so the ThreadLocal read both breaks and
+        // (before the context's anonymous normalization) could answer an
+        // AnonymousAuthenticationToken. The request-scoped context is the
+        // sanctioned read (the AddressDataFetcher.userAddresses precedent);
+        // an absent or anonymous caller answers the honest null floor.
+        Authentication caller = MarketplaceGraphQlContext.callerOf(environment);
+        if (caller == null || !caller.isAuthenticated()) {
+            return null;
+        }
+        return navigationPort.findMenuItemById(caller,
+                        decodeId(item.getParent().getId(), MENU_ITEM_TAG, "A parent item ID"))
+                .map(parent -> {
+                    MenuTreeContext context = menuTreeContextOf(caller, parent.menuId());
+                    return toGraphQlMenuItem(parent, context.byParent(), context.levels());
+                })
+                .orElse(null);
+    }
+
+    /**
+     * The {@code MenuItem.translation(languageCode)} read-back — the wave-11
+     * #806 review (Major · Functional Correctness): the SDL declared the
+     * field but no resolver ever wired it, so every selection answered the
+     * mapper's silent null. The owning read source EXISTS — the item
+     * projection carries the per-locale name translations the console owner
+     * loads (keyed by language code, each with its owning row id) — so the
+     * field resolves through the SAME seam every menu-item read uses: the
+     * source item's id re-reads via {@code findMenuItemById} and the
+     * addressed language's translation renders with its row id (the Saleor
+     * {@code MenuItemTranslation.id} identity — the attribute-translation
+     * precedent's encode scheme). A language with no translation answers the
+     * honest null (Saleor's own semantics); an item deleted concurrently
+     * answers null too.
+     *
+     * <p>This is a FIELD-level completion resolver — the caller reads from
+     * the REQUEST-SCOPED context (the wave-4 INT-001 evidence: the
+     * SecurityContext ThreadLocal does not reach the engine's completion
+     * threads); an absent caller answers the honest null floor. The per-node
+     * re-read joins the pageTypeAttributes/Collection.products guarded-N+1
+     * advisory class (maxPageSize caps the fan-out).</p>
+     */
+    @DgsData(parentType = DgsConstants.MENUITEM.TYPE_NAME,
+             field = DgsConstants.MENUITEM.Translation)
+    public MenuItemTranslation menuItemTranslation(DataFetchingEnvironment environment,
+                                                   @InputArgument("languageCode")
+                                                   LanguageCodeEnum languageCode) {
+        MenuItem item = environment.getSource();
+        if (item == null || item.getId() == null || languageCode == null) {
+            return null;
+        }
+        Authentication caller = MarketplaceGraphQlContext.callerOf(environment);
+        if (caller == null || !caller.isAuthenticated()) {
+            return null;
+        }
+        return navigationPort.findMenuItemById(caller,
+                        decodeId(item.getId(), MENU_ITEM_TAG, "A menu item ID is required"))
+                // the projection's translation map is keyed by the stored
+                // lower-case codes; the wire form converts at this boundary
+                .map(view -> view.translations().get(languageCode.name().toLowerCase(java.util.Locale.ROOT)))
+                .map(translation -> MenuItemTranslation.newBuilder()
+                        .id(globalIdCodec.encode("MenuItemTranslation", translation.id()))
+                        .name(translation.name())
+                        .language(languageCode)
+                        .build())
+                .orElse(null);
     }
 
     private Menu toGraphQlMenu(CmsNavigationSpi.MenuView view) {
@@ -477,10 +794,20 @@ public class CmsNavigationDataFetcher {
                 .build();
     }
 
-    private static com.marketplace.app.graphql.generated.types.PageInfo pageInfoOf(boolean hasNext) {
+    /**
+     * The connection envelope's page info — the PermissionGroupDataFetcher
+     * toConnection pattern (the shard review 2026-11-01 wave 2): the
+     * Relay cursors from the first/last edge and hasPreviousPage from the
+     * REQUESTED scroll position (a scroll that started after a known
+     * element has elements before it).
+     */
+    private static com.marketplace.app.graphql.generated.types.PageInfo pageInfoOf(
+            String startCursor, String endCursor, boolean hasNext, boolean hasPrevious) {
         return com.marketplace.app.graphql.generated.types.PageInfo.newBuilder()
                 .hasNextPage(hasNext)
-                .hasPreviousPage(false)
+                .hasPreviousPage(hasPrevious)
+                .startCursor(startCursor)
+                .endCursor(endCursor)
                 .build();
     }
 

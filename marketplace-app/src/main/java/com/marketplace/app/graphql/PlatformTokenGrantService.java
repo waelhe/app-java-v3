@@ -101,6 +101,37 @@ public class PlatformTokenGrantService {
     /** The roles attribute's key on the authorization rows. */
     private static final String ROLES_ATTRIBUTE = "platform.roles";
 
+    /**
+     * The shard review (Major · Security & Privacy, 2026-11-01 wave 2;
+     * representation hardened in wave 3, CORRECTED in wave 4): the
+     * family's OWN birth time on the authorization row — every rotation
+     * re-issues the refresh token (now + TTL), so the token's issuedAt
+     * can never bound the family's age; the attribute does.
+     *
+     * <p><b>Representation — String of epoch millis (the wave-4 CI
+     * evidence):</b> wave 3 recorded the value as a {@link Long} and
+     * asserted the scalar "unconditionally safe across every
+     * Jackson/PTV configuration". The platform's own CI falsified that
+     * claim: {@code JdbcOAuth2AuthorizationService}'s Jackson 3 row
+     * mapper deserializes the attributes map through a
+     * {@code BasicPolymorphicTypeValidator} that DENIES the
+     * {@code java.lang.Long} type id the write side embeds, so every
+     * read of such a row failed with
+     * {@code Could not resolve type id 'java.lang.Long'} (7 red tests
+     * across the shard matrix and the Saleor Backend Compatibility
+     * Gate, 2026-11-01). The official contract for the authorization
+     * store's JSON metadata is Jackson's own: only the PTV-allowlisted
+     * subtypes round-trip, and plain {@link String} values are stored
+     * WITHOUT any type id at all — the representation every
+     * configuration accepts. The read side honors all three recorded
+     * shapes (String, Long, Instant) so no live row ever breaks.</p>
+     *
+     * <p>A legacy row (pre-attribute) is seeded from the presented
+     * token's issuedAt at its next rotation — the conservative floor
+     * (the family is at least as old as the presented token).</p>
+     */
+    private static final String FAMILY_CREATED_ATTRIBUTE = "platform.family.created";
+
     // The #392 module-slice shape (the UserService/PasswordResetService
     // precedent verbatim): the security-infrastructure beans live outside
     // the GraphQL adapter slice — resolved lazily so every package-slice
@@ -116,6 +147,7 @@ public class PlatformTokenGrantService {
     private final IdentitySpi identitySpi;
     private final String audience;
     private final String publicClientId;
+    private final java.time.Duration refreshFamilyMaxAge;
 
     public PlatformTokenGrantService(
             ObjectProvider<AuthenticationConfiguration> authenticationConfiguration,
@@ -128,7 +160,9 @@ public class PlatformTokenGrantService {
             IdentitySpi identitySpi,
             @Value("${marketplace.security.jwt.audience:marketplace-api}") String audience,
             @Value("${marketplace.security.oauth2.public-client.client-id:"
-                    + "10b588c6-4e85-43ec-9ecf-c588676774d7}") String publicClientId) {
+                    + "10b588c6-4e85-43ec-9ecf-c588676774d7}") String publicClientId,
+            @Value("${marketplace.security.token.refresh-family-max-age-seconds:2592000}")
+            long refreshFamilyMaxAgeSeconds) {
         this.authenticationConfiguration = authenticationConfiguration;
         this.authorizationService = authorizationService;
         this.refreshTokenRotationStore = refreshTokenRotationStore;
@@ -139,6 +173,10 @@ public class PlatformTokenGrantService {
         this.identitySpi = identitySpi;
         this.audience = audience;
         this.publicClientId = publicClientId;
+        // The absolute session bound (default 30d = 2× the 14d refresh
+        // TTL): a family kept alive by rotation forever is the reviewer's
+        // exact finding — the cap forces a fresh password grant.
+        this.refreshFamilyMaxAge = java.time.Duration.ofSeconds(refreshFamilyMaxAgeSeconds);
     }
 
     /** The issued pair + the caller's own account projection. */
@@ -178,8 +216,18 @@ public class PlatformTokenGrantService {
         UserAccountView user = identitySpi.findCurrentUserAccount(
                         new UsernamePasswordAuthenticationToken(principal, null, java.util.List.of()))
                 .orElse(null);
-        log.info("Platform password grant issued: principal={}, roles={}", principal, roles);
-        return new IssuedTokens(accessToken, refreshToken, opaqueToken(), user);
+        // The shard review (Minor · Security & Privacy, 2026-11-01): the
+        // principal is the caller-supplied email — never INFO-log it (PII
+        // leakage into logs); the internal account id identifies the grant.
+        log.info("Platform password grant issued: userId={}", user == null ? null : user.id());
+        // The shard review (Minor · Functional Correctness, 2026-11-01
+        // wave 2): the csrfToken was a random value NO path verifies —
+        // tokenRefresh REJECTS any non-blank csrfToken (the platform's
+        // own classified message), so a Saleor-protocol client returning
+        // it was punished for following the protocol. The honest answer
+        // is null: this surface does not implement CSRF proof (the
+        // nullable SDL field).
+        return new IssuedTokens(accessToken, refreshToken, null, user);
     }
 
     /**
@@ -215,6 +263,25 @@ public class PlatformTokenGrantService {
         if (authorization == null
                 || authorization.getRefreshToken() == null
                 || !authorization.getRefreshToken().isActive()) {
+            // A LATE replay of a consumed value dies HERE, never reaching
+            // the rotation's consumption boundary: the completed rotation
+            // already REPLACED the presented value in the shared row, so
+            // the replayed value cannot resolve (findByToken answers
+            // null). That is exactly the theft shape the OAuth 2.0
+            // Security BCP's refresh-token rotation (RFC 9700 §2.4.2)
+            // reuse detection exists for — an attacker who rotated first
+            // leaves the legitimate client failing silently while the
+            // attacker's successor stayed valid. Before the plain
+            // rejection, the family ledger is consulted: a value
+            // recognized as consumed BEYOND the grace window revokes the
+            // ENTIRE family. The rejection message is IDENTICAL either
+            // way — the response never reveals whether the ledger
+            // recognized the value (the in-window concurrent
+            // double-spend and the unknown token keep their recorded
+            // plain rejection; the store's grace window arbitrates).
+            if (authorization == null) {
+                refreshTokenRotationStore().revokeFamilyIfConsumed(refreshToken);
+            }
             throw new org.springframework.security.authentication.BadCredentialsException(
                     "The refresh token is invalid, expired or revoked");
         }
@@ -249,6 +316,30 @@ public class PlatformTokenGrantService {
         Set<String> roles = (Set<String>) authorization.getAttributes()
                 .getOrDefault(ROLES_ATTRIBUTE, Set.of());
         Instant now = Instant.now();
+        // The shard review (Major · Security & Privacy, 2026-11-01 wave 2):
+        // the ABSOLUTE family-age cap. Each rotation re-issues the refresh
+        // token (now + TTL) so the token's own issuedAt can never bound
+        // the family — without this cap a session kept alive by rotation
+        // NEVER expires. The family's birth time rides the authorization
+        // row's attributes (written at grant); a legacy row predating the
+        // attribute is bounded from the presented token's issuedAt (the
+        // conservative floor) and seeded onto the row by THIS rotation,
+        // so every legacy family converges under the cap within one
+        // refresh. (The account-state side of the finding is the identity
+        // owner's own recorded contract: account disable/email change/
+        // self-deletion and role revoke DELETE the principal's
+        // oauth2_authorization rows in the same transaction — UserService
+        // and RoleAssignmentService's own DELETE statements — so a
+        // disabled account cannot refresh; NO parallel per-refresh
+        // account read is added here, per the reviewer's own guidance.)
+        Instant familyCreated = familyCreatedAt(authorization);
+        Instant familyStart = familyCreated != null ? familyCreated
+                : authorization.getRefreshToken().getToken().getIssuedAt();
+        if (familyStart != null
+                && Duration.between(familyStart, now).compareTo(refreshFamilyMaxAge) > 0) {
+            throw new org.springframework.security.authentication.BadCredentialsException(
+                    "The session exceeded its maximum age — sign in again");
+        }
         String accessToken = mintAccessToken(principal, roles, now);
         OAuth2AccessToken accessTokenToken = new OAuth2AccessToken(
                 OAuth2AccessToken.TokenType.BEARER, accessToken, now, now.plus(ACCESS_TOKEN_TTL));
@@ -259,12 +350,23 @@ public class PlatformTokenGrantService {
         String successor = opaqueToken();
         OAuth2RefreshToken refreshTokenToken = new OAuth2RefreshToken(successor, now,
                 now.plus(REFRESH_TOKEN_TTL));
-        OAuth2Authorization refreshed = OAuth2Authorization.from(authorization)
+        OAuth2Authorization.Builder rotation = OAuth2Authorization.from(authorization)
                 .token(accessTokenToken, metadata ->
                         metadata.put(OAuth2Authorization.Token.INVALIDATED_METADATA_NAME, false))
                 .token(refreshTokenToken, metadata ->
-                        metadata.put(OAuth2Authorization.Token.INVALIDATED_METADATA_NAME, false))
-                .build();
+                        metadata.put(OAuth2Authorization.Token.INVALIDATED_METADATA_NAME, false));
+        if (familyCreated == null && familyStart != null) {
+            // The legacy row's convergence: the family birth attribute is
+            // seeded from the presented token's issuedAt (the conservative
+            // floor — the family is at least this old), so the NEXT refresh
+            // enforces the true family age from the same attribute every
+            // new grant carries.
+            // String-of-millis on the authorization store (the wave-4 CI
+            // evidence: the row mapper's PTV denies the Long type id —
+            // see the constant's javadoc).
+            rotation.attribute(FAMILY_CREATED_ATTRIBUTE, String.valueOf(familyStart.toEpochMilli()));
+        }
+        OAuth2Authorization refreshed = rotation.build();
         // THE atomic boundary: the store arbitrates the consumption —
         // one conditional UPDATE on the shared row, in the database's
         // row lock, serialized across every instance sharing the store.
@@ -277,8 +379,10 @@ public class PlatformTokenGrantService {
         UserAccountView user = identitySpi.findCurrentUserAccount(
                         new UsernamePasswordAuthenticationToken(principal, null, java.util.List.of()))
                 .orElse(null);
-        log.info("Platform token refresh rotated: principal={}", principal);
-        return new IssuedTokens(accessToken, successor, opaqueToken(), user);
+        log.info("Platform token refresh rotated: userId={}", user == null ? null : user.id());
+        // The shard review (2026-11-01 wave 2): the csrfToken honesty fix —
+        // the rotation's answer carries null, exactly like the grant.
+        return new IssuedTokens(accessToken, successor, null, user);
     }
 
     /**
@@ -315,6 +419,34 @@ public class PlatformTokenGrantService {
         return jwtEncoder().encode(JwtEncoderParameters.from(claims)).getTokenValue();
     }
 
+    /**
+     * Reads the family's birth time from the authorization attributes —
+     * the recorded representation is the String-of-epoch-millis the
+     * write side stores (the wave-4 CI evidence: the Long embedding
+     * never survives the row mapper's PTV); a Number or an Instant
+     * value is still honored (interim-build rows would carry one, and
+     * the honest read never breaks a live session over a
+     * representation difference). An unparseable String answers null —
+     * the conservative floor — never a thrown parse failure.
+     */
+    private static Instant familyCreatedAt(OAuth2Authorization authorization) {
+        Object raw = authorization.getAttributes().get(FAMILY_CREATED_ATTRIBUTE);
+        if (raw instanceof Number epochMillis) {
+            return Instant.ofEpochMilli(epochMillis.longValue());
+        }
+        if (raw instanceof Instant recorded) {
+            return recorded;
+        }
+        if (raw instanceof String text) {
+            try {
+                return Instant.ofEpochMilli(Long.parseLong(text.trim()));
+            } catch (NumberFormatException tolerated) {
+                return null;
+            }
+        }
+        return null;
+    }
+
     private OAuth2Authorization authorizationRow(String principal, Set<String> roles,
                                                   String accessToken, String refreshToken,
                                                   Instant issuedAt) {
@@ -335,6 +467,13 @@ public class PlatformTokenGrantService {
                 .token(accessTokenToken)
                 .refreshToken(refreshTokenToken)
                 .attribute(ROLES_ATTRIBUTE, roles)
+                // The family's birth time (the wave-2 review's absolute
+                // session cap) — written once at grant as the String of
+                // epoch millis (the wave-4 CI correction: the row mapper's
+                // PTV denies the Long type id — see the constant's javadoc);
+                // rotations preserve it (OAuth2Authorization.from copies
+                // the attributes).
+                .attribute(FAMILY_CREATED_ATTRIBUTE, String.valueOf(issuedAt.toEpochMilli()))
                 .build();
     }
 

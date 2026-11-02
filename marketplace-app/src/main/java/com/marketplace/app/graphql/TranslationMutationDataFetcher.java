@@ -74,17 +74,20 @@ public class TranslationMutationDataFetcher {
     private final AttributeGraphQlMapper attributeMapper;
     private final CollectionGraphQlMapper collectionMapper;
     private final SaleorGlobalIdCodec globalIdCodec;
+    private final GraphQlProperties properties;
 
     public TranslationMutationDataFetcher(TranslationWriteSpi translationWriteSpi,
                                           CategoryGraphQlMapper categoryMapper,
                                           AttributeGraphQlMapper attributeMapper,
                                           CollectionGraphQlMapper collectionMapper,
-                                          SaleorGlobalIdCodec globalIdCodec) {
+                                          SaleorGlobalIdCodec globalIdCodec,
+                                          GraphQlProperties properties) {
         this.translationWriteSpi = translationWriteSpi;
         this.categoryMapper = categoryMapper;
         this.attributeMapper = attributeMapper;
         this.collectionMapper = collectionMapper;
         this.globalIdCodec = globalIdCodec;
+        this.properties = properties;
     }
 
     /**
@@ -203,11 +206,23 @@ public class TranslationMutationDataFetcher {
     public AttributeBulkTranslate attributeBulkTranslate(
             @InputArgument String errorPolicy,
             @InputArgument List<AttributeBulkTranslateInput> translations) {
+        properties.requireBoundedList(translations, "attributeBulkTranslate");
         if (translations == null || translations.isEmpty()) {
             throw new IllegalArgumentException("attributeBulkTranslate requires a non-empty list of translations");
         }
         List<TranslationBulkItem> items = new ArrayList<>(translations.size());
         for (AttributeBulkTranslateInput translation : translations) {
+            // The shard review (Minor · Data Integrity, 2026-11-01 wave 2):
+            // the SDL promises a classified validation error for a supplied
+            // externalReference — the loop never read it, so a request
+            // carrying BOTH id and externalReference passed and the service
+            // silently ignored the reference (the file's own
+            // never-a-silent-no-op rule).
+            if (translation.getExternalReference() != null) {
+                throw new IllegalArgumentException(
+                        "attributeBulkTranslate externalReference is not implemented on this "
+                                + "platform yet");
+            }
             requireInput(translation.getTranslationFields(), "attributeBulkTranslate translationFields");
             if (translation.getId() == null) {
                 throw new IllegalArgumentException(
@@ -249,12 +264,21 @@ public class TranslationMutationDataFetcher {
     public AttributeValueBulkTranslate attributeValueBulkTranslate(
             @InputArgument String errorPolicy,
             @InputArgument List<AttributeValueBulkTranslateInput> translations) {
+        properties.requireBoundedList(translations, "attributeValueBulkTranslate");
         if (translations == null || translations.isEmpty()) {
             throw new IllegalArgumentException(
                     "attributeValueBulkTranslate requires a non-empty list of translations");
         }
         List<TranslationBulkItem> items = new ArrayList<>(translations.size());
         for (AttributeValueBulkTranslateInput translation : translations) {
+            // The shard review (2026-11-01 wave 2): the same classified
+            // rejection the attribute loop carries — the value loop's
+            // externalReference was equally silent.
+            if (translation.getExternalReference() != null) {
+                throw new IllegalArgumentException(
+                        "attributeValueBulkTranslate externalReference is not implemented on this "
+                                + "platform yet");
+            }
             requireInput(translation.getTranslationFields(), "attributeValueBulkTranslate translationFields");
             if (translation.getId() == null) {
                 throw new IllegalArgumentException(

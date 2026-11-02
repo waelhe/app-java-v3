@@ -59,13 +59,16 @@ public class CollectionMutationDataFetcher {
     private final CollectionWriteSpi collectionWriteSpi;
     private final CollectionGraphQlMapper collectionMapper;
     private final SaleorGlobalIdCodec globalIdCodec;
+    private final GraphQlProperties properties;
 
     public CollectionMutationDataFetcher(CollectionWriteSpi collectionWriteSpi,
                                          CollectionGraphQlMapper collectionMapper,
-                                         SaleorGlobalIdCodec globalIdCodec) {
+                                         SaleorGlobalIdCodec globalIdCodec,
+                                         GraphQlProperties properties) {
         this.collectionWriteSpi = collectionWriteSpi;
         this.collectionMapper = collectionMapper;
         this.globalIdCodec = globalIdCodec;
+        this.properties = properties;
     }
 
     /**
@@ -80,6 +83,11 @@ public class CollectionMutationDataFetcher {
     @RateLimiter(name = "graphqlCollectionMutation")
     public CollectionCreate collectionCreate(@InputArgument CollectionCreateInput input) {
         requireInput(input, "collectionCreate");
+        // The shard review (Minor · Performance & Scalability, 2026-11-01
+        // wave 2): the sibling membership root (collectionAddProducts)
+        // bounds its products list; the create root let the same list ride
+        // unbounded through decodeProductIds.
+        properties.requireBoundedList(input.getProducts(), "collectionCreate");
         CollectionMutationResult result = collectionWriteSpi.createCollection(
                 new CollectionCreateCommand(input.getName(), input.getSlug(),
                         input.getIsPublished(), decodeProductIds(input.getProducts())));
@@ -159,6 +167,7 @@ public class CollectionMutationDataFetcher {
     @DgsMutation(field = DgsConstants.MUTATION.CollectionBulkDelete)
     @RateLimiter(name = "graphqlCollectionMutation")
     public CollectionBulkDelete collectionBulkDelete(@InputArgument List<String> ids) {
+        properties.requireBoundedList(ids, "collectionBulkDelete");
         if (ids == null || ids.isEmpty()) {
             throw new IllegalArgumentException("collectionBulkDelete requires a non-empty list of ids");
         }
@@ -184,6 +193,7 @@ public class CollectionMutationDataFetcher {
     public com.marketplace.app.graphql.generated.types.CollectionAddProducts collectionAddProducts(
             @InputArgument String collectionId,
             @InputArgument List<String> products) {
+        properties.requireBoundedList(products, "collectionAddProducts");
         UUID nativeCollectionId = requireCollectionKey(collectionId, "collectionAddProducts");
         List<UUID> nativeProductIds = requireProductKeys(products, "collectionAddProducts");
         CollectionMutationResult result = collectionWriteSpi.addProducts(
@@ -205,6 +215,7 @@ public class CollectionMutationDataFetcher {
     public com.marketplace.app.graphql.generated.types.CollectionRemoveProducts collectionRemoveProducts(
             @InputArgument String collectionId,
             @InputArgument List<String> products) {
+        properties.requireBoundedList(products, "collectionRemoveProducts");
         UUID nativeCollectionId = requireCollectionKey(collectionId, "collectionRemoveProducts");
         List<UUID> nativeProductIds = requireProductKeys(products, "collectionRemoveProducts");
         CollectionMutationResult result = collectionWriteSpi.removeProducts(
@@ -228,6 +239,7 @@ public class CollectionMutationDataFetcher {
     public com.marketplace.app.graphql.generated.types.CollectionReorderProducts collectionReorderProducts(
             @InputArgument String collectionId,
             @InputArgument List<MoveProductInput> moves) {
+        properties.requireBoundedList(moves, "collectionReorderProducts");
         UUID nativeCollectionId = requireCollectionKey(collectionId, "collectionReorderProducts");
         if (moves == null || moves.isEmpty()) {
             throw new IllegalArgumentException(

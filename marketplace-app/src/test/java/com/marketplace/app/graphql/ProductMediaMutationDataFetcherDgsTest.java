@@ -71,7 +71,7 @@ import static org.mockito.Mockito.when;
  *
  * <p>What this proves: the SDL's own mutation roots load and execute
  * through the real argument binding; the payload shapes serialize
- * exactly as the pinned 3.23.43 schema declares them ({@code errors}
+ * exactly as the pinned 3.23.45 schema declares them ({@code errors}
  * with field/message/code over the product family's shared
  * {@code ProductError}, the deleted/new-order {@code media}
  * projections carrying the typed global IDs, the bulk delete's honest

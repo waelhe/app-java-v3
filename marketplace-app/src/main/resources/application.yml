@@ -671,6 +671,34 @@ resilience4j:
         limit-for-period: 100
         limit-refresh-period: 1m
         timeout-duration: 5s
+      # The shard review (Major · Stability & Availability, 2026-11-01
+      # wave 2): the per-CALLER budget the anonymous entry points carry
+      # (PerCallerRateLimitGuard) — dynamically keyed instances created
+      # through the official RateLimiterRegistry.rateLimiter(name,
+      # configName) API. 10/min fail-fast per caller address: one address
+      # can only exhaust itself. The named instances below stay as the
+      # per-JVM outer ceilings; this config is the inner per-caller bound.
+      perCallerGrant:
+        limit-for-period: 10
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      # The wave-4 #806 review (second cycle, Major · Security & Privacy):
+      # the ACCOUNT-keyed budget (PerCallerRateLimitGuard's email-hash
+      # instances — credential-stuffing defense) is SEPARATE from the
+      # address budget above. Riding perCallerGrant's own 10/min let ONE
+      # address burn the victim's ACCOUNT budget (ten tokenCreate calls
+      # with the victim's email) and lock the victim's login out of its
+      # own account for the refresh period — RequestNotPermitted from a
+      # fresh address. perAccountGrant strictly EXCEEDS the address budget
+      # (3×): a single address can only ever consume a third of an
+      # account's budget, so the legitimate owner keeps login headroom,
+      # while distributed stuffing against one account stays capped at
+      # 30 attempts/min (the per-JVM outer ceilings and the address
+      # budgets bound the aggregate).
+      perAccountGrant:
+        limit-for-period: 30
+        limit-refresh-period: 1m
+        timeout-duration: 0
     instances:
       catalog:
         base-config: default
@@ -1035,9 +1063,59 @@ resilience4j:
       # budget (50/min, the graphqlCategoryQuery precedent).
       # Agent 1 (P1 identity — TokenDataFetcher's own request): the token
       # mutation family — tokenCreate IS the password grant (the
-      # unauthenticated sign-in surface), tokenRefresh the rotation;
-      # the write budget with fail-fast is the family's own posture.
+      # unauthenticated sign-in surface), tokenRefresh the rotation.
+      # The shard review (Major · Stability, 2026-11-01 wave 2) RAISED the
+      # per-instance ceiling 10 -> 60: the per-JVM budget is the OUTER
+      # bound only (an instance-level 10/min meant the ELEVENTH login
+      # platform-wide answered 429); the real flood control is the
+      # per-caller guard (PerCallerRateLimitGuard, the perCallerGrant
+      # config) — each caller address gets its own 10/min fail-fast budget.
       graphqlTokenMutation:
+        base-config: default
+        limit-for-period: 60
+        timeout-duration: 0
+      # The shard review (Minor · Functional Correctness, 2026-11-01): the
+      # three names below are annotated 70x across the account/CMS fetchers
+      # but were never declared — every call silently fell back to the
+      # default instance's limits instead of the intended per-surface
+      # budgets. graphqlAccountMutation and graphqlCmsMutation follow the
+      # mutation shape (10/min, fail fast); graphqlCmsQuery follows the
+      # read shape (50/min). graphqlTokenVerify (the read-shaped
+      # verification leg) and graphqlTokenDeactivate (the authenticated
+      # sign-out leg) are the budget split the same review required.
+      graphqlAccountMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      # The shard review (Major · Stability & Availability, 2026-11-01
+      # wave 2): the ANONYMOUS account roots (accountRegister,
+      # requestPasswordReset, sendConfirmationEmail, setPassword,
+      # confirmAccount) leave the shared graphqlAccountMutation budget —
+      # a flood of reset requests must never starve the authenticated
+      # customer/staff admin mutations sharing that instance. The wave-3
+      # review RAISED the outer ceiling 10 -> 60 (the same reasoning as
+      # graphqlTokenMutation): a per-JVM 10/min meant ONE caller's ten
+      # reset requests starved every other caller's registration — the
+      # outer ceiling must fit aggregate traffic; the per-caller guard
+      # (PerCallerRateLimitGuard, the perCallerGrant config — now wired
+      # into ALL FIVE anonymous roots) does the real flood control.
+      graphqlAccountAnonymousMutation:
+        base-config: default
+        limit-for-period: 60
+        timeout-duration: 0
+      graphqlCmsMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlCmsQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      graphqlTokenVerify:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      graphqlTokenDeactivate:
         base-config: default
         limit-for-period: 10
         timeout-duration: 0

@@ -18,7 +18,7 @@
 5. Saleor skill pins/provenance: `docs/governance/agent-skills-policy.md`, `docs/governance/plans/agent-skills-pins.json`, and the official-resource inventory `docs/governance/plans/saleor-ai-resource-surface.json`.
 6. Domain navigation companion (not a plan or root ledger): `docs/governance/campaign/saleor-domain-knowledge-map.md`.
 
-Historical Dashboard adaptation and schema-parity plans are superseded; preserve them as evidence only. The canonical plan forbids hiding/disabling/removing retained Dashboard 3.23.39 routes/workbenches/controls to accommodate a backend gap. The missing backend capability must be implemented; P7 stays blocked until it is.
+Historical Dashboard adaptation and schema-parity plans are superseded; preserve them as evidence only. The canonical plan forbids hiding/disabling/removing retained Dashboard 3.23.41 routes/workbenches/controls to accommodate a backend gap. The missing backend capability must be implemented; P7 stays blocked until it is.
 
 ## Active concurrent execution — three implementation agents + A0 steward
 
@@ -79,7 +79,7 @@ Branch preparation does not start external coding-agent sessions. GitHub Assigne
 ## قرار الحوكمة الحاكم لتكامل Saleor — D-SALEOR-FULL-001 (2026-10-20)
 
 - **المرجع التنفيذي الوحيد:** [الخطة النهائية للوحة الكاملة ومخطط التجارة الكامل](docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md). مصفوفة المجالات: `docs/governance/plans/saleor-commerce-domain-matrix.csv`; سجل الاختلافات: `docs/governance/plans/saleor-contract-divergences.csv`; الـpins: `docs/governance/plans/saleor-source-pins.json`.
-- **القرار:** كامل Saleor Dashboard 3.23.39 هو أساس الإدارة، ومخطط Saleor 3.23.43 (458 root operations/events) هو مرجع عقد التجارة. Spring Boot + DGS + Maven + وحدات Modulith القائمة تملك التنفيذ وقواعد العمل؛ لا يشغّل النظام محرك Saleor ثانيًا.
+- **القرار:** كامل Saleor Dashboard 3.23.41 هو أساس الإدارة، ومخطط Saleor 3.23.45 (458 root operations/events) هو مرجع عقد التجارة. Spring Boot + DGS + Maven + وحدات Modulith القائمة تملك التنفيذ وقواعد العمل؛ لا يشغّل النظام محرك Saleor ثانيًا.
 - **إيقاف الخطط المتعارضة:** خطتا تكييف Dashboard القديمة وتكافؤ المخطط القديم موسومتان تاريخيًا فقط. يحظر الرجوع إليهما كخطتي تنفيذ؛ حارس CI يثبت علامة superseded والرابط المرجعي.
 - **حقيقة حالة طلبات السحب (قياس 2026-10-20):** #676 و#677 دُمجا قبل قرار D-SALEOR-FULL-001؛ #678 أُغلق أولًا (11:52:01Z) ثم دُمج لاحقًا (12:20:31Z) — فمرشّحات/فرز المنتجات وأساس keyset الموجودان في `main` جزء من الحالة المقيسة، ويبقى قرار المالك (الإبقاء/الاسترجاع بكلمة صريحة) مفتوحًا كما وُثّق على #686؛ حتى حسمه يخضع المحتوى لاختبارات التوافق مع عقد Saleor في P2 ولا يُسترجع تلقائيًا. أما #679 و#680 و#681 و#683 فأُغلقت دون دمج، وتبقى فروعها/commits محفوظة لإعادة تقييمها عبر PR جديد متوافق مع الخطة. الـguard يمنع إعادة فتح مسار التنفيذ القديم. workflow `retired-saleor-pr-guard.yml` يفشل إذا أُعيد فتح أي منها. الإغلاق ليس حذفًا للشيفرة ولا ادعاءً بأن قدرات تلك الطلبات دُمجت.
 - **الأتمتة:** حارس CI يتحقق من pin الرسمي، وعدّ الجذور، والمصفوفة، ويولّد تقرير مطابقة من العقد المنشور. فحص الانجراف أسبوعي ويصدر issue للمراجعة، ولا يحدّث pins أو يدمج إلى main تلقائيًا.

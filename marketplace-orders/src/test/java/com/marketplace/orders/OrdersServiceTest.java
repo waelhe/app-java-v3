@@ -920,7 +920,12 @@ class OrdersServiceTest {
     }
 
     @Test
-    void checkoutProjectionRefusesAProductLevelLineInsteadOfFabricatingAVariant() {
+    void checkoutProjectionExcludesAProductLevelLineInsteadOfFailingOrFabricating() {
+        // The shard review (2026-11-01): the Saleor checkout surface never
+        // fails the whole read for a line it cannot represent, and never
+        // fabricates a variant for it — the legacy product-level line is
+        // EXCLUDED from the projection (the legacy REST surface keeps
+        // serving it; the cart row is untouched).
         Cart cart = Cart.activeFor(consumer);
         CartItem productLevel = CartItem.of(cart.getId(), UUID.randomUUID(), null, 1, 500L, "SAR");
         when(cartRepository.findById(cart.getId())).thenReturn(Optional.of(cart));
@@ -928,9 +933,41 @@ class OrdersServiceTest {
         when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
                 .thenReturn(List.of(productLevel));
 
-        assertThatThrownBy(() -> service.findCheckout(cart.getId(), authentication))
-                .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("variant");
+        CheckoutView view = service.findCheckout(cart.getId(), authentication);
+
+        assertThat(view.lines()).isEmpty();
+        assertThat(view.quantity()).isZero();
+    }
+
+    @Test
+    void checkoutProjectionExcludesAStaleVariantLineAndKeepsTheResolvableOnes() {
+        // The shard review (2026-11-01): a line whose variant (or its
+        // parent product) no longer resolves — the stale shape a variant
+        // deletion leaves behind — is EXCLUDED; the resolvable lines and
+        // their quantities survive, and the read never throws.
+        Cart cart = Cart.activeFor(consumer);
+        UUID liveVariant = UUID.randomUUID();
+        UUID staleVariant = UUID.randomUUID();
+        CartItem live = CartItem.of(cart.getId(), UUID.randomUUID(), liveVariant, 2, 500L, "SAR");
+        CartItem stale = CartItem.of(cart.getId(), UUID.randomUUID(), staleVariant, 5, 700L, "SAR");
+        when(cartRepository.findById(cart.getId())).thenReturn(Optional.of(cart));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumer);
+        when(cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
+                .thenReturn(List.of(live, stale));
+        when(productPricingPort.priceOfVariant(liveVariant))
+                .thenReturn(new ProductPricingPort.VariantPrice(liveVariant, UUID.randomUUID(),
+                        UUID.randomUUID(), 500L, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE,
+                        ProductPricingPort.StorefrontState.ACTIVE));
+        when(productPricingPort.priceOfVariant(staleVariant))
+                .thenThrow(new ResourceNotFoundException("ProductVariant", staleVariant));
+
+        CheckoutView view = service.findCheckout(cart.getId(), authentication);
+
+        assertThat(view.lines())
+                .extracting(CheckoutView.Line::id)
+                .containsExactly(live.getId());
+        assertThat(view.quantity()).isEqualTo(2);
     }
 
     @Test

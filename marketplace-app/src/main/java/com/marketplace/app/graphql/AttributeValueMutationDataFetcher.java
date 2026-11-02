@@ -55,13 +55,16 @@ public class AttributeValueMutationDataFetcher {
     private final AttributeValueWriteSpi attributeValueWriteSpi;
     private final AttributeGraphQlMapper attributeMapper;
     private final SaleorGlobalIdCodec globalIdCodec;
+    private final GraphQlProperties properties;
 
     public AttributeValueMutationDataFetcher(AttributeValueWriteSpi attributeValueWriteSpi,
                                              AttributeGraphQlMapper attributeMapper,
-                                             SaleorGlobalIdCodec globalIdCodec) {
+                                             SaleorGlobalIdCodec globalIdCodec,
+                                             GraphQlProperties properties) {
         this.attributeValueWriteSpi = attributeValueWriteSpi;
         this.attributeMapper = attributeMapper;
         this.globalIdCodec = globalIdCodec;
+        this.properties = properties;
     }
 
     /**
@@ -175,6 +178,7 @@ public class AttributeValueMutationDataFetcher {
     @DgsMutation(field = DgsConstants.MUTATION.AttributeValueBulkDelete)
     @RateLimiter(name = "graphqlAttributeValueMutation")
     public AttributeValueBulkDelete attributeValueBulkDelete(@InputArgument List<String> ids) {
+        properties.requireBoundedList(ids, "attributeValueBulkDelete");
         if (ids == null || ids.isEmpty()) {
             throw new IllegalArgumentException("attributeValueBulkDelete requires a non-empty list of ids");
         }
