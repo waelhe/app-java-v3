@@ -18,6 +18,7 @@ import com.marketplace.app.graphql.generated.types.MenuItemInput;
 import com.marketplace.app.graphql.generated.types.MenuItemMove;
 import com.marketplace.app.graphql.generated.types.MenuItemMoveInput;
 import com.marketplace.app.graphql.generated.types.MenuItemTranslate;
+import com.marketplace.app.graphql.generated.types.MenuItemTranslation;
 import com.marketplace.app.graphql.generated.types.MenuItemUpdate;
 import com.marketplace.app.graphql.generated.types.MenuSortingInput;
 import com.marketplace.app.graphql.generated.types.MenuUpdate;
@@ -731,6 +732,52 @@ public class CmsNavigationDataFetcher {
                     MenuTreeContext context = menuTreeContextOf(caller, parent.menuId());
                     return toGraphQlMenuItem(parent, context.byParent(), context.levels());
                 })
+                .orElse(null);
+    }
+
+    /**
+     * The {@code MenuItem.translation(languageCode)} read-back — the wave-11
+     * #806 review (Major · Functional Correctness): the SDL declared the
+     * field but no resolver ever wired it, so every selection answered the
+     * mapper's silent null. The owning read source EXISTS — the item
+     * projection carries the per-locale name translations the console owner
+     * loads (keyed by language code, each with its owning row id) — so the
+     * field resolves through the SAME seam every menu-item read uses: the
+     * source item's id re-reads via {@code findMenuItemById} and the
+     * addressed language's translation renders with its row id (the Saleor
+     * {@code MenuItemTranslation.id} identity — the attribute-translation
+     * precedent's encode scheme). A language with no translation answers the
+     * honest null (Saleor's own semantics); an item deleted concurrently
+     * answers null too.
+     *
+     * <p>This is a FIELD-level completion resolver — the caller reads from
+     * the REQUEST-SCOPED context (the wave-4 INT-001 evidence: the
+     * SecurityContext ThreadLocal does not reach the engine's completion
+     * threads); an absent caller answers the honest null floor. The per-node
+     * re-read joins the pageTypeAttributes/Collection.products guarded-N+1
+     * advisory class (maxPageSize caps the fan-out).</p>
+     */
+    @DgsData(parentType = DgsConstants.MENUITEM.TYPE_NAME,
+             field = DgsConstants.MENUITEM.Translation)
+    public MenuItemTranslation menuItemTranslation(DataFetchingEnvironment environment,
+                                                   @InputArgument("languageCode")
+                                                   LanguageCodeEnum languageCode) {
+        MenuItem item = environment.getSource();
+        if (item == null || item.getId() == null || languageCode == null) {
+            return null;
+        }
+        Authentication caller = MarketplaceGraphQlContext.callerOf(environment);
+        if (caller == null || !caller.isAuthenticated()) {
+            return null;
+        }
+        return navigationPort.findMenuItemById(caller,
+                        decodeId(item.getId(), MENU_ITEM_TAG, "A menu item ID is required"))
+                .map(view -> view.translations().get(languageCode.name()))
+                .map(translation -> MenuItemTranslation.newBuilder()
+                        .id(globalIdCodec.encode("MenuItemTranslation", translation.id()))
+                        .name(translation.name())
+                        .language(languageCode)
+                        .build())
                 .orElse(null);
     }
 

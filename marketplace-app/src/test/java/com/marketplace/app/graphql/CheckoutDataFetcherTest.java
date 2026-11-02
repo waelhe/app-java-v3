@@ -420,6 +420,30 @@ class CheckoutDataFetcherTest {
     }
 
     @Test
+    void anonymousAuthenticationIsRejectedLikeAMissingOne() {
+        // The wave-11 #806 review (Major · Security): AnonymousAuthenticationToken
+        // answers isAuthenticated() == true — the type check is the only honest
+        // wall (the account-lifecycle fetcher's wave-3 guard, same semantics).
+        SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.AnonymousAuthenticationToken(
+                        "key", "anonymousUser",
+                        List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS"))));
+
+        assertThatThrownBy(() -> fetcher.checkout(null, null))
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+        assertThatThrownBy(() -> fetcher.checkoutLinesAdd(null, null, null, List.of()))
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+        assertThatThrownBy(() -> fetcher.checkoutLinesUpdate(null, null, null, List.of()))
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+        assertThatThrownBy(() -> fetcher.checkoutLinesDelete(null, null, List.of()))
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+        assertThatThrownBy(() -> fetcher.checkoutLineDelete(null, null, null, "raw"))
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+
+        verifyNoInteractions(checkoutSpi, mapper, orderCommandSpi);
+    }
+
+    @Test
     void adminAuthenticationFlowsToTheUseCaseUnchangedOnEveryIdentifierPath() {
         Authentication admin = UsernamePasswordAuthenticationToken.authenticated(
                 "checkout-admin", "n/a", List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));

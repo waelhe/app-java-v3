@@ -10,6 +10,7 @@ import com.marketplace.app.graphql.generated.types.PageDelete;
 import com.marketplace.app.graphql.generated.types.PageInput;
 import com.marketplace.app.graphql.generated.types.PageSortingInput;
 import com.marketplace.app.graphql.generated.types.PageTranslate;
+import com.marketplace.app.graphql.generated.types.PageTranslation;
 import com.marketplace.app.graphql.generated.types.PageTranslationInput;
 import com.marketplace.app.graphql.generated.types.PageType;
 import com.marketplace.app.graphql.generated.types.PageTypeCountableConnection;
@@ -477,6 +478,54 @@ public class CmsPageDataFetcher {
                     }
                     return List.copyOf(attributes);
                 })
+                .orElse(null);
+    }
+
+    /**
+     * The {@code Page.translation(languageCode)} read-back — the wave-11
+     * #806 review (Major · Functional Correctness): the SDL declared the
+     * field but no resolver ever wired it, so every selection answered the
+     * mapper's silent null. The owning read source EXISTS — the page
+     * projection carries the per-locale translations the console owner
+     * loads (keyed by language code) — so the field resolves through the
+     * SAME seam every page read uses: the source page's id re-reads via
+     * {@code findPageById} and the addressed language's translation renders
+     * with its owning row id (the Saleor {@code PageTranslation.id}
+     * identity — the attribute-translation precedent's encode scheme). A
+     * language with no translation answers the honest null (Saleor's own
+     * semantics); a page deleted concurrently answers null too.
+     *
+     * <p>This is a FIELD-level completion resolver — the caller reads from
+     * the REQUEST-SCOPED context (the wave-4 INT-001 evidence: the
+     * SecurityContext ThreadLocal does not reach the engine's completion
+     * threads); an absent caller answers the honest null floor. The
+     * per-node re-read joins the pageTypeAttributes/Collection.products
+     * guarded-N+1 advisory class (maxPageSize caps the fan-out).</p>
+     */
+    @DgsData(parentType = DgsConstants.PAGE.TYPE_NAME,
+             field = DgsConstants.PAGE.Translation)
+    public PageTranslation pageTranslation(DataFetchingEnvironment environment,
+                                           @InputArgument("languageCode")
+                                           LanguageCodeEnum languageCode) {
+        Page source = environment.getSource();
+        if (source == null || source.getId() == null || languageCode == null) {
+            return null;
+        }
+        Authentication caller = MarketplaceGraphQlContext.callerOf(environment);
+        if (caller == null || !caller.isAuthenticated()) {
+            return null;
+        }
+        return cmsPageSpi.findPageById(caller,
+                        decodeId(source.getId(), PAGE_TYPE_TAG, "A page ID is required"))
+                .map(view -> view.translations().get(languageCode.name()))
+                .map(translation -> PageTranslation.newBuilder()
+                        .id(globalIdCodec.encode("PageTranslation", translation.id()))
+                        .seoTitle(translation.seoTitle())
+                        .seoDescription(translation.seoDescription())
+                        .title(translation.title())
+                        .content(translation.content())
+                        .language(languageCode)
+                        .build())
                 .orElse(null);
     }
 

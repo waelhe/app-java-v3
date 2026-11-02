@@ -492,7 +492,16 @@ public class CheckoutDataFetcher {
 
     private Authentication currentAuthentication() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) {
+        // The wave-11 #806 review (Major · Security): AnonymousAuthenticationToken
+        // answers isAuthenticated() == true — the type check is the only honest
+        // wall, the same guard the account-lifecycle fetcher adopted in wave 3.
+        // The checkout family reaches cart-owning and payment-adjacent use
+        // cases; an anonymous caller must never pass as an authenticated one
+        // (the PreLoginGraphQlGate keeps these roots staff/customer-gated, but
+        // the guard must not silently accept an anonymous caller if the
+        // gate's allowlist ever widens).
+        if (authentication == null || !authentication.isAuthenticated()
+                || authentication instanceof org.springframework.security.authentication.AnonymousAuthenticationToken) {
             throw new AuthenticationCredentialsNotFoundException(
                     "Authentication is required for checkout operations");
         }

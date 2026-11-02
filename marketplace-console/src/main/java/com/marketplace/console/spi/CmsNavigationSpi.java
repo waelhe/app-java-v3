@@ -33,10 +33,18 @@ public interface CmsNavigationSpi {
     record MenuView(UUID id, String name, String slug) {
     }
 
+    /** The bounded per-locale menu-item translation projection — the
+     * owning row's id rides the view so the GraphQL surface can render the
+     * Saleor {@code MenuItemTranslation.id} identity honestly (the wave-11
+     * #806 review: the field was declared but never wired; the read source
+     * is the owning repository row, and its id IS the translation's id). */
+    record MenuItemTranslationView(UUID id, String languageCode, String name) {
+    }
+
     /** The menu item projection (translations keyed by language code). */
     record MenuItemView(UUID id, UUID menuId, UUID parentId, String name, String url,
                         UUID categoryId, UUID pageId, int position,
-                        Map<String, String> translations) {
+                        Map<String, MenuItemTranslationView> translations) {
     }
 
     /** One page of the collection (the forward-only keyset contract). */

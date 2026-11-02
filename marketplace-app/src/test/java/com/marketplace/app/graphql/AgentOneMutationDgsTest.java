@@ -37,6 +37,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -493,6 +494,103 @@ class AgentOneMutationDgsTest {
                 query { menu { id } }
                 """, "data.menu"))
                 .hasMessageContaining("A menu ID, slug or name is required");
+    }
+
+    // ---------------------------------------------------------------------
+    // The wave-11 #806 review (Major · Functional Correctness): the declared
+    // Page.translation / MenuItem.translation fields — wired to the owning
+    // read seam, with the row id as the Saleor translation identity.
+    // ---------------------------------------------------------------------
+
+    @Test
+    void pageTranslationResolvesTheAddressedLanguageThroughTheOwningReadSeam() {
+        actAs("agent-one-admin@example.com", "ADMIN");
+        UUID pageId = UUID.randomUUID();
+        UUID translationRowId = UUID.randomUUID();
+        CmsPageSpi.PageTranslationView arabic = new CmsPageSpi.PageTranslationView(
+                translationRowId, "AR", "ar-slug", "\u0639\u0646\u0648\u0627\u0646",
+                "\u0645\u062d\u062a\u0648\u0649", "seo-ar", "seo-desc-ar");
+        when(cmsPageSpi.findPageById(any(), eq(pageId))).thenReturn(Optional.of(
+                new CmsPageSpi.PageView(pageId, UUID.randomUUID(), "About", "about",
+                        "about", "About", "content", true, null, null, null, null,
+                        Map.of("AR", arabic))));
+
+        Object title = dgsQueryExecutor.executeAndExtractJsonPath("""
+                query {
+                    page(id: "%s") {
+                        title
+                        translation(languageCode: AR) { title language }
+                    }
+                }
+                """.formatted(globalId("Page", pageId)), "data.page.translation.title");
+
+        assertThat(title).isEqualTo("\u0639\u0646\u0648\u0627\u0646");
+        // The root read AND the field-level completion both flow through the
+        // SAME owning seam (findPageById) — the resolver re-reads the source.
+        verify(cmsPageSpi, atLeastOnce()).findPageById(any(), eq(pageId));
+    }
+
+    @Test
+    void pageTranslationAnswersTheHonestNullForAnUntranslatedLanguage() {
+        actAs("agent-one-admin@example.com", "ADMIN");
+        UUID pageId = UUID.randomUUID();
+        when(cmsPageSpi.findPageById(any(), eq(pageId))).thenReturn(Optional.of(
+                new CmsPageSpi.PageView(pageId, UUID.randomUUID(), "About", "about",
+                        "about", "About", "content", true, null, null, null, null,
+                        Map.of())));
+
+        Object translation = dgsQueryExecutor.executeAndExtractJsonPath("""
+                query {
+                    page(id: "%s") {
+                        translation(languageCode: AR) { title }
+                    }
+                }
+                """.formatted(globalId("Page", pageId)), "data.page.translation");
+
+        assertThat(translation).isNull();
+    }
+
+    @Test
+    void menuItemTranslationResolvesTheAddressedLanguageThroughTheOwningReadSeam() {
+        actAs("agent-one-admin@example.com", "ADMIN");
+        UUID itemId = UUID.randomUUID();
+        UUID translationRowId = UUID.randomUUID();
+        when(cmsNavigationSpi.findMenuItemById(any(), eq(itemId))).thenReturn(Optional.of(
+                new CmsNavigationSpi.MenuItemView(itemId, UUID.randomUUID(), null,
+                        "Home", "/home", null, null, 0,
+                        Map.of("AR", new CmsNavigationSpi.MenuItemTranslationView(
+                                translationRowId, "AR", "\u0627\u0644\u0631\u0626\u064a\u0633\u064a\u0629")))));
+
+        Object name = dgsQueryExecutor.executeAndExtractJsonPath("""
+                query {
+                    menuItem(id: "%s") {
+                        name
+                        translation(languageCode: AR) { name language }
+                    }
+                }
+                """.formatted(globalId("MenuItem", itemId)), "data.menuItem.translation.name");
+
+        assertThat(name).isEqualTo("\u0627\u0644\u0631\u0626\u064a\u0633\u064a\u0629");
+        verify(cmsNavigationSpi, atLeastOnce()).findMenuItemById(any(), eq(itemId));
+    }
+
+    @Test
+    void menuItemTranslationAnswersTheHonestNullForAnUntranslatedLanguage() {
+        actAs("agent-one-admin@example.com", "ADMIN");
+        UUID itemId = UUID.randomUUID();
+        when(cmsNavigationSpi.findMenuItemById(any(), eq(itemId))).thenReturn(Optional.of(
+                new CmsNavigationSpi.MenuItemView(itemId, UUID.randomUUID(), null,
+                        "Home", "/home", null, null, 0, Map.of())));
+
+        Object translation = dgsQueryExecutor.executeAndExtractJsonPath("""
+                query {
+                    menuItem(id: "%s") {
+                        translation(languageCode: AR) { name }
+                    }
+                }
+                """.formatted(globalId("MenuItem", itemId)), "data.menuItem.translation");
+
+        assertThat(translation).isNull();
     }
 
     @Test
