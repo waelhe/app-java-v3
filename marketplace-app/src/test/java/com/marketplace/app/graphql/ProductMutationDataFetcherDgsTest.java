@@ -295,11 +295,11 @@ class ProductMutationDataFetcherDgsTest {
         UUID typeId = UUID.randomUUID();
         when(productWriteSpi.createProduct(any(), any())).thenReturn(
                 ProductMutationResult.success(productView(createdId, "Fresh Widget", typeId, "DRAFT")));
-        // The productType field is the ProductType OBJECT (the G4 review): the
-        // field fetcher resolves the referenced type's bounded projection from
-        // the product-type owner when the subfields are selected.
-        when(productTypeReadSpi.findProductTypeById(eq(typeId), any())).thenReturn(
-                Optional.of(new ProductTypeView(typeId, "DGS Widget Schema", "dgs-widget-schema")));
+        // The productType field is the ProductType OBJECT (the G4 review),
+        // resolved through the DGS data loader (the N+1 fix): the payload's
+        // subfield selection batches into the owner's findProductTypesByIds.
+        when(productTypeReadSpi.findProductTypesByIds(any(), any())).thenReturn(
+                Map.of(typeId, Optional.of(new ProductTypeView(typeId, "DGS Widget Schema", "dgs-widget-schema"))));
 
         Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
                 mutation { productCreate(input: {name: "Fresh Widget", description: "Fresh",

@@ -14,7 +14,7 @@ import com.marketplace.app.graphql.generated.types.OrderDirection;
 import com.marketplace.catalog.spi.ProductPage;
 import com.marketplace.catalog.spi.ProductReadSpi;
 import com.marketplace.catalog.spi.ProductSort;
-import com.marketplace.catalog.spi.ProductTypeReadSpi;
+import com.marketplace.catalog.spi.ProductTypeView;
 import com.marketplace.catalog.spi.ProductView;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
@@ -22,6 +22,7 @@ import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import graphql.schema.DataFetchingEnvironment;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
+import org.dataloader.DataLoader;
 import org.springframework.data.domain.KeysetScrollPosition;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.ScrollPosition;
@@ -33,7 +34,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * P2 (the canonical Saleor plan §5-P2): the GraphQL adapter for the
@@ -83,7 +86,6 @@ public class ProductDataFetcher {
 
     private final ProductReadSpi productReadSpi;
     private final ProductGraphQlMapper mapper;
-    private final ProductTypeReadSpi productTypeReadSpi;
     private final ProductTypeGraphQlMapper productTypeMapper;
     private final GraphQlProperties properties;
     private final EncodingCursorStrategy<ScrollPosition> cursorStrategy;
@@ -91,14 +93,12 @@ public class ProductDataFetcher {
 
     public ProductDataFetcher(ProductReadSpi productReadSpi,
                               ProductGraphQlMapper mapper,
-                              ProductTypeReadSpi productTypeReadSpi,
                               ProductTypeGraphQlMapper productTypeMapper,
                               GraphQlProperties properties,
                               EncodingCursorStrategy<ScrollPosition> cursorStrategy,
                               SaleorGlobalIdCodec globalIdCodec) {
         this.productReadSpi = productReadSpi;
         this.mapper = mapper;
-        this.productTypeReadSpi = productTypeReadSpi;
         this.productTypeMapper = productTypeMapper;
         this.properties = properties;
         this.cursorStrategy = cursorStrategy;
@@ -242,15 +242,22 @@ public class ProductDataFetcher {
      * the declared {@code ProductTypeReadSpi} seam (the productType read
      * root's own mapper and authorization boundary).
      *
-     * <p>The fetcher runs ONLY when the field is selected (the engine's
-     * own execution semantics), so the per-object owner lookup rides
-     * every product that actually asks for its type — bounded by the
-     * pagination hard maximum on list fields and single-object on the
-     * {@code product} root. The nulls stay honest: no reference on the
-     * product (pre-C1/zero-variant legacy rows) answers null WITHOUT an
-     * owner call, and a referenced type the caller cannot see answers
-     * the owner's own safe absence (null object, never a fabricated
-     * one).</p>
+     * <p><b>Batched, not per-object</b> (the 2026-11-03 #806 review's N+1
+     * finding): the fetcher loads through the official DGS data loader
+     * ({@link ProductTypeDataLoader}), so a page of products resolves
+     * its references in ONE owner call
+     * ({@code findProductTypesByIds}) instead of one
+     * {@code findProductTypeById} per product — the same batching rides
+     * every parent shape the field serves ({@code products},
+     * {@code product}, {@code Collection.products}). The fetcher runs
+     * ONLY when the field is selected (the engine's own execution
+     * semantics). The nulls stay honest: no reference on the product
+     * (pre-C1/zero-variant legacy rows) answers null WITHOUT an owner
+     * call, and a referenced type the caller cannot see answers the
+     * owner's own safe absence (null object, never a fabricated one).
+     * The typed-global-ID decode stays ON THIS THREAD, before the load:
+     * a malformed reference answers the codec's classified field-scoped
+     * validation error, never a batch-poisoning sibling failure.</p>
      */
     // parentType/field carry the SDL's own names as literals: the codegen's
     // DgsConstants cover the root operation fields (@DgsQuery/@DgsMutation),
@@ -263,19 +270,24 @@ public class ProductDataFetcher {
     // OBJECT, so an ordinary page of products exhausted graphqlCatalogRead
     // (50/period) mid-page and surfaced as data errors. Rate limiting owns
     // the ROOT resolvers only.
-    public ProductType productType(DataFetchingEnvironment environment) {
+    public CompletableFuture<ProductType> productType(DataFetchingEnvironment environment) {
         Product source = environment.getSource();
         if (source.getProductType() == null) {
-            return null;
+            return CompletableFuture.completedFuture(null);
         }
         String reference = source.getProductType().getId();
         if (reference == null) {
-            return null;
+            return CompletableFuture.completedFuture(null);
         }
         UUID nativeId = globalIdCodec.decode(reference, ProductTypeGraphQlMapper.PRODUCT_TYPE_TYPE);
-        return productTypeReadSpi.findProductTypeById(nativeId, currentAuthentication())
-                .map(productTypeMapper::toGraphQlProductType)
-                .orElse(null);
+        // The caller travels with the key: the loader re-establishes the
+        // captured security context around the owner call on the dispatch
+        // thread (the DelegatingSecurityContext discipline — see
+        // ProductTypeDataLoader's contract).
+        DataLoader<UUID, Optional<ProductTypeView>> loader =
+                environment.getDataLoader(ProductTypeDataLoader.NAME);
+        return loader.load(nativeId, currentAuthentication())
+                .thenApply(view -> view.map(productTypeMapper::toGraphQlProductType).orElse(null));
     }
 
     /**

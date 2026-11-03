@@ -19,6 +19,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -106,6 +107,53 @@ class ProductTypeReadServiceTest {
         assertThat(view).isPresent();
         assertThat(view.get().name()).isEqualTo("المطبخ");
         assertThat(view.get().slug()).isEqualTo("kitchen");
+    }
+
+    // ------------------------------------------------------------------
+    // findProductTypesByIds — the batch twin (the #806 N+1 fix's seam)
+    // ------------------------------------------------------------------
+
+    @Test
+    void batchAnswersEveryRequestedIdFoundRowsTheirProjectionAndUnknownsTheSafeEmpty() {
+        ProductType existing = type("home-appliances", "Home appliances", "الأجهزة المنزلية");
+        ProductType other = type("kitchen", null, "المطبخ");
+        UUID missing = UUID.randomUUID();
+        when(repository.findAllById(any())).thenReturn(java.util.List.of(existing, other));
+
+        Map<UUID, Optional<ProductTypeView>> views = service.findProductTypesByIds(
+                java.util.List.of(existing.getId(), other.getId(), missing), authentication);
+
+        // The loader's own every-key rule: every requested id answers its
+        // Optional — found rows their bounded projection, unknowns the same
+        // honest empty the single lookup answers.
+        assertThat(views).containsOnlyKeys(existing.getId(), other.getId(), missing);
+        assertThat(views.get(existing.getId())).isPresent();
+        assertThat(views.get(existing.getId()).get().name()).isEqualTo("Home appliances");
+        assertThat(views.get(other.getId())).isPresent();
+        assertThat(views.get(other.getId()).get().name()).isEqualTo("المطبخ");
+        assertThat(views.get(missing)).isEmpty();
+    }
+
+    @Test
+    void batchCollapsesDuplicatesAndAnswersOneEntryPerDistinctId() {
+        ProductType existing = type("home-appliances", "Home appliances", "الأجهزة المنزلية");
+        when(repository.findAllById(any())).thenReturn(java.util.List.of(existing));
+
+        Map<UUID, Optional<ProductTypeView>> views = service.findProductTypesByIds(
+                java.util.List.of(existing.getId(), existing.getId(), existing.getId()),
+                authentication);
+
+        assertThat(views).containsOnlyKeys(existing.getId());
+        assertThat(views.get(existing.getId())).isPresent();
+    }
+
+    @Test
+    void batchToleratesANullIdAndAnEmptyCollectionWithoutTouchingTheRepository() {
+        assertThat(service.findProductTypesByIds(java.util.List.of(), authentication)).isEmpty();
+        assertThat(service.findProductTypesByIds(null, authentication)).isEmpty();
+        assertThat(service.findProductTypesByIds(java.util.Arrays.asList(null, null), authentication))
+                .isEmpty();
+        verifyNoInteractions(repository);
     }
 
     // ------------------------------------------------------------------

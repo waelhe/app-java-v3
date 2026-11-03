@@ -4,6 +4,8 @@ import org.springframework.data.domain.KeysetScrollPosition;
 import org.springframework.data.domain.Limit;
 import org.springframework.security.core.Authentication;
 
+import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.modulith.NamedInterface;
@@ -32,6 +34,34 @@ public interface ProductTypeReadSpi {
      * @return the product-type projection, empty when no row matches
      */
     Optional<ProductTypeView> findProductTypeById(UUID id, Authentication authentication);
+
+    /**
+     * The product-type projections for a batch of native UUIDs behind the
+     * typed global IDs — the batch twin of {@link #findProductTypeById},
+     * introduced for the {@code Product.productType} field's DGS data
+     * loader (the 2026-11-03 #806 review's N+1 finding: a page of
+     * products executed one owner lookup per product). The official DGS
+     * data-loader pattern batches the page's references into ONE owner
+     * call; this seam is that call.
+     *
+     * <p>The semantics are the single lookup's own, per id: every
+     * requested id answers its {@link Optional} — an unknown but
+     * well-formed UUID answers empty (the safe absence the nullable
+     * field carries — never an error, never a fabricated type), a known
+     * row answers its bounded projection. The returned map carries an
+     * entry for EVERY requested id (a missing entry is a contract
+     * violation — the loader's own every-key rule).</p>
+     *
+     * @param ids            the native UUIDs (decoded by the boundary's
+     *                       codec; duplicates and an empty collection are
+     *                       tolerated — an empty collection answers an
+     *                       empty map)
+     * @param authentication the caller, whose ADMIN authority is verified
+     * @return every requested id mapped to its projection, empty for the
+     *         unknown ones
+     */
+    Map<UUID, Optional<ProductTypeView>> findProductTypesByIds(Collection<UUID> ids,
+                                                               Authentication authentication);
 
     /**
      * One bounded page of the product-type collection as a forward-only

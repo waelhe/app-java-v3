@@ -55,6 +55,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -292,11 +294,12 @@ class ProductDataFetcherDgsTest {
                         any(ProductSort.class), any(), any(Limit.class)))
                 .thenAnswer(invocation -> new ProductPage(
                         windowAt.apply(ScrollPosition.keyset()), 9));
-        // The productType field is the ProductType OBJECT (the G4 review): the
-        // field fetcher resolves the referenced type's bounded projection from
-        // the product-type owner when the subfields are selected.
-        when(productTypeReadSpi.findProductTypeById(eq(typeId), any())).thenReturn(
-                Optional.of(new ProductTypeView(typeId, "Widget Schema", "widget-schema")));
+        // The productType field is the ProductType OBJECT (the G4 review)
+        // resolved through the official DGS data loader (the 2026-11-03
+        // #806 review's N+1 fix): the page's references batch into ONE
+        // findProductTypesByIds owner call.
+        when(productTypeReadSpi.findProductTypesByIds(any(), any())).thenReturn(
+                Map.of(typeId, Optional.of(new ProductTypeView(typeId, "Widget Schema", "widget-schema"))));
 
         Map<String, Object> connection = dgsQueryExecutor.executeAndExtractJsonPath(
                 """
@@ -327,6 +330,55 @@ class ProductDataFetcherDgsTest {
                 .encodeToString(("ProductType:" + typeId).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         assertThat(productType.get("name")).isEqualTo("Widget Schema");
         assertThat(productType.get("slug")).isEqualTo("widget-schema");
+    }
+
+    /**
+     * The N+1 fix's own acceptance (the 2026-11-03 #806 review, Nitpick ·
+     * Performance &amp; Scalability): a page of products with
+     * {@code productType} selected resolves its references through the
+     * DGS data loader — ONE batched {@code findProductTypesByIds} owner
+     * call for the whole page (the per-product
+     * {@code findProductTypeById} pattern is measurably gone), and the
+     * same type referenced by every product on the page answers from
+     * the one batch entry.
+     */
+    @Test
+    void productTypeSelectionsAcrossAPageBatchIntoOneOwnerCall() {
+        authenticateAs("dgs-consumer-subject", "CONSUMER");
+        UUID typeId = UUID.randomUUID();
+        List<ProductView> page = List.of(
+                productView(UUID.randomUUID(), "Widget A", typeId, "ACTIVE"),
+                productView(UUID.randomUUID(), "Widget B", typeId, "ACTIVE"),
+                productView(UUID.randomUUID(), "Widget C", typeId, "ACTIVE"));
+        when(productReadSpi.scrollProducts(any(org.springframework.security.core.Authentication.class),
+                        any(ProductSort.class), any(), any(Limit.class)))
+                .thenAnswer(invocation -> new ProductPage(
+                        Window.from(page, index -> ScrollPosition.forward(Map.of(
+                                "name", page.get(index).name(), "id", page.get(index).id())),
+                                false), page.size()));
+        when(productTypeReadSpi.findProductTypesByIds(any(), any())).thenReturn(
+                Map.of(typeId, Optional.of(new ProductTypeView(typeId, "Widget Schema", "widget-schema"))));
+
+        Map<String, Object> connection = dgsQueryExecutor.executeAndExtractJsonPath(
+                "query { products(first: 3) { edges { node { name productType { name slug } } } } }",
+                "data.products");
+
+        // ONE batched owner call carries the whole page's selections — the
+        // N+1 pattern (one call per product) is gone, and the single-object
+        // seam stays untouched (the productType ROOT still owns it).
+        verify(productTypeReadSpi, times(1)).findProductTypesByIds(any(), any());
+        verify(productTypeReadSpi, never()).findProductTypeById(any(UUID.class), any());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> edges = (List<Map<String, Object>>) connection.get("edges");
+        assertThat(edges).hasSize(3);
+        for (Map<String, Object> edge : edges) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> node = (Map<String, Object>) edge.get("node");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> productType = (Map<String, Object>) node.get("productType");
+            assertThat(productType.get("name")).isEqualTo("Widget Schema");
+            assertThat(productType.get("slug")).isEqualTo("widget-schema");
+        }
     }
 
     /**
@@ -371,8 +423,10 @@ class ProductDataFetcherDgsTest {
                         Window.from(List.of(productView(id, "Typed Widget", typeId, "ACTIVE")), index ->
                                         ScrollPosition.forward(Map.of("name", "Typed Widget", "id", id)),
                                 false), 1));
-        // The owner's honest empty: a stranger's or missing type row.
-        when(productTypeReadSpi.findProductTypeById(eq(typeId), any())).thenReturn(Optional.empty());
+        // The owner's honest empty: a stranger's or missing type row —
+        // the batch seam answers the same safe absence per id.
+        when(productTypeReadSpi.findProductTypesByIds(any(), any())).thenReturn(
+                Map.of(typeId, Optional.empty()));
 
         Map<String, Object> connection = dgsQueryExecutor.executeAndExtractJsonPath(
                 "query { products(first: 1) { edges { node { productType { id name } } } } }",
@@ -397,12 +451,11 @@ class ProductDataFetcherDgsTest {
         when(productReadSpi.findProductById(eq(id), any(org.springframework.security.core.Authentication.class)))
                 .thenReturn(java.util.Optional.of(productView(id, "Widget", typeId, "ACTIVE")));
         // Product.productType is the ProductType OBJECT (the G4 review — the
-        // same shape the products/scroll selections already assert): the field
-        // fetcher resolves the referenced type's bounded projection from the
-        // product-type owner when the subfields are selected, so the read-back
-        // document selects them and the owner answers the row.
-        when(productTypeReadSpi.findProductTypeById(eq(typeId), any())).thenReturn(
-                Optional.of(new ProductTypeView(typeId, "Widget Schema", "widget-schema")));
+        // same shape the products/scroll selections already assert), resolved
+        // through the DGS data loader (the N+1 fix): the read-back document
+        // selects the subfields and the batch owner seam answers the row.
+        when(productTypeReadSpi.findProductTypesByIds(any(), any())).thenReturn(
+                Map.of(typeId, Optional.of(new ProductTypeView(typeId, "Widget Schema", "widget-schema"))));
 
         String globalId = java.util.Base64.getEncoder()
                 .encodeToString(("Product:" + id).getBytes(java.nio.charset.StandardCharsets.UTF_8));

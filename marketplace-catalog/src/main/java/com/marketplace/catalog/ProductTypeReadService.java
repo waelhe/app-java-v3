@@ -14,10 +14,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -64,6 +68,44 @@ public class ProductTypeReadService implements ProductTypeReadSpi {
             return Optional.empty();
         }
         return productTypeRepository.findById(id).map(ProductTypeReadService::toView);
+    }
+
+    /**
+     * The batch twin of the single lookup — ADMIN-enforced, one
+     * {@code findAllById} repository read (Spring Data's own batch-by-ids
+     * seam) instead of one {@code findById} per product. Every requested
+     * id answers its {@link Optional}: the found rows their bounded
+     * projection, every other requested id the same honest empty the
+     * single lookup answers — never an error, never a fabricated type.
+     * Duplicates collapse (the same id asked twice answers the same
+     * entry); a collection with no usable id answers an empty map
+     * without touching the repository.
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional(readOnly = true)
+    public Map<UUID, Optional<ProductTypeView>> findProductTypesByIds(Collection<UUID> ids,
+                                                                       Authentication authentication) {
+        if (ids == null) {
+            return Map.of();
+        }
+        Set<UUID> distinct = new LinkedHashSet<>();
+        for (UUID id : ids) {
+            if (id != null) {
+                distinct.add(id);
+            }
+        }
+        if (distinct.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, Optional<ProductTypeView>> results = new HashMap<>();
+        for (UUID id : distinct) {
+            results.put(id, Optional.empty());
+        }
+        for (ProductType type : productTypeRepository.findAllById(distinct)) {
+            results.put(type.getId(), Optional.of(toView(type)));
+        }
+        return results;
     }
 
     /**
