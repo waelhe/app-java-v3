@@ -95,4 +95,42 @@ class UuidScalarTest {
         assertThatThrownBy(() -> scalar.serialize(123, CONTEXT, LOCALE))
                 .isInstanceOf(CoercingSerializeException.class);
     }
+
+    /**
+     * The Coercing contract's own closure (the 2026-11-03 #806 review,
+     * Minor · Stability & Availability): every external value
+     * {@code parseValue} accepts, {@code valueToLiteral} must accept —
+     * and the literal it answers must be valid for {@code parseLiteral}.
+     * The inherited default threw {@code UnsupportedOperationException},
+     * so a valid {@code token} variable could crash value-to-literal
+     * conversion (normalized-operation rewriting).
+     */
+    @Test
+    void valueToLiteralAcceptsEveryParseValueInputAndRoundTrips() {
+        // A UUID value answers its canonical text literal...
+        graphql.language.Value<?> fromUuid = scalar.valueToLiteral(EXPECTED, CONTEXT, LOCALE);
+        assertThat(fromUuid).isInstanceOf(StringValue.class);
+        assertThat(((StringValue) fromUuid).getValue()).isEqualTo(EXPECTED.toString());
+        // ...a canonical String variable (the external form) likewise...
+        graphql.language.Value<?> fromString =
+                scalar.valueToLiteral(EXPECTED.toString(), CONTEXT, LOCALE);
+        assertThat(((StringValue) fromString).getValue()).isEqualTo(EXPECTED.toString());
+        // ...an UPPERCASE canonical form normalizes to the lower-case
+        // canonical literal (the same normalization serialize applies)...
+        graphql.language.Value<?> fromUppercase =
+                scalar.valueToLiteral(EXPECTED.toString().toUpperCase(java.util.Locale.ROOT), CONTEXT, LOCALE);
+        assertThat(((StringValue) fromUppercase).getValue()).isEqualTo(EXPECTED.toString());
+        // ...and the answered literal is valid for parseLiteral (the
+        // contract's own round-trip rule).
+        assertThat(scalar.parseLiteral(fromUuid, CoercedVariables.emptyVariables(), CONTEXT, LOCALE))
+                .isEqualTo(EXPECTED);
+    }
+
+    @Test
+    void valueToLiteralRejectsWhatParseValueRejects() {
+        assertThatThrownBy(() -> scalar.valueToLiteral("not-a-uuid", CONTEXT, LOCALE))
+                .isInstanceOf(CoercingParseValueException.class);
+        assertThatThrownBy(() -> scalar.valueToLiteral(123, CONTEXT, LOCALE))
+                .isInstanceOf(CoercingParseValueException.class);
+    }
 }

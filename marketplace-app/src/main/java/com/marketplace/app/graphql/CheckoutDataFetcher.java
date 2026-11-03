@@ -300,13 +300,26 @@ public class CheckoutDataFetcher {
                                                   @InputArgument String lineId) {
         Authentication authentication = currentAuthentication();
         UUID token = checkoutToken(environment);
+        // The 2026-11-03 #806 review (Minor · Functional Correctness): the
+        // single catch reported the IDENTIFIER errors (the id/token
+        // conflict, the empty/required identifier) under `lineId` while
+        // every sibling root answers them under `id` — the same
+        // wrong-field defect fixed for linesUpdate's NOT_FOUND. The two
+        // catches are split: the checkout's own identity errors own `id`;
+        // the lineId decode failure keeps `lineId` with the constant
+        // message shape the sibling paths use (never the codec's raw
+        // sentence).
         final UUID cartId;
-        final UUID decodedLineId;
         try {
             cartId = requireCheckoutIdentifier(id, checkoutId, token);
+        } catch (IllegalArgumentException exception) {
+            return payload(null, List.of(error("id", exception.getMessage(), "INVALID")), true, authentication);
+        }
+        final UUID decodedLineId;
+        try {
             decodedLineId = globalIdCodec.decode(lineId, CheckoutGraphQlMapper.CHECKOUT_LINE_TYPE);
         } catch (IllegalArgumentException exception) {
-            return payload(null, List.of(error("lineId", exception.getMessage(), "INVALID")), true, authentication);
+            return payload(null, List.of(error("lineId", "Invalid checkout line global ID", "INVALID")), true, authentication);
         }
 
         final CheckoutView updated;

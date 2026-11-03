@@ -573,6 +573,29 @@ class CollectionDataFetcherDgsTest {
     }
 
     /**
+     * The 2026-11-03 #806 review (Minor · Data Integrity): the pinned
+     * 3.23.45 reference REJECTS id+slug together
+     * ({@code validate_one_of_args_is_in_query} — "Argument 'id' cannot
+     * be combined with 'slug'"); the boundary used to answer the id leg
+     * and silently ignore the slug. The combination now answers the
+     * classified error — never a silent no-op on one of the caller's
+     * keys.
+     */
+    @Test
+    void collectionLookupWithBothKeysIsRejectedLikeThePinnedReference() {
+        authenticateAs("dgs-consumer-subject", "CONSUMER");
+        String globalId = java.util.Base64.getEncoder()
+                .encodeToString(("Collection:" + UUID.randomUUID())
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
+                "query($id: ID!) { collection(id: $id, slug: \"some-slug\") { id } }",
+                "$", Map.of("id", globalId)))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("Argument 'id' cannot be combined with 'slug'");
+    }
+
+    /**
      * An unauthenticated caller answers the authentication guard — the
      * house pattern the public-root family carries.
      */

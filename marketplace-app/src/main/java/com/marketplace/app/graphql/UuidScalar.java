@@ -77,6 +77,37 @@ public final class UuidScalar implements Coercing<UUID, String> {
         }
     }
 
+    /**
+     * The Coercing contract's own closure (graphql-java 25.1,
+     * {@code Coercing}: "every valid external input value for parseValue
+     * is also valid for valueToLiteral, and the literals returned are
+     * valid for parseLiteral") — the 2026-11-03 #806 review (Minor ·
+     * Stability & Availability): the inherited default threw
+     * {@code UnsupportedOperationException}, so a valid {@code token}
+     * variable value could crash any engine path that converts values
+     * back to literals (normalized-operation rewriting). The literal is
+     * the CANONICAL lower-case text of the validated UUID — exactly the
+     * form {@link #parseLiteral} accepts.
+     */
+    @Override
+    public Value<?> valueToLiteral(Object input,
+                                   GraphQLContext graphQLContext,
+                                   Locale locale) {
+        String canonical;
+        if (input instanceof UUID uuid) {
+            canonical = uuid.toString();
+        } else if (input instanceof String value) {
+            try {
+                canonical = parseCanonicalUuid(value).toString();
+            } catch (IllegalArgumentException exception) {
+                throw new CoercingParseValueException("UUID scalar requires a canonical UUID value");
+            }
+        } else {
+            throw new CoercingParseValueException("UUID scalar requires a canonical UUID value");
+        }
+        return StringValue.of(canonical);
+    }
+
     private static UUID parseCanonicalUuid(String value) {
         if (value == null || !CANONICAL_UUID.matcher(value).matches()) {
             throw new IllegalArgumentException("Invalid UUID value");

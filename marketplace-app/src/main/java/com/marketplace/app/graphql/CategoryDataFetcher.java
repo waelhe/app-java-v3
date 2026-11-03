@@ -168,8 +168,12 @@ public class CategoryDataFetcher {
      * validation error — never a silent null and never a raw UUID
      * fallback. The {@code slug} argument executes through the owner's
      * code lookup: an unknown but well-formed slug likewise answers
-     * null. When both executable keys are sent, {@code id} wins —
-     * upstream's own documented precedence. The
+     * null. When both executable keys are sent the call is REJECTED —
+     * upstream's own one-of rule
+     * ({@code validate_one_of_args_is_in_query},
+     * saleor/graphql/product/schema.py at the pinned 3.23.45: "Argument
+     * 'id' cannot be combined with 'slug'") — never a silent precedence
+     * (the 2026-11-03 #806 review, Minor · Data Integrity). The
      * {@code slugLanguageCode} argument (no translation owner) and the
      * {@code externalReference} argument (no external-ID column) have
      * no owning capability on this platform and answer the explicit
@@ -196,6 +200,10 @@ public class CategoryDataFetcher {
         if (id == null && slug == null) {
             throw new IllegalArgumentException(
                     "category requires one of id or slug on this platform");
+        }
+        if (id != null && slug != null) {
+            throw new IllegalArgumentException(
+                    "category: Argument 'id' cannot be combined with 'slug'");
         }
         if (id != null) {
             UUID nativeId = globalIdCodec.decode(id, CategoryGraphQlMapper.CATEGORY_TYPE);

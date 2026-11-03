@@ -489,6 +489,32 @@ class CheckoutDataFetcherTest {
         List<Map<String, Object>> errors = (List<Map<String, Object>>) result.get("errors");
         assertThat(errors).hasSize(1);
         assertThat(errors.get(0)).containsEntry("code", "INVALID");
+        // The 2026-11-03 #806 review (Minor · Functional Correctness): the
+        // checkout's own identity errors own the payload's `id` field in
+        // EVERY mutation — checkoutLineDelete used to answer them under
+        // `lineId` (the same wrong-field defect fixed for linesUpdate's
+        // NOT_FOUND).
+        assertThat(errors.get(0)).containsEntry("field", "id");
         assertThat((String) errors.get(0).get("message")).contains("Only one checkout identifier");
+    }
+
+    @Test
+    void lineDeleteAnswersTheMalformedLineIdUnderTheLineIdField() {
+        // The same review: the lineId decode failure keeps ITS OWN field
+        // (`lineId`) with the constant message shape the sibling paths
+        // use — the split catch keeps both fields honest.
+        UUID cartId = UUID.randomUUID();
+        Map<String, Object> result = fetcher.checkoutLineDelete(
+                checkoutGlobalId(cartId), null, environment(), "not-a-global-id");
+
+        assertThat(result.get("checkout")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> errors = (List<Map<String, Object>>) result.get("errors");
+        assertThat(errors).hasSize(1);
+        assertThat(errors.get(0)).containsEntry("field", "lineId");
+        assertThat(errors.get(0)).containsEntry("code", "INVALID");
+        assertThat((String) errors.get(0).get("message"))
+                .isEqualTo("Invalid checkout line global ID");
+        verifyNoInteractions(checkoutSpi);
     }
 }

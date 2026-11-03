@@ -170,13 +170,18 @@ public class AttributeDataFetcher {
      * UUID fallback. The {@code slug} argument executes through the
      * owner's code lookup (the domain's own {@code findByCode} seam):
      * an unknown but well-formed slug likewise answers null. When both
-     * executable keys are sent, {@code id} wins — upstream's own
-     * documented precedence. The {@code externalReference} argument has no
-     * owning capability on this platform and answers the explicit
-     * classified error whenever it is sent; a call with no key at all
-     * answers the classified validation error (a keyless lookup is a
-     * client error here, never a fabricated absence — the recorded
-     * divergence from upstream's null answer).
+     * executable keys are sent the call is REJECTED — upstream's own
+     * one-of rule ({@code validate_one_of_args_is_in_query},
+     * saleor/graphql/core/validators at the pinned 3.23.45: "Argument
+     * 'id' cannot be combined with 'slug'") — never a silent precedence
+     * that quietly ignores one of the caller's keys (the 2026-11-03 #806
+     * review, Minor · Data Integrity: the retired id-first-precedence
+     * claim contradicted the pinned reference). The
+     * {@code externalReference} argument has no owning capability on this
+     * platform and answers the explicit classified error whenever it is
+     * sent; a call with no key at all answers the classified validation
+     * error (a keyless lookup is a client error here, never a fabricated
+     * absence — the recorded divergence from upstream's null answer).
      */
     @DgsQuery(field = DgsConstants.QUERY.Attribute)
     @RateLimiter(name = "graphqlCatalogAttributeQuery")
@@ -191,6 +196,10 @@ public class AttributeDataFetcher {
         if (id == null && slug == null) {
             throw new IllegalArgumentException(
                     "attribute requires one of id or slug on this platform");
+        }
+        if (id != null && slug != null) {
+            throw new IllegalArgumentException(
+                    "attribute: Argument 'id' cannot be combined with 'slug'");
         }
         if (id != null) {
             UUID nativeId = globalIdCodec.decode(id, AttributeGraphQlMapper.ATTRIBUTE_TYPE);
