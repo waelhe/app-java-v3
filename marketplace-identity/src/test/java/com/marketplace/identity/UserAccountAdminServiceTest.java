@@ -254,7 +254,7 @@ class UserAccountAdminServiceTest {
 
         assertThat(results).hasSize(1);
         assertThat(results.get(0).errorCode()).isEqualTo("INVALID");
-        assertThat(results.get(0).message()).isEqualTo("The row input was rejected");
+        assertThat(results.get(0).errorMessage()).isEqualTo("The row input was rejected");
     }
 
     @Test
