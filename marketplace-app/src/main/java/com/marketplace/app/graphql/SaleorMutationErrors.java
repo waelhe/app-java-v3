@@ -26,6 +26,24 @@ final class SaleorMutationErrors {
     private SaleorMutationErrors() {
     }
 
+    /**
+     * The payload message for an arbitrary caught failure — the SAME
+     * authored-message rule every payload error field rides
+     * ({@code safeMessage} below), exposed for the bulk paths that build
+     * per-row payload errors from transport-level exceptions instead of
+     * the owner's {@code BulkRowResult} (the 2026-11-03 #806 review,
+     * Minor · Functional Correctness: the row-level
+     * {@code customerBulkUpdate} used to discard the row failure's
+     * class and answer every failed row a generic INVALID).
+     *
+     * @param failure the caught row-level failure
+     * @return the operator-authored message when the failure type is
+     *         authored, else the generic rejection
+     */
+    static String wireMessage(Throwable failure) {
+        return safeMessage(failure);
+    }
+
     /** The platform-native error → the Saleor wire code vocabulary. */
     static String codeOf(Throwable failure) {
         if (failure instanceof ResourceNotFoundException) {

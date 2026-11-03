@@ -234,8 +234,14 @@ public class CheckoutDataFetcher {
         try {
             updated = checkoutSpi.updateLines(cartId, requested, authentication);
         } catch (ResourceNotFoundException exception) {
+            // The 2026-11-03 #806 review (Minor · Functional Correctness):
+            // checkoutLinesAdd/Delete answer CHECKOUT_NOT_FOUND under the
+            // payload's own `id` field — the same semantic error under
+            // `lines` here bound the client to the wrong field. The
+            // line-VALIDATION errors below stay under `lines`: they are
+            // about the lines input, not the checkout's own identity.
             log.info("checkoutLinesUpdate rejected NOT_FOUND — {}", exception.getMessage(), exception);
-            return payload(null, List.of(error("lines", CHECKOUT_NOT_FOUND, "NOT_FOUND")), true, authentication);
+            return payload(null, List.of(error("id", CHECKOUT_NOT_FOUND, "NOT_FOUND")), true, authentication);
         } catch (BadRequestException exception) {
             log.info("checkoutLinesUpdate rejected INVALID — {}", exception.getMessage(), exception);
             return payload(null, List.of(error("lines", LINE_INVALID, "INVALID")), true, authentication);

@@ -567,4 +567,61 @@ class UserDataFetcherDgsTest {
         org.mockito.Mockito.verifyNoInteractions(userManagementSpi);
     }
 
+    /**
+     * The 2026-11-03 #806 review (Minor · Functional Correctness): the
+     * row-level failure's OWN class answers — an unresolvable
+     * externalReference is a {@code NOT_FOUND} with the owner's
+     * authored sentence, never the generic {@code INVALID} the
+     * discarded-exception path used to answer for every failed row.
+     */
+    @Test
+    void customerBulkUpdateAnswersTheTransportFailuresOwnClassNotFoundForAnUnknownReference() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        UUID targetId = UUID.randomUUID();
+        when(userManagementSpi.bulkUpdateCustomers(
+                any(org.springframework.security.core.Authentication.class),
+                argThat((List<UUID> ids) -> ids.size() == 2 && targetId.equals(ids.get(0))
+                        && ids.get(1) == null),
+                any(),
+                eq(true)))
+                .thenReturn(List.of(
+                        new com.marketplace.identity.spi.BulkRowResult(targetId, null, null),
+                        // The owner never sees the failed row's content:
+                        // its wire result is the preserved transport
+                        // failure's OWN class, replacing whatever the
+                        // owner answered for the null-pairing.
+                        new com.marketplace.identity.spi.BulkRowResult(null, "INVALID",
+                                "The customer update was refused")));
+        when(identitySpi.findUserAccountById(eq(targetId),
+                any(org.springframework.security.core.Authentication.class)))
+                .thenReturn(java.util.Optional.of(providerView(targetId)));
+        when(identitySpi.findUserAccountBySubject(eq("unknown-subject"),
+                any(org.springframework.security.core.Authentication.class)))
+                .thenReturn(java.util.Optional.empty());
+
+        String targetGlobalId = java.util.Base64.getEncoder()
+                .encodeToString(("User:" + targetId).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { customerBulkUpdate(customers: [
+                            {id: "%s", input: {firstName: "Valid"}},
+                            {externalReference: "unknown-subject", input: {firstName: "Broken"}}],
+                        errorPolicy: IGNORE_FAILED) {
+                    count
+                    results { customer { email } errors { message code } }
+                } }
+                """.formatted(targetGlobalId), "data.customerBulkUpdate");
+
+        assertThat(payload.get("count")).isEqualTo(1);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> results = (List<Map<String, Object>>) payload.get("results");
+        assertThat(results).hasSize(2);
+        assertThat(results.get(1).get("customer")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rowErrors = (List<Map<String, Object>>) results.get(1).get("errors");
+        assertThat(rowErrors).hasSize(1);
+        assertThat(rowErrors.get(0).get("code")).isEqualTo("NOT_FOUND");
+        assertThat(rowErrors.get(0).get("message"))
+                .isEqualTo("No user for the external reference: unknown-subject");
+    }
+
 }

@@ -134,16 +134,20 @@ server:
   # ForwardedHeaderFilter) covers both the RFC 7239 "Forwarded" header and the
   # full X-Forwarded-* set — including host and port, which NATIVE (Tomcat
   # RemoteIpValve) does not honor.
-  # The wave-4 #806 review's rate-limit-key finding: under FRAMEWORK the
-  # request wrapper SUPPRESSES the raw X-Forwarded-For headers entirely and
-  # its resolved remoteAddr is the LEFTMOST XFF entry (spoofable when the
-  # edge appends) — the PerCallerRateLimitGuard therefore keys on the
-  # RIGHTMOST XFF entry (the one this trusted edge appended) or the true
-  # socket peer address, read from the CONTAINER's root request (the guard
-  # unwraps the standard ServletRequestWrapper chain because Boot 4.1.2
-  # registers the forwarded filter at Integer.MIN_VALUE — no filter can
-  # precede the wrapper to capture the raw header); the strategy itself
-  # stays FRAMEWORK.
+  # The rate-limit key finding's settled state (the 2026-11-03 #806
+  # review, Minor · Maintainability — the comment had drifted behind the
+  # guard): PerCallerRateLimitGuard reads NO X-Forwarded-For entry. The
+  # public path (through the Railway HTTP edge) keys on X-Real-IP — the
+  # header Railway's edge OVERWRITES on every public request and
+  # documents as the client's remote IP — accepted only when it parses
+  # as an IP literal, then normalized to the caller's routable PREFIX
+  # (IPv6 collapses to its /64, IPv4 stands whole); when absent (direct
+  # or local access, tests) it falls back to the socket peer address.
+  # The internal path (*.railway.internal — the project environment's
+  # own trust boundary) keys on the CONTAINER's root request
+  # getRemoteAddr(): any service in the same environment can send its
+  # own forwarding headers, so X-Forwarded-For/X-Real-IP are read
+  # nowhere there. The strategy itself stays FRAMEWORK.
   forward-headers-strategy: FRAMEWORK
   tomcat:
     # Official javadoc: "When using SSL terminated at a proxy, this property

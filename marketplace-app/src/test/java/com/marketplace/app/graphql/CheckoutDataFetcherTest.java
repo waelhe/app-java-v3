@@ -400,6 +400,30 @@ class CheckoutDataFetcherTest {
         assertThat(message).doesNotContain("consumer").doesNotContain("owner");
     }
 
+    @Test
+    void guessedTokenUuidOnLinesUpdateAnswersNotFoundUnderTheIdFieldLikeItsSiblings() {
+        // The 2026-11-03 #806 review (Minor · Functional Correctness):
+        // checkoutLinesAdd/Delete answer CHECKOUT_NOT_FOUND under `id`;
+        // linesUpdate used to answer the SAME semantic error under
+        // `lines` — a client binding the wrong field. The payload's own
+        // identity error owns `id`; the line-VALIDATION errors keep
+        // `lines`.
+        UUID guessed = UUID.randomUUID();
+        String lineId = lineGlobalId(UUID.randomUUID());
+        when(checkoutSpi.updateLines(eq(guessed), anyList(), any()))
+                .thenThrow(new ResourceNotFoundException("Checkout", guessed));
+
+        Map<String, Object> result = fetcher.checkoutLinesUpdate(null, null, environmentWithToken(guessed),
+                List.of(Map.of("lineId", lineId, "quantity", 3)));
+
+        assertThat(result.get("checkout")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> errors = (List<Map<String, Object>>) result.get("errors");
+        assertThat(errors).hasSize(1);
+        assertThat(errors.get(0)).containsEntry("code", "NOT_FOUND");
+        assertThat(errors.get(0)).containsEntry("field", "id");
+    }
+
     // ------------------------------------------------------------------
     // the security gate: a token is never an authentication grant
     // ------------------------------------------------------------------

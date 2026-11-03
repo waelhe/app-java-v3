@@ -33,7 +33,9 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -147,6 +149,14 @@ public class UserManagementDataFetcher {
                 || errorPolicy == ErrorPolicyEnum.REJECT_FAILED_ROWS;
         List<UUID> ids = new ArrayList<>(customers.size());
         List<UserWriteFields> rows = new ArrayList<>(customers.size());
+        // The 2026-11-03 #806 review (Minor · Functional Correctness): the
+        // row-level catch used to discard the row failure's class and
+        // message (a null-pairing handed the owner), so the client saw a
+        // generic INVALID for every failed row — a NOT_FOUND for an
+        // unknown externalReference answered as an INVALID. The failure
+        // is preserved by its row index here and answers ITS OWN
+        // classified code and authored message in results[i].errors.
+        Map<Integer, RuntimeException> transportFailures = new HashMap<>();
         for (CustomerBulkUpdateInput row : customers) {
             // The shard review (Minor · Functional Correctness, 2026-11-01):
             // with a row-level policy, one unresolvable row must fail
@@ -180,6 +190,7 @@ public class UserManagementDataFetcher {
                 if (!rowLevel) {
                     throw rowFailure;
                 }
+                transportFailures.put(ids.size(), rowFailure);
                 ids.add(null);
                 rows.add(null);
             }
@@ -189,7 +200,28 @@ public class UserManagementDataFetcher {
                         rowLevel);
         List<com.marketplace.app.graphql.generated.types.CustomerBulkResult> wireResults =
                 new ArrayList<>(results.size());
-        for (com.marketplace.identity.spi.BulkRowResult result : results) {
+        for (int i = 0; i < results.size(); i++) {
+            com.marketplace.identity.spi.BulkRowResult result = results.get(i);
+            RuntimeException transportFailure = transportFailures.get(i);
+            if (transportFailure != null) {
+                // The row's OWN resolution failure answers its classified
+                // code and authored message (the SaleorMutationErrors
+                // taxonomy every other payload error rides) — never the
+                // owner's generic INVALID for a row it never saw.
+                wireResults.add(com.marketplace.app.graphql.generated.types.CustomerBulkResult
+                        .newBuilder()
+                        .customer(null)
+                        .errors(List.of(com.marketplace.app.graphql.generated.types.CustomerBulkUpdateError
+                                .newBuilder()
+                                .field(null)
+                                .message(SaleorMutationErrors.wireMessage(transportFailure))
+                                .code(SaleorMutationErrors.translate(
+                                        com.marketplace.app.graphql.generated.types.CustomerBulkUpdateErrorCode.class,
+                                        SaleorMutationErrors.codeOf(transportFailure)))
+                                .build()))
+                        .build());
+                continue;
+            }
             wireResults.add(com.marketplace.app.graphql.generated.types.CustomerBulkResult
                     .newBuilder()
                     .customer(result.success() ? userById(result.userId()) : null)
