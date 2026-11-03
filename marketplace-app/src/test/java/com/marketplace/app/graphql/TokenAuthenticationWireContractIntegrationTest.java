@@ -64,10 +64,23 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * the seed's {@code auth_users} rows are the platform's own login store.
  * The legs run through MockMvc over the full real security chain exactly
  * like {@code GraphQlSecurityIntegrationTest}.</p>
+ *
+ * <p><b>The public client is the REAL one too</b>: the grant's
+ * authorization row is built against the configured public client —
+ * the official {@code OAuth2PublicClientInitializer} skips its seeding
+ * when {@code marketplace.security.oauth2.public-client.*} is unset
+ * (the empty non-prod default), and the production grant service then
+ * answers 'The public client is not registered'. Setting the two
+ * properties makes the INITIALIZER itself bootstrap the client through
+ * the official {@code RegisteredClientRepository} — the same mechanism
+ * production rides, and the same property key the grant service's own
+ * {@code publicClientId} binds.</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "spring.flyway.enabled=true",
         "spring.jpa.hibernate.ddl-auto=none",
+        "marketplace.security.oauth2.public-client.client-id=10b588c6-4e85-43ec-9ecf-c588676774d7",
+        "marketplace.security.oauth2.public-client.redirect-uris=https://dashboard.example.com/callback",
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
