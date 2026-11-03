@@ -636,7 +636,11 @@ class CollectionGraphQlIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfy(errors -> assertThat(errors).isNotEmpty());
+                .satisfy(errors -> {
+                assertThat(errors).isNotEmpty();
+                assertThat(errors.get(0).getExtensions())
+                        .containsEntry("errorCode", "AUTHZ-001");
+            });
     }
 
     @Test
@@ -649,7 +653,11 @@ class CollectionGraphQlIntegrationTest {
                 .variable("id", UUID.randomUUID().toString())
                 .execute()
                 .errors()
-                .satisfy(errors -> assertThat(errors).isNotEmpty());
+                .satisfy(errors -> {
+                assertThat(errors).isNotEmpty();
+                assertThat(errors.get(0).getExtensions())
+                        .containsEntry("errorCode", "VAL-001");
+            });
     }
 
     @Test
@@ -662,7 +670,11 @@ class CollectionGraphQlIntegrationTest {
                 .variable("id", productGlobalId(UUID.randomUUID()))
                 .execute()
                 .errors()
-                .satisfy(errors -> assertThat(errors).isNotEmpty());
+                .satisfy(errors -> {
+                assertThat(errors).isNotEmpty();
+                assertThat(errors.get(0).getExtensions())
+                        .containsEntry("errorCode", "VAL-001");
+            });
     }
 
     @Test
