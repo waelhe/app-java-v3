@@ -143,6 +143,41 @@ class AgentOneGraphQlMappers {
         return List.of();
     }
 
+    /**
+     * The tokenCreate rejection payload (AUTH-01, the 2026-11-03
+     * adversarial scan): the pinned Saleor 3.23.45 contract
+     * (create_token.py) answers a failed password grant as
+     * {@code errors:[{field: "email", message: "Please, enter valid
+     * credentials", code: INVALID_CREDENTIALS}]} — the platform
+     * unifies the unknown-email, wrong-password and disabled-account
+     * legs onto that ONE triple (the anti-enumeration divergence row
+     * "tokenCreate authentication rejection"; Saleor's own INACTIVE
+     * answer for a disabled account is deliberately collapsed).
+     */
+    List<AccountError> invalidCredentialsAccountErrors() {
+        return List.of(AccountError.newBuilder()
+                .field("email")
+                .message("Please, enter valid credentials")
+                .code(AccountErrorCode.INVALID_CREDENTIALS)
+                .build());
+    }
+
+    /**
+     * The tokenRefresh rejection payload (AUTH-01): the pinned Saleor
+     * 3.23.45 contract (refresh_token.py) answers an invalid, expired
+     * or revoked refresh token as {@code errors:[{field:
+     * "refreshToken", message: "Incorrect refreshToken", code:
+     * JWT_INVALID_TOKEN}]} — every rotation-rejection leg of this
+     * platform's one-time-use store answers that triple.
+     */
+    List<AccountError> invalidRefreshTokenAccountErrors() {
+        return List.of(AccountError.newBuilder()
+                .field("refreshToken")
+                .message("Incorrect refreshToken")
+                .code(AccountErrorCode.JWT_INVALID_TOKEN)
+                .build());
+    }
+
     List<StaffError> staffErrors(Throwable failure) {
         return List.of(StaffError.newBuilder()
                 .field(null).message(SaleorMutationErrors.of(failure).message())

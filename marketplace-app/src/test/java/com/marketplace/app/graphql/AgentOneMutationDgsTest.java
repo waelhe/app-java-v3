@@ -675,6 +675,116 @@ class AgentOneMutationDgsTest {
         assertThat(fields.get("user")).isNotNull();
     }
 
+    // ---------------------------------------------------------------------
+    // AUTH-01 + TST-03 (the 2026-11-03 adversarial scan, P1): the token
+    // surface's failures are PAYLOAD errors — the pinned Saleor 3.23.45
+    // create_token.py / refresh_token.py contracts — never the generic
+    // INTERNAL-001 transport envelope the resolver used to answer.
+    // ---------------------------------------------------------------------
+
+    @Test
+    void tokenCreateAnswersTheSaleorPayloadErrorForBadCredentials() {
+        // The pinned reference: a failed password grant answers
+        // errors:[{field: "email", message: "Please, enter valid
+        // credentials", code: INVALID_CREDENTIALS}].
+        when(tokenGrantService.grant("legit@example.com", "wrong-password"))
+                .thenThrow(new org.springframework.security.authentication
+                        .BadCredentialsException("Bad credentials"));
+
+        Object payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { tokenCreate(email: "legit@example.com",
+                        password: "wrong-password") {
+                    token refreshToken csrfToken user { email }
+                    errors { field message code }
+                } }
+                """, "data.tokenCreate");
+
+        assertThat(payload).isNotNull();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> fields = (Map<String, Object>) payload;
+        assertThat(fields.get("token")).isNull();
+        assertThat(fields.get("refreshToken")).isNull();
+        assertThat(fields.get("csrfToken")).isNull();
+        assertThat(fields.get("user")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> errors = (List<Map<String, Object>>) fields.get("errors");
+        assertThat(errors).hasSize(1);
+        assertThat(errors.get(0)).containsEntry("field", "email")
+                .containsEntry("message", "Please, enter valid credentials")
+                .containsEntry("code", "INVALID_CREDENTIALS");
+    }
+
+    @Test
+    void tokenCreateUnifiesUnknownEmailWrongPasswordAndDisabledAccount() {
+        // The anti-enumeration contract (the recorded divergence row
+        // "tokenCreate authentication rejection"): the provider's own
+        // BadCredentialsException already hides the unknown-email
+        // distinction; the fetcher's unified catch extends the same
+        // discipline to the disabled account — all three legs answer the
+        // IDENTICAL payload, byte for byte.
+        when(tokenGrantService.grant("unknown@example.com", "whatever"))
+                .thenThrow(new org.springframework.security.authentication
+                        .BadCredentialsException("Bad credentials"));
+        when(tokenGrantService.grant("known@example.com", "wrong-password"))
+                .thenThrow(new org.springframework.security.authentication
+                        .BadCredentialsException("Bad credentials"));
+        when(tokenGrantService.grant("disabled@example.com", "correct-password"))
+                .thenThrow(new org.springframework.security.authentication
+                        .DisabledException("User is disabled"));
+
+        Map<String, Object> unknownEmail = tokenCreatePayload("unknown@example.com", "whatever");
+        Map<String, Object> wrongPassword = tokenCreatePayload("known@example.com", "wrong-password");
+        Map<String, Object> disabledAccount = tokenCreatePayload("disabled@example.com", "correct-password");
+
+        assertThat(unknownEmail).isEqualTo(wrongPassword);
+        assertThat(wrongPassword).isEqualTo(disabledAccount);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> errors = (List<Map<String, Object>>) unknownEmail.get("errors");
+        assertThat(errors).hasSize(1);
+        assertThat(errors.get(0)).containsEntry("code", "INVALID_CREDENTIALS");
+    }
+
+    @Test
+    void tokenRefreshAnswersTheSaleorPayloadErrorForAnInvalidToken() {
+        // The pinned reference (refresh_token.py): an invalid, expired or
+        // revoked refresh token answers errors:[{field: "refreshToken",
+        // message: "Incorrect refreshToken", code: JWT_INVALID_TOKEN}].
+        when(tokenGrantService.refresh("a-consumed-refresh-token"))
+                .thenThrow(new org.springframework.security.authentication
+                        .BadCredentialsException("The refresh token is invalid, expired or revoked"));
+
+        Object payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { tokenRefresh(refreshToken: "a-consumed-refresh-token") {
+                    token refreshToken user { email }
+                    errors { field message code }
+                } }
+                """, "data.tokenRefresh");
+
+        assertThat(payload).isNotNull();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> fields = (Map<String, Object>) payload;
+        assertThat(fields.get("token")).isNull();
+        assertThat(fields.get("refreshToken")).isNull();
+        assertThat(fields.get("user")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> errors = (List<Map<String, Object>>) fields.get("errors");
+        assertThat(errors).hasSize(1);
+        assertThat(errors.get(0)).containsEntry("field", "refreshToken")
+                .containsEntry("message", "Incorrect refreshToken")
+                .containsEntry("code", "JWT_INVALID_TOKEN");
+    }
+
+    /** The AUTH-01 helper: the full tokenCreate payload for one leg. */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> tokenCreatePayload(String email, String password) {
+        return (Map<String, Object>) dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { tokenCreate(email: "%s", password: "%s") {
+                    token refreshToken csrfToken user { email }
+                    errors { field message code }
+                } }
+                """.formatted(email, password), "data.tokenCreate");
+    }
+
     @Test
     void tokenVerifyAnswersAStrictJsonPayloadDocument() throws Exception {
         // The integrator's security round: Map.toString() output is NOT

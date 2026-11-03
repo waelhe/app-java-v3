@@ -11,6 +11,7 @@ import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -102,14 +103,36 @@ public class TokenDataFetcher {
             throw new IllegalArgumentException(
                     "An email and a password are required for the token grant");
         }
-        PlatformTokenGrantService.IssuedTokens issued = tokenGrantService.grant(email, password);
-        return CreateToken.newBuilder()
-                .token(issued.accessToken())
-                .refreshToken(issued.refreshToken())
-                .csrfToken(issued.csrfToken())
-                .user(issued.user() == null ? null : userMapper.toGraphQlUser(issued.user()))
-                .errors(mappers.emptyAccountErrors())
-                .build();
+        // AUTH-01 (the 2026-11-03 adversarial scan, P1): the grant's
+        // AuthenticationException used to fall through to the generic
+        // INTERNAL-001 envelope — the Saleor contract for tokenCreate is
+        // a PAYLOAD error, not a transport error. The pinned reference
+        // (saleor/saleor 3.23.45, create_token.py) answers every failed
+        // password grant as errors:[{field: "email", message: "Please,
+        // enter valid credentials", code: INVALID_CREDENTIALS}] — and
+        // this platform UNIFIES the whole family: an unknown email, a
+        // wrong password and a disabled account all answer the IDENTICAL
+        // triple (the provider's own BadCredentialsException already
+        // hides the unknown-email distinction; the unified catch extends
+        // the same discipline to DisabledException and every other
+        // account-state failure — no account-status enumeration on the
+        // sign-in surface; the deliberate collapse of Saleor's INACTIVE
+        // answer is the recorded divergence row "tokenCreate
+        // authentication rejection").
+        try {
+            PlatformTokenGrantService.IssuedTokens issued = tokenGrantService.grant(email, password);
+            return CreateToken.newBuilder()
+                    .token(issued.accessToken())
+                    .refreshToken(issued.refreshToken())
+                    .csrfToken(issued.csrfToken())
+                    .user(issued.user() == null ? null : userMapper.toGraphQlUser(issued.user()))
+                    .errors(mappers.emptyAccountErrors())
+                    .build();
+        } catch (AuthenticationException failure) {
+            return CreateToken.newBuilder()
+                    .errors(mappers.invalidCredentialsAccountErrors())
+                    .build();
+        }
     }
 
     /**
@@ -138,13 +161,27 @@ public class TokenDataFetcher {
         if (refreshToken == null || refreshToken.isBlank()) {
             throw new IllegalArgumentException("A refresh token is required");
         }
-        PlatformTokenGrantService.IssuedTokens issued = tokenGrantService.refresh(refreshToken);
-        return RefreshToken.newBuilder()
-                .token(issued.accessToken())
-                .refreshToken(issued.refreshToken())
-                .user(issued.user() == null ? null : userMapper.toGraphQlUser(issued.user()))
-                .errors(mappers.emptyAccountErrors())
-                .build();
+        // AUTH-01 (same P1): the rotation's rejection is a PAYLOAD error
+        // too — the pinned reference (refresh_token.py at 3.23.45) answers
+        // an invalid/expired/revoked refresh token as errors:[{field:
+        // "refreshToken", message: "Incorrect refreshToken", code:
+        // JWT_INVALID_TOKEN}]. The platform's one-time-use rotation store
+        // raises BadCredentialsException for exactly that family (unknown
+        // value, consumed value, expired family, foreign client) — every
+        // leg answers the SAME wire triple here.
+        try {
+            PlatformTokenGrantService.IssuedTokens issued = tokenGrantService.refresh(refreshToken);
+            return RefreshToken.newBuilder()
+                    .token(issued.accessToken())
+                    .refreshToken(issued.refreshToken())
+                    .user(issued.user() == null ? null : userMapper.toGraphQlUser(issued.user()))
+                    .errors(mappers.emptyAccountErrors())
+                    .build();
+        } catch (AuthenticationException failure) {
+            return RefreshToken.newBuilder()
+                    .errors(mappers.invalidRefreshTokenAccountErrors())
+                    .build();
+        }
     }
 
     /**

@@ -184,6 +184,18 @@ public class CheckoutDataFetcher {
         } catch (ConflictException exception) {
             log.info("checkoutLinesAdd rejected PRODUCT_UNAVAILABLE_FOR_PURCHASE — {}", exception.getMessage(), exception);
             return payload(null, List.of(error("lines", LINE_UNAVAILABLE, "PRODUCT_UNAVAILABLE_FOR_PURCHASE")), true, authentication);
+        } catch (org.springframework.dao.DataIntegrityViolationException exception) {
+            // ORD-06 (the 2026-11-03 adversarial scan, P3): two concurrent
+            // adds of the same variant both pass the merge-path precheck and
+            // the second INSERT loses the cart-lines uniqueness race (the
+            // V222 partial unique index — the platform's own backstop for
+            // the merge model). The raw DataIntegrityViolationException used
+            // to escape as an unclassified GraphQL error; the Saleor contract
+            // for this root is a PAYLOAD error — CheckoutError under
+            // `lines`, the same LINE_CONFLICT sentence the update path
+            // answers for a conflicting line state.
+            log.info("checkoutLinesAdd lost the concurrent uniqueness race — {}", exception.getMessage(), exception);
+            return payload(null, List.of(error("lines", LINE_CONFLICT, "INVALID")), true, authentication);
         }
         return payload(updated, List.of(), true, authentication);
     }
