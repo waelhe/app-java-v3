@@ -647,7 +647,7 @@ class AttributeDataFetcherDgsTest {
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
                 "query { attributes(first: 1) { totalCount } }", "$"))
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
-                .hasMessageContaining("An unexpected error occurred");
+                .hasMessageContaining("Authentication required");
     }
 
     /**

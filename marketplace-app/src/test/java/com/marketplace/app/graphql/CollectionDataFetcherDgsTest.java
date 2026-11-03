@@ -607,11 +607,11 @@ class CollectionDataFetcherDgsTest {
                 "query { collections(first: 1) { totalCount } }",
                 "data.collections"))
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
-                .hasMessageContaining("An unexpected error occurred")
+                .hasMessageContaining("Authentication required")
                 .satisfies(ex -> assertThat(
                                 ((com.netflix.graphql.dgs.exceptions.QueryException) ex).getErrors().get(0)
                                         .getExtensions())
-                        .containsEntry("errorCode", "INT-001"));
+                        .containsEntry("errorCode", "AUTHN-001"));
         verify(collectionReadSpi, org.mockito.Mockito.never()).scrollCollections(
                 any(org.springframework.security.core.Authentication.class),
                 any(CollectionSort.class), any(), any(Limit.class));

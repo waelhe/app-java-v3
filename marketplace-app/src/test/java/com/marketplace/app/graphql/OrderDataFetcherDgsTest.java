@@ -596,11 +596,12 @@ class OrderDataFetcherDgsTest {
 
     /**
      * The unauthenticated guard: no security context answers the
-     * credentials error, never a silent read. The masked sentence is the
-     * resolver's own leakage policy — the credentials failure lands in the
-     * classified internal family (INT-001), so the proof carries BOTH the
-     * masking sentence and the canonical extensions pair, never a silent
-     * read and never an unclassified leak.
+     * credentials error, never a silent read. AUTH-01 (the 2026-11-03
+     * adversarial scan): the resolver classifies the credentials failure
+     * AUTHN — the fixed safe sentence and the AUTHN-001 taxonomy, the
+     * same pair the REST advice returns — so the proof carries BOTH the
+     * classified sentence and the canonical extensions pair, never a
+     * silent read and never an unclassified leak.
      */
     @Test
     void unauthenticatedCallerAnswersTheCredentialsError() {
@@ -608,11 +609,11 @@ class OrderDataFetcherDgsTest {
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
                 "query { orders(first: 1) { totalCount } }", "$"))
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
-                .hasMessageContaining("An unexpected error occurred")
+                .hasMessageContaining("Authentication required")
                 .satisfies(ex -> assertThat(
                                 ((com.netflix.graphql.dgs.exceptions.QueryException) ex).getErrors().get(0)
                                         .getExtensions())
-                        .containsEntry("errorCode", "INT-001"));
+                        .containsEntry("errorCode", "AUTHN-001"));
     }
 
     /**
@@ -632,11 +633,11 @@ class OrderDataFetcherDgsTest {
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
                 "query { orders(first: 1) { totalCount } }", "$"))
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
-                .hasMessageContaining("An unexpected error occurred")
+                .hasMessageContaining("Authentication required")
                 .satisfies(ex -> assertThat(
                                 ((com.netflix.graphql.dgs.exceptions.QueryException) ex).getErrors().get(0)
                                         .getExtensions())
-                        .containsEntry("errorCode", "INT-001"));
+                        .containsEntry("errorCode", "AUTHN-001"));
     }
 
     /**

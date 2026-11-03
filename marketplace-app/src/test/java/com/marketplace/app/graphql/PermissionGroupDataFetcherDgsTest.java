@@ -477,15 +477,16 @@ class PermissionGroupDataFetcherDgsTest {
     void unauthenticatedCallerAnswersTheCredentialsError() {
         SecurityContextHolder.clearContext();
         // The fetcher's guard throws AuthenticationCredentialsNotFoundException;
-        // the resolver's leakage policy (measured) masks unknown exceptions to
-        // the generic internal sentence — the HTTP layer's pre-login gate
+        // the resolver classifies it AUTHN (AUTH-01, the 2026-11-03
+        // adversarial scan): the fixed safe sentence and the AUTHN-001
+        // taxonomy — the HTTP layer's pre-login gate
         // (HTTP 200 + the classified AUTHN-001 envelope enforced by
         // PreLoginGraphQlGate, documented in OrderGraphQlIntegrationTest)
         // remains the anonymous boundary's own proof.
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
                 "query { permissionGroups(first: 1) { totalCount } }", "$"))
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
-                .hasMessageContaining("An unexpected error occurred");
+                .hasMessageContaining("Authentication required");
     }
 
 }

@@ -486,13 +486,14 @@ class UserDataFetcherDgsTest {
     void unauthenticatedCallerAnswersTheCredentialsError() {
         SecurityContextHolder.clearContext();
         // The fetcher's guard throws AuthenticationCredentialsNotFoundException;
-        // the resolver's leakage policy (measured) masks unknown exceptions to
-        // the generic internal sentence — the HTTP layer's 401 tripartite
+        // the resolver classifies it AUTHN (AUTH-01, the 2026-11-03
+        // adversarial scan): the fixed safe sentence and the AUTHN-001
+        // taxonomy — the HTTP layer's 401 tripartite
         // contract remains the anonymous boundary's own proof.
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
                 "query { me { id } }", "$"))
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
-                .hasMessageContaining("An unexpected error occurred");
+                .hasMessageContaining("Authentication required");
     }
 
     /**
@@ -634,8 +635,9 @@ class UserDataFetcherDgsTest {
      * {@code rows.size()} + 1), shifted every later row's pairing and
      * misrecorded the transport failure's index. The pin: the SPI
      * receives [null, secondId] paired with [null, fields], the failed
-     * row answers its own classified error, and the LATER row still
-     * succeeds at its own index.
+     * row answers its own classified error (INVALID with the §5 policy's
+     * fixed rejection sentence — a library IAE's text never rides the
+     * wire), and the LATER row still succeeds at its own index.
      */
     @Test
     void customerBulkUpdateKeepsTheRowPairingWhenTheIdResolvesButTheFieldsFail() {
@@ -651,8 +653,7 @@ class UserDataFetcherDgsTest {
                 eq(true)))
                 .thenReturn(List.of(
                         new com.marketplace.identity.spi.BulkRowResult(null, "INVALID",
-                                "customerCreate/customerUpdate customerType is not implemented"
-                                        + " on this platform yet"),
+                                "The operation was rejected"),
                         new com.marketplace.identity.spi.BulkRowResult(secondTargetId, null, null)));
         when(identitySpi.findUserAccountById(eq(secondTargetId),
                 any(org.springframework.security.core.Authentication.class)))
@@ -678,14 +679,17 @@ class UserDataFetcherDgsTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> results = (List<Map<String, Object>>) payload.get("results");
         assertThat(results).hasSize(2);
-        // The failed row answers its OWN classified rejection at ITS index.
+        // The failed row answers its OWN classified rejection at ITS index:
+        // code INVALID (the IAE's codeOf classification), message the §5
+        // payload policy's fixed rejection sentence — the IAE's own text
+        // is a library type's message and never rides the wire (only the
+        // owner modules' authored domain exceptions pass through).
         assertThat(results.get(0).get("customer")).isNull();
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> rowErrors = (List<Map<String, Object>>) results.get(0).get("errors");
         assertThat(rowErrors).hasSize(1);
         assertThat(rowErrors.get(0).get("code")).isEqualTo("INVALID");
-        assertThat(rowErrors.get(0).get("message")).isEqualTo(
-                "customerCreate/customerUpdate customerType is not implemented on this platform yet");
+        assertThat(rowErrors.get(0).get("message")).isEqualTo("The operation was rejected");
         // The later row still succeeds at ITS index — the pairing never shifted.
         @SuppressWarnings("unchecked")
         Map<String, Object> second = (Map<String, Object>) results.get(1).get("customer");

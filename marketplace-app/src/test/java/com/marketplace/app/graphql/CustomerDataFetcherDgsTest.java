@@ -491,14 +491,15 @@ class CustomerDataFetcherDgsTest {
     void unauthenticatedCallerAnswersTheCredentialsError() {
         SecurityContextHolder.clearContext();
         // The fetcher's guard throws AuthenticationCredentialsNotFoundException;
-        // the resolver's leakage policy (measured) masks unknown exceptions to
-        // the generic internal sentence — the HTTP layer's 401 tripartite
+        // the resolver classifies it AUTHN (AUTH-01, the 2026-11-03
+        // adversarial scan): the fixed safe sentence and the AUTHN-001
+        // taxonomy — the HTTP layer's 401 tripartite
         // contract (GraphQlSecurityIntegrationTest) remains the anonymous
         // boundary's own proof.
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
                 "query { customers(first: 1) { totalCount } }", "$"))
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
-                .hasMessageContaining("An unexpected error occurred");
+                .hasMessageContaining("Authentication required");
     }
 
 }
