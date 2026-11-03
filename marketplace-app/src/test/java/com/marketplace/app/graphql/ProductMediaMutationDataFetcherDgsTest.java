@@ -278,7 +278,8 @@ class ProductMediaMutationDataFetcherDgsTest {
                 } }
                 """.formatted(productMediaGlobalId(mediaId)), "data.productMediaDelete");
 
-        verify(productMediaWriteSpi).deleteProductMedia(eq(mediaId), any());
+        verify(productMediaWriteSpi).deleteProductMedia(eq(mediaId),
+                argThat(authentication -> "dgs-media-provider-subject".equals(authentication.getName())));
         assertThat(payload.get("errors")).isEqualTo(List.of());
         @SuppressWarnings("unchecked")
         Map<String, Object> media = (Map<String, Object>) payload.get("media");
@@ -382,7 +383,7 @@ class ProductMediaMutationDataFetcherDgsTest {
         verify(productMediaWriteSpi).bulkDeleteProductMedia(
                 argThat(ids -> ids != null && ids.size() == 2
                         && ids.get(0).equals(owned) && ids.get(1).equals(stranger)),
-                any());
+                argThat(authentication -> "dgs-media-provider-subject".equals(authentication.getName())));
         assertThat(payload.get("count")).isEqualTo(1);
         assertThat(payload.get("errors")).isEqualTo(List.of());
     }
@@ -436,7 +437,7 @@ class ProductMediaMutationDataFetcherDgsTest {
         verify(productMediaWriteSpi).reorderProductMedia(eq(productId),
                 argThat(ids -> ids != null && ids.size() == 2
                         && ids.get(0).equals(first) && ids.get(1).equals(second)),
-                any());
+                argThat(authentication -> "dgs-media-provider-subject".equals(authentication.getName())));
         assertThat(payload.get("errors")).isEqualTo(List.of());
         assertThat(payload.get("product")).isNull();
         @SuppressWarnings("unchecked")

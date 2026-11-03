@@ -295,7 +295,7 @@ class ProductVariantMutationDataFetcherDgsTest {
         verify(productVariantWriteSpi).createVariant(argThat(command ->
                 command.productId().equals(productId) && "SKU-1".equals(command.sku())
                         && "Large / Red".equals(command.name()) && command.priceMinor() == 149900L),
-                any());
+                argThat(authentication -> "dgs-provider-subject".equals(authentication.getName())));
         assertThat(payload.get("errors")).isEqualTo(List.of());
         @SuppressWarnings("unchecked")
         Map<String, Object> variant = (Map<String, Object>) payload.get("productVariant");
@@ -381,7 +381,7 @@ class ProductVariantMutationDataFetcherDgsTest {
         verify(productVariantWriteSpi).updateVariant(argThat((UUID id) -> id.equals(rowId)),
                 argThat(command -> "SKU-2".equals(command.sku()) && command.name() == null
                         && command.priceMinor() == 99900L),
-                any());
+                argThat(authentication -> "dgs-provider-subject".equals(authentication.getName())));
         assertThat(payload.get("errors")).isEqualTo(List.of());
         @SuppressWarnings("unchecked")
         Map<String, Object> variant = (Map<String, Object>) payload.get("productVariant");
@@ -448,7 +448,8 @@ class ProductVariantMutationDataFetcherDgsTest {
                 } }
                 """.formatted(variantGlobalId(rowId)), "data.productVariantDelete");
 
-        verify(productVariantWriteSpi).deleteVariant(argThat((UUID id) -> id.equals(rowId)), any());
+        verify(productVariantWriteSpi).deleteVariant(argThat((UUID id) -> id.equals(rowId)),
+                argThat(authentication -> "dgs-provider-subject".equals(authentication.getName())));
         assertThat(payload.get("errors")).isEqualTo(List.of());
         @SuppressWarnings("unchecked")
         Map<String, Object> variant = (Map<String, Object>) payload.get("productVariant");
@@ -476,7 +477,8 @@ class ProductVariantMutationDataFetcherDgsTest {
                 "data.productVariantBulkDelete");
 
         verify(productVariantWriteSpi).deleteVariants(argThat((List<UUID> ids) ->
-                ids.size() == 2 && ids.contains(first) && ids.contains(second)), any());
+                ids.size() == 2 && ids.contains(first) && ids.contains(second)),
+                argThat(authentication -> "dgs-provider-subject".equals(authentication.getName())));
         assertThat(payload.get("count")).isEqualTo(1);
         assertThat(payload.get("errors")).isEqualTo(List.of());
     }
@@ -575,7 +577,8 @@ class ProductVariantMutationDataFetcherDgsTest {
         verify(productVariantWriteSpi).bulkUpdateVariants(eq(productId),
                 argThat((List<ProductVariantBulkUpdateItem> items) ->
                         items.size() == 1 && items.get(0).id().equals(rowId)
-                                && "SKU-2".equals(items.get(0).fields().sku())), any(), any());
+                                && "SKU-2".equals(items.get(0).fields().sku())),
+                argThat(authentication -> "dgs-provider-subject".equals(authentication.getName())), any());
     }
 
     /**
@@ -610,7 +613,8 @@ class ProductVariantMutationDataFetcherDgsTest {
         assertThat(payload.get("errors")).isEqualTo(List.of());
         verify(productVariantWriteSpi).bulkUpdateVariants(eq(productId),
                 argThat((List<ProductVariantBulkUpdateItem> items) ->
-                        items.size() == 1 && items.get(0).id().equals(rowId)), any(), any());
+                        items.size() == 1 && items.get(0).id().equals(rowId)),
+                argThat(authentication -> "dgs-provider-subject".equals(authentication.getName())), any());
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> results = (List<Map<String, Object>>) payload.get("results");
         assertThat(results).hasSize(2);
