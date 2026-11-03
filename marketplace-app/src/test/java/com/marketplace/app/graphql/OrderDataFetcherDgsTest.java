@@ -729,8 +729,8 @@ class OrderDataFetcherDgsTest {
         UUID variantId = UUID.randomUUID(), productId = UUID.randomUUID();
         when(checkoutSpi.findCheckout(eq(checkoutId), any(org.springframework.security.core.Authentication.class)))
                 .thenReturn(agent3CheckoutView(checkoutId, lineId, variantId));
-        when(variantReadSpi.findVariantForCheckoutLine(variantId))
-                .thenReturn(java.util.Optional.of(agent3VariantView(variantId, productId)));
+        when(variantReadSpi.findVariantsForCheckoutLines(java.util.Set.of(variantId)))
+                .thenReturn(java.util.Map.of(variantId, agent3VariantView(variantId, productId)));
 
         Map<String, Object> checkout = dgsQueryExecutor.executeAndExtractJsonPath(
                 "query($id: ID!) { checkout(id: $id) { id token quantity lines { id quantity variant { id name sku status product { id name } } } } }",
@@ -764,8 +764,8 @@ class OrderDataFetcherDgsTest {
         UUID checkoutId = UUID.randomUUID(), lineId = UUID.randomUUID(), variantId = UUID.randomUUID();
         when(checkoutSpi.findCheckout(eq(checkoutId), any(org.springframework.security.core.Authentication.class)))
                 .thenReturn(agent3CheckoutView(checkoutId, lineId, variantId));
-        when(variantReadSpi.findVariantForCheckoutLine(variantId))
-                .thenReturn(java.util.Optional.empty());
+        when(variantReadSpi.findVariantsForCheckoutLines(java.util.Set.of(variantId)))
+                .thenReturn(java.util.Map.of());
 
         Map<String, Object> checkout = dgsQueryExecutor.executeAndExtractJsonPath(
                 "query($id: ID!) { checkout(id: $id) { id quantity lines { id } } }",
@@ -784,8 +784,8 @@ class OrderDataFetcherDgsTest {
         when(checkoutSpi.addLines(eq(checkoutId), any(),
                 any(org.springframework.security.core.Authentication.class)))
                 .thenReturn(agent3CheckoutView(checkoutId, lineId, variantId));
-        when(variantReadSpi.findVariantForCheckoutLine(variantId))
-                .thenReturn(java.util.Optional.empty());
+        when(variantReadSpi.findVariantsForCheckoutLines(java.util.Set.of(variantId)))
+                .thenReturn(java.util.Map.of());
 
         Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath(
                 "mutation($id: ID!, $lines: [CheckoutLineInput!]!) { checkoutLinesAdd(id: $id, lines: $lines) { checkout { id quantity lines { id } } checkoutErrors { code } errors { code } } }",

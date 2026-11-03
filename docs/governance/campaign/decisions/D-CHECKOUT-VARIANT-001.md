@@ -6,7 +6,7 @@
 
 The pinned Saleor 3.23.43 GraphQL contract is the wire authority for checkout: `CheckoutLine.variant` is a **direct, non-null `ProductVariant!`**. The platform must not introduce a `CheckoutVariantReference` wrapper, `availableInCatalog` flag, or nested `productVariant` property into this Saleor-facing field.
 
-The checkout mapper uses a dedicated catalog SPI method, `findVariantForCheckoutLine(UUID)`, only after the orders owner has resolved the checkout through `CheckoutSpi`. That use case is the authorization boundary: only an authenticated cart owner or ADMIN may reach the mapper. The dedicated projection may read a live variant and its live parent regardless of lifecycle state so a purchaser can inspect a variant already present on their own cart. This does **not** change the two-row ACTIVE visibility gate on the public `productVariant` / `productVariants` roots.
+The checkout mapper uses a dedicated catalog SPI method, `findVariantsForCheckoutLines(Collection<UUID>)`, only after the orders owner has resolved the checkout through `CheckoutSpi`. That use case is the authorization boundary: only an authenticated cart owner or ADMIN may reach the mapper. The dedicated projection may read a live variant and its live parent regardless of lifecycle state so a purchaser can inspect a variant already present on their own cart. This does **not** change the two-row ACTIVE visibility gate on the public `productVariant` / `productVariants` roots.
 
 ## Integrity and non-fabrication rules
 
@@ -24,3 +24,5 @@ The checkout mapper uses a dedicated catalog SPI method, `findVariantForCheckout
 5. CI, Integration Test, CodeQL, container/security checks, and Saleor inventory/gates pass on the same assembled head.
 
 Until the edge states in the first integrity bullet are eliminated by data migration/backfill or a durable snapshot contract, the checkout family must not be claimed as universally `RELEASE_READY` for every legacy cart row.
+
+The 2026-11-03 12:44:42Z #806 review found a per-line N+1 in the checkout variant read. The dedicated checkout-scoped read is now the batched `findVariantsForCheckoutLines(Collection<UUID>)` — one read for the whole distinct variant set, with the same checkout-only semantics — and the single-id form was removed from the SPI as dead surface.

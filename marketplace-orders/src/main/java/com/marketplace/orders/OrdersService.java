@@ -327,7 +327,7 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
         //    wire where every line carries a variant);
         //  - a stale variant line (the variant or its parent product row no
         //    longer resolves — the SAME representability predicate the
-        //    composition mapper's findVariantForCheckoutLine applies,
+        //    composition mapper's findVariantsForCheckoutLines applies,
         //    verified here through the pricing port's authoritative
         //    resolution, so the mapper's fail-loud guards stay
         //    defense-in-depth and never fire for live data).

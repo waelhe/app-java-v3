@@ -191,42 +191,13 @@ class ProductVariantReadServiceTest {
         assertThat(service.findVariantById(variant.getId(), adminCaller)).isEmpty();
     }
 
-    @Test
-    void checkoutLineProjectionPreservesSuspendedVariantAndParentWithoutWideningStorefrontReads() {
-        Product parent = suspendedProduct("b5a Checkout Parent");
-        ProductVariant variant = suspendedVariant(parent, "b5a-checkout-suspended");
-        when(variantRepository.findById(variant.getId())).thenReturn(Optional.of(variant));
-        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
-
-        assertThat(service.findVariantForCheckoutLine(variant.getId()))
-                .contains(new ProductVariantView(variant.getId(), variant.getName(), variant.getSku(),
-                        variant.getStatus().name(),
-                        new ProductView(parent.getId(), parent.getTitle(),
-                                parent.getProductTypeId(), parent.getStatus().name())));
-        assertThat(service.findVariantById(variant.getId(), publicCaller)).isEmpty();
-    }
-
-    @Test
-    void checkoutLineProjectionAnswersEmptyWhenVariantOrParentIsUnavailable() {
-        UUID unknown = UUID.randomUUID();
-        when(variantRepository.findById(unknown)).thenReturn(Optional.empty());
-        assertThat(service.findVariantForCheckoutLine(unknown)).isEmpty();
-
-        Product parent = activeProduct("b5a Checkout Missing Parent");
-        ProductVariant variant = activeVariant(parent, "b5a-checkout-missing-parent");
-        when(variantRepository.findById(variant.getId())).thenReturn(Optional.of(variant));
-        when(productRepository.findById(parent.getId())).thenReturn(Optional.empty());
-
-        assertThat(service.findVariantForCheckoutLine(variant.getId())).isEmpty();
-    }
-
     // ------------------------------------------------------------------
     // findVariantsForCheckoutLines — the batched checkout render seam
     // (the 12:44:42Z #806 review's N+1 fix)
     // ------------------------------------------------------------------
 
     @Test
-    void batchedCheckoutReadAnswersTheSameProjectionAsTheSingleRead() {
+    void batchedCheckoutReadPreservesSuspendedVariantsAndParentsWithoutWideningStorefrontReads() {
         Product parent = suspendedProduct("b5a Batched Checkout Parent");
         ProductVariant a = suspendedVariant(parent, "b5a-checkout-batched-a");
         ProductVariant b = suspendedVariant(parent, "b5a-checkout-batched-b");
@@ -239,6 +210,10 @@ class ProductVariantReadServiceTest {
                 List.of(a.getId(), b.getId(), a.getId()));
 
         assertThat(views).containsOnlyKeys(a.getId(), b.getId());
+        // The checkout-only seam never widens the storefront read: the
+        // suspended variant stays invisible to the public productVariant
+        // root's two-row ACTIVE gate.
+        assertThat(service.findVariantById(a.getId(), publicCaller)).isEmpty();
         assertThat(views.get(a.getId())).isEqualTo(new ProductVariantView(a.getId(),
                 a.getName(), a.getSku(), a.getStatus().name(),
                 new ProductView(parent.getId(), parent.getTitle(), parent.getProductTypeId(),
@@ -270,13 +245,18 @@ class ProductVariantReadServiceTest {
     }
 
     @Test
-    void batchedCheckoutReadOmitsTheVariantWhoseParentNoLongerResolves() {
+    void batchedCheckoutReadOmitsUnknownVariantsAndThoseWhoseParentNoLongerResolves() {
         Product parent = activeProduct("b5a Batched Missing Parent");
         ProductVariant v = activeVariant(parent, "b5a-checkout-batched-missing-parent");
         when(variantRepository.findAllById(Set.of(v.getId()))).thenReturn(List.of(v));
         when(productRepository.findAllById(Set.of(parent.getId()))).thenReturn(List.of());
 
         assertThat(service.findVariantsForCheckoutLines(List.of(v.getId()))).isEmpty();
+
+        // An unknown but well-formed id answers the same safe absence.
+        UUID unknown = UUID.randomUUID();
+        when(variantRepository.findAllById(Set.of(unknown))).thenReturn(List.of());
+        assertThat(service.findVariantsForCheckoutLines(List.of(unknown))).isEmpty();
     }
 
     @Test

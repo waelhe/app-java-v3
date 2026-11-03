@@ -105,28 +105,10 @@ public class ProductVariantReadService implements ProductVariantReadSpi {
     }
 
     /**
-     * Checkout line references are read after CheckoutSpi has proved that
-     * the caller owns the cart (or is ADMIN). Preserve the current bounded
-     * projection for existing lines even when the variant or parent is
-     * SUSPENDED/ARCHIVED. Public ProductVariant reads remain governed by
-     * findVariantById's two-row ACTIVE gate. Hibernate soft-delete and the
-     * parent existence requirement still apply.
-     */
-    @Override
-    @Transactional(readOnly = true)
-    public Optional<ProductVariantView> findVariantForCheckoutLine(UUID id) {
-        if (id == null) {
-            return Optional.empty();
-        }
-        return variantRepository.findById(id).flatMap(this::resolveView);
-    }
-
-    /**
      * The batched checkout-line read — ONE {@code findAllById} over the
      * DISTINCT requested ids plus ONE batched parent load (the same
      * {@code parentProjections} discipline the scrolls carry), never a
-     * per-line N+1. Per-id semantics are EXACTLY
-     * {@link #findVariantForCheckoutLine}'s: the checkout-only projection
+     * per-line N+1. Per-id semantics: the checkout-only projection
      * that preserves a live variant's display regardless of lifecycle,
      * with the soft-delete policy and the parent-resolution requirement
      * — a variant whose row or parent no longer resolves is ABSENT from

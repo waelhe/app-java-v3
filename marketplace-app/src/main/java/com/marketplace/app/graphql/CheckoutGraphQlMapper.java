@@ -45,7 +45,7 @@ import java.util.UUID;
  *   deleted from the legacy cart … still served by the legacy REST
  *   surface").</li>
  *   <li><b>A stale variant line ({@code variantId != null} whose variant
- *   no longer resolves through {@code findVariantForCheckoutLine}) IS
+ *   no longer resolves through {@code findVariantsForCheckoutLines}) IS
  *   stale.</b> {@link #render(CheckoutView)} reports its native id so the
  *   fetcher layer purges it through the same owner-authorized use case
  *   {@code checkoutLineDelete} rides — Saleor's canonical cascade

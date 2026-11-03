@@ -50,22 +50,8 @@ public interface ProductVariantReadSpi {
     Optional<ProductVariantView> findVariantById(UUID id, Authentication authentication);
 
     /**
-     * Checkout-only projection for a variant already referenced by a cart
-     * line. The caller MUST first obtain the checkout through the orders
-     * owner's CheckoutSpi, which enforces authenticated owner/ADMIN access.
-     * This read preserves a live variant's display projection when its
-     * variant or parent has left the public ACTIVE population; it does not
-     * change public productVariant root visibility.
-     *
-     * <p>The repository soft-delete policy still applies. If the variant or
-     * its parent no longer resolves, this returns empty rather than
-     * fabricating a ProductVariant for Saleor's non-null field.</p>
-     */
-    Optional<ProductVariantView> findVariantForCheckoutLine(UUID id);
-
-    /**
-     * The BATCHED checkout-line projection — the SAME checkout-only
-     * semantics as {@link #findVariantForCheckoutLine}, answered for
+     * The BATCHED checkout-line projection — the checkout-only
+     * semantics, answered for
      * every DISTINCT id in ONE read (the render's whole-cart call; the
      * parent projections ride the catalog owner's own batched
      * association load — never a per-line N+1 on every checkout read
