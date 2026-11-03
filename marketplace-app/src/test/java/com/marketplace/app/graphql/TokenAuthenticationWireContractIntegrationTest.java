@@ -56,8 +56,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * structurally between the three legs, so no account-status oracle rides
  * the response. (The disabled-account collapse of Saleor's own INACTIVE
  * answer is deliberate; the divergence row owns it.)</p>
+ *
+ * <p><b>The schema is the REAL one</b> (the rotation suite's own context
+ * key: {@code spring.flyway.enabled=true} + {@code ddl-auto=none}): the
+ * grant's authorization row lands in {@code oauth2_authorization} — a
+ * Flyway-owned table the create-drop default context never creates, and
+ * the seed's {@code auth_users} rows are the platform's own login store.
+ * The legs run through MockMvc over the full real security chain exactly
+ * like {@code GraphQlSecurityIntegrationTest}.</p>
  */
-@SpringBootTest
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
+        "spring.flyway.enabled=true",
+        "spring.jpa.hibernate.ddl-auto=none",
+})
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
 class TokenAuthenticationWireContractIntegrationTest {
