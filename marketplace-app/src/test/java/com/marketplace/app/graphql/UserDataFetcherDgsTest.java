@@ -624,4 +624,72 @@ class UserDataFetcherDgsTest {
                 .isEqualTo("No user for the external reference: unknown-subject");
     }
 
+    /**
+     * IDP-02 (the 2026-11-03 adversarial scan, P2): a row whose id
+     * RESOLVES but whose field conversion then FAILS (the classified
+     * not-implemented rejection for a supplied {@code customerType})
+     * must fail ITSELF with the null-pairing intact — the pre-fix shape
+     * added the resolved id to {@code ids} before converting the fields,
+     * so this exact row leaked its id unpaired ({@code ids.size()} =
+     * {@code rows.size()} + 1), shifted every later row's pairing and
+     * misrecorded the transport failure's index. The pin: the SPI
+     * receives [null, secondId] paired with [null, fields], the failed
+     * row answers its own classified error, and the LATER row still
+     * succeeds at its own index.
+     */
+    @Test
+    void customerBulkUpdateKeepsTheRowPairingWhenTheIdResolvesButTheFieldsFail() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        UUID leakedCandidateId = UUID.randomUUID();
+        UUID secondTargetId = UUID.randomUUID();
+        when(userManagementSpi.bulkUpdateCustomers(
+                any(org.springframework.security.core.Authentication.class),
+                argThat((List<UUID> ids) -> ids.size() == 2 && ids.get(0) == null
+                        && secondTargetId.equals(ids.get(1))),
+                argThat((List<com.marketplace.identity.spi.UserWriteFields> rows) ->
+                        rows.size() == 2 && rows.get(0) == null && rows.get(1) != null),
+                eq(true)))
+                .thenReturn(List.of(
+                        new com.marketplace.identity.spi.BulkRowResult(null, "INVALID",
+                                "customerCreate/customerUpdate customerType is not implemented"
+                                        + " on this platform yet"),
+                        new com.marketplace.identity.spi.BulkRowResult(secondTargetId, null, null)));
+        when(identitySpi.findUserAccountById(eq(secondTargetId),
+                any(org.springframework.security.core.Authentication.class)))
+                .thenReturn(java.util.Optional.of(providerView(secondTargetId)));
+
+        String firstGlobalId = java.util.Base64.getEncoder()
+                .encodeToString(("User:" + leakedCandidateId)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String secondGlobalId = java.util.Base64.getEncoder()
+                .encodeToString(("User:" + secondTargetId)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { customerBulkUpdate(customers: [
+                            {id: "%s", input: {firstName: "First", customerType: "123"}},
+                            {id: "%s", input: {firstName: "Second"}}],
+                        errorPolicy: IGNORE_FAILED) {
+                    count
+                    results { customer { email } errors { message code } }
+                } }
+                """.formatted(firstGlobalId, secondGlobalId), "data.customerBulkUpdate");
+
+        assertThat(payload.get("count")).isEqualTo(1);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> results = (List<Map<String, Object>>) payload.get("results");
+        assertThat(results).hasSize(2);
+        // The failed row answers its OWN classified rejection at ITS index.
+        assertThat(results.get(0).get("customer")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rowErrors = (List<Map<String, Object>>) results.get(0).get("errors");
+        assertThat(rowErrors).hasSize(1);
+        assertThat(rowErrors.get(0).get("code")).isEqualTo("INVALID");
+        assertThat(rowErrors.get(0).get("message")).isEqualTo(
+                "customerCreate/customerUpdate customerType is not implemented on this platform yet");
+        // The later row still succeeds at ITS index — the pairing never shifted.
+        @SuppressWarnings("unchecked")
+        Map<String, Object> second = (Map<String, Object>) results.get(1).get("customer");
+        assertThat(second.get("email")).isEqualTo("provider@example.com");
+    }
+
 }

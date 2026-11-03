@@ -171,8 +171,23 @@ public class UserManagementDataFetcher {
             // per-row INVALID for a null id — the null-pairing path the
             // catch ladder already uses).
             try {
-                ids.add(resolveTarget(row.getExternalReference(), row.getId()));
-                rows.add(toFields(row.getInput()));
+                // IDP-02 (the 2026-11-03 adversarial scan, P2): resolve
+                // BOTH row halves into locals BEFORE any list add. The
+                // previous shape added the resolved id to `ids` first and
+                // converted the fields second — a row whose id resolved
+                // but whose toFields conversion failed (the classified
+                // not-implemented rejections, e.g. a supplied
+                // customerType) leaked its id into `ids` unpaired: the
+                // catch's null-pairing then appended id=null/row=null,
+                // leaving ids.size() = rows.size() + 1 forever after —
+                // every later row shifted its pairing and
+                // transportFailures' index recorded the wrong slot. The
+                // local-first shape keeps the two lists paired in every
+                // outcome of the row.
+                java.util.UUID resolvedId = resolveTarget(row.getExternalReference(), row.getId());
+                UserWriteFields fields = toFields(row.getInput());
+                ids.add(resolvedId);
+                rows.add(fields);
             } catch (IllegalArgumentException
                     | ResourceNotFoundException rowFailure) {
                 // The narrowed catch (the 2026-11-02 #806 review, Minor ·
