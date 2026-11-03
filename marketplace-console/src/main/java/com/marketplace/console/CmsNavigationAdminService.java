@@ -339,13 +339,31 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
     public MenuWindow scrollMenus(Authentication caller, String sortField, boolean ascending,
                                   KeysetScrollPosition position, Limit limit) {
         requireAdmin(caller);
+        if (limit == null || !limit.isLimited() || limit.max() <= 0) {
+            // The installed Spring Data 4.1.1 Limit contract: max() is only
+            // readable on a limited instance (Unlimited.max() throws) — and
+            // the keyset scroll REQUIRES a bounded page (an unlimited fetch
+            // would replace the SQL keyset with an unbounded load). The W31
+            // hostile-review recommendation: the seam-level guard the
+            // catalog and pricing scrolls already carry, so the scroll
+            // contract is ONE on every path — the data fetcher's
+            // min(requested, maxPageSize) stays the outer bound; this is
+            // defense in depth at the owning seam.
+            throw new IllegalArgumentException("A positive page size is required");
+        }
         Window<CmsMenu> window = switch (sortField == null ? "NAME" : sortField) {
             case "SLUG" -> ascending
                     ? menuRepository.findAllByOrderBySlugAscIdAsc(position, limit)
                     : menuRepository.findAllByOrderBySlugDescIdDesc(position, limit);
-            default -> ascending
+            // The classified error the sibling method already documents
+            // ("never a silent fallback") — an unknown vocabulary answers
+            // honestly; the data fetcher only ever passes NAME/SLUG, so the
+            // guard is contract depth, not a behavior change for callers.
+            case "NAME" -> ascending
                     ? menuRepository.findAllByOrderByNameAscIdAsc(position, limit)
                     : menuRepository.findAllByOrderByNameDescIdDesc(position, limit);
+            default -> throw new IllegalArgumentException(
+                    "Unsupported menu sort field: " + sortField);
         };
         return new MenuWindow(window.map(this::toView), menuRepository.count());
     }
@@ -372,6 +390,18 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
                                           boolean ascending, KeysetScrollPosition position,
                                           Limit limit) {
         requireAdmin(caller);
+        if (limit == null || !limit.isLimited() || limit.max() <= 0) {
+            // The installed Spring Data 4.1.1 Limit contract: max() is only
+            // readable on a limited instance (Unlimited.max() throws) — and
+            // the keyset scroll REQUIRES a bounded page (an unlimited fetch
+            // would replace the SQL keyset with an unbounded load). The W31
+            // hostile-review recommendation: the seam-level guard the
+            // catalog and pricing scrolls already carry, so the scroll
+            // contract is ONE on every path — the data fetcher's
+            // min(requested, maxPageSize) stays the outer bound; this is
+            // defense in depth at the owning seam.
+            throw new IllegalArgumentException("A positive page size is required");
+        }
         // The item collection's owning sorts: NAME (the item's own column)
         // and SLUG (the Saleor enum value rides the same name sort — the
         // item carries no slug column of its own). The window rides the

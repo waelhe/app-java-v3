@@ -204,6 +204,49 @@ class CmsNavigationAdminServiceTest {
                 .hasMessageContaining("cycle");
     }
 
+
+    @Test
+    void scrollMenusRejectsTheUnboundedLimit() {
+        // The W31 hostile-review recommendation, proven by regression: the
+        // seam-level bound the catalog and pricing scrolls already carry.
+        assertThatThrownBy(() -> service.scrollMenus(admin, "NAME", true,
+                org.springframework.data.domain.ScrollPosition.keyset(),
+                org.springframework.data.domain.Limit.unlimited()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("A positive page size is required");
+        assertThatThrownBy(() -> service.scrollMenus(admin, "NAME", true,
+                org.springframework.data.domain.ScrollPosition.keyset(), null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("A positive page size is required");
+    }
+
+    @Test
+    void scrollMenusRejectsAnUnknownSortField() {
+        // The honest classification the sibling method already documents:
+        // never a silent fallback to the name sort for a vocabulary the
+        // owner does not carry.
+        assertThatThrownBy(() -> service.scrollMenus(admin, "POSITION", true,
+                org.springframework.data.domain.ScrollPosition.keyset(),
+                org.springframework.data.domain.Limit.of(10)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Unsupported menu sort field");
+    }
+
+    @Test
+    void scrollMenuItemsRejectsTheUnboundedLimit() {
+        // The W31 hostile-review recommendation, proven by regression: the
+        // seam-level bound the catalog and pricing scrolls already carry.
+        assertThatThrownBy(() -> service.scrollMenuItems(admin, "NAME", true,
+                org.springframework.data.domain.ScrollPosition.keyset(),
+                org.springframework.data.domain.Limit.unlimited()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("A positive page size is required");
+        assertThatThrownBy(() -> service.scrollMenuItems(admin, "NAME", true,
+                org.springframework.data.domain.ScrollPosition.keyset(), null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("A positive page size is required");
+    }
+
     @Test
     void scrollMenuItemsRejectsAnUnknownSortField() {
         // The honest classification: never a silent fallback to the name
