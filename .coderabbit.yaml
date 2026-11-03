@@ -34,20 +34,24 @@ reviews:
   high_level_summary: true
   path_filters:
     - "!**/package-lock.json"
-    # The wave-11 coverage-gate fix: CodeRabbit's DEFAULT ignored paths exclude
-    # `!**/*.csv` and `!**/*.json` (docs.coderabbit.ai/configuration/
-    # path-instructions — "Default ignored paths"), so the campaign's
-    # governance data files (the divergence ledger, the root-inventory and
-    # agent-handoff CSVs, the source-pins registry — all candidate-changed
-    # paths) could never appear in any review's processed-file list, while
-    # the trusted coverage verifier requires EVERY shard file to be processed
-    # by its review. The officially documented override is the exact default
-    # pattern WITHOUT the leading `!` — it disables that single default
-    # without restricting the review scope (a broad include would turn the
-    # list into an allowlist; these exact-pattern overrides do not), and
-    # "exclusions win" keeps the explicit package-lock exclusion above.
+    # Path-filter semantics per the official reference
+    # (docs.coderabbit.ai/configuration/path-instructions — "How path filters
+    # combine"): "Includes restrict scope" — a pattern without `!` limits
+    # review to files matching an include; "Exact default overrides are
+    # exempt" — a DEFAULT ignored pattern copied without its leading `!`
+    # disables that default WITHOUT restricting the scope; "Exclusions win".
+    # `!**/*.csv` is a documented default ignored path, so the exact-pattern
+    # override below re-includes the campaign's governance CSVs (the divergence
+    # ledger, the root-inventory and agent-handoff tables) that the trusted
+    # coverage verifier requires every shard review to process.
+    # JSON is NOT a default ignored path — the wave-28b correction: the
+    # previous `**/*.json` entry was a NOVEL inclusion, which per "Includes
+    # restrict scope" silently limited every review on heads carrying this
+    # file to *.json files only (measured: review 5748072479 walked a 74-file
+    # partition yet its processed-file list declared exactly one json path).
+    # Removed; json files need no pattern because they are reviewable by
+    # default.
     - "**/*.csv"
-    - "**/*.json"
   auto_review:
     enabled: true
     drafts: true
