@@ -18,7 +18,9 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -117,6 +119,48 @@ public class ProductVariantReadService implements ProductVariantReadSpi {
             return Optional.empty();
         }
         return variantRepository.findById(id).flatMap(this::resolveView);
+    }
+
+    /**
+     * The batched checkout-line read — ONE {@code findAllById} over the
+     * DISTINCT requested ids plus ONE batched parent load (the same
+     * {@code parentProjections} discipline the scrolls carry), never a
+     * per-line N+1. Per-id semantics are EXACTLY
+     * {@link #findVariantForCheckoutLine}'s: the checkout-only projection
+     * that preserves a live variant's display regardless of lifecycle,
+     * with the soft-delete policy and the parent-resolution requirement
+     * — a variant whose row or parent no longer resolves is ABSENT from
+     * the map (never a null {@code Product!} on the wire).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Map<UUID, ProductVariantView> findVariantsForCheckoutLines(Collection<UUID> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Map.of();
+        }
+        Set<UUID> distinct = new LinkedHashSet<>();
+        for (UUID id : ids) {
+            if (id != null) {
+                distinct.add(id);
+            }
+        }
+        if (distinct.isEmpty()) {
+            return Map.of();
+        }
+        List<ProductVariant> rows = variantRepository.findAllById(distinct);
+        Map<UUID, ProductView> parents = parentProjections(rows);
+        Map<UUID, ProductVariantView> variants = new HashMap<>(rows.size() * 2);
+        for (ProductVariant row : rows) {
+            ProductView parent = parents.get(row.getProductId());
+            if (parent == null) {
+                // The referential-honesty stance the single read carries:
+                // a variant whose parent no longer resolves answers the
+                // safe absence — never a null Product! on the wire.
+                continue;
+            }
+            variants.put(row.getId(), toView(row, parent));
+        }
+        return variants;
     }
 
     /**

@@ -89,8 +89,8 @@ class AccountLifecycleSpiAdapterTest {
         adapter.deactivateAllTokens(caller);
         verify(tokenRevocationService).deactivateAllFor(caller);
 
-        adapter.deleteAccountByToken("deletion-token");
-        verify(selfServiceTokenService).deleteByToken("deletion-token");
+        adapter.deleteAccountByToken(caller, "deletion-token");
+        verify(selfServiceTokenService).deleteByToken(caller, "deletion-token");
 
         adapter.requestAccountDeletion(caller);
         verify(selfServiceTokenService).requestDeletion(caller);

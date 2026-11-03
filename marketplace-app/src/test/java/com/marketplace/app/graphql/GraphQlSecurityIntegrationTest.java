@@ -48,7 +48,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * GraphQL document and lets an anonymous caller reach execution ONLY
  * for the enumerated pre-login family (tokenCreate, tokenRefresh,
  * tokenVerify, requestPasswordReset, confirmAccount, setPassword,
- * confirmEmailChange, accountRegister, accountDelete — every one
+ * confirmEmailChange, accountRegister — every one
  * carries its own proof in the payload or CREATES the account).
  * Everything else answers the classified AUTHN-001 GraphQL error before
  * dispatch. This is the §13 decision record's documented reopening

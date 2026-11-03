@@ -1,13 +1,16 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.catalog.spi.ProductVariantReadSpi;
+import com.marketplace.catalog.spi.ProductVariantView;
 import com.marketplace.orders.spi.CheckoutView;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -98,6 +101,22 @@ public class CheckoutGraphQlMapper {
     RenderedCheckout render(CheckoutView view) {
         List<Map<String, Object>> lines = new ArrayList<>();
         List<UUID> staleLineIds = new ArrayList<>();
+        // The 12:44:42Z #806 review (Performance & Scalability): the
+        // variant reads ride ONE batched SPI call for the WHOLE cart
+        // (the parentProjections batched-association discipline the
+        // catalog owner already carries) — never a per-line query on
+        // every checkout read and every mutation payload (the N+1 the
+        // review measured). Duplicates collapse to one read per DISTINCT
+        // variant; a cart with no variant-backed lines reads nothing.
+        Set<UUID> variantIds = new LinkedHashSet<>();
+        for (CheckoutView.Line line : view.lines()) {
+            if (line.variantId() != null) {
+                variantIds.add(line.variantId());
+            }
+        }
+        Map<UUID, ProductVariantView> variants = variantIds.isEmpty()
+                ? Map.of()
+                : variantReadSpi.findVariantsForCheckoutLines(variantIds);
         for (CheckoutView.Line line : view.lines()) {
             if (line.variantId() == null) {
                 // ADR-0012 product-level line: legacy cart state, NOT
@@ -108,11 +127,14 @@ public class CheckoutGraphQlMapper {
                 // surface (GET /cart carries the line with its id).
                 continue;
             }
-            Map<String, Object> rendered = toGraphQlLine(line);
-            if (rendered != null) {
-                lines.add(rendered);
-            } else {
+            ProductVariantView variant = variants.get(line.variantId());
+            if (variant == null) {
+                // The stale/deleted-variant shape: absent from the
+                // batched read — REPORTED for the owner-side purge (the
+                // cascade contract the class documents).
                 staleLineIds.add(line.id());
+            } else {
+                lines.add(toGraphQlLine(line, variant));
             }
         }
         Map<String, Object> checkout = new LinkedHashMap<>();
@@ -129,27 +151,23 @@ public class CheckoutGraphQlMapper {
     }
 
     /**
-     * The representable form of one checkout line — {@code null} when the
-     * line's variant no longer resolves (the stale/deleted-variant case
-     * the wave-4 review measured): the {@code CheckoutLine.variant} field
-     * is {@code ProductVariant!} (non-null in the vendored Saleor SDL and
-     * in the pinned reference schema saleor/saleor@3.23.45), so the line
-     * cannot be served as a weaker shape — it is absent from the render
-     * and REPORTED for the owner-side purge instead, per the cascade
-     * contract above. The product-level ({@code variantId == null}) shape
-     * never reaches this method: {@link #render} skips it before the
-     * variant read, keeping the two shapes' dispositions distinct.
+     * The representable form of one checkout line over its ALREADY-BATCHED
+     * variant projection — the stale/deleted-variant case (the variant
+     * absent from {@link #render}'s batched read, the shape the wave-4
+     * review measured) never reaches this method: the
+     * {@code CheckoutLine.variant} field is {@code ProductVariant!}
+     * (non-null in the vendored Saleor SDL and in the pinned reference
+     * schema saleor/saleor@3.23.45), so {@link #render} reports such a
+     * line for the owner-side purge instead, per the cascade contract
+     * above. The product-level ({@code variantId == null}) shape is
+     * skipped before the variant read, keeping the two shapes'
+     * dispositions distinct.
      */
-    private Map<String, Object> toGraphQlLine(CheckoutView.Line line) {
-        return variantReadSpi.findVariantForCheckoutLine(line.variantId())
-                .map(variantMapper::toGraphQlProductVariant)
-                .map(variant -> {
-                    Map<String, Object> mapped = new LinkedHashMap<>();
-                    mapped.put("id", globalIdCodec.encode(CHECKOUT_LINE_TYPE, line.id()));
-                    mapped.put("variant", variant);
-                    mapped.put("quantity", line.quantity());
-                    return mapped;
-                })
-                .orElse(null);
+    private Map<String, Object> toGraphQlLine(CheckoutView.Line line, ProductVariantView variant) {
+        Map<String, Object> mapped = new LinkedHashMap<>();
+        mapped.put("id", globalIdCodec.encode(CHECKOUT_LINE_TYPE, line.id()));
+        mapped.put("variant", variantMapper.toGraphQlProductVariant(variant));
+        mapped.put("quantity", line.quantity());
+        return mapped;
     }
 }

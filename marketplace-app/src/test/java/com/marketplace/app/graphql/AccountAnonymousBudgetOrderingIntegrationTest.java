@@ -29,30 +29,43 @@ import static org.mockito.Mockito.when;
 
 /**
  * The wave-4 review's ordering + budget-isolation contract over the REAL
- * chain: the anonymous {@code accountDelete} flood is rejected by its own
- * per-caller budget BEFORE the shared {@code graphqlAccountMutation}
- * permit is ever consulted — so the authenticated customer/staff admin
- * mutations keep their budget while one anonymous caller floods.
+ * chain: the anonymous {@code confirmEmailChange} flood is rejected by
+ * its own per-caller budget BEFORE the shared
+ * {@code graphqlAccountMutation} permit is ever consulted — so the
+ * authenticated customer/staff admin mutations keep their budget while
+ * one anonymous caller floods.
  *
  * <p><b>The regression this pins (the wave-4 review, Major · Stability &
- * Availability):</b> {@code accountDelete}/{@code confirmEmailChange}
- * were anonymous-reachable (PreLoginGraphQlGate PRE_LOGIN_OPERATIONS)
- * yet rode the SHARED authenticated budget with no per-caller guard, and
- * the body-level guard call ran AFTER the shared {@code @RateLimiter}
- * advice had already acquired the shared permit — one anonymous flood
- * exhausted the documented {@code customer*}/{@code staff*}/{@code
- * address*} budget for every user. The fix is two-layered: the roots
+ * Availability):</b> {@code confirmEmailChange} and (at the time)
+ * {@code accountDelete} were anonymous-reachable
+ * (PreLoginGraphQlGate PRE_LOGIN_OPERATIONS) yet rode the SHARED
+ * authenticated budget with no per-caller guard, and the body-level
+ * guard call ran AFTER the shared {@code @RateLimiter} advice had
+ * already acquired the shared permit — one anonymous flood exhausted
+ * the documented {@code customer*}/{@code staff*}/{@code address*}
+ * budget for every user. The fix is two-layered: the anonymous roots
  * ride the anonymous surface with {@link PerCallerBudget}, and the
  * aspect's ORDER (100) precedes resilience4j's RateLimiterAspect (405),
  * so a per-caller rejection never reaches the shared limiter.</p>
  *
- * <p><b>Measured here:</b> twelve anonymous {@code accountDelete}
+ * <p><b>The 12:44:42Z #806 review (Minor · Security &amp; Privacy)
+ * narrowed the anonymous family:</b> {@code accountDelete} left
+ * PRE_LOGIN_OPERATIONS — the pinned Saleor 3.23.45 contract requires
+ * AUTHENTICATED_USER on {@code AccountDelete} and binds the one-time
+ * token to the authenticated caller — so the anonymous
+ * {@code accountDelete} is now denied by the GATE (the classified
+ * AUTHN-001, before ANY budget is consulted), pinned by its own leg
+ * below. The wave-4 ordering/isolation regression keeps a REAL
+ * anonymous carrier: {@code confirmEmailChange}.</p>
+ *
+ * <p><b>Measured here:</b> twelve anonymous {@code confirmEmailChange}
  * attempts from one caller — the later ones answer the classified RL-001
  * rate-limit error at the response level (the root throws before any
  * payload is built), and an authenticated {@code customerCreate} (the
  * {@code graphqlAccountMutation} surface) still executes its domain flow
  * without any rate-limit error — the shared budget survived the flood
- * untouched.</p>
+ * untouched; and one anonymous {@code accountDelete} answers AUTHN-001
+ * (the gate), never RL-001.</p>
  *
  * <p><b>Schema source (the suite's own recorded trap):</b> this test
  * seeds {@code users} with raw SQL — the test profile's default schema
@@ -114,7 +127,7 @@ class AccountAnonymousBudgetOrderingIntegrationTest {
     }
 
     @Test
-    void anAnonymousAccountDeleteFloodIsRejectedByItsOwnBudgetAndTheSharedAuthenticatedBudgetSurvives() {
+    void anAnonymousConfirmEmailChangeFloodIsRejectedByItsOwnBudgetAndTheSharedAuthenticatedBudgetSurvives() {
         HttpGraphQlTester anonymous = testerFor(null, null);
 
         // Twelve attempts from ONE anonymous caller: the per-caller budget
@@ -124,7 +137,7 @@ class AccountAnonymousBudgetOrderingIntegrationTest {
         for (int attempt = 0; attempt < 12; attempt++) {
             var response = anonymous.document("""
                     mutation {
-                        accountDelete(token: "not-a-real-deletion-right-%d") {
+                        confirmEmailChange(token: "not-a-real-email-change-right-%d") {
                             errors { code }
                         }
                     }
@@ -154,6 +167,28 @@ class AccountAnonymousBudgetOrderingIntegrationTest {
                 .isFalse();
         assertThat(customer.path("customerCreate.user.id").entity(String.class).get())
                 .isNotBlank();
+    }
+
+    @Test
+    void anAnonymousAccountDeleteIsDeniedByTheGateBeforeAnyBudget() {
+        // The 12:44:42Z #806 review: the pinned Saleor 3.23.45 contract
+        // requires AUTHENTICATED_USER on accountDelete (the one-time
+        // token is validated against the authenticated caller) — the
+        // anonymous presentation is the GATE's classified AUTHN-001,
+        // never a budget question.
+        HttpGraphQlTester anonymous = testerFor(null, null);
+        var response = anonymous.document("""
+                mutation {
+                    accountDelete(token: "not-a-real-deletion-right") {
+                        errors { code }
+                    }
+                }
+                """).execute();
+        response.errors().satisfy(errors -> assertThat(errors.stream()
+                .anyMatch(error -> "AUTHN-001".equals(
+                        String.valueOf(error.getExtensions().get("errorCode")))))
+                .as("the gate must answer the anonymous accountDelete with AUTHN-001")
+                .isTrue());
     }
 
     private HttpGraphQlTester testerFor(String subject, String role) {

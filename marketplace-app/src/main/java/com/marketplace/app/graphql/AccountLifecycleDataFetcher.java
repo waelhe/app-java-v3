@@ -298,21 +298,21 @@ public class AccountLifecycleDataFetcher {
 
     /** Saleor {@code accountDelete(token)} — the redemption through the standing erasure. */
     @DgsMutation(field = DgsConstants.MUTATION.AccountDelete)
-    // The wave-4 review (Major · Stability & Availability): both roots are
-    // anonymous-reachable (PreLoginGraphQlGate PRE_LOGIN_OPERATIONS) yet
-    // rode the SHARED authenticated graphqlAccountMutation budget with no
-    // per-caller guard — one anonymous flood could exhaust the documented
-    // customer*/staff*/address* budget for every user. They now ride the
-    // anonymous surface with the per-caller budget, the exact shape
-    // confirmAccount/setPassword already carry.
-    @PerCallerBudget(surface = "graphqlAccountAnonymousMutation")
-    @RateLimiter(name = "graphqlAccountAnonymousMutation")
+    // The 12:44:42Z #806 review (Minor · Security & Privacy): the pinned
+    // Saleor 3.23.45 contract requires AUTHENTICATED_USER on AccountDelete
+    // and validates the one-time token against the authenticated caller
+    // (try_generators(user=info.context.user, token=token)) — the root is
+    // REMOVED from the anonymous pre-login family and the redemption is
+    // caller-bound. The wave-4 anonymous-budget annotations are gone with
+    // it: the root rides the authenticated graphqlAccountMutation budget,
+    // the same shape accountRequestDeletion carries.
+    @RateLimiter(name = "graphqlAccountMutation")
     public AccountDelete accountDelete(@InputArgument String token,
                                        graphql.schema.DataFetchingEnvironment environment) {
         if (token == null || token.isBlank()) {
             throw new IllegalArgumentException("A deletion token is required");
         }
-        accountLifecycleSpi.deleteAccountByToken(token);
+        accountLifecycleSpi.deleteAccountByToken(currentAuthentication(), token);
         return AccountDelete.newBuilder().errors(mappers.emptyAccountErrors()).build();
     }
 

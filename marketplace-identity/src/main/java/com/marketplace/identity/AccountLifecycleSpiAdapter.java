@@ -95,8 +95,8 @@ public class AccountLifecycleSpiAdapter implements AccountLifecycleSpi {
     }
 
     @Override
-    public void deleteAccountByToken(String token) {
-        selfServiceTokenService.deleteByToken(token);
+    public void deleteAccountByToken(Authentication caller, String token) {
+        selfServiceTokenService.deleteByToken(caller, token);
     }
 
     @Override

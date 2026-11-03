@@ -5,6 +5,8 @@ import org.springframework.data.domain.Limit;
 import org.springframework.modulith.NamedInterface;
 import org.springframework.security.core.Authentication;
 
+import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -60,6 +62,23 @@ public interface ProductVariantReadSpi {
      * fabricating a ProductVariant for Saleor's non-null field.</p>
      */
     Optional<ProductVariantView> findVariantForCheckoutLine(UUID id);
+
+    /**
+     * The BATCHED checkout-line projection — the SAME checkout-only
+     * semantics as {@link #findVariantForCheckoutLine}, answered for
+     * every DISTINCT id in ONE read (the render's whole-cart call; the
+     * parent projections ride the catalog owner's own batched
+     * association load — never a per-line N+1 on every checkout read
+     * and mutation payload). A variant whose row or parent no longer
+     * resolves is ABSENT from the returned map (the caller reports its
+     * line for the owner-side purge, never a fabricated
+     * {@code ProductVariant!}); null ids are ignored; an empty or null
+     * collection answers an empty map without touching the store.
+     *
+     * @param ids the variant ids the checkout's lines reference
+     * @return the readable projections keyed by their variant id
+     */
+    Map<UUID, ProductVariantView> findVariantsForCheckoutLines(Collection<UUID> ids);
 
     /**
      * One bounded page of the variant population as a REAL SQL

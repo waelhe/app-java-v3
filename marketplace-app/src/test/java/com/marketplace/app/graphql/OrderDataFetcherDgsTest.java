@@ -616,6 +616,30 @@ class OrderDataFetcherDgsTest {
     }
 
     /**
+     * The 12:44:42Z #806 review (Minor · Security & Privacy): an
+     * anonymous token is NOT an authenticated caller — the type check is
+     * the only honest wall (CheckoutDataFetcher's wave-11 guard, the
+     * same semantics here). The order family reaches the ADMIN-gated
+     * management surface.
+     */
+    @Test
+    void anonymousAuthenticationIsRejectedLikeAMissingOne() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.AnonymousAuthenticationToken(
+                        "key", "anonymousUser",
+                        List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority(
+                                "ROLE_ANONYMOUS"))));
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
+                "query { orders(first: 1) { totalCount } }", "$"))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("An unexpected error occurred")
+                .satisfies(ex -> assertThat(
+                                ((com.netflix.graphql.dgs.exceptions.QueryException) ex).getErrors().get(0)
+                                        .getExtensions())
+                        .containsEntry("errorCode", "INT-001"));
+    }
+
+    /**
      * The page-size contract rides the real properties binding: the
      * caller's {@code first} reaches the owning use case as the bounded
      * limit (clamped by the boundary's own cap — the same house contract

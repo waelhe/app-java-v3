@@ -49,8 +49,13 @@ public interface AccountLifecycleSpi {
     /** {@code accountRequestDeletion}: the one-time erasure right. */
     void requestAccountDeletion(Authentication caller);
 
-    /** {@code accountDelete}: the token redemption through the standing erasure. */
-    void deleteAccountByToken(String token);
+    /**
+     * {@code accountDelete}: the caller-bound token redemption through the
+     * standing erasure — the pinned Saleor 3.23.45 contract requires
+     * AUTHENTICATED_USER on the root and validates the one-time right
+     * against the authenticated caller, never an anonymous presentation.
+     */
+    void deleteAccountByToken(Authentication caller, String token);
 
     /** {@code tokensDeactivateAll}: kills the caller's own issued authorizations. */
     int deactivateAllTokens(Authentication caller);

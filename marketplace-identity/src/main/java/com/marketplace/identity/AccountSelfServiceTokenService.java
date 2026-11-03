@@ -1,5 +1,6 @@
 package com.marketplace.identity;
 
+import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import io.micrometer.observation.annotation.Observed;
 import org.slf4j.Logger;
@@ -28,8 +29,10 @@ import java.time.Duration;
  * CALLER's own login and publishes the mail event; the redemption
  * delegates to the standing I7 erasure
  * ({@code UserService#pseudonymizeAccount}) — the same operation the
- * password-verified REST surface triggers, with the token as the single
- * proof instead.</p>
+ * password-verified REST surface triggers, with the one-time right as
+ * the proof, redeemed only by the account it was issued to (the pinned
+ * Saleor 3.23.45 AUTHENTICATED_USER contract on {@code accountDelete},
+ * the 12:44:42Z #806 review's caller-bound redemption).</p>
  *
  * <p>The password change: the caller's old password verified through the
  * official {@code PasswordEncoder#matches} primitive, the new secret
@@ -92,9 +95,29 @@ public class AccountSelfServiceTokenService {
                 java.time.Instant.now().plus(DELETION_TTL));
     }
 
-    /** {@code accountDelete}: redeems the right through the standing I7 erasure. */
+    /**
+     * {@code accountDelete}: redeems the right through the standing I7
+     * erasure — the CALLER-BOUND redemption the pinned Saleor 3.23.45
+     * contract mandates ({@code AccountDelete.Meta.permissions =
+     * AuthorizationFilters.AUTHENTICATED_USER} and
+     * {@code try_generators(user=info.context.user, token=token)}: the
+     * one-time right is redeemed only by the account it was issued to).
+     * The ownership check rides the CWE-367 {@code accountOf} PRE-read —
+     * a foreign caller's possession of the raw value is rejected WITHOUT
+     * burning the single-use right (the mismatch is the caller's error,
+     * never the owner's), and the atomic {@code consume} stays the
+     * single source of the single-use verdict.
+     */
     @Observed(name = "account.deletion.execute")
-    public void deleteByToken(String token) {
+    public void deleteByToken(Authentication caller, String token) {
+        String owner = authActionTokenService
+                .accountOf(token, AuthActionTokenPurpose.ACCOUNT_DELETION)
+                .orElseThrow(() -> new BadRequestException(
+                        "This account deletion link is invalid or has already been used"));
+        if (!owner.equals(caller.getName())) {
+            throw new BadRequestException(
+                    "This account deletion link is not valid for this account");
+        }
         AuthActionToken redeemed = authActionTokenService
                 .consume(token, AuthActionTokenPurpose.ACCOUNT_DELETION);
         String subject = redeemed.getUsername();

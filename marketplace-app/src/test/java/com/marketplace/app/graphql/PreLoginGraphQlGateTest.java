@@ -171,6 +171,20 @@ class PreLoginGraphQlGateTest {
     }
 
     @Test
+    void accountDeleteIsDeniedForTheAnonymousCaller() {
+        // The 12:44:42Z #806 review (Minor · Security & Privacy): the
+        // pinned Saleor 3.23.45 contract requires AUTHENTICATED_USER on
+        // accountDelete and binds the one-time token to the
+        // authenticated caller — the root left the anonymous pre-login
+        // family.
+        anonymous();
+        when(request.getDocument()).thenReturn(
+                "mutation { accountDelete(token: \"x\") { errors { code } } }");
+
+        assertDeniedWithAuthn();
+    }
+
+    @Test
     void aMixedPreLoginAndProtectedDocumentIsDenied() {
         anonymous();
         when(request.getDocument()).thenReturn(

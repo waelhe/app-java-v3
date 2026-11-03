@@ -91,7 +91,14 @@ public class JdbcRefreshTokenRotationStore implements RefreshTokenRotationStore 
             WHERE token_hash = ? AND consumed_at < now() - make_interval(secs => ?)
             """;
 
-    /** Family revocation — one statement removes the whole token family. */
+    /**
+     * Family revocation — one statement removes the family's authorization
+     * row: every further rotation and any new issuance riding the family
+     * ends here. The already-issued access token is NOT wire-revoked (the
+     * resource server's local JWT decode never consults the row) — it
+     * ends with its own short TTL, the bounded exposure window the
+     * interface contract documents.
+     */
     private static final String REVOKE_FAMILY =
             "DELETE FROM oauth2_authorization WHERE id = ?";
 
@@ -133,10 +140,15 @@ public class JdbcRefreshTokenRotationStore implements RefreshTokenRotationStore 
      * value presented again is a THEFT SIGNAL, not just an invalid token —
      * an attacker who rotated first left the legitimate user failing
      * silently while the attacker's successor stayed valid. When the ledger
-     * recognizes the value BEYOND the grace window, the ENTIRE family is
-     * revoked (the authorization row — access token, successor refresh
-     * tokens and all) and a security event is logged (family id only: never
-     * a token value). An unknown value — or one consumed within the grace
+     * recognizes the value BEYOND the grace window, the family's LINEAGE is
+     * revoked — the authorization row is deleted, which ends every further
+     * rotation and any new issuance riding it (the ledger rows cascade);
+     * the ALREADY-ISSUED access token itself stays wire-valid until its
+     * short standing TTL ends (900s — the resource server's local JWT
+     * decode never consults the row; the bounded exposure window is the
+     * deliberate stateless-decode trade) — and a security event is logged
+     * (family id only: never a token value). An unknown value — or one
+     * consumed within the grace
      * window (the concurrent double-spend shape) — stays a plain rejection.
      *
      * <p><b>Called from BOTH rejection sites:</b> the {@link #rotate}

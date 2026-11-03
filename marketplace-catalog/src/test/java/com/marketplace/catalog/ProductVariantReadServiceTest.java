@@ -21,6 +21,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,7 +30,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -214,6 +218,72 @@ class ProductVariantReadServiceTest {
         when(productRepository.findById(parent.getId())).thenReturn(Optional.empty());
 
         assertThat(service.findVariantForCheckoutLine(variant.getId())).isEmpty();
+    }
+
+    // ------------------------------------------------------------------
+    // findVariantsForCheckoutLines — the batched checkout render seam
+    // (the 12:44:42Z #806 review's N+1 fix)
+    // ------------------------------------------------------------------
+
+    @Test
+    void batchedCheckoutReadAnswersTheSameProjectionAsTheSingleRead() {
+        Product parent = suspendedProduct("b5a Batched Checkout Parent");
+        ProductVariant a = suspendedVariant(parent, "b5a-checkout-batched-a");
+        ProductVariant b = suspendedVariant(parent, "b5a-checkout-batched-b");
+        when(variantRepository.findAllById(Set.of(a.getId(), b.getId())))
+                .thenReturn(List.of(a, b));
+        when(productRepository.findAllById(Set.of(parent.getId()))).thenReturn(List.of(parent));
+
+        // Duplicates collapse to one read per DISTINCT variant.
+        Map<UUID, ProductVariantView> views = service.findVariantsForCheckoutLines(
+                List.of(a.getId(), b.getId(), a.getId()));
+
+        assertThat(views).containsOnlyKeys(a.getId(), b.getId());
+        assertThat(views.get(a.getId())).isEqualTo(new ProductVariantView(a.getId(),
+                a.getName(), a.getSku(), a.getStatus().name(),
+                new ProductView(parent.getId(), parent.getTitle(), parent.getProductTypeId(),
+                        parent.getStatus().name())));
+        assertThat(views.get(b.getId())).isEqualTo(new ProductVariantView(b.getId(),
+                b.getName(), b.getSku(), b.getStatus().name(),
+                new ProductView(parent.getId(), parent.getTitle(), parent.getProductTypeId(),
+                        parent.getStatus().name())));
+    }
+
+    @Test
+    void batchedCheckoutReadIsOneQueryPairNeverAPerLineNPlusOne() {
+        // The N+1 proof the 12:44:42Z review demanded: ONE variants
+        // findAllById + ONE parents findAllById for the WHOLE distinct
+        // set — never a per-line read on every checkout render.
+        Product parent = activeProduct("b5a Batched N+1 Parent");
+        ProductVariant v1 = activeVariant(parent, "b5a-checkout-n1");
+        ProductVariant v2 = activeVariant(parent, "b5a-checkout-n2");
+        ProductVariant v3 = activeVariant(parent, "b5a-checkout-n3");
+        when(variantRepository.findAllById(Set.of(v1.getId(), v2.getId(), v3.getId())))
+                .thenReturn(List.of(v1, v2, v3));
+        when(productRepository.findAllById(Set.of(parent.getId()))).thenReturn(List.of(parent));
+
+        service.findVariantsForCheckoutLines(List.of(v1.getId(), v2.getId(), v3.getId()));
+
+        verify(variantRepository, times(1)).findAllById(org.mockito.ArgumentMatchers.any());
+        verify(productRepository, times(1)).findAllById(org.mockito.ArgumentMatchers.any());
+        verifyNoMoreInteractions(variantRepository, productRepository);
+    }
+
+    @Test
+    void batchedCheckoutReadOmitsTheVariantWhoseParentNoLongerResolves() {
+        Product parent = activeProduct("b5a Batched Missing Parent");
+        ProductVariant v = activeVariant(parent, "b5a-checkout-batched-missing-parent");
+        when(variantRepository.findAllById(Set.of(v.getId()))).thenReturn(List.of(v));
+        when(productRepository.findAllById(Set.of(parent.getId()))).thenReturn(List.of());
+
+        assertThat(service.findVariantsForCheckoutLines(List.of(v.getId()))).isEmpty();
+    }
+
+    @Test
+    void batchedCheckoutReadAnswersEmptyForEmptyAndNullInput() {
+        assertThat(service.findVariantsForCheckoutLines(List.of())).isEmpty();
+        assertThat(service.findVariantsForCheckoutLines(null)).isEmpty();
+        verifyNoInteractions(variantRepository, productRepository);
     }
 
     // ------------------------------------------------------------------

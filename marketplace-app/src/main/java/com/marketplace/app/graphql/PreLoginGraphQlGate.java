@@ -84,6 +84,15 @@ public class PreLoginGraphQlGate implements WebGraphQlInterceptor {
      * a rotation token, a verifiable token, a single-use out-of-band
      * redemption right) or CREATES the account. Everything else in the
      * schema is deny-by-default for the anonymous caller.
+     *
+     * <p>{@code accountDelete} is NOT a member (the 12:44:42Z #806
+     * review, Minor · Security &amp; Privacy): the pinned Saleor 3.23.45
+     * contract requires AUTHENTICATED_USER on {@code AccountDelete} and
+     * validates the one-time token against the authenticated caller
+     * ({@code try_generators(user=info.context.user, token=token)}) — the
+     * deletion redemption is caller-bound, so the anonymous surface must
+     * not carry it. Authenticated requests still flow untouched through
+     * {@code chain.next(request)}.</p>
      */
     private static final Set<String> PRE_LOGIN_OPERATIONS = Set.of(
             "tokenCreate",
@@ -93,8 +102,7 @@ public class PreLoginGraphQlGate implements WebGraphQlInterceptor {
             "confirmAccount",
             "setPassword",
             "confirmEmailChange",
-            "accountRegister",
-            "accountDelete");
+            "accountRegister");
 
     private final Parser parser = new Parser();
 

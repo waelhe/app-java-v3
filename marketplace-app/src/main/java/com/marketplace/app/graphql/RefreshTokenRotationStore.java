@@ -61,11 +61,19 @@ public interface RefreshTokenRotationStore {
      *   <li><b>Recognized, consumed beyond the grace window</b> — the
      *       LATE replay (the theft shape: the attacker rotated first,
      *       the legitimate client replays the stolen value minutes
-     *       later): the ENTIRE token family is revoked (the
-     *       {@code oauth2_authorization} row — access token, successor
-     *       refresh tokens and all; the ledger rows cascade with it)
-     *       and a security event is logged (family id only: never a
-     *       token value). Answers {@code true}.</li>
+     *       later): the token family's LINEAGE is revoked — the
+     *       {@code oauth2_authorization} row is deleted (no further
+     *       rotation, no new issuance; the ledger rows cascade with
+     *       it) and a security event is logged (family id only: never
+     *       a token value). The ALREADY-ISSUED access token is NOT
+     *       invalidated on the wire: the resource server decodes JWTs
+     *       locally (signature, issuer, audience, expiry — Spring
+     *       Security's documented decoder contract) and never consults
+     *       the authorization row, so it stays acceptable only until
+     *       its short standing TTL ends (900s —
+     *       {@code PlatformTokenGrantService.ACCESS_TOKEN_TTL}); that
+     *       bounded exposure window is the deliberate
+     *       stateless-decode trade. Answers {@code true}.</li>
      *   <li><b>Recognized, consumed within the grace window</b> — the
      *       CONCURRENT double-spend shape (two tabs racing the same
      *       refresh; the loser's rejection lands milliseconds after the

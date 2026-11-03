@@ -307,7 +307,15 @@ public class OrderDataFetcher {
      */
     private Authentication currentAuthentication() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) {
+        // The 12:44:42Z #806 review (Minor · Security & Privacy):
+        // AnonymousAuthenticationToken answers isAuthenticated() == true —
+        // the type check is the only honest wall, the SAME guard
+        // CheckoutDataFetcher.currentAuthentication carries (the wave-11
+        // fix). The order family reaches the ADMIN-gated management
+        // surface; an anonymous caller must never pass as an
+        // authenticated one.
+        if (authentication == null || !authentication.isAuthenticated()
+                || authentication instanceof org.springframework.security.authentication.AnonymousAuthenticationToken) {
             throw new AuthenticationCredentialsNotFoundException(
                     "Authentication is required for order reads");
         }

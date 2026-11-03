@@ -281,8 +281,20 @@ public class CheckoutDataFetcher {
         try {
             updated = checkoutSpi.deleteLines(cartId, requested, authentication);
         } catch (ResourceNotFoundException exception) {
-            log.info("checkoutLinesDelete rejected NOT_FOUND — {}", exception.getMessage(), exception);
-            return payload(null, List.of(error("id", CHECKOUT_NOT_FOUND, "NOT_FOUND")), false, authentication);
+            // The same resource classification the single root carries
+            // (the 12:44:42Z review): the checkout's own absence stays
+            // CHECKOUT_NOT_FOUND under `id`; a MISSED LINE is the
+            // linesIds VALIDATION error the pinned Saleor contract
+            // answers (validate_lines: "Provided line_ids aren't part
+            // of checkout." under line_id), never a checkout-wide
+            // NOT_FOUND.
+            boolean checkoutMissing = CheckoutGraphQlMapper.CHECKOUT_TYPE
+                    .equals(exception.resourceType());
+            log.info("checkoutLinesDelete rejected NOT_FOUND ({}) — {}",
+                    exception.resourceType(), exception.getMessage());
+            return payload(null, List.of(checkoutMissing
+                    ? error("id", CHECKOUT_NOT_FOUND, "NOT_FOUND")
+                    : error("linesIds", LINE_INVALID, "INVALID")), false, authentication);
         } catch (BadRequestException exception) {
             log.info("checkoutLinesDelete rejected INVALID — {}", exception.getMessage(), exception);
             return payload(null, List.of(error("linesIds", LINE_INVALID, "INVALID")), false, authentication);
@@ -326,8 +338,22 @@ public class CheckoutDataFetcher {
         try {
             updated = checkoutSpi.deleteLines(cartId, List.of(decodedLineId), authentication);
         } catch (ResourceNotFoundException exception) {
-            log.info("checkoutLineDelete rejected NOT_FOUND — {}", exception.getMessage(), exception);
-            return payload(null, List.of(error("lineId", LINE_NOT_FOUND, "NOT_FOUND")), true, authentication);
+            // The 12:44:42Z #806 review (Minor · Functional Correctness):
+            // OrdersService.deleteLines throws the SAME type for both
+            // resources — classify by the MISSED RESOURCE (the exception's
+            // own resourceType, never its message text): the checkout's
+            // absence answers CHECKOUT_NOT_FOUND under `id` (the field
+            // every sibling root uses), the line's absence stays
+            // LINE_NOT_FOUND under `lineId` — the pinned Saleor contract
+            // (get_node_or_error(only_type=CheckoutLine, field="line_id",
+            // NOT_FOUND) vs get_checkout's NonExistingCheckout under id).
+            boolean checkoutMissing = CheckoutGraphQlMapper.CHECKOUT_TYPE
+                    .equals(exception.resourceType());
+            log.info("checkoutLineDelete rejected NOT_FOUND ({}) — {}",
+                    exception.resourceType(), exception.getMessage());
+            return payload(null, List.of(checkoutMissing
+                    ? error("id", CHECKOUT_NOT_FOUND, "NOT_FOUND")
+                    : error("lineId", LINE_NOT_FOUND, "NOT_FOUND")), true, authentication);
         } catch (BadRequestException | ConflictException exception) {
             log.info("checkoutLineDelete rejected INVALID — {}", exception.getMessage(), exception);
             return payload(null, List.of(error("lineId", LINE_INVALID, "INVALID")), true, authentication);

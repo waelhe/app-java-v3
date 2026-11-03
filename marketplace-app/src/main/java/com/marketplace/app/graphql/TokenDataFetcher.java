@@ -24,10 +24,19 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>Transport-only adapter (the frozen §7 contract): argument validation
  * and the wire mapping; every rule lives in the owning use cases. The
- * password-grant surface is rate-limited from day one — the unconfigured
- * named instance falls back to the shared resilience4j {@code default}
- * budget (100/min, measured) with the tighter yml instance proposed for
- * A0's integration pass.</p>
+ * token surface's rate budget is two-layered and configured: the named
+ * resilience4j instances are the yml-configured per-JVM outer ceilings
+ * ({@code graphqlTokenMutation} 60/min for the grant and the rotation,
+ * {@code graphqlTokenVerify} 50/min, {@code graphqlTokenDeactivate}
+ * 10/min), and the per-caller guard keys a 10/min fail-fast budget per
+ * caller address ({@code perCallerGrant}); {@code tokenCreate} adds the
+ * ACCOUNT-keyed budget ({@code perAccount = true} — strictly exceeding
+ * the address budget, so one address can only consume a third of an
+ * account's budget and the legitimate owner keeps login headroom while
+ * distributed stuffing stays capped). The aspect order is deliberate:
+ * {@code @PerCallerBudget} (order 100) runs BEFORE resilience4j's
+ * {@code RateLimiterAspect} (405), so the caller's own budget is
+ * consumed before the JVM ceiling is ever consulted.</p>
  *
  * <p><b>The rotation's wire contract:</b> {@code tokenRefresh} returns the
  * SUCCESSOR refresh token ({@code RefreshToken.refreshToken}) — the

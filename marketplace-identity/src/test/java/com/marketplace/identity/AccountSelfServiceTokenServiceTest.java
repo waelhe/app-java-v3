@@ -105,14 +105,35 @@ class AccountSelfServiceTokenServiceTest {
         AuthActionToken right = AuthActionToken.issue(SUBJECT,
                 AuthActionTokenPurpose.ACCOUNT_DELETION, "hash",
                 Instant.now().plus(Duration.ofHours(24)));
+        when(authActionTokenService.accountOf("the-token",
+                AuthActionTokenPurpose.ACCOUNT_DELETION)).thenReturn(Optional.of(SUBJECT));
         when(authActionTokenService.consume("the-token",
                 AuthActionTokenPurpose.ACCOUNT_DELETION)).thenReturn(right);
         when(userRepository.findBySubject(SUBJECT)).thenReturn(Optional.of(userRow));
 
-        service.deleteByToken("the-token");
+        service.deleteByToken(caller, "the-token");
 
         verify(userService).pseudonymizeAccount(userRow.getId(),
                 "account self-deletion (token redemption)", "self");
+    }
+
+    @Test
+    void deleteByTokenRefusesAForeignRightWithoutBurningIt() {
+        // The pinned Saleor 3.23.45 contract binds the redemption to the
+        // authenticated caller (try_generators(user=..., token=...)): a
+        // caller presenting another account's one-time right is refused
+        // BEFORE the single-use consumption — the mismatch is the
+        // caller's error, never the owner's burned right.
+        when(authActionTokenService.accountOf("the-token",
+                AuthActionTokenPurpose.ACCOUNT_DELETION))
+                .thenReturn(Optional.of("someone-else@example.com"));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> service.deleteByToken(caller, "the-token"))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class);
+
+        verify(authActionTokenService, never()).consume(any(), any());
+        verify(userService, never()).pseudonymizeAccount(any(), any(), any());
     }
 
     @Test

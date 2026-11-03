@@ -424,6 +424,68 @@ class CheckoutDataFetcherTest {
         assertThat(errors.get(0)).containsEntry("field", "id");
     }
 
+    @Test
+    void lineDeleteClassifiesTheMissingCheckoutUnderIdAndTheMissingLineUnderLineId() {
+        // The 12:44:42Z #806 review (Minor · Functional Correctness):
+        // OrdersService.deleteLines throws the SAME exception type for
+        // both resources; the fetcher now classifies by the MISSED
+        // RESOURCE (the exception's own resourceType — never its message
+        // text): the checkout's absence answers CHECKOUT_NOT_FOUND under
+        // `id` (the field every sibling root uses), the line's absence
+        // stays LINE_NOT_FOUND under `lineId` — the pinned Saleor
+        // contract (get_node_or_error(only_type=CheckoutLine,
+        // field="line_id", NOT_FOUND) vs get_checkout's
+        // NonExistingCheckout under id).
+        UUID cartId = UUID.randomUUID();
+        UUID lineId = UUID.randomUUID();
+
+        when(checkoutSpi.deleteLines(eq(cartId), anyList(), any()))
+                .thenThrow(new ResourceNotFoundException("Checkout", cartId));
+        Map<String, Object> missingCheckout = fetcher.checkoutLineDelete(
+                null, null, environmentWithToken(cartId), lineGlobalId(lineId));
+        assertThat(missingCheckout.get("checkout")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> checkoutErrors =
+                (List<Map<String, Object>>) missingCheckout.get("errors");
+        assertThat(checkoutErrors).hasSize(1);
+        assertThat(checkoutErrors.get(0)).containsEntry("field", "id");
+        assertThat(checkoutErrors.get(0)).containsEntry("code", "NOT_FOUND");
+
+        when(checkoutSpi.deleteLines(eq(cartId), anyList(), any()))
+                .thenThrow(new ResourceNotFoundException("CheckoutLine", lineId));
+        Map<String, Object> missingLine = fetcher.checkoutLineDelete(
+                null, null, environmentWithToken(cartId), lineGlobalId(lineId));
+        assertThat(missingLine.get("checkout")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> lineErrors =
+                (List<Map<String, Object>>) missingLine.get("errors");
+        assertThat(lineErrors).hasSize(1);
+        assertThat(lineErrors.get(0)).containsEntry("field", "lineId");
+        assertThat(lineErrors.get(0)).containsEntry("code", "NOT_FOUND");
+    }
+
+    @Test
+    void linesDeleteClassifiesTheMissingLineUnderLinesIdsNotTheCheckout() {
+        // Saleor 3.23.45 checkoutLinesDelete: a line outside the checkout
+        // is the linesIds VALIDATION error (validate_lines raises
+        // "Provided line_ids aren't part of checkout." under line_id),
+        // never a checkout-wide NOT_FOUND — the same resource
+        // classification the single root now carries.
+        UUID cartId = UUID.randomUUID();
+        when(checkoutSpi.deleteLines(eq(cartId), anyList(), any()))
+                .thenThrow(new ResourceNotFoundException("CheckoutLine", UUID.randomUUID()));
+
+        Map<String, Object> result = fetcher.checkoutLinesDelete(null, environmentWithToken(cartId),
+                List.of(lineGlobalId(UUID.randomUUID())));
+
+        assertThat(result.get("checkout")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> errors = (List<Map<String, Object>>) result.get("errors");
+        assertThat(errors).hasSize(1);
+        assertThat(errors.get(0)).containsEntry("field", "linesIds");
+        assertThat(errors.get(0)).containsEntry("code", "INVALID");
+    }
+
     // ------------------------------------------------------------------
     // the security gate: a token is never an authentication grant
     // ------------------------------------------------------------------
