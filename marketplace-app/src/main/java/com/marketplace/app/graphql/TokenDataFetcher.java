@@ -203,7 +203,15 @@ public class TokenDataFetcher {
 
     private Authentication currentAuthentication() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) {
+        // The 2026-11-03 adversarial scan (Minor · Security & Privacy — the
+        // 12:44:42Z review's OrderDataFetcher fix, applied here for
+        // consistency): AnonymousAuthenticationToken answers
+        // isAuthenticated() == true — the type check is the only honest
+        // wall (tokensDeactivateAll is behind the pre-login gate's
+        // deny-by-default, but the guard must not silently accept an
+        // anonymous caller if the gate's allowlist ever widens).
+        if (authentication == null || !authentication.isAuthenticated()
+                || authentication instanceof org.springframework.security.authentication.AnonymousAuthenticationToken) {
             throw new org.springframework.security.authentication
                     .AuthenticationCredentialsNotFoundException(
                     "Authentication is required for token administration");

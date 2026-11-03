@@ -30,8 +30,10 @@ import java.util.function.Function;
  * The shard review (Major · Stability & Availability, 2026-11-01 wave 2):
  * the per-CALLER budget for the anonymous entry points — the grant path
  * ({@code tokenCreate}/{@code tokenRefresh}), registration
- * ({@code accountRegister}) and the anonymous email senders
- * ({@code requestPasswordReset}/{@code sendConfirmationEmail}).
+ * ({@code accountRegister}) and the anonymous reset request
+ * ({@code requestPasswordReset}; sendConfirmationEmail is an
+ * AUTHENTICATED_USER root in the pinned Saleor 3.23.45 contract and
+ * rides the authenticated budget).
  *
  * <p><b>Why this exists:</b> the named {@code @RateLimiter} instances are
  * PER JVM INSTANCE (the resilience4j annotation model — the yml's own

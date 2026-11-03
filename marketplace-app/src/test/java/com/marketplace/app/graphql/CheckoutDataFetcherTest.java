@@ -425,6 +425,29 @@ class CheckoutDataFetcherTest {
     }
 
     @Test
+    void linesUpdateClassifiesTheMissingLineUnderLinesNotTheCheckout() {
+        // The pinned Saleor 3.23.45 checkout_lines_update.py answers a
+        // missed line under line_id with CheckoutErrorCode.GRAPHQL_ERROR
+        // (get_nodes_or_error) — translated to this root's `lines`
+        // argument field, the same translation the delete root applies.
+        UUID cartId = UUID.randomUUID();
+        UUID missedLineId = UUID.randomUUID();
+        String lineId = lineGlobalId(missedLineId);
+        when(checkoutSpi.updateLines(eq(cartId), anyList(), any()))
+                .thenThrow(new ResourceNotFoundException("CheckoutLine", missedLineId));
+
+        Map<String, Object> result = fetcher.checkoutLinesUpdate(null, null, environmentWithToken(cartId),
+                List.of(Map.of("lineId", lineId, "quantity", 3)));
+
+        assertThat(result.get("checkout")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> errors = (List<Map<String, Object>>) result.get("errors");
+        assertThat(errors).hasSize(1);
+        assertThat(errors.get(0)).containsEntry("field", "lines");
+        assertThat(errors.get(0)).containsEntry("code", "GRAPHQL_ERROR");
+    }
+
+    @Test
     void lineDeleteClassifiesTheMissingCheckoutUnderIdAndTheMissingLineUnderLineId() {
         // The 12:44:42Z #806 review (Minor · Functional Correctness):
         // OrdersService.deleteLines throws the SAME exception type for

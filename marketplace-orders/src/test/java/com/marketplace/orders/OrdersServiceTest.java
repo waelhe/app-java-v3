@@ -1038,6 +1038,43 @@ class OrdersServiceTest {
     }
 
     @Test
+    void checkoutLinesDeleteAnswersTheTypedCheckoutMissForAnUnknownCart() {
+        UUID cartId = UUID.randomUUID();
+        when(cartRepository.findById(cartId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.deleteLines(cartId, List.of(UUID.randomUUID()), authentication))
+                .isInstanceOfSatisfying(ResourceNotFoundException.class,
+                        exception -> assertThat(exception.resourceType()).isEqualTo("Checkout"));
+    }
+
+    @Test
+    void checkoutLinesDeleteAnswersTheTypedCheckoutMissForTheForeignCaller() {
+        Cart cart = Cart.activeFor(consumer);
+        when(cartRepository.findById(cart.getId())).thenReturn(Optional.of(cart));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(UUID.randomUUID());
+
+        assertThatThrownBy(() -> service.deleteLines(cart.getId(), List.of(UUID.randomUUID()), authentication))
+                .isInstanceOfSatisfying(ResourceNotFoundException.class,
+                        exception -> assertThat(exception.resourceType()).isEqualTo("Checkout"));
+        verify(cartItemRepository, never()).delete(any());
+    }
+
+    @Test
+    void checkoutLinesDeleteAnswersTheTypedLineMissForALineOfAnotherCart() {
+        Cart cart = Cart.activeFor(consumer);
+        CartItem foreign = CartItem.of(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                1, 500L, "SAR");
+        when(cartRepository.findById(cart.getId())).thenReturn(Optional.of(cart));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumer);
+        when(cartItemRepository.findById(foreign.getId())).thenReturn(Optional.of(foreign));
+
+        assertThatThrownBy(() -> service.deleteLines(cart.getId(), List.of(foreign.getId()), authentication))
+                .isInstanceOfSatisfying(ResourceNotFoundException.class,
+                        exception -> assertThat(exception.resourceType()).isEqualTo("CheckoutLine"));
+        verify(cartItemRepository, never()).delete(any());
+    }
+
+    @Test
     void checkoutDeleteAsAdminRemovesTheLinesBeforeTheAggregate() {
         Cart cart = Cart.activeFor(consumer);
         CartItem line = CartItem.of(cart.getId(), UUID.randomUUID(), UUID.randomUUID(),
@@ -1155,6 +1192,30 @@ class OrdersServiceTest {
         CartItem result = service.addCartItem(consumer, product, variant, 2);
 
         assertThat(result.getQuantity()).isEqualTo(3);
+        verify(cartItemRepository, never()).save(any());
+    }
+
+    @Test
+    void addingPastTheLineCapOnTheMergePathAnswersTheSameCapAsEveryOtherShape() {
+        // The 2026-11-03 adversarial scan (Major · Correctness): the merge
+        // shape re-checks the summed quantity against the same
+        // MAX_LINE_QUANTITY cap — a buyer must not grow a line unboundedly
+        // through repeated adds.
+        Cart cart = Cart.activeFor(consumer);
+        UUID product = UUID.randomUUID();
+        UUID variant = UUID.randomUUID();
+        CartItem existing = CartItem.of(cart.getId(), product, variant, 1000, 1750L, "SAR");
+        when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
+                .thenReturn(Optional.of(cart));
+        when(productPricingPort.priceOfVariant(variant)).thenReturn(
+                new ProductPricingPort.VariantPrice(variant, product, seller, 1750L, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE,
+                        ProductPricingPort.StorefrontState.ACTIVE));
+        when(cartItemRepository.findByCartIdAndProductIdAndVariantId(cart.getId(), product, variant))
+                .thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> service.addCartItem(consumer, product, variant, 1))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class);
         verify(cartItemRepository, never()).save(any());
     }
 

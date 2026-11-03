@@ -264,6 +264,19 @@ class AgentOneMutationDgsTest {
         verify(accountLifecycleSpi).requestPasswordReset("who@example.com");
     }
 
+    @Test
+    void sendConfirmationEmailResendsTheAuthenticatedCallersOwnVerification() {
+        // The pinned Saleor 3.23.45 contract: AUTHENTICATED_USER operating
+        // on info.context.user — the resend targets the CALLER's own
+        // account, never an attacker-chosen address.
+        actAs("agent-one@example.com", "CONSUMER");
+        dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { sendConfirmationEmail(channel: "",
+                        redirectUrl: "https://store.example.com/confirm") { errors { code } } }
+                """, "data.sendConfirmationEmail.errors");
+        verify(accountLifecycleSpi).resendEmailVerification("agent-one@example.com");
+    }
+
     /**
      * The shard review (2026-11-01, Minor · Security): bcrypt's ceiling is
      * 72 UTF-8 BYTES, never 72 characters — a 40-character Arabic password

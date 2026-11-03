@@ -185,6 +185,22 @@ class PreLoginGraphQlGateTest {
     }
 
     @Test
+    void sendConfirmationEmailIsDeniedForTheAnonymousCaller() {
+        // The pinned Saleor 3.23.45 contract
+        // (SendConfirmationEmail.Meta.permissions =
+        // AuthorizationFilters.AUTHENTICATED_USER, operating on
+        // info.context.user): the root emails the AUTHENTICATED caller's
+        // own account — it never belonged to the anonymous pre-login
+        // family.
+        anonymous();
+        when(request.getDocument()).thenReturn(
+                "mutation { sendConfirmationEmail(channel: \"\","
+                        + " redirectUrl: \"https://store.example.com/confirm\") { errors { code } } }");
+
+        assertDeniedWithAuthn();
+    }
+
+    @Test
     void aMixedPreLoginAndProtectedDocumentIsDenied() {
         anonymous();
         when(request.getDocument()).thenReturn(

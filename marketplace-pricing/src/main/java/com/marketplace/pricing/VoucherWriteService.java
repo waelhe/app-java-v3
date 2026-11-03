@@ -110,7 +110,12 @@ public class VoucherWriteService implements VoucherWriteSpi {
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     public VoucherMutationResult updateVoucher(UUID id, VoucherUpdateCommand command) {
-        Optional<Voucher> addressed = id == null ? Optional.empty() : voucherRepository.findById(id);
+        // The 2026-11-03 adversarial scan: the code-stability verdict rides
+        // the SAME row lock the settlement path (settleVoucher's
+        // findByCodeForUpdate) serializes on — an unlocked check-then-act
+        // let a concurrent redemption slip between the count and the
+        // revise.
+        Optional<Voucher> addressed = id == null ? Optional.empty() : voucherRepository.findByIdForUpdate(id);
         if (addressed.isEmpty()) {
             return VoucherMutationResult.failure(List.of(new VoucherMutationError(
                     "id", VoucherMutationErrorCode.NOT_FOUND, "No voucher found for the id")));

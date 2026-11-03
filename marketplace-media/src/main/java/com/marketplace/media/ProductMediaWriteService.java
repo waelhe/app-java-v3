@@ -86,7 +86,7 @@ public class ProductMediaWriteService implements ProductMediaWriteSpi {
     }
 
     @Override
-    @PreAuthorize("hasRole('PROVIDER')")
+    @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
     @Transactional
     public ProductMediaMutationResult deleteProductMedia(UUID mediaId, Authentication authentication) {
         Optional<MediaAsset> addressed = ownedProductMediaRow(mediaId, authentication);
@@ -108,7 +108,7 @@ public class ProductMediaWriteService implements ProductMediaWriteSpi {
     }
 
     @Override
-    @PreAuthorize("hasRole('PROVIDER')")
+    @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
     @Transactional
     public ProductMediaBulkResult bulkDeleteProductMedia(List<UUID> mediaIds,
                                                          Authentication authentication) {
@@ -132,7 +132,7 @@ public class ProductMediaWriteService implements ProductMediaWriteSpi {
     }
 
     @Override
-    @PreAuthorize("hasRole('PROVIDER')")
+    @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
     @Transactional
     public ProductMediaReorderResult reorderProductMedia(UUID productId, List<UUID> orderedMediaIds,
                                                           Authentication authentication) {

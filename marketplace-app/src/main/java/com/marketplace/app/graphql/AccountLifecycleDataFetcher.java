@@ -84,12 +84,18 @@ public class AccountLifecycleDataFetcher {
 
     /**
      * Saleor {@code sendConfirmationEmail(channel, redirectUrl)} — the
-     * same anonymous email-sender class the reset request carries (the
-     * wave-2 review's per-caller set).
+     * authenticated caller's own verification resend. The pinned Saleor
+     * 3.23.45 contract: {@code SendConfirmationEmail.Meta.permissions =
+     * (AuthorizationFilters.AUTHENTICATED_USER,)} operating on
+     * {@code info.context.user} — the root emails the CALLER's own
+     * account, so it rides the authenticated graphqlAccountMutation
+     * budget like its siblings passwordChange/accountRequestDeletion
+     * (the anonymous family serves only roots an anonymous caller can
+     * actually redeem; the per-account resend throttle is the identity
+     * owner's own 60-second re-issue floor).
      */
     @DgsMutation(field = DgsConstants.MUTATION.SendConfirmationEmail)
-    @PerCallerBudget(surface = "graphqlAccountAnonymousMutation")
-    @RateLimiter(name = "graphqlAccountAnonymousMutation")
+    @RateLimiter(name = "graphqlAccountMutation")
     public SendConfirmationEmail sendConfirmationEmail(@InputArgument String channel,
                                                        @InputArgument String redirectUrl,
                                                        graphql.schema.DataFetchingEnvironment environment) {

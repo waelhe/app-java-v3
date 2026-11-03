@@ -88,11 +88,17 @@ public class AccountSelfServiceTokenService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "No account for the authenticated subject: " + subject));
         authActionTokenService.issue(subject, AuthActionTokenPurpose.ACCOUNT_DELETION, DELETION_TTL)
-                .ifPresent(issued -> eventPublisher.publishEvent(new com.marketplace.shared.api
-                        .AccountDeletionRequestedEvent(user.getId(), user.getEmail(),
-                        issued.rawToken(), issued.expiresAt())));
-        log.info("Account deletion requested: subject={}, expiresAt={}", subject,
-                java.time.Instant.now().plus(DELETION_TTL));
+                .ifPresent(issued -> {
+                    eventPublisher.publishEvent(new com.marketplace.shared.api
+                            .AccountDeletionRequestedEvent(user.getId(), user.getEmail(),
+                            issued.rawToken(), issued.expiresAt()));
+                    // The issued right's OWN expiry — never a recomputed
+                    // guess, and nothing is logged to expire when the
+                    // re-issue throttle silently declines (the 2026-11-03
+                    // adversarial scan's logging-honesty finding).
+                    log.info("Account deletion right issued: subject={}, expiresAt={}",
+                            subject, issued.expiresAt());
+                });
     }
 
     /**

@@ -234,14 +234,23 @@ public class CheckoutDataFetcher {
         try {
             updated = checkoutSpi.updateLines(cartId, requested, authentication);
         } catch (ResourceNotFoundException exception) {
-            // The 2026-11-03 #806 review (Minor · Functional Correctness):
-            // checkoutLinesAdd/Delete answer CHECKOUT_NOT_FOUND under the
-            // payload's own `id` field — the same semantic error under
-            // `lines` here bound the client to the wrong field. The
-            // line-VALIDATION errors below stay under `lines`: they are
-            // about the lines input, not the checkout's own identity.
-            log.info("checkoutLinesUpdate rejected NOT_FOUND — {}", exception.getMessage(), exception);
-            return payload(null, List.of(error("id", CHECKOUT_NOT_FOUND, "NOT_FOUND")), true, authentication);
+            // The same resource classification the delete roots carry (the
+            // 12:44:42Z review's fix, completed for this root by the
+            // 2026-11-03 adversarial scan): classify by the MISSED RESOURCE
+            // — the checkout's absence answers CHECKOUT_NOT_FOUND under
+            // `id`; the line's absence answers the pinned Saleor contract
+            // (checkout_lines_update.py: get_nodes_or_error(line_ids,
+            // "line_id", CheckoutLine) and the stale-line
+            // NonExistingCheckoutLines both raise ValidationError under
+            // `line_id` with CheckoutErrorCode.GRAPHQL_ERROR — never a
+            // checkout-wide NOT_FOUND).
+            boolean checkoutMissing = CheckoutGraphQlMapper.CHECKOUT_TYPE
+                    .equals(exception.resourceType());
+            log.info("checkoutLinesUpdate rejected NOT_FOUND ({}) — {}",
+                    exception.resourceType(), exception.getMessage());
+            return payload(null, List.of(checkoutMissing
+                    ? error("id", CHECKOUT_NOT_FOUND, "NOT_FOUND")
+                    : error("lines", LINE_NOT_FOUND, "GRAPHQL_ERROR")), true, authentication);
         } catch (BadRequestException exception) {
             log.info("checkoutLinesUpdate rejected INVALID — {}", exception.getMessage(), exception);
             return payload(null, List.of(error("lines", LINE_INVALID, "INVALID")), true, authentication);

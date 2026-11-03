@@ -200,6 +200,10 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
                 : cartItemRepository.findByCartIdAndProductIdAndVariantIdIsNull(cart.getId(), productId);
         return existing
                 .map(line -> {
+                    // The adversarial scan (2026-11-03, Major · Correctness): the
+                    // merge shape must carry the SAME cap every other shape does —
+                    // the summed quantity is re-checked, never trusted.
+                    requireQuantity(line.getQuantity() + quantity);
                     line.updateQuantity(line.getQuantity() + quantity);
                     return line;
                 })
