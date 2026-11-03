@@ -239,6 +239,25 @@ class UserAccountAdminServiceTest {
     }
 
     @Test
+    void bulkUpdateIgnoreFailedKeepsTheRawIaeMessageInternal() {
+        // The 2026-11-03 preemptive review: the broad IllegalArgumentException
+        // catch cannot tell the use case's authored validation from a
+        // library-raised IAE — the wire payload answers the platform's own
+        // constant refusal (the SaleorMutationErrors.safeMessage law), and
+        // the raw text rides DEBUG only.
+        when(userRepository.findById(CUSTOMER_ID)).thenReturn(Optional.of(customerRow));
+
+        List<BulkRowResult> results = service.bulkUpdateCustomers(admin,
+                List.of(CUSTOMER_ID),
+                List.of(new UserWriteFields("not-an-email", null, null, null)),
+                true);
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).errorCode()).isEqualTo("INVALID");
+        assertThat(results.get(0).message()).isEqualTo("The row input was rejected");
+    }
+
+    @Test
     void bulkSetActiveFlipsEveryKnownRow() {
         when(userRepository.existsById(CUSTOMER_ID)).thenReturn(true);
         when(userRepository.existsById(STAFF_ID)).thenReturn(false);

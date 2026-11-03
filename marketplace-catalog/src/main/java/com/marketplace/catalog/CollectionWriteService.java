@@ -372,10 +372,25 @@ public class CollectionWriteService implements CollectionWriteSpi {
     /**
      * The membership's append — the owner's own max+1 derivation over the
      * current live membership (the assignment registry's own append law).
+     *
+     * <p>The 2026-11-03 preemptive review: the registry's live positions
+     * are NOT guaranteed contiguous — {@code collectionRemoveProducts}
+     * deletes a member WITHOUT renumbering, so the live tail can carry a
+     * gap (positions 1,3,4 after the middle row's removal). A size+1
+     * derivation would then mint the LAST live position AGAIN — the same
+     * duplicate-position defect the wave-19 review closed for the
+     * category registry ({@code CategoryWriteService#nextPosition}) and
+     * the type-attribute assignments — and no unique index guards
+     * (collection_id, position) (only the pair's own partial index), so
+     * the duplicate is silent and the display order turns unstable. The
+     * derivation therefore reads the live MAXIMUM — exactly the shape
+     * this method's own javadoc always claimed.</p>
      */
     private void appendMembership(UUID collectionId, List<UUID> productIds) {
         int next = collectionProductRepository
-                .findByCollectionIdOrderByPositionAscIdAsc(collectionId).size() + 1;
+                .findByCollectionIdOrderByPositionAscIdAsc(collectionId).stream()
+                .mapToInt(CollectionProduct::getPosition)
+                .max().orElse(0) + 1;
         for (UUID productId : distinct(productIds)) {
             collectionProductRepository.save(CollectionProduct.create(collectionId, productId, next++));
         }

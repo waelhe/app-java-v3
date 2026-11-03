@@ -205,7 +205,17 @@ public class UserAccountAdminService implements com.marketplace.identity.spi.Use
             } catch (com.marketplace.shared.api.ConflictException failure) {
                 results.add(new BulkRowResult(id, "ALREADY_EXISTS", failure.getMessage()));
             } catch (IllegalArgumentException failure) {
-                results.add(new BulkRowResult(id, "INVALID", failure.getMessage()));
+                // The 2026-11-03 preemptive review: this broad catch cannot
+                // tell the use case's own authored validation from a
+                // library-raised IAE — the raw message would couple the
+                // wire contract to exception text the platform does not
+                // own (the same law SaleorMutationErrors.safeMessage
+                // established: only the AUTHORED domain exceptions carry
+                // their message; everything else answers the generic
+                // refusal, the raw text rides DEBUG only).
+                log.debug("bulkUpdateCustomers row rejected; the raw message stays internal",
+                        failure);
+                results.add(new BulkRowResult(id, "INVALID", "The row input was rejected"));
             }
         }
         return results;

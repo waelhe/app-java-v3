@@ -403,6 +403,35 @@ class CollectionWriteServiceTest {
     }
 
     @Test
+    void removeThenAppendDerivesThePositionFromTheLiveMaximum() {
+        UUID collectionId = UUID.randomUUID();
+        UUID newProductId = UUID.randomUUID();
+        UUID survivorProductId = UUID.randomUUID();
+        when(collectionRepository.findById(collectionId))
+                .thenReturn(Optional.of(row("slug", "Old", true)));
+        Product member = product();
+        when(productRepository.findById(newProductId)).thenReturn(Optional.of(member));
+        when(membershipRepository.findByCollectionIdAndProductId(collectionId, newProductId))
+                .thenReturn(Optional.empty());
+        // The registry's own live tail after collectionRemoveProducts
+        // deleted the middle member WITHOUT renumbering: positions 1,3,4.
+        // A size+1 derivation would mint 4 again (the duplicate-position
+        // defect the 2026-11-03 preemptive review closed); the append
+        // law's max+1 derivation answers 5.
+        when(membershipRepository.findByCollectionIdOrderByPositionAscIdAsc(collectionId))
+                .thenReturn(List.of(
+                        CollectionProduct.create(collectionId, UUID.randomUUID(), 1),
+                        CollectionProduct.create(collectionId, UUID.randomUUID(), 3),
+                        CollectionProduct.create(collectionId, survivorProductId, 4)));
+
+        CollectionMutationResult result = service.addProducts(collectionId, List.of(newProductId));
+
+        assertThat(result.success()).isTrue();
+        verify(membershipRepository).save(argThat(saved ->
+                saved.getPosition() == 5 && saved.getProductId().equals(newProductId)));
+    }
+
+    @Test
     void removeProductsSkipsNonMembersIdempotently() {
         UUID collectionId = UUID.randomUUID();
         UUID productId = UUID.randomUUID();
