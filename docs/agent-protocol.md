@@ -10,7 +10,7 @@
 > global `~/.config/opencode/AGENTS.md`, the local `protocol-enforcer`
 > skill, session-downloaded JDKs) disagrees with the repo, **the repo
 > governs** and the local artifact is patched to match.
-> Effective: 2026-09-29. Provenance: built by the frontend platform agent
+> Effective: 2026-11-03 (protocol revision; initial bootstrap protocol 2026-09-29). Provenance: built by the frontend platform agent
 > (waelhe/web-marketplace) under the owner's one-time role exception
 > («قم باستثناء لدورك هذه المرة وقم بتصميم وهندسة و ببناء هذا النظام
 > لهم. لانك الاكثر معرفة به. ثم عد لدورك», 2026-09-28 — "make an
@@ -93,13 +93,14 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
 
 ## 3. Session bootstrap ritual (in this order, every session)
 
-1. **Survivor inventory**: is the clone there? Does `git log` match
-   GitHub? A local token may or may not have survived — the only local
-   assumption the whole chain needs is GitHub credentials (ask the owner
-   when missing).
-2. **Re-sync** (ff-only, never merge blindly): `git fetch origin &&
-   git checkout main && git merge --ff-only origin/main`. Missing clone
-   → re-clone.
+1. **GitHub truth and access**: read the repository, current default-branch SHA,
+   open PRs, and workflow state through the connected GitHub interface.
+   Never assume a stale local clone is current. If GitHub access is unavailable,
+   report the blocker rather than substituting unverified local state.
+2. **Remote branch first**: create a task branch from the exact observed base
+   SHA and make durable edits/commits on GitHub; open a PR for review. Do not
+   push directly to `main`. A local clone/toolchain is optional supplementary
+   support, not the primary execution surface or source of truth.
 3. **Load the root family in the AGENTS.md §0.1 mandatory order**:
    `SYSTEM.md` (the mechanism, §1-§14) → `PROJECT_MAP.md` (the state:
    what is merged, open, pending — read the newest wave sections first)
@@ -116,7 +117,25 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
    the adversarial pass in `review-protocol.md`; when a guard fails,
    `enforcement-map.md` states the rule → enforcement binding. The
    system is permanent; the quick view only points into it.
-5. **Read the in-flight work**: `git log --oneline -15` + open PRs and
+5. **Activate task-specific skills and source references**: read
+   `docs/governance/agent-skills-policy.md` and
+   `docs/governance/plans/agent-skills-pins.json`; load each relevant
+   vendored `.agents/skills/<name>/SKILL.md` and its specific rules or
+   references. Check that its pin/registry is current. A skill is a
+   specialist reference, never a replacement for official docs, the
+   canonical domain plan, a pinned schema, or code/tests. Never run an
+   unpinned installer (including `npx skills add`) against this repo.
+   For a Saleor task, consult https://docs.saleor.io/developer/ai,
+   start from its `llms.txt`, use the read-only Documentation MCP when
+   available, and use a separate GraphQL MCP/schema source only when
+   needed. Use the schema matching the repository's pinned Saleor
+   version; never substitute an unreleased `main` schema. Load the
+   adopted `saleor-core` skill for the discount/stock/order behaviors
+   it covers. Other Saleor skills remain unadopted unless the actual
+   task requires them and their adoption is approved and pinned through
+   the repository policy. For all other technologies, discover and
+   load only relevant, properly versioned skills and official sources.
+6. **Read the in-flight work**: recent commits through GitHub + open PRs and
    issues via the API, **with full pagination** — a capped page silently
    truncates the list (measured 2026-09-28: `per_page=10` showed 10 of
    28 open PRs — the retro review campaign `review/retro-*` #431-#457
@@ -124,22 +143,24 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
    can change the OpenAPI the frontend consumes. Note that
    `PROJECT_MAP.md` can LAG behind merged waves (measured 2026-09-28:
    its newest section recorded merge #383 while main sat at #458 — the
-   repo's own recorded truth-sync-gap pattern) — `git log` + the PR
+   repo's own recorded truth-sync-gap pattern) — the recent commit history + PR
    list are the fresher truth; the map is a dated snapshot.
-6. **Rebuild the toolchain** (it never survives): Temurin JDK 25
-   (25.0.4.1 is the team's recorded build), then `./mvnw` (wrapper
-   3.10.0, self-contained). No Docker locally is the standing reality —
-   see §7.
-7. **Measure before building** (METHODOLOGY.md Stage 2 is not optional):
+7. **Optional local toolchain**: when a supported local environment is
+   available, use the pinned Temurin JDK/Maven wrapper for supplementary
+   feedback. Do not block GitHub-first execution on creating a local
+   environment; GitHub Actions remain the required remote verification
+   record. Docker-dependent integration tests are judged by the configured
+   remote workflow when no supported local Docker environment exists.
+8. **Measure before building** (METHODOLOGY.md Stage 2 is not optional):
    live `/v3/api-docs` on staging, the target endpoints' success AND
    failure shapes, the repo's own evidence at `ملف:سطر`. Every parity
    claim carries its measurement date.
-8. **Emit the §0.2 declaration before any mutating action** (AGENTS.md —
+9. **Emit the §0.2 declaration before any mutating action** (AGENTS.md —
    enforced): `[الملف الحاكم]` (governing file) / `[النواة المعمارية]`
    (architecture core) / `[البند من المصفوفة §14.2]` / `[أثر على
    الحدود]` (boundary impact) / `[دين]` (debt). An action without the
    declaration is stopped before it executes.
-9. **The word gates stand**: gates B and C (AGENTS.md §0.4) open only on
+10. **The word gates stand**: gates B and C (AGENTS.md §0.4) open only on
    the owner's explicit word; no assumed answers.
 
 ## 4. The five operating rules (mapped to the repo's own governance)
@@ -156,7 +177,7 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
    verification) → Document & Ship. Skipping stages is a forbidden
    process pattern (§16.2).
 3. **Full execution authority — on the branch; the merge is
-   word-gated** — branches, implementation, and local gates are the
+   word-gated** — branches, implementation, and branch-level checks are the
    agent's, transparently. Merging to `main` happens ONLY on the owner's
    explicit word («ادمج» and its variants — every merge wave in
    PROJECT_MAP records its word), through the three measured merge
@@ -180,29 +201,29 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
 
 ## 5. The agent cycle (one concern = one branch = one PR)
 
-1. Resync (ritual above) → 2. read the governing file + §14.2 matrix →
-   3. measure the contract live (Stage 1-2: official docs verbatim +
-   code reality + baseline counts) → 4. branch (naming per
-   METHODOLOGY.md §6.2) → 5. implement per CODING_STANDARDS with the
-   §0.2 declaration riding the PR body → 6. regression pins that fail
-   on the previous code + unit tests green locally (`./mvnw clean verify
-   -pl <module> -am` — the AGENTS.md rule before any push; integration
-   tests judge on CI, no Docker locally) → 7. push the branch → open the
-   PR with the mandatory template filled (scope classification, official
-   references, OpenAPI impact, migrations, security) + the measured
-   baseline/after/delta table → 8. CI + CodeRabbit review (invoke
-   `@coderabbitai review` per the repo's measured activation pattern;
-   adopt findings from the root with evidence, never surface-level) →
-   9. HOLD: the merge waits for the owner's word through the three
-   gates → 10. on the word: squash merge (the `(#N)` is born;
-   PROJECT_MAP's newest wave section records the word, the gates, the
-   deploy telemetry) → 11. post-merge proof: deploy success via the
-   commit-status channel (Railway GraphQL tokens measured dead 403 —
-   commit status is the documented alternative), the smoke station
-   (liveness/readiness/jwks/OIDC/modulith 401/api-docs paths count),
-   watchdog round green → 12. truth-sync: PROJECT_MAP/SYSTEM updates
-   ride the functional PR itself (rule #353) or a follow-up docs PR —
-   numbers guarded by `DocumentationNumbersGuardTest`.
+1. Read the governing file + SYSTEM.md §14.2 matrix and the relevant
+   task-specific pinned skills → 2. verify the applicable official docs
+   and matching official source repository → 3. measure current code,
+   live contracts, and baseline → 4. create a remote branch from the
+   observed GitHub base SHA → 5. implement on that branch with the
+   AGENTS.md §0.2 declaration and the official supported APIs/extension
+   points → 6. add regression pins and run relevant tests. Run local
+   Maven/JDK checks when available for supplementary feedback, but local
+   execution is not a prerequisite for GitHub-first work. Use GitHub
+   Actions on the current PR head as the required remote verification
+   record → 7. open/update the PR with the mandatory template, exact
+   versioned official references, contract/migration/security impact, and
+   measured baseline/after/delta → 8. request CodeRabbit review when
+   applicable with `@coderabbitai review`; verify it is complete and
+   attached to the current PR head. For PRs above the per-review file
+   limit, use only the repository's existing fail-closed review-shard
+   and coverage-verifier process → 9. while CI/reviews are pending, do
+   not idle: continue independent analysis or non-conflicting branches
+   and monitor required results periodically. Pending is never success
+   → 10. HOLD: merge only on the owner's explicit word and after every
+   required gate passes → 11. on authorization, squash merge per policy
+   → 12. verify post-merge deployment/smoke where the task requires it
+   → 13. truth-sync the governing state documents with measured evidence.
 
 ## 6. House patterns (what "looks right" here — each measured)
 
@@ -263,7 +284,7 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
 | Standards + testing | `docs/CODING_STANDARDS.md` (§13 testing), `docs/dev/testing-conventions.md` | Detailed rules |
 | Domain governance | `docs/governance/*`, `docs/security/*`, `docs/api/*`, `docs/observability/*`, `docs/release/*` | Specialized extensions (per METHODOLOGY Appendix B hierarchy) |
 | The gates | `.github/workflows/*` + `.ci/*` + `.gitleaks.toml` | CI as the durable public record |
-| History + decisions | `git log` + PRs (#N squash) + `docs/governance/decisions/*` | The permanent record |
+| History + decisions | GitHub commit history + PRs (#N squash) + `docs/governance/decisions/*` | The permanent record |
 | This protocol + the skill spec | `docs/agent-protocol.md` + `docs/agent-skill.md` | The zero-memory agent chain |
 | The knowledge graph | `.ua/` | Rides PRs (generation snapshots) |
 
@@ -298,7 +319,7 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
   guarded canonical phrase (measured 2026-09-28: a retired module count
   persists in prose while the reactor moved on).
 - Truth-sync debt: PROJECT_MAP/SYSTEM sections lagging the merged waves
-  (the repo's own recorded gap pattern) — cross-check `git log` + PRs
+  (the repo's own recorded gap pattern) — cross-check recent GitHub commit history + PRs
   before trusting a doc section's recency.
 - Guessing when live verification is impossible (backend down, no
   Docker): stop and declare, never fabricate a measurement.
@@ -313,29 +334,38 @@ depends on any local copy surviving:
 ```text
 تابع العمل على باك اند المنصة (app-java-v3). أنت وكيل الباك اند الدائم:
 ابدأ بطقس الإقلاع في docs/agent-protocol.md بمستودع waelhe/app-java-v3
-(استنسخه من GitHub إن غاب محليًا؛ إن فُقد التوكن فاطلبه مني)، واتبع
-AGENTS.md §0 كحوكمة إجبارية وdocs/METHODOLOGY.md كطريقة العمل الرئيسة —
-GitHub هو الحقيقة الوحيدة. ثم اعرف الموجة التالية من PROJECT_MAP.md
-وتابع العمل. ردودك عليّ بالعربية دائمًا، ولا دمج إلى main إلا بكلمة
+(استخدم GitHub مباشرة؛ أنشئ فرعًا بعيدًا من SHA الرأس الحالي وافتح PR؛ لا تجعل العمل المحلي شرطًا)، واتبع
+AGENTS.md §0 كحوكمة إجبارية وdocs/METHODOLOGY.md كطريقة العمل الرئيسة.
+استند إلى الوثائق والمستودعات الرسمية المطابقة للإصدارات لكل التقنيات،
+واستخدم المهارات المثبتة ذات الصلة وفق سياسة المستودع، ولا تخترع عملاً
+يدويًا غير موثق. لا تنتظر CI أو CodeRabbit بلا عمل؛ تابع المهام المستقلة
+مع بقاء جميع بوابات التحقق والدمج إلزامية. ثم افحص PROJECT_MAP.md وPRs
+والفروع المفتوحة وحدد المهمة التالية دون تعارض ثم تابع العمل. ردودك عليّ بالعربية دائمًا،
+ولا دمج إلى main إلا بكلمة
 صريحة مني — الدمج نفسه نشر إلى الإنتاج.
 ```
 
 Gloss (owner-facing Arabic, quoted as data per §1): "Continue the
 marketplace backend (app-java-v3). You are the permanent backend agent:
 start with the bootstrap ritual in `docs/agent-protocol.md` of
-`waelhe/app-java-v3` (clone from GitHub if missing locally; if the token
-is lost, ask me); follow `AGENTS.md` §0 as enforced governance and
-`docs/METHODOLOGY.md` as the master method — GitHub is the only truth.
-Then read the next wave from `PROJECT_MAP.md` and continue the work.
+`waelhe/app-java-v3`; work GitHub-first on a remote task branch and PR,
+with local execution only as supplementary support. Follow `AGENTS.md`
+§0 as enforced governance and `docs/METHODOLOGY.md` as the master method.
+Use version-matched official documentation and source repositories across
+all technologies, and activate relevant pinned skills under the repo's
+skill policy. Do not invent undocumented manual workarounds. Do not idle
+while CI/reviews run; continue independent work without bypassing gates.
+Then inspect `PROJECT_MAP.md`, current PRs, and branches before selecting
+non-conflicting work.
 Replies to me always in Arabic; no merge to main except on my explicit
 word — the merge itself deploys to production."
 
 **Why a zero-memory agent needs nothing else.** The prompt's only local
 assumption is GitHub credentials (ask the owner when missing). Everything
-else is fetched from the repo at session start: the clone, this protocol
+else is fetched from GitHub at session start: this protocol
 (the complete method chain), `AGENTS.md` (auto-read by agent frameworks
 — and re-read by §3.3), the root family (mechanism, state, standards),
-the CI workflows, and `git log` + PRs (the history). The local global
+the CI workflows, recent commits + PRs (the history). The local global
 AGENTS.md, the local `protocol-enforcer` skill, and the session JDK are
 conveniences, rebuilt from this document — never dependencies.
 
@@ -349,6 +379,88 @@ skills mechanism) and that system permanently carries the protocol.
 on any disagreement the skill is patched to match the twin (the frontend
 precedent, validated: structurally-valid frontmatter, description within
 the 1024-char limit, English AI-facing format).
+
+## 12. Permanent execution rules — all technologies and every task
+
+### 12.1 Evidence before implementation
+
+The source-of-truth rule applies to every technology, service, SDK,
+database, protocol, build tool, deployment platform, and integration —
+not only Spring or Maven. For each decision, use the official
+documentation for the exact deployed/pinned version, the matching
+official source repository, and applicable published standards.
+Trusted community practice is secondary evidence only. Record the
+source URL, version/commit, and exact relevant section, API, or source
+path.
+
+Do not invent unsupported code, configuration, operational steps,
+manual workarounds, or integrations. Prefer the technology's documented
+automatic configuration, lifecycle, conventions, generators, and
+supported plugins where they cover the use case. Custom implementation
+is permitted when it uses a documented official extension or
+configuration point and is required by the product contract. Do not
+remove a manual customization solely because it is manual; verify its
+support status and purpose first. If no supported solution can be
+established, report the gap instead of improvising.
+
+### 12.2 Skills are task-scoped and pinned
+
+Before work, inspect `docs/governance/agent-skills-policy.md` and
+`docs/governance/plans/agent-skills-pins.json`, then read the relevant
+vendored skill and its referenced rules. Skills are reference inputs,
+not authority over product decisions, canonical plans, pinned schemas,
+official documentation, or measured code/tests. Never install or
+refresh a skill outside the repository's reviewed pin-and-registry
+procedure.
+
+For Saleor work, use
+[Saleor's AI developer guidance](https://docs.saleor.io/developer/ai):
+start with `llms.txt`, use the Documentation MCP for read-only
+documentation search when available, and use GraphQL MCP only where
+schema access is needed. The GraphQL schema must match the repository's
+pinned Saleor release. Apply the already-adopted `saleor-core` skill
+where its discount, order-allocation, or stock rules apply. The other
+Saleor skills are not automatically applicable: adopt them only when
+the task requires them and after the repository's pinning policy is
+satisfied. The canonical Saleor plan, source pins, divergence ledger,
+and application code remain controlling.
+
+### 12.3 GitHub-first execution and non-blocking parallelism
+
+GitHub is the durable execution surface. Create a branch from the
+observed base SHA, apply changes to that branch, and use PRs and
+GitHub Actions as the review and verification record. A local clone or
+local test run may supplement this flow, but it is not the primary
+source of truth and must not be represented as a remote check.
+
+Do not remain idle while CI, CodeRabbit, or another independent review
+is running. Continue a genuinely independent task or a non-conflicting
+branch, inspect results periodically, and return to any failed check
+when its result is available. Parallel work must not create overlapping
+writes, stale reviews, or false claims. A pending check is never a
+passing check.
+
+### 12.4 Review and merge integrity
+
+For applicable human-authored PRs, request CodeRabbit review using
+`@coderabbitai review` and verify a completed review against the
+current PR head. Respect the repository's CodeRabbit gate and its
+fail-closed review-coverage process for PRs exceeding the review file
+limit. Do not create substitute review shards, bypass the gate, or
+assume a review happened from a status label alone.
+
+Implementation and review can proceed on the branch without waiting
+for the owner, but merge to `main` remains subject to the owner's
+explicit authorization and every required repository gate. Never
+weaken branch protection, skip CI, or merge a pending/red result.
+
+### 12.5 Honest completion report
+
+Report the actual branch, PR, commit, source versions, changed paths,
+tests, remote workflow results, completed reviews, unresolved threads,
+and outstanding blockers. Distinguish completed, pending, failed, and
+not run. Never claim deployment, review, or test success without
+observable evidence.
 
 ---
 
