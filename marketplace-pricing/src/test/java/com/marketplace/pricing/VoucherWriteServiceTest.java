@@ -222,7 +222,7 @@ class VoucherWriteServiceTest {
     @Test
     void unknownIdAnswersTheNotFoundDomainError() {
         UUID unknown = UUID.randomUUID();
-        when(voucherRepository.findById(unknown)).thenReturn(Optional.empty());
+        when(voucherRepository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
 
         VoucherMutationResult result = service.updateVoucher(unknown,
                 new VoucherUpdateCommand("New", null, null, null, null, null,
@@ -236,7 +236,7 @@ class VoucherWriteServiceTest {
     @Test
     void emptyCommandAnswersTheCurrentProjectionWithoutASave() {
         Voucher existing = row("KEEP-CODE");
-        when(voucherRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(voucherRepository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(redemptionRepository.countByVoucherId(existing.getId())).thenReturn(2L);
 
         VoucherMutationResult result = service.updateVoucher(existing.getId(),
@@ -252,7 +252,7 @@ class VoucherWriteServiceTest {
     @Test
     void providedFieldsReplaceAndNullsPreserve() {
         Voucher existing = row("KEEP-CODE");
-        when(voucherRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(voucherRepository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(voucherRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(redemptionRepository.countByVoucherId(existing.getId())).thenReturn(0L);
 
@@ -271,7 +271,7 @@ class VoucherWriteServiceTest {
         Voucher existing = Voucher.of("SPAN-CODE", "Row", "SAR", Voucher.DiscountType.FIXED, 500L, 0L,
                 Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-12-01T00:00:00Z"),
                 null, null, true);
-        when(voucherRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(voucherRepository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
 
         // The new end lands BEFORE the preserved start — the merged span is reversed.
         VoucherMutationResult result = service.updateVoucher(existing.getId(),
@@ -286,7 +286,7 @@ class VoucherWriteServiceTest {
     @Test
     void codeChangeOnARedeemedVoucherIsRefused() {
         Voucher existing = row("USED-CODE");
-        when(voucherRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(voucherRepository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(redemptionRepository.countByVoucherId(existing.getId())).thenReturn(3L);
 
         VoucherMutationResult result = service.updateVoucher(existing.getId(),
@@ -302,7 +302,7 @@ class VoucherWriteServiceTest {
     @Test
     void malformedCodeOnARedeemedRowAnswersTheShapeErrorNeverAnNpe() {
         Voucher existing = row("USED-CODE");
-        when(voucherRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(voucherRepository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(redemptionRepository.countByVoucherId(existing.getId())).thenReturn(3L);
 
         // The command's code is non-blank but fails the entity's shape —
@@ -328,7 +328,7 @@ class VoucherWriteServiceTest {
         // INVALID error, never an out-of-range row.
         Voucher existing = Voucher.of("TYPE-SWITCH", "Row", "SAR",
                 Voucher.DiscountType.FIXED, 50000L, 0L, null, null, null, null, true);
-        when(voucherRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(voucherRepository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
 
         VoucherMutationResult result = service.updateVoucher(existing.getId(),
                 new VoucherUpdateCommand(null, null, "PERCENTAGE", null, null, null,
@@ -348,7 +348,7 @@ class VoucherWriteServiceTest {
         // bound, so the merged pair persists.
         Voucher existing = Voucher.of("TYPE-FITS", "Row", "SAR",
                 Voucher.DiscountType.FIXED, 500L, 0L, null, null, null, null, true);
-        when(voucherRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(voucherRepository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(voucherRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(redemptionRepository.countByVoucherId(existing.getId())).thenReturn(0L);
 
@@ -365,7 +365,7 @@ class VoucherWriteServiceTest {
     @Test
     void codeChangeOnAnUnredeemedVoucherExecutes() {
         Voucher existing = row("IDLE-CODE");
-        when(voucherRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(voucherRepository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(voucherRepository.findByCode("FRESH-CODE")).thenReturn(Optional.empty());
         when(voucherRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(redemptionRepository.countByVoucherId(existing.getId())).thenReturn(0L);
@@ -382,7 +382,7 @@ class VoucherWriteServiceTest {
     void duplicateCodeExcludingTheRowsOwnIdAnswersAlreadyExists() {
         Voucher existing = row("OWN-CODE");
         Voucher other = row("OTHER-CODE");
-        when(voucherRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(voucherRepository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(voucherRepository.findByCode("OTHER-CODE")).thenReturn(Optional.of(other));
         when(redemptionRepository.countByVoucherId(existing.getId())).thenReturn(0L);
 
@@ -399,7 +399,7 @@ class VoucherWriteServiceTest {
     void applyOncePerCustomerFlattensBothWays() {
         Voucher perUser = Voucher.of("PERU-CODE", "Row", "SAR", Voucher.DiscountType.FIXED, 500L, 0L,
                 null, null, null, 1L, true);
-        when(voucherRepository.findById(perUser.getId())).thenReturn(Optional.of(perUser));
+        when(voucherRepository.findByIdForUpdate(perUser.getId())).thenReturn(Optional.of(perUser));
         when(voucherRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(redemptionRepository.countByVoucherId(perUser.getId())).thenReturn(0L);
 
