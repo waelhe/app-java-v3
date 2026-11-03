@@ -452,9 +452,19 @@ public class SecurityConfig {
                         // plain Field whose name is in the enumerated
                         // pre-login family (tokenCreate, tokenRefresh,
                         // tokenVerify, requestPasswordReset, confirmAccount,
-                        // setPassword, confirmEmailChange, accountRegister,
-                        // accountDelete — every one carries its own proof in
-                        // the payload or CREATES the account). Fragment
+                        // setPassword, confirmEmailChange, accountRegister)
+                        // — every one carries its own proof in the payload
+                        // or CREATES the account. The family's single
+                        // authority is the gate's own
+                        // PreLoginGraphQlGate.PRE_LOGIN_OPERATIONS set —
+                        // this enumeration mirrors it verbatim, and the
+                        // platform governance suite pins the two together
+                        // so they can never drift again (ORD-04, the
+                        // 2026-11-03 adversarial scan: this comment used
+                        // to list accountDelete, which the gate excludes —
+                        // the pinned Saleor contract binds the deletion
+                        // redemption to the authenticated caller).
+                        // Fragment
                         // shapes and unparsable documents are refused
                         // outright; the operationName parameter is ignored
                         // (client-controlled metadata, not the operation).

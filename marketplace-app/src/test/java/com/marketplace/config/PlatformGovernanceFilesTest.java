@@ -1239,6 +1239,59 @@ class PlatformGovernanceFilesTest {
         return dir;
     }
 
+    /**
+     * ORD-04 (the 2026-11-03 adversarial scan) — the config-that-lies
+     * guard for the anonymous GraphQL surface: the SecurityConfig comment
+     * enumerates the pre-login family in prose, while the WALL itself is
+     * {@code PreLoginGraphQlGate.PRE_LOGIN_OPERATIONS}. The comment used
+     * to list {@code accountDelete} — an operation the gate excludes (the
+     * pinned Saleor contract binds the deletion redemption to the
+     * authenticated caller), a security-relevant lie in the config's own
+     * explanation. This guard parses BOTH sources and pins them to set
+     * equality: the comment's enumeration must mirror the gate's family
+     * exactly — neither wider (a phantom member overstates the anonymous
+     * surface) nor narrower (a missing member understates the wall).
+     */
+    @Test
+    void securityConfigPreLoginCommentMirrorsTheGateFamilyExactly() throws Exception {
+        String gate = read("marketplace-app", "src", "main", "java", "com", "marketplace",
+                "app", "graphql", "PreLoginGraphQlGate.java");
+        String config = read("marketplace-platform-infra", "src", "main", "java", "com",
+                "marketplace", "shared", "security", "SecurityConfig.java");
+
+        // The gate's own declaration is the authority: the quoted members
+        // inside "PRE_LOGIN_OPERATIONS = Set.of(" up to the closing ");".
+        int setStart = gate.indexOf("PRE_LOGIN_OPERATIONS = Set.of(");
+        assertThat(setStart).as("PreLoginGraphQlGate must declare PRE_LOGIN_OPERATIONS").isGreaterThan(-1);
+        String setBody = gate.substring(setStart, gate.indexOf(");", setStart));
+        java.util.regex.Matcher member = java.util.regex.Pattern
+                .compile("\"([a-zA-Z]+)\"").matcher(setBody);
+        Set<String> gateFamily = new HashSet<>();
+        while (member.find()) {
+            gateFamily.add(member.group(1));
+        }
+        assertThat(gateFamily).isNotEmpty();
+
+        // The comment's enumeration: the parenthetical list that follows
+        // "pre-login family" in the SecurityConfig prose.
+        int familyNote = config.indexOf("pre-login family (");
+        assertThat(familyNote).as("SecurityConfig must explain the pre-login family enumeration").isGreaterThan(-1);
+        String commentList = config.substring(familyNote + "pre-login family (".length(),
+                config.indexOf(")", familyNote));
+        Set<String> commentFamily = new HashSet<>();
+        for (String token : commentList.split("[\\s,]+")) {
+            if (token.matches("[a-zA-Z]+")) {
+                commentFamily.add(token);
+            }
+        }
+        assertThat(commentFamily).isNotEmpty();
+
+        assertThat(commentFamily)
+                .as("the SecurityConfig pre-login enumeration must mirror PreLoginGraphQlGate's"
+                        + " family exactly — the gate is the single authority")
+                .isEqualTo(gateFamily);
+    }
+
     private static ValidatorResult runPatchValidator(Path publicationDir) throws IOException, InterruptedException {
         Path script = repoRoot().resolve("scripts").resolve("openrewrite").resolve("validate-patches.py");
         assertThat(script).as("scripts/openrewrite/validate-patches.py must exist").exists();
