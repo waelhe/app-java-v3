@@ -478,7 +478,7 @@ class CollectionDataFetcherDgsTest {
 
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
                 """
-                query { collections(first: 2, sortBy: { field: PRODUCT_COUNT }) { totalCount } }
+                query { collections(first: 2, sortBy: { field: PRODUCT_COUNT, direction: ASC }) { totalCount } }
                 """,
                 "data.collections"))
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
@@ -497,7 +497,7 @@ class CollectionDataFetcherDgsTest {
         authenticateAs("dgs-consumer-subject", "CONSUMER");
 
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
-                "query { collections(first: 2, filter: { slug: \"x\" }) { totalCount } }",
+                "query { collections(first: 2, filter: { search: \"x\" }) { totalCount } }",
                 "data.collections"))
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
                 .hasMessageContaining("filter is not implemented");
