@@ -440,6 +440,60 @@ when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(or
         assertThat(approved.getStatus()).isEqualTo(OrderReturn.ReturnStatus.APPROVED);
     }
 
+    /**
+     * ORD-02 (the 2026-11-03 adversarial scan, P2): the frozen share is
+     * the EXACT half-up integer of the true rational — no binary
+     * floating-point intermediate, no tolerance margin. The pin lands
+     * exactly on the half boundary: goods 10_003 × (20_000 − 10_000) /
+     * 20_000 = 5_001.5 exactly — half-up freezes 5_002 (the double form
+     * reaches the same value here through a representable quotient; the
+     * integer form proves it can never be anything else).
+     */
+    @Test
+    void theFrozenShareIsTheExactHalfUpIntegerOnTheHalfBoundary() {
+        Order order = fulfilledOrderWithShipping(20_000L, 10_000L, 0L, true, 500L);
+        OrderItem item = itemOf(order, UUID.randomUUID(), 1, 10_003L);
+        OrderReturn r = OrderReturn.requested(order.getId(), buyer,
+                OrderReturn.ReturnType.RETURN, "half boundary", "SAR", Instant.now());
+        when(returns.findById(r.getId())).thenReturn(Optional.of(r));
+        when(returnLines.findByOrderReturnId(r.getId())).thenReturn(List.of(
+                OrderReturnLine.of(r.getId(), item, 1)));
+        when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+
+        OrderReturn approved = service.approve(r.getId());
+
+        // 10_003 × 10_000 / 20_000 = 5_001.5 → the exact half-up integer.
+        assertThat(approved.getRefundAmountMinor()).isEqualTo(5_002L);
+        assertThat(approved.getStatus()).isEqualTo(OrderReturn.ReturnStatus.APPROVED);
+    }
+
+    /**
+     * ORD-02's loud-failure contract (rule B7's bound-before-compute):
+     * a pathological magnitude whose product exceeds {@code Long} fails
+     * LOUDLY (the delivery pricing precedent) — never a silently wrapped
+     * or fabricated share. The double form had NO magnitude guard at
+     * all: the same inputs flowed through a float64 intermediate and
+     * answered whatever the rounding produced.
+     */
+    @Test
+    void aPathologicalMagnitudeFailsLoudlyInsteadOfFreezingAWrappedShare() {
+        Order order = fulfilledOrderWithShipping(4_000_000_000L, 0L, 0L, true, 1L);
+        OrderItem item = itemOf(order, UUID.randomUUID(), 1, 4_000_000_000L);
+        OrderReturn r = OrderReturn.requested(order.getId(), buyer,
+                OrderReturn.ReturnType.RETURN, "pathological magnitude", "SAR", Instant.now());
+        when(returns.findById(r.getId())).thenReturn(Optional.of(r));
+        when(returnLines.findByOrderReturnId(r.getId())).thenReturn(List.of(
+                OrderReturnLine.of(r.getId(), item, 1)));
+        when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+
+        // 4e9 × 4e9 overflows Long — Math.multiplyExact's loud refusal.
+        assertThatThrownBy(() -> service.approve(r.getId()))
+                .isInstanceOf(ArithmeticException.class);
+        org.mockito.Mockito.verify(returns, org.mockito.Mockito.never()).save(any(OrderReturn.class));
+    }
+
     @Test
     void anExchangeCompletionCreatesTheZeroPaymentReplacementAndReservesItsShelf() {
         Order order = fulfilledOrder();

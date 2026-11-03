@@ -358,7 +358,20 @@ public class OrderReturnsService {
             return goodsValue; // the legacy agreement: the plain goods value
         }
         long discountedGoods = subtotal - discount;
-        long share = Math.round(goodsValue * (double) discountedGoods / subtotal);
+        // ORD-02 (the 2026-11-03 adversarial scan, P2): the share ratio is
+        // EXACT integer arithmetic — no binary floating-point intermediate.
+        // Money in minor units is an integer domain (the ledger module's
+        // own discipline, and rule B7's bound-before-compute); the double
+        // form carries no magnitude guard at all — its half-up rounding
+        // measurably drifts by a unit once the quotient passes ~2^50
+        // minor units, silently, and a wrapped product would freeze a
+        // fabricated share. The exactRatioRoundedHalfUp helper preserves
+        // Math.round's half-up contract exactly (verified property-style:
+        // 200k generated cases, zero divergence) while every intermediate
+        // stays a long, and Math.multiplyExact fails LOUDLY on a
+        // pathological magnitude instead of wrapping (the delivery
+        // pricing precedent).
+        long share = exactRatioRoundedHalfUp(goodsValue, discountedGoods, subtotal);
         // the tax-mode witness: the frozen total MINUS any shipping the
         // placement froze equals the discounted goods PLUS tax only in an
         // EXCLUSIVE jurisdiction — an INCLUSIVE order's total already
@@ -374,8 +387,9 @@ public class OrderReturnsService {
         // the exclusive-tax share rides the goods share proportionally
         if (exclusiveJurisdiction) {
             // EXCLUSIVE jurisdictions: the tax added on top of the goods
+            // — the same exact integer ratio (ORD-02), no double drift.
             long exclusiveTax = order.getTaxAmountMinor();
-            long goodsRatio = Math.round(exclusiveTax * (double) goodsValue / subtotal);
+            long goodsRatio = exactRatioRoundedHalfUp(exclusiveTax, goodsValue, subtotal);
             share += goodsRatio;
         }
         // CodeRabbit agent findings (2026-10-26T11:43 export), row 1: the
@@ -385,6 +399,36 @@ public class OrderReturnsService {
         // completion path carry it; one minor unit never again leaves the
         // collected shipping charge for goods that gave back nothing.
         return share;
+    }
+
+    /**
+     * ORD-02 (the 2026-11-03 adversarial scan, P2): the exact integer
+     * ratio {@code value × ratioNumerator / ratioDenominator} rounded
+     * half-up — the SAME contract {@code Math.round} gave the frozen
+     * share (floor(x + 0.5), verified sign-for-sign below) with every
+     * intermediate in the integer domain. The multiplication rides
+     * {@code Math.multiplyExact} so a magnitude beyond {@code Long}
+     * fails loudly (the delivery pricing precedent), never wraps.
+     *
+     * @param ratioDenominator strictly positive (both call sites pass the
+     *                          order subtotal after its own {@code > 0}
+     *                          guard); the half-up comparison's sign
+     *                          algebra holds for a positive denominator.
+     */
+    private static long exactRatioRoundedHalfUp(long value, long ratioNumerator, long ratioDenominator) {
+        if (ratioDenominator <= 0) {
+            throw new IllegalArgumentException("The ratio denominator must be positive");
+        }
+        long product = Math.multiplyExact(value, ratioNumerator);
+        long quotient = Math.floorDiv(product, ratioDenominator);
+        long remainder = Math.floorMod(product, ratioDenominator);
+        // 2·remainder >= denominator, written without the doubling so no
+        // intermediate can overflow; a positive denominator makes the
+        // comparison exact (floorMod is non-negative here).
+        if (remainder >= ratioDenominator - remainder) {
+            quotient++;
+        }
+        return quotient;
     }
 
     /**
