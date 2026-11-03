@@ -15,6 +15,31 @@ tone_instructions: >-
   official Spring/DGS/Flyway documentation; flag undocumented assumptions,
   module boundary violations, and missing test coverage.
 reviews:
+  # The review-shard architecture, stated so compile-level findings can be
+  # judged against the right tree (the 2026-11-03 #806 review's Critical
+  # import-resolution finding was a shard-boundary artifact: the types it
+  # asked to add already exist in the candidate, in the exact package it
+  # named — this is the documented configuration feature for giving the
+  # reviewer repository context, docs.coderabbit.ai/reference/
+  # configuration "reviews.instructions").
+  instructions: |
+    Review-shard architecture of this repository: a large main-targeting
+    candidate PR (currently #787, the commerce campaign integration) is
+    split for review into review-shard PRs of at most 100 files each,
+    each based on the same main commit. The repository tree at a shard
+    PR's head therefore intentionally contains ONLY that shard's slice
+    of the candidate diff — types, modules, and files owned by sibling
+    shards are absent from the shard tree by design and appear in the
+    candidate PR together. When a finding depends on a type or file
+    outside the shard's own changed paths — for example an import that
+    resolves to a module another shard carries — verify it against the
+    candidate PR's tree before flagging it: the candidate's own CI
+    (build, tests, gates) is the compile-level authority for the whole
+    diff. Real defects within the shard's changed paths — logic,
+    contract violations, security, data integrity, documentation
+    contradictions with the code — are exactly what these shard reviews
+    exist to catch; judge them as usual against the official Spring
+    Boot, Maven, DGS, and Saleor documentation.
   profile: chill
   # Findings become REQUEST_CHANGES; once comments are resolved, the latest
   # commit has been reviewed, and no pre-merge checks fail, CodeRabbit
