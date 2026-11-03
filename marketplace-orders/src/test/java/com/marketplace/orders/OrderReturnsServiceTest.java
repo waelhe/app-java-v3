@@ -460,6 +460,7 @@ when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(or
                 OrderReturnLine.of(r.getId(), item, 1)));
         when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
         when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
 
         OrderReturn approved = service.approve(r.getId());
 
