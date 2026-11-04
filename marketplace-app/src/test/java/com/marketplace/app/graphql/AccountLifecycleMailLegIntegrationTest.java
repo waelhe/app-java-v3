@@ -103,7 +103,7 @@ class AccountLifecycleMailLegIntegrationTest {
     private static final Pattern ONE_TIME_TOKEN = Pattern.compile("[A-Za-z0-9_-]{43}");
 
     @BeforeEach
-    void purgeMailboxes() {
+    void purgeMailboxes() throws Exception {
         greenMail.purgeEmailFromAllMailboxes();
     }
 
