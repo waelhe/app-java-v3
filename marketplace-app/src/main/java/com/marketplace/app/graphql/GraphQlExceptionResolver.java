@@ -3,6 +3,7 @@ package com.marketplace.app.graphql;
 import com.marketplace.shared.api.ApiErrorTaxonomy;
 import com.marketplace.shared.api.GlobalExceptionHandler;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.ServiceUnavailableException;
 import com.marketplace.shared.security.CorrelationIdFilter;
 import graphql.GraphQLError;
 import graphql.GraphqlErrorBuilder;
@@ -70,7 +71,8 @@ public class GraphQlExceptionResolver extends DataFetcherExceptionResolverAdapte
      * not-found, validation (argument binding and Bean Validation), domain
      * conflict (including the concurrent-write uniqueness races the shared
      * backstop indexes raise), authentication, authorization, rate limit,
-     * and the masked internal default.
+     * service unavailability (the classified 503 family), and the masked
+     * internal default.
      * Only the designated-safe domain messages pass through; every unknown
      * failure carries the generic internal sentence — never a stack trace,
      * SQL, or provider detail.
@@ -140,6 +142,23 @@ public class GraphQlExceptionResolver extends DataFetcherExceptionResolverAdapte
             // the REST advice — the RL-001 taxonomy with the identical fixed
             // sentence, never the limiter's internal instance state.
             return buildError(env, ErrorType.BAD_REQUEST, ApiErrorTaxonomy.RATE_LIMIT, RATE_LIMIT_MESSAGE);
+        }
+        // ORD-02's residual (the 2026-11-04 scan) — and with it the
+        // pseudonymization-HMAC OFF case (SubjectPseudonymizer.derive): the
+        // house's CLASSIFIED 503 family used to fall through to the masked
+        // INTERNAL envelope here even though the REST advice maps the same
+        // exception to 503 SU-001 through the ApiProblemDetailException
+        // branch (GlobalExceptionHandler.handleApiProblemDetail). The
+        // GraphQL-spec ErrorType vocabulary has no 503 value — INTERNAL_ERROR
+        // is the closest of its fixed five (a server-side condition, never
+        // the client's request) — while the authoritative machine contract
+        // carries the SU-001/availability pair, the same errorCode/category
+        // the REST ProblemDetail body emits. The exception's own message is
+        // a house-authored configuration/status sentence (the same detail
+        // REST passes through), so it stays in the designated-safe set.
+        if (ex instanceof ServiceUnavailableException) {
+            return buildError(env, ErrorType.INTERNAL_ERROR, ApiErrorTaxonomy.SERVICE_UNAVAILABLE,
+                    ex.getMessage());
         }
 
         return buildError(env, ErrorType.INTERNAL_ERROR, ApiErrorTaxonomy.INTERNAL, GENERIC_INTERNAL_MESSAGE);

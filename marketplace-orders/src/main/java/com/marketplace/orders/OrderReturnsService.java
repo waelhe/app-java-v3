@@ -5,6 +5,7 @@ import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.OrderRefundPort;
 import com.marketplace.shared.api.ProductStockPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.ServiceUnavailableException;
 import io.micrometer.observation.annotation.Observed;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -410,16 +411,50 @@ public class OrderReturnsService {
      * {@code Math.multiplyExact} so a magnitude beyond {@code Long}
      * fails loudly (the delivery pricing precedent), never wraps.
      *
+     * <p><b>ORD-02's residual (the 2026-11-04 scan): the loud failure is
+     * now CLASSIFIED, not raw.</b> The overflow fires at a goods value
+     * ≳ 3.04×10⁹ minor (~30.4M major on a 2-decimal currency) — INSIDE
+     * the platform's declared money range (0 .. 100000000 major, the
+     * {@code VoucherWireMoneyConverter}/{@code SearchCriteria} bound) —
+     * and the raw {@code ArithmeticException} was unmapped: REST fell to
+     * the generic 500 fallback and GraphQL masked it as INTERNAL-001.
+     * The delivery pricing precedent classifies the SAME overflow
+     * ({@code DeliveryService.multiplyAndAdd} catches
+     * {@code ArithmeticException} → {@code ServiceUnavailableException}),
+     * and the house REST advice maps that exception to 503 SU-001 — the
+     * capability-is-unavailable-at-this-magnitude family. This helper
+     * answers the same classified exception, naming the amount ceiling,
+     * so both transports carry the machine contract instead of the
+     * masked internal envelope.</p>
+     *
      * @param ratioDenominator strictly positive (both call sites pass the
      *                          order subtotal after its own {@code > 0}
      *                          guard); the half-up comparison's sign
      *                          algebra holds for a positive denominator.
+     * @throws ServiceUnavailableException when the exact product
+     *                          {@code value × ratioNumerator} crosses the
+     *                          signed 64-bit minor-unit domain — the
+     *                          amount ceiling this ratio can compute
      */
     private static long exactRatioRoundedHalfUp(long value, long ratioNumerator, long ratioDenominator) {
         if (ratioDenominator <= 0) {
             throw new IllegalArgumentException("The ratio denominator must be positive");
         }
-        long product = Math.multiplyExact(value, ratioNumerator);
+        final long product;
+        try {
+            product = Math.multiplyExact(value, ratioNumerator);
+        } catch (ArithmeticException ex) {
+            // ORD-02's residual: the classified loud failure — the
+            // delivery pricing precedent's own mapping, with the amount
+            // ceiling named (the 64-bit minor-unit domain and the
+            // platform's declared money range).
+            throw new ServiceUnavailableException(
+                    "The exact refund-ratio arithmetic overflowed the signed 64-bit minor-unit "
+                            + "domain — the goods value " + value
+                            + " exceeds the amount ceiling this order's ratio can compute "
+                            + "(the platform's supported monetary range is 0 .. 100000000 "
+                            + "major units)");
+        }
         long quotient = Math.floorDiv(product, ratioDenominator);
         long remainder = Math.floorMod(product, ratioDenominator);
         // 2·remainder >= denominator, written without the doubling so no
