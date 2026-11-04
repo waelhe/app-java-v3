@@ -61,4 +61,29 @@ public class EmailNotificationService {
                 })
         );
     }
+
+    /**
+     * Sends an email notification to an EXPLICIT address — the recipient
+     * the mail's own semantics name, not the user record's current one.
+     *
+     * <p>B11 (ORD-03 — the 2026-11-03 adversarial review): the
+     * email-change confirmation's redemption right belongs to the NEW
+     * address's mailbox (the pinned Saleor behavior: the change
+     * confirmation mails the new address, so possession of the one-time
+     * token is the proof the new address works — the whole point of the
+     * confirmation). The user-record lookup would resolve the OLD
+     * address, which is why this seam takes the recipient verbatim from
+     * the event's own frozen contract.</p>
+     *
+     * @param to        the recipient address the event's contract names
+     * @param subject   email subject
+     * @param template  Thymeleaf template path
+     * @param variables template model variables
+     */
+    public void sendEmailTo(String to, String subject, String template, Map<String, Object> variables) {
+        emailService.ifPresent(es -> {
+            es.send(to, subject, template, variables);
+            log.info("Email notification sent: to={}, subject={}", to, subject);
+        });
+    }
 }
