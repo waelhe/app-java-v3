@@ -134,11 +134,11 @@ class RateLimiterDeclarationGuardTest {
     private static Set<String> declaredInstanceNames() throws IOException {
         String yml = read(repoRoot().resolve("marketplace-app/src/main/resources/application.yml"));
         Matcher resilience = Pattern.compile("(?m)^resilience4j:\\n").matcher(yml);
-        assertThat(resilience).as("application.yml must carry the resilience4j block").find();
+        assertThat(resilience.find()).as("application.yml must carry the resilience4j block").isTrue();
         String afterResilience = yml.substring(resilience.end());
 
         Matcher ratelimiter = Pattern.compile("(?m)^  ratelimiter:\\n").matcher(afterResilience);
-        assertThat(ratelimiter).as("the resilience4j block must carry the ratelimiter section").find();
+        assertThat(ratelimiter.find()).as("the resilience4j block must carry the ratelimiter section").isTrue();
         String ratelimiterSection = afterResilience.substring(ratelimiter.end());
         Matcher ratelimiterEnd = Pattern.compile("(?m)^ {0,2}\\S").matcher(ratelimiterSection);
         if (ratelimiterEnd.find()) {
@@ -146,7 +146,7 @@ class RateLimiterDeclarationGuardTest {
         }
 
         Matcher instances = Pattern.compile("(?m)^    instances:\\n").matcher(ratelimiterSection);
-        assertThat(instances).as("the ratelimiter section must carry the instances block").find();
+        assertThat(instances.find()).as("the ratelimiter section must carry the instances block").isTrue();
         String instancesSection = ratelimiterSection.substring(instances.end());
         Matcher instancesEnd = Pattern.compile("(?m)^ {0,4}\\S").matcher(instancesSection);
         if (instancesEnd.find()) {
