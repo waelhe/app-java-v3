@@ -310,6 +310,12 @@ public class CollectionWriteService implements CollectionWriteSpi {
             return CollectionMutationResult.failure(List.of(new CollectionMutationError(
                     "id", CollectionMutationErrorCode.NOT_FOUND, "No collection found for the id")));
         }
+        // B6 (CAT-01): serialize the reorder against every concurrent
+        // position writer (the append's own lock — the media registry's
+        // advisory discipline) BEFORE the live membership is read, then
+        // keep every intermediate state unique through the two-phase
+        // rewrite below — the V298 partial unique index is the backstop.
+        collectionProductRepository.lockCollectionPositionAllocation(collectionId.toString());
         List<CollectionProduct> membership = collectionProductRepository
                 .findByCollectionIdOrderByPositionAscIdAsc(collectionId);
         // A move addressing a non-member product answers NOT_FOUND with
@@ -341,6 +347,18 @@ public class CollectionWriteService implements CollectionWriteSpi {
         // current order, then the compacted 1..n re-derivation (the
         // position column's own deterministic law — the assignment
         // registry's reorder precedent).
+        //
+        // The live-position unique index (V298's
+        // uq_collection_products_position_live) makes a DIRECT 1..n
+        // rewrite collide TRANSIENTLY (a row moving to position 1 shares
+        // it with the current holder until that row's own UPDATE
+        // executes — the partial unique index sees the intermediate
+        // state). The two-phase rewrite keeps EVERY intermediate state
+        // unique — the assignment registry's own repair (wave-19 #808):
+        // phase 1 parks the WHOLE membership beyond its current maximum
+        // and flushes (the 1..max range is now empty), then phase 2
+        // writes the final dense order into the empty range — one
+        // transaction, all-or-nothing with the reorder itself.
         List<CollectionProduct> reordered = new ArrayList<>(membership);
         for (Map.Entry<UUID, Integer> move : requested.entrySet()) {
             int index = indexOfProduct(reordered, move.getKey());
@@ -359,13 +377,28 @@ public class CollectionWriteService implements CollectionWriteSpi {
             CollectionProduct moved = reordered.remove(index);
             reordered.add(target, moved);
         }
+        boolean changed = false;
         for (int index = 0; index < reordered.size(); index++) {
-            CollectionProduct member = reordered.get(index);
-            if (member.getPosition() != index + 1) {
-                member.reposition(index + 1);
-                collectionProductRepository.save(member);
+            if (reordered.get(index).getPosition() != index + 1) {
+                changed = true;
+                break;
             }
         }
+        if (!changed) {
+            // The zero-shift idempotent no-op: the resolved order is the
+            // stored order — nothing changes, nothing writes.
+            return CollectionMutationResult.success(toView(addressed.get()));
+        }
+        int park = reordered.stream().mapToInt(CollectionProduct::getPosition).max().orElse(0) + 1;
+        for (CollectionProduct member : reordered) {
+            member.reposition(park++);
+        }
+        collectionProductRepository.saveAll(reordered);
+        collectionProductRepository.flush();
+        for (int index = 0; index < reordered.size(); index++) {
+            reordered.get(index).reposition(index + 1);
+        }
+        collectionProductRepository.saveAll(reordered);
         return CollectionMutationResult.success(toView(addressed.get()));
     }
 
@@ -380,13 +413,23 @@ public class CollectionWriteService implements CollectionWriteSpi {
      * derivation would then mint the LAST live position AGAIN — the same
      * duplicate-position defect the wave-19 review closed for the
      * category registry ({@code CategoryWriteService#nextPosition}) and
-     * the type-attribute assignments — and no unique index guards
-     * (collection_id, position) (only the pair's own partial index), so
-     * the duplicate is silent and the display order turns unstable. The
-     * derivation therefore reads the live MAXIMUM — exactly the shape
-     * this method's own javadoc always claimed.</p>
+     * the type-attribute assignments — so the derivation reads the live
+     * MAXIMUM — exactly the shape this method's own javadoc always
+     * claimed.</p>
+     *
+     * <p>B6 (CAT-01 — the 2026-11-03 adversarial review): the derivation
+     * is a READ-THEN-MINT race — two concurrent appends both read the
+     * same MAX(position) and mint the same next position, silently (no
+     * index guarded the column). The advisory transaction lock acquired
+     * HERE — before the membership is read — serializes every position
+     * writer per collection (the media registry's own allocation lock,
+     * A-17/C.7), and the V298 partial unique index
+     * ({@code uq_collection_products_position_live}) answers any path
+     * that still slips through with the honest constraint failure — the
+     * backstop, never the user-visible answer.</p>
      */
     private void appendMembership(UUID collectionId, List<UUID> productIds) {
+        collectionProductRepository.lockCollectionPositionAllocation(collectionId.toString());
         int next = collectionProductRepository
                 .findByCollectionIdOrderByPositionAscIdAsc(collectionId).stream()
                 .mapToInt(CollectionProduct::getPosition)

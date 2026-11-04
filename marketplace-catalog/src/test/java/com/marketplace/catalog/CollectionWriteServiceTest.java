@@ -532,20 +532,42 @@ class CollectionWriteServiceTest {
                         CollectionProduct.create(collectionId, first, 1),
                         CollectionProduct.create(collectionId, second, 2),
                         CollectionProduct.create(collectionId, third, 3)));
-        when(membershipRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        // B6 (CAT-01): the rewrite mutates the SAME member rows across its
+        // two phases, so the phases are captured AT INVOCATION TIME (a
+        // lazy matcher would see the phase-2 positions on both calls).
+        List<List<UUID>> phaseOrders = new java.util.ArrayList<>();
+        List<List<Integer>> phasePositions = new java.util.ArrayList<>();
+        when(membershipRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<UUID> order = new java.util.ArrayList<>();
+            List<Integer> positions = new java.util.ArrayList<>();
+            for (CollectionProduct member : (Iterable<CollectionProduct>) invocation.getArgument(0)) {
+                order.add(member.getProductId());
+                positions.add(member.getPosition());
+            }
+            phaseOrders.add(order);
+            phasePositions.add(positions);
+            return invocation.getArgument(0);
+        });
 
         CollectionMutationResult result = service.reorderProducts(collectionId,
                 List.of(new CollectionProductMove(third, -2)));
 
         assertThat(result.success()).isTrue();
-        // third moved two positions backward: [third, first, second] — the
-        // compacted 1..n re-derivation (the position column's own law).
-        verify(membershipRepository).save(argThat(member ->
-                member.getProductId().equals(third) && member.getPosition() == 1));
-        verify(membershipRepository).save(argThat(member ->
-                member.getProductId().equals(first) && member.getPosition() == 2));
-        verify(membershipRepository).save(argThat(member ->
-                member.getProductId().equals(second) && member.getPosition() == 3));
+        // third moved two positions backward: [third, first, second] —
+        // the compacted 1..n re-derivation (the position column's own
+        // law). B6 (CAT-01): the rewrite is TWO-PHASE under the V298
+        // live-position unique index — phase 1 parks the WHOLE membership
+        // beyond its current maximum (3 → 4,5,6) and flushes, then phase
+        // 2 writes the final dense order into the emptied 1..max range —
+        // so EVERY intermediate state stays unique under the partial
+        // unique index (the assignment registry's own repair shape).
+        assertThat(phaseOrders).containsExactly(
+                List.of(third, first, second),
+                List.of(third, first, second));
+        assertThat(phasePositions).containsExactly(
+                List.of(4, 5, 6),
+                List.of(1, 2, 3));
+        verify(membershipRepository).flush();
     }
 
     @Test
