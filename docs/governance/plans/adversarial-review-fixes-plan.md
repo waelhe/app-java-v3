@@ -75,7 +75,7 @@
 | TST-04 | صفر اختبارات تزامن لاستهلاك القسائم | **OPEN** | تعديل `VoucherWriteServiceTest` في `361b5cb` كان fixtures للقفل الجديد فقط، لا اختبار سباق | W3-B15 |
 | TST-05 | idempotency (صف 8 في السجل) بلا تنفيذ ولا اختبار؛ `Idempotency-Key` في CORS بلا مستهلك | **OPEN** | grep: الرأس موجود في `SecurityConfig.java` فقط (CORS) — صفر مستهلك | W3-B17 |
 | TST-06 | `orderCancel`/`orderBulkCancel` عبر GraphQL بلا تكامل | **OPEN** | لا IT جديد | W3-B16 |
-| TST-08 | نوافذ `@RateLimiter` معطلة فعلياً في بيئة الاختبار (1s refresh) | **OPEN** | `application-test.yml:193-203+`: `limit-refresh-period: 1s` كما هي | W2-B14 |
+| TST-08 | نوافذ `@RateLimiter` معطلة فعلياً في بيئة الاختبار (1s refresh) | **CLOSED** | → **أُغلق W2-B14** بحارس ساكن بنمط config-that-lies: `RateLimiterDeclarationGuardTest` يمسح كل تعليقات `@RateLimiter(name=…)` عبر أشجار الـreactor الرئيسية ويطابقها مع مفاتيح `resilience4j.ratelimiter.instances` في الـprofile الأساسي — أي اسم غير معرَّف (يسقط صامتاً إلى default: 100/min و5s انتظار — صنف العيب الموثق في تعليقات application.yml نفسها والذي رصدته مراجعة 2026-11-01 حياً في ثلاثة أسماء) يُفشل الحارس بأسمائه. نوافذ 1s في بيئة الاختبار تبقى عمداً (سرعة الجناح) لأن الإثبات السلوكي الصادق مستحيل فيها بحكم التصميم — فالحارس الساكن هو الإغلاق الأمين. **التجربة الموضعية قبل الهبوط: الشجرة الحالية 56 معلَّقاً = 56 معرَّفاً (تطابق تام).** | W2-B14 |
 
 ### P3 (17) + GOV (2)
 
