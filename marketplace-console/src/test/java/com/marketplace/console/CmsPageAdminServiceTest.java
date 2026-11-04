@@ -171,6 +171,9 @@ class CmsPageAdminServiceTest {
      * own AccessDeniedException BEFORE any argument is touched (the
      * programmatic requireAdmin gate leads every leg; a future leg that
      * forgets it fails here on its first null-argument symptom instead).
+     * A primitive parameter cannot carry null — Method.invoke would fail
+     * its unboxing BEFORE the leg's gate could answer — so primitive slots
+     * ride their zero-value default (see {@link #inert(Class)}).
      */
     @Test
     void everyLegIsAdminGated() {
@@ -184,11 +187,55 @@ class CmsPageAdminServiceTest {
             if (args.length > 0) {
                 args[0] = consumer;
             }
+            for (int i = 1; i < args.length; i++) {
+                args[i] = inert(leg.getParameterTypes()[i]);
+            }
             assertThatThrownBy(() -> leg.invoke(service, args))
                     .as("%s.%s must refuse a CONSUMER caller at its gate", "CmsPageAdminService", leg.getName())
                     .isInstanceOf(java.lang.reflect.InvocationTargetException.class)
                     .hasCauseInstanceOf(org.springframework.security.access.AccessDeniedException.class);
         }
+    }
+
+    /**
+     * The reflection harness's inert argument for one parameter slot: a
+     * primitive slot cannot carry null — Method.invoke would fail the
+     * unboxing with IllegalArgumentException BEFORE the leg's gate could
+     * answer — so it rides its zero-value default instead (the CI round on
+     * the B23 sweep: bulkUpdateCustomers' {@code boolean ignoreFailed}).
+     * Every reference slot stays null: a leg that touches its arguments
+     * before the gate still fails on its first null-argument symptom,
+     * exactly as the sweep promises.
+     */
+    private static Object inert(Class<?> type) {
+        if (!type.isPrimitive()) {
+            return null;
+        }
+        if (type == boolean.class) {
+            return false;
+        }
+        if (type == char.class) {
+            return '\0';
+        }
+        if (type == long.class) {
+            return 0L;
+        }
+        if (type == int.class) {
+            return 0;
+        }
+        if (type == short.class) {
+            return (short) 0;
+        }
+        if (type == byte.class) {
+            return (byte) 0;
+        }
+        if (type == float.class) {
+            return 0.0f;
+        }
+        if (type == double.class) {
+            return 0.0d;
+        }
+        throw new IllegalArgumentException("Unknown primitive type: " + type);
     }
 
     // ---------------------------------------------------------------------
