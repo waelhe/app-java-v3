@@ -281,14 +281,30 @@ class UserAccountAdminServiceTest {
         verify(passwordResetService).requestReset(STAFF_EMAIL);
     }
 
+    /**
+     * B23 (IDP-05 — the 2026-11-03 adversarial review, review-pr-806): the
+     * FULL admin sweep — every public leg of UserAccountAdminService, invoked with a
+     * CONSUMER caller and inert arguments, must answer Spring Security's
+     * own AccessDeniedException BEFORE any argument is touched (the
+     * programmatic requireAdmin gate leads every leg; a future leg that
+     * forgets it fails here on its first null-argument symptom instead).
+     */
     @Test
     void everyLegIsAdminGated() {
-        Authentication consumer = new UsernamePasswordAuthenticationToken(CUSTOMER_EMAIL, null,
+        Authentication consumer = new UsernamePasswordAuthenticationToken("m@example.com", null,
                 List.of(new SimpleGrantedAuthority("ROLE_CONSUMER")));
-        assertThatThrownBy(() -> service.createCustomer(consumer,
-                new UserWriteFields(CUSTOMER_EMAIL, null, null, null), false))
-                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
-        assertThatThrownBy(() -> service.deleteCustomer(consumer, CUSTOMER_ID))
-                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        for (java.lang.reflect.Method leg : UserAccountAdminService.class.getDeclaredMethods()) {
+            if (!java.lang.reflect.Modifier.isPublic(leg.getModifiers()) || leg.isSynthetic()) {
+                continue;
+            }
+            Object[] args = new Object[leg.getParameterCount()];
+            if (args.length > 0) {
+                args[0] = consumer;
+            }
+            assertThatThrownBy(() -> leg.invoke(service, args))
+                    .as("%s.%s must refuse a CONSUMER caller at its gate", "UserAccountAdminService", leg.getName())
+                    .isInstanceOf(java.lang.reflect.InvocationTargetException.class)
+                    .hasCauseInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        }
     }
 }

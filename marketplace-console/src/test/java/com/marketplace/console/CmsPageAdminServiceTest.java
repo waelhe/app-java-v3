@@ -164,12 +164,31 @@ class CmsPageAdminServiceTest {
                 .isInstanceOf(ConflictException.class);
     }
 
+    /**
+     * B23 (IDP-05 — the 2026-11-03 adversarial review, review-pr-806): the
+     * FULL admin sweep — every public leg of CmsPageAdminService, invoked with a
+     * CONSUMER caller and inert arguments, must answer Spring Security's
+     * own AccessDeniedException BEFORE any argument is touched (the
+     * programmatic requireAdmin gate leads every leg; a future leg that
+     * forgets it fails here on its first null-argument symptom instead).
+     */
     @Test
     void everyLegIsAdminGated() {
         Authentication consumer = new UsernamePasswordAuthenticationToken("m@example.com", null,
                 List.of(new SimpleGrantedAuthority("ROLE_CONSUMER")));
-        assertThatThrownBy(() -> service.createPage(consumer, "T", "t", null, null, null, null, typeId))
-                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        for (java.lang.reflect.Method leg : CmsPageAdminService.class.getDeclaredMethods()) {
+            if (!java.lang.reflect.Modifier.isPublic(leg.getModifiers()) || leg.isSynthetic()) {
+                continue;
+            }
+            Object[] args = new Object[leg.getParameterCount()];
+            if (args.length > 0) {
+                args[0] = consumer;
+            }
+            assertThatThrownBy(() -> leg.invoke(service, args))
+                    .as("%s.%s must refuse a CONSUMER caller at its gate", "CmsPageAdminService", leg.getName())
+                    .isInstanceOf(java.lang.reflect.InvocationTargetException.class)
+                    .hasCauseInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        }
     }
 
     // ---------------------------------------------------------------------
