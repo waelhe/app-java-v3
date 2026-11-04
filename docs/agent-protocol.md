@@ -264,7 +264,7 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
 | Thing | The measured reality / fix |
 |---|---|
 | JDK | Temurin 25 (25.0.4.1 is the team's recorded build) — download per session; CI uses `setup-java` temurin 25 with maven cache (`ci.yml:62-67`) |
-| Build | `./mvnw` (Maven distribution 3.10.0, wrapper tool 3.3.4); full gate `./mvnw clean verify`; targeted `./mvnw clean verify -pl <module> -am` before any push (AGENTS.md) |
+| Build | `./mvnw` (Maven distribution 3.10.0, wrapper tool 3.3.4); local full/targeted runs are supplementary feedback when available; GitHub Actions on the current PR head are the required remote verification record |
 | No Docker locally | The standing protocol: integration tests judge on CI (`@Testcontainers(disabledWithoutDocker = true)`); the local run covers unit + test-compile |
 | Deploy proof | Railway GraphQL tokens measured dead (403) → the **commit-status channel** is the documented alternative (PROJECT_MAP); python HTTP to Railway is blocked by Cloudflare 1010 → curl with a browser UA (frontend-measured 2026-09-28, applies here) |
 | Secrets | Railway service variables only (45 app variables measured at migration); rotate; never in tracked files — gitleaks (high/critical policy, anchored allowlist) runs first in CI |
