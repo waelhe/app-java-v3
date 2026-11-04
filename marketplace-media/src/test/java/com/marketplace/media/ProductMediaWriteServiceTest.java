@@ -16,6 +16,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.Authentication;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -355,6 +356,41 @@ class ProductMediaWriteServiceTest {
         order.verify(mediaAssetRepository).lockProductPositionAllocation(productId.toString());
         order.verify(mediaAssetRepository).findByProductIdAndStatusOrderByPositionAsc(
                 productId, MediaAssetStatus.UPLOADED);
+    }
+
+    @Test
+    void aReorderOnAProductAtTheCapWorksFully() {
+        // B19 (CAT-07 — the 2026-11-03 adversarial review, review-pr-809):
+        // the cap's other half — a product AT the limit (200 displayable
+        // rows) reorders FULLY. The allocation cap keeps the displayable
+        // set within the bulk-list bound (200), so the absolute-order
+        // whole-set list always fits the boundary — the permanent-lock
+        // path is closed from both ends.
+        when(productLookupPort.getProductInfo(productId))
+                .thenReturn(new ProductLookupPort.ProductInfo(productId, providerId));
+        mockOwner();
+        List<MediaAsset> rows = new ArrayList<>(200);
+        for (int i = 1; i <= 200; i++) {
+            rows.add(uploadedAsset(productId, providerId, i));
+        }
+        when(mediaAssetRepository.findByProductIdAndStatusOrderByPositionAsc(
+                productId, MediaAssetStatus.UPLOADED)).thenReturn(rows);
+        when(mediaAssetRepository.findByProductIdAndStatusOrderByPositionAsc(
+                productId, MediaAssetStatus.PENDING_UPLOAD)).thenReturn(List.of());
+
+        // The caller reverses the whole displayable set — 200 ids, the
+        // exact size the bulk-list bound accepts.
+        List<UUID> reversed = new ArrayList<>(rows.stream().map(MediaAsset::getId).toList());
+        java.util.Collections.reverse(reversed);
+        var result = service.reorderProductMedia(productId, reversed, authentication);
+
+        assertThat(result.errors()).isEmpty();
+        assertThat(result.media()).hasSize(200);
+        assertThat(result.media().get(0).position()).isEqualTo(1);
+        assertThat(result.media().get(199).position()).isEqualTo(200);
+        // The compacted 1..n re-derivation over the GIVEN (reversed) order.
+        assertThat(rows.get(199).getPosition()).isEqualTo(1);
+        assertThat(rows.get(0).getPosition()).isEqualTo(200);
     }
 
     @Test
