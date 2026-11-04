@@ -1136,6 +1136,11 @@ class PlatformGovernanceFilesTest {
                 .contains("Do not remain idle while CI")
                 .contains("weaken branch protection, skip CI")
                 .doesNotContain("`git log`");
+
+        assertThat(protocol)
+                .as("the protocol must not make a local Maven run a pre-push gate")
+                .contains("local full/targeted runs are supplementary feedback")
+                .doesNotContain("before any push (AGENTS.md)");
         int protocolDefectStep = protocol.indexOf("4. **Load the defect-knowledge system**");
         int protocolSkillStep = protocol.indexOf("5. **Activate task-specific skills");
         assertThat(protocolDefectStep).as("protocol must load defect knowledge").isNotNegative();
