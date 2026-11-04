@@ -288,6 +288,11 @@ class UserAccountAdminServiceTest {
      * own AccessDeniedException BEFORE any argument is touched (the
      * programmatic requireAdmin gate leads every leg; a future leg that
      * forgets it fails here on its first null-argument symptom instead).
+     * A primitive parameter cannot carry null — Method.invoke would fail
+     * its unboxing BEFORE the leg's gate could answer — so primitive slots
+     * ride their zero-value default (see {@link #inert(Class)}). The five
+     * staff-notification-recipient legs are UserManagementSpi pass-throughs
+     * whose gate owns elsewhere (see {@link #RECIPIENT_SPI_LEGS}).
      */
     @Test
     void everyLegIsAdminGated() {
@@ -297,14 +302,77 @@ class UserAccountAdminServiceTest {
             if (!java.lang.reflect.Modifier.isPublic(leg.getModifiers()) || leg.isSynthetic()) {
                 continue;
             }
+            // The five staff-notification-recipient legs are UserManagementSpi
+            // pass-throughs: their ADMIN gate lives in the OWNING use case
+            // (StaffNotificationRecipientService), which this unit test mocks —
+            // sweeping them here would prove the mock, not the gate. The
+            // owner's own sweep (StaffNotificationRecipientServiceTest
+            // .everyLegIsAdminGated) refuses a CONSUMER caller on all five
+            // legs against the real gate.
+            if (RECIPIENT_SPI_LEGS.contains(leg.getName())) {
+                continue;
+            }
             Object[] args = new Object[leg.getParameterCount()];
             if (args.length > 0) {
                 args[0] = consumer;
+            }
+            for (int i = 1; i < args.length; i++) {
+                args[i] = inert(leg.getParameterTypes()[i]);
             }
             assertThatThrownBy(() -> leg.invoke(service, args))
                     .as("%s.%s must refuse a CONSUMER caller at its gate", "UserAccountAdminService", leg.getName())
                     .isInstanceOf(java.lang.reflect.InvocationTargetException.class)
                     .hasCauseInstanceOf(org.springframework.security.access.AccessDeniedException.class);
         }
+    }
+
+    /**
+     * The UserManagementSpi pass-through legs whose ADMIN gate owns at
+     * StaffNotificationRecipientService (swept there against the real
+     * gate) — see the B23 sweep's skip comment.
+     */
+    private static final java.util.Set<String> RECIPIENT_SPI_LEGS = java.util.Set.of(
+            "createRecipient", "updateRecipient", "deleteRecipient", "findRecipient",
+            "listRecipients");
+
+    /**
+     * The reflection harness's inert argument for one parameter slot: a
+     * primitive slot cannot carry null — Method.invoke would fail the
+     * unboxing with IllegalArgumentException BEFORE the leg's gate could
+     * answer — so it rides its zero-value default instead (the CI round on
+     * the B23 sweep: bulkUpdateCustomers' {@code boolean ignoreFailed}).
+     * Every reference slot stays null: a leg that touches its arguments
+     * before the gate still fails on its first null-argument symptom,
+     * exactly as the sweep promises.
+     */
+    private static Object inert(Class<?> type) {
+        if (!type.isPrimitive()) {
+            return null;
+        }
+        if (type == boolean.class) {
+            return false;
+        }
+        if (type == char.class) {
+            return '\0';
+        }
+        if (type == long.class) {
+            return 0L;
+        }
+        if (type == int.class) {
+            return 0;
+        }
+        if (type == short.class) {
+            return (short) 0;
+        }
+        if (type == byte.class) {
+            return (byte) 0;
+        }
+        if (type == float.class) {
+            return 0.0f;
+        }
+        if (type == double.class) {
+            return 0.0d;
+        }
+        throw new IllegalArgumentException("Unknown primitive type: " + type);
     }
 }

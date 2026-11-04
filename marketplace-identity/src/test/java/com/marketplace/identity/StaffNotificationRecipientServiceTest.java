@@ -166,9 +166,25 @@ class StaffNotificationRecipientServiceTest {
         assertThat(service.list(admin)).hasSize(1);
     }
 
+    /**
+     * B23 (IDP-05 — the 2026-11-03 adversarial review, review-pr-806): the
+     * registry's OWN admin sweep — every public leg of the OWNING use case
+     * refuses a CONSUMER caller at its gate before any argument is touched.
+     * This is where the UserManagementSpi pass-through legs of
+     * UserAccountAdminService (createRecipient/updateRecipient/
+     * deleteRecipient/findRecipient/listRecipients) are gated and swept —
+     * the pass-through class mocks this service in its own unit test, so
+     * the gate can only be proven here, against the real thing.
+     */
     @Test
     void everyLegIsAdminGated() {
         assertThatThrownBy(() -> service.create(consumer, USER_ID, null, null))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        assertThatThrownBy(() -> service.update(consumer, USER_ID, null, null, null))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        assertThatThrownBy(() -> service.delete(consumer, USER_ID))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        assertThatThrownBy(() -> service.find(consumer, USER_ID))
                 .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
         assertThatThrownBy(() -> service.list(consumer))
                 .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
