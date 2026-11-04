@@ -466,22 +466,27 @@ class ProductWriteServiceTest {
      */
     @Test
     void deleteRefusesWhenAReservationLandsAfterTheInitialUnlockedRead() {
+        // The raced row's id is a plain local: a mock's getId() inside
+        // thenReturn(...) clobbers the pending stubbing (Mockito's
+        // documented unfinished-stubbing race — the same class the
+        // CollectionReadServiceTest round caught).
+        UUID raceId = UUID.randomUUID();
         Product staleRead = mock(Product.class);
-        when(staleRead.getId()).thenReturn(UUID.randomUUID());
+        when(staleRead.getId()).thenReturn(raceId);
         when(staleRead.getProviderId()).thenReturn(ProviderIds.CALLER);
         when(staleRead.getReservedQuantity()).thenReturn(0);
         Product lockedRow = mock(Product.class);
-        when(lockedRow.getId()).thenReturn(staleRead.getId());
+        when(lockedRow.getId()).thenReturn(raceId);
         when(lockedRow.getProviderId()).thenReturn(ProviderIds.CALLER);
         when(lockedRow.getReservedQuantity()).thenReturn(5);
         // The stale unlocked read the pre-lock guard used to consult
         // (kept as the race's own witness — the delete path no longer
         // reads through it).
-        when(productRepository.findById(staleRead.getId())).thenReturn(Optional.of(staleRead));
+        when(productRepository.findById(raceId)).thenReturn(Optional.of(staleRead));
         // The locked read the delete path now rides.
-        when(productRepository.findByIdForUpdate(staleRead.getId())).thenReturn(Optional.of(lockedRow));
+        when(productRepository.findByIdForUpdate(raceId)).thenReturn(Optional.of(lockedRow));
 
-        ProductMutationResult result = service.deleteProduct(staleRead.getId(), caller);
+        ProductMutationResult result = service.deleteProduct(raceId, caller);
 
         assertThat(result.success()).isFalse();
         assertThat(result.errors()).singleElement()
