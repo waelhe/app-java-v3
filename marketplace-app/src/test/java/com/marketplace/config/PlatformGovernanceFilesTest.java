@@ -1148,18 +1148,35 @@ class PlatformGovernanceFilesTest {
         assertThat(protocolDefectStep).as("defect knowledge precedes specialist skills")
                 .isLessThan(protocolSkillStep);
 
+        int protocolDeclarationStep = protocol.indexOf("8. **Emit the §0.2 declaration");
+        int protocolBranchStep = protocol.indexOf("9. **Remote branch and durable edits on GitHub**");
+        assertThat(protocolDeclarationStep).as("protocol must carry the declaration step").isNotNegative();
+        assertThat(protocolBranchStep).as("protocol must carry the remote-branch step").isNotNegative();
+        assertThat(protocolDeclarationStep).as("the declaration precedes the branch creation")
+                .isLessThan(protocolBranchStep);
+
         assertThat(skill)
                 .as("the portable skill must carry the same permanent operating rules")
                 .contains("name: app-java-v3-backend-agent")
                 .contains("https://docs.saleor.io/developer/ai")
                 .contains("Do not idle for pending CI/CodeRabbit")
                 .contains("No unsupported manual implementation");
-        int skillDefectStep = skill.indexOf("4. Defect-knowledge system");
-        int skillPolicyStep = skill.indexOf("5. Read `docs/governance/agent-skills-policy.md`");
+        int skillDefectStep = skill.indexOf("5. Defect-knowledge system");
+        int skillPolicyStep = skill.indexOf("6. Read `docs/governance/agent-skills-policy.md`");
         assertThat(skillDefectStep).as("portable skill must load defect knowledge").isNotNegative();
         assertThat(skillPolicyStep).as("portable skill must load the skill pin policy").isNotNegative();
         assertThat(skillDefectStep).as("defect knowledge precedes specialist skills")
                 .isLessThan(skillPolicyStep);
+
+        // The CodeRabbit 2026-11-04 finding: GitHub reads and the §0.1 loads
+        // precede the §0.2 declaration, and only THEN the remote branch —
+        // no state-changing action runs before the declaration.
+        int skillDeclarationStep = skill.indexOf("9. Emit the AGENTS.md §0.2 declaration");
+        int skillBranchStep = skill.indexOf("10. Create the remote task branch");
+        assertThat(skillDeclarationStep).as("portable skill must carry the declaration step").isNotNegative();
+        assertThat(skillBranchStep).as("portable skill must carry the remote-branch step").isNotNegative();
+        assertThat(skillDeclarationStep).as("the skill's declaration precedes its branch creation")
+                .isLessThan(skillBranchStep);
 
         assertThat(methodology)
                 .as("the master methodology must govern every technology with version-matched evidence")
@@ -1177,7 +1194,16 @@ class PlatformGovernanceFilesTest {
         String rewriteWorkflow = read(".github", "workflows", "openrewrite-catalog.yml");
         assertThat(rewriteWorkflow)
                 .as("all OpenRewrite Maven invocations must use the pinned repository wrapper")
-                .contains("./mvnw --settings")
-                .doesNotContain("\n          mvn --settings");
+                .contains("./mvnw --settings");
+        // The CodeRabbit 2026-11-04 nitpick: the literal exclusion caught one
+        // exact invocation shape only. A workflow-level pattern rejects EVERY
+        // direct runner-Maven call (line-start mvn, YAML list items, inline
+        // run: forms) while never matching ./mvnw — the '.' prefix and the
+        // \b after mvn both exclude the wrapper.
+        assertThat(java.util.regex.Pattern.compile("(?m)^\\s*(?:-\\s*)?(?:run:\\s*)?mvn\\b")
+                .matcher(rewriteWorkflow)
+                .find())
+                .as("no OpenRewrite workflow step may invoke runner Maven directly")
+                .isFalse();
     }
 }

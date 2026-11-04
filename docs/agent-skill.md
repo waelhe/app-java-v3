@@ -54,17 +54,20 @@ this skill is patched to match.
 ## 1. Session bootstrap (in order, every session)
 
 1. Read current repository state and the default-branch SHA through
-   GitHub; create a remote task branch from that exact SHA. A local clone
-   is optional supplementary tooling, never the primary execution surface.
-2. Read `AGENTS.md` — §0 is ENFORCED: the mandatory load order
+   GitHub. A local clone is optional supplementary tooling, never the
+   primary execution surface.
+2. Check in-flight work through GitHub, including all open PRs/issues
+   and recent commits. Open PRs are forward-contract risk (OpenAPI changes
+   ripple to waelhe/web-marketplace).
+3. Read `AGENTS.md` — §0 is ENFORCED: the mandatory load order
    (SYSTEM.md → PROJECT_MAP.md → the task's governing file) and the
    five-field declaration before any mutating action.
-3. Read `docs/agent-protocol.md` (the full method), then the root
+4. Read `docs/agent-protocol.md` (the full method), then the root
    family it binds: `SYSTEM.md` (mechanism, facts with file:line
    evidence), `PROJECT_MAP.md` (state — newest wave sections first),
    `docs/METHODOLOGY.md` (the master 6-stage method),
    `CONTRIBUTING.md` (channels, contract rules, secrets policy).
-4. Defect-knowledge system (`docs/governance/defect-knowledge/` —
+5. Defect-knowledge system (`docs/governance/defect-knowledge/` —
    protocol §9's regression list is its quick view; protocol §3's
    step 4 is the binding ritual step this item mirrors): before
    editing, load `change-protocol.md` and apply the pattern families
@@ -74,7 +77,7 @@ this skill is patched to match.
    pass in `review-protocol.md`; when a guard fails, `enforcement-map.md`
    states the rule → enforcement binding. The system is permanent; the
    quick view only points into it.
-5. Read `docs/governance/agent-skills-policy.md` and
+6. Read `docs/governance/agent-skills-policy.md` and
    `docs/governance/plans/agent-skills-pins.json`; load only relevant,
    pinned `.agents/skills/<name>/SKILL.md` files and their triggered
    rules. Skills are references, not authorities; never run an unpinned
@@ -84,9 +87,6 @@ this skill is patched to match.
    the repository's pinned Saleor release, and load the adopted
    `saleor-core` skill when its covered behavior applies. Other Saleor
    skills require an actual need and reviewed adoption under the policy.
-6. Check in-flight work through GitHub, including all open PRs/issues
-   and recent commits. Open PRs are forward-contract risk (OpenAPI changes
-   ripple to waelhe/web-marketplace).
 7. Local JDK/Maven execution is optional supplementary feedback; do not
    block GitHub-first work on provisioning a local toolchain. Remote
    GitHub Actions are the required verification record. Docker-dependent
@@ -96,6 +96,12 @@ this skill is patched to match.
    AND failure shapes of the target endpoints. Every fact carries its
    measurement date.
 
+9. Emit the AGENTS.md §0.2 declaration before any mutating action
+   (`[الملف الحاكم]` / `[النواة المعمارية]` / `[البند من المصفوفة §14.2]` /
+   `[أثر على الحدود]` / `[دين]`) — the twin §3 step 8, verbatim in force.
+10. Create the remote task branch from the exact observed base SHA
+    and make durable edits/commits on GitHub; open a PR for review. Do
+    not push directly to `main` (the twin §3 step 9).
 ## 2. The seven operating rules (condensed — full text in the twin §4 and §12)
 
 1. Definition before building — the governing file + SYSTEM.md §14.2

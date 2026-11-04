@@ -97,10 +97,16 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
    open PRs, and workflow state through the connected GitHub interface.
    Never assume a stale local clone is current. If GitHub access is unavailable,
    report the blocker rather than substituting unverified local state.
-2. **Remote branch first**: create a task branch from the exact observed base
-   SHA and make durable edits/commits on GitHub; open a PR for review. Do not
-   push directly to `main`. A local clone/toolchain is optional supplementary
-   support, not the primary execution surface or source of truth.
+2. **Read the in-flight work**: recent commits through GitHub + open PRs and
+   issues via the API, **with full pagination** — a capped page silently
+   truncates the list (measured 2026-09-28: `per_page=10` showed 10 of
+   28 open PRs — the retro review campaign `review/retro-*` #431-#457
+   plus fix branches). Open PRs are forward-contract risk: a merged wave
+   can change the OpenAPI the frontend consumes. Note that
+   `PROJECT_MAP.md` can LAG behind merged waves (measured 2026-09-28:
+   its newest section recorded merge #383 while main sat at #458 — the
+   repo's own recorded truth-sync-gap pattern) — the recent commit history + PR
+   list are the fresher truth; the map is a dated snapshot.
 3. **Load the root family in the AGENTS.md §0.1 mandatory order**:
    `SYSTEM.md` (the mechanism, §1-§14) → `PROJECT_MAP.md` (the state:
    what is merged, open, pending — read the newest wave sections first)
@@ -135,31 +141,25 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
    task requires them and their adoption is approved and pinned through
    the repository policy. For all other technologies, discover and
    load only relevant, properly versioned skills and official sources.
-6. **Read the in-flight work**: recent commits through GitHub + open PRs and
-   issues via the API, **with full pagination** — a capped page silently
-   truncates the list (measured 2026-09-28: `per_page=10` showed 10 of
-   28 open PRs — the retro review campaign `review/retro-*` #431-#457
-   plus fix branches). Open PRs are forward-contract risk: a merged wave
-   can change the OpenAPI the frontend consumes. Note that
-   `PROJECT_MAP.md` can LAG behind merged waves (measured 2026-09-28:
-   its newest section recorded merge #383 while main sat at #458 — the
-   repo's own recorded truth-sync-gap pattern) — the recent commit history + PR
-   list are the fresher truth; the map is a dated snapshot.
-7. **Optional local toolchain**: when a supported local environment is
+6. **Optional local toolchain**: when a supported local environment is
    available, use the pinned Temurin JDK/Maven wrapper for supplementary
    feedback. Do not block GitHub-first execution on creating a local
    environment; GitHub Actions remain the required remote verification
    record. Docker-dependent integration tests are judged by the configured
    remote workflow when no supported local Docker environment exists.
-8. **Measure before building** (METHODOLOGY.md Stage 2 is not optional):
+7. **Measure before building** (METHODOLOGY.md Stage 2 is not optional):
    live `/v3/api-docs` on staging, the target endpoints' success AND
    failure shapes, the repo's own evidence at `ملف:سطر`. Every parity
    claim carries its measurement date.
-9. **Emit the §0.2 declaration before any mutating action** (AGENTS.md —
+8. **Emit the §0.2 declaration before any mutating action** (AGENTS.md —
    enforced): `[الملف الحاكم]` (governing file) / `[النواة المعمارية]`
    (architecture core) / `[البند من المصفوفة §14.2]` / `[أثر على
    الحدود]` (boundary impact) / `[دين]` (debt). An action without the
    declaration is stopped before it executes.
+9. **Remote branch and durable edits on GitHub**: create a task branch from the exact observed base
+   SHA and make durable edits/commits on GitHub; open a PR for review. Do not
+   push directly to `main`. A local clone/toolchain is optional supplementary
+   support, not the primary execution surface or source of truth.
 10. **The word gates stand**: gates B and C (AGENTS.md §0.4) open only on
    the owner's explicit word; no assumed answers.
 
