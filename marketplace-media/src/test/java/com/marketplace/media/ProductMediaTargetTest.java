@@ -6,6 +6,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ProductLookupPort;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ProviderSummary;
@@ -66,7 +67,7 @@ class ProductMediaTargetTest {
     void setUp() {
         MediaProperties properties = new MediaProperties(
                 new MediaProperties.Storage("", "auto", "", "", "", false),
-                new MediaProperties.Limits(10_485_760L, 10,
+                new MediaProperties.Limits(10_485_760L, 10, 200,
                         Set.of("image/jpeg", "image/png", "image/webp", "image/gif"),
                         Duration.ofMinutes(15), 640, 25_000_000L));
         service = new MediaService(repository, storageProvider, properties,
@@ -83,6 +84,28 @@ class ProductMediaTargetTest {
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
         when(providerLookupPort.findByUserId(providerId))
                 .thenReturn(Optional.of(new ProviderSummary(providerId, "P", "VERIFIED", ownerId)));
+    }
+
+    @Test
+    void requestProductUploadRefusesTheTwoHundredAndFirstAllocation() {
+        // B19 (CAT-07 — the 2026-11-03 adversarial review, review-pr-809):
+        // the per-product media cap at the allocation root. The reorder's
+        // absolute-order semantics require the WHOLE displayable set in one
+        // GraphQL list, and the bulk-list bound (default 200) refuses a
+        // longer one — without the cap, a product above the bound could
+        // NEVER be reordered again. The 201st allocation is the classified
+        // refusal, checked under the advisory lock (the
+        // maxAssetsPerReview posture verbatim).
+        mockOwner();
+        when(repository.countByProductId(productId)).thenReturn(200L);
+
+        assertThatThrownBy(() ->
+                service.requestProductUpload(productId, "image/jpeg", 1024L, authentication))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("A product carries at most 200 media assets")
+                .hasMessageContaining("including pending uploads");
+        verify(repository).lockProductPositionAllocation(productId.toString());
+        verify(repository, never()).save(any(MediaAsset.class));
     }
 
     @Test

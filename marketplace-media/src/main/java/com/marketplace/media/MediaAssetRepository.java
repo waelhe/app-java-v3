@@ -107,4 +107,14 @@ public interface MediaAssetRepository extends JpaRepository<MediaAsset, UUID> {
 
     /** A-17 (C.7): the owner-gated product read — UPLOADED assets in display order. */
     List<MediaAsset> findByProductIdAndStatusOrderByPositionAsc(UUID productId, MediaAssetStatus status);
+
+    /**
+     * B19 (CAT-07 — the 2026-11-03 adversarial review, review-pr-809): the
+     * product twin of {@code countByListingId} — EVERY asset row the product
+     * carries (PENDING uploads included, the {@code maxAssetsPerReview}
+     * posture), read under the product's own advisory allocation lock so the
+     * per-product cap holds under concurrent requests. Deleted rows are hard
+     * deletes — they free their slots.
+     */
+    long countByProductId(UUID productId);
 }
