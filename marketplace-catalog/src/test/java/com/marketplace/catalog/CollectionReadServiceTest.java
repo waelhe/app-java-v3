@@ -279,11 +279,17 @@ class CollectionReadServiceTest {
         // The joined page the bounded SQL answers — (position, product)
         // rows already in the membership's own (position, id) order (the
         // ORDER BY owns the ordering now; the in-memory sort is gone).
+        // The mocked member products are built BEFORE the stubbing: a mock
+        // created (and stubbed) inside thenReturn(...) clobbers the outer
+        // when() — Mockito's documented unfinished-stubbing race, the exact
+        // failure the CI round caught here.
+        Product rowA = activeProduct(productIdA);
+        Product rowB = activeProduct(productIdB);
         when(membershipRepository.findFirstMembershipProductRows(
                 eq(collectionId), eq(true), any(Pageable.class)))
                 .thenReturn(joinedPage(
-                        row(1, activeProduct(productIdA)),
-                        row(2, activeProduct(productIdB))));
+                        row(1, rowA),
+                        row(2, rowB)));
         when(membershipRepository.countVisibleMembershipProducts(collectionId, true)).thenReturn(2L);
 
         CollectionProductsPage page = service.scrollCollectionProducts(
@@ -311,9 +317,10 @@ class CollectionReadServiceTest {
         // — the joined publication law filters the draft member inside
         // the SAME statement, so a run of draft members can never shrink
         // a public caller's page (the page math stays honest).
+        Product theActiveMember = activeProduct(activeId);
         when(membershipRepository.findFirstMembershipProductRows(
                 eq(collectionId), eq(false), any(Pageable.class)))
-                .thenReturn(joinedPage(row(1, activeProduct(activeId))));
+                .thenReturn(joinedPage(row(1, theActiveMember)));
         when(membershipRepository.countVisibleMembershipProducts(collectionId, false)).thenReturn(1L);
 
         CollectionProductsPage page = service.scrollCollectionProducts(
@@ -366,9 +373,10 @@ class CollectionReadServiceTest {
     void theAdminCallersMemberProductsScrollCarriesTheDraftProductsToo() {
         UUID collectionId = UUID.randomUUID();
         UUID draftId = UUID.randomUUID();
+        Product theDraftMember = draftProduct(draftId);
         when(membershipRepository.findFirstMembershipProductRows(
                 eq(collectionId), eq(true), any(Pageable.class)))
-                .thenReturn(joinedPage(row(1, draftProduct(draftId))));
+                .thenReturn(joinedPage(row(1, theDraftMember)));
         when(membershipRepository.countVisibleMembershipProducts(collectionId, true)).thenReturn(1L);
 
         CollectionProductsPage page = service.scrollCollectionProducts(
@@ -386,9 +394,10 @@ class CollectionReadServiceTest {
         UUID productIdB = UUID.randomUUID();
         KeysetScrollPosition afterFirst = ScrollPosition.forward(Map.of(
                 "position", 1, "id", productIdA));
+        Product rowB = activeProduct(productIdB);
         when(membershipRepository.findNextMembershipProductRows(
                 eq(collectionId), eq(true), eq(1), eq(productIdA), any(Pageable.class)))
-                .thenReturn(joinedPage(row(2, activeProduct(productIdB))));
+                .thenReturn(joinedPage(row(2, rowB)));
         when(membershipRepository.countVisibleMembershipProducts(collectionId, true)).thenReturn(2L);
 
         CollectionProductsPage page = service.scrollCollectionProducts(
@@ -448,9 +457,10 @@ class CollectionReadServiceTest {
     @Test
     void anUnlimitedRequestAnswersTheBoundedDefaultPageNeverTheWholeMembership() {
         UUID collectionId = UUID.randomUUID();
+        Product theMember = activeProduct(UUID.randomUUID());
         when(membershipRepository.findFirstMembershipProductRows(
                 eq(collectionId), eq(true), any(Pageable.class)))
-                .thenReturn(joinedPage(row(1, activeProduct(UUID.randomUUID()))));
+                .thenReturn(joinedPage(row(1, theMember)));
         when(membershipRepository.countVisibleMembershipProducts(collectionId, true)).thenReturn(500L);
 
         CollectionProductsPage page = service.scrollCollectionProducts(
