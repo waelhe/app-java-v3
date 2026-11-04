@@ -251,9 +251,11 @@ class VoucherMutationDataFetcherDgsTest {
 
     /**
      * The happy create through the real wiring: the input binds by name
-     * (the enum included), the command reaches the owner's seam, and the
-     * payload serializes the empty error list with the created
-     * projection's typed global ID.
+     * (the enum included), the money pair converts at the boundary onto
+     * the owner's exact integers (500.00 SAR major = 50000 minor;
+     * 10.00 minAmountSpent major = 1000 minor — IDP-01's pinned
+     * PositiveDecimal semantics), and the payload serializes the empty
+     * error list with the created projection's typed global ID.
      */
     @Test
     void voucherCreateExecutesTheOwnerAndSerializesTheSaleorPayload() {
@@ -265,7 +267,7 @@ class VoucherMutationDataFetcherDgsTest {
         Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
                 mutation { voucherCreate(input: {
                     name: "Policy", code: "fresh-code", discountValueType: FIXED,
-                    discountValue: 500, currency: "SAR", minSpend: 1000,
+                    discountValue: 500.00, currency: "SAR", minAmountSpent: 10.00,
                     startDate: "2026-11-01T00:00:00Z", endDate: "2026-12-01T00:00:00Z",
                     usageLimit: 10, applyOncePerCustomer: false
                 }) {
@@ -279,7 +281,7 @@ class VoucherMutationDataFetcherDgsTest {
                 "Policy".equals(command.name())
                         && "fresh-code".equals(command.code())
                         && "FIXED".equals(command.discountValueType())
-                        && command.discountValue() == 500L
+                        && command.discountValue() == 50000L
                         && "SAR".equals(command.currency())
                         && command.minSpend() == 1000L
                         && command.usageLimit() == 10L));
@@ -295,8 +297,218 @@ class VoucherMutationDataFetcherDgsTest {
     }
 
     /**
+     * The percentage leg of the money boundary: {@code 7.5} percentage
+     * points — the pinned Decimal wire value — lands on the owner's
+     * 750 basis points (IDP-01's measured coercion-leg fix: this exact
+     * value could not ride the Int wire at all).
+     */
+    @Test
+    void voucherCreateConvertsPercentagePointsOntoBasisPoints() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        when(voucherWriteSpi.createVoucher(any())).thenReturn(
+                VoucherMutationResult.success(voucherView(UUID.randomUUID(), "PCT-CODE")));
+
+        dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { voucherCreate(input: {
+                    code: "pct-code", discountValueType: PERCENTAGE,
+                    discountValue: 7.5, currency: "SAR"
+                }) {
+                    errors { field code }
+                    voucher { id }
+                } }
+                """, "data.voucherCreate");
+
+        verify(voucherWriteSpi).createVoucher(argThat(command ->
+                "PERCENTAGE".equals(command.discountValueType())
+                        && command.discountValue() == 750L
+                        && command.minSpend() == null));
+    }
+
+    /**
+     * The integer-literal leg: {@code 500} (an IntValue — the pinned
+     * scalar's parse_literal accepts exactly IntValue | FloatValue)
+     * still rides the wire and converts with the same major-unit
+     * semantics.
+     */
+    @Test
+    void voucherCreateAcceptsTheIntegerLiteralOnTheDecimalWire() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        when(voucherWriteSpi.createVoucher(any())).thenReturn(
+                VoucherMutationResult.success(voucherView(UUID.randomUUID(), "INT-CODE")));
+
+        dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { voucherCreate(input: {
+                    code: "int-code", discountValueType: FIXED,
+                    discountValue: 100, currency: "USD"
+                }) {
+                    errors { field code }
+                    voucher { id }
+                } }
+                """, "data.voucherCreate");
+
+        verify(voucherWriteSpi).createVoucher(argThat(command ->
+                command.discountValue() == 10000L && "USD".equals(command.currency())));
+    }
+
+    /**
+     * A percentage finer than one basis point ({@code 7.555}) answers
+     * the classified INVALID payload error and never reaches the owner
+     * — the internal integer cannot host it, and the honest answer is
+     * the error, not the rounding.
+     */
+    @Test
+    void voucherCreateRejectsSubBasisPointPercentageWithTheClassifiedError() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { voucherCreate(input: {
+                    code: "fine-code", discountValueType: PERCENTAGE,
+                    discountValue: 7.555, currency: "SAR"
+                }) {
+                    errors { field code }
+                    voucher { id }
+                } }
+                """, "data.voucherCreate");
+
+        assertThat(payload.get("voucher")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> errors = (List<Map<String, Object>>) payload.get("errors");
+        assertThat(errors).hasSize(1);
+        assertThat(errors.get(0).get("field")).isEqualTo("discountValue");
+        assertThat(errors.get(0).get("code")).isEqualTo("INVALID");
+        org.mockito.Mockito.verifyNoInteractions(voucherWriteSpi);
+    }
+
+    /**
+     * A fixed amount finer than the currency's own minor digits (three
+     * decimals on a two-decimal currency) answers the classified
+     * INVALID — currency-exact conversion, never silent rounding.
+     */
+    @Test
+    void voucherCreateRejectsScaleBeyondTheCurrencysOwnExponent() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { voucherCreate(input: {
+                    code: "scale-code", discountValueType: FIXED,
+                    discountValue: 10.505, currency: "SAR", minAmountSpent: 50.25
+                }) {
+                    errors { field code }
+                    voucher { id }
+                } }
+                """, "data.voucherCreate");
+
+        assertThat(payload.get("voucher")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> errors = (List<Map<String, Object>>) payload.get("errors");
+        assertThat(errors).hasSize(1);
+        assertThat(errors.get(0).get("field")).isEqualTo("discountValue");
+        assertThat(errors.get(0).get("code")).isEqualTo("INVALID");
+        org.mockito.Mockito.verifyNoInteractions(voucherWriteSpi);
+    }
+
+    /**
+     * The minAmountSpent leg: {@code 50.25} major units land on the
+     * owner's 5025 minor units.
+     */
+    @Test
+    void voucherCreateConvertsMinAmountSpentOntoMinorUnits() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        when(voucherWriteSpi.createVoucher(any())).thenReturn(
+                VoucherMutationResult.success(voucherView(UUID.randomUUID(), "MIN-CODE")));
+
+        dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { voucherCreate(input: {
+                    code: "min-code", discountValueType: FIXED,
+                    discountValue: 25.50, currency: "USD", minAmountSpent: 50.25
+                }) {
+                    errors { field code }
+                    voucher { id }
+                } }
+                """, "data.voucherCreate");
+
+        verify(voucherWriteSpi).createVoucher(argThat(command ->
+                command.discountValue() == 2550L && command.minSpend() == 5025L));
+    }
+
+    /**
+     * A money value without its unit discriminator answers the
+     * classified INVALID — the value's semantics cannot be known, and
+     * guessing would fake them.
+     */
+    @Test
+    void voucherCreateRejectsAValueWithoutItsTypeDiscriminator() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { voucherCreate(input: {
+                    code: "no-type-code", discountValue: 10.00, currency: "SAR"
+                }) {
+                    errors { field code }
+                    voucher { id }
+                } }
+                """, "data.voucherCreate");
+
+        assertThat(payload.get("voucher")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> errors = (List<Map<String, Object>>) payload.get("errors");
+        assertThat(errors.get(0).get("field")).isEqualTo("discountValue");
+        assertThat(errors.get(0).get("code")).isEqualTo("INVALID");
+        org.mockito.Mockito.verifyNoInteractions(voucherWriteSpi);
+    }
+
+    /**
+     * A percentage above the pinned internal ceiling (100.00% = 10000
+     * basis points) answers the classified INVALID at the boundary.
+     */
+    @Test
+    void voucherCreateRejectsAPercentageAboveTheCeiling() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { voucherCreate(input: {
+                    code: "over-code", discountValueType: PERCENTAGE,
+                    discountValue: 100.01, currency: "SAR"
+                }) {
+                    errors { field code }
+                    voucher { id }
+                } }
+                """, "data.voucherCreate");
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> errors = (List<Map<String, Object>>) payload.get("errors");
+        assertThat(errors.get(0).get("field")).isEqualTo("discountValue");
+        assertThat(errors.get(0).get("code")).isEqualTo("INVALID");
+        org.mockito.Mockito.verifyNoInteractions(voucherWriteSpi);
+    }
+
+    /**
+     * A negative value cannot ride the PositiveDecimal wire at all —
+     * the scalar's own pinned coercion (nonnegative only) rejects the
+     * request before any domain code runs.
+     */
+    @Test
+    void voucherCreateRejectsANegativeValueAtScalarCoercion() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { voucherCreate(input: {
+                    code: "neg-code", discountValueType: FIXED,
+                    discountValue: -1.00, currency: "SAR"
+                }) {
+                    errors { field code }
+                    voucher { id }
+                } }
+                """, "$"))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class);
+        org.mockito.Mockito.verifyNoInteractions(voucherWriteSpi);
+    }
+
+    /**
      * The domain validation outcome rides the payload's own errors field
-     * — the registered "Mutation payload errors" ADAPT divergence.
+     * — the registered "Mutation payload errors" ADAPT divergence (the
+     * boundary conversion succeeds first: 500 on the FIXED decimal wire
+     * is 50000 minor, then the owner answers the domain error).
      */
     @Test
     void voucherCreateAnswersTheDomainErrorsInThePayload() {

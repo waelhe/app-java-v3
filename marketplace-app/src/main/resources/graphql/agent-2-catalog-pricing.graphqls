@@ -8,10 +8,18 @@
 # 5783276) for the arguments the platform's house no-new-scalar SDL can
 # declare. Saleor-only directives (@doc/@webhookEventsInfo) and fields
 # whose scalar owners do not exist on this surface (Upload, JSONString,
-# JSON, PositiveDecimal, DateTime) stay undeclared until an owning
-# capability exists — the same bounded-closure discipline the read
-# roots' SDL established; every declared-but-unowned ARGUMENT answers
-# the explicit classified error when sent, never a silent no-op.
+# JSON, DateTime) stay undeclared until an owning capability exists —
+# the same bounded-closure discipline the read roots' SDL established;
+# every declared-but-unowned ARGUMENT answers the explicit classified
+# error when sent, never a silent no-op.
+#
+# PositiveDecimal is the ONE declared custom money scalar: the voucher
+# write surface below (VoucherInput.discountValue/minAmountSpent) is
+# its owning capability — the divergence ledger's "Decimal /
+# PositiveDecimal money" row (the pinned scalars.py semantics:
+# nonnegative Decimal riding graphene.Float's numeric wire, parsed
+# through str() so typed decimal places survive; PositiveDecimalScalar
+# mirrors the contract exactly).
 #
 # Bounded executable slices (this packet):
 #   categoryCreate / categoryUpdate / categoryDelete /
@@ -617,12 +625,29 @@ extend type Mutation {
 # (name, code, startDate, endDate, discountValueType, usageLimit,
 # applyOncePerCustomer — all executed over the vouchers row) PLUS the
 # platform-extension discount facts the row's own NOT NULL policy
-# requires and the Saleor closure cannot declare on this no-new-scalar
-# surface (discountValue, currency, minSpend) — the "platform-only
+# requires and the Saleor VoucherInput closure does not declare
+# (discountValue, currency, minAmountSpent) — the "platform-only
 # fields as extensions" policy the Category wire type's own
 # nameAr/position extension fields established. Temporal fields bind as
 # ISO-8601 strings — the surface's own documented no-new-scalar
 # decision (dates render as ISO-8601 strings on the read side).
+#
+# THE MONEY CONTRACT (IDP-01 root fix, the ledger's "Decimal /
+# PositiveDecimal money" row): the two money fields carry the pinned
+# VoucherChannelListingAddInput semantics — Saleor's own carrier of
+# voucher money writes — through the pinned PositiveDecimal scalar:
+#   discountValue FIXED: MAJOR currency units (100 = 100.00);
+#   discountValue PERCENTAGE: percentage points (7.5 = 7.5% = 750 bps
+#     internally; precision beyond one basis point is a classified
+#     INVALID — the internal integer cannot host it);
+#   minAmountSpent: MAJOR units of the voucher's own currency — the
+#     pinned write-path spelling (the pinned read side renders
+#     minSpent: Money; the earlier minSpend: Int spelling matched
+#     neither — U4 closed).
+# The boundary converts to the platform's exact minor-unit/basis-point
+# longs with the currency's own ISO-4217 exponent (see
+# VoucherWireMoneyConverter): every rejected conversion answers the
+# classified DiscountError payload error, never a silent clamp.
 #
 # Unowned Saleor members stay undeclared (recorded divergences): the
 # voucher-type discrimination (VoucherTypeEnum — no column), the
@@ -631,6 +656,8 @@ extend type Mutation {
 # (no owner), countries (no shipping owner), applyOncePerOrder,
 # onlyForStaff, singleUse.
 # =====================================================================
+scalar PositiveDecimal
+
 input VoucherInput {
     """Voucher name."""
     name: String
@@ -654,17 +681,24 @@ input VoucherInput {
     applyOncePerCustomer: Boolean
 
     """
-    PLATFORM EXTENSION (the row's NOT NULL discount policy — no Saleor
-    carrier in the declarable closure): PERCENTAGE vouchers carry
-    1..10000 basis points; FIXED vouchers carry the minor amount.
+    PLATFORM EXTENSION (the row's NOT NULL discount policy — Saleor's
+    own money-write carrier, the pinned VoucherChannelListingAddInput,
+    declares this same field): the voucher's value in MAJOR currency
+    units for FIXED (100 = 100.00) or percentage points for PERCENTAGE
+    (7.5 = 7.5%).
     """
-    discountValue: Int
+    discountValue: PositiveDecimal
 
     """PLATFORM EXTENSION: the row's ISO-4217 currency denomination."""
     currency: String
 
-    """PLATFORM EXTENSION: the minimum spend in minor units (>= 0; omitted defaults to 0)."""
-    minSpend: Int
+    """
+    PLATFORM EXTENSION (the pinned write-path spelling — Saleor's
+    VoucherChannelListingAddInput.minAmountSpent): the minimum spend in
+    MAJOR units of the voucher's currency (>= 0; omitted keeps the
+    row's existing value / defaults to 0 on create).
+    """
+    minAmountSpent: PositiveDecimal
 }
 
 type VoucherCreate {

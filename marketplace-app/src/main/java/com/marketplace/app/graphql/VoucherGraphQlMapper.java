@@ -25,13 +25,14 @@ import org.springframework.stereotype.Component;
  * FIXED vocabulary rendered verbatim), {@code currency} (the policy
  * row's own ISO-4217 denomination) and the window instants rendered as
  * ISO-8601 strings (the house no-new-scalar decision — Saleor's
- * DateTime scalar divergence row). Unowned Saleor fields — the
+ * DateTime scalar divergence row). Unowned Saleor read fields — the
  * discountValue/minSpent money surfaces (the frozen money contract
- * forbids binary float for authoritative amounts), the voucher-type
- * discrimination, the codes/single-use feature-preview model, the
- * catalogue scoping, channel listings, the metadata family and
- * translations — stay undeclared until an owning capability exists:
- * never faked.</p>
+ * forbids binary float for authoritative amounts; the WRITE surface
+ * carries them through the pinned PositiveDecimal scalar instead — see
+ * VoucherWireMoneyConverter), the voucher-type discrimination, the
+ * codes/single-use feature-preview model, the catalogue scoping,
+ * channel listings, the metadata family and translations — stay
+ * undeclared until an owning capability exists: never faked.</p>
  */
 @Component
 public class VoucherGraphQlMapper {

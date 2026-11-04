@@ -898,8 +898,8 @@ class PromotionVoucherGraphQlIntegrationTest {
         String emittedId = adminTester.document("""
                         mutation { voucherCreate(input: {
                             name: "P3 Created Policy", code: "p3-created-code",
-                            discountValueType: PERCENTAGE, discountValue: 750,
-                            currency: "SAR", minSpend: 5000,
+                            discountValueType: PERCENTAGE, discountValue: 7.5,
+                            currency: "SAR", minAmountSpent: 50.00,
                             startDate: "2026-11-01T00:00:00Z", endDate: "2026-12-01T00:00:00Z",
                             usageLimit: 9, applyOncePerCustomer: true
                         }) {
