@@ -1,5 +1,6 @@
 package test.config;
 
+import com.marketplace.app.graphql.PositiveDecimalScalar;
 import com.marketplace.app.graphql.UuidScalar;
 import graphql.schema.GraphQLScalarType;
 import com.marketplace.shared.config.MarketplaceProperties;
@@ -69,6 +70,25 @@ public class ModuleTestConfig {
         return wiringBuilder -> wiringBuilder.scalar(GraphQLScalarType.newScalar()
                 .name("UUID")
                 .coercing(new UuidScalar())
+                .build());
+    }
+
+    /**
+     * Same measured failure, same documented path, second scalar: the W1-B1
+     * voucher money contract added {@code scalar PositiveDecimal} to the
+     * shared SDL (agent-2-catalog-pricing.graphqls), so every module slice
+     * that assembles the repository SDL now needs its wiring too — the CI
+     * failure "There is no scalar implementation for the named
+     * 'PositiveDecimal' scalar type" across the app shards. Full
+     * application contexts register the production {@code @DgsScalar}
+     * wiring and never load this test configuration, so the registration
+     * stays single-path in each context (the UUID contract above).
+     */
+    @Bean
+    RuntimeWiringConfigurer positiveDecimalScalarWiringConfigurer() {
+        return wiringBuilder -> wiringBuilder.scalar(GraphQLScalarType.newScalar()
+                .name("PositiveDecimal")
+                .coercing(new PositiveDecimalScalar())
                 .build());
     }
 
