@@ -75,6 +75,14 @@ public class CategoryDataFetcher {
     private static final CategorySort DEFAULT_SORT =
             CategorySort.of(CategorySort.Field.NAME, true);
 
+    /**
+     * The scroll's cursor-fingerprint identity (B18/CAT-06 — the 2026-11-03
+     * adversarial review, review-pr-808): the categories connection's own
+     * stamp, distinct from every other scroll on the surface, so a cursor
+     * emitted here is refused verbatim on any other connection.
+     */
+    private static final String SCROLL_ID = "categories with the same sortBy";
+
     private final CategoryReadSpi categoryReadSpi;
     private final CategoryGraphQlMapper mapper;
     private final GraphQlProperties properties;
@@ -152,10 +160,10 @@ public class CategoryDataFetcher {
                     .build();
         }
         int pageSize = Math.min(requested, properties.pagination().maxPageSize());
-        KeysetScrollPosition position = keysetPosition(after, sort.property());
+        KeysetScrollPosition position = keysetPosition(after, sort);
         CategoryPage page = categoryReadSpi.scrollCategories(
                 currentAuthentication(), sort, position, Limit.of(pageSize));
-        return toConnection(page, position);
+        return toConnection(page, position, sort);
     }
 
     /**
@@ -247,9 +255,9 @@ public class CategoryDataFetcher {
      * unparseable values — or a cursor emitted by the OTHER sort — answers
      * the same VAL-001 taxonomy.
      */
-    private KeysetScrollPosition keysetPosition(String after, String sortProperty) {
-        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, sortProperty,
-                KeysetCursorGate::textValue, "categories with the same sortBy");
+    private KeysetScrollPosition keysetPosition(String after, CategorySort sort) {
+        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, sort.property(),
+                KeysetCursorGate::textValue, SCROLL_ID, sort.ascending());
     }
 
     /**
@@ -263,14 +271,16 @@ public class CategoryDataFetcher {
      * elements before it. {@code totalCount} is the registry count
      * (GraphQL Int's signed 32-bit ceiling documented, hence the clamp).
      */
-    private CategoryCountableConnection toConnection(CategoryPage page, KeysetScrollPosition position) {
+    private CategoryCountableConnection toConnection(CategoryPage page,
+                                                       KeysetScrollPosition position, CategorySort sort) {
         Window<CategoryView> window = page.window();
         List<CategoryView> content = window.getContent();
         List<CategoryCountableEdge> edges = new ArrayList<>(content.size());
         for (int i = 0; i < content.size(); i++) {
             edges.add(CategoryCountableEdge.newBuilder()
                     .node(mapper.toGraphQlCategory(content.get(i)))
-                    .cursor(cursorStrategy.toCursor(window.positionAt(i)))
+                    .cursor(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                            window.positionAt(i), SCROLL_ID, sort.property(), sort.ascending())))
                     .build());
         }
         String startCursor = edges.isEmpty() ? null : edges.get(0).getCursor();

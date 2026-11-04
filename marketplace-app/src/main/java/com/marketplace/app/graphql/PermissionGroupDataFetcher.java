@@ -66,6 +66,13 @@ public class PermissionGroupDataFetcher {
     private static final PermissionGroupSort DEFAULT_SORT =
             PermissionGroupSort.of(PermissionGroupSort.Field.NAME, true);
 
+    /**
+     * The scroll's cursor-fingerprint identity (B18/CAT-06 — the 2026-11-03
+     * adversarial review, review-pr-808): the permissionGroups connection's
+     * own stamp, distinct from every other scroll on the surface.
+     */
+    private static final String SCROLL_ID = "permissionGroups with the same sortBy";
+
     private final IdentitySpi identitySpi;
     private final PermissionGroupGraphQlMapper mapper;
     private final GraphQlProperties properties;
@@ -130,10 +137,10 @@ public class PermissionGroupDataFetcher {
                     .build();
         }
         int pageSize = Math.min(requested, properties.pagination().maxPageSize());
-        KeysetScrollPosition position = keysetPosition(after);
+        KeysetScrollPosition position = keysetPosition(after, sort);
         PermissionGroupPage page = identitySpi.scrollPermissionGroups(
                 currentAuthentication(), sort, position, Limit.of(pageSize));
-        return toConnection(page, position);
+        return toConnection(page, position, sort);
     }
 
     /**
@@ -184,9 +191,9 @@ public class PermissionGroupDataFetcher {
      * value type, so a client-crafted cursor with well-named but
      * unparseable values answers the same VAL-001 taxonomy.
      */
-    private KeysetScrollPosition keysetPosition(String after) {
+    private KeysetScrollPosition keysetPosition(String after, PermissionGroupSort sort) {
         return KeysetCursorGate.forwardKeyset(cursorStrategy, after, "name", KeysetCursorGate::textValue,
-                "permissionGroups with the same sortBy");
+                SCROLL_ID, sort.ascending());
     }
 
     /**
@@ -200,14 +207,16 @@ public class PermissionGroupDataFetcher {
      * before it. {@code totalCount} is the collection count (GraphQL
      * Int's signed 32-bit ceiling documented, hence the clamp).
      */
-    private GroupCountableConnection toConnection(PermissionGroupPage page, KeysetScrollPosition position) {
+    private GroupCountableConnection toConnection(PermissionGroupPage page,
+                                                    KeysetScrollPosition position, PermissionGroupSort sort) {
         Window<PermissionGroupView> window = page.window();
         List<PermissionGroupView> content = window.getContent();
         List<GroupCountableEdge> edges = new ArrayList<>(content.size());
         for (int i = 0; i < content.size(); i++) {
             edges.add(GroupCountableEdge.newBuilder()
                     .node(mapper.toGraphQlGroup(content.get(i)))
-                    .cursor(cursorStrategy.toCursor(window.positionAt(i)))
+                    .cursor(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                            window.positionAt(i), SCROLL_ID, "name", sort.ascending())))
                     .build());
         }
         String startCursor = edges.isEmpty() ? null : edges.get(0).getCursor();

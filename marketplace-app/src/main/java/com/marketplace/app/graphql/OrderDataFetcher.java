@@ -84,6 +84,13 @@ public class OrderDataFetcher {
     private static final OrderSort DEFAULT_SORT =
             OrderSort.of(OrderSort.Field.CREATED_AT, false);
 
+    /**
+     * The scroll's cursor-fingerprint identity (B18/CAT-06 — the 2026-11-03
+     * adversarial review, review-pr-808): the orders connection's own
+     * stamp, distinct from every other scroll on the surface.
+     */
+    private static final String SCROLL_ID = "orders with the same sortBy";
+
     private final OrderReadSpi orderReadSpi;
     private final OrderCommandSpi orderCommandSpi;
     private final OrderGraphQlMapper mapper;
@@ -179,7 +186,7 @@ public class OrderDataFetcher {
         KeysetScrollPosition position = keysetPosition(after, sort);
         OrderPage page = orderReadSpi.scrollOrders(
                 currentAuthentication(), sort, position, Limit.of(pageSize));
-        return toConnection(page, position);
+        return toConnection(page, position, sort);
     }
 
     /**
@@ -254,11 +261,20 @@ public class OrderDataFetcher {
     private KeysetScrollPosition keysetPosition(String after, OrderSort sort) {
         return switch (sort.field()) {
             case CREATED_AT -> KeysetCursorGate.forwardKeyset(cursorStrategy, after, "placedAt",
-                    KeysetCursorGate::instantValue, "orders with the same sortBy");
+                    KeysetCursorGate::instantValue, SCROLL_ID, sort.ascending());
             case LAST_MODIFIED_AT -> KeysetCursorGate.forwardKeyset(cursorStrategy, after, "updatedAt",
-                    KeysetCursorGate::instantValue, "orders with the same sortBy");
+                    KeysetCursorGate::instantValue, SCROLL_ID, sort.ascending());
             case STATUS -> KeysetCursorGate.forwardKeyset(cursorStrategy, after, "status",
-                    KeysetCursorGate::textValue, "orders with the same sortBy");
+                    KeysetCursorGate::textValue, SCROLL_ID, sort.ascending());
+        };
+    }
+
+    /** The executed sort's owning property — the cursor's fingerprint axis. */
+    private static String sortProperty(OrderSort sort) {
+        return switch (sort.field()) {
+            case CREATED_AT -> "placedAt";
+            case LAST_MODIFIED_AT -> "updatedAt";
+            case STATUS -> "status";
         };
     }
 
@@ -273,14 +289,16 @@ public class OrderDataFetcher {
      * {@code totalCount} is the population's count (GraphQL Int's signed
      * 32-bit ceiling documented, hence the clamp).
      */
-    private OrderCountableConnection toConnection(OrderPage page, KeysetScrollPosition position) {
+    private OrderCountableConnection toConnection(OrderPage page,
+                                                  KeysetScrollPosition position, OrderSort sort) {
         Window<OrderView> window = page.window();
         List<OrderView> content = window.getContent();
         List<OrderCountableEdge> edges = new ArrayList<>(content.size());
         for (int i = 0; i < content.size(); i++) {
             edges.add(OrderCountableEdge.newBuilder()
                     .node(mapper.toGraphQlOrder(content.get(i)))
-                    .cursor(cursorStrategy.toCursor(window.positionAt(i)))
+                    .cursor(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                            window.positionAt(i), SCROLL_ID, sortProperty(sort), sort.ascending())))
                     .build());
         }
         String startCursor = edges.isEmpty() ? null : edges.get(0).getCursor();

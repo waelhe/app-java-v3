@@ -64,6 +64,16 @@ public class CmsNavigationDataFetcher {
     static final String MENU_TAG = "Menu";
     static final String MENU_ITEM_TAG = "MenuItem";
 
+    /**
+     * The scrolls' cursor-fingerprint identities (B18/CAT-06 — the 2026-11-03
+     * adversarial review, review-pr-808): the menus and menuItems
+     * connections carry DISTINCT stamps — they shared one gate identity
+     * ("the connection with the same sortBy") before, so a menus cursor
+     * passed the menuItems gate verbatim.
+     */
+    private static final String MENUS_SCROLL_ID = "menus with the same sortBy";
+    private static final String MENU_ITEMS_SCROLL_ID = "menuItems with the same sortBy";
+
     private final CmsNavigationSpi navigationPort;
     private final SaleorGlobalIdCodec globalIdCodec;
     private final EncodingCursorStrategy<ScrollPosition> cursorStrategy;
@@ -371,7 +381,8 @@ public class CmsNavigationDataFetcher {
         boolean ascending = sortBy == null || sortBy.getDirection() == null
                 || com.marketplace.app.graphql.generated.types.OrderDirection.ASC
                         .equals(sortBy.getDirection());
-        org.springframework.data.domain.KeysetScrollPosition position = keysetPosition(after, field);
+        org.springframework.data.domain.KeysetScrollPosition position = keysetPosition(after,
+                field, MENUS_SCROLL_ID, ascending);
         CmsNavigationSpi.MenuWindow window = navigationPort.scrollMenus(currentAuthentication(),
                 field, ascending, position,
                 Limit.of(Math.min(requested, properties.pagination().maxPageSize())));
@@ -388,7 +399,9 @@ public class CmsNavigationDataFetcher {
         for (int i = 0; i < window.window().getContent().size(); i++) {
             edges.add(com.marketplace.app.graphql.generated.types.MenuCountableEdge.newBuilder()
                     .node(toMenuWithItems(menusCaller, window.window().getContent().get(i)))
-                    .cursor(cursorStrategy.toCursor(window.window().positionAt(i)))
+                    .cursor(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                            window.window().positionAt(i), MENUS_SCROLL_ID,
+                            cursorProperty(field), ascending)))
                     .build());
         }
         // The shard review (Minor · Functional Correctness, 2026-11-01
@@ -452,7 +465,8 @@ public class CmsNavigationDataFetcher {
                     .pageInfo(pageInfoOf(null, null, false, false))
                     .build();
         }
-        org.springframework.data.domain.KeysetScrollPosition position = keysetPosition(after, "NAME");
+        org.springframework.data.domain.KeysetScrollPosition position = keysetPosition(after,
+                "NAME", MENU_ITEMS_SCROLL_ID, true);
         CmsNavigationSpi.MenuItemWindow window = navigationPort.scrollMenuItems(
                 currentAuthentication(), "NAME", true, position,
                 Limit.of(Math.min(requested, properties.pagination().maxPageSize())));
@@ -470,7 +484,9 @@ public class CmsNavigationDataFetcher {
                     menuId -> menuTreeContextOf(caller, menuId));
             edges.add(com.marketplace.app.graphql.generated.types.MenuItemCountableEdge.newBuilder()
                     .node(toGraphQlMenuItem(item, context.byParent(), context.levels()))
-                    .cursor(cursorStrategy.toCursor(window.window().positionAt(i)))
+                    .cursor(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                            window.window().positionAt(i), MENU_ITEMS_SCROLL_ID,
+                            cursorProperty("NAME"), true)))
                     .build());
         }
         // The shard review (2026-11-01 wave 2): the same Relay envelope the
@@ -502,10 +518,20 @@ public class CmsNavigationDataFetcher {
      * keysets.
      */
     private org.springframework.data.domain.KeysetScrollPosition keysetPosition(
-            String after, String sortField) {
+            String after, String sortField, String scrollId, boolean ascending) {
+        // B18 (CAT-06 — the 2026-11-03 adversarial review, review-pr-808):
+        // the scrolls' own identity and direction ride the cursor's
+        // fingerprint — a menus cursor never passes the menuItems gate
+        // (they shared one identity before) and an ASC cursor never
+        // passes the DESC query.
         String property = "SLUG".equals(sortField) ? "slug" : "name";
         return KeysetCursorGate.forwardKeyset(cursorStrategy, after, property,
-                KeysetCursorGate::textValue, "the connection with the same sortBy");
+                KeysetCursorGate::textValue, scrollId, ascending);
+    }
+
+    /** The executed sort's owning property — the cursor's fingerprint axis. */
+    private static String cursorProperty(String sortField) {
+        return "SLUG".equals(sortField) ? "slug" : "name";
     }
 
     /**

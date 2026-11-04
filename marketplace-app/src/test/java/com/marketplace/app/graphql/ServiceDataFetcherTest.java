@@ -163,7 +163,11 @@ class ServiceDataFetcherTest {
         UUID lastId = UUID.randomUUID();
         KeysetScrollPosition after = ScrollPosition.forward(Map.of(
                 "createdAt", Instant.parse("2026-01-01T00:00:00Z"), "id", lastId));
-        String cursor = cursorStrategy.toCursor(after);
+        // B18 (CAT-06): the cursor this connection emits carries its
+        // fingerprint — the round-trip rides the same stamp the emission
+        // applies (the fixed createdAt DESC contract).
+        String cursor = cursorStrategy.toCursor(
+                KeysetCursorGate.stamped(after, "services", "createdAt", false));
         when(catalogService.scrollActiveListings(any(KeysetScrollPosition.class), any(Limit.class)))
                 .thenReturn(Window.from(List.of(), index -> ScrollPosition.keyset(), false));
 

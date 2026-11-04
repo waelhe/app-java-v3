@@ -85,6 +85,16 @@ public class CollectionDataFetcher {
     private static final CollectionSort DEFAULT_SORT =
             CollectionSort.of(CollectionSort.Field.NAME, true);
 
+    /**
+     * The scrolls' cursor-fingerprint identities (B18/CAT-06 — the 2026-11-03
+     * adversarial review, review-pr-808): the collections and
+     * collection-products connections carry DISTINCT stamps, and each
+     * carries its own direction.
+     */
+    private static final String COLLECTIONS_SCROLL_ID = "collections with the same sortBy";
+    private static final String COLLECTION_PRODUCTS_SCROLL_ID =
+            "collection products with the same display order";
+
     private final CollectionReadSpi collectionReadSpi;
     private final CollectionGraphQlMapper collectionMapper;
     private final ProductGraphQlMapper productMapper;
@@ -164,10 +174,10 @@ public class CollectionDataFetcher {
         int pageSize = Math.min(requested, properties.pagination().maxPageSize());
         KeysetScrollPosition position = KeysetCursorGate.forwardKeyset(
                 cursorStrategy, after, sort.property(),
-                KeysetCursorGate::textValue, "collections with the same sortBy");
+                KeysetCursorGate::textValue, COLLECTIONS_SCROLL_ID, sort.ascending());
         CollectionPage page = collectionReadSpi.scrollCollections(
                 currentAuthentication(), sort, position, Limit.of(pageSize));
-        return toConnection(page, position);
+        return toConnection(page, position, sort);
     }
 
     /**
@@ -317,7 +327,7 @@ public class CollectionDataFetcher {
                 cursorStrategy, after, "position",
                 value -> value instanceof Number number ? number.intValue()
                         : Integer.parseInt(String.valueOf(value)),
-                "collection products with the same display order");
+                COLLECTION_PRODUCTS_SCROLL_ID, true);
         CollectionProductsPage page = collectionReadSpi.scrollCollectionProducts(
                 collectionId, position, Limit.of(pageSize), authentication);
         return toProductsConnection(page, position);
@@ -356,14 +366,16 @@ public class CollectionDataFetcher {
      * documented, hence the clamp).
      */
     private CollectionCountableConnection toConnection(CollectionPage page,
-                                                       KeysetScrollPosition position) {
+                                                       KeysetScrollPosition position, CollectionSort sort) {
         Window<CollectionView> window = page.window();
         List<CollectionView> content = window.getContent();
         List<CollectionCountableEdge> edges = new ArrayList<>(content.size());
         for (int i = 0; i < content.size(); i++) {
             edges.add(CollectionCountableEdge.newBuilder()
                     .node(collectionMapper.toGraphQlCollection(content.get(i)))
-                    .cursor(cursorStrategy.toCursor(window.positionAt(i)))
+                    .cursor(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                            window.positionAt(i), COLLECTIONS_SCROLL_ID,
+                            sort.property(), sort.ascending())))
                     .build());
         }
         String startCursor = edges.isEmpty() ? null : edges.get(0).getCursor();
@@ -393,7 +405,8 @@ public class CollectionDataFetcher {
         for (int i = 0; i < content.size(); i++) {
             edges.add(ProductCountableEdge.newBuilder()
                     .node(productMapper.toGraphQlProduct(content.get(i)))
-                    .cursor(cursorStrategy.toCursor(window.positionAt(i)))
+                    .cursor(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                            window.positionAt(i), COLLECTION_PRODUCTS_SCROLL_ID, "position", true)))
                     .build());
         }
         String startCursor = edges.isEmpty() ? null : edges.get(0).getCursor();

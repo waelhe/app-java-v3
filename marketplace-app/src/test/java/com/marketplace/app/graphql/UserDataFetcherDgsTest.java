@@ -424,11 +424,13 @@ class UserDataFetcherDgsTest {
         List<Map<String, Object>> edges = (List<Map<String, Object>>) connection.get("edges");
         assertThat(edges).hasSize(2);
         assertThat(edges.get(0).get("cursor"))
-                .isEqualTo(cursorStrategy.toCursor(ScrollPosition.forward(Map.of(
-                        "email", "admin@example.com", "id", first))));
+                .isEqualTo(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                        ScrollPosition.forward(Map.of("email", "admin@example.com", "id", first)),
+                        "staffUsers with the same sortBy", "email", true)));
         assertThat(edges.get(1).get("cursor"))
-                .isEqualTo(cursorStrategy.toCursor(ScrollPosition.forward(Map.of(
-                        "email", "provider@example.com", "id", second))));
+                .isEqualTo(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                        ScrollPosition.forward(Map.of("email", "provider@example.com", "id", second)),
+                        "staffUsers with the same sortBy", "email", true)));
         @SuppressWarnings("unchecked")
         Map<String, Object> firstNode = (Map<String, Object>) edges.get(0).get("node");
         @SuppressWarnings("unchecked")

@@ -64,6 +64,13 @@ public class ProductTypeDataFetcher {
     private static final ProductTypeSort DEFAULT_SORT =
             ProductTypeSort.of(ProductTypeSort.Field.NAME, true);
 
+    /**
+     * The scroll's cursor-fingerprint identity (B18/CAT-06 — the 2026-11-03
+     * adversarial review, review-pr-808): the productTypes connection's own
+     * stamp, distinct from every other scroll on the surface.
+     */
+    private static final String SCROLL_ID = "productTypes with the same sortBy";
+
     private final ProductTypeReadSpi productTypeReadSpi;
     private final ProductTypeGraphQlMapper mapper;
     private final GraphQlProperties properties;
@@ -127,10 +134,10 @@ public class ProductTypeDataFetcher {
                     .build();
         }
         int pageSize = Math.min(requested, properties.pagination().maxPageSize());
-        KeysetScrollPosition position = keysetPosition(after);
+        KeysetScrollPosition position = keysetPosition(after, sort);
         ProductTypePage page = productTypeReadSpi.scrollProductTypes(
                 currentAuthentication(), sort, position, Limit.of(pageSize));
-        return toConnection(page, position);
+        return toConnection(page, position, sort);
     }
 
     /**
@@ -180,9 +187,9 @@ public class ProductTypeDataFetcher {
      * value type, so a client-crafted cursor with well-named but
      * unparseable values answers the same VAL-001 taxonomy.
      */
-    private KeysetScrollPosition keysetPosition(String after) {
-        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, "name", KeysetCursorGate::textValue,
-                "productTypes with the same sortBy");
+    private KeysetScrollPosition keysetPosition(String after, ProductTypeSort sort) {
+        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, "name",
+                KeysetCursorGate::textValue, SCROLL_ID, sort.ascending());
     }
 
     /**
@@ -196,14 +203,16 @@ public class ProductTypeDataFetcher {
      * {@code totalCount} is the collection count (GraphQL Int's signed
      * 32-bit ceiling documented, hence the clamp).
      */
-    private ProductTypeCountableConnection toConnection(ProductTypePage page, KeysetScrollPosition position) {
+    private ProductTypeCountableConnection toConnection(ProductTypePage page,
+                                                          KeysetScrollPosition position, ProductTypeSort sort) {
         Window<ProductTypeView> window = page.window();
         List<ProductTypeView> content = window.getContent();
         List<ProductTypeCountableEdge> edges = new ArrayList<>(content.size());
         for (int i = 0; i < content.size(); i++) {
             edges.add(ProductTypeCountableEdge.newBuilder()
                     .node(mapper.toGraphQlProductType(content.get(i)))
-                    .cursor(cursorStrategy.toCursor(window.positionAt(i)))
+                    .cursor(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                            window.positionAt(i), SCROLL_ID, "name", sort.ascending())))
                     .build());
         }
         String startCursor = edges.isEmpty() ? null : edges.get(0).getCursor();

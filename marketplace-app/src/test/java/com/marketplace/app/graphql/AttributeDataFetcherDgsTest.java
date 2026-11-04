@@ -317,11 +317,13 @@ class AttributeDataFetcherDgsTest {
         List<Map<String, Object>> edges = (List<Map<String, Object>>) connection.get("edges");
         assertThat(edges).hasSize(2);
         assertThat(edges.get(0).get("cursor"))
-                .isEqualTo(cursorStrategy.toCursor(ScrollPosition.forward(Map.of(
-                        "name", "Brand", "id", brandId))));
+                .isEqualTo(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                        ScrollPosition.forward(Map.of("name", "Brand", "id", brandId)),
+                        "attributes with the same sortBy", "name", true)));
         assertThat(edges.get(1).get("cursor"))
-                .isEqualTo(cursorStrategy.toCursor(ScrollPosition.forward(Map.of(
-                        "name", "Color", "id", colorId))));
+                .isEqualTo(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                        ScrollPosition.forward(Map.of("name", "Color", "id", colorId)),
+                        "attributes with the same sortBy", "name", true)));
         @SuppressWarnings("unchecked")
         Map<String, Object> firstNode = (Map<String, Object>) edges.get(0).get("node");
         assertThat(firstNode.get("name")).isEqualTo("Brand");

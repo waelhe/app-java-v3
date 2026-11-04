@@ -46,6 +46,13 @@ import java.util.UUID;
 @DgsComponent
 public class CustomerTypeDataFetcher {
 
+    /**
+     * The scroll's cursor-fingerprint identity (B18/CAT-06 — the 2026-11-03
+     * adversarial review, review-pr-808): the customerTypes connection's own
+     * stamp, distinct from every other scroll on the surface.
+     */
+    private static final String SCROLL_ID = "customerTypes with the same sortBy";
+
     private final CustomerTypeSpi customerTypeSpi;
     private final com.marketplace.catalog.spi.AttributeReadSpi attributeReadSpi;
     private final AgentOneGraphQlMappers mappers;
@@ -260,7 +267,7 @@ public class CustomerTypeDataFetcher {
                 ? org.springframework.data.domain.ScrollPosition.keyset()
                 : KeysetCursorGate.forwardKeyset(cursorStrategy, after,
                         sortProperty(sort), sortValueFunction(sort),
-                        "customerTypes with the same sortBy");
+                        SCROLL_ID, sort.ascending());
         CustomerTypeSpi.CustomerTypePage page = customerTypeSpi.scroll(currentAuthentication(),
                 sort, position, Limit.of(Math.min(requested, properties.pagination().maxPageSize())),
                 search);
@@ -268,7 +275,7 @@ public class CustomerTypeDataFetcher {
         // the connection pinned hasPreviousPage=false, breaking the Relay
         // contract every other catalog root honors (position-aware).
         return mappers.toCustomerTypeConnection(page.window(), page.total(),
-                !position.isInitial());
+                !position.isInitial(), SCROLL_ID, sortProperty(sort), sort.ascending());
     }
 
     // ---------------------------------------------------------------------

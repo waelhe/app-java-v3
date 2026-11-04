@@ -70,6 +70,13 @@ public class PromotionDataFetcher {
     private static final PromotionSort DEFAULT_SORT =
             PromotionSort.of(PromotionSort.Field.NAME, true);
 
+    /**
+     * The scroll's cursor-fingerprint identity (B18/CAT-06 — the 2026-11-03
+     * adversarial review, review-pr-808): the promotions connection's own
+     * stamp, distinct from every other scroll on the surface.
+     */
+    private static final String SCROLL_ID = "promotions with the same sortBy";
+
     private final DiscountReadSpi discountReadSpi;
     private final PromotionGraphQlMapper mapper;
     private final GraphQlProperties properties;
@@ -140,7 +147,7 @@ public class PromotionDataFetcher {
         KeysetScrollPosition position = keysetPosition(after, sort);
         PromotionPage page = discountReadSpi.scrollPromotions(
                 currentAuthentication(), sort, position, Limit.of(pageSize));
-        return toConnection(page, position);
+        return toConnection(page, position, sort);
     }
 
     /**
@@ -209,9 +216,14 @@ public class PromotionDataFetcher {
     private KeysetScrollPosition keysetPosition(String after, PromotionSort sort) {
         return sort.field() == PromotionSort.Field.NAME
                 ? KeysetCursorGate.forwardKeyset(cursorStrategy, after, "name",
-                        KeysetCursorGate::textValue, "promotions with the same sortBy")
+                        KeysetCursorGate::textValue, SCROLL_ID, sort.ascending())
                 : KeysetCursorGate.forwardKeyset(cursorStrategy, after, "createdAt",
-                        KeysetCursorGate::instantValue, "promotions with the same sortBy");
+                        KeysetCursorGate::instantValue, SCROLL_ID, sort.ascending());
+    }
+
+    /** The executed sort's owning property — the cursor's fingerprint axis. */
+    private static String sortProperty(PromotionSort sort) {
+        return sort.field() == PromotionSort.Field.NAME ? "name" : "createdAt";
     }
 
     /**
@@ -225,14 +237,16 @@ public class PromotionDataFetcher {
      * before it. {@code totalCount} is the collection count (GraphQL
      * Int's signed 32-bit ceiling documented, hence the clamp).
      */
-    private PromotionCountableConnection toConnection(PromotionPage page, KeysetScrollPosition position) {
+    private PromotionCountableConnection toConnection(PromotionPage page,
+                                                       KeysetScrollPosition position, PromotionSort sort) {
         Window<PromotionView> window = page.window();
         List<PromotionView> content = window.getContent();
         List<PromotionCountableEdge> edges = new ArrayList<>(content.size());
         for (int i = 0; i < content.size(); i++) {
             edges.add(PromotionCountableEdge.newBuilder()
                     .node(mapper.toGraphQlPromotion(content.get(i)))
-                    .cursor(cursorStrategy.toCursor(window.positionAt(i)))
+                    .cursor(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                            window.positionAt(i), SCROLL_ID, sortProperty(sort), sort.ascending())))
                     .build());
         }
         String startCursor = edges.isEmpty() ? null : edges.get(0).getCursor();
