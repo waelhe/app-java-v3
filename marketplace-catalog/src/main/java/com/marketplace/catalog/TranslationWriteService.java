@@ -150,17 +150,27 @@ public class TranslationWriteService implements TranslationWriteSpi {
             return AttributeValueMutationResult.failure(errors);
         }
         CatalogAttributeOption row = addressed.get();
-        CatalogAttributeDefinition parent =
-                attributeDefinitionRepository.findById(row.getAttributeDefinitionId()).orElseThrow();
+        // B20 (CAT-08 — the 2026-11-03 adversarial review, review-pr-808):
+        // the concurrent parent soft-delete race answers the classified
+        // NOT_FOUND — the ProductVariantWriteService precedent's own law
+        // (never a raw NoSuchElementException 500 off the wire) — and the
+        // orphan revision never persists.
+        Optional<CatalogAttributeDefinition> parent =
+                attributeDefinitionRepository.findById(row.getAttributeDefinitionId());
+        if (parent.isEmpty()) {
+            return AttributeValueMutationResult.failure(List.of(new AttributeMutationError(
+                    "id", AttributeMutationErrorCode.NOT_FOUND,
+                    "No attribute definition found for the value's parent")));
+        }
         if (command.name() == null) {
-            return AttributeValueMutationResult.success(toView(parent), toValueView(row));
+            return AttributeValueMutationResult.success(toView(parent.get()), toValueView(row));
         }
         // The option's own display-metadata amendment seam (the
         // entity's own validateNames law rides inside it — the
         // backstop over the service's own precheck).
         row.revise(mergedEn(command, row.getNameEn()), mergedAr(command, row.getNameAr()));
         CatalogAttributeOption updated = attributeOptionRepository.save(row);
-        return AttributeValueMutationResult.success(toView(parent), toValueView(updated));
+        return AttributeValueMutationResult.success(toView(parent.get()), toValueView(updated));
     }
 
     @Override

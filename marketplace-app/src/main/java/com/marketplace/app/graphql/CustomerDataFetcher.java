@@ -22,9 +22,7 @@ import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.ScrollPosition;
 import org.springframework.data.domain.Window;
 import org.springframework.graphql.data.pagination.EncodingCursorStrategy;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -235,12 +233,10 @@ public class CustomerDataFetcher {
      * future public journey reopens the route policy).
      */
     private Authentication currentAuthentication() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) {
-            throw new AuthenticationCredentialsNotFoundException(
-                    "Authentication is required for customer administration");
-        }
-        return authentication;
+        // B24 (IDP-06): the shared identity-family wall — an anonymous
+        // token answers isAuthenticated() == true, so the TYPE check is
+        // part of the refusal (the TokenDataFetcher lesson, one authority).
+        return AuthenticatedCallers.require("customer administration");
     }
 
 }

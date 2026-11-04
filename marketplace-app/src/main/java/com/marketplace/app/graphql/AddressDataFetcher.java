@@ -21,7 +21,6 @@ import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.InputArgument;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.List;
 import java.util.UUID;
@@ -269,12 +268,9 @@ public class AddressDataFetcher {
     }
 
     private Authentication currentAuthentication() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) {
-            throw new org.springframework.security.authentication
-                    .AuthenticationCredentialsNotFoundException(
-                    "Authentication is required for address operations");
-        }
-        return authentication;
+        // B24 (IDP-06): the shared identity-family wall — an anonymous
+        // token answers isAuthenticated() == true, so the TYPE check is
+        // part of the refusal (the TokenDataFetcher lesson, one authority).
+        return AuthenticatedCallers.require("address operations");
     }
 }

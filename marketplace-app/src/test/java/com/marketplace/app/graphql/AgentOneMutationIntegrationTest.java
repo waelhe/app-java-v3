@@ -278,7 +278,9 @@ class AgentOneMutationIntegrationTest {
                         """)
                 .execute()
                 .errors()
-                .satisfy(errors -> assertThat(errors).isNotEmpty())
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getExtensions())
+                                .containsEntry("errorCode", "AUTHZ-001")))
                 .path("pageTypeCreate").valueIsNull();
     }
 }
