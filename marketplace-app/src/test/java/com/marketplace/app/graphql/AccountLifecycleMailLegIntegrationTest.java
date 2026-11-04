@@ -62,6 +62,12 @@ import static org.mockito.Mockito.when;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "spring.flyway.enabled=true",
         "spring.jpa.hibernate.ddl-auto=none",
+        // The erasure leg rides SubjectPseudonymizer.derive — the capability
+        // is OFF without the environment-only HMAC channel (derive answers
+        // its 503), and the GraphQL resolver masks that as INT-001. The
+        // sibling AccountSelfDeletionIntegrationTest binds the same key for
+        // the same reason (secrets-policy §1: test-only value).
+        "marketplace.security.pseudonymization.subject-hmac-key=it-mail-leg-journey-key",
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
@@ -176,15 +182,23 @@ class AccountLifecycleMailLegIntegrationTest {
                 .errors().verify()
                 .path("confirmEmailChange.errors").entityList(Object.class).hasSize(0);
 
-        // The durable effect: the login identity moved to the new address.
+        // The durable effect: the login identity moved to the new address —
+        // the projection row's subject AND email move TOGETHER (the
+        // subject==username invariant AccountEmailChangeService documents:
+        // moving only the email would leave the subject pointing at the
+        // dead login name and break every findBySubject lookup).
         Integer moved = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM users WHERE subject = ?",
-                Integer.class, email);
+                Integer.class, newEmail);
         Integer atNewAddress = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM users WHERE subject = ? AND email = ?",
-                Integer.class, email, newEmail);
-        assertThat(moved).as("the account row survives the move").isEqualTo(1);
+                Integer.class, newEmail, newEmail);
+        Integer oldIdentityGone = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM users WHERE subject = ?",
+                Integer.class, email);
+        assertThat(moved).as("the account row survives the move under its new identity").isEqualTo(1);
         assertThat(atNewAddress).as("the account's email moved to the new address").isEqualTo(1);
+        assertThat(oldIdentityGone).as("the old login identity is gone").isZero();
     }
 
     // ------------------------------------------------------------------

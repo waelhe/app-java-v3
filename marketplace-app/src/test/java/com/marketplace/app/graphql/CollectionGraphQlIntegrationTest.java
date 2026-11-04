@@ -494,7 +494,7 @@ class CollectionGraphQlIntegrationTest {
                             edges { node { id name }
                             totalCount
                             pageInfo { hasNextPage endCursor }
-                        } } }
+                        } } } }
                         """)
                 .variable("id", collectionGlobalId(collectionId))
                 .execute()

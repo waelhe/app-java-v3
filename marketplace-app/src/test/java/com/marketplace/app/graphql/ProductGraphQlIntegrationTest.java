@@ -115,6 +115,9 @@ class ProductGraphQlIntegrationTest {
     @Autowired
     private com.marketplace.shared.api.ProductStockPort productStockPort;
 
+    @Autowired
+    private org.springframework.transaction.support.TransactionTemplate transactionTemplate;
+
     @LocalServerPort
     private int port;
 
@@ -873,7 +876,10 @@ class ProductGraphQlIntegrationTest {
                 "b4c Reserved Widget", "fixture", 1000L, "SAR", providerId)).getId();
         seededProductIds.add(productId);
         jdbcTemplate.update("UPDATE products SET stock_quantity = 20 WHERE id = ?", productId);
-        assertThat(productRepository.reserve(productId, 5))
+        // The repository's bulk modifying statements need an active
+        // transaction — the probe rides the house TransactionTemplate (the
+        // placement's own reservation seam, not a hand-rolled write).
+        assertThat(transactionTemplate.execute(status -> productRepository.reserve(productId, 5)))
                 .as("the placement's reservation lands on the live row").isEqualTo(1);
 
         HttpGraphQlTester providerTester = testerFor(providerId.toString(), "PROVIDER");
@@ -947,7 +953,7 @@ class ProductGraphQlIntegrationTest {
                 "b4c Zombie Reservation Widget", "fixture", 1000L, "SAR", providerId)).getId();
         seededProductIds.add(productId);
         jdbcTemplate.update("UPDATE products SET stock_quantity = 20 WHERE id = ?", productId);
-        assertThat(productRepository.reserve(productId, 3)).isEqualTo(1);
+        assertThat(transactionTemplate.execute(status -> productRepository.reserve(productId, 3))).isEqualTo(1);
 
         // The pre-B7 state, recreated directly: the row soft-deleted under
         // the open reservation (the raw column write is the probe's own
@@ -958,7 +964,7 @@ class ProductGraphQlIntegrationTest {
         // (@SoftDelete filters the statement), so the reservation is
         // unreleasable and the orders owner's adapter answers its 409 —
         // the root cause the B7 wall closes.
-        assertThat(productRepository.release(productId, 3))
+        assertThat(transactionTemplate.execute(status -> productRepository.release(productId, 3)))
                 .as("the soft-deleted row's reservation can never be released (U1)")
                 .isZero();
         assertThatThrownBy(() -> productStockPort.release(java.util.Map.of(productId, 3)))
