@@ -105,6 +105,18 @@ class CollectionReadServiceTest {
         return new Object[]{position, product};
     }
 
+    /**
+     * The typed page builder — {@code List.of(row(...), ...)} on its own
+     * infers {@code List<Object>} (each {@code Object[]} argument is
+     * assignable to the loose bound), which cannot stub the repository's
+     * {@code List<Object[]>} seam; the explicit varargs collector pins the
+     * element type (the CI compile round's own measured evidence).
+     */
+    @SafeVarargs
+    private static List<Object[]> joinedPage(Object[]... orderedRows) {
+        return List.of(orderedRows);
+    }
+
     // ------------------------------------------------------------------
     // findCollectionById / findCollectionBySlug — the publication law
     // ------------------------------------------------------------------
@@ -269,7 +281,7 @@ class CollectionReadServiceTest {
         // ORDER BY owns the ordering now; the in-memory sort is gone).
         when(membershipRepository.findFirstMembershipProductRows(
                 eq(collectionId), eq(true), any(Pageable.class)))
-                .thenReturn(List.of(
+                .thenReturn(joinedPage(
                         row(1, activeProduct(productIdA)),
                         row(2, activeProduct(productIdB))));
         when(membershipRepository.countVisibleMembershipProducts(collectionId, true)).thenReturn(2L);
@@ -301,7 +313,7 @@ class CollectionReadServiceTest {
         // a public caller's page (the page math stays honest).
         when(membershipRepository.findFirstMembershipProductRows(
                 eq(collectionId), eq(false), any(Pageable.class)))
-                .thenReturn(List.of(row(1, activeProduct(activeId))));
+                .thenReturn(joinedPage(row(1, activeProduct(activeId))));
         when(membershipRepository.countVisibleMembershipProducts(collectionId, false)).thenReturn(1L);
 
         CollectionProductsPage page = service.scrollCollectionProducts(
@@ -356,7 +368,7 @@ class CollectionReadServiceTest {
         UUID draftId = UUID.randomUUID();
         when(membershipRepository.findFirstMembershipProductRows(
                 eq(collectionId), eq(true), any(Pageable.class)))
-                .thenReturn(List.of(row(1, draftProduct(draftId))));
+                .thenReturn(joinedPage(row(1, draftProduct(draftId))));
         when(membershipRepository.countVisibleMembershipProducts(collectionId, true)).thenReturn(1L);
 
         CollectionProductsPage page = service.scrollCollectionProducts(
@@ -376,7 +388,7 @@ class CollectionReadServiceTest {
                 "position", 1, "id", productIdA));
         when(membershipRepository.findNextMembershipProductRows(
                 eq(collectionId), eq(true), eq(1), eq(productIdA), any(Pageable.class)))
-                .thenReturn(List.of(row(2, activeProduct(productIdB))));
+                .thenReturn(joinedPage(row(2, activeProduct(productIdB))));
         when(membershipRepository.countVisibleMembershipProducts(collectionId, true)).thenReturn(2L);
 
         CollectionProductsPage page = service.scrollCollectionProducts(
@@ -438,7 +450,7 @@ class CollectionReadServiceTest {
         UUID collectionId = UUID.randomUUID();
         when(membershipRepository.findFirstMembershipProductRows(
                 eq(collectionId), eq(true), any(Pageable.class)))
-                .thenReturn(List.of(row(1, activeProduct(UUID.randomUUID()))));
+                .thenReturn(joinedPage(row(1, activeProduct(UUID.randomUUID()))));
         when(membershipRepository.countVisibleMembershipProducts(collectionId, true)).thenReturn(500L);
 
         CollectionProductsPage page = service.scrollCollectionProducts(
