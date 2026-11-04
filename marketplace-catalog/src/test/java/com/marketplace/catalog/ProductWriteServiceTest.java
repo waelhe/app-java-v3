@@ -179,11 +179,38 @@ class ProductWriteServiceTest {
         verify(productRepository, never()).save(any());
     }
 
+    /**
+     * B21 (CAT-09 — the 2026-11-03 adversarial review, review-pr-808): the
+     * create's type validation rides the LOCKING read — FOR SHARE, held
+     * for the creating transaction's lifetime (the delete side's
+     * FOR UPDATE twin serializes against it) — never the plain findById
+     * whose verdict a concurrent productTypeDelete could invalidate
+     * between the check and the commit (the soft delete leaves the
+     * physical row the FK still accepts, so the FK alone never catches
+     * the window).
+     */
+    @Test
+    void theCreateValidatesTheTypeThroughTheLockingRead() {
+        when(storeCategoryRepository.findByCode("widgets")).thenReturn(Optional.of(mock(StoreCategory.class)));
+        UUID typeId = UUID.randomUUID();
+        when(productTypeRepository.findByIdForShare(typeId)).thenReturn(Optional.empty());
+
+        ProductMutationResult result = service.createProduct(
+                create("Widget", null, "widgets", 1000L, "SAR", typeId), caller);
+
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductMutationError::code, ProductMutationError::field)
+                .containsExactly(ProductMutationErrorCode.NOT_FOUND, "productType");
+        verify(productTypeRepository).findByIdForShare(typeId);
+        verify(productTypeRepository, never()).findById(typeId);
+        verify(productRepository, never()).save(any());
+    }
+
     @Test
     void unknownProductTypeAnswersTheNotFoundDomainError() {
         when(storeCategoryRepository.findByCode("widgets")).thenReturn(Optional.of(mock(StoreCategory.class)));
         UUID unknownType = UUID.randomUUID();
-        when(productTypeRepository.findById(unknownType)).thenReturn(Optional.empty());
+        when(productTypeRepository.findByIdForShare(unknownType)).thenReturn(Optional.empty());
 
         ProductMutationResult result = service.createProduct(
                 create("Widget", null, "widgets", 1000L, "SAR", unknownType), caller);
@@ -215,7 +242,7 @@ class ProductWriteServiceTest {
     @Test
     void happyCreateWithATypedProductStartsAsDraft() {
         UUID typeId = UUID.randomUUID();
-        when(productTypeRepository.findById(typeId)).thenReturn(Optional.of(mock(ProductType.class)));
+        when(productTypeRepository.findByIdForShare(typeId)).thenReturn(Optional.of(mock(ProductType.class)));
         when(productRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         ProductMutationResult result = service.createProduct(
