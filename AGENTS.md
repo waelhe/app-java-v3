@@ -50,6 +50,7 @@ This file adds project-specific conventions.
 ## Additional Rules
 
 - **CI**: Run `mvn clean verify -pl <module>` before pushing
+- **Local verification** (GOV-02, added 2026-11-04): when the environment allows (JDK 25 + Docker/Testcontainers available), run the touched modules' suites locally BEFORE opening the PR — CI is the final arbiter, never the first test run; a red local run never goes to GitHub unexplained. When the environment does not allow it, the PR body says so explicitly (CI then carries the proof alone)
 - **Testing**: All integration tests MUST have `@ActiveProfiles("test")` and `@Testcontainers(disabledWithoutDocker = true)` or `@Container`
 - **Flyway**: Any schema change = new V{number} migration file. Never modify existing migrations
 - **Envers**: All domain entities MUST have `@Audited`
