@@ -174,6 +174,31 @@ public class PerCallerRateLimitGuard {
                     "marketplace.graphql.per-caller-rate-limit.max-tracked-callers must be >= 1, got "
                             + maxTrackedCallers);
         }
+        // The 2026-11-04 #806 round (Minor · Security & Privacy): the
+        // account budget MUST strictly exceed the address budget — the
+        // defaults carry 10/30, but the yml can override either entry
+        // independently; a perCallerGrant raised to the account budget
+        // (or beyond) lets ONE address alone exhaust the victim account's
+        // whole budget and lock the owner out until the window refreshes.
+        // Fail at startup (the same contract the max-tracked-callers
+        // check enforces): a misconfigured guard can never run with the
+        // lockout it exists to prevent. Package slices without the
+        // resilience4j auto-configuration validate the programmatic
+        // defaults (10 < 30 — the invariant the defaults document).
+        RateLimiterRegistry shared = sharedRegistry.getIfAvailable();
+        RateLimiterConfig callerConfig = shared == null
+                ? DEFAULT_PER_CALLER_CONFIG
+                : shared.getConfiguration(PER_CALLER_CONFIG).orElse(DEFAULT_PER_CALLER_CONFIG);
+        RateLimiterConfig accountConfig = shared == null
+                ? DEFAULT_PER_ACCOUNT_CONFIG
+                : shared.getConfiguration(PER_ACCOUNT_CONFIG).orElse(DEFAULT_PER_ACCOUNT_CONFIG);
+        if (accountConfig.getLimitForPeriod() <= callerConfig.getLimitForPeriod()) {
+            throw new IllegalArgumentException(
+                    "marketplace.graphql.per-caller-rate-limit: the perAccountGrant budget ("
+                            + accountConfig.getLimitForPeriod() + "/period) must strictly exceed the "
+                            + "perCallerGrant budget (" + callerConfig.getLimitForPeriod()
+                            + "/period) — otherwise one address alone exhausts an account's whole budget");
+        }
         // The wave-3 review (Major · Stability): dynamically keyed
         // instances in the AUTO-CONFIGURED registry would grow without
         // bound — the official builder path with a bounded store keeps

@@ -202,7 +202,11 @@ public class ProductVariantMutationDataFetcher {
     @RateLimiter(name = "graphqlProductVariantMutation")
     public ProductVariantBulkDelete productVariantBulkDelete(@InputArgument List<String> ids,
                                                              @InputArgument List<String> skus) {
-        if (skus != null && !skus.isEmpty()) {
+        // The 2026-11-04 #806 round (Minor · Functional Correctness): ANY
+        // supplied skus value — even the empty list — is an unimplemented
+        // addressing mode; the old !isEmpty() leg let a non-null empty
+        // list slip past the rejection and run the ids-only delete.
+        if (skus != null) {
             throw new IllegalArgumentException(
                     "productVariantBulkDelete skus addressing is not implemented on this platform yet"
                             + " (the ids are the addressing keys)");

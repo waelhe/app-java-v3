@@ -282,6 +282,17 @@ public class AccountLifecycleDataFetcher {
         if (input == null) {
             throw new IllegalArgumentException("An input is required");
         }
+        // The 2026-11-04 #806 round (Minor · Functional Correctness): the
+        // SDL declares defaultBillingAddress/defaultShippingAddress, but
+        // the identity owner's own-profile write carries no address
+        // fields — a supplied value was a SILENT no-op (the never-a-
+        // silent-no-op rule, the UserManagementDataFetcher's own
+        // rejection vocabulary for the same fields).
+        if (input.getDefaultBillingAddress() != null || input.getDefaultShippingAddress() != null) {
+            throw new IllegalArgumentException(
+                    "accountUpdate defaultBillingAddress/defaultShippingAddress are not implemented "
+                            + "on this platform yet");
+        }
         // The 2026-11-04 #806 round (Major · Functional Correctness): the
         // identity store carries ONE composed display name — Saleor's
         // firstName/lastName are separate columns there, so a partial

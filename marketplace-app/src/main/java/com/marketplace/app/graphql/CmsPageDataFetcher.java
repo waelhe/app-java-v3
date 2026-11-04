@@ -364,7 +364,15 @@ public class CmsPageDataFetcher {
         }
         rejectChannel(channel);
         int requested = first == null ? properties.pagination().defaultPageSize() : first;
-        if (requested <= 0) {
+        // The 2026-11-04 #806 round (Minor · Functional Correctness): the
+        // Relay connection spec — a NEGATIVE first is a client error, while
+        // zero keeps the documented empty page (the staffUsers field's own
+        // house contract: no query executes, totalCount answers the honest
+        // not-computed null).
+        if (requested < 0) {
+            throw new IllegalArgumentException("first cannot be negative");
+        }
+        if (requested == 0) {
             return PageCountableConnection.newBuilder()
                     .edges(List.of())
                     .pageInfo(pageInfoOf(null, null, false, false))
@@ -408,7 +416,15 @@ public class CmsPageDataFetcher {
                     "pageTypes filter is not implemented on this platform yet");
         }
         int requested = first == null ? properties.pagination().defaultPageSize() : first;
-        if (requested <= 0) {
+        // The 2026-11-04 #806 round (Minor · Functional Correctness): the
+        // Relay connection spec — a NEGATIVE first is a client error, while
+        // zero keeps the documented empty page (the staffUsers field's own
+        // house contract: no query executes, totalCount answers the honest
+        // not-computed null).
+        if (requested < 0) {
+            throw new IllegalArgumentException("first cannot be negative");
+        }
+        if (requested == 0) {
             return PageTypeCountableConnection.newBuilder()
                     .edges(List.of())
                     .pageInfo(pageInfoOf(null, null, false, false))

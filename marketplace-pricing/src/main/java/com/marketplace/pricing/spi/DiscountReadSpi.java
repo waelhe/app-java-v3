@@ -69,6 +69,16 @@ public interface DiscountReadSpi {
     Optional<VoucherView> findVoucherById(UUID id, Authentication authentication);
 
     /**
+     * The staff-surface verdict seam — the orders root's own
+     * {@code requireAdmin()} precedent: the ADMIN decision must precede
+     * the fetcher's degenerate-page and unimplemented-argument early
+     * returns, so a non-ADMIN caller always answers the authorization
+     * failure (never a success-shaped empty page and never a validation
+     * error about arguments the caller cannot use).
+     */
+    void requireAdmin();
+
+    /**
      * One bounded page of the voucher policy collection as a
      * forward-only keyset scroll in the requested sort (the owning field
      * + the {@code id} tiebreaker). The returning page carries the
