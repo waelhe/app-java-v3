@@ -278,6 +278,50 @@ class AgentOneMutationDgsTest {
     }
 
     /**
+     * B10 (IDP-03/IDP-07 — the 2026-11-03 adversarial review, the
+     * divergence-ledger closure): the account-lifecycle argument laws the
+     * ledger row now records, pinned on the wire. The pinned 3.23.45
+     * contract itself declares {@code channel: String!} and
+     * {@code redirectUrl: String!} — the platform keeps the signatures
+     * byte-faithful, and the BEHAVIOR is the recorded ADAPT: a real
+     * channel slug answers the classified not-implemented error (the
+     * platform is a single-channel store), while the blank string stays
+     * the no-op the sibling test rides.
+     */
+    @Test
+    void sendConfirmationEmailRejectsARealChannelSlugWithTheClassifiedError() {
+        actAs("agent-one@example.com", "CONSUMER");
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { sendConfirmationEmail(channel: "channel-1",
+                        redirectUrl: "https://store.example.com/confirm") { errors { code } } }
+                """, "data.sendConfirmationEmail.errors"))
+                .hasMessageContaining("not implemented on this platform");
+        verify(accountLifecycleSpi, never()).resendEmailVerification(any());
+    }
+
+    /**
+     * B10's redirectUrl pin: the argument is accepted on the wire (the
+     * pinned String! signature) and IGNORED in behavior — an
+     * attacker-chosen URL must behave identically to the house URL. The
+     * owning SPI call never receives it: there is no redirect surface by
+     * construction (no open-redirect, no SSRF), exactly what the
+     * divergence-ledger row records.
+     */
+    @Test
+    void requestEmailChangeIgnoresTheRedirectUrlEntirely() {
+        actAs("agent-one@example.com", "CONSUMER");
+        dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { requestEmailChange(newEmail: "next@example.com",
+                        password: "aStrongPassword1!",
+                        redirectUrl: "https://attacker.example/steal") {
+                    errors { code }
+                } }
+                """, "data.requestEmailChange.errors");
+        verify(accountLifecycleSpi).requestEmailChange(
+                any(), eq("next@example.com"), eq("aStrongPassword1!"));
+    }
+
+    /**
      * The shard review (2026-11-01, Minor · Security): bcrypt's ceiling is
      * 72 UTF-8 BYTES, never 72 characters — a 40-character Arabic password
      * is ~80 bytes and passed the old character-only count. The byte
