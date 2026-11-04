@@ -7,12 +7,15 @@ import com.marketplace.catalog.spi.CollectionSort;
 import com.marketplace.catalog.spi.CollectionView;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.KeysetScrollPosition;
 import org.springframework.data.domain.Limit;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.ScrollPosition;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.Authentication;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -21,6 +24,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -48,7 +53,6 @@ class CollectionReadServiceTest {
 
     private CollectionRepository collectionRepository;
     private CollectionProductRepository membershipRepository;
-    private ProductRepository productRepository;
     private CollectionReadSpi service;
 
     /** The ADMIN-class caller — the include-unpublished capability. */
@@ -63,9 +67,11 @@ class CollectionReadServiceTest {
     void setUp() {
         collectionRepository = mock(CollectionRepository.class);
         membershipRepository = mock(CollectionProductRepository.class);
-        productRepository = mock(ProductRepository.class);
-        service = new CollectionReadService(
-                collectionRepository, membershipRepository, productRepository);
+        // B8 (CAT-03): the owning use case no longer holds the products
+        // port at all — the bounded joined page lives in the membership
+        // registry's own repository seam, so the N×findById shape is
+        // structurally gone, not merely unexercised.
+        service = new CollectionReadService(collectionRepository, membershipRepository);
     }
 
     private static Collection publishedRow(String slug, String nameEn) {
@@ -92,6 +98,11 @@ class CollectionReadServiceTest {
         when(product.getProductTypeId()).thenReturn(null);
         when(product.getStatus()).thenReturn(StoreProductStatus.DRAFT);
         return product;
+    }
+
+    /** The joined page row the bounded SQL answers — {@code [position, product]}. */
+    private static Object[] row(int position, Product product) {
+        return new Object[]{position, product};
     }
 
     // ------------------------------------------------------------------
@@ -253,14 +264,15 @@ class CollectionReadServiceTest {
         UUID collectionId = UUID.randomUUID();
         UUID productIdA = UUID.randomUUID();
         UUID productIdB = UUID.randomUUID();
-        when(membershipRepository.findByCollectionIdOrderByPositionAscIdAsc(collectionId))
+        // The joined page the bounded SQL answers — (position, product)
+        // rows already in the membership's own (position, id) order (the
+        // ORDER BY owns the ordering now; the in-memory sort is gone).
+        when(membershipRepository.findFirstMembershipProductRows(
+                eq(collectionId), eq(true), any(Pageable.class)))
                 .thenReturn(List.of(
-                        CollectionProduct.create(collectionId, productIdB, 2),
-                        CollectionProduct.create(collectionId, productIdA, 1)));
-        Product productA = activeProduct(productIdA);
-        Product productB = activeProduct(productIdB);
-        when(productRepository.findById(productIdA)).thenReturn(Optional.of(productA));
-        when(productRepository.findById(productIdB)).thenReturn(Optional.of(productB));
+                        row(1, activeProduct(productIdA)),
+                        row(2, activeProduct(productIdB))));
+        when(membershipRepository.countVisibleMembershipProducts(collectionId, true)).thenReturn(2L);
 
         CollectionProductsPage page = service.scrollCollectionProducts(
                 collectionId, ScrollPosition.keyset(), Limit.of(10), admin);
@@ -268,26 +280,29 @@ class CollectionReadServiceTest {
         assertThat(page.total()).isEqualTo(2);
         assertThat(page.window().getContent()).extracting(product -> product.id())
                 .containsExactly(productIdA, productIdB);
+        assertThat(page.window().hasNext()).isFalse();
+        // CAT-03's own structural pin: the bounded page NEVER rides the
+        // unbounded whole-membership seam.
+        verify(membershipRepository, never()).findByCollectionIdOrderByPositionAscIdAsc(any());
     }
 
     @Test
     void thePlainCallersMemberProductsScrollCarriesTheActiveProductsAlone() {
         UUID collectionId = UUID.randomUUID();
         UUID activeId = UUID.randomUUID();
-        UUID draftId = UUID.randomUUID();
         // The wave-19 #808 review's gate: the member-products scroll reads
         // the collection's own publication fact FIRST (a live stub for the
         // published collection the caller may read).
         when(collectionRepository.findById(collectionId)).thenReturn(Optional.of(
                 Collection.create("member-slug", "Members", "الأعضاء", true)));
-        when(membershipRepository.findByCollectionIdOrderByPositionAscIdAsc(collectionId))
-                .thenReturn(List.of(
-                        CollectionProduct.create(collectionId, activeId, 1),
-                        CollectionProduct.create(collectionId, draftId, 2)));
-        Product active = activeProduct(activeId);
-        Product draft = draftProduct(draftId);
-        when(productRepository.findById(activeId)).thenReturn(Optional.of(active));
-        when(productRepository.findById(draftId)).thenReturn(Optional.of(draft));
+        // The PUBLIC page the joined SQL answers: the ACTIVE member alone
+        // — the joined publication law filters the draft member inside
+        // the SAME statement, so a run of draft members can never shrink
+        // a public caller's page (the page math stays honest).
+        when(membershipRepository.findFirstMembershipProductRows(
+                eq(collectionId), eq(false), any(Pageable.class)))
+                .thenReturn(List.of(row(1, activeProduct(activeId))));
+        when(membershipRepository.countVisibleMembershipProducts(collectionId, false)).thenReturn(1L);
 
         CollectionProductsPage page = service.scrollCollectionProducts(
                 collectionId, ScrollPosition.keyset(), Limit.of(10), member);
@@ -306,16 +321,8 @@ class CollectionReadServiceTest {
         // exposure through a collection the same caller cannot read), and
         // the membership registry is never consulted.
         UUID collectionId = UUID.randomUUID();
-        UUID activeId = UUID.randomUUID();
-        // The collaborator is built BEFORE the stubbing line — a mock
-        // never gets created and stubbed inside another stubbing's
-        // thenReturn argument (the CI's own UnfinishedStubbing evidence).
-        Product active = activeProduct(activeId);
         when(collectionRepository.findById(collectionId)).thenReturn(Optional.of(
                 Collection.create("hidden-slug", "Hidden", "المخفية", false)));
-        when(membershipRepository.findByCollectionIdOrderByPositionAscIdAsc(collectionId))
-                .thenReturn(List.of(CollectionProduct.create(collectionId, activeId, 1)));
-        when(productRepository.findById(activeId)).thenReturn(Optional.of(active));
 
         CollectionProductsPage page = service.scrollCollectionProducts(
                 collectionId, ScrollPosition.keyset(), Limit.of(10), member);
@@ -323,6 +330,7 @@ class CollectionReadServiceTest {
         assertThat(page.total()).isZero();
         assertThat(page.window().getContent()).isEmpty();
         verify(membershipRepository, never()).findByCollectionIdOrderByPositionAscIdAsc(any());
+        verify(membershipRepository, never()).findFirstMembershipProductRows(any(), anyBoolean(), any());
     }
 
     @Test
@@ -339,16 +347,17 @@ class CollectionReadServiceTest {
         assertThat(page.total()).isZero();
         assertThat(page.window().getContent()).isEmpty();
         verify(membershipRepository, never()).findByCollectionIdOrderByPositionAscIdAsc(any());
+        verify(membershipRepository, never()).findFirstMembershipProductRows(any(), anyBoolean(), any());
     }
 
     @Test
     void theAdminCallersMemberProductsScrollCarriesTheDraftProductsToo() {
         UUID collectionId = UUID.randomUUID();
         UUID draftId = UUID.randomUUID();
-        when(membershipRepository.findByCollectionIdOrderByPositionAscIdAsc(collectionId))
-                .thenReturn(List.of(CollectionProduct.create(collectionId, draftId, 1)));
-        Product draft = draftProduct(draftId);
-        when(productRepository.findById(draftId)).thenReturn(Optional.of(draft));
+        when(membershipRepository.findFirstMembershipProductRows(
+                eq(collectionId), eq(true), any(Pageable.class)))
+                .thenReturn(List.of(row(1, draftProduct(draftId))));
+        when(membershipRepository.countVisibleMembershipProducts(collectionId, true)).thenReturn(1L);
 
         CollectionProductsPage page = service.scrollCollectionProducts(
                 collectionId, ScrollPosition.keyset(), Limit.of(10), admin);
@@ -363,17 +372,12 @@ class CollectionReadServiceTest {
         UUID collectionId = UUID.randomUUID();
         UUID productIdA = UUID.randomUUID();
         UUID productIdB = UUID.randomUUID();
-        when(membershipRepository.findByCollectionIdOrderByPositionAscIdAsc(collectionId))
-                .thenReturn(List.of(
-                        CollectionProduct.create(collectionId, productIdA, 1),
-                        CollectionProduct.create(collectionId, productIdB, 2)));
-        Product productA = activeProduct(productIdA);
-        Product productB = activeProduct(productIdB);
-        when(productRepository.findById(productIdA)).thenReturn(Optional.of(productA));
-        when(productRepository.findById(productIdB)).thenReturn(Optional.of(productB));
-
         KeysetScrollPosition afterFirst = ScrollPosition.forward(Map.of(
                 "position", 1, "id", productIdA));
+        when(membershipRepository.findNextMembershipProductRows(
+                eq(collectionId), eq(true), eq(1), eq(productIdA), any(Pageable.class)))
+                .thenReturn(List.of(row(2, activeProduct(productIdB))));
+        when(membershipRepository.countVisibleMembershipProducts(collectionId, true)).thenReturn(2L);
 
         CollectionProductsPage page = service.scrollCollectionProducts(
                 collectionId, afterFirst, Limit.of(10), admin);
@@ -393,8 +397,6 @@ class CollectionReadServiceTest {
     @Test
     void aMalformedPositionKeyAnswersTheClassifiedValidationError() {
         UUID collectionId = UUID.randomUUID();
-        when(membershipRepository.findByCollectionIdOrderByPositionAscIdAsc(collectionId))
-                .thenReturn(List.of());
 
         KeysetScrollPosition malformed = ScrollPosition.forward(Map.of(
                 "position", "not-a-number", "id", UUID.randomUUID()));
@@ -403,6 +405,64 @@ class CollectionReadServiceTest {
                 collectionId, malformed, Limit.of(10), admin))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("parseable position");
+    }
+
+    // ------------------------------------------------------------------
+    // B8 (CAT-03) — the bounded page's own laws
+    // ------------------------------------------------------------------
+
+    @Test
+    void thePageSizeLimitDrivesHasNextAndNeverLeaksTheProbeRow() {
+        UUID collectionId = UUID.randomUUID();
+        // The page ask is 10; the SQL returns 11 — the one-beyond probe
+        // row that answers hasNext inside the same statement.
+        List<Object[]> rows = new ArrayList<>();
+        for (int position = 1; position <= 11; position++) {
+            rows.add(row(position, activeProduct(UUID.randomUUID())));
+        }
+        when(membershipRepository.findFirstMembershipProductRows(
+                eq(collectionId), eq(true), any(Pageable.class)))
+                .thenReturn(rows);
+        when(membershipRepository.countVisibleMembershipProducts(collectionId, true)).thenReturn(11L);
+
+        CollectionProductsPage page = service.scrollCollectionProducts(
+                collectionId, ScrollPosition.keyset(), Limit.of(10), admin);
+
+        assertThat(page.window().hasNext()).isTrue();
+        assertThat(page.window().getContent()).hasSize(10);
+        assertThat(page.total()).isEqualTo(11);
+    }
+
+    @Test
+    void anUnlimitedRequestAnswersTheBoundedDefaultPageNeverTheWholeMembership() {
+        UUID collectionId = UUID.randomUUID();
+        when(membershipRepository.findFirstMembershipProductRows(
+                eq(collectionId), eq(true), any(Pageable.class)))
+                .thenReturn(List.of(row(1, activeProduct(UUID.randomUUID()))));
+        when(membershipRepository.countVisibleMembershipProducts(collectionId, true)).thenReturn(500L);
+
+        CollectionProductsPage page = service.scrollCollectionProducts(
+                collectionId, ScrollPosition.keyset(), Limit.unlimited(), admin);
+
+        // The CAT-03 pin: the unlimited seam answers the platform's
+        // documented bounded ceiling (100 + the one probe row = a 101-row
+        // ask), never the load of the whole 500-member registry.
+        ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+        verify(membershipRepository).findFirstMembershipProductRows(
+                eq(collectionId), eq(true), pageable.capture());
+        assertThat(pageable.getValue().getPageSize()).isEqualTo(101);
+        assertThat(page.total()).isEqualTo(500);
+    }
+
+    @Test
+    void aNonPositivePageSizeAnswersTheClassifiedValidationError() {
+        // The sibling ProductReadService guard's own contract — an
+        // unbounded page would replace the SQL keyset with an unbounded
+        // load (the exact CAT-03 shape), so the honest classified error.
+        assertThatThrownBy(() -> service.scrollCollectionProducts(UUID.randomUUID(),
+                ScrollPosition.keyset(), Limit.of(0), admin))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("positive page size");
     }
 
     // ------------------------------------------------------------------

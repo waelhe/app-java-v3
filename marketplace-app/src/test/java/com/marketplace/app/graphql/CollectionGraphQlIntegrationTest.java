@@ -8,6 +8,9 @@ import com.marketplace.catalog.Product;
 import com.marketplace.catalog.ProductRepository;
 import com.marketplace.identity.User;
 import com.marketplace.identity.UserRepository;
+import jakarta.persistence.EntityManagerFactory;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -77,6 +80,11 @@ import static org.mockito.Mockito.when;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "spring.flyway.enabled=true",
         "spring.jpa.hibernate.ddl-auto=none",
+        // B8 (CAT-03): the bounded-page regression's own meter — Hibernate's
+        // documented statement counter (the platform's existing statistics
+        // support; this class's context is already property-forked from the
+        // shared IT context by the Flyway pair above).
+        "spring.jpa.properties.hibernate.generate_statistics=true",
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
@@ -112,6 +120,10 @@ class CollectionGraphQlIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    /** B8 (CAT-03): the statement meter for the bounded-page regression. */
+    @Autowired
+    private EntityManagerFactory entityManagerFactory;
 
     @LocalServerPort
     private int port;
@@ -440,6 +452,67 @@ class CollectionGraphQlIntegrationTest {
                 .path("collection.products.edges[*].node.name").entityList(String.class)
                 .containsExactly("lcol Alpha Widget", "lcol Beta Widget", "lcol Draft Widget")
                 .path("collection.products.totalCount").entity(Integer.class).isEqualTo(3);
+    }
+
+    // ------------------------------------------------------------------
+    // B8 (CAT-03) — the bounded member-products page: the N+1 /
+    // unbounded-load regression, measured on the statement counter
+    // ------------------------------------------------------------------
+
+    @Test
+    void theMemberProductsScrollAnswersOneBoundedPagePerRequestNeverTheWholeMembership() {
+        // 120 live members — a membership six times the page ask (20): the
+        // pre-B8 shape loaded ALL 120 membership rows into memory and then
+        // issued one findById PER member (>= 122 statements for THIS very
+        // request), while the bounded page answers ONE joined statement
+        // for the page + ONE count statement for the total.
+        UUID collectionId = collectionRepository.save(Collection.create(
+                "lcol-bounded", "L Bounded", "المحدودة", true)).getId();
+        seededCollectionIds.add(collectionId);
+        List<Product> products = new ArrayList<>();
+        for (int index = 1; index <= 120; index++) {
+            products.add(Product.register(storeCategoryCode,
+                    "lcol Bounded Widget " + index, "l-collections fixture",
+                    1000L, "SAR", providerId));
+        }
+        for (Product product : productRepository.saveAll(products)) {
+            seededProductIds.add(product.getId());
+        }
+        List<CollectionProduct> membership = new ArrayList<>();
+        List<UUID> orderedIds = products.stream().map(Product::getId).toList();
+        for (int index = 0; index < orderedIds.size(); index++) {
+            membership.add(CollectionProduct.create(collectionId, orderedIds.get(index), index + 1));
+        }
+        collectionProductRepository.saveAll(membership);
+
+        Statistics statistics =
+                entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        statistics.clear();
+        HttpGraphQlTester admin = testerFor(ADMIN_SUBJECT, "ADMIN");
+        admin.document("""
+                        query($id: ID!) { collection(id: $id) { id products(first: 20) {
+                            edges { node { id name }
+                            totalCount
+                            pageInfo { hasNextPage endCursor }
+                        } } }
+                        """)
+                .variable("id", collectionGlobalId(collectionId))
+                .execute()
+                .path("collection.products.edges[*].node.id").entityList(String.class).hasSize(20)
+                .path("collection.products.totalCount").entity(Integer.class).isEqualTo(120)
+                .path("collection.products.pageInfo.hasNextPage").entity(Boolean.class).isEqualTo(true);
+        long prepared = statistics.getPrepareStatementCount();
+
+        // The bounded page's own budget: the membership page statement,
+        // the count statement, the collection publication gate and the
+        // fixed per-request infrastructure statements — a CONSTANT
+        // independent of the 120-member registry (the pre-B8 shape
+        // measured >= 122 statements for this same request). The headroom
+        // absorbs infra statements without ever admitting the per-member
+        // growth back.
+        assertThat(prepared)
+                .as("the member-products page must stay a constant statement count (was >= 122 pre-B8)")
+                .isLessThanOrEqualTo(30);
     }
 
     // ------------------------------------------------------------------
