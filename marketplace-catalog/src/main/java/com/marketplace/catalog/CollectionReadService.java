@@ -8,6 +8,7 @@ import com.marketplace.catalog.spi.CollectionView;
 import com.marketplace.catalog.spi.ProductView;
 import org.springframework.data.domain.KeysetScrollPosition;
 import org.springframework.data.domain.Limit;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.ScrollPosition;
 import org.springframework.data.domain.Window;
 import org.springframework.security.core.Authentication;
@@ -74,16 +75,23 @@ import java.util.function.Function;
 @Service
 public class CollectionReadService implements CollectionReadSpi {
 
+    /**
+     * B8 (CAT-03): the member-products scroll's page ceiling when the
+     * caller does not scope one — the platform's documented
+     * bounded-collection hard maximum (100 rows: "bounds database work,
+     * heap and payload regardless of what a client asks for"), so the
+     * unlimited seam can never degrade back into the whole-membership
+     * load the review measured.
+     */
+    static final int DEFAULT_MEMBERSHIP_PAGE_MAX = 100;
+
     private final CollectionRepository collectionRepository;
     private final CollectionProductRepository collectionProductRepository;
-    private final ProductRepository productRepository;
 
     public CollectionReadService(CollectionRepository collectionRepository,
-                                 CollectionProductRepository collectionProductRepository,
-                                 ProductRepository productRepository) {
+                                 CollectionProductRepository collectionProductRepository) {
         this.collectionRepository = collectionRepository;
         this.collectionProductRepository = collectionProductRepository;
-        this.productRepository = productRepository;
     }
 
     /**
@@ -194,6 +202,21 @@ public class CollectionReadService implements CollectionReadSpi {
      * member-product publication law governs: a non-ADMIN caller's scroll
      * carries the published (ACTIVE) products alone, and the total
      * answers the same visibility.
+     *
+     * <p><b>B8 (CAT-03 — the 2026-11-03 adversarial review): the page is
+     * cut in SQL, never in memory.</b> The scroll previously loaded the
+     * whole live membership and issued one {@code findById} per member
+     * before sorting and slicing in memory; it now answers ONE bounded
+     * joined statement per page (the membership row and its product in
+     * the same query, the publication law filtered by that same query)
+     * plus ONE count statement for the honest {@code totalCount}. The
+     * membership's live positions are unique (the V298 partial unique
+     * index), so the (position, product id) key is a total ordering —
+     * the ORDER BY alone answers the deterministic order the in-memory
+     * comparator used to establish. An unlimited request answers the
+     * platform's bounded-collection default page (the documented 100-row
+     * hard ceiling that "bounds database work, heap and payload"),
+     * never the unbounded whole-membership load.</p>
      */
     @Override
     @Transactional(readOnly = true)
@@ -204,6 +227,7 @@ public class CollectionReadService implements CollectionReadSpi {
         if (collectionId == null) {
             throw new IllegalArgumentException("A collection id is required");
         }
+        int pageSize = resolvePageSize(limit);
         boolean staff = staffCaller(authentication);
         // The wave-19 #808 review's publication gate, enforced before the
         // membership registry is ever consulted: a non-ADMIN caller's
@@ -219,60 +243,54 @@ public class CollectionReadService implements CollectionReadSpi {
                     Window.from(List.<ProductView>of(), index ->
                             ScrollPosition.forward(Map.of("position", 0)), false), 0);
         }
-        List<CollectionProduct> membership =
-                collectionProductRepository.findByCollectionIdOrderByPositionAscIdAsc(collectionId);
-        List<ProductView> visible = new ArrayList<>(membership.size());
-        for (CollectionProduct member : membership) {
-            productRepository.findById(member.getProductId())
-                    .filter(product -> staff || product.getStatus() == StoreProductStatus.ACTIVE)
-                    .ifPresent(product -> visible.add(toProductView(product)));
-        }
-
-        // The deterministic ordering — the membership's own (position, id)
-        // key, ascending only (the display order's own law; the Saleor
-        // products field's forward-only pagination contract). The member
-        // positions are read from ONE map built up front: the comparator,
-        // the cursor filter and the cursor builder all look up by id in
-        // O(1) instead of re-scanning the membership list linearly.
-        Map<UUID, Integer> memberPositions = new HashMap<>(membership.size() * 2);
-        for (CollectionProduct member : membership) {
-            memberPositions.put(member.getProductId(), member.getPosition());
-        }
-        Comparator<Integer> positionOrder = Comparator.naturalOrder();
-        Comparator<UUID> idOrder = Comparator.naturalOrder();
-        visible.sort(Comparator
-                .comparing((ProductView product) ->
-                        memberPositions.getOrDefault(product.id(), Integer.MAX_VALUE), positionOrder)
-                .thenComparing(ProductView::id, idOrder));
-
-        List<ProductView> scrollable = visible;
+        Integer afterPosition = null;
+        UUID afterId = null;
         if (position != null && !position.isInitial()) {
             requireForwardKeyset(position, "position", "collection products");
-            int cursorPosition = parseCursorInt(position, "collection products");
-            UUID cursorId = parseCursorId(position, "collection products");
-            scrollable = visible.stream()
-                    .filter(product -> {
-                        int byPosition = Integer.compare(
-                                memberPositions.getOrDefault(product.id(), Integer.MAX_VALUE),
-                                cursorPosition);
-                        return byPosition != 0 ? byPosition > 0
-                                : idOrder.compare(product.id(), cursorId) > 0;
-                    })
-                    .toList();
+            afterPosition = parseCursorInt(position, "collection products");
+            afterId = parseCursorId(position, "collection products");
         }
-
-        int pageSize = limit == null || !limit.isLimited()
-                ? scrollable.size()
-                : Math.min(limit.max(), scrollable.size());
-        boolean hasNext = scrollable.size() > pageSize;
-        List<ProductView> content = scrollable.subList(0, pageSize);
-        Window<ProductView> window = Window.from(content, index ->
+        // The one-beyond probe row answers hasNext in the same statement
+        // (the page query's own Limit discipline — no second lookahead).
+        List<Object[]> rows = afterPosition == null
+                ? collectionProductRepository.findFirstMembershipProductRows(
+                        collectionId, staff, PageRequest.of(0, pageSize + 1))
+                : collectionProductRepository.findNextMembershipProductRows(
+                        collectionId, staff, afterPosition, afterId,
+                        PageRequest.of(0, pageSize + 1));
+        boolean hasNext = rows.size() > pageSize;
+        List<Object[]> content = hasNext ? rows.subList(0, pageSize) : rows;
+        List<ProductView> visible = new ArrayList<>(content.size());
+        Map<UUID, Integer> memberPositions = new HashMap<>(content.size() * 2);
+        for (Object[] row : content) {
+            Product product = (Product) row[1];
+            memberPositions.put(product.getId(), (Integer) row[0]);
+            visible.add(toProductView(product));
+        }
+        Window<ProductView> window = Window.from(visible, index ->
                 ScrollPosition.forward(Map.of(
-                        "position", memberPositions.getOrDefault(
-                                content.get(index).id(), Integer.MAX_VALUE),
-                        "id", content.get(index).id())),
+                        "position", memberPositions.get(visible.get(index).id()),
+                        "id", visible.get(index).id())),
                 hasNext);
-        return new CollectionProductsPage(window, visible.size());
+        return new CollectionProductsPage(
+                window, collectionProductRepository.countVisibleMembershipProducts(collectionId, staff));
+    }
+
+    /**
+     * The page size law — the sibling {@code ProductReadService} guard's
+     * own contract: a positive page size is REQUIRED (an unbounded page
+     * would replace the SQL keyset with an unbounded load — the exact
+     * CAT-03 shape), and an unlimited request answers the platform's
+     * documented bounded-collection ceiling (100 rows) instead.
+     */
+    private static int resolvePageSize(Limit limit) {
+        if (limit == null || !limit.isLimited() || limit.max() >= Integer.MAX_VALUE) {
+            return DEFAULT_MEMBERSHIP_PAGE_MAX;
+        }
+        if (limit.max() <= 0) {
+            throw new IllegalArgumentException("A positive page size is required");
+        }
+        return limit.max();
     }
 
     /**
