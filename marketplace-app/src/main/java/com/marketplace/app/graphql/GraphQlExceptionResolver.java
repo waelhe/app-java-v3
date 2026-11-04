@@ -15,6 +15,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.graphql.execution.DataFetcherExceptionResolverAdapter;
 import org.springframework.graphql.execution.ErrorType;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.stereotype.Component;
 
@@ -132,7 +133,14 @@ public class GraphQlExceptionResolver extends DataFetcherExceptionResolverAdapte
         // payload — is answered inside TokenDataFetcher and never reaches
         // this branch; Spring Security's own exception messages stay
         // server-side.)
-        if (ex instanceof AuthenticationException) {
+        // The 2026-11-04 adversarial delta review: the INFRA family —
+        // AuthenticationServiceException and its InternalAuthenticationServiceException
+        // subclass (a DB outage inside the provider's load leg) — is guarded
+        // OUT of this classification: it is a broken server, not a caller who
+        // must authenticate, so it skips to the masked INTERNAL branch below
+        // (never classified as "Authentication required").
+        if (ex instanceof AuthenticationException authentication
+                && !(authentication instanceof AuthenticationServiceException)) {
             return buildError(env, ErrorType.UNAUTHORIZED, ApiErrorTaxonomy.AUTHN,
                     AUTHENTICATION_REQUIRED_MESSAGE);
         }

@@ -16,6 +16,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
@@ -143,6 +144,12 @@ class PlatformTokenGrantRotationMultiInstanceIntegrationTest {
     @Autowired
     private JwtDecoder jwtDecoder;
 
+    // The 2026-11-04 timing-equalization seam: the context's own encoder
+    // bean (SecurityConfig's DelegatingPasswordEncoder) — the same one the
+    // production grant service caches its dummy bcrypt hash through.
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
     @Autowired
     private IdentitySpi identitySpi;
 
@@ -196,6 +203,7 @@ class PlatformTokenGrantRotationMultiInstanceIntegrationTest {
                 provider(jwkSource),
                 provider(authorizationServerSettings),
                 provider(jwtDecoder),
+                provider(passwordEncoder),
                 identitySpi,
                 AUDIENCE,
                 CLIENT_ID,
@@ -208,6 +216,7 @@ class PlatformTokenGrantRotationMultiInstanceIntegrationTest {
                 provider(jwkSource),
                 provider(authorizationServerSettings),
                 provider(jwtDecoder),
+                provider(passwordEncoder),
                 identitySpi,
                 AUDIENCE,
                 CLIENT_ID,

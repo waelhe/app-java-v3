@@ -10,8 +10,12 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
+import org.springframework.security.authentication.AccountExpiredException;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.CredentialsExpiredException;
+import org.springframework.security.authentication.DisabledException;
+import org.springframework.security.authentication.LockedException;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.AuthenticationException;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -127,7 +131,15 @@ public class TokenDataFetcher {
                     .user(issued.user() == null ? null : userMapper.toGraphQlUser(issued.user()))
                     .errors(mappers.emptyAccountErrors())
                     .build();
-        } catch (AuthenticationException failure) {
+        } catch (BadCredentialsException | DisabledException | LockedException
+                | AccountExpiredException | CredentialsExpiredException failure) {
+            // The 2026-11-04 adversarial delta review: narrowed to the
+            // CLIENT-cause family only — an infra outage (DB down →
+            // InternalAuthenticationServiceException) was answered here as
+            // "Please, enter valid credentials", masking a 500 as a credential
+            // failure; the infra family now falls through to the resolver
+            // untouched, while all five client causes keep the
+            // anti-enumeration unification (the IDENTICAL payload triple).
             return CreateToken.newBuilder()
                     .errors(mappers.invalidCredentialsAccountErrors())
                     .build();
@@ -176,7 +188,15 @@ public class TokenDataFetcher {
                     .user(issued.user() == null ? null : userMapper.toGraphQlUser(issued.user()))
                     .errors(mappers.emptyAccountErrors())
                     .build();
-        } catch (AuthenticationException failure) {
+        } catch (BadCredentialsException | DisabledException | LockedException
+                | AccountExpiredException | CredentialsExpiredException failure) {
+            // The 2026-11-04 adversarial delta review: the same narrowing on
+            // the rotation — an infra outage (DB down → InternalAuthentication-
+            // ServiceException) was answered as "Incorrect refreshToken",
+            // masking a 500 as a token failure; the infra family now falls
+            // through to the resolver untouched, while every client cause
+            // keeps the anti-enumeration unification (the IDENTICAL payload
+            // triple).
             return RefreshToken.newBuilder()
                     .errors(mappers.invalidRefreshTokenAccountErrors())
                     .build();

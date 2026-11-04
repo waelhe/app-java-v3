@@ -7,10 +7,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.authentication.AccountExpiredException;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.authentication.CredentialsExpiredException;
+import org.springframework.security.authentication.DisabledException;
+import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
@@ -102,6 +107,13 @@ public class PlatformTokenGrantService {
     private static final String ROLES_ATTRIBUTE = "platform.roles";
 
     /**
+     * The fixed input of the timing-equalization dummy comparison (the
+     * OWASP Authentication Cheat Sheet pattern — a constant, never
+     * caller data). Package-visible for the grant suite's verification.
+     */
+    static final String DUMMY_COMPARISON_SECRET = "platform.timing-equalization.dummy-secret";
+
+    /**
      * The shard review (Major · Security & Privacy, 2026-11-01 wave 2;
      * representation hardened in wave 3, CORRECTED in wave 4): the
      * family's OWN birth time on the authorization row — every rotation
@@ -144,6 +156,8 @@ public class PlatformTokenGrantService {
     private final ObjectProvider<JWKSource<SecurityContext>> jwkSource;
     private final ObjectProvider<AuthorizationServerSettings> authorizationServerSettings;
     private final ObjectProvider<JwtDecoder> jwtDecoder;
+    private final ObjectProvider<PasswordEncoder> passwordEncoder;
+    private final String dummyBcrypt;
     private final IdentitySpi identitySpi;
     private final String audience;
     private final String publicClientId;
@@ -157,6 +171,7 @@ public class PlatformTokenGrantService {
             ObjectProvider<JWKSource<SecurityContext>> jwkSource,
             ObjectProvider<AuthorizationServerSettings> authorizationServerSettings,
             ObjectProvider<JwtDecoder> jwtDecoder,
+            ObjectProvider<PasswordEncoder> passwordEncoder,
             IdentitySpi identitySpi,
             @Value("${marketplace.security.jwt.audience:marketplace-api}") String audience,
             @Value("${marketplace.security.oauth2.public-client.client-id:"
@@ -170,6 +185,14 @@ public class PlatformTokenGrantService {
         this.jwkSource = jwkSource;
         this.authorizationServerSettings = authorizationServerSettings;
         this.jwtDecoder = jwtDecoder;
+        this.passwordEncoder = passwordEncoder;
+        // The 2026-11-04 review's timing equalization (see grant()): ONE
+        // bcrypt hash over the FIXED constant, computed once here at bean
+        // init — never per-request, never from caller input. Null only in
+        // package-slice contexts without the security stack, where no
+        // grant ever runs.
+        PasswordEncoder encoder = passwordEncoder.getIfAvailable();
+        this.dummyBcrypt = encoder == null ? null : encoder.encode(DUMMY_COMPARISON_SECRET);
         this.identitySpi = identitySpi;
         this.audience = audience;
         this.publicClientId = publicClientId;
@@ -197,8 +220,24 @@ public class PlatformTokenGrantService {
      */
     @Observed(name = "graphql.token.create")
     public IssuedTokens grant(String email, String password) {
-        Authentication authentication = authenticationManager().authenticate(
-                new UsernamePasswordAuthenticationToken(email, password));
+        Authentication authentication;
+        try {
+            authentication = authenticationManager().authenticate(
+                    new UsernamePasswordAuthenticationToken(email, password));
+        } catch (DisabledException | LockedException | AccountExpiredException
+                | CredentialsExpiredException accountState) {
+            // The 2026-11-04 adversarial delta review (MAJOR — timing
+            // oracle): the account-state family fails the provider's
+            // PRE-authentication checks, so the disabled leg costs ~0
+            // bcrypt while unknown-email/wrong-password cost ~1 — a
+            // measurable account-status oracle on the sign-in surface.
+            // The OWASP mitigation (Authentication Cheat Sheet): burn ONE
+            // dummy comparison against the constructor-cached bcrypt hash
+            // so every rejection costs the same, then rethrow the SAME
+            // failure (the grant flow itself is untouched).
+            burnDummyPasswordComparison();
+            throw accountState;
+        }
         String principal = authentication.getName();
         Set<String> roles = stripRolePrefix(authentication);
         Instant now = Instant.now();
@@ -493,6 +532,19 @@ public class PlatformTokenGrantService {
                 .map(authority -> authority.getAuthority())
                 .map(value -> value.startsWith("ROLE_") ? value.substring(5) : value)
                 .collect(Collectors.toSet());
+    }
+
+    /**
+     * The OWASP timing-equalization burn: ONE {@link PasswordEncoder#matches}
+     * against the constructor-cached dummy bcrypt hash — constant input,
+     * ignored result, and never a restructuring of the grant flow (the
+     * account-state failure is rethrown to the caller exactly as raised).
+     */
+    private void burnDummyPasswordComparison() {
+        PasswordEncoder encoder = passwordEncoder.getIfAvailable();
+        if (encoder != null && dummyBcrypt != null) {
+            encoder.matches(DUMMY_COMPARISON_SECRET, dummyBcrypt);
+        }
     }
 
     private AuthenticationManager authenticationManager() {
