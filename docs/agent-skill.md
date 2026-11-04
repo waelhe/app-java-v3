@@ -34,7 +34,7 @@ description: >-
   services — including bare Arabic continuations such as «ادمج»
   (merge), «راجع» (review), «تابع» (continue), «ما وضع الباك اند؟»
   (status). Encodes: AGENTS.md §0 enforced governance (the mandatory
-  load order + the five-field declaration before any mutating action);
+  load order + the six-field declaration before any mutating action);
   the METHODOLOGY.md 6-stage workflow as the method; GitHub as the only
   truth (zero-memory bootstrap); official version-matched documentation
   and source repositories govern all technologies; no unsupported manual
@@ -61,7 +61,7 @@ this skill is patched to match.
    ripple to waelhe/web-marketplace).
 3. Read `AGENTS.md` — §0 is ENFORCED: the mandatory load order
    (SYSTEM.md → PROJECT_MAP.md → the task's governing file) and the
-   five-field declaration before any mutating action.
+   six-field declaration before any mutating action.
 4. Read `docs/agent-protocol.md` (the full method), then the root
    family it binds: `SYSTEM.md` (mechanism, facts with file:line
    evidence), `PROJECT_MAP.md` (state — newest wave sections first),
@@ -98,7 +98,8 @@ this skill is patched to match.
 
 9. Emit the AGENTS.md §0.2 declaration before any mutating action
    (`[الملف الحاكم]` / `[النواة المعمارية]` / `[البند من المصفوفة §14.2]` /
-   `[أثر على الحدود]` / `[دين]`) — the twin §3 step 8, verbatim in force.
+   `[أثر على الحدود]` / `[دين]` / `[معرفة العيوب]`) — the twin §3 step 8,
+   verbatim in force.
 10. Create the remote task branch from the exact observed base SHA
     and make durable edits/commits on GitHub; open a PR for review. Do
     not push directly to `main` (the twin §3 step 9).

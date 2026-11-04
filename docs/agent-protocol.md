@@ -154,7 +154,9 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
 8. **Emit the §0.2 declaration before any mutating action** (AGENTS.md —
    enforced): `[الملف الحاكم]` (governing file) / `[النواة المعمارية]`
    (architecture core) / `[البند من المصفوفة §14.2]` / `[أثر على
-   الحدود]` (boundary impact) / `[دين]` (debt). An action without the
+   الحدود]` (boundary impact) / `[دين]` (debt) / `[معرفة العيوب]`
+   (defect knowledge — the §B/§C rulebook rules the change's triggers
+   load, or «لا محفزات»). An action without the
    declaration is stopped before it executes.
 9. **Remote branch and durable edits on GitHub**: create a task branch from the exact observed base
    SHA and make durable edits/commits on GitHub; open a PR for review. Do not
@@ -231,7 +233,7 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
   this repo or a fetched official quote. Numbers in docs are guarded by
   derivation tests (`DocumentationNumbersGuardTest` guards README /
   SYSTEM / ARCHITECTURE counts — the #425 Track 1 discipline).
-- **The declaration**: the §0.2 five-field block rides every mutating
+- **The declaration**: the §0.2 six-field block rides every mutating
   action and every PR body.
 - **Root-cause fixes with fail-on-previous-code pins**: the #458
   standard — a fix adopted from a review note only after verification

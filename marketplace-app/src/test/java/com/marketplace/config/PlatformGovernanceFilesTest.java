@@ -1154,6 +1154,18 @@ class PlatformGovernanceFilesTest {
         assertThat(protocolBranchStep).as("protocol must carry the remote-branch step").isNotNegative();
         assertThat(protocolDeclarationStep).as("the declaration precedes the branch creation")
                 .isLessThan(protocolBranchStep);
+        int protocolBootstrapStep = protocol.indexOf("1. **GitHub truth and access**");
+        assertThat(protocolBootstrapStep).as("protocol must carry the bootstrap step").isNotNegative();
+        assertThat(protocolBootstrapStep).as("bootstrap precedes the protocol declaration")
+                .isLessThan(protocolDeclarationStep);
+        assertThat(protocol.substring(protocolBootstrapStep, protocolDeclarationStep))
+                .as("no remote branch creation before the protocol declaration")
+                .doesNotContain("Remote branch and durable edits on GitHub");
+        // The six-field contract: the declaration step carries AGENTS.md
+        // §0.2's full field set — the defect-knowledge field included.
+        assertThat(protocol.substring(protocolDeclarationStep, protocolDeclarationStep + 700))
+                .as("the declaration lists the six §0.2 fields")
+                .contains("[معرفة العيوب]");
 
         assertThat(skill)
                 .as("the portable skill must carry the same permanent operating rules")
@@ -1177,6 +1189,18 @@ class PlatformGovernanceFilesTest {
         assertThat(skillBranchStep).as("portable skill must carry the remote-branch step").isNotNegative();
         assertThat(skillDeclarationStep).as("the skill's declaration precedes its branch creation")
                 .isLessThan(skillBranchStep);
+        // The CodeRabbit 2026-11-04 round-2 nitpick: the ordering pins
+        // compare heading POSITIONS only — the text of the steps that
+        // precede the declaration must not itself carry branch creation
+        // (a state-changing instruction living inside a "read" step
+        // would pass the heading check while violating the rule).
+        int skillBootstrapStep = skill.indexOf("1. Read current repository state");
+        assertThat(skillBootstrapStep).as("portable skill must carry the bootstrap step").isNotNegative();
+        assertThat(skillBootstrapStep).as("bootstrap precedes the skill declaration")
+                .isLessThan(skillDeclarationStep);
+        assertThat(skill.substring(skillBootstrapStep, skillDeclarationStep))
+                .as("no remote branch creation before the skill declaration")
+                .doesNotContain("Create the remote task branch");
 
         assertThat(methodology)
                 .as("the master methodology must govern every technology with version-matched evidence")
