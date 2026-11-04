@@ -378,6 +378,50 @@ class ProductWriteServiceTest {
     }
 
     @Test
+    void deleteOfAReservedProductAnswersTheClassifiedRefusal() {
+        // B7 (CAT-04 — the 2026-11-03 adversarial review): the
+        // open-reservation wall — a soft delete under an open reservation
+        // is unreleasable forever (the U1 probe's measured truth), so the
+        // delete answers the classified INVALID refusal instead.
+        Product reserved = mock(Product.class);
+        when(reserved.getId()).thenReturn(UUID.randomUUID());
+        when(reserved.getProviderId()).thenReturn(ProviderIds.CALLER);
+        when(reserved.getReservedQuantity()).thenReturn(5);
+        when(productRepository.findById(reserved.getId())).thenReturn(Optional.of(reserved));
+
+        ProductMutationResult result = service.deleteProduct(reserved.getId(), caller);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductMutationError::code)
+                .isEqualTo(ProductMutationErrorCode.INVALID);
+        verify(productRepository, never()).delete(any(Product.class));
+        verify(variantRepository, never()).delete(any(ProductVariant.class));
+    }
+
+    @Test
+    void deleteOfAProductWhoseVariantHoldsAReservationAnswersTheRefusal() {
+        // The wall spans BOTH shelves (ADR-0012's reservation spans the
+        // product and its variants; the delete cascades the variant shelf,
+        // so an open variant reservation is the same unreleasable state).
+        Product owned = rowOwnedBy(ProviderIds.CALLER);
+        ProductVariant reservedVariant = mock(ProductVariant.class);
+        when(reservedVariant.getReservedQuantity()).thenReturn(2);
+        when(productRepository.findById(owned.getId())).thenReturn(Optional.of(owned));
+        when(variantRepository.findByProductIdOrderBySkuAsc(owned.getId()))
+                .thenReturn(List.of(reservedVariant));
+
+        ProductMutationResult result = service.deleteProduct(owned.getId(), caller);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductMutationError::code)
+                .isEqualTo(ProductMutationErrorCode.INVALID);
+        verify(productRepository, never()).delete(any(Product.class));
+        verify(variantRepository, never()).delete(any(ProductVariant.class));
+    }
+
+    @Test
     void bulkDeleteAnswersTheHonestOwnedCount() {
         Product first = rowOwnedBy(ProviderIds.CALLER);
         Product strangers = rowOwnedBy(ProviderIds.STRANGER);
@@ -392,6 +436,26 @@ class ProductWriteServiceTest {
         assertThat(count).isEqualTo(1);
         verify(productRepository).delete(first);
         verify(productRepository, never()).delete(strangers);
+    }
+
+    @Test
+    void bulkDeleteSkipsTheReservedRowWithoutCountingIt() {
+        // B7 (CAT-04): the bulk shape of the open-reservation wall — the
+        // blocked row is neither deleted nor counted (the count answers
+        // only what the registry itself deleted).
+        Product reserved = mock(Product.class);
+        when(reserved.getId()).thenReturn(UUID.randomUUID());
+        when(reserved.getProviderId()).thenReturn(ProviderIds.CALLER);
+        when(reserved.getReservedQuantity()).thenReturn(5);
+        Product free = rowOwnedBy(ProviderIds.CALLER);
+        when(productRepository.findById(reserved.getId())).thenReturn(Optional.of(reserved));
+        when(productRepository.findById(free.getId())).thenReturn(Optional.of(free));
+
+        int count = service.deleteProducts(List.of(reserved.getId(), free.getId()), caller);
+
+        assertThat(count).as("the reserved row is skipped and not counted").isEqualTo(1);
+        verify(productRepository, never()).delete(reserved);
+        verify(productRepository).delete(free);
     }
 
     @Test

@@ -195,6 +195,26 @@ public class ProductWriteService implements ProductWriteSpi {
                     "id", ProductMutationErrorCode.NOT_FOUND, "No product found for the id")));
         }
         Product row = addressed.get();
+        // B7 (CAT-04 — the 2026-11-03 adversarial review, review-pr-808):
+        // the open-reservation wall. The delete is a SOFT delete, and the
+        // reservation machinery (reserve/release/commit) rides bulk JPQL
+        // that Hibernate's @SoftDelete filters — once the row is
+        // soft-deleted, a release or commit on it matches ZERO rows and
+        // the orders owner's ConflictException fires: a paid order's
+        // stock could never be fulfilled or released again (the U1
+        // probe's own measured evidence, pinned in
+        // ProductDeleteReservationGuardIntegrationTest). The honest
+        // contract: a product holding open reservations — its own counter
+        // or any of its variants' (the delete cascades them) — is
+        // refused with the classified INVALID error until the reserved
+        // units are released or fulfilled.
+        if (row.getReservedQuantity() > 0 || variantsHoldOpenReservations(row.getId())) {
+            return ProductMutationResult.failure(List.of(new ProductMutationError(
+                    "id", ProductMutationErrorCode.INVALID,
+                    "A product holding open reservations cannot be deleted — release or "
+                            + "fulfill the reserved units first (reserved: "
+                            + row.getReservedQuantity() + ")")));
+        }
         ProductView lastKnown = toView(row);
         productRepository.delete(row);
         // The wave-19 #808 review's preferred law (Major · Stability): the
@@ -221,6 +241,15 @@ public class ProductWriteService implements ProductWriteSpi {
             // existence disclosure for another provider's row).
             Optional<Product> addressed = ownedRow(id, authentication);
             if (addressed.isPresent()) {
+                // B7 (CAT-04): the single delete's open-reservation wall,
+                // the bulk shape — a blocked row is skipped and NOT
+                // counted (the count answers only what the registry
+                // itself deleted; the single root carries the classified
+                // refusal for the same state).
+                if (addressed.get().getReservedQuantity() > 0
+                        || variantsHoldOpenReservations(id)) {
+                    continue;
+                }
                 productRepository.delete(addressed.get());
                 // The single delete's cascade (the same wave-19 law).
                 deleteVariantsOf(id);
@@ -228,6 +257,21 @@ public class ProductWriteService implements ProductWriteSpi {
             }
         }
         return deleted;
+    }
+
+    /**
+     * B7 (CAT-04): whether any of the product's variants still holds a
+     * reservation — the delete cascades the variant shelf, so an open
+     * variant reservation is the same unreleasable state the product's
+     * own counter carries (ADR-0012's reservation spans BOTH shelves).
+     */
+    private boolean variantsHoldOpenReservations(UUID productId) {
+        for (ProductVariant variant : variantRepository.findByProductIdOrderBySkuAsc(productId)) {
+            if (variant.getReservedQuantity() > 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
