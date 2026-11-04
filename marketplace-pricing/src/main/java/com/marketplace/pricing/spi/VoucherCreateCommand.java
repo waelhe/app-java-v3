@@ -12,6 +12,14 @@ package com.marketplace.pricing.spi;
  * anywhere on this surface; dates render as ISO-8601 strings on the
  * read side and bind as strings on the write side).</p>
  *
+ * <p><b>The money units are the platform's INTERNAL exact integers</b>
+ * (the frozen money contract: minor units / basis points, never
+ * binary float): the GraphQL adapter's boundary converter
+ * (VoucherWireMoneyConverter) translates the pinned Saleor
+ * PositiveDecimal wire — major currency units for FIXED, percentage
+ * points for PERCENTAGE — onto these longs before the command is
+ * built; the pricing owner never sees the wire decimals.</p>
+ *
  * @param name                the optional display name
  * @param code                the voucher code (4..64 uppercase
  *                            letters/digits/dashes — the entity's own
@@ -23,7 +31,9 @@ package com.marketplace.pricing.spi;
  * @param currency            the ISO-4217 denomination (3 uppercase
  *                            letters — the row's NOT NULL column)
  * @param minSpend            the minimum spend in minor units (&gt;= 0;
- *                            null defaults the row to 0)
+ *                            null defaults the row to 0) — the wire's
+ *                            minAmountSpent (major units) after the
+ *                            boundary conversion
  * @param startDate           the ISO-8601 start (null opens an
  *                            unbounded window)
  * @param endDate             the ISO-8601 end (null = no end)

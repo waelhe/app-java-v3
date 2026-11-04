@@ -7,6 +7,14 @@ package com.marketplace.pricing.spi;
  * temporal fields are ISO-8601 strings (the surface's no-new-scalar
  * decision).
  *
+ * <p><b>The money units are the platform's INTERNAL exact integers</b>
+ * (minor units / basis points — the frozen money contract): the GraphQL
+ * adapter's boundary converter (VoucherWireMoneyConverter) translates
+ * the pinned PositiveDecimal wire onto these longs; a money value sent
+ * without its unit discriminator (discountValueType for the value,
+ * currency for minAmountSpent) answers the classified INVALID at the
+ * boundary before this command is built.</p>
+ *
  * <p>Amendments are constrained by the row's own integrity laws: the
  * code may change only while no redemption exists (the entity's own
  * code-stability discipline — an already-redeemed voucher's code is a

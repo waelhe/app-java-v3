@@ -66,10 +66,12 @@ public class VoucherMutationDataFetcher {
 
     /**
      * Saleor {@code voucherCreate(input: VoucherInput!): VoucherCreate} —
-     * the voucher policy write over the owner's use case. The generated
-     * input's Int fields clamp to the command's long semantics (Int is
-     * the GraphQL 32-bit ceiling; the owner's own bounds reject invalid
-     * ranges regardless).
+     * the voucher policy write over the owner's use case. The money
+     * fields ride the pinned PositiveDecimal wire (major units for
+     * FIXED, percentage points for PERCENTAGE) and convert at this
+     * boundary onto the owner's exact minor-unit/basis-point longs
+     * (VoucherWireMoneyConverter — IDP-01's root fix); every rejected
+     * conversion answers the classified payload error.
      */
     @DgsMutation(field = DgsConstants.MUTATION.VoucherCreate)
     @RateLimiter(name = "graphqlVoucherMutation")
@@ -77,7 +79,15 @@ public class VoucherMutationDataFetcher {
         if (input == null) {
             throw new IllegalArgumentException("voucherCreate requires a non-null input");
         }
-        VoucherMutationResult result = voucherWriteSpi.createVoucher(toCreateCommand(input));
+        List<VoucherMutationError> wireErrors = new ArrayList<>();
+        VoucherWireMoneyConverter.WireMoney money = convertWireMoney(input, wireErrors);
+        if (!wireErrors.isEmpty()) {
+            return VoucherCreate.newBuilder()
+                    .errors(toDiscountErrors(wireErrors))
+                    .voucher(null)
+                    .build();
+        }
+        VoucherMutationResult result = voucherWriteSpi.createVoucher(toCreateCommand(input, money));
         return VoucherCreate.newBuilder()
                 .errors(toDiscountErrors(result.errors()))
                 .voucher(result.voucher() == null ? null : voucherMapper.toGraphQlVoucher(result.voucher()))
@@ -107,8 +117,16 @@ public class VoucherMutationDataFetcher {
             throw new IllegalArgumentException("voucherUpdate requires the id of the voucher to update");
         }
         UUID nativeId = globalIdCodec.decode(id, VoucherGraphQlMapper.VOUCHER_TYPE);
+        List<VoucherMutationError> wireErrors = new ArrayList<>();
+        VoucherWireMoneyConverter.WireMoney money = convertWireMoney(input, wireErrors);
+        if (!wireErrors.isEmpty()) {
+            return VoucherUpdate.newBuilder()
+                    .errors(toDiscountErrors(wireErrors))
+                    .voucher(null)
+                    .build();
+        }
         VoucherMutationResult result = voucherWriteSpi.updateVoucher(
-                nativeId, toUpdateCommand(input));
+                nativeId, toUpdateCommand(input, money));
         return VoucherUpdate.newBuilder()
                 .errors(toDiscountErrors(result.errors()))
                 .voucher(result.voucher() == null ? null : voucherMapper.toGraphQlVoucher(result.voucher()))
@@ -161,15 +179,30 @@ public class VoucherMutationDataFetcher {
                 .build();
     }
 
+    /**
+     * The pinned PositiveDecimal money pair onto the owner's exact
+     * integers — the boundary conversion every create/update rides.
+     */
+    private static VoucherWireMoneyConverter.WireMoney convertWireMoney(
+            VoucherInput input, List<VoucherMutationError> wireErrors) {
+        return VoucherWireMoneyConverter.convert(
+                input.getDiscountValue(),
+                input.getDiscountValueType() == null ? null : input.getDiscountValueType().name(),
+                input.getMinAmountSpent(),
+                input.getCurrency(),
+                wireErrors);
+    }
+
     /** The generated input onto the owner's create command. */
-    private static VoucherCreateCommand toCreateCommand(VoucherInput input) {
+    private static VoucherCreateCommand toCreateCommand(VoucherInput input,
+                                                        VoucherWireMoneyConverter.WireMoney money) {
         return new VoucherCreateCommand(
                 input.getName(),
                 input.getCode(),
                 input.getDiscountValueType() == null ? null : input.getDiscountValueType().name(),
-                input.getDiscountValue() == null ? null : (long) input.getDiscountValue(),
+                money.discountValue(),
                 input.getCurrency(),
-                input.getMinSpend() == null ? null : (long) input.getMinSpend(),
+                money.minSpend(),
                 input.getStartDate(),
                 input.getEndDate(),
                 input.getUsageLimit() == null ? null : (long) input.getUsageLimit(),
@@ -177,14 +210,15 @@ public class VoucherMutationDataFetcher {
     }
 
     /** The generated input onto the owner's amendment command. */
-    private static VoucherUpdateCommand toUpdateCommand(VoucherInput input) {
+    private static VoucherUpdateCommand toUpdateCommand(VoucherInput input,
+                                                        VoucherWireMoneyConverter.WireMoney money) {
         return new VoucherUpdateCommand(
                 input.getName(),
                 input.getCode(),
                 input.getDiscountValueType() == null ? null : input.getDiscountValueType().name(),
-                input.getDiscountValue() == null ? null : (long) input.getDiscountValue(),
+                money.discountValue(),
                 input.getCurrency(),
-                input.getMinSpend() == null ? null : (long) input.getMinSpend(),
+                money.minSpend(),
                 input.getStartDate(),
                 input.getEndDate(),
                 input.getUsageLimit() == null ? null : (long) input.getUsageLimit(),
