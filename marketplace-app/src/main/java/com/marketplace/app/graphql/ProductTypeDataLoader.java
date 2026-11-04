@@ -39,9 +39,12 @@ import java.util.concurrent.CompletionStage;
  * scheduled thread, where the request thread's context never arrives.
  * Establishing the captured context around the owner call (set, invoke,
  * restore — the {@code DelegatingSecurityContextRunnable} discipline)
- * keeps the owner's own {@code @PreAuthorize} working UNCHANGED: the
- * same ADMIN rule, decided on the same caller, on any dispatch
- * thread.</p>
+ * keeps the caller's identity available to the owner seam on ANY
+ * dispatch thread. (The 2026-11-04 #806 round: the batch seam is the
+ * PUBLIC catalog read — the {@code Product.productType} field serves
+ * every caller who can see a product — so it carries no staff gate; the
+ * captured-context discipline stays for the owner's caller-scoped
+ * behavior and any future gating at the owning use case.)</p>
  *
  * <p><b>Values are never null</b> — the java-dataloader contract: every
  * requested key answers its {@link Optional} (an unresolvable reference

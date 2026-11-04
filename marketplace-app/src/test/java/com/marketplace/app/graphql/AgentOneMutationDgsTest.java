@@ -893,6 +893,28 @@ class AgentOneMutationDgsTest {
                 """.formatted(globalId("User", USER_ID)), "data.accountUpdate"))
                 .hasMessageContaining("app impersonation");
     }
+
+    /**
+     * The 2026-11-04 #806 round (Major · Functional Correctness): the
+     * identity store carries ONE composed display name, so a partial
+     * Saleor-shaped name update (firstName alone, or lastName alone)
+     * would compose from the input's single half and REPLACE the whole
+     * stored name — silently dropping the other half. The honest contract
+     * is both-or-neither through the same classified validation error the
+     * impersonation argument answers.
+     */
+    @Test
+    void accountUpdateRejectsThePartialNameUpdateThroughTheClassifiedError() {
+        actAs("agent-one@example.com", "CONSUMER");
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { accountUpdate(input: { firstName: "OnlyFirst" }) { user { id } } }
+                """, "data.accountUpdate"))
+                .hasMessageContaining("firstName and lastName together");
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { accountUpdate(input: { lastName: "OnlyLast" }) { user { id } } }
+                """, "data.accountUpdate"))
+                .hasMessageContaining("firstName and lastName together");
+    }
     /**
      * The 2026-11-02 #806 review (Minor · Stability): the payload
      * vocabulary translation's own contract promises the
