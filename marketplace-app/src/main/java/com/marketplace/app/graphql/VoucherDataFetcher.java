@@ -123,6 +123,13 @@ public class VoucherDataFetcher {
             @InputArgument String after,
             @InputArgument Integer first,
             @InputArgument Integer last) {
+        // The 2026-11-04 #806 round (Minor · Functional Correctness): the
+        // staff verdict comes FIRST — the degenerate first<=0 page used to
+        // return before the owner's ADMIN-gated scroll ran, so a
+        // non-ADMIN caller received a success-shaped empty page instead
+        // of the authorization failure. The orders root's own
+        // requireAdmin-before-early-returns order.
+        discountReadSpi.requireAdmin();
         if (filter != null) {
             throw new IllegalArgumentException(
                     "vouchers filter is not implemented on this platform yet");

@@ -142,6 +142,12 @@ public class OrderDataFetcher {
             @InputArgument String after,
             @InputArgument Integer first,
             @InputArgument Integer last) {
+        // The 2026-11-04 #806 round (Minor · Security & Privacy): the
+        // permission decision comes FIRST — before the unimplemented-args
+        // rejections — so a non-ADMIN caller answers AUTHZ-001 (the
+        // documented contract), never a VAL-001 about arguments the
+        // caller will never be allowed to send.
+        orderCommandSpi.requireAdmin();
         if (filter != null) {
             throw new IllegalArgumentException(
                     "orders filter is not implemented on this platform yet");
@@ -167,13 +173,9 @@ public class OrderDataFetcher {
         int requested = first == null ? properties.pagination().defaultPageSize() : first;
         if (requested <= 0) {
             // The shard review (Minor · Security & Privacy, 2026-11-01):
-            // the empty page answered BEFORE the ADMIN decision, so a
-            // non-ADMIN caller received a success-shaped response instead
-            // of the AUTHZ-001 rejection the contract promises. The
-            // permission decision comes FIRST — the same order
-            // orderBulkCancel applies (authorization before any
-            // success-shaped response).
-            orderCommandSpi.requireAdmin();
+            // the empty page answered BEFORE the ADMIN decision — fixed
+            // by the requireAdmin at the method's top (the 2026-11-04
+            // round widened it to cover the args rejections too).
             return OrderCountableConnection.newBuilder()
                     .edges(List.of())
                     .pageInfo(PageInfo.newBuilder()
@@ -208,6 +210,12 @@ public class OrderDataFetcher {
     public Order order(@InputArgument String id,
                        @InputArgument String externalReference) {
         Authentication authentication = currentAuthentication();
+        // The 2026-11-04 #806 round (Minor · Security & Privacy): the same
+        // decision-first order the orders root applies — the ADMIN verdict
+        // precedes the argument rejections, so a non-ADMIN caller answers
+        // AUTHZ-001, never a VAL-001 about externalReference or the
+        // missing id.
+        orderCommandSpi.requireAdmin();
         if (externalReference != null) {
             throw new IllegalArgumentException(
                     "order externalReference lookup is not implemented on this platform yet");

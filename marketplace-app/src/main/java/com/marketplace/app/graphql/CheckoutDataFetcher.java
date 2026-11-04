@@ -136,6 +136,14 @@ public class CheckoutDataFetcher {
                                                 @InputArgument String checkoutId,
                                                 DataFetchingEnvironment environment,
                                                 @InputArgument List<Map<String, Object>> lines) {
+        // The 2026-11-04 #806 round (Minor · Functional Correctness): the
+        // empty list is a client error, not a success-shaped no-op — the
+        // same non-empty contract productBulkDelete/productBulkCreate
+        // apply (a call that adds nothing answers the classified
+        // validation error, never a silent unchanged checkout).
+        if (lines == null || lines.isEmpty()) {
+            throw new IllegalArgumentException("checkoutLinesAdd requires a non-empty list of lines");
+        }
         // The shard review (Minor · Performance & Scalability, 2026-11-01
         // wave 2): the line lists ride decode loops into the SPI — the
         // G4 unbounded-list bound every bulk root applies (same as
@@ -205,6 +213,11 @@ public class CheckoutDataFetcher {
                                                    @InputArgument String checkoutId,
                                                    DataFetchingEnvironment environment,
                                                    @InputArgument List<Map<String, Object>> lines) {
+        // The 2026-11-04 #806 round (Minor · Functional Correctness): the
+        // same non-empty contract the add root applies.
+        if (lines == null || lines.isEmpty()) {
+            throw new IllegalArgumentException("checkoutLinesUpdate requires a non-empty list of lines");
+        }
         // The shard review (2026-11-01 wave 2): the same G4 bound the add
         // root applies — the update list decodes per line into the SPI.
         properties.requireBoundedList(lines, "checkoutLinesUpdate");
@@ -277,6 +290,11 @@ public class CheckoutDataFetcher {
     public Map<String, Object> checkoutLinesDelete(@InputArgument String id,
                                                    DataFetchingEnvironment environment,
                                                    @InputArgument List<String> linesIds) {
+        // The 2026-11-04 #806 round (Minor · Functional Correctness): the
+        // same non-empty contract the add/update roots apply.
+        if (linesIds == null || linesIds.isEmpty()) {
+            throw new IllegalArgumentException("checkoutLinesDelete requires a non-empty list of linesIds");
+        }
         // The shard review (2026-11-01 wave 2): the delete list decodes a
         // global ID per entry — the same G4 bound as the add/update roots.
         properties.requireBoundedList(linesIds, "checkoutLinesDelete");

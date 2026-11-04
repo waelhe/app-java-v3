@@ -71,6 +71,17 @@ public class DiscountReadService implements DiscountReadSpi {
     }
 
     /**
+     * The staff-surface verdict seam (the orders root's own
+     * {@code requireAdmin()} precedent): the ADMIN decision the
+     * fetchers run BEFORE their degenerate-page early returns.
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    public void requireAdmin() {
+        // The @PreAuthorize IS the verdict — nothing else to do.
+    }
+
+    /**
      * The promotion lookup by the native UUID behind the typed global ID
      * — ADMIN-enforced. An unknown but well-formed UUID answers empty:
      * the nullable root's own honest absence, never an error and never a

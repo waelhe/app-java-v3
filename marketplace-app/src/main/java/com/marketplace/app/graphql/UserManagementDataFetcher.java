@@ -396,6 +396,15 @@ public class UserManagementDataFetcher {
         rejectUnimplementedUserInputFields(
                 input.getDefaultBillingAddress(), input.getDefaultShippingAddress(),
                 input.getCustomerType(), "userCreate");
+        // The 2026-11-04 #806 round (Minor · Functional Correctness): the
+        // input's own channel field rode the same silent no-op — a
+        // supplied channel made the create look channel-scoped while the
+        // single-channel platform ignored it. The house channel message.
+        if (input.getChannel() != null && !input.getChannel().isBlank()) {
+            throw new IllegalArgumentException(
+                    "The channel argument is not implemented on this platform yet "
+                            + "(the platform is a single-channel store)");
+        }
         return new UserWriteFields(input.getEmail(),
                 input.getFirstName(), input.getLastName(), input.getIsActive());
     }
