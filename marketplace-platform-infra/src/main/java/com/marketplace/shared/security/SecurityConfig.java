@@ -623,7 +623,14 @@ public class SecurityConfig {
         // X-API-Version must be allowed so versioned clients can send the
         // X-API-Version request header consumed by ApiVersioningConfig
         // (ApiVersionConfigurer#useRequestHeader) across the same origin (A2).
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Correlation-ID", "Idempotency-Key", "X-API-Version"));
+        // B17 (TST-05 — the 2026-11-03 adversarial review): Idempotency-Key
+        // is NOT advertised — the header has no consumer on this platform
+        // (the payments owner's replay safety rides its own
+        // payment-intents.idempotency_key store), and advertising an
+        // unhonored header is exactly the config-that-lies shape. The
+        // header returns to this list together with its consumer — the
+        // divergence ledger's Idempotency-Key row records the deferral.
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Correlation-ID", "X-API-Version"));
         config.setExposedHeaders(List.of("X-Correlation-ID"));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);

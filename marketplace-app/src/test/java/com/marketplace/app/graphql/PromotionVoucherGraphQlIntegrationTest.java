@@ -32,6 +32,13 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -99,6 +106,10 @@ class PromotionVoucherGraphQlIntegrationTest {
 
     @Autowired
     private VoucherRedemptionRepository voucherRedemptionRepository;
+
+    /** B15 (TST-04): the orders owner's own settlement seam — the locked write under race. */
+    @Autowired
+    private com.marketplace.shared.api.CommercialPricingPort commercialPricingPort;
 
     @LocalServerPort
     private int port;
@@ -945,6 +956,83 @@ class PromotionVoucherGraphQlIntegrationTest {
                 .path("voucher.code").entity(String.class).isEqualTo("P3-CREATED-CODE")
                 .path("voucher.usageLimit").entity(Integer.class).isEqualTo(9)
                 .path("voucher.applyOncePerCustomer").entity(Boolean.class).isEqualTo(true);
+    }
+
+    // ------------------------------------------------------------------
+    // B15 (TST-04) — the redemption race (the locked write's own proof)
+    // ------------------------------------------------------------------
+
+    /**
+     * B15 (TST-04 — the 2026-11-03 adversarial review, review-pr-810):
+     * the voucher settlement's concurrency guarantee, proven under a REAL
+     * two-thread race instead of assumed. The settlement rides
+     * {@code findByCodeForUpdate} (PESSIMISTIC_WRITE on the voucher row)
+     * before the redemption-limit check, so two concurrent settles on a
+     * usageLimit of one must serialize at the row: EXACTLY ONE redemption
+     * lands and the loser answers the classified 409 ConflictException —
+     * never two rows, never a lost update (the PlatformTokenGrant
+     * rotation race's own harness shape).
+     */
+    @Test
+    void twoConcurrentSettlesOnAUsageLimitOfOneAllowExactlyOneRedemption() throws Exception {
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        String emittedId = adminTester.document("""
+                        mutation { voucherCreate(input: {
+                            name: "P3 Race Policy", code: "p3-race-once",
+                            discountValueType: PERCENTAGE, discountValue: 5,
+                            currency: "SAR",
+                            startDate: "2026-01-01T00:00:00Z", endDate: "2027-01-01T00:00:00Z",
+                            usageLimit: 1, applyOncePerCustomer: false
+                        }) { errors { code } voucher { id } } }
+                        """)
+                .execute()
+                .errors().verify()
+                .path("voucherCreate.voucher.id").entity(String.class).get();
+        String decoded = new String(java.util.Base64.getDecoder().decode(emittedId),
+                java.nio.charset.StandardCharsets.UTF_8);
+        UUID voucherId = UUID.fromString(decoded.substring("Voucher:".length()));
+        seededVoucherIds.add(voucherId);
+
+        UUID orderA = UUID.randomUUID();
+        UUID orderB = UUID.randomUUID();
+        UUID consumer = UUID.randomUUID();
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CyclicBarrier startTogether = new CyclicBarrier(2);
+        Callable<Boolean> settleOrderA = () -> {
+            startTogether.await(30, TimeUnit.SECONDS);
+            commercialPricingPort.settleVoucher(orderA, consumer, "P3-RACE-ONCE", 500L, "SAR");
+            return true;
+        };
+        Callable<Boolean> settleOrderB = () -> {
+            startTogether.await(30, TimeUnit.SECONDS);
+            commercialPricingPort.settleVoucher(orderB, consumer, "P3-RACE-ONCE", 500L, "SAR");
+            return true;
+        };
+        try {
+            Future<Boolean> first = pool.submit(settleOrderA);
+            Future<Boolean> second = pool.submit(settleOrderB);
+            int successes = 0;
+            for (Future<Boolean> outcome : List.of(first, second)) {
+                try {
+                    outcome.get(60, TimeUnit.SECONDS);
+                    successes++;
+                } catch (ExecutionException expected) {
+                    // The loser's classified refusal — the limit was
+                    // reached by the winner under the SAME row lock.
+                    assertThat(expected.getCause())
+                            .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                            .hasMessageContaining("redemption limit");
+                }
+            }
+            assertThat(successes).as("exactly one of the two concurrent settles lands — "
+                    + "the voucher row's pessimistic lock arbitrates").isEqualTo(1);
+            assertThat(voucherRedemptionRepository.countByVoucherId(voucherId))
+                    .as("the shared row carries exactly one redemption")
+                    .isEqualTo(1L);
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     @Test
