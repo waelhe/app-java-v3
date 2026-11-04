@@ -119,6 +119,12 @@ class PlatformTokenGrantServiceTest {
 
     @BeforeEach
     void setUp() {
+        rotationStore = new InMemoryRotationStore(authorizationStore);
+        service = newService(rotationStore);
+    }
+
+    /** The service assembly, over a swappable rotation store (B26's sequencing proof). */
+    private PlatformTokenGrantService newService(RefreshTokenRotationStore store) {
         RegisteredClient publicClient = RegisteredClient.withId(UUID.randomUUID().toString())
                 .clientId(PUBLIC_CLIENT_ID)
                 .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
@@ -148,10 +154,10 @@ class PlatformTokenGrantServiceTest {
                 new UserAccountView(UUID.randomUUID(), PRINCIPAL, false, true,
                         Instant.now().minusSeconds(3600), Instant.now(), Set.of("CONSUMER"))));
 
-        service = new PlatformTokenGrantService(
+        return new PlatformTokenGrantService(
                 provider(authenticationConfiguration),
                 provider(authorizationStore),
-                provider(rotationStore = new InMemoryRotationStore(authorizationStore)),
+                provider(store),
                 provider(clientRepository),
                 provider(jwkSource),
                 provider(AuthorizationServerSettings.builder()
@@ -377,6 +383,49 @@ class PlatformTokenGrantServiceTest {
         authorizationStore.removeByPrincipal(PRINCIPAL);
 
         assertThatThrownBy(() -> service.refresh(rotated.refreshToken()))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessageContaining("invalid, expired or revoked");
+    }
+
+    /**
+     * B26 (ORD-07 — the 2026-11-03 adversarial review, review-pr-811): the
+     * SEQUENCING proof — a deactivation committing DURING an in-flight
+     * refresh. The refresh already resolved the authorization row
+     * (findByToken answered the live family) when the identity owner's
+     * deactivation transaction commits its DELETE-by-principal; the
+     * rotation's atomic conditional UPDATE (the store's row lock — the
+     * arbitrator the design already rides) then matches NO row: the
+     * refusal precedes the mint, the fresh pair NEVER reaches the caller,
+     * and the family cannot resurrect. The residual window is the
+     * stateless access token's own bounded lifetime — a pair minted
+     * BEFORE the commit stays valid until its natural expiry, the
+     * documented 900s contract, never extended by the race.
+     */
+    @Test
+    void aDeactivationCommittingAtTheRotationBoundaryRefusesTheInFlightRefresh() {
+        // The deactivation lands exactly at the rotation's atomic
+        // boundary — after the service's findByToken leg, before the
+        // conditional UPDATE — the tightest interleaving the race allows.
+        service = newService(new RefreshTokenRotationStore() {
+            @Override
+            public boolean rotate(OAuth2Authorization rotated, String presentedRefreshToken) {
+                authorizationStore.removeByPrincipal(PRINCIPAL);
+                return rotationStore.rotate(rotated, presentedRefreshToken);
+            }
+
+            @Override
+            public boolean revokeFamilyIfConsumed(String presentedRefreshToken) {
+                return rotationStore.revokeFamilyIfConsumed(presentedRefreshToken);
+            }
+
+            @Override
+            public int purgeConsumedBefore(Instant cutoff) {
+                return rotationStore.purgeConsumedBefore(cutoff);
+            }
+        });
+        PlatformTokenGrantService.IssuedTokens granted = service.grant(PRINCIPAL, PASSWORD);
+
+        assertThatThrownBy(() -> service.refresh(granted.refreshToken()))
                 .isInstanceOf(BadCredentialsException.class)
                 .hasMessageContaining("invalid, expired or revoked");
     }

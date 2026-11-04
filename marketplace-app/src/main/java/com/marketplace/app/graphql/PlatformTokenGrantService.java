@@ -331,7 +331,18 @@ public class PlatformTokenGrantService {
         // oauth2_authorization rows in the same transaction — UserService
         // and RoleAssignmentService's own DELETE statements — so a
         // disabled account cannot refresh; NO parallel per-refresh
-        // account read is added here, per the reviewer's own guidance.)
+        // account read is added here, per the reviewer's own guidance.
+        // B26/ORD-07 — the 2026-11-03 adversarial review, review-pr-811 —
+        // the CONCURRENT interleaving rides the same arbitration: a
+        // deactivation committing between this method's findByToken leg
+        // and the rotation's atomic conditional UPDATE leaves the UPDATE
+        // matching NO row — the refusal precedes the mint and the fresh
+        // pair never reaches the caller (the sequencing proof:
+        // aDeactivationCommittingAtTheRotationBoundaryRefusesTheInFlightRefresh).
+        // The residual window is the stateless access token's own bounded
+        // lifetime — a pair minted BEFORE the deactivation's commit stays
+        // valid until its natural expiry, the documented 900s contract,
+        // never extended by the race.)
         Instant familyCreated = familyCreatedAt(authorization);
         Instant familyStart = familyCreated != null ? familyCreated
                 : authorization.getRefreshToken().getToken().getIssuedAt();
