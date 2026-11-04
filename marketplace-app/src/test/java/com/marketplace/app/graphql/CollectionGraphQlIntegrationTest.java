@@ -489,6 +489,11 @@ class CollectionGraphQlIntegrationTest {
                 entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
         statistics.clear();
         HttpGraphQlTester admin = testerFor(ADMIN_SUBJECT, "ADMIN");
+        // The connection's own fields (totalCount/pageInfo) sit on the
+        // products connection — the edges block closes before them (the
+        // first CI round's parse fix closed the outer query; this closes
+        // the edge block so the fields validate against the connection
+        // type, not the edge).
         admin.document("""
                         query($id: ID!) { collection(id: $id) { id products(first: 20) {
                             edges { node { id name } }
