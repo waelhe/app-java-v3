@@ -1165,5 +1165,14 @@ class PlatformGovernanceFilesTest {
                 .contains("https://github.com/spring-projects/spring-boot/")
                 .contains("https://github.com/apache/maven/")
                 .contains("https://github.com/saleor/saleor");
+
+        // The OpenRewrite workflow is required on Maven-sensitive PRs. It must
+        // invoke the repository wrapper (3.10.0), not an arbitrary runner Maven
+        // (the hosted runner supplied 3.9.15 and the Enforcer correctly failed).
+        String rewriteWorkflow = read(".github", "workflows", "openrewrite-catalog.yml");
+        assertThat(rewriteWorkflow)
+                .as("all OpenRewrite Maven invocations must use the pinned repository wrapper")
+                .contains("./mvnw --settings")
+                .doesNotContain("\n          mvn --settings");
     }
 }
