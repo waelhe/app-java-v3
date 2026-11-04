@@ -84,6 +84,26 @@ public class NotificationEventListener {
      * reached the account's mailbox and the journey froze at the token
      * issue. Same contract as the security-mail pair above: the mail
      * channel alone, no in-app row, no preference gate.
+     *
+     * <p><b>Idempotency — no consumer-side guard, by the A-04 precedent
+     * (documented, not omitted):</b> the password-reset pair this leg
+     * mirrors carries no state guard either, and the house's own
+     * recorded position is that the registry IS the delivery-semantics
+     * owner ({@code EmailNotificationService}'s class contract: the mail
+     * rides the listener's own {@code REQUIRES_NEW} unit and the
+     * registry marks the publication completed exactly when that unit
+     * commits; {@code EventPublicationResubmission}: "Listeners in this
+     * system are idempotent by design … so re-delivery is safe", and
+     * re-delivery happens only for FAILED publications). The completion
+     * marking is therefore the exactly-once marker for a successful
+     * leg — no consumed-marker is invented here. The residual
+     * at-least-once window (a send whose unit failed to commit) can
+     * only re-send the SAME one-time token, and the true single-use
+     * enforcement lives where it already belongs: identity's
+     * {@code AuthActionToken} stamps {@code consumed_at} exactly once
+     * under a pessimistic lock, so a duplicated mail can never redeem
+     * twice. The redelivery no-op is pinned end-to-end by
+     * {@code AccountLifecycleMailLegIntegrationTest}'s sweep legs.</p>
      */
     @ApplicationModuleListener
     public void onAccountDeletionRequested(com.marketplace.shared.api.AccountDeletionRequestedEvent event) {
@@ -95,6 +115,15 @@ public class NotificationEventListener {
     /**
      * B11 (ORD-03): the email-change journey's mail leg — the redemption
      * right belongs to the NEW address's mailbox; same mail-only shape.
+     *
+     * <p><b>Idempotency:</b> the position documented on
+     * {@link #onAccountDeletionRequested} verbatim — the registry's
+     * completion marking is the exactly-once marker (the A-04
+     * password-reset precedent, no consumer-side guard by design), and
+     * the change token's single-use enforcement lives at identity's
+     * redemption ({@code AuthActionToken#consume}), so a re-delivered
+     * publication can at worst re-send the same token, never redeem
+     * twice.</p>
      */
     @ApplicationModuleListener
     public void onEmailChangeRequested(com.marketplace.shared.api.EmailChangeRequestedEvent event) {

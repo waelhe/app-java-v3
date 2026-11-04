@@ -1,6 +1,7 @@
 package com.marketplace.app.graphql;
 
 import com.icegreen.greenmail.util.GreenMail;
+import com.marketplace.shared.cache.EventPublicationResubmission;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,6 +29,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -58,6 +60,23 @@ import static org.mockito.Mockito.when;
  * not the account's current record. The deletion confirmation mails the
  * account's own current address (the erasure right belongs to the
  * account holder).</p>
+ *
+ * <p><b>The idempotency legs (the plan's own B11 acceptance line, «إعادة
+ * تسليم الحدث = no-op»):</b> the consumers carry no state guard by the
+ * A-04 password-reset precedent — the registry's completion marking IS
+ * the exactly-once marker (a successful listener's publication is MOVED
+ * to {@code event_publication_archive} under the house
+ * {@code completion-mode: archive}, V28), and re-delivery exists only
+ * for FAILED publications through the standing
+ * {@link EventPublicationResubmission} sweep (FAILED-only, the sweep
+ * seam {@code EventPublicationResubmissionIntegrationTest} drives). Each
+ * leg below drives that sweep after a completed delivery and proves the
+ * mailbox stays at exactly one mail — redelivery is a no-op for a
+ * completed publication. The residual at-least-once window (a send whose
+ * listener unit failed to commit) can only re-send the SAME one-time
+ * token; the single-use enforcement lives at identity's redemption
+ * ({@code AuthActionToken#consume} under a pessimistic lock), pinned by
+ * the existing redemption legs above.</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "spring.flyway.enabled=true",
@@ -91,6 +110,15 @@ class AccountLifecycleMailLegIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    /**
+     * The standing recovery sweep — the platform's ONLY runtime
+     * re-delivery mechanism (FAILED publications only). The public
+     * {@code resubmitDue} clock seam is the one
+     * {@code EventPublicationResubmissionIntegrationTest} drives.
+     */
+    @Autowired
+    private EventPublicationResubmission resubmission;
 
     @LocalServerPort
     private int port;
@@ -185,6 +213,95 @@ class AccountLifecycleMailLegIntegrationTest {
                 Integer.class, email, newEmail);
         assertThat(moved).as("the account row survives the move").isEqualTo(1);
         assertThat(atNewAddress).as("the account's email moved to the new address").isEqualTo(1);
+    }
+
+    @Test
+    void theDeletionMailLegIsNeverRedeliveredByTheRecoverySweep() throws Exception {
+        // The idempotency leg — the plan's B11 acceptance line («إعادة
+        // تسليم الحدث = no-op»): a COMPLETED delivery is never re-sent by
+        // the platform's only re-delivery mechanism.
+        String listenerPattern = "%NotificationEventListener%onAccountDeletionRequested%";
+        long archivedBefore = countArchivedPublications(listenerPattern);
+
+        String email = uniqueEmail("b11-idem-del");
+        registerVerifiedAccount(email);
+
+        HttpGraphQlTester self = testerFor(email, "CONSUMER");
+        self.document("""
+                        mutation { accountRequestDeletion(channel: null,
+                                redirectUrl: "https://app.example.com/gone") {
+                            errors { code }
+                        } }
+                        """)
+                .execute()
+                .errors().verify()
+                .path("accountRequestDeletion.errors").entityList(Object.class).hasSize(0);
+
+        // The mail leg delivered exactly ONE mail carrying the one-time
+        // token — the baseline the re-delivery assertion measures against.
+        String token = tokenFromLatestMail("Confirm Your Account Deletion", email);
+        assertThat(token).as("the deletion mail carries the one-time token").isNotBlank();
+        assertThat(countMails("Confirm Your Account Deletion", email))
+                .as("the deletion mail arrived exactly once")
+                .isEqualTo(1);
+
+        // The exactly-once marker itself: the listener's REQUIRES_NEW unit
+        // completed, so the registry MOVED the publication into the archive
+        // (completion-mode: archive, V28) — a completed publication is not
+        // resubmittable by construction.
+        awaitArchivedPublications(listenerPattern, archivedBefore + 1,
+                "the deletion mail leg's publication completed into the archive");
+
+        // Re-delivery leg: drive the standing sweep (FAILED-only — the
+        // EventPublicationResubmissionIntegrationTest seam) and prove the
+        // completed publication is not among its candidates: no live row,
+        // and the mailbox stays at exactly one mail through the stability
+        // window (a re-dispatch would land within it — listener dispatch
+        // is AFTER_COMMIT + async).
+        resubmission.resubmitDue(Instant.now());
+        assertMailCountStays("Confirm Your Account Deletion", email, 1,
+                Duration.ofSeconds(3));
+        awaitNoLivePublications(listenerPattern,
+                "no deletion publication returned to the live registry");
+    }
+
+    @Test
+    void theEmailChangeMailLegIsNeverRedeliveredByTheRecoverySweep() throws Exception {
+        // The idempotency leg's email-change twin — same mechanism, the
+        // recipient law's own address (the NEW mailbox holds the proof).
+        String listenerPattern = "%NotificationEventListener%onEmailChangeRequested%";
+        long archivedBefore = countArchivedPublications(listenerPattern);
+
+        String email = uniqueEmail("b11-idem-chg");
+        String newEmail = uniqueEmail("b11-idem-chg-next");
+        registerVerifiedAccount(email);
+
+        HttpGraphQlTester self = testerFor(email, "CONSUMER");
+        self.document("""
+                        mutation { requestEmailChange(newEmail: "%s",
+                                password: "%s",
+                                redirectUrl: "https://app.example.com/mail") {
+                            errors { code }
+                        } }
+                        """.formatted(newEmail, HOUSE_PASSWORD))
+                .execute()
+                .errors().verify()
+                .path("requestEmailChange.errors").entityList(Object.class).hasSize(0);
+
+        String token = tokenFromLatestMail("Confirm Your Email Change", newEmail);
+        assertThat(token).as("the change mail carries the one-time token").isNotBlank();
+        assertThat(countMails("Confirm Your Email Change", newEmail))
+                .as("the change mail arrived exactly once at the NEW address")
+                .isEqualTo(1);
+
+        awaitArchivedPublications(listenerPattern, archivedBefore + 1,
+                "the change mail leg's publication completed into the archive");
+
+        resubmission.resubmitDue(Instant.now());
+        assertMailCountStays("Confirm Your Email Change", newEmail, 1,
+                Duration.ofSeconds(3));
+        awaitNoLivePublications(listenerPattern,
+                "no change publication returned to the live registry");
     }
 
     // ------------------------------------------------------------------
@@ -287,5 +404,112 @@ class AccountLifecycleMailLegIntegrationTest {
             }
         }
         return null;
+    }
+
+    /**
+     * Counts the mails GreenMail currently holds for the exact (subject,
+     * recipient) pair — the same matching the {@link #awaitMail} poll
+     * performs, snapshot instead of wait.
+     */
+    private int countMails(String subject, String recipient) {
+        int count = 0;
+        for (MimeMessage message : greenMail.getReceivedMessages()) {
+            try {
+                if (subject.equals(message.getSubject())
+                        && message.getRecipients(jakarta.mail.Message.RecipientType.TO) != null
+                        && java.util.Arrays.stream(message.getRecipients(jakarta.mail.Message.RecipientType.TO))
+                                .anyMatch(address -> recipient.equalsIgnoreCase(address.toString()))) {
+                    count++;
+                }
+            } catch (Exception ignored) {
+                // a partially-formed mail during GreenMail's write — not countable
+            }
+        }
+        return count;
+    }
+
+    /**
+     * The re-delivery stability window (the
+     * {@code EventPublicationResubmissionIntegrationTest} backoff-window
+     * idiom): polls the mailbox for the whole window and fails on ANY
+     * reading other than the expected count — a re-dispatched listener
+     * (AFTER_COMMIT + async) would land well inside it.
+     */
+    private void assertMailCountStays(String subject, String recipient, int expected, Duration window) {
+        long deadline = System.nanoTime() + window.toNanos();
+        while (System.nanoTime() < deadline) {
+            assertThat(countMails(subject, recipient))
+                    .as("mailbox for '%s' → %s stays at %d mail(s) through the re-delivery window",
+                            subject, recipient, expected)
+                    .isEqualTo(expected);
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+    }
+
+    /** Archived (completed) publications for the listener — V28's table. */
+    private long countArchivedPublications(String listenerPattern) {
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM event_publication_archive WHERE listener_id LIKE ?"
+                        + " AND completion_date IS NOT NULL",
+                Long.class, listenerPattern);
+        return count == null ? 0 : count;
+    }
+
+    /** Live publications for the listener — non-zero means resubmittable state. */
+    private long countLivePublications(String listenerPattern) {
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM event_publication WHERE listener_id LIKE ?",
+                Long.class, listenerPattern);
+        return count == null ? 0 : count;
+    }
+
+    /**
+     * Polls (up to 30s, 200ms — the {@code EventPublicationResubmission-
+     * IntegrationTest} pattern) until the archive holds at least
+     * {@code expected} completed publications for the listener. Listener
+     * dispatch is AFTER_COMMIT + async, so the completion move must be
+     * polled, not assumed.
+     */
+    private void awaitArchivedPublications(String listenerPattern, long expected, String description) {
+        long deadline = System.nanoTime() + 30_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            if (countArchivedPublications(listenerPattern) >= expected) {
+                return;
+            }
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        throw new AssertionError("Condition not met within 30s: " + description);
+    }
+
+    /**
+     * Polls (up to 10s, 200ms) until the live registry holds NO row for the
+     * listener — under {@code completion-mode: archive} a completed
+     * publication's row is MOVED out, so a persistent live row would mean a
+     * resubmittable (incomplete) state, which is what the sweep feeds on.
+     */
+    private void awaitNoLivePublications(String listenerPattern, String description) {
+        long deadline = System.nanoTime() + 10_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            if (countLivePublications(listenerPattern) == 0) {
+                return;
+            }
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        throw new AssertionError("Condition not met within 10s: " + description);
     }
 }
