@@ -282,6 +282,21 @@ public class AccountLifecycleDataFetcher {
         if (input == null) {
             throw new IllegalArgumentException("An input is required");
         }
+        // The 2026-11-04 #806 round (Major · Functional Correctness): the
+        // identity store carries ONE composed display name — Saleor's
+        // firstName/lastName are separate columns there, so a partial
+        // Saleor-shaped update (firstName alone) would compose from the
+        // input's single half and REPLACE the whole stored name, silently
+        // dropping the other half. The split-back is impossible (a
+        // composed string cannot be faithfully decomposed), so the honest
+        // contract is both-or-neither: the classified validation error —
+        // the same taxonomy the impersonation argument above answers.
+        if ((input.getFirstName() != null) != (input.getLastName() != null)) {
+            throw new IllegalArgumentException(
+                    "accountUpdate requires firstName and lastName together on this platform "
+                            + "(the identity store carries one composed display name — a partial "
+                            + "name update would drop the stored half)");
+        }
         accountLifecycleSpi.updateOwnProfile(currentAuthentication(),
                 composeDisplayName(input.getFirstName(), input.getLastName()));
         return AccountUpdate.newBuilder()

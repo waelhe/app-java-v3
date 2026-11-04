@@ -320,6 +320,36 @@ class ProductGraphQlIntegrationTest {
                         }));
     }
 
+    /**
+     * The 2026-11-04 #806 round (Major · Functional Correctness): the
+     * {@code productType} field's batch owner seam is the PUBLIC catalog
+     * read — every caller who can see a product resolves the field. The
+     * N+1 batch fix was born with the single-lookup staff leg's ADMIN
+     * gate, so every non-admin caller answered an authorization error on
+     * the field; the gate now lives only on the staff roots
+     * (productType/productTypes), and a CONSUMER page resolves its
+     * product types through the same loader.
+     */
+    @Test
+    void theProductTypeFieldResolvesForNonAdminCallers() {
+        HttpGraphQlTester consumer = testerFor(CONSUMER_SUBJECT, "CONSUMER");
+        consumer.document("""
+                        query { products(first: 50, sortBy: { direction: ASC, field: NAME }) {
+                            edges { node { name productType { name slug } } }
+                        } }
+                        """)
+                .execute()
+                .errors().verify()
+                .path("products.edges[*].node.productType").entityList(java.util.Map.class)
+                .satisfies(types -> assertThat(
+                        types.stream().filter(java.util.Objects::nonNull).toList())
+                        .isNotEmpty()
+                        .allSatisfy(type -> {
+                            assertThat(type.get("name")).asString().isNotBlank();
+                            assertThat(type.get("slug")).asString().isNotBlank();
+                        }));
+    }
+
     @Test
     void keysetCursorFollowThroughContinuesTheSameScrollWithoutOverlap() {
         HttpGraphQlTester tester = testerFor(CONSUMER_SUBJECT, "CONSUMER");

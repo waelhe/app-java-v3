@@ -266,6 +266,48 @@ class VoucherWriteServiceTest {
         assertThat(result.voucher().usageLimit()).isEqualTo(5L);
     }
 
+    /**
+     * The 2026-11-04 #806 round (Major · Functional Correctness): a
+     * currency change without the amounts restated keeps the row's
+     * minor-unit values under the NEW currency's unit — the silent
+     * 100x-class corruption (500 SAR minor becomes "500 USD minor").
+     * The platform has no FX source, so the honest contract is the
+     * explicit restatement: the currency leg demands BOTH amounts.
+     */
+    @Test
+    void aCurrencyChangeWithoutTheAmountsRestatedAnswersTheClassifiedInvalid() {
+        Voucher existing = row("FX-KEEP");
+        when(voucherRepository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
+        when(redemptionRepository.countByVoucherId(existing.getId())).thenReturn(0L);
+
+        VoucherMutationResult rejected = service.updateVoucher(existing.getId(),
+                new VoucherUpdateCommand(null, null, null, null, "USD", null,
+                        null, null, null, null));
+
+        assertThat(rejected.success()).isFalse();
+        assertThat(rejected.errors()).anySatisfy(error -> {
+            assertThat(error.field()).isEqualTo("currency");
+            assertThat(error.code()).isEqualTo(VoucherMutationErrorCode.INVALID);
+        });
+        verify(voucherRepository, never()).save(any());
+
+        // The same currency restated WITH both amounts lands — the
+        // operator's explicit correction path stays open. The view's own
+        // vocabulary carries no amounts (the settlement path's internal
+        // facts), so the restated pair is verified on the persisted row.
+        when(voucherRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        VoucherMutationResult restated = service.updateVoucher(existing.getId(),
+                new VoucherUpdateCommand(null, null, null, 1000L, "USD", 250L,
+                        null, null, null, null));
+
+        assertThat(restated.success()).isTrue();
+        assertThat(restated.voucher().currency()).isEqualTo("USD");
+        verify(voucherRepository).save(org.mockito.ArgumentMatchers.argThat(saved ->
+                "USD".equals(saved.getCurrency())
+                        && saved.getDiscountValue() == 1000L
+                        && saved.getMinSpendMinor() == 250L));
+    }
+
     @Test
     void mergedWindowSpanRecheckRunsOverTheMergedPair() {
         Voucher existing = Voucher.of("SPAN-CODE", "Row", "SAR", Voucher.DiscountType.FIXED, 500L, 0L,

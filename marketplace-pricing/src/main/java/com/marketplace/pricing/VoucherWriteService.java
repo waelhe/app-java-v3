@@ -158,6 +158,22 @@ public class VoucherWriteService implements VoucherWriteSpi {
         String mergedCurrency = command.currency() == null
                 ? row.getCurrency()
                 : normalizeCurrency(command.currency(), errors);
+        // The 2026-11-04 #806 round (Major · Functional Correctness): a
+        // currency change without the amounts restated keeps the ROW's
+        // minor-unit values under the NEW currency's unit — a silent
+        // 100x-class money corruption (1000 USD cents saved as "1000 JPY").
+        // The platform has no FX rate source (documented), so the honest
+        // contract is the explicit restatement: changing the currency
+        // requires BOTH the discount value and the minimum spend in the
+        // new currency — the same re-validation-together discipline the
+        // (type, value) pair above carries.
+        if (command.currency() != null
+                && !command.currency().equals(row.getCurrency())
+                && (command.discountValue() == null || command.minSpend() == null)) {
+            errors.add(new VoucherMutationError("currency", VoucherMutationErrorCode.INVALID,
+                    "Changing a voucher's currency requires restating both its discountValue "
+                            + "and minSpend in the new currency"));
+        }
         long mergedMinSpend = command.minSpend() == null ? row.getMinSpendMinor() : command.minSpend();
         if (mergedMinSpend < 0) {
             errors.add(new VoucherMutationError("minSpend", VoucherMutationErrorCode.INVALID,

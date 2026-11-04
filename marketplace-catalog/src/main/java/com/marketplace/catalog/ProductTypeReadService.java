@@ -71,7 +71,7 @@ public class ProductTypeReadService implements ProductTypeReadSpi {
     }
 
     /**
-     * The batch twin of the single lookup — ADMIN-enforced, one
+     * The batch twin of the single lookup — the PUBLIC catalog seam: one
      * {@code findAllById} repository read (Spring Data's own batch-by-ids
      * seam) instead of one {@code findById} per product. Every requested
      * id answers its {@link Optional}: the found rows their bounded
@@ -80,9 +80,24 @@ public class ProductTypeReadService implements ProductTypeReadSpi {
      * Duplicates collapse (the same id asked twice answers the same
      * entry); a collection with no usable id answers an empty map
      * without touching the repository.
+     *
+     * <p><b>The 2026-11-04 #806 round (Major · Functional Correctness):</b>
+     * this seam serves the PUBLIC {@code Product.productType} field's data
+     * loader (every caller who can see a product — CONSUMER, PROVIDER,
+     * ADMIN), so the batch read carries NO staff gate: product types are
+     * public catalog facts (id/name/slug — the same projection the public
+     * product surfaces render), and a referenced type the caller cannot
+     * resolve answers its per-row safe absence. The STAFF surfaces keep
+     * their gates where they live: {@link #findProductTypeById} (the
+     * {@code productType} root) and {@link #scrollProductTypes} (the
+     * {@code productTypes} root) stay ADMIN-enforced — the gate at the
+     * owning use case, exactly as the module's own REST surface
+     * established. The original ADMIN gate here (born with the N+1
+     * batch fix, copied from the single-lookup staff leg) made the
+     * public field answer an authorization error for every non-admin
+     * caller.</p>
      */
     @Override
-    @PreAuthorize("hasRole('ADMIN')")
     @Transactional(readOnly = true)
     public Map<UUID, Optional<ProductTypeView>> findProductTypesByIds(Collection<UUID> ids,
                                                                        Authentication authentication) {
