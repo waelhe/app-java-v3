@@ -745,6 +745,14 @@ class OrderJourneyIntegrationTest {
         String sellerName = "it-cancel-seller-" + UUID.randomUUID().toString().substring(0, 8);
         registerUser(sellerName, "USER", "PROVIDER");
         GateResult sellerGate = loginGate(sellerName, PASSWORD);
+        // The seller's commerce provisioning rides the same lazy
+        // /users/me sync every other registerProduct caller performs —
+        // the identity row the strict CurrentUserProvider resolves is
+        // created by syncFromOidc on the first /users/me call; without
+        // it the product registration answers "User not found for
+        // subject" (the file's own documented rule).
+        assertThat(getWithBearer("/api/v1/users/me", sellerGate.accessToken()).statusCode())
+                .as("the seller's /me provisioning sync").isEqualTo(200);
         UUID product = registerProduct(sellerGate.accessToken(), 1500L);
         setStock(sellerGate.accessToken(), product, 20);
 

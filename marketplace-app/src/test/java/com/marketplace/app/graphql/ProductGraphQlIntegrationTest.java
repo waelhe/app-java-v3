@@ -924,8 +924,13 @@ class ProductGraphQlIntegrationTest {
                 .path("productBulkDelete.count").entity(Integer.class).isEqualTo(1);
 
         // Released, the delete lands — the wall is the reservation state,
-        // never a blanket refusal.
-        assertThat(productRepository.release(productId, 5))
+        // never a blanket refusal. The repository's bulk modifying
+        // statements need an active transaction — the same house
+        // TransactionTemplate the reservation above rode (the typed
+        // local keeps assertThat's overload resolution unambiguous).
+        Integer released = transactionTemplate.execute(
+                status -> productRepository.release(productId, 5));
+        assertThat(released)
                 .as("the release frees the reserved units").isEqualTo(1);
         providerTester.document("""
                         mutation { productDelete(id: "%s") {

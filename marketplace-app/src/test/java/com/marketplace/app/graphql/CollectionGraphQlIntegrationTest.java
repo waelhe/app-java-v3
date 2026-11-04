@@ -491,7 +491,7 @@ class CollectionGraphQlIntegrationTest {
         HttpGraphQlTester admin = testerFor(ADMIN_SUBJECT, "ADMIN");
         admin.document("""
                         query($id: ID!) { collection(id: $id) { id products(first: 20) {
-                            edges { node { id name }
+                            edges { node { id name } }
                             totalCount
                             pageInfo { hasNextPage endCursor }
                         } } } }
