@@ -13,9 +13,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
@@ -49,6 +51,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -97,12 +100,21 @@ class PlatformTokenGrantServiceTest {
     private static final String PASSWORD = "correct-password-123";
     private static final String PUBLIC_CLIENT_ID = "test-public-client";
 
+    /** The disabled leg's principal — the provider's pre-auth check shape. */
+    private static final String DISABLED_PRINCIPAL = "rotation-agent-disabled@example.com";
+
+    /** The stubbed form of the constructor-cached dummy bcrypt hash. */
+    private static final String DUMMY_HASH = "{bcrypt}$2a$10$timingequalization-dummy-hash";
+
     private static JWKSource<SecurityContext> jwkSource;
     private static JwtDecoder jwtDecoder;
 
     private final InMemoryRowStore authorizationStore = new InMemoryRowStore();
     private InMemoryRotationStore rotationStore;
     private PlatformTokenGrantService service;
+
+    /** Verifies the timing-equalization burn (mock — the unit seam). */
+    private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
 
     @BeforeAll
     static void keyMaterial() throws Exception {
@@ -139,6 +151,12 @@ class PlatformTokenGrantServiceTest {
         AuthenticationConfiguration authenticationConfiguration =
                 mock(AuthenticationConfiguration.class);
         AuthenticationManager authenticationManager = authentication -> {
+            if (DISABLED_PRINCIPAL.equals(authentication.getName())) {
+                // The provider's pre-authentication account-state check —
+                // thrown BEFORE any password comparison (the timing-oracle
+                // shape the 2026-11-04 review measured).
+                throw new DisabledException("disabled");
+            }
             if (PRINCIPAL.equals(authentication.getName())
                     && PASSWORD.equals(authentication.getCredentials())) {
                 return new UsernamePasswordAuthenticationToken(PRINCIPAL, null,
@@ -148,6 +166,10 @@ class PlatformTokenGrantServiceTest {
         };
         when(authenticationConfiguration.getAuthenticationManager())
                 .thenReturn(authenticationManager);
+
+        // The constructor-cached dummy hash (bean-init shape, stubbed).
+        when(passwordEncoder.encode(PlatformTokenGrantService.DUMMY_COMPARISON_SECRET))
+                .thenReturn(DUMMY_HASH);
 
         IdentitySpi identitySpi = mock(IdentitySpi.class);
         when(identitySpi.findCurrentUserAccount(any())).thenReturn(Optional.of(
@@ -163,6 +185,7 @@ class PlatformTokenGrantServiceTest {
                 provider(AuthorizationServerSettings.builder()
                         .issuer("https://auth.example.com").build()),
                 provider(jwtDecoder),
+                provider(passwordEncoder),
                 identitySpi,
                 "marketplace-api",
                 PUBLIC_CLIENT_ID,
@@ -443,6 +466,25 @@ class PlatformTokenGrantServiceTest {
         assertThat(first.accessToken()).isNotEqualTo(second.accessToken());
         assertThatThrownBy(() -> service.grant(PRINCIPAL, "wrong-password"))
                 .isInstanceOf(BadCredentialsException.class);
+    }
+
+    /**
+     * The 2026-11-04 adversarial delta review (timing oracle): a disabled
+     * account's grant must burn ONE dummy comparison against the
+     * constructor-cached bcrypt hash — the OWASP equalization, so the
+     * disabled leg costs the same ~1 bcrypt the unknown-email/wrong-password
+     * legs cost — and then rethrow the SAME DisabledException (the grant
+     * flow itself untouched, the failure unchanged on the wire).
+     */
+    @Test
+    void aDisabledAccountBurnsTheDummyComparisonBeforeRethrowing() {
+        assertThatThrownBy(() -> service.grant(DISABLED_PRINCIPAL, PASSWORD))
+                .isInstanceOf(DisabledException.class);
+
+        // The burn: exactly one matches() over the FIXED constant against
+        // the constructor-cached hash — never real caller data.
+        verify(passwordEncoder).matches(
+                PlatformTokenGrantService.DUMMY_COMPARISON_SECRET, DUMMY_HASH);
     }
 
     // -------------------------------------------------------------------

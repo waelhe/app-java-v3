@@ -152,6 +152,27 @@ class GraphQlExceptionResolverTest {
     }
 
     /**
+     * The 2026-11-04 adversarial delta review: the INFRA family — an
+     * {@code AuthenticationServiceException} (whose InternalAuthenticationServiceException
+     * subclass is the DB-down shape the review demonstrated) — must NOT
+     * classify as AUTHN ("Authentication required"): a broken server is not
+     * a caller who must authenticate, so it answers the masked INTERNAL
+     * pair (INT-001 / internal) like every unknown failure.
+     */
+    @Test
+    void mapsAuthenticationServiceExceptionToMaskedInternalNotAuthn() {
+        GraphQLError error = first(resolver.resolveException(
+                new org.springframework.security.authentication
+                        .AuthenticationServiceException("data source down"),
+                env).block());
+
+        assertThat(error.getErrorType()).isEqualTo(org.springframework.graphql.execution.ErrorType.INTERNAL_ERROR);
+        assertThat(error.getExtensions()).containsEntry("errorCode", ApiErrorTaxonomy.INTERNAL.errorCode());
+        assertThat(error.getExtensions()).containsEntry("category", ApiErrorTaxonomy.INTERNAL.category());
+        assertThat(error.getMessage()).isEqualTo("An unexpected error occurred");
+    }
+
+    /**
      * CAT-02 (the 2026-11-03 adversarial scan, P2): a lost uniqueness race
      * — the second INSERT of a concurrent pair hitting the unique backstop
      * index — classifies as CONFLICT (CONFLICT-001 / conflict) with the
