@@ -314,7 +314,9 @@ class ProductVariantDataFetcherDgsTest {
         List<Map<String, Object>> edges = (List<Map<String, Object>>) connection.get("edges");
         assertThat(edges).hasSize(1);
         assertThat(edges.get(0).get("cursor"))
-                .isEqualTo(cursorStrategy.toCursor(ScrollPosition.forward(Map.of("id", variantId))));
+                .isEqualTo(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                        ScrollPosition.forward(Map.of("id", variantId)),
+                        "productVariants with the same sortBy", "id", true)));
         @SuppressWarnings("unchecked")
         Map<String, Object> node = (Map<String, Object>) edges.get(0).get("node");
         assertThat(node.get("name")).isEqualTo("Large / Red");

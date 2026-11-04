@@ -108,12 +108,18 @@ class AgentOneGraphQlMappers {
     // ---------------------------------------------------------------------
 
     <T> CustomerTypeCountableConnection toCustomerTypeConnection(Window<CustomerTypeView> window,
-                                                                  long total, boolean hasPreviousPage) {
+                                                                  long total, boolean hasPreviousPage,
+                                                                  String scrollId, String sortProperty,
+                                                                  boolean ascending) {
         List<CustomerTypeCountableEdge> edges = new ArrayList<>(window.getContent().size());
         for (int i = 0; i < window.getContent().size(); i++) {
             edges.add(CustomerTypeCountableEdge.newBuilder()
                     .node(toGraphQlCustomerType(window.getContent().get(i)))
-                    .cursor(cursorStrategy.toCursor(window.positionAt(i)))
+                    // B18 (CAT-06): the scroll's fingerprint rides the emitted
+                    // cursor — the gate refuses it on any other scroll, sort,
+                    // or direction.
+                    .cursor(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                            window.positionAt(i), scrollId, sortProperty, ascending)))
                     .build());
         }
         return CustomerTypeCountableConnection.newBuilder()

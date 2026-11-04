@@ -334,8 +334,9 @@ class OrderDataFetcherDgsTest {
         List<Map<String, Object>> edges = (List<Map<String, Object>>) connection.get("edges");
         assertThat(edges).hasSize(1);
         assertThat(edges.get(0).get("cursor"))
-                .isEqualTo(cursorStrategy.toCursor(ScrollPosition.forward(Map.of(
-                        "placedAt", placedAt, "id", orderId))));
+                .isEqualTo(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                        ScrollPosition.forward(Map.of("placedAt", placedAt, "id", orderId)),
+                        "orders with the same sortBy", "placedAt", false)));
         @SuppressWarnings("unchecked")
         Map<String, Object> node = (Map<String, Object>) edges.get(0).get("node");
         assertThat(node.get("id")).isEqualTo(java.util.Base64.getEncoder()

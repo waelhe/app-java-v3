@@ -40,6 +40,13 @@ import java.util.UUID;
 @DgsComponent
 public class StoreProductDataFetcher {
 
+    /**
+     * The scroll's cursor-fingerprint identity (B18/CAT-06 — the 2026-11-03
+     * adversarial review, review-pr-808): the storeProducts connection's own
+     * stamp, distinct from every other scroll on the surface.
+     */
+    private static final String SCROLL_ID = "storeProducts with the same sortBy";
+
     private final ProductAdminSpi productAdminSpi;
     private final StoreProductGraphQlMapper mapper;
     private final GraphQlProperties properties;
@@ -86,10 +93,20 @@ public class StoreProductDataFetcher {
         int pageSize = Math.min(requested, properties.pagination().maxPageSize());
         ProductAdminSpi.ProductListFilter mappedFilter = toListFilter(filter);
         ProductAdminSpi.ProductListSort mappedSort = toListSort(sortBy);
-        return productAdminSpi.scrollOwnedProducts(
+        Window<StoreProduct> page = productAdminSpi.scrollOwnedProducts(
                         currentAuthentication(), mappedFilter, mappedSort,
                         keysetPosition(after, mappedSort), Limit.of(pageSize))
                 .map(mapper::toResponse);
+        // B18 (CAT-06 — the 2026-11-03 adversarial review, review-pr-808):
+        // the framework's connection adaptation encodes the window's own
+        // positions — stamp each with the scroll's fingerprint so the gate
+        // refuses the emitted cursor on any other scroll, sort, or
+        // direction.
+        return Window.from(page.getContent(),
+                index -> KeysetCursorGate.stamped(page.positionAt(index), SCROLL_ID,
+                        mappedSort.field().property(),
+                        mappedSort.direction() == ProductAdminSpi.ProductListSortDirection.ASC),
+                page.hasNext());
     }
 
     @DgsQuery(field = DgsConstants.QUERY.StoreProductTypes)
@@ -273,6 +290,7 @@ public class StoreProductDataFetcher {
             case PRICE_MINOR -> KeysetCursorGate::longValue;
         };
         return KeysetCursorGate.forwardKeyset(cursorStrategy, after, field.property(), sortValue,
-                "storeProducts with the same sortBy");
+                SCROLL_ID,
+                sort.direction() == ProductAdminSpi.ProductListSortDirection.ASC);
     }
 }

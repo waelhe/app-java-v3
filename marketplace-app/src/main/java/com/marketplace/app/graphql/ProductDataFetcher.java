@@ -84,6 +84,13 @@ public class ProductDataFetcher {
     private static final ProductSort DEFAULT_SORT =
             ProductSort.of(ProductSort.Field.NAME, true);
 
+    /**
+     * The scroll's cursor-fingerprint identity (B18/CAT-06 — the 2026-11-03
+     * adversarial review, review-pr-808): the products connection's own
+     * stamp, distinct from every other scroll on the surface.
+     */
+    private static final String SCROLL_ID = "products with the same sortBy";
+
     private final ProductReadSpi productReadSpi;
     private final ProductGraphQlMapper mapper;
     private final ProductTypeGraphQlMapper productTypeMapper;
@@ -171,10 +178,10 @@ public class ProductDataFetcher {
                     .build();
         }
         int pageSize = Math.min(requested, properties.pagination().maxPageSize());
-        KeysetScrollPosition position = keysetPosition(after, sort.property());
+        KeysetScrollPosition position = keysetPosition(after, sort);
         ProductPage page = productReadSpi.scrollProducts(
                 currentAuthentication(), sort, position, Limit.of(pageSize));
-        return toConnection(page, position);
+        return toConnection(page, position, sort);
     }
 
     /**
@@ -328,9 +335,9 @@ public class ProductDataFetcher {
      * unparseable values — or a cursor emitted by the OTHER sort — answers
      * the same VAL-001 taxonomy.
      */
-    private KeysetScrollPosition keysetPosition(String after, String sortProperty) {
-        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, sortProperty,
-                KeysetCursorGate::textValue, "products with the same sortBy");
+    private KeysetScrollPosition keysetPosition(String after, ProductSort sort) {
+        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, sort.property(),
+                KeysetCursorGate::textValue, SCROLL_ID, sort.ascending());
     }
 
     /**
@@ -345,14 +352,16 @@ public class ProductDataFetcher {
      * population's count (GraphQL Int's signed 32-bit ceiling
      * documented, hence the clamp).
      */
-    private ProductCountableConnection toConnection(ProductPage page, KeysetScrollPosition position) {
+    private ProductCountableConnection toConnection(ProductPage page,
+                                                     KeysetScrollPosition position, ProductSort sort) {
         Window<ProductView> window = page.window();
         List<ProductView> content = window.getContent();
         List<ProductCountableEdge> edges = new ArrayList<>(content.size());
         for (int i = 0; i < content.size(); i++) {
             edges.add(ProductCountableEdge.newBuilder()
                     .node(mapper.toGraphQlProduct(content.get(i)))
-                    .cursor(cursorStrategy.toCursor(window.positionAt(i)))
+                    .cursor(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                            window.positionAt(i), SCROLL_ID, sort.property(), sort.ascending())))
                     .build());
         }
         String startCursor = edges.isEmpty() ? null : edges.get(0).getCursor();

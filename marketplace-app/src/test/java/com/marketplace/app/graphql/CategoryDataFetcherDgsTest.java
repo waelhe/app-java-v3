@@ -312,11 +312,13 @@ class CategoryDataFetcherDgsTest {
         List<Map<String, Object>> edges = (List<Map<String, Object>>) connection.get("edges");
         assertThat(edges).hasSize(2);
         assertThat(edges.get(0).get("cursor"))
-                .isEqualTo(cursorStrategy.toCursor(ScrollPosition.forward(Map.of(
-                        "name", "Stay", "id", stayId))));
+                .isEqualTo(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                        ScrollPosition.forward(Map.of("name", "Stay", "id", stayId)),
+                        "categories with the same sortBy", "name", true)));
         assertThat(edges.get(1).get("cursor"))
-                .isEqualTo(cursorStrategy.toCursor(ScrollPosition.forward(Map.of(
-                        "name", "Events", "id", eventsId))));
+                .isEqualTo(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                        ScrollPosition.forward(Map.of("name", "Events", "id", eventsId)),
+                        "categories with the same sortBy", "name", true)));
         @SuppressWarnings("unchecked")
         Map<String, Object> firstNode = (Map<String, Object>) edges.get(0).get("node");
         assertThat(firstNode.get("name")).isEqualTo("Stay");

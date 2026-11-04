@@ -71,6 +71,13 @@ public class AttributeDataFetcher {
     private static final AttributeSort DEFAULT_SORT =
             AttributeSort.of(AttributeSort.Field.NAME, true);
 
+    /**
+     * The scroll's cursor-fingerprint identity (B18/CAT-06 — the 2026-11-03
+     * adversarial review, review-pr-808): the attributes connection's own
+     * stamp, distinct from every other scroll on the surface.
+     */
+    private static final String SCROLL_ID = "attributes with the same sortBy";
+
     private final AttributeReadSpi attributeReadSpi;
     private final AttributeGraphQlMapper mapper;
     private final GraphQlProperties properties;
@@ -154,10 +161,10 @@ public class AttributeDataFetcher {
                     .build();
         }
         int pageSize = Math.min(requested, properties.pagination().maxPageSize());
-        KeysetScrollPosition position = keysetPosition(after, sort.property());
+        KeysetScrollPosition position = keysetPosition(after, sort);
         AttributePage page = attributeReadSpi.scrollAttributes(
                 currentAuthentication(), sort, position, Limit.of(pageSize));
-        return toConnection(page, position);
+        return toConnection(page, position, sort);
     }
 
     /**
@@ -247,9 +254,9 @@ public class AttributeDataFetcher {
      * unparseable values — or a cursor emitted by the OTHER sort — answers
      * the same VAL-001 taxonomy.
      */
-    private KeysetScrollPosition keysetPosition(String after, String sortProperty) {
-        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, sortProperty,
-                KeysetCursorGate::textValue, "attributes with the same sortBy");
+    private KeysetScrollPosition keysetPosition(String after, AttributeSort sort) {
+        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, sort.property(),
+                KeysetCursorGate::textValue, SCROLL_ID, sort.ascending());
     }
 
     /**
@@ -263,14 +270,16 @@ public class AttributeDataFetcher {
      * {@code totalCount} is the collection count (GraphQL Int's signed
      * 32-bit ceiling documented, hence the clamp).
      */
-    private AttributeCountableConnection toConnection(AttributePage page, KeysetScrollPosition position) {
+    private AttributeCountableConnection toConnection(AttributePage page,
+                                                       KeysetScrollPosition position, AttributeSort sort) {
         Window<AttributeView> window = page.window();
         List<AttributeView> content = window.getContent();
         List<AttributeCountableEdge> edges = new ArrayList<>(content.size());
         for (int i = 0; i < content.size(); i++) {
             edges.add(AttributeCountableEdge.newBuilder()
                     .node(mapper.toGraphQlAttribute(content.get(i)))
-                    .cursor(cursorStrategy.toCursor(window.positionAt(i)))
+                    .cursor(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                            window.positionAt(i), SCROLL_ID, sort.property(), sort.ascending())))
                     .build());
         }
         String startCursor = edges.isEmpty() ? null : edges.get(0).getCursor();

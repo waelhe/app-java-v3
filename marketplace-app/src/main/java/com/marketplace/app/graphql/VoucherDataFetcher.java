@@ -71,6 +71,13 @@ public class VoucherDataFetcher {
     private static final VoucherSort DEFAULT_SORT =
             VoucherSort.of(VoucherSort.Field.CODE, true);
 
+    /**
+     * The scroll's cursor-fingerprint identity (B18/CAT-06 — the 2026-11-03
+     * adversarial review, review-pr-808): the vouchers connection's own
+     * stamp, distinct from every other scroll on the surface.
+     */
+    private static final String SCROLL_ID = "vouchers with the same sortBy";
+
     private final DiscountReadSpi discountReadSpi;
     private final VoucherGraphQlMapper mapper;
     private final GraphQlProperties properties;
@@ -148,10 +155,10 @@ public class VoucherDataFetcher {
                     .build();
         }
         int pageSize = Math.min(requested, properties.pagination().maxPageSize());
-        KeysetScrollPosition position = keysetPosition(after);
+        KeysetScrollPosition position = keysetPosition(after, sort);
         VoucherPage page = discountReadSpi.scrollVouchers(
                 currentAuthentication(), sort, position, Limit.of(pageSize));
-        return toConnection(page, position);
+        return toConnection(page, position, sort);
     }
 
     /**
@@ -230,9 +237,9 @@ public class VoucherDataFetcher {
      * value type, so a client-crafted cursor with well-named but
      * unparseable values answers the same VAL-001 taxonomy.
      */
-    private KeysetScrollPosition keysetPosition(String after) {
+    private KeysetScrollPosition keysetPosition(String after, VoucherSort sort) {
         return KeysetCursorGate.forwardKeyset(cursorStrategy, after, "code", KeysetCursorGate::textValue,
-                "vouchers with the same sortBy");
+                SCROLL_ID, sort.ascending());
     }
 
     /**
@@ -246,14 +253,16 @@ public class VoucherDataFetcher {
      * before it. {@code totalCount} is the collection count (GraphQL
      * Int's signed 32-bit ceiling documented, hence the clamp).
      */
-    private VoucherCountableConnection toConnection(VoucherPage page, KeysetScrollPosition position) {
+    private VoucherCountableConnection toConnection(VoucherPage page,
+                                                     KeysetScrollPosition position, VoucherSort sort) {
         Window<VoucherView> window = page.window();
         List<VoucherView> content = window.getContent();
         List<VoucherCountableEdge> edges = new ArrayList<>(content.size());
         for (int i = 0; i < content.size(); i++) {
             edges.add(VoucherCountableEdge.newBuilder()
                     .node(mapper.toGraphQlVoucher(content.get(i)))
-                    .cursor(cursorStrategy.toCursor(window.positionAt(i)))
+                    .cursor(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                            window.positionAt(i), SCROLL_ID, "code", sort.ascending())))
                     .build());
         }
         String startCursor = edges.isEmpty() ? null : edges.get(0).getCursor();

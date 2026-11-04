@@ -316,11 +316,13 @@ class CustomerDataFetcherDgsTest {
         List<Map<String, Object>> edges = (List<Map<String, Object>>) connection.get("edges");
         assertThat(edges).hasSize(2);
         assertThat(edges.get(0).get("cursor"))
-                .isEqualTo(cursorStrategy.toCursor(ScrollPosition.forward(Map.of(
-                        "email", "customer-one@example.com", "id", first))));
+                .isEqualTo(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                        ScrollPosition.forward(Map.of("email", "customer-one@example.com", "id", first)),
+                        "customers with the same sortBy", "email", true)));
         assertThat(edges.get(1).get("cursor"))
-                .isEqualTo(cursorStrategy.toCursor(ScrollPosition.forward(Map.of(
-                        "email", "customer-two@example.com", "id", second))));
+                .isEqualTo(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                        ScrollPosition.forward(Map.of("email", "customer-two@example.com", "id", second)),
+                        "customers with the same sortBy", "email", true)));
         @SuppressWarnings("unchecked")
         Map<String, Object> firstNode = (Map<String, Object>) edges.get(0).get("node");
         // The typed global ID the SHARED mapper emits — never a raw UUID.

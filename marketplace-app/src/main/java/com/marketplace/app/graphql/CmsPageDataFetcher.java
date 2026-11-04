@@ -65,6 +65,16 @@ public class CmsPageDataFetcher {
     static final String PAGE_TYPE_TAG = "Page";
     static final String PAGE_TYPE_TYPE_TAG = "PageType";
 
+    /**
+     * The scrolls' cursor-fingerprint identities (B18/CAT-06 — the 2026-11-03
+     * adversarial review, review-pr-808): the pages and pageTypes
+     * connections carry DISTINCT stamps — they shared one gate identity
+     * before, so a pages cursor passed the pageTypes gate verbatim
+     * whenever the key sets coincided.
+     */
+    private static final String PAGES_SCROLL_ID = "pages with the same sortBy";
+    private static final String PAGE_TYPES_SCROLL_ID = "pageTypes with the same sortBy";
+
     private final CmsPageSpi cmsPageSpi;
     private final com.marketplace.catalog.spi.AttributeReadSpi attributeReadSpi;
     private final AgentOneGraphQlMappers mappers;
@@ -365,11 +375,12 @@ public class CmsPageDataFetcher {
         boolean ascending = sortBy == null || sortBy.getDirection() == null
                 || com.marketplace.app.graphql.generated.types.OrderDirection.ASC
                         .equals(sortBy.getDirection());
-        KeysetScrollPosition position = keysetPosition(after, field);
+        KeysetScrollPosition position = keysetPosition(after, field, PAGES_SCROLL_ID, ascending);
         CmsPageSpi.PageWindow window = cmsPageSpi.scrollPages(currentAuthentication(), field,
                 ascending, position,
                 Limit.of(Math.min(requested, properties.pagination().maxPageSize())));
-        return toConnection(window, PageCountableConnection.newBuilder(), position);
+        return toConnection(window, PageCountableConnection.newBuilder(), position, field,
+                ascending);
     }
 
     @DgsQuery(field = DgsConstants.QUERY.PageType)
@@ -408,11 +419,12 @@ public class CmsPageDataFetcher {
         boolean ascending = sortBy == null || sortBy.getDirection() == null
                 || com.marketplace.app.graphql.generated.types.OrderDirection.ASC
                         .equals(sortBy.getDirection());
-        KeysetScrollPosition typePosition = keysetPosition(after, field);
+        KeysetScrollPosition typePosition = keysetPosition(after, field, PAGE_TYPES_SCROLL_ID,
+                ascending);
         CmsPageSpi.PageTypeWindow window = cmsPageSpi.scrollPageTypes(currentAuthentication(),
                 field, ascending, typePosition,
                 Limit.of(Math.min(requested, properties.pagination().maxPageSize())));
-        return toTypeConnection(window, typePosition);
+        return toTypeConnection(window, typePosition, field, ascending);
     }
 
     // ---------------------------------------------------------------------
@@ -535,13 +547,16 @@ public class CmsPageDataFetcher {
 
     private PageCountableConnection toConnection(CmsPageSpi.PageWindow window,
                                                  PageCountableConnection.Builder builder,
-                                                 KeysetScrollPosition position) {
+                                                 KeysetScrollPosition position, String sortField,
+                                                 boolean ascending) {
         List<com.marketplace.app.graphql.generated.types.PageCountableEdge> edges =
                 new ArrayList<>(window.window().getContent().size());
         for (int i = 0; i < window.window().getContent().size(); i++) {
             edges.add(com.marketplace.app.graphql.generated.types.PageCountableEdge.newBuilder()
                     .node(toGraphQlPage(window.window().getContent().get(i)))
-                    .cursor(cursorStrategy.toCursor(window.window().positionAt(i)))
+                    .cursor(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                            window.window().positionAt(i), PAGES_SCROLL_ID,
+                            cursorProperty(sortField), ascending)))
                     .build());
         }
         // The shard review (Minor · Functional Correctness, 2026-11-01
@@ -558,13 +573,16 @@ public class CmsPageDataFetcher {
     }
 
     private PageTypeCountableConnection toTypeConnection(CmsPageSpi.PageTypeWindow window,
-                                                          KeysetScrollPosition position) {
+                                                          KeysetScrollPosition position,
+                                                          String sortField, boolean ascending) {
         List<com.marketplace.app.graphql.generated.types.PageTypeCountableEdge> edges =
                 new ArrayList<>(window.window().getContent().size());
         for (int i = 0; i < window.window().getContent().size(); i++) {
             edges.add(com.marketplace.app.graphql.generated.types.PageTypeCountableEdge.newBuilder()
                     .node(toGraphQlPageType(window.window().getContent().get(i)))
-                    .cursor(cursorStrategy.toCursor(window.window().positionAt(i)))
+                    .cursor(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                            window.window().positionAt(i), PAGE_TYPES_SCROLL_ID,
+                            cursorProperty(sortField), ascending)))
                     .build());
         }
         String start = edges.isEmpty() ? null : edges.get(0).getCursor();
@@ -593,23 +611,32 @@ public class CmsPageDataFetcher {
                 .build();
     }
 
-    private KeysetScrollPosition keysetPosition(String after, String sortField) {
+    private KeysetScrollPosition keysetPosition(String after, String sortField, String scrollId,
+                                               boolean ascending) {
         // The connection's own sort keys (B2, the CodeRabbit correctness
         // round): pageTypes defaults to NAME and the service orders that
         // window by (name, id) — the cursor key must match the requested
         // sort or the gate rejects the emitted cursor on the next request
         // (the previous fall-through handed pageTypes' NAME windows a
-        // slug-keyed cursor).
-        String property = switch (sortField) {
+        // slug-keyed cursor). B18 (CAT-06): the scroll's own identity and
+        // direction ride the cursor's fingerprint — a pages cursor never
+        // passes the pageTypes gate and an ASC cursor never passes the
+        // DESC query.
+        String property = cursorProperty(sortField);
+        java.util.function.Function<Object, Object> value = "createdAt".equals(property)
+                ? KeysetCursorGate::instantValue : KeysetCursorGate::textValue;
+        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, property, value,
+                scrollId, ascending);
+    }
+
+    /** The executed sort's owning property — the cursor's fingerprint axis. */
+    private static String cursorProperty(String sortField) {
+        return switch (sortField) {
             case "TITLE" -> "title";
             case "CREATED_AT", "PUBLICATION_DATE" -> "createdAt";
             case "NAME" -> "name";
             default -> "slug";
         };
-        java.util.function.Function<Object, Object> value = "createdAt".equals(property)
-                ? KeysetCursorGate::instantValue : KeysetCursorGate::textValue;
-        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, property, value,
-                "pages with the same sortBy");
     }
 
     private List<UUID> validatedAttributes(List<String> attributeIds) {

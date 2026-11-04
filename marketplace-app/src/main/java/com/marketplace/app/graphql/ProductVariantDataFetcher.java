@@ -80,6 +80,13 @@ public class ProductVariantDataFetcher {
     private static final ProductVariantSort DEFAULT_SORT =
             ProductVariantSort.of(ProductVariantSort.Field.ID, true);
 
+    /**
+     * The scroll's cursor-fingerprint identity (B18/CAT-06 — the 2026-11-03
+     * adversarial review, review-pr-808): the productVariants connection's
+     * own stamp, distinct from every other scroll on the surface.
+     */
+    private static final String SCROLL_ID = "productVariants with the same sortBy";
+
     private final ProductVariantReadSpi variantReadSpi;
     private final ProductVariantGraphQlMapper mapper;
     private final GraphQlProperties properties;
@@ -171,7 +178,7 @@ public class ProductVariantDataFetcher {
         KeysetScrollPosition position = keysetPosition(after, sort);
         ProductVariantPage page = variantReadSpi.scrollVariants(
                 currentAuthentication(), sort, position, Limit.of(pageSize));
-        return toConnection(page, position);
+        return toConnection(page, position, sort);
     }
 
     /**
@@ -260,10 +267,15 @@ public class ProductVariantDataFetcher {
     private KeysetScrollPosition keysetPosition(String after, ProductVariantSort sort) {
         if (sort.field() == ProductVariantSort.Field.LAST_MODIFIED_AT) {
             return KeysetCursorGate.forwardKeyset(cursorStrategy, after, "updatedAt",
-                    KeysetCursorGate::instantValue, "productVariants with the same sortBy");
+                    KeysetCursorGate::instantValue, SCROLL_ID, sort.ascending());
         }
         return KeysetCursorGate.forwardKeyset(cursorStrategy, after, "id",
-                KeysetCursorGate::uuidValue, "productVariants with the same sortBy");
+                KeysetCursorGate::uuidValue, SCROLL_ID, sort.ascending());
+    }
+
+    /** The executed sort's owning property — the cursor's fingerprint axis. */
+    private static String sortProperty(ProductVariantSort sort) {
+        return sort.field() == ProductVariantSort.Field.LAST_MODIFIED_AT ? "updatedAt" : "id";
     }
 
     /**
@@ -279,14 +291,16 @@ public class ProductVariantDataFetcher {
      * Int's signed 32-bit ceiling documented, hence the clamp).
      */
     private ProductVariantCountableConnection toConnection(ProductVariantPage page,
-                                                           KeysetScrollPosition position) {
+                                                           KeysetScrollPosition position,
+                                                           ProductVariantSort sort) {
         Window<ProductVariantView> window = page.window();
         List<ProductVariantView> content = window.getContent();
         List<ProductVariantCountableEdge> edges = new ArrayList<>(content.size());
         for (int i = 0; i < content.size(); i++) {
             edges.add(ProductVariantCountableEdge.newBuilder()
                     .node(mapper.toGraphQlProductVariant(content.get(i)))
-                    .cursor(cursorStrategy.toCursor(window.positionAt(i)))
+                    .cursor(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                            window.positionAt(i), SCROLL_ID, sortProperty(sort), sort.ascending())))
                     .build());
         }
         String startCursor = edges.isEmpty() ? null : edges.get(0).getCursor();

@@ -70,6 +70,13 @@ public class CustomerDataFetcher {
      */
     private static final UserAccountSort DEFAULT_SORT = UserAccountSort.of(UserAccountSort.Field.EMAIL, true);
 
+    /**
+     * The scroll's cursor-fingerprint identity (B18/CAT-06 — the 2026-11-03
+     * adversarial review, review-pr-808): the customers connection's own
+     * stamp, distinct from every other scroll on the surface.
+     */
+    private static final String SCROLL_ID = "customers with the same sortBy";
+
     private final IdentitySpi identitySpi;
     private final UserGraphQlMapper mapper;
     private final GraphQlProperties properties;
@@ -145,7 +152,7 @@ public class CustomerDataFetcher {
         KeysetScrollPosition position = keysetPosition(after, sort);
         UserAccountPage page = identitySpi.scrollCustomers(
                 currentAuthentication(), sort, position, Limit.of(pageSize));
-        return toConnection(page, position);
+        return toConnection(page, position, sort);
     }
 
     /**
@@ -178,17 +185,21 @@ public class CustomerDataFetcher {
      * unparseable values answers the same VAL-001 taxonomy.
      */
     private KeysetScrollPosition keysetPosition(String after, UserAccountSort sort) {
-        String property = switch (sort.field()) {
-            case EMAIL -> "email";
-            case CREATED_AT -> "createdAt";
-            case LAST_MODIFIED_AT -> "updatedAt";
-        };
         java.util.function.Function<Object, Object> sortValue = switch (sort.field()) {
             case EMAIL -> KeysetCursorGate::textValue;
             case CREATED_AT, LAST_MODIFIED_AT -> KeysetCursorGate::instantValue;
         };
-        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, property, sortValue,
-                "customers with the same sortBy");
+        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, sortProperty(sort), sortValue,
+                SCROLL_ID, sort.ascending());
+    }
+
+    /** The executed sort's owning property — the cursor's fingerprint axis. */
+    private static String sortProperty(UserAccountSort sort) {
+        return switch (sort.field()) {
+            case EMAIL -> "email";
+            case CREATED_AT -> "createdAt";
+            case LAST_MODIFIED_AT -> "updatedAt";
+        };
     }
 
     /**
@@ -202,14 +213,16 @@ public class CustomerDataFetcher {
      * {@code totalCount} is the collection count (GraphQL Int's signed
      * 32-bit ceiling documented, hence the clamp).
      */
-    private UserCountableConnection toConnection(UserAccountPage page, KeysetScrollPosition position) {
+    private UserCountableConnection toConnection(UserAccountPage page,
+                                                 KeysetScrollPosition position, UserAccountSort sort) {
         Window<UserAccountView> window = page.window();
         List<UserAccountView> content = window.getContent();
         List<UserCountableEdge> edges = new ArrayList<>(content.size());
         for (int i = 0; i < content.size(); i++) {
             edges.add(UserCountableEdge.newBuilder()
                     .node(mapper.toGraphQlUser(content.get(i)))
-                    .cursor(cursorStrategy.toCursor(window.positionAt(i)))
+                    .cursor(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                            window.positionAt(i), SCROLL_ID, sortProperty(sort), sort.ascending())))
                     .build());
         }
         String startCursor = edges.isEmpty() ? null : edges.get(0).getCursor();
