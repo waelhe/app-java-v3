@@ -78,6 +78,33 @@ public class NotificationEventListener {
     }
 
     /**
+     * B11 (ORD-03 — the 2026-11-03 adversarial review, review-pr-811): the
+     * account self-deletion journey's mail leg — the event carried no
+     * consumer since its landing, so the one-time erasure right never
+     * reached the account's mailbox and the journey froze at the token
+     * issue. Same contract as the security-mail pair above: the mail
+     * channel alone, no in-app row, no preference gate.
+     */
+    @ApplicationModuleListener
+    public void onAccountDeletionRequested(com.marketplace.shared.api.AccountDeletionRequestedEvent event) {
+        notificationService.onAccountDeletionRequested(
+                event.userId(), event.deletionToken(), event.expiresAt());
+        log.info("Account deletion mail sent: userId={}", event.userId());
+    }
+
+    /**
+     * B11 (ORD-03): the email-change journey's mail leg — the redemption
+     * right belongs to the NEW address's mailbox; same mail-only shape.
+     */
+    @ApplicationModuleListener
+    public void onEmailChangeRequested(com.marketplace.shared.api.EmailChangeRequestedEvent event) {
+        notificationService.onEmailChangeRequested(
+                event.userId(), event.oldEmail(), event.newEmail(),
+                event.changeToken(), event.expiresAt());
+        log.info("Email change mail sent: userId={}", event.userId());
+    }
+
+    /**
      * A-03 (official-compliance plan 0.6 — the dead BookingConfirmedEvent's
      * delivery; the parallel contracts ledger recorded this consumer as
      * "returning with round A-03" and rules the crossing: booking (Track A)
