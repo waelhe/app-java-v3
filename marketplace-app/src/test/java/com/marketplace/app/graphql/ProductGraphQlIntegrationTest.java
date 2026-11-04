@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
@@ -109,6 +110,10 @@ class ProductGraphQlIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    /** B7/U1 (CAT-04): the orders owner's own reservation seam — the same port OrdersService rides. */
+    @Autowired
+    private com.marketplace.shared.api.ProductStockPort productStockPort;
 
     @LocalServerPort
     private int port;
@@ -853,5 +858,114 @@ class ProductGraphQlIntegrationTest {
                 .errors().verify()
                 .path("productBulkDelete.count").entity(Integer.class).isEqualTo(1)
                 .path("productBulkDelete.errors").entityList(Object.class).hasSize(0);
+    }
+
+    // ------------------------------------------------------------------
+    // B7 (CAT-04) — the open-reservation wall on the delete roots
+    // ------------------------------------------------------------------
+
+    @Test
+    void theDeleteRootsRefuseAProductHoldingOpenReservations() {
+        // The orders owner's own reservation seam (ProductStockAdapter
+        // rides the same repository write) freezes units on the product's
+        // counter — the state an open placement leaves behind.
+        UUID productId = productRepository.save(Product.register(storeCategoryCode,
+                "b4c Reserved Widget", "fixture", 1000L, "SAR", providerId)).getId();
+        seededProductIds.add(productId);
+        jdbcTemplate.update("UPDATE products SET stock_quantity = 20 WHERE id = ?", productId);
+        assertThat(productRepository.reserve(productId, 5))
+                .as("the placement's reservation lands on the live row").isEqualTo(1);
+
+        HttpGraphQlTester providerTester = testerFor(providerId.toString(), "PROVIDER");
+
+        // The single root refuses with the classified INVALID error —
+        // never a soft delete under an open reservation.
+        providerTester.document("""
+                        mutation { productDelete(id: "%s") {
+                            errors { field code }
+                            product { id }
+                        } }
+                        """.formatted(productGlobalId(productId)))
+                .execute()
+                .errors().verify()
+                .path("productDelete.errors[0].field").entity(String.class).isEqualTo("id")
+                .path("productDelete.errors[0].code").entity(String.class).isEqualTo("INVALID")
+                .path("productDelete.product").valueIsNull();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT is_deleted FROM products WHERE id = ?", Boolean.class, productId))
+                .as("the reserved product stays live under the wall").isFalse();
+
+        // The bulk root answers the same wall with the honest count: the
+        // blocked row is neither deleted nor counted (the count answers
+        // only what the registry itself deleted).
+        UUID freeId = productRepository.save(Product.register(storeCategoryCode,
+                "b4c Free Widget", "fixture", 1000L, "SAR", providerId)).getId();
+        seededProductIds.add(freeId);
+        providerTester.document("""
+                        mutation($ids: [ID!]!) { productBulkDelete(ids: $ids) {
+                            count
+                            errors { code }
+                        } }
+                        """)
+                .variable("ids", List.of(productGlobalId(productId), productGlobalId(freeId)))
+                .execute()
+                .errors().verify()
+                .path("productBulkDelete.count").entity(Integer.class).isEqualTo(1);
+
+        // Released, the delete lands — the wall is the reservation state,
+        // never a blanket refusal.
+        assertThat(productRepository.release(productId, 5))
+                .as("the release frees the reserved units").isEqualTo(1);
+        providerTester.document("""
+                        mutation { productDelete(id: "%s") {
+                            errors { code }
+                            product { id }
+                        } }
+                        """.formatted(productGlobalId(productId)))
+                .execute()
+                .errors().verify()
+                .path("productDelete.errors").entityList(Object.class).hasSize(0);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT is_deleted FROM products WHERE id = ?", Boolean.class, productId))
+                .as("the released product deletes").isTrue();
+    }
+
+    /**
+     * U1 (the W5 risk probe — B7's own WHY, measured): the reservation
+     * machinery rides bulk JPQL that Hibernate's {@code @SoftDelete}
+     * filters, so a soft-deleted product's reservation can NEVER be
+     * released or committed again — the exact state the B7 wall makes
+     * unreachable through the delete roots. This probe recreates the
+     * pre-guard state directly (a raw soft-delete under an open
+     * reservation, bypassing the guarded GraphQL surface on purpose) and
+     * measures the machinery's answer: zero matched rows and the orders
+     * owner's 409 ConflictException on the adapter seam.
+     */
+    @Test
+    void aSoftDeletedRowCanNeverReleaseItsReservationAgain() {
+        UUID productId = productRepository.save(Product.register(storeCategoryCode,
+                "b4c Zombie Reservation Widget", "fixture", 1000L, "SAR", providerId)).getId();
+        seededProductIds.add(productId);
+        jdbcTemplate.update("UPDATE products SET stock_quantity = 20 WHERE id = ?", productId);
+        assertThat(productRepository.reserve(productId, 3)).isEqualTo(1);
+
+        // The pre-B7 state, recreated directly: the row soft-deleted under
+        // the open reservation (the raw column write is the probe's own
+        // instrument — no production path writes this shape anymore).
+        jdbcTemplate.update("UPDATE products SET is_deleted = TRUE WHERE id = ?", productId);
+
+        // The measured truth: the bulk-JPQL release matches ZERO rows
+        // (@SoftDelete filters the statement), so the reservation is
+        // unreleasable and the orders owner's adapter answers its 409 —
+        // the root cause the B7 wall closes.
+        assertThat(productRepository.release(productId, 3))
+                .as("the soft-deleted row's reservation can never be released (U1)")
+                .isZero();
+        assertThatThrownBy(() -> productStockPort.release(java.util.Map.of(productId, 3)))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT reserved_quantity FROM products WHERE id = ?", Integer.class, productId))
+                .as("the zombie reservation stays frozen at its value")
+                .isEqualTo(3);
     }
 }
