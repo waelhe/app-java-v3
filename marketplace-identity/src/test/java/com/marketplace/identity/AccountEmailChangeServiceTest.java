@@ -31,6 +31,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -111,6 +112,63 @@ class AccountEmailChangeServiceTest {
                 com.marketplace.shared.api.EmailChangeRequestedEvent.class);
         assertThat(((com.marketplace.shared.api.EmailChangeRequestedEvent) event.getValue())
                 .newEmail()).isEqualTo("newperson@example.com");
+    }
+
+    /**
+     * B22 (IDP-04 — the 2026-11-03 adversarial review, review-pr-806): a
+     * THROTTLED re-request must not move the pending pair. The silent
+     * throttle (an enumeration-safe no-op that sends nothing) previously
+     * still overwrote the user's pending target — the STILL LIVE prior
+     * link then confirmed and applied the address it was never issued
+     * for (two sequential requests A then B, the second inside
+     * minIssueInterval: link A confirmed and applied B). The pair moves
+     * hand-in-hand with the live link now: the redeemed right always
+     * applies the pair it was issued for, literally.
+     */
+    @Test
+    void aThrottledReRequestKeepsThePendingPairBoundToTheLiveLink() {
+        when(userDetailsManager.loadUserByUsername(OLD_SUBJECT)).thenReturn(loginRow());
+        when(passwordEncoder.matches("pw", "{bcrypt}hash")).thenReturn(true);
+        when(userRepository.findBySubject(OLD_SUBJECT)).thenReturn(Optional.of(userRow));
+        // The first request issues link A for target A; the re-request
+        // hits the throttle window — the documented silent no-op.
+        when(authActionTokenService.issue(any(), any(), any()))
+                .thenReturn(Optional.of(new AuthActionTokenService.IssuedToken(
+                        "link-a", Instant.now().plus(Duration.ofMinutes(30)))))
+                .thenReturn(Optional.empty());
+
+        service.requestChange(caller, "a-person@example.com", "pw");
+        service.requestChange(caller, "b-person@example.com", "pw");
+
+        // The throttled re-request sent nothing and moved NOTHING: the
+        // live link A stays bound to A — never B.
+        assertThat(userRow.consumePendingEmailChange()).isEqualTo("a-person@example.com");
+        verify(eventPublisher, times(1)).publishEvent(any(Object.class));
+    }
+
+    /**
+     * B22's other half: a re-request that DOES issue moves the pair with
+     * the new link — issue()'s own replacement rule (the V112 live-token
+     * unique index) consumes the prior right, and the pending pair
+     * follows the newest live link exactly.
+     */
+    @Test
+    void aReIssuingRequestMovesThePairHandInHandWithTheNewLink() {
+        when(userDetailsManager.loadUserByUsername(OLD_SUBJECT)).thenReturn(loginRow());
+        when(passwordEncoder.matches("pw", "{bcrypt}hash")).thenReturn(true);
+        when(userRepository.findBySubject(OLD_SUBJECT)).thenReturn(Optional.of(userRow));
+        when(authActionTokenService.issue(any(), any(), any()))
+                .thenReturn(Optional.of(new AuthActionTokenService.IssuedToken(
+                        "link-a", Instant.now().plus(Duration.ofMinutes(30)))))
+                .thenReturn(Optional.of(new AuthActionTokenService.IssuedToken(
+                        "link-b", Instant.now().plus(Duration.ofMinutes(30)))));
+
+        service.requestChange(caller, "a-person@example.com", "pw");
+        service.requestChange(caller, "b-person@example.com", "pw");
+
+        // The pair follows the NEWEST live link — link B carries B.
+        assertThat(userRow.consumePendingEmailChange()).isEqualTo("b-person@example.com");
+        verify(eventPublisher, times(2)).publishEvent(any(Object.class));
     }
 
     @Test

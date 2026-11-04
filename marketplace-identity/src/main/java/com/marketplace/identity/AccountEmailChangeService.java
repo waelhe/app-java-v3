@@ -112,11 +112,25 @@ public class AccountEmailChangeService {
         User user = userRepository.findBySubject(subject)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "No account for the authenticated subject: " + subject));
-        user.requestEmailChange(target);
+        // B22 (IDP-04 — the 2026-11-03 adversarial review, review-pr-806):
+        // the pending pair moves ONLY when a live link is actually issued.
+        // issue()'s replacement rule already consumes the prior token when
+        // it re-issues (the V112 live-token unique index), but the
+        // throttled window — a re-request inside minIssueInterval —
+        // answers the enumeration-safe silent success and sends NOTHING:
+        // writing the pending target BEFORE that decision left the STILL
+        // LIVE prior link bound to a target it was never issued for (two
+        // sequential requests A then B, the second throttled: link A
+        // confirmed and applied B). The pair coherence lives here now:
+        // the pending target changes hand-in-hand with the live link, so
+        // a redeemed right ALWAYS applies the pair it was issued for.
         authActionTokenService.issue(subject, AuthActionTokenPurpose.EMAIL_CHANGE, EMAIL_CHANGE_TTL)
-                .ifPresent(issued -> eventPublisher.publishEvent(new com.marketplace.shared.api
-                        .EmailChangeRequestedEvent(user.getId(), subject, target,
-                        issued.rawToken(), issued.expiresAt())));
+                .ifPresent(issued -> {
+                    user.requestEmailChange(target);
+                    eventPublisher.publishEvent(new com.marketplace.shared.api
+                            .EmailChangeRequestedEvent(user.getId(), subject, target,
+                            issued.rawToken(), issued.expiresAt()));
+                });
         log.info("Email change requested: subject={}, expiresAt={}", subject,
                 java.time.Instant.now().plus(EMAIL_CHANGE_TTL));
     }
