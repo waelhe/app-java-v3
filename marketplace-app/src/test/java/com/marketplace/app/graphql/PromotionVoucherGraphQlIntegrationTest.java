@@ -1001,12 +1001,17 @@ class PromotionVoucherGraphQlIntegrationTest {
         CyclicBarrier startTogether = new CyclicBarrier(2);
         Callable<Boolean> settleOrderA = () -> {
             startTogether.await(30, TimeUnit.SECONDS);
-            commercialPricingPort.settleVoucher(orderA, consumer, "P3-RACE-ONCE", 500L, "SAR");
+            // W5's locked minSpend re-validation widened the seam: the
+            // discounted subtotal is the threshold's own basis (the race
+            // voucher carries no minSpend — 5% of a 100.00 basis = 500).
+            commercialPricingPort.settleVoucher(orderA, consumer, "P3-RACE-ONCE",
+                    10_000L, 500L, "SAR");
             return true;
         };
         Callable<Boolean> settleOrderB = () -> {
             startTogether.await(30, TimeUnit.SECONDS);
-            commercialPricingPort.settleVoucher(orderB, consumer, "P3-RACE-ONCE", 500L, "SAR");
+            commercialPricingPort.settleVoucher(orderB, consumer, "P3-RACE-ONCE",
+                    10_000L, 500L, "SAR");
             return true;
         };
         try {
