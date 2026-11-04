@@ -440,8 +440,10 @@ class OrdersServiceTest {
                         OrderPriceComponent.ComponentType.TAX);
         assertThat(component.getAllValues().get(2).getReferenceCode())
                 .isEqualTo("SA:INCLUSIVE:1500");
-        // the voucher settlement rode INSIDE the placement transaction
-        verify(commercialPricingPort).settleVoucher(order.getId(), consumer, "RAMADAN10", 500L, "SAR");
+        // the voucher settlement rode INSIDE the placement transaction —
+        // the minSpend basis is the PROMOTION-discounted subtotal (3000−300)
+        verify(commercialPricingPort).settleVoucher(order.getId(), consumer, "RAMADAN10",
+                3000L - 300L, 500L, "SAR");
     }
 
     @Test
@@ -465,6 +467,7 @@ class OrdersServiceTest {
                 + "redemption limit"))
                 .when(commercialPricingPort).settleVoucher(org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.anyLong(),
                         org.mockito.ArgumentMatchers.anyLong(),
                         org.mockito.ArgumentMatchers.any());
 

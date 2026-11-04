@@ -575,6 +575,7 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
             // (no order row in ANY group survives an over-limit voucher).
             if (groupVoucher != null && !groupVoucher.isBlank()) {
                 commercialPricingPort.settleVoucher(order.getId(), consumerId, groupVoucher,
+                        breakdown.subtotalMinor() - breakdown.promotionDiscountMinor(),
                         breakdown.voucherDiscountMinor(), groupCurrency);
             }
             List<OrderItem> frozen = new java.util.ArrayList<>(groupLines.size());
