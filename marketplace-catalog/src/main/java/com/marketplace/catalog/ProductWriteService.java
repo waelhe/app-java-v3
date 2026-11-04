@@ -122,7 +122,12 @@ public class ProductWriteService implements ProductWriteSpi {
                     "No store category found for the code"));
         }
         if (command.productTypeId() != null
-                && productTypeRepository.findById(command.productTypeId()).isEmpty()) {
+                // B21 (CAT-09 — the 2026-11-03 adversarial review, review-pr-808):
+                // the locking read (FOR SHARE, held for THIS transaction's
+                // lifetime) — a concurrent productTypeDelete's soft-delete
+                // UPDATE blocks until the create commits, so the type the
+                // create validated is the type the product references.
+                && productTypeRepository.findByIdForShare(command.productTypeId()).isEmpty()) {
             errors.add(new ProductMutationError("productType", ProductMutationErrorCode.NOT_FOUND,
                     "No product type found for the id"));
         }

@@ -183,9 +183,17 @@ public class ProductTypeWriteService implements ProductTypeWriteSpi {
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     public ProductTypeMutationResult deleteProductType(UUID id) {
+        // B21 (CAT-09 — the 2026-11-03 adversarial review, review-pr-808):
+        // the write lock comes BEFORE the live-references guard — the row
+        // lock (FOR UPDATE, the orders module's findByIdForUpdate
+        // precedent) serializes against a concurrent create's FOR SHARE,
+        // so the guard's count runs against the create's committed fact
+        // and answers the classified INVALID refusal instead of letting
+        // the soft delete slip past a product the create was still
+        // writing.
         Optional<ProductType> addressed = id == null
                 ? Optional.empty()
-                : productTypeRepository.findById(id);
+                : productTypeRepository.findByIdForUpdate(id);
         if (addressed.isEmpty()) {
             return ProductTypeMutationResult.failure(List.of(new ProductTypeMutationError(
                     "id", ProductTypeMutationErrorCode.NOT_FOUND, "No product type found for the id")));
@@ -219,9 +227,12 @@ public class ProductTypeWriteService implements ProductTypeWriteSpi {
             // Unknown ids are skipped — the honest affected count answers
             // what the registry itself deleted (never a fabricated count,
             // never an error entry for an id the registry never knew).
+            // B21 (CAT-09): the same write lock as the single delete — the
+            // guard runs under the row lock, serialized against the
+            // concurrent create.
             Optional<ProductType> addressed = id == null
                     ? Optional.empty()
-                    : productTypeRepository.findById(id);
+                    : productTypeRepository.findByIdForUpdate(id);
             if (addressed.isPresent() && !hasLiveReferences(id)) {
                 // The single delete's refusal law (the wave-19 #808
                 // review): a referenced product type is NOT deleted and

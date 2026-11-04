@@ -15,6 +15,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -279,10 +280,33 @@ class ProductTypeWriteServiceTest {
     // deleteProductType / deleteProductTypes
     // ------------------------------------------------------------------
 
+    /**
+     * B21 (CAT-09 — the 2026-11-03 adversarial review, review-pr-808): the
+     * delete takes the WRITE lock BEFORE its live-references guard — the
+     * in-order proof. {@code findByIdForUpdate} (FOR UPDATE, the orders
+     * module's own precedent) precedes the guard's count query, so a
+     * concurrent create's FOR SHARE serializes behind the delete and the
+     * guard's verdict runs against the create's committed fact — the
+     * classified INVALID refusal, never a soft delete slipping past a
+     * product the create was still writing.
+     */
+    @Test
+    void deleteTakesTheWriteLockBeforeTheLiveReferencesGuard() {
+        ProductType existing = row("locked-type", "Locked");
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
+        when(productRepository.existsByProductTypeId(existing.getId())).thenReturn(true);
+
+        service.deleteProductType(existing.getId());
+
+        org.mockito.InOrder order = inOrder(repository, productRepository);
+        order.verify(repository).findByIdForUpdate(existing.getId());
+        order.verify(productRepository).existsByProductTypeId(existing.getId());
+    }
+
     @Test
     void deleteOfAnUnknownRowAnswersTheNotFoundDomainError() {
         UUID unknown = UUID.randomUUID();
-        when(repository.findById(unknown)).thenReturn(Optional.empty());
+        when(repository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
 
         ProductTypeMutationResult result = service.deleteProductType(unknown);
 
@@ -295,7 +319,7 @@ class ProductTypeWriteServiceTest {
     @Test
     void deleteAnswersTheLastKnownProjection() {
         ProductType existing = row("gone-type", "Gone");
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
 
         ProductTypeMutationResult result = service.deleteProductType(existing.getId());
 
@@ -313,7 +337,7 @@ class ProductTypeWriteServiceTest {
         // publish path reading a schema the admin surface no longer
         // shows. No cascade: the references own their own lifecycle.
         ProductType existing = row("used-type", "Used");
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(productRepository.existsByProductTypeId(existing.getId())).thenReturn(true);
 
         ProductTypeMutationResult result = service.deleteProductType(existing.getId());
@@ -328,7 +352,7 @@ class ProductTypeWriteServiceTest {
     @Test
     void deleteOfAnAssignmentReferencedTypeAnswersTheInvalidDomainError() {
         ProductType existing = row("assigned-type", "Assigned");
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(productRepository.existsByProductTypeId(existing.getId())).thenReturn(false);
         when(assignmentRepository.existsByProductTypeId(existing.getId())).thenReturn(true);
 
@@ -345,8 +369,8 @@ class ProductTypeWriteServiceTest {
     void bulkDeleteAnswersTheHonestCount() {
         ProductType first = row("first-type", "First");
         ProductType second = row("second-type", "Second");
-        when(repository.findById(first.getId())).thenReturn(Optional.of(first));
-        when(repository.findById(second.getId())).thenReturn(Optional.of(second));
+        when(repository.findByIdForUpdate(first.getId())).thenReturn(Optional.of(first));
+        when(repository.findByIdForUpdate(second.getId())).thenReturn(Optional.of(second));
 
         // Arrays.asList carries the null member the honest-skip case
         // feeds the owner (List.of's own null refusal is not the seam).
@@ -365,8 +389,8 @@ class ProductTypeWriteServiceTest {
         // the registry itself deleted.
         ProductType free = row("free-type", "Free");
         ProductType referenced = row("referenced-type", "Referenced");
-        when(repository.findById(free.getId())).thenReturn(Optional.of(free));
-        when(repository.findById(referenced.getId())).thenReturn(Optional.of(referenced));
+        when(repository.findByIdForUpdate(free.getId())).thenReturn(Optional.of(free));
+        when(repository.findByIdForUpdate(referenced.getId())).thenReturn(Optional.of(referenced));
         when(productRepository.existsByProductTypeId(referenced.getId())).thenReturn(true);
 
         int count = service.deleteProductTypes(java.util.Arrays.asList(
@@ -393,7 +417,7 @@ class ProductTypeWriteServiceTest {
         // A nameAr-only row renders nameAr (the read service's own
         // fallback rule); a nameEn row renders nameEn.
         ProductType arOnly = ProductType.create("ar-type", null, "الاسم العربي فقط", null);
-        when(repository.findById(arOnly.getId())).thenReturn(Optional.of(arOnly));
+        when(repository.findByIdForUpdate(arOnly.getId())).thenReturn(Optional.of(arOnly));
 
         ProductTypeMutationResult result = service.deleteProductType(arOnly.getId());
 
