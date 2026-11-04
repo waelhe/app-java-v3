@@ -143,9 +143,10 @@ For domain/runtime failures resolved by the central GraphQL exception resolver, 
 | Domain conflict (`IllegalStateException`) | `CONFLICT-001` | `conflict` | `BAD_REQUEST` |
 | Authorization (`AccessDeniedException`) | `AUTHZ-001` | `authz` | `FORBIDDEN` |
 | Rate limit (`RequestNotPermitted`, resilience4j instances) | `RL-001` | `rate-limit` | `BAD_REQUEST` |
+| Service unavailable (`ServiceUnavailableException` — the classified 503 family: unbound optional channels, the RMA exact-ratio magnitude ceiling) | `SU-001` | `availability` | `INTERNAL_ERROR` |
 | Unknown/internal (masked) | `INT-001` | `internal` | `INTERNAL_ERROR` |
 
-- The GraphQL-spec `errorType` is derived from spring-graphql's fixed five-value vocabulary (it has no rate-limit or conflict value); the authoritative machine contract is the extensions pair.
+- The GraphQL-spec `errorType` is derived from spring-graphql's fixed five-value vocabulary (it has no rate-limit, conflict or availability/503 value); the authoritative machine contract is the extensions pair.
 - `traceId`: propagated correlation identifier, included only when `marketplace.graphql.errors.include-trace-id=true`.
 - Rate-limit rejections carry the same fixed sentence REST returns (`Rate limit exceeded. Please try again later.`) — never the limiter's internal instance state.
 

@@ -5,6 +5,7 @@ import com.marketplace.shared.api.OrderRefundPort;
 import com.marketplace.shared.api.ProductStockPort;
 import com.marketplace.shared.api.RefundOutcome;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.ServiceUnavailableException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -470,12 +471,19 @@ when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(or
     }
 
     /**
-     * ORD-02's loud-failure contract (rule B7's bound-before-compute):
-     * a pathological magnitude whose product exceeds {@code Long} fails
-     * LOUDLY (the delivery pricing precedent) — never a silently wrapped
-     * or fabricated share. The double form had NO magnitude guard at
-     * all: the same inputs flowed through a float64 intermediate and
-     * answered whatever the rounding produced.
+     * ORD-02's loud-failure contract (rule B7's bound-before-compute),
+     * the 2026-11-04 classified form: a pathological magnitude whose
+     * product exceeds {@code Long} fails LOUDLY — as the house's
+     * CLASSIFIED 503 (ServiceUnavailableException, the delivery pricing
+     * precedent's own mapping; REST answers 503 SU-001, GraphQL the
+     * SU-001/availability envelope) — never a raw {@code
+     * ArithmeticException} the transports would mask as the generic
+     * 500/INTERNAL-001, and never a silently wrapped or fabricated
+     * share. The double form had NO magnitude guard at all: the same
+     * inputs flowed through a float64 intermediate and answered
+     * whatever the rounding produced. The expectation change from the
+     * raw ArithmeticException assertion is INTENTIONAL (the classified
+     * form is the fix's own contract).
      */
     @Test
     void aPathologicalMagnitudeFailsLoudlyInsteadOfFreezingAWrappedShare() {
@@ -489,9 +497,13 @@ when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(or
         when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
         when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
 
-        // 4e9 × 4e9 overflows Long — Math.multiplyExact's loud refusal.
+        // 4e9 × 4e9 overflows Long — the classified loud refusal, never
+        // the raw ArithmeticException.
         assertThatThrownBy(() -> service.approve(r.getId()))
-                .isInstanceOf(ArithmeticException.class);
+                .isInstanceOf(ServiceUnavailableException.class)
+                .isNotInstanceOf(ArithmeticException.class)
+                .hasMessageContaining("overflowed the signed 64-bit minor-unit domain")
+                .hasMessageContaining("0 .. 100000000");
         org.mockito.Mockito.verify(returns, org.mockito.Mockito.never()).save(any(OrderReturn.class));
     }
 

@@ -201,6 +201,34 @@ class GraphQlExceptionResolverTest {
     }
 
     /**
+     * ORD-02's residual (the 2026-11-04 scan): the house's CLASSIFIED 503
+     * family — {@code ServiceUnavailableException}, which the REST advice
+     * maps to 503 SU-001 through the ApiProblemDetailException branch —
+     * must surface the SAME machine contract here: the SU-001/availability
+     * extensions pair, never the masked INTERNAL envelope it used to fall
+     * through to. The GraphQL-spec ErrorType vocabulary has no 503 value,
+     * so INTERNAL_ERROR is the closest of its fixed five (a server-side
+     * condition); the exception's own house-authored message passes
+     * through like every designated-safe domain exception. This is also
+     * the envelope the pseudonymization-HMAC OFF case
+     * (SubjectPseudonymizer.derive) now answers on GraphQL.
+     */
+    @Test
+    void mapsServiceUnavailableToTheAvailabilityTaxonomy() {
+        GraphQLError error = first(resolver.resolveException(
+                new com.marketplace.shared.api.ServiceUnavailableException(
+                        "The capability is not configured"),
+                env).block());
+
+        assertThat(error.getErrorType()).isEqualTo(org.springframework.graphql.execution.ErrorType.INTERNAL_ERROR);
+        assertThat(error.getExtensions())
+                .containsEntry("errorCode", ApiErrorTaxonomy.SERVICE_UNAVAILABLE.errorCode());
+        assertThat(error.getExtensions())
+                .containsEntry("category", ApiErrorTaxonomy.SERVICE_UNAVAILABLE.category());
+        assertThat(error.getMessage()).isEqualTo("The capability is not configured");
+    }
+
+    /**
      * The masked fallback keeps the canonical INTERNAL pair (INT-001 /
      * internal) and the generic message.
      */
