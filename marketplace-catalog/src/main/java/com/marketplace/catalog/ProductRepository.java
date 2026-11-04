@@ -1,5 +1,6 @@
 package com.marketplace.catalog;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.domain.KeysetScrollPosition;
@@ -7,6 +8,7 @@ import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Window;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -73,6 +75,26 @@ public interface ProductRepository extends JpaRepository<Product, UUID>, JpaSpec
      * answers the classified INVALID, never an orphaning delete).
      */
     boolean existsByProductTypeId(UUID productTypeId);
+
+    /**
+     * B7's TOCTOU residual (CAT-04 — the 2026-11-04 follow-on): the
+     * delete-path locked read, the money path's own
+     * {@code VoucherRepository.findByCodeForUpdate} pattern verbatim. The
+     * reservation machinery's bulk UPDATE ({@link #reserve}) writes THIS
+     * row but never touches the {@code @Version} column, so a guard on an
+     * unlocked {@code findById} is check-then-act: a delete that passed on
+     * reserved=0 could soft-delete the row while a concurrent placement's
+     * reservation commits — the exact stranded U1 state the B7 wall was
+     * built to prevent. The pessimistic write lock serializes the delete's
+     * guard+soft-delete against that UPDATE: either the delete holds the
+     * row first and the reservation's soft-delete-filtered UPDATE matches
+     * ZERO rows (the placement's own honest 409, rolled back whole), or
+     * the reservation committed first and the locked read sees the
+     * reserved counter and the delete refuses.
+     */
+    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Product p where p.id = :id")
+    Optional<Product> findByIdForUpdate(@Param("id") UUID id);
 
     /**
      * Reserves {@code qty} units of an ACTIVE product whose free stock

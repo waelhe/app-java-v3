@@ -189,7 +189,12 @@ public class ProductWriteService implements ProductWriteSpi {
     @PreAuthorize("hasRole('PROVIDER')")
     @Transactional
     public ProductMutationResult deleteProduct(UUID id, Authentication authentication) {
-        Optional<Product> addressed = ownedRow(id, authentication);
+        // B7's TOCTOU residual (CAT-04 — the 2026-11-04 follow-on): the
+        // row is loaded THROUGH the pessimistic locked read, never the
+        // unlocked findById — the ownership safe-absence law is unchanged
+        // (a missing row and a stranger's row answer the same empty), but
+        // the wall below now checks the LOCKED counters.
+        Optional<Product> addressed = ownedRowForUpdate(id, authentication);
         if (addressed.isEmpty()) {
             return ProductMutationResult.failure(List.of(new ProductMutationError(
                     "id", ProductMutationErrorCode.NOT_FOUND, "No product found for the id")));
@@ -203,11 +208,37 @@ public class ProductWriteService implements ProductWriteSpi {
         // the orders owner's ConflictException fires: a paid order's
         // stock could never be fulfilled or released again (the U1
         // probe's own measured evidence, pinned in
-        // ProductDeleteReservationGuardIntegrationTest). The honest
+        // ProductGraphQlIntegrationTest's B7 legs). The honest
         // contract: a product holding open reservations — its own counter
         // or any of its variants' (the delete cascades them) — is
         // refused with the classified INVALID error until the reserved
         // units are released or fulfilled.
+        //
+        // The lock design (why these two locks close the race): the wall's
+        // first shape was check-then-act — an unlocked read, while the
+        // placement's reservation is a bulk UPDATE that does NOT touch
+        // the @Version column, so a delete that passed the guard on
+        // reserved=0 could soft-delete the row WHILE the reservation
+        // committed, stranding the paid order's stock in the unreleasable
+        // U1 state. Now BOTH shelves are loaded under PESSIMISTIC_WRITE
+        // (the money path's own VoucherRepository.findByCodeForUpdate
+        // pattern): the product row through findByIdForUpdate —
+        // ProductRepository.reserve's bulk UPDATE writes that row, so the
+        // lock serializes against it (either the delete holds the row and
+        // the soft-delete-filtered reservation matches ZERO rows → the
+        // placement's own honest 409 rolls back whole, or the reservation
+        // committed first and the locked read sees the counter and
+        // refuses) — and the variant roster through
+        // findByProductIdOrderBySkuAscForUpdate, because the VARIANT
+        // reservation is a native UPDATE on the variant row ALONE (its
+        // parent gate is a non-locking EXISTS, and a variant cart line
+        // never increments the parent product's counter — ADR-0012's
+        // placement splits the shelves), so the product-row lock alone
+        // cannot close the variant race: the variant rows carry their
+        // own. The delete itself still rides the ENTITY
+        // (repository.delete → Hibernate's @SoftDelete UPDATE), so the
+        // Envers audit revision — AGENTS.md's "all domain entities MUST
+        // have @Audited" discipline — is unchanged.
         if (row.getReservedQuantity() > 0 || variantsHoldOpenReservations(row.getId())) {
             return ProductMutationResult.failure(List.of(new ProductMutationError(
                     "id", ProductMutationErrorCode.INVALID,
@@ -239,7 +270,17 @@ public class ProductWriteService implements ProductWriteSpi {
             // count answers only what the caller owns and the registry
             // itself deleted (never a fabricated count, never an
             // existence disclosure for another provider's row).
-            Optional<Product> addressed = ownedRow(id, authentication);
+            // B7's TOCTOU residual (CAT-04): each candidate rides the SAME
+            // locked read the single delete owns (ownedRowForUpdate) — the
+            // per-row guard below checks the LOCKED counters, so a
+            // reservation that lands between any two candidates is seen,
+            // not raced. The locks are taken in the caller's list order;
+            // two concurrent bulk deletes naming the same rows in
+            // opposite orders are untangled by the database's own deadlock
+            // detector (one whole delete rolls back — never a stranded
+            // reservation, which is the state this wall exists to
+            // prevent).
+            Optional<Product> addressed = ownedRowForUpdate(id, authentication);
             if (addressed.isPresent()) {
                 // B7 (CAT-04): the single delete's open-reservation wall,
                 // the bulk shape — a blocked row is skipped and NOT
@@ -264,9 +305,16 @@ public class ProductWriteService implements ProductWriteSpi {
      * reservation — the delete cascades the variant shelf, so an open
      * variant reservation is the same unreleasable state the product's
      * own counter carries (ADR-0012's reservation spans BOTH shelves).
+     * The roster is read through the LOCKED variant roster
+     * (findByProductIdOrderBySkuAscForUpdate): the variant reservation is
+     * a native UPDATE on the variant row alone, so the variant rows —
+     * not just the parent product row — must be under the delete's
+     * pessimistic lock for the guard to be race-free (the locks are held
+     * until the delete transaction commits, so nothing can land between
+     * this check and the cascade below).
      */
     private boolean variantsHoldOpenReservations(UUID productId) {
-        for (ProductVariant variant : variantRepository.findByProductIdOrderBySkuAsc(productId)) {
+        for (ProductVariant variant : variantRepository.findByProductIdOrderBySkuAscForUpdate(productId)) {
             if (variant.getReservedQuantity() > 0) {
                 return true;
             }
@@ -277,10 +325,15 @@ public class ProductWriteService implements ProductWriteSpi {
     /**
      * The product's live variant rows — soft-deleted WITH the product
      * (the wave-19 #808 review's cascade: a deleted product never leaves
-     * an owned orphan shelf behind).
+     * an owned orphan shelf behind). Read through the same LOCKED roster
+     * the guard used: within one transaction the second
+     * {@code SELECT ... FOR UPDATE} acquires nothing new (this transaction
+     * already holds the row locks), and the delete's own UPDATE of the
+     * variant row is therefore serialized against any concurrent variant
+     * reservation exactly like the guard's read.
      */
     private void deleteVariantsOf(UUID productId) {
-        for (ProductVariant variant : variantRepository.findByProductIdOrderBySkuAsc(productId)) {
+        for (ProductVariant variant : variantRepository.findByProductIdOrderBySkuAscForUpdate(productId)) {
             variantRepository.delete(variant);
         }
     }
@@ -364,6 +417,23 @@ public class ProductWriteService implements ProductWriteSpi {
             return Optional.empty();
         }
         return productRepository.findById(id)
+                .filter(row -> row.getProviderId().equals(currentUserProvider.getCurrentUserId(authentication)));
+    }
+
+    /**
+     * The DELETE paths' own ownership read — the SAME safe-absence law as
+     * {@link #ownedRow}, but through the pessimistic locked read
+     * ({@code findByIdForUpdate}, the money path's settle-time pattern):
+     * the delete's reservation wall and its soft-delete both ride the row
+     * lock the concurrent placement's reservation UPDATE serializes on
+     * (B7's TOCTOU residual, CAT-04 — the unlocked check-then-act guard
+     * could pass on reserved=0 while a reservation committed under it).
+     */
+    private Optional<Product> ownedRowForUpdate(UUID id, Authentication authentication) {
+        if (id == null) {
+            return Optional.empty();
+        }
+        return productRepository.findByIdForUpdate(id)
                 .filter(row -> row.getProviderId().equals(currentUserProvider.getCurrentUserId(authentication)));
     }
 

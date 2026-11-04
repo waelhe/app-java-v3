@@ -8,6 +8,7 @@ import org.springframework.data.domain.KeysetScrollPosition;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Window;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -76,6 +77,28 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
 
     /** The product's live roster (the owner's list surface — the V219 partial index's read). */
     List<ProductVariant> findByProductIdOrderBySkuAsc(UUID productId);
+
+    /**
+     * B7's TOCTOU residual (CAT-04 — the 2026-11-04 follow-on): the
+     * delete-path locked roster, the money path's own
+     * {@code VoucherRepository.findByCodeForUpdate} pattern. The variant
+     * reservation ({@link #reserve}) is a NATIVE UPDATE on the VARIANT
+     * row alone — its parent-product gate rides a NON-locking EXISTS, and
+     * a variant cart line never increments the parent product's
+     * reserved counter (ADR-0012's placement splits the two shelves) —
+     * so the PRODUCT row's pessimistic lock cannot close the delete
+     * race for variant reservations: the variant rows carry their own.
+     * The locked roster read serializes the delete's variant guard +
+     * cascade against a concurrent variant reservation: either the
+     * delete holds the rows first and the reservation's
+     * {@code is_deleted = FALSE} predicate matches ZERO rows (the
+     * placement's own honest 409, rolled back whole), or the reservation
+     * committed first and the locked roster sees its counter and the
+     * delete refuses.
+     */
+    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select v from ProductVariant v where v.productId = :productId order by v.sku asc")
+    List<ProductVariant> findByProductIdOrderBySkuAscForUpdate(@Param("productId") UUID productId);
 
     /** Friendly precheck for the database-unique canonical typed option combination. */
     boolean existsByProductIdAndOptionCombinationKey(UUID productId, String optionCombinationKey);

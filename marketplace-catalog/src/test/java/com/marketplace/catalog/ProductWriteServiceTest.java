@@ -46,8 +46,10 @@ import static org.mockito.Mockito.when;
  * partial-preserve semantics (the empty no-op, null fields preserve,
  * the merged-name/description/price re-checks, the ARCHIVED terminal
  * refusal, the stranger-row safe absence), the single delete's safe
- * absence and soft-delete happy path, and the bulk delete's honest
- * count (stranger ids skipped, never fabricated).</p>
+ * absence and soft-delete happy path, the B7 open-reservation wall
+ * (including its TOCTOU residual: the locked re-read refuses when a
+ * reservation lands after the initial unlocked read), and the bulk
+ * delete's honest count (stranger ids skipped, never fabricated).</p>
  */
 class ProductWriteServiceTest {
 
@@ -336,7 +338,10 @@ class ProductWriteServiceTest {
     @Test
     void deleteOfAStrangersRowAnswersTheSafeAbsence() {
         Product strangers = rowOwnedBy(ProviderIds.STRANGER);
-        when(productRepository.findById(strangers.getId())).thenReturn(Optional.of(strangers));
+        // The delete path's locked read (the voucher fixtures' own
+        // findByIdForUpdate stub shape) — the stranger row still answers
+        // the same safe absence through it.
+        when(productRepository.findByIdForUpdate(strangers.getId())).thenReturn(Optional.of(strangers));
 
         ProductMutationResult result = service.deleteProduct(strangers.getId(), caller);
 
@@ -349,7 +354,7 @@ class ProductWriteServiceTest {
     @Test
     void deleteAnswersTheLastKnownProjection() {
         Product owned = rowOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findById(owned.getId())).thenReturn(Optional.of(owned));
+        when(productRepository.findByIdForUpdate(owned.getId())).thenReturn(Optional.of(owned));
 
         ProductMutationResult result = service.deleteProduct(owned.getId(), caller);
 
@@ -366,8 +371,8 @@ class ProductWriteServiceTest {
         // owned orphan shelf the write side still reaches.
         Product owned = rowOwnedBy(ProviderIds.CALLER);
         ProductVariant variant = ProductVariant.register(owned, "orphan-sku", "Orphan", 100L);
-        when(productRepository.findById(owned.getId())).thenReturn(Optional.of(owned));
-        when(variantRepository.findByProductIdOrderBySkuAsc(owned.getId()))
+        when(productRepository.findByIdForUpdate(owned.getId())).thenReturn(Optional.of(owned));
+        when(variantRepository.findByProductIdOrderBySkuAscForUpdate(owned.getId()))
                 .thenReturn(List.of(variant));
 
         ProductMutationResult result = service.deleteProduct(owned.getId(), caller);
@@ -387,7 +392,7 @@ class ProductWriteServiceTest {
         when(reserved.getId()).thenReturn(UUID.randomUUID());
         when(reserved.getProviderId()).thenReturn(ProviderIds.CALLER);
         when(reserved.getReservedQuantity()).thenReturn(5);
-        when(productRepository.findById(reserved.getId())).thenReturn(Optional.of(reserved));
+        when(productRepository.findByIdForUpdate(reserved.getId())).thenReturn(Optional.of(reserved));
 
         ProductMutationResult result = service.deleteProduct(reserved.getId(), caller);
 
@@ -407,11 +412,49 @@ class ProductWriteServiceTest {
         Product owned = rowOwnedBy(ProviderIds.CALLER);
         ProductVariant reservedVariant = mock(ProductVariant.class);
         when(reservedVariant.getReservedQuantity()).thenReturn(2);
-        when(productRepository.findById(owned.getId())).thenReturn(Optional.of(owned));
-        when(variantRepository.findByProductIdOrderBySkuAsc(owned.getId()))
+        when(productRepository.findByIdForUpdate(owned.getId())).thenReturn(Optional.of(owned));
+        when(variantRepository.findByProductIdOrderBySkuAscForUpdate(owned.getId()))
                 .thenReturn(List.of(reservedVariant));
 
         ProductMutationResult result = service.deleteProduct(owned.getId(), caller);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductMutationError::code)
+                .isEqualTo(ProductMutationErrorCode.INVALID);
+        verify(productRepository, never()).delete(any(Product.class));
+        verify(variantRepository, never()).delete(any(ProductVariant.class));
+    }
+
+    /**
+     * B7's TOCTOU residual (CAT-04 — the 2026-11-04 follow-on): the
+     * wall's first shape was check-then-act. The unlocked read (the
+     * first stub below) saw reserved=0; a concurrent placement's
+     * reservation — a bulk UPDATE that never touches the @Version
+     * column — committed under it; the LOCKED re-read the delete's
+     * guard now rides sees reserved=5. The wall must hold on the LOCKED
+     * row: the classified INVALID refusal answers and the delete never
+     * reaches the registry (a soft delete under an open reservation is
+     * the stranded U1 state, exactly what B7 exists to prevent).
+     */
+    @Test
+    void deleteRefusesWhenAReservationLandsAfterTheInitialUnlockedRead() {
+        Product staleRead = mock(Product.class);
+        when(staleRead.getId()).thenReturn(UUID.randomUUID());
+        when(staleRead.getProviderId()).thenReturn(ProviderIds.CALLER);
+        when(staleRead.getReservedQuantity()).thenReturn(0);
+        Product lockedRow = mock(Product.class);
+        when(lockedRow.getId()).thenReturn(staleRead.getId());
+        when(lockedRow.getProviderId()).thenReturn(ProviderIds.CALLER);
+        when(lockedRow.getReservedQuantity()).thenReturn(5);
+        // The stale unlocked read the pre-lock guard used to consult
+        // (kept as the race's own witness — the delete path no longer
+        // reads through it).
+        when(productRepository.findById(staleRead.getId())).thenReturn(Optional.of(staleRead));
+        // The locked read the delete path now rides.
+        when(productRepository.findByIdForUpdate(staleRead.getId())).thenReturn(Optional.of(lockedRow));
+
+        ProductMutationResult result = service.deleteProduct(staleRead.getId(), caller);
 
         assertThat(result.success()).isFalse();
         assertThat(result.errors()).singleElement()
@@ -425,8 +468,10 @@ class ProductWriteServiceTest {
     void bulkDeleteAnswersTheHonestOwnedCount() {
         Product first = rowOwnedBy(ProviderIds.CALLER);
         Product strangers = rowOwnedBy(ProviderIds.STRANGER);
-        when(productRepository.findById(first.getId())).thenReturn(Optional.of(first));
-        when(productRepository.findById(strangers.getId())).thenReturn(Optional.of(strangers));
+        // The bulk candidates ride the same locked read the single delete
+        // owns (the per-row guard checks the LOCKED counters).
+        when(productRepository.findByIdForUpdate(first.getId())).thenReturn(Optional.of(first));
+        when(productRepository.findByIdForUpdate(strangers.getId())).thenReturn(Optional.of(strangers));
 
         // Arrays.asList carries the null member the honest-skip case
         // feeds the owner (List.of's own null refusal is not the seam).
@@ -448,8 +493,8 @@ class ProductWriteServiceTest {
         when(reserved.getProviderId()).thenReturn(ProviderIds.CALLER);
         when(reserved.getReservedQuantity()).thenReturn(5);
         Product free = rowOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findById(reserved.getId())).thenReturn(Optional.of(reserved));
-        when(productRepository.findById(free.getId())).thenReturn(Optional.of(free));
+        when(productRepository.findByIdForUpdate(reserved.getId())).thenReturn(Optional.of(reserved));
+        when(productRepository.findByIdForUpdate(free.getId())).thenReturn(Optional.of(free));
 
         int count = service.deleteProducts(List.of(reserved.getId(), free.getId()), caller);
 
