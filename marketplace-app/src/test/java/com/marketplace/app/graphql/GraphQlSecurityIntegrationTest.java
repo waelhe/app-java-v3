@@ -84,7 +84,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * the corrected plan (authorization belongs in the owning use-case
  * boundary, which the mutation's ownership-delegation test pins).</p>
  */
-@SpringBootTest
+@SpringBootTest(properties = {
+        // B29 (TST-09 — the 2026-11-03 adversarial review, review-pr-807):
+        // this IT rides the REAL migration schema — the same Flyway
+        // contract the wire ITs established (flyway.enabled=true +
+        // ddl-auto=none). The create-drop default masked migration drift:
+        // a schema Hibernate generates is never the schema production
+        // runs, so a security-chain verdict against it proved less than
+        // it claimed.
+        "spring.flyway.enabled=true",
+        "spring.jpa.hibernate.ddl-auto=none"})
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
 class GraphQlSecurityIntegrationTest {

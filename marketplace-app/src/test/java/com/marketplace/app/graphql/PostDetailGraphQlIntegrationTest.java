@@ -75,7 +75,13 @@ import static org.mockito.Mockito.when;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
                 "marketplace.graphql.pagination.default-page-size=3",
-                "marketplace.graphql.pagination.max-page-size=5"})
+                "marketplace.graphql.pagination.max-page-size=5",
+                // B29 (TST-09 — the 2026-11-03 adversarial review,
+                // review-pr-807): the REAL migration schema — the same
+                // Flyway contract the wire ITs established. The
+                // create-drop default masked migration drift.
+                "spring.flyway.enabled=true",
+                "spring.jpa.hibernate.ddl-auto=none"})
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
 class PostDetailGraphQlIntegrationTest {
