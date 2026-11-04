@@ -84,20 +84,20 @@
 | CAT-05 | قصي ADMIN الخالص عن `productMedia*` عكس REST | **CLOSED** | `0d1d97dcaa`: `hasAnyRole(PROVIDER, ADMIN)` على delete/bulk-delete/reorder | — |
 | CAT-06 | بوابة cursor لا تتحقق من الاتجاه/هوية الجذر | **OPEN** | غير ملموس | W4-B18 |
 | CAT-07 | >200 وسيط حية = قفل دائم لإعادة الترتيب | **OPEN** | غير ملموس (لا سقف رفع ولا رفع حد) | W4-B19 |
-| CAT-08 | `orElseThrow` خام في `translateAttributeValue` ← 500 | **OPEN** | غير ملموس | W4-B20 |
+| CAT-08 | `orElseThrow` خام في `translateAttributeValue` ← 500 | **CLOSED** | → **أُغلق W4-B20**: الأب المتزامن الحذف الناعم يجاب بـNOT_FOUND المصنف (نمط ProductVariantWriteService الحرفي) — لا NoSuchElementException خام ولا مراجعة يتيمة تُحفظ. | W4-B20 |
 | CAT-09 | TOCTOU createProduct/productTypeDelete | **OPEN** | غير ملموس | W4-B21 |
 | IDP-04 | توكن تغيير البريد يطبّق الزوج الحالي لا زوج الإصدار | **OPEN** | غير ملموس | W4-B22 |
 | IDP-05 | `everyLegIsAdminGated` يغطي ساقاً–ساقين من 13+ | **OPEN** | غير ملموس | W4-B23 |
-| IDP-06 | رفض `AnonymousAuthenticationToken` في fetcher واحد فقط | **PARTIAL** | `TokenDataFetcher` أُغلق (`0d1d97dcaa`)؛ fetchers الهوية الخمسة (Address/User/UserManagement/Customer/PermissionGroup) = صفر مرجع للسور (grep اليوم) | W4-B24 |
+| IDP-06 | رفض `AnonymousAuthenticationToken` في fetcher واحد فقط | **CLOSED** | → **أُغلق W4-B24**: السور المشترك `AuthenticatedCallers.require` — المرجع الواحد للمنفذين الستة (العنوان/المستخدم/إدارة المستخدمين/العميل/مجموعات الصلاحيات + التوكن نفسه يركب السلطة ذاتها)، واختبار الوحدة يثبت الحالات الأربع (anonymous يُرفض رغم isAuthenticated=true، سياق فارغ، توكن غير موثق، موثق حقيقي يمر). | W4-B24 |
 | IDP-07 | انحرافات سلكية غير مسجلة لعائلة account-lifecycle | **CLOSED** | → **أُغلق W2-B10**: الصف السلوكي الشامل للعائلة (الست جذور) في `saleor-contract-divergences.csv` بصيغة الـ11 حقلاً — يجتاز قواعد المدقق (61 صفاً، disposition ADAPT، status IMPLEMENTATION_REQUIRED). | W2-B10 |
-| ORD-05 | Query يكتب: skip-and-purge مقابل قرار «fail-closed» | **PARTIAL** | صف 56 في CSV أُعيدت صياغته (`cf2a6bd464`) ويوثّق الشلال صراحة (exclude/purge/deferred) — يبقى حسم الحالة النهائية (اعتماد vs تنفيذ) | W4-B25 |
+| ORD-05 | Query يكتب: skip-and-purge مقابل قرار «fail-closed» | **CLOSED** | → **حُسم W4-B25 (DECISION-4: الاعتماد)**: صف CheckoutLine.variant → APPROVED — الشلال (exclude/purge/deferred) هو عقد الإسقاط الرسمي وقت القراءة (سلوك مقاس 14/14 و23/23) وبوابة snapshot/backfill تبقى مفتوحة كما ينص الصف. | W4-B25 |
 | ORD-06 | 23505 المتزامن على `checkoutLinesAdd` يكسر شكل CheckoutError | **CLOSED** | `ab7ca008` (B5): مصيدة صريحة في `checkoutLinesAdd` تعيد `errors:[CheckoutError]` بحقل `lines` بجملة LINE_CONFLICT القائمة (نفس نمط مسار التحديث) | — |
 | ORD-07 | tokenRefresh المتزامن مع التعطيل يسكّ JWT بعد التعطيل | **OPEN** | غير ملموس | W4-B26 |
 | ORD-08 | لا purge adapter لـ`orders.ship_to_address` بعد محو الحساب | **OPEN** | غير ملموس | W4-B27 |
-| TST-07 | 3 اختبارات denial تؤكد أقل مما تدّعي | **OPEN** | غير ملموس | W4-B28 |
+| TST-07 | 3 اختبارات denial تؤكد أقل مما تدّعي | **CLOSED** | → **أُغلق W4-B28**: التوكيدات الثلاثة (AgentOneMutation CMS، ProductVariant، ProductTypeAttribute) ترتقي إلى `errorCode == AUTHZ-001` الحرفي في الامتدادات — النمط السائد في بقية الملفات. | W4-B28 |
 | TST-09 | 3/23 ITs على create-drop لا Flyway | **OPEN** | غير ملموس | W4-B29 |
-| TST-10 | `Service.price: Float!` يُشرَّع باختبار | **OPEN** | غير ملموس | W4-B30 |
-| TST-11 | تعليق pom يقول «227 failsafe classes» والفعلي 186 | **OPEN** | غير ملموس (توثيقي) | W4-B31 |
+| TST-10 | `Service.price: Float!` يُشرَّع باختبار | **CLOSED** | → **أُغلق W4-B30 (DECISION-6)**: صف KEEP_EXTENSION مسجل (63 صفاً) — حقل عرض صرف لحساب minor-unit الصحيح الدقيق، لا سطح كتابة يقبل Float، ولا حساب على المعروض؛ شرط الفشل المغلق: أي سطح كتابة مالي مستقبلي على العائلة يركب عقد PositiveDecimal. | W4-B30 |
+| TST-11 | تعليق pom يقول «227 failsafe classes» والفعلي 186 | **CLOSED** | → **أُغلق W4-B31**: التعليق يُسند الآن إلى العدد المشتق من حارس التوثيق نفسه (192 ملف app عند الكتابة، 195 عبر الـreactor) بدل رقم صلب يتقادم. | W4-B31 |
 | GOV-01 | اختبار #813 الأحمر على رأسه (3 توكيدات تعتمد ملفات #787) | **CLOSED** | `1b96a2c79b`: «keep the protocol guard self-contained on main» (−203 سطراً) — `Tests — modules` أخضر على رأس #813 الآن | — |
 | GOV-02 | قاعدة GitHub-first تُضعف التحقق المحلي المسبق بلا تعويض | OPEN (ملاحظة سياسة) | نص AGENTS.md كما هو — اختياري | W4 |
 

@@ -839,8 +839,8 @@ class ProductVariantGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> assertThat(errors)
-                        .anySatisfy(error -> assertThat(error.getMessage())
-                                .contains("Access Denied")));
+                        .anySatisfy(error -> assertThat(error.getExtensions())
+                                .containsEntry("errorCode", "AUTHZ-001")));
     }
 
     @Test
