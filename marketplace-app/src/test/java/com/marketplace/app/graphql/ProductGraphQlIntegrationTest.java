@@ -332,6 +332,20 @@ class ProductGraphQlIntegrationTest {
      */
     @Test
     void theProductTypeFieldResolvesForNonAdminCallers() {
+        // The fixture population's own shapes: the class's active fixtures
+        // carry NO type reference (the no-type register overload) and the
+        // typed fixture is the DRAFT row only the ADMIN population sees —
+        // so a CONSUMER page would honestly answer null productType on
+        // every row. The test therefore seeds its OWN published, typed
+        // row first (the C1 flow: register-with-type starts DRAFT, then
+        // publish), the state a real store's public catalog carries.
+        Product typed = productRepository.save(Product.register(
+                storeCategoryCode, "b4c Published Typed Widget", "b4c fixture", 1000L, "SAR",
+                providerId, seededTypeId));
+        typed.publish();
+        productRepository.save(typed);
+        seededProductIds.add(typed.getId());
+
         HttpGraphQlTester consumer = testerFor(CONSUMER_SUBJECT, "CONSUMER");
         consumer.document("""
                         query { products(first: 50, sortBy: { direction: ASC, field: NAME }) {
