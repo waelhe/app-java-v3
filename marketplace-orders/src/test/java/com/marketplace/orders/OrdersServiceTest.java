@@ -78,6 +78,8 @@ class OrdersServiceTest {
     @Mock
     private com.marketplace.shared.api.CheckoutDeliveryPort checkoutDeliveryPort;
     @Mock
+    private jakarta.persistence.EntityManager entityManager;
+    @Mock
     private Authentication authentication;
 
     private OrdersService service;
@@ -131,7 +133,8 @@ class OrdersServiceTest {
         service = new OrdersService(cartRepository, cartItemRepository,
                 orderRepository, orderItemRepository, currentUserProvider, eventPublisher,
                 productPricingPort, productStockPort, orderPaymentPort,
-                commercialPricingPort, orderPriceComponentRepository, checkoutDeliveryPort);
+                commercialPricingPort, orderPriceComponentRepository, checkoutDeliveryPort,
+                entityManager);
         org.mockito.Mockito.lenient()
                 .when(commercialPricingPort.computeBreakdown(org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.anyLong(),
@@ -582,6 +585,54 @@ class OrdersServiceTest {
         ArgumentCaptor<Object> event = ArgumentCaptor.forClass(Object.class);
         verify(eventPublisher).publishEvent(event.capture());
         assertThat(event.getValue()).isEqualTo(new OrderConfirmedEvent(order.getId(), consumer));
+    }
+
+    /**
+     * The 2026-11-05 #811 round (Minor · Data Integrity): the settlement
+     * listener's PLACED decision rides the REFRESHED state under the
+     * pessimistic lock — the previous second read returned the
+     * already-managed instance, so a concurrent confirm that committed
+     * between the two reads left the filter deciding on the STALE PLACED
+     * and double-confirming with a duplicate event. The refresh's mock
+     * simulates the authoritative row: the stale leg reloads CONFIRMED
+     * (no confirm, no event), the fresh leg keeps PLACED (confirm runs).
+     */
+    @Test
+    void confirmFromPaymentDecidesOnTheStateTheLockRefreshReloaded() {
+        java.util.UUID paymentIntentId = java.util.UUID.randomUUID();
+        // The stale leg: the unlocked read saw PLACED, but the row under
+        // the lock is CONFIRMED — the refresh reloads it, the listener
+        // stays a no-op.
+        Order concurrentlyConfirmed = placedOrder();
+        concurrentlyConfirmed.linkPaymentIntent(paymentIntentId);
+        when(orderRepository.findByPaymentIntentId(paymentIntentId))
+                .thenReturn(Optional.of(concurrentlyConfirmed));
+        org.mockito.Mockito.doAnswer(inv -> {
+            concurrentlyConfirmed.confirm(java.time.Instant.now());
+            return null;
+        }).when(entityManager).refresh(concurrentlyConfirmed,
+                jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+
+        service.confirmFromPayment(paymentIntentId);
+
+        verify(orderRepository, org.mockito.Mockito.never())
+                .findByIdForUpdate(concurrentlyConfirmed.getId());
+        verify(eventPublisher, org.mockito.Mockito.never()).publishEvent(any());
+
+        // The fresh leg: the locked row is still PLACED — the confirm
+        // runs and publishes exactly once.
+        Order stillPlaced = placedOrder();
+        stillPlaced.linkPaymentIntent(paymentIntentId);
+        when(orderRepository.findByPaymentIntentId(paymentIntentId))
+                .thenReturn(Optional.of(stillPlaced));
+        when(orderRepository.findByIdForUpdate(stillPlaced.getId()))
+                .thenReturn(Optional.of(stillPlaced));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.confirmFromPayment(paymentIntentId);
+
+        verify(orderRepository).findByIdForUpdate(stillPlaced.getId());
+        verify(eventPublisher).publishEvent(any(OrderConfirmedEvent.class));
     }
 
     @Test

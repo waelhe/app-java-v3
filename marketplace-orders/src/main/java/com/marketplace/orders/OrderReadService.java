@@ -90,6 +90,19 @@ public class OrderReadService implements OrderReadSpi {
         if (limit == null || limit.isUnlimited() || limit.max() <= 0) {
             throw new IllegalArgumentException("A positive page size is required");
         }
+        // The 2026-11-05 #811 round (Minor · Functional Correctness): the
+        // interface's own contract is forward-only keyset scrolling, but a
+        // BACKWARD position (a before-cursor shape) executed a reversed
+        // page over the date/status columns instead of the classified
+        // rejection every other malformed position answers. The guard
+        // keeps the initial position legal (it scrolls forward by
+        // definition) and answers the classified family for the backward
+        // shape — the boundary's own VAL-001 taxonomy maps it.
+        if (position != null && !position.scrollsForward()) {
+            throw new IllegalArgumentException(
+                    "scrollOrders supports forward-only keyset positions (the before-cursor "
+                            + "shape is not a supported page request)");
+        }
         KeysetScrollPosition scrolled = sort.field() == OrderSort.Field.STATUS
                 ? rebindStatusKey(position)
                 : position;

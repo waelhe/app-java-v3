@@ -440,9 +440,23 @@ public class OrderReturnsService {
         if (ratioDenominator <= 0) {
             throw new IllegalArgumentException("The ratio denominator must be positive");
         }
-        final long product;
+        // The 2026-11-05 #811 round (Major · Functional Correctness): the
+        // intermediate product rides BigInteger — the previous
+        // Math.multiplyExact rejected products beyond Long.MAX even when
+        // the FINAL QUOTIENT is representable (e.g. a value of
+        // Long.MAX/2 with a 3:2 ratio: the product overflows, the
+        // refund's 2/3 of it does not), answering the classified
+        // unavailability for a refund the platform can actually compute.
+        // The classified loud failure now fires only where it always
+        // belonged: when the QUOTIENT itself leaves the signed 64-bit
+        // minor-unit domain (longValueExact's ArithmeticException).
+        java.math.BigInteger denominator = java.math.BigInteger.valueOf(ratioDenominator);
+        java.math.BigInteger[] quotientAndRemainder = java.math.BigInteger.valueOf(value)
+                .multiply(java.math.BigInteger.valueOf(ratioNumerator))
+                .divideAndRemainder(denominator);
+        long quotient;
         try {
-            product = Math.multiplyExact(value, ratioNumerator);
+            quotient = quotientAndRemainder[0].longValueExact();
         } catch (ArithmeticException ex) {
             // ORD-02's residual: the classified loud failure — the
             // delivery pricing precedent's own mapping, with the amount
@@ -455,12 +469,11 @@ public class OrderReturnsService {
                             + "(the platform's supported monetary range is 0 .. 100000000 "
                             + "major units)");
         }
-        long quotient = Math.floorDiv(product, ratioDenominator);
-        long remainder = Math.floorMod(product, ratioDenominator);
+        java.math.BigInteger remainder = quotientAndRemainder[1];
         // 2·remainder >= denominator, written without the doubling so no
         // intermediate can overflow; a positive denominator makes the
-        // comparison exact (floorMod is non-negative here).
-        if (remainder >= ratioDenominator - remainder) {
+        // comparison exact (the remainder is non-negative here).
+        if (remainder.compareTo(denominator.subtract(remainder)) >= 0) {
             quotient++;
         }
         return quotient;

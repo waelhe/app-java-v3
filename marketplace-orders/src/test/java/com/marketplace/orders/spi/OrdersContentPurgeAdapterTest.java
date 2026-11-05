@@ -114,4 +114,61 @@ class OrdersContentPurgeAdapterTest {
                 eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
                 eq(AuthoredContentPurgePort.PURGED_MARKER));
     }
+
+    /**
+     * The 2026-11-05 #811 round's two scope corrections: the address
+     * purge EXCLUDES the orders that still need their delivery (a
+     * PLACED/CONFIRMED platform-delivery row's frozen address is the
+     * delivery's own destination — Art. 17(3)(b)), and the subject's
+     * authored texts now include the buyer's cancel reason and the
+     * return REASON, live rows AND audit mirrors alike (the returns'
+     * resolution_note stays — the merchant decision record).
+     */
+    @Test
+    void purgeAuthoredTexts_excludesStillDeliveringOrdersAndPurgesTheAuthoredReasons() {
+        adapter.purgeAuthoredTexts(SUBJECT);
+
+        // The address statements carry the delivery-still-needed
+        // exclusion — the live row by its own status, the audit mirror
+        // by the live row's current status.
+        verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql != null && sql.contains("UPDATE orders SET ship_to_address")
+                                && sql.contains("status NOT IN ('PLACED', 'CONFIRMED')")),
+                eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
+                eq(AuthoredContentPurgePort.PURGED_MARKER));
+        verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql != null && sql.contains("UPDATE orders_aud SET ship_to_address")
+                                && sql.contains("NOT EXISTS")
+                                && sql.contains("o.status IN ('PLACED', 'CONFIRMED')")),
+                eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
+                eq(AuthoredContentPurgePort.PURGED_MARKER));
+
+        // The buyer's cancel reason purges — live (with the version
+        // advance) and audit mirror.
+        verify(jdbcTemplate).update(
+                contains("UPDATE orders SET cancel_reason = ?, version = version + 1"),
+                eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
+                eq(AuthoredContentPurgePort.PURGED_MARKER));
+        verify(jdbcTemplate).update(
+                contains("UPDATE orders_aud SET cancel_reason = ?"),
+                eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
+                eq(AuthoredContentPurgePort.PURGED_MARKER));
+
+        // The return REASON purges — live (with the version advance) and
+        // audit mirror; the resolution_note column appears NOWHERE.
+        verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql != null && sql.contains("UPDATE order_returns SET reason = ?, version = version + 1")
+                                && !sql.contains("resolution_note")),
+                eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
+                eq(AuthoredContentPurgePort.PURGED_MARKER));
+        verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql != null && sql.contains("UPDATE order_returns_aud SET reason = ?")
+                                && !sql.contains("resolution_note")),
+                eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
+                eq(AuthoredContentPurgePort.PURGED_MARKER));
+    }
 }
