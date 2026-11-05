@@ -783,7 +783,7 @@ class AgentOneMutationDgsTest {
 
         Object payload = dgsQueryExecutor.executeAndExtractJsonPath("""
                 mutation { tokenRefresh(refreshToken: "the-presented-refresh-token") {
-                    token refreshToken user { email }
+                    token refreshToken user { id email }
                 } }
                 """, "data.tokenRefresh");
 
@@ -794,7 +794,14 @@ class AgentOneMutationDgsTest {
         // successor — the presented token is dead after this call.
         assertThat(fields.get("token")).isEqualTo("successor-access-token");
         assertThat(fields.get("refreshToken")).isEqualTo("successor-refresh-token");
+        // The 2026-11-05 #807 round: the payload's user is the ROTATED
+        // account's own identity — not just "a user" — so the successor's
+        // client binds the session to the right subject from the wire.
         assertThat(fields.get("user")).isNotNull();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> user = (Map<String, Object>) fields.get("user");
+        assertThat(user.get("id")).isEqualTo(globalId("User", USER_ID));
+        assertThat(user.get("email")).isEqualTo("agent-one@example.com");
     }
 
     // ---------------------------------------------------------------------

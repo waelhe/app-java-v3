@@ -367,7 +367,18 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
             // stored order — nothing changes, nothing writes.
             return ProductTypeMutationResult.success(toView(type.get()));
         }
-        int park = ordered.stream().mapToInt(ProductTypeAttributeAssignment::getPosition).max().orElse(0) + 1;
+        // The 2026-11-05 #808 round-3 review (Major · Functional Correctness,
+        // repeat): the VARIANT-family bucket merges TWO per-scope-numbered
+        // position spaces, so the merged list can hold MORE members than the
+        // largest stored position (two attributes per scope: n=4, max=2).
+        // A park range starting at max+1 overlapped the final 1..n range,
+        // and Hibernate's update-flush order (NOT the saveAll list order)
+        // could transiently duplicate a (product_type_id, scope, position)
+        // row against the live unique index. The park starts beyond BOTH
+        // the current maximum AND the final range's own end.
+        int park = Math.max(
+                ordered.stream().mapToInt(ProductTypeAttributeAssignment::getPosition).max().orElse(0),
+                ordered.size()) + 1;
         for (ProductTypeAttributeAssignment assignment : ordered) {
             assignment.reposition(park++);
         }
