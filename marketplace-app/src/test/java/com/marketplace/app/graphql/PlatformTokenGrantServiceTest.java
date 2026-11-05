@@ -112,6 +112,8 @@ class PlatformTokenGrantServiceTest {
     private final InMemoryRowStore authorizationStore = new InMemoryRowStore();
     private InMemoryRotationStore rotationStore;
     private PlatformTokenGrantService service;
+    /** The identity seam mock (the 2026-11-05 #806 round-3 disable-race pins flip its enabled truth). */
+    private IdentitySpi identitySpi;
 
     /** Verifies the timing-equalization burn (mock — the unit seam). */
     private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
@@ -171,10 +173,14 @@ class PlatformTokenGrantServiceTest {
         when(passwordEncoder.encode(PlatformTokenGrantService.DUMMY_COMPARISON_SECRET))
                 .thenReturn(DUMMY_HASH);
 
-        IdentitySpi identitySpi = mock(IdentitySpi.class);
+        identitySpi = mock(IdentitySpi.class);
         when(identitySpi.findCurrentUserAccount(any())).thenReturn(Optional.of(
                 new UserAccountView(UUID.randomUUID(), PRINCIPAL, false, true,
                         Instant.now().minusSeconds(3600), Instant.now(), Set.of("CONSUMER"))));
+        // The 2026-11-05 #806 round-3 harness pin: the login store's
+        // enabled truth — true for the happy paths, flipped by the
+        // disable-race pins below.
+        when(identitySpi.loginAccountEnabled(PRINCIPAL)).thenReturn(true);
 
         return new PlatformTokenGrantService(
                 provider(authenticationConfiguration),
@@ -190,6 +196,47 @@ class PlatformTokenGrantServiceTest {
                 "marketplace-api",
                 PUBLIC_CLIENT_ID,
                 java.time.Duration.ofDays(30).toSeconds());
+    }
+
+    // -------------------------------------------------------------------
+    // The disable race (the 2026-11-05 #806 round-3 review, Major)
+    // -------------------------------------------------------------------
+
+    @Test
+    void theGrantLosesItsRowWhenTheAccountWasDisabledUnderTheSave() {
+        // The disable lands between authenticate() and save(): the login
+        // store answers the POST-save re-verification with disabled. The
+        // raced grant never leaves a live row behind — the row the save
+        // wrote is removed and the caller sees the account-state failure
+        // the pre-authentication wall would have answered.
+        assertThat(authorizationStore.size()).isZero();
+        when(identitySpi.loginAccountEnabled(PRINCIPAL)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.grant(PRINCIPAL, PASSWORD))
+                .isInstanceOf(org.springframework.security.authentication.DisabledException.class);
+        // The store's own truth (a hand-written fake, not a mock): the
+        // save wrote one row, the post-save re-verification removed it —
+        // no live authorization survives the race.
+        assertThat(authorizationStore.size())
+                .as("the raced grant's row must not survive the disable")
+                .isZero();
+    }
+
+    @Test
+    void theRefreshLegRevokesTheFamilyOfADisabledAccount() {
+        PlatformTokenGrantService.IssuedTokens granted = service.grant(PRINCIPAL, PASSWORD);
+
+        // The administrative disable (L23) removed the account's rows — a
+        // row that SURVIVES (the race) is revoked at the refresh door: the
+        // rejection keeps the surface's unified invalid-token vocabulary.
+        when(identitySpi.loginAccountEnabled(PRINCIPAL)).thenReturn(false);
+        assertThatThrownBy(() -> service.refresh(granted.refreshToken()))
+                .isInstanceOf(org.springframework.security.authentication.BadCredentialsException.class)
+                .hasMessage("The refresh token is invalid, expired or revoked");
+        // The store's own truth: the family row is revoked at the door.
+        assertThat(authorizationStore.size())
+                .as("a disabled account's family row is revoked on refresh")
+                .isZero();
     }
 
     // -------------------------------------------------------------------
@@ -509,6 +556,11 @@ class PlatformTokenGrantServiceTest {
         @Override
         public void remove(OAuth2Authorization authorization) {
             rows.remove(authorization.getId());
+        }
+
+        /** The store's own truth for the disable-race pins. */
+        int size() {
+            return rows.size();
         }
 
         @Override

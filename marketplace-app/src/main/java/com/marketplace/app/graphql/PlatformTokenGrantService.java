@@ -2,6 +2,7 @@ package com.marketplace.app.graphql;
 
 import com.marketplace.identity.spi.IdentitySpi;
 import com.marketplace.identity.spi.UserAccountView;
+import com.marketplace.shared.api.ServiceUnavailableException;
 import io.micrometer.observation.annotation.Observed;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -282,6 +283,20 @@ public class PlatformTokenGrantService {
         UserAccountView user = identitySpi.findCurrentUserAccount(
                         new UsernamePasswordAuthenticationToken(principal, null, java.util.List.of()))
                 .orElse(null);
+        // The 2026-11-05 #806 round-3 review (Major · Security & Privacy):
+        // the account state is re-verified AFTER the save — a disable that
+        // landed between authenticate() and save() would otherwise leave a
+        // live authorization row the refresh leg kept renewing until the
+        // family-age cap. The raced grant loses its row and answers the
+        // SAME account-state failure the pre-authentication wall carries.
+        if (user != null && !identitySpi.loginAccountEnabled(principal)) {
+            authorizationService().remove(authorizationService().findByToken(
+                    refreshToken, new OAuth2TokenType(OAuth2TokenType.REFRESH_TOKEN.getValue())));
+            log.warn("Platform password grant revoked at issue: the account was disabled"
+                    + " while the grant raced (userId={})", user.id());
+            throw new org.springframework.security.authentication.DisabledException(
+                    "User is disabled");
+        }
         // The shard review (Minor · Security & Privacy, 2026-11-01): the
         // principal is the caller-supplied email — never INFO-log it (PII
         // leakage into logs); the internal account id identifies the grant.
@@ -378,6 +393,19 @@ public class PlatformTokenGrantService {
                     "The refresh token does not belong to this surface's client");
         }
         String principal = authorization.getPrincipalName();
+        // The 2026-11-05 #806 round-3 review (Major · Security & Privacy):
+        // the refresh leg never consulted the account's state — a disabled
+        // account's session stayed renewable until the family-age cap. The
+        // row is revoked at the door and the rejection keeps the surface's
+        // unified invalid-token vocabulary (never an account-state oracle).
+        boolean accountInactive = !identitySpi.loginAccountEnabled(principal);
+        if (accountInactive) {
+            authorizationService().remove(authorization);
+            log.warn("Refresh rejected and family revoked: the account is not active"
+                    + " (principal={})", principal);
+            throw new org.springframework.security.authentication.BadCredentialsException(
+                    "The refresh token is invalid, expired or revoked");
+        }
         @SuppressWarnings("unchecked")
         Set<String> roles = (Set<String>) authorization.getAttributes()
                 .getOrDefault(ROLES_ATTRIBUTE, Set.of());
@@ -542,7 +570,7 @@ public class PlatformTokenGrantService {
                                                   Instant issuedAt) {
         RegisteredClient client = registeredClientRepository().findByClientId(publicClientId);
         if (client == null) {
-            throw new IllegalStateException(
+            throw new ServiceUnavailableException(
                     "The public client is not registered — the password grant requires it");
         }
         OAuth2AccessToken accessTokenToken = new OAuth2AccessToken(
@@ -590,13 +618,13 @@ public class PlatformTokenGrantService {
     private AuthenticationManager authenticationManager() {
         AuthenticationConfiguration configuration = authenticationConfiguration.getIfAvailable();
         if (configuration == null) {
-            throw new IllegalStateException(
+            throw new ServiceUnavailableException(
                     "The authorization stack is not available — the token grant requires it");
         }
         try {
             return configuration.getAuthenticationManager();
         } catch (RuntimeException failure) {
-            throw new IllegalStateException(
+            throw new ServiceUnavailableException(
                     "The global authentication manager could not be assembled", failure);
         }
     }
@@ -604,7 +632,7 @@ public class PlatformTokenGrantService {
     private OAuth2AuthorizationService authorizationService() {
         OAuth2AuthorizationService service = authorizationService.getIfAvailable();
         if (service == null) {
-            throw new IllegalStateException(
+            throw new ServiceUnavailableException(
                     "The authorization service is not available — the token grant requires it");
         }
         return service;
@@ -613,7 +641,7 @@ public class PlatformTokenGrantService {
     private RefreshTokenRotationStore refreshTokenRotationStore() {
         RefreshTokenRotationStore store = refreshTokenRotationStore.getIfAvailable();
         if (store == null) {
-            throw new IllegalStateException(
+            throw new ServiceUnavailableException(
                     "The refresh rotation store is not available — the token grant requires it");
         }
         return store;
@@ -622,7 +650,7 @@ public class PlatformTokenGrantService {
     private RegisteredClientRepository registeredClientRepository() {
         RegisteredClientRepository repository = registeredClientRepository.getIfAvailable();
         if (repository == null) {
-            throw new IllegalStateException(
+            throw new ServiceUnavailableException(
                     "The client registry is not available — the token grant requires it");
         }
         return repository;
@@ -631,7 +659,7 @@ public class PlatformTokenGrantService {
     private AuthorizationServerSettings authorizationServerSettings() {
         AuthorizationServerSettings settings = authorizationServerSettings.getIfAvailable();
         if (settings == null) {
-            throw new IllegalStateException(
+            throw new ServiceUnavailableException(
                     "The authorization server settings are not available — the token grant "
                             + "requires them");
         }
@@ -641,7 +669,7 @@ public class PlatformTokenGrantService {
     private JwtEncoder jwtEncoder() {
         JWKSource<SecurityContext> keys = jwkSource.getIfAvailable();
         if (keys == null) {
-            throw new IllegalStateException(
+            throw new ServiceUnavailableException(
                     "The signing key material is not available — the token grant requires it");
         }
         return new NimbusJwtEncoder(keys);
@@ -650,7 +678,7 @@ public class PlatformTokenGrantService {
     private JwtDecoder jwtDecoder() {
         JwtDecoder decoder = jwtDecoder.getIfAvailable();
         if (decoder == null) {
-            throw new IllegalStateException(
+            throw new ServiceUnavailableException(
                     "The resource-server decoder is not available — token verification requires it");
         }
         return decoder;

@@ -215,6 +215,22 @@ public interface IdentitySpi {
     java.util.Optional<UserAccountView> findCurrentUserAccount(Authentication authentication);
 
     /**
+     * The login store's own ENABLED truth for a subject (the
+     * {@code auth_users.enabled} flag the authentication chain reads —
+     * the state an administrative disable flips, L23). The 2026-11-05
+     * #806 round-3 review's disable race: a disable that lands between
+     * the password grant's {@code authenticate()} and its authorization
+     * {@code save()} deletes the account's rows BEFORE the grant's own
+     * insert lands, so the grant must re-verify this state AFTER its
+     * save and drop the raced row. A subject with no login row answers
+     * false (nothing may be granted for it).
+     *
+     * @param subject the login identifier (the principal name)
+     * @return true only when the login row exists and is enabled
+     */
+    boolean loginAccountEnabled(String subject);
+
+    /**
      * P1 (the Saleor {@code user} root): the account projection by the
      * native UUID behind the typed global ID. Saleor requires
      * MANAGE_STAFF/MANAGE_USERS/MANAGE_ORDERS — enforced here as the
