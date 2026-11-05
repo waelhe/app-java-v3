@@ -107,9 +107,17 @@ public class ProductWriteService implements ProductWriteSpi {
                     "A product's price is a non-negative minor amount"));
         }
         String currency = command.currency() == null ? "" : command.currency().strip().toUpperCase(Locale.ROOT);
-        if (!currency.matches("[A-Z]{3}")) {
+        // The 2026-11-05 #809 round (Minor · Functional Correctness): the
+        // absent/malformed split the vocabulary itself defines — REQUIRED
+        // is the absent-field family, INVALID the malformed-shape family.
+        // The previous single branch classified a SUPPLIED "riyals" as
+        // REQUIRED against the vocabulary's own description.
+        if (currency.isEmpty()) {
             errors.add(new ProductMutationError("currency", ProductMutationErrorCode.REQUIRED,
                     "A product is denominated in a 3-letter ISO-4217 currency"));
+        } else if (!currency.matches("[A-Z]{3}")) {
+            errors.add(new ProductMutationError("currency", ProductMutationErrorCode.INVALID,
+                    "A product's currency is a 3-letter ISO-4217 code"));
         }
         String storeCategoryCode = command.storeCategoryCode() == null
                 ? null

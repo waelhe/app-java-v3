@@ -230,11 +230,20 @@ class ProductTypeAttributeWriteServiceTest {
     void theHappyAssignDerivesTheScopeAndTheAppendPosition() {
         CatalogAttributeDefinition text = definition("text-attr", CatalogAttributeType.TEXT);
         CatalogAttributeDefinition choice = definition("choice-attr", CatalogAttributeType.CHOICE);
+        // The 2026-11-05 #809 round (Minor · Test Quality): the existing
+        // roster's attribute is a THIRD definition — the previous fixture
+        // pre-assigned `text` itself, so the "happy" path silently rode a
+        // re-assign of an already-assigned attribute (the duplicate probe
+        // is a separate stub, which is why it never fired — an
+        // inconsistent fixture). The position derivation stays measured
+        // over the same starting shape: one existing PRODUCT-scope row at
+        // position 1.
+        CatalogAttributeDefinition size = definition("size-attr", CatalogAttributeType.TEXT);
         when(attributeDefinitionRepository.findById(text.getId())).thenReturn(Optional.of(text));
         when(attributeDefinitionRepository.findById(choice.getId())).thenReturn(Optional.of(choice));
         when(attributeOptionRepository.countByAttributeDefinitionId(choice.getId())).thenReturn(3L);
         when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
-                .thenReturn(List.of(assigned(text, ProductTypeAttributeScope.PRODUCT, 1)));
+                .thenReturn(List.of(assigned(size, ProductTypeAttributeScope.PRODUCT, 1)));
         when(assignmentRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         ProductTypeMutationResult result = service.assignAttributes(type.getId(), List.of(

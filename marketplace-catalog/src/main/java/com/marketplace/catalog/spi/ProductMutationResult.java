@@ -25,8 +25,19 @@ public record ProductMutationResult(ProductView product, List<ProductMutationErr
         return new ProductMutationResult(product, List.of());
     }
 
-    /** The failure factory — the domain error entries, no projection. */
+    /**
+     * The failure factory — the domain error entries, no projection. The
+     * 2026-11-05 #809 round (Minor · Functional Correctness): an EMPTY
+     * error list would fabricate a "failure" whose success() answers
+     * TRUE (a null product with zero errors) — the factory now refuses
+     * the inconsistent shape loudly, the same never-a-fabricated-result
+     * law the payload builders carry.
+     */
     public static ProductMutationResult failure(List<ProductMutationError> errors) {
+        if (errors == null || errors.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "A failure result requires at least one domain error");
+        }
         return new ProductMutationResult(null, List.copyOf(errors));
     }
 }

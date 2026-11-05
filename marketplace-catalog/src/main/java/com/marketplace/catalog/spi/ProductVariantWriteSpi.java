@@ -55,8 +55,13 @@ public interface ProductVariantWriteSpi {
      * @param authentication the caller's authentication (the owning
      *                      provider resolution)
      * @return the result with the created row's projection, or the
-     *         domain validation errors (REQUIRED product/price,
-     *         NOT_FOUND product, INVALID shapes, ALREADY_EXISTS sku)
+     *         domain validation errors (REQUIRED product/price — the
+     *         product input that did not resolve, INVALID shapes,
+     *         ALREADY_EXISTS sku). The 2026-11-05 #809 round: the
+     *         javadoc's NOT_FOUND leg never matched the implementation
+     *         or its tests — a create command's unresolvable parent is
+     *         the create-validation family's REQUIRED, never the
+     *         entity-addressing family's NOT_FOUND.
      */
     ProductVariantMutationResult createVariant(ProductVariantCreateCommand command,
                                                org.springframework.security.core.Authentication authentication);
