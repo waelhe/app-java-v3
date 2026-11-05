@@ -980,8 +980,10 @@ class AttributeGraphQlIntegrationTest {
                     seededOptionIds.add(UUID.fromString(
                             decodedGlobalId(id).substring("AttributeValue:".length())));
                 });
-        // The append-position derivation: the second value rides max+1.
-        assertThat(attributeOptionRepository.findById(rowId).orElseThrow().getPosition()).isZero();
+        // The append-position derivation: the first position is 1 — aligned
+        // with the reorder's 1-based no-change probe (the 2026-11-05 #808
+        // round-2 alignment); the second value rides max+1.
+        assertThat(attributeOptionRepository.findById(rowId).orElseThrow().getPosition()).isEqualTo(1);
     }
 
     @Test
