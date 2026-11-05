@@ -149,13 +149,18 @@ class ProductWriteServiceTest {
     }
 
     @Test
-    void malformedCurrencyAnswersTheRequiredDomainError() {
+    void malformedCurrencyAnswersTheInvalidDomainError() {
+        // The 2026-11-05 #809 round (Minor · Test Quality): a SUPPLIED
+        // but malformed value ("riyals") is the INVALID leg — REQUIRED
+        // is the absent-field family (the sibling tests below); the
+        // previous expectation misclassified the shape against the
+        // ProductMutationErrorCode vocabulary's own description.
         ProductMutationResult result = service.createProduct(
                 create("Widget", null, "widgets", 1000L, "riyals", null), caller);
 
         assertThat(result.errors()).singleElement()
                 .extracting(ProductMutationError::code, ProductMutationError::field)
-                .containsExactly(ProductMutationErrorCode.REQUIRED, "currency");
+                .containsExactly(ProductMutationErrorCode.INVALID, "currency");
     }
 
     @Test
