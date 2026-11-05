@@ -169,7 +169,12 @@ class AttributeValueWriteServiceTest {
     }
 
     @Test
-    void theFirstValueOfAnAttributeStartsAtPositionZero() {
+    void theFirstValueOfAnAttributeStartsAtPositionOne() {
+        // The 2026-11-05 #808 round (Minor · Functional Correctness):
+        // the first position is 1 — aligned with the reorder's 1-based
+        // no-change probe and compaction (i + 1). The previous 0-based
+        // start made every fresh single-option attribute look "changed"
+        // to the probe and forced a renumbering write on a true no-op.
         CatalogAttributeDefinition parent = choiceParent();
         when(definitions.findById(parent.getId())).thenReturn(Optional.of(parent));
         when(options.findByAttributeDefinitionIdAndCode(parent.getId(), "small"))
@@ -182,7 +187,7 @@ class AttributeValueWriteServiceTest {
                 new AttributeValueCreateCommand("Small", "small"));
 
         assertThat(result.success()).isTrue();
-        verify(options).save(argOptionWithPosition(0));
+        verify(options).save(argOptionWithPosition(1));
     }
 
     // ------------------------------------------------------------------

@@ -290,7 +290,13 @@ public class CollectionReadService implements CollectionReadSpi {
         if (limit.max() <= 0) {
             throw new IllegalArgumentException("A positive page size is required");
         }
-        return limit.max();
+        // The 2026-11-05 #808 round (Minor · Performance & Scalability):
+        // the caller's bounded limit is itself CAPPED at the documented
+        // membership ceiling — the previous shape returned limit.max()
+        // unbounded, so a Limit.of(100_000) replaced the SQL keyset with
+        // a mega-page (the exact CAT-03 shape the ceiling exists to
+        // prevent).
+        return Math.min(limit.max(), DEFAULT_MEMBERSHIP_PAGE_MAX);
     }
 
     /**

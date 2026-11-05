@@ -159,7 +159,13 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
     @Transactional
     public ProductVariantMutationResult updateVariant(UUID id, ProductVariantUpdateCommand command,
                                                       Authentication authentication) {
-        Optional<ProductVariant> addressed = ownedRow(id, authentication);
+        // The 2026-11-05 #808 round (Major · Data Integrity): the update
+        // rides the LOCKED ownership read — the plain findById raced a
+        // concurrent placement's reservation or a delete's wall and a
+        // lost update (reviseDetails + save over a row another
+        // transaction moved): the same ownedRowForUpdate the delete
+        // paths ride.
+        Optional<ProductVariant> addressed = ownedRowForUpdate(id, authentication);
         if (addressed.isEmpty()) {
             return ProductVariantMutationResult.failure(List.of(new ProductVariantMutationError(
                     "id", ProductVariantMutationErrorCode.NOT_FOUND, "No product variant found for the id")));
@@ -410,23 +416,9 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
     }
 
     /**
-     * The caller's own row — the ownership law's own safe absence: a
-     * missing row and a stranger's row answer the same empty (the R5
-     * shape, never an existence disclosure — the
-     * {@code ProductWriteService.ownedRow} twin).
-     */
-    private Optional<ProductVariant> ownedRow(UUID id, Authentication authentication) {
-        if (id == null) {
-            return Optional.empty();
-        }
-        return variantRepository.findById(id)
-                .filter(row -> row.getProviderId()
-                        .equals(currentUserProvider.getCurrentUserId(authentication)));
-    }
-
-    /**
-     * The DELETE paths' own ownership read — the SAME safe-absence law as
-     * {@link #ownedRow}, but through the pessimistic locked read
+     * The WRITE paths' own ownership read — the safe-absence law
+     * (a missing row and a stranger's row answer the same empty, the R5
+     * shape), through the pessimistic locked read
      * ({@code findByIdForUpdate}): the variant reservation is a native
      * UPDATE on the row alone, so the delete's reservation wall and its
      * soft-delete both ride the row lock a concurrent placement

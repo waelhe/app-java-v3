@@ -274,7 +274,7 @@ class ProductVariantWriteServiceTest {
     @Test
     void anUnknownRowAnswersTheNotFoundDomainError() {
         UUID unknown = UUID.randomUUID();
-        when(variantRepository.findById(unknown)).thenReturn(Optional.empty());
+        when(variantRepository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
 
         ProductVariantMutationResult result = service.updateVariant(
                 unknown, new ProductVariantUpdateCommand("SKU-2", null, null), caller);
@@ -288,7 +288,7 @@ class ProductVariantWriteServiceTest {
     void aStrangersRowAnswersTheSameSafeAbsenceNeverAnExistenceDisclosure() {
         Product strangerProduct = productOwnedBy(ProviderIds.STRANGER);
         ProductVariant strangerRow = variantUnder(strangerProduct, "SKU-9");
-        when(variantRepository.findById(strangerRow.getId())).thenReturn(Optional.of(strangerRow));
+        when(variantRepository.findByIdForUpdate(strangerRow.getId())).thenReturn(Optional.of(strangerRow));
 
         ProductVariantMutationResult result = service.updateVariant(
                 strangerRow.getId(), new ProductVariantUpdateCommand("SKU-2", null, null), caller);
@@ -302,7 +302,7 @@ class ProductVariantWriteServiceTest {
     void theEmptyCommandAnswersTheCurrentProjectionWithoutAWrite() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant row = variantUnder(parent, "SKU-1");
-        when(variantRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
         when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
 
         ProductVariantMutationResult result = service.updateVariant(
@@ -318,7 +318,7 @@ class ProductVariantWriteServiceTest {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant archived = variantUnder(parent, "SKU-1");
         archived.archive();
-        when(variantRepository.findById(archived.getId())).thenReturn(Optional.of(archived));
+        when(variantRepository.findByIdForUpdate(archived.getId())).thenReturn(Optional.of(archived));
 
         ProductVariantMutationResult result = service.updateVariant(
                 archived.getId(), new ProductVariantUpdateCommand("SKU-2", null, null), caller);
@@ -333,7 +333,7 @@ class ProductVariantWriteServiceTest {
     void aBlankSkuOnUpdateAnswersTheInvalidDomainError() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant row = variantUnder(parent, "SKU-1");
-        when(variantRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
 
         ProductVariantMutationResult result = service.updateVariant(
                 row.getId(), new ProductVariantUpdateCommand("  ", null, null), caller);
@@ -348,7 +348,7 @@ class ProductVariantWriteServiceTest {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant row = variantUnder(parent, "SKU-1");
         ProductVariant other = variantUnder(parent, "SKU-2");
-        when(variantRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
         when(variantRepository.findByProviderIdAndSku(ProviderIds.CALLER, "SKU-2"))
                 .thenReturn(Optional.of(other));
 
@@ -365,7 +365,7 @@ class ProductVariantWriteServiceTest {
     void theSameSkuResendStaysTheIdempotentNoOp() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant row = variantUnder(parent, "SKU-1");
-        when(variantRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
         when(variantRepository.findByProviderIdAndSku(ProviderIds.CALLER, "SKU-1"))
                 .thenReturn(Optional.of(row));
         when(variantRepository.save(any(ProductVariant.class)))
@@ -383,7 +383,7 @@ class ProductVariantWriteServiceTest {
     void aNegativePriceOnUpdateAnswersTheInvalidDomainError() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant row = variantUnder(parent, "SKU-1");
-        when(variantRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
 
         ProductVariantMutationResult result = service.updateVariant(
                 row.getId(), new ProductVariantUpdateCommand(null, null, -5L), caller);
@@ -397,7 +397,7 @@ class ProductVariantWriteServiceTest {
     void theHappyUpdateAmendsTheMovableSetAndPreservesTheOwnershipFacts() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant row = variantUnder(parent, "SKU-1");
-        when(variantRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
         when(variantRepository.findByProviderIdAndSku(ProviderIds.CALLER, "SKU-2"))
                 .thenReturn(Optional.empty());
         when(variantRepository.save(any(ProductVariant.class)))
@@ -424,7 +424,7 @@ class ProductVariantWriteServiceTest {
     @Test
     void deletingAnUnknownRowAnswersTheNotFoundDomainError() {
         UUID unknown = UUID.randomUUID();
-        when(variantRepository.findById(unknown)).thenReturn(Optional.empty());
+        when(variantRepository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
 
         ProductVariantMutationResult result = service.deleteVariant(unknown, caller);
 
@@ -535,7 +535,7 @@ class ProductVariantWriteServiceTest {
         // the raw orElseThrow produced.
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant row = variantUnder(parent, "SKU-ORPHAN");
-        when(variantRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
         when(productRepository.findById(parent.getId())).thenReturn(Optional.empty());
 
         ProductVariantMutationResult result = service.updateVariant(row.getId(),
@@ -572,7 +572,7 @@ class ProductVariantWriteServiceTest {
         UUID unknown = UUID.randomUUID();
         when(variantRepository.findByIdForUpdate(owned.getId())).thenReturn(Optional.of(owned));
         when(variantRepository.findByIdForUpdate(strangerOwned.getId())).thenReturn(Optional.of(strangerOwned));
-        when(variantRepository.findById(unknown)).thenReturn(Optional.empty());
+        when(variantRepository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
 
         int count = service.deleteVariants(
                 List.of(owned.getId(), strangerOwned.getId(), unknown), caller);
@@ -626,7 +626,12 @@ class ProductVariantWriteServiceTest {
     void bulkUpdateReturnsThePerItemOutcomes() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant row = variantUnder(parent, "SKU-1");
+        // The bulk loop's routing pre-check reads the plain findById (a
+        // cheap ownership filter); the authoritative re-read inside
+        // updateVariant rides the locked findByIdForUpdate — both stubs
+        // serve the two hops (the 2026-11-05 #808 round's locked update).
         when(variantRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
         when(variantRepository.findByProviderIdAndSku(ProviderIds.CALLER, "SKU-2")).thenReturn(Optional.empty());
         when(variantRepository.save(any(ProductVariant.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -655,7 +660,7 @@ class ProductVariantWriteServiceTest {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         Product otherParent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant strangerRow = variantUnder(otherParent, "SKU-OTHER");
-        when(variantRepository.findById(strangerRow.getId()))
+        when(variantRepository.findByIdForUpdate(strangerRow.getId()))
                 .thenReturn(Optional.of(strangerRow));
 
         var outcomes = service.bulkUpdateVariants(parent.getId(), List.of(

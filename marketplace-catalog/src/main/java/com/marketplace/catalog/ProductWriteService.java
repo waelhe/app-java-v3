@@ -153,7 +153,12 @@ public class ProductWriteService implements ProductWriteSpi {
     @PreAuthorize("hasRole('PROVIDER')")
     @Transactional
     public ProductMutationResult updateProduct(UUID id, ProductUpdateCommand command, Authentication authentication) {
-        Optional<Product> addressed = ownedRow(id, authentication);
+        // The 2026-11-05 #808 round (Major · Data Integrity): the update
+        // rides the LOCKED ownership read — the plain findById raced a
+        // concurrent delete's reservation wall and a lost update
+        // (reviseDetails + save over a row another transaction moved):
+        // the same ownedRowForUpdate the delete paths ride.
+        Optional<Product> addressed = ownedRowForUpdate(id, authentication);
         if (addressed.isEmpty()) {
             return ProductMutationResult.failure(List.of(new ProductMutationError(
                     "id", ProductMutationErrorCode.NOT_FOUND, "No product found for the id")));
@@ -421,21 +426,9 @@ public class ProductWriteService implements ProductWriteSpi {
     }
 
     /**
-     * The caller's own row — the ownership law's own safe absence: a
-     * missing row and a stranger's row answer the same empty (the R5
-     * shape, never an existence disclosure).
-     */
-    private Optional<Product> ownedRow(UUID id, Authentication authentication) {
-        if (id == null) {
-            return Optional.empty();
-        }
-        return productRepository.findById(id)
-                .filter(row -> row.getProviderId().equals(currentUserProvider.getCurrentUserId(authentication)));
-    }
-
-    /**
-     * The DELETE paths' own ownership read — the SAME safe-absence law as
-     * {@link #ownedRow}, but through the pessimistic locked read
+     * The WRITE paths' own ownership read — the safe-absence law
+     * (a missing row and a stranger's row answer the same empty, the R5
+     * shape), through the pessimistic locked read
      * ({@code findByIdForUpdate}, the money path's settle-time pattern):
      * the delete's reservation wall and its soft-delete both ride the row
      * lock the concurrent placement's reservation UPDATE serializes on

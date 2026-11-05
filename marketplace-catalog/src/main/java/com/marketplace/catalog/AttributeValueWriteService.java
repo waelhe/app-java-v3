@@ -127,10 +127,15 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
         // The append position — the owner's own max+1 derivation (never a
         // client-supplied fact; the position-uniqueness column backstop
         // keeps the concurrent-append window honest).
+        // The 2026-11-05 #808 round (Minor · Functional Correctness): the
+        // FIRST position is 1 — the reorder's no-change probe and its
+        // compaction are 1-based (i + 1), so the previous 0-based first
+        // position made every fresh single-option attribute look
+        // "changed" and forced a renumbering write on a true no-op.
         int appendPosition = attributeOptionRepository
                 .findFirstByAttributeDefinitionIdOrderByPositionDesc(attributeId)
                 .map(last -> last.getPosition() + 1)
-                .orElse(0);
+                .orElse(1);
         CatalogAttributeOption created = attributeOptionRepository.save(
                 CatalogAttributeOption.create(attributeId, code, name, null, appendPosition));
         return AttributeValueMutationResult.success(toAttributeView(parent.get()), toValueView(created));

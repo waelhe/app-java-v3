@@ -185,6 +185,10 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
         }
         List<ProductTypeMutationError> errors = new ArrayList<>();
         List<ProductTypeAttributeAssignment> toSave = new ArrayList<>();
+        // The 2026-11-05 #808 round (Major · Functional Correctness): the
+        // deferred moves — nothing mutates a managed entity before the
+        // failure verdict passes.
+        List<DeferredMove> deferredMoves = new ArrayList<>();
         // The wave-19 #808 review (Major · Functional Correctness): the
         // moved row's position must be derived from the TARGET scope
         // BEFORE the move (after moveToScope the moved row itself sits in
@@ -235,18 +239,36 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
                 int targetPosition = pendingNextPosition.computeIfAbsent(target,
                         candidate -> nextPosition(productTypeId, candidate));
                 pendingNextPosition.put(target, targetPosition + 1);
-                assignment.moveToScope(target);
-                assignment.reposition(targetPosition);
+                // The 2026-11-05 #808 round (Major · Functional
+                // Correctness): the move is DEFERRED — the assignment is
+                // a managed entity, so mutating it before the failure
+                // verdict left the scope/position writes committed even
+                // when the result answered failure (the transaction
+                // commits the managed mutations regardless of the
+                // returned verdict). The moves apply only after the
+                // error gate.
                 toSave.add(assignment);
+                deferredMoves.add(new DeferredMove(assignment, target, targetPosition));
             }
         }
         if (!errors.isEmpty()) {
             return ProductTypeMutationResult.failure(errors);
         }
+        // The verdict passed — the deferred moves apply now, inside the
+        // same transaction, exactly once.
+        for (DeferredMove move : deferredMoves) {
+            move.assignment().moveToScope(move.target());
+            move.assignment().reposition(move.position());
+        }
         if (!toSave.isEmpty()) {
             assignmentRepository.saveAll(toSave);
         }
         return ProductTypeMutationResult.success(toView(type.get()));
+    }
+
+    /** The deferred move carrier — the assignment, its target scope, and the derived position. */
+    private record DeferredMove(ProductTypeAttributeAssignment assignment,
+                                ProductTypeAttributeScope target, int position) {
     }
 
     @Override
