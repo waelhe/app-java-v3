@@ -7,7 +7,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
-import java.time.Instant;
 
 /**
  * The reuse-detection ledger's bounded lifetime — the shard review's
@@ -69,8 +68,13 @@ public class ConsumedRefreshTokenCleanupJob {
      */
     @Scheduled(fixedDelayString = "PT1H", initialDelayString = "PT10M")
     public void purgeExpiredConsumedTokens() {
-        Instant cutoff = Instant.now().minus(retention);
-        int purged = store.purgeConsumedBefore(cutoff);
+        // The 2026-11-05 #806 round-3 review (Major): the cutoff is
+        // computed INSIDE the database against the same clock that wrote
+        // consumed_at - a host clock ahead of the database could
+        // otherwise purge a row before its family's reuse-detection
+        // meaning expired, silently disarming the late-replay detection
+        // for that value.
+        int purged = store.purgeConsumedOlderThan(retention);
         if (purged > 0) {
             // The count only — never a token hash, never a family id (the
             // ledger's own privacy posture).

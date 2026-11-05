@@ -79,7 +79,9 @@ public class AccountLifecycleDataFetcher {
             throw new IllegalArgumentException("An email is required");
         }
         accountLifecycleSpi.requestPasswordReset(email.trim());
-        return RequestPasswordReset.newBuilder().errors(mappers.emptyAccountErrors()).build();
+        return RequestPasswordReset.newBuilder()
+                .accountErrors(mappers.emptyAccountErrors())
+                .errors(mappers.emptyAccountErrors()).build();
     }
 
     /**
@@ -104,7 +106,9 @@ public class AccountLifecycleDataFetcher {
         // pending hold the caller re-arms — on this platform the login
         // username IS the email, so the caller's own subject carries it.
         accountLifecycleSpi.resendEmailVerification(currentAuthentication().getName());
-        return SendConfirmationEmail.newBuilder().errors(mappers.emptyAccountErrors()).build();
+        return SendConfirmationEmail.newBuilder()
+                .accountErrors(mappers.emptyAccountErrors())
+                .errors(mappers.emptyAccountErrors()).build();
     }
 
     /**
@@ -135,6 +139,7 @@ public class AccountLifecycleDataFetcher {
         accountLifecycleSpi.confirmAccount(email == null ? null : email.trim(), token);
         return ConfirmAccount.newBuilder()
                 .user(null)
+                .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -158,6 +163,7 @@ public class AccountLifecycleDataFetcher {
                 password);
         return SetPassword.newBuilder()
                 .user(null)
+                .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -182,6 +188,7 @@ public class AccountLifecycleDataFetcher {
         accountLifecycleSpi.requestEmailChange(currentAuthentication(), newEmail, password);
         return RequestEmailChange.newBuilder()
                 .user(currentUserOrNull())
+                .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -207,6 +214,7 @@ public class AccountLifecycleDataFetcher {
         accountLifecycleSpi.confirmEmailChange(token);
         return ConfirmEmailChange.newBuilder()
                 .user(null)
+                .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -221,6 +229,14 @@ public class AccountLifecycleDataFetcher {
     @RateLimiter(name = "graphqlAccountAnonymousMutation")
     public AccountRegister accountRegister(@InputArgument AccountRegisterInput input,
                                            graphql.schema.DataFetchingEnvironment environment) {
+        // The 2026-11-05 #806 round-3 review (Minor · Functional
+        // Correctness): the input's channel field declares the same
+        // single-channel contract every sibling root rejects — silently
+        // accepting it here let a client believe a channel-scoped
+        // registration happened.
+        if (input != null) {
+            rejectChannel(input.getChannel());
+        }
         if (input == null || input.getEmail() == null || input.getEmail().isBlank()
                 || input.getPassword() == null || input.getPassword().isBlank()) {
             throw new IllegalArgumentException("An email and a password are required");
@@ -264,6 +280,7 @@ public class AccountLifecycleDataFetcher {
                 composeDisplayName(input.getFirstName(), input.getLastName()));
         return AccountRegister.newBuilder()
                 .user(null)
+                .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -312,6 +329,7 @@ public class AccountLifecycleDataFetcher {
                 composeDisplayName(input.getFirstName(), input.getLastName()));
         return AccountUpdate.newBuilder()
                 .user(currentUserOrNull())
+                .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -324,6 +342,7 @@ public class AccountLifecycleDataFetcher {
         rejectChannel(channel);
         accountLifecycleSpi.requestAccountDeletion(currentAuthentication());
         return AccountRequestDeletion.newBuilder()
+                .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -345,7 +364,9 @@ public class AccountLifecycleDataFetcher {
             throw new IllegalArgumentException("A deletion token is required");
         }
         accountLifecycleSpi.deleteAccountByToken(currentAuthentication(), token);
-        return AccountDelete.newBuilder().errors(mappers.emptyAccountErrors()).build();
+        return AccountDelete.newBuilder()
+                .accountErrors(mappers.emptyAccountErrors())
+                .errors(mappers.emptyAccountErrors()).build();
     }
 
     // ---------------------------------------------------------------------
@@ -355,6 +376,7 @@ public class AccountLifecycleDataFetcher {
     private PasswordChange passwordChangePayload() {
         return PasswordChange.newBuilder()
                 .user(currentUserOrNull())
+                .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }

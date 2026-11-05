@@ -442,8 +442,8 @@ class PlatformTokenGrantServiceTest {
             }
 
             @Override
-            public int purgeConsumedBefore(Instant cutoff) {
-                return rotationStore.purgeConsumedBefore(cutoff);
+            public int purgeConsumedOlderThan(java.time.Duration retention) {
+                return rotationStore.purgeConsumedOlderThan(retention);
             }
         });
         PlatformTokenGrantService.IssuedTokens granted = service.grant(PRINCIPAL, PASSWORD);
@@ -612,9 +612,10 @@ class PlatformTokenGrantServiceTest {
          * nothing is written; an unknown value answers false.
          */
         @Override
-        public int purgeConsumedBefore(java.time.Instant cutoff) {
+        public int purgeConsumedOlderThan(java.time.Duration retention) {
             // The in-memory ledger mirrors the production TTL bound; the
             // unit suite never exercises the purge job itself.
+            java.time.Instant cutoff = java.time.Instant.now().minus(retention);
             consumedByHash.values().removeIf(consumed -> consumed.consumedAt().isBefore(cutoff));
             return 0;
         }

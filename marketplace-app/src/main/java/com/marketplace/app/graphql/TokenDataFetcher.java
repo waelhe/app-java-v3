@@ -11,6 +11,7 @@ import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import org.springframework.security.authentication.AccountExpiredException;
+import java.util.List;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.CredentialsExpiredException;
 import org.springframework.security.authentication.DisabledException;
@@ -129,6 +130,7 @@ public class TokenDataFetcher {
                     .refreshToken(issued.refreshToken())
                     .csrfToken(issued.csrfToken())
                     .user(issued.user() == null ? null : userMapper.toGraphQlUser(issued.user()))
+                    .accountErrors(mappers.emptyAccountErrors())
                     .errors(mappers.emptyAccountErrors())
                     .build();
         } catch (BadCredentialsException | DisabledException | LockedException
@@ -141,6 +143,7 @@ public class TokenDataFetcher {
             // untouched, while all five client causes keep the
             // anti-enumeration unification (the IDENTICAL payload triple).
             return CreateToken.newBuilder()
+                    .accountErrors(mappers.invalidCredentialsAccountErrors())
                     .errors(mappers.invalidCredentialsAccountErrors())
                     .build();
         }
@@ -186,6 +189,7 @@ public class TokenDataFetcher {
                     .token(issued.accessToken())
                     .refreshToken(issued.refreshToken())
                     .user(issued.user() == null ? null : userMapper.toGraphQlUser(issued.user()))
+                    .accountErrors(mappers.emptyAccountErrors())
                     .errors(mappers.emptyAccountErrors())
                     .build();
         } catch (BadCredentialsException | DisabledException | LockedException
@@ -198,6 +202,7 @@ public class TokenDataFetcher {
             // keeps the anti-enumeration unification (the IDENTICAL payload
             // triple).
             return RefreshToken.newBuilder()
+                    .accountErrors(mappers.invalidRefreshTokenAccountErrors())
                     .errors(mappers.invalidRefreshTokenAccountErrors())
                     .build();
         }
@@ -233,8 +238,24 @@ public class TokenDataFetcher {
         PlatformTokenGrantService.VerifiedToken verified = tokenGrantService.verify(token);
         VerifyToken.Builder builder = VerifyToken.newBuilder()
                 .isValid(verified.valid())
-                .payload(verified.claims().isEmpty() ? null : jsonMapper.writeValueAsString(verified.claims()))
-                .errors(mappers.emptyAccountErrors());
+                .payload(verified.claims().isEmpty() ? null : jsonMapper.writeValueAsString(verified.claims()));
+        // The 2026-11-05 #806 round-3 review (Minor · Functional
+        // Correctness): the pinned Saleor 3.23.45 contract answers an
+        // invalid verdict with the accountErrors entry under `token`
+        // (verify_token.py's get_payload/get_user vocabulary — "Signature
+        // has expired"/JWT_SIGNATURE_EXPIRED, "Error decoding
+        // signature"/JWT_DECODE_ERROR, "Invalid token"/JWT_INVALID_TOKEN);
+        // an empty error list made the failure indistinguishable from a
+        // success the caller could not use.
+        List<com.marketplace.app.graphql.generated.types.AccountError> verifyErrors =
+                verified.valid() ? List.of()
+                        : List.of(com.marketplace.app.graphql.generated.types.AccountError.newBuilder()
+                                .field("token")
+                                .message(verified.failureMessage())
+                                .code(com.marketplace.app.graphql.generated.types.AccountErrorCode
+                                        .valueOf(verified.failureCode()))
+                                .build());
+        builder.accountErrors(verifyErrors).errors(verifyErrors);
         if (verified.valid() && verified.subject() != null) {
             identitySpi.findCurrentUserAccount(
                             new org.springframework.security.authentication
@@ -248,11 +269,21 @@ public class TokenDataFetcher {
     @DgsMutation(field = DgsConstants.MUTATION.TokensDeactivateAll)
     // The same review: the authenticated sign-out-everywhere leg must not
     // compete with anonymous grant traffic for one shared budget.
+    @PerCallerBudget(surface = "graphqlTokenDeactivate")
     @RateLimiter(name = "graphqlTokenDeactivate")
-    public DeactivateAllUserTokens tokensDeactivateAll() {
+    public DeactivateAllUserTokens tokensDeactivateAll(
+            graphql.schema.DataFetchingEnvironment environment) {
+        // The 2026-11-05 #806 round-3 review (Major · Stability &
+        // Availability): the shared JVM-wide graphqlTokenDeactivate grant
+        // alone let ONE authenticated account exhaust it for every OTHER
+        // caller (the sign-out-everywhere leg fails platform-wide); the
+        // per-caller budget (the aspect, ahead of the shared permit) gives
+        // each address its own fail-fast slice — the exact shape
+        // tokenVerify already carries.
         Authentication caller = currentAuthentication();
         accountLifecycleSpi.deactivateAllTokens(caller);
         return DeactivateAllUserTokens.newBuilder()
+                .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }

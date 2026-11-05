@@ -33,7 +33,13 @@ import org.springframework.security.oauth2.server.authorization.OAuth2Authorizat
  *   <li>{@code false} — the presented value was already consumed (a
  *       replay after a completed rotation, or a concurrent rotation that
  *       won on ANY instance): the caller MUST reject the request exactly
- *       like an unknown token. Nothing was written.</li>
+ *       like an unknown token. The loser leg CONSULTS the family ledger
+ *       ({@link #revokeFamilyIfConsumed}) before answering: a value
+ *       recognized BEYOND the grace window revokes the family on this
+ *       leg (the 2026-11-05 #806 round-3 review's contract correction:
+ *       the earlier "nothing was written" wording predated the V296
+ *       reuse-detection ledger; within the grace window nothing is
+ *       written, beyond it the revocation IS the documented outcome).</li>
  * </ul>
  */
 public interface RefreshTokenRotationStore {
@@ -115,9 +121,18 @@ public interface RefreshTokenRotationStore {
      * the table on its own: an ACTIVE family rotates forever, and every
      * rotation adds a row.
      *
-     * @param cutoff rows with {@code consumed_at} strictly before this
-     *               instant are deleted
+     * <p><b>The cutoff rides the DATABASE clock, never the host clock</b>
+     * (the 2026-11-05 #806 round-3 review, Major): {@code consumed_at}
+     * is written by the database's own {@code clock_timestamp()}, so a
+     * host clock running ahead of the database would purge rows EARLY
+     * (shortening the reuse-detection window below the family's real
+     * lifetime), while a host clock behind merely delays the purge
+     * (harmless). The comparison happens entirely inside the database:
+     * {@code consumed_at < now() - retention}.</p>
+     *
+     * @param retention the family's absolute session bound
+     *                  ({@code refresh-family-max-age-seconds})
      * @return the number of rows deleted
      */
-    int purgeConsumedBefore(java.time.Instant cutoff);
+    int purgeConsumedOlderThan(java.time.Duration retention);
 }

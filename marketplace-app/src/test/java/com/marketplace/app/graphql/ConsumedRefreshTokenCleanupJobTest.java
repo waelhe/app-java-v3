@@ -2,7 +2,6 @@ package com.marketplace.app.graphql;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -16,20 +15,20 @@ import org.junit.jupiter.api.Test;
  *
  * <p>A plain unit proof, no Spring context: the job is a plain
  * {@code @Component} whose constructor takes the store and the configured
- * family max age; a capturing fake store records the cutoff the scheduled
- * method hands down, and the assertions pin the retention horizon against
- * wall-clock tolerance (the job reads {@link Instant#now()} directly, so
- * the proof allows the scheduling latency the fixed-delay model permits).
- * The suite that never exercised the purge job itself was the gap this
- * test closes — the fake in {@code PlatformTokenGrantServiceTest} said so
- * out loud.</p>
+ * family max age; a capturing fake store records the RETENTION the
+ * scheduled method hands down. The 2026-11-05 #806 round-3 review moved
+ * the cutoff arithmetic into the database (the same clock that wrote
+ * {@code consumed_at} - a host clock ahead of the DB could otherwise
+ * purge a row before its reuse-detection meaning expired), so the job
+ * passes the retention through VERBATIM and there is no wall-clock
+ * tolerance left to allow.</p>
  */
 class ConsumedRefreshTokenCleanupJobTest {
 
-    /** Captures the cutoff (and nothing else) — the retention's whole contract. */
+    /** Captures the retention (and nothing else) - the whole contract. */
     private static final class CapturingStore implements RefreshTokenRotationStore {
 
-        private final List<Instant> cutoffs = new ArrayList<>();
+        private final List<java.time.Duration> retentions = new ArrayList<>();
 
         @Override
         public boolean rotate(
@@ -44,13 +43,11 @@ class ConsumedRefreshTokenCleanupJobTest {
         }
 
         @Override
-        public int purgeConsumedBefore(Instant cutoff) {
-            cutoffs.add(cutoff);
+        public int purgeConsumedOlderThan(java.time.Duration retention) {
+            retentions.add(retention);
             return 0;
         }
     }
-
-    private static final long TOLERANCE_SECONDS = 30;
 
     @Test
     void theDefaultRetentionRidesTheFamilyAbsoluteBoundNotTheTokenTtl() {
@@ -60,20 +57,16 @@ class ConsumedRefreshTokenCleanupJobTest {
         ConsumedRefreshTokenCleanupJob job =
                 new ConsumedRefreshTokenCleanupJob(store, 2_592_000L);
 
-        Instant before = Instant.now();
         job.purgeExpiredConsumedTokens();
-        Instant after = Instant.now();
 
-        assertThat(store.cutoffs).hasSize(1);
-        Instant cutoff = store.cutoffs.get(0);
-        // The cutoff is now - 30d (within the run's own wall-clock span)…
-        assertThat(cutoff).isAfterOrEqualTo(before.minusSeconds(2_592_000L + TOLERANCE_SECONDS));
-        assertThat(cutoff).isBeforeOrEqualTo(after.minusSeconds(2_592_000L - TOLERANCE_SECONDS));
-        // …and strictly older than the superseded TTL horizon (14d): the
+        // The retention passes through VERBATIM (the DB computes the
+        // cutoff against its own clock)…
+        assertThat(store.retentions).containsExactly(java.time.Duration.ofSeconds(2_592_000L));
+        // …and still outlives the superseded TTL horizon (14d): the
         // family-revocation window the old rule silently deleted.
-        assertThat(cutoff)
+        assertThat(store.retentions.getFirst().toSeconds())
                 .as("the retention must outlive the refresh TTL horizon")
-                .isBefore(Instant.now().minus(PlatformTokenGrantService.REFRESH_TOKEN_TTL));
+                .isGreaterThan(PlatformTokenGrantService.REFRESH_TOKEN_TTL.toSeconds());
     }
 
     @Test
@@ -85,13 +78,8 @@ class ConsumedRefreshTokenCleanupJobTest {
         ConsumedRefreshTokenCleanupJob job =
                 new ConsumedRefreshTokenCleanupJob(store, 86_400L);
 
-        Instant before = Instant.now();
         job.purgeExpiredConsumedTokens();
-        Instant after = Instant.now();
 
-        assertThat(store.cutoffs).hasSize(1);
-        Instant cutoff = store.cutoffs.get(0);
-        assertThat(cutoff).isAfterOrEqualTo(before.minusSeconds(86_400L + TOLERANCE_SECONDS));
-        assertThat(cutoff).isBeforeOrEqualTo(after.minusSeconds(86_400L - TOLERANCE_SECONDS));
+        assertThat(store.retentions).containsExactly(java.time.Duration.ofSeconds(86_400L));
     }
 }

@@ -262,6 +262,18 @@ class AgentOneMutationDgsTest {
                 } }
                 """, "data.requestPasswordReset.errors");
         verify(accountLifecycleSpi).requestPasswordReset("who@example.com");
+
+        // The 2026-11-05 #806 round-3 pin: the deprecated accountErrors
+        // alias stays selectable on every lifecycle payload (the SDL
+        // declares it [AccountError!]! - a null answer would be a
+        // non-null violation for any client selecting the alias).
+        Object aliased = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { requestPasswordReset(email: "who@example.com",
+                        redirectUrl: "https://app.example.com/reset") {
+                    accountErrors { code }
+                } }
+                """, "data.requestPasswordReset.accountErrors");
+        assertThat(aliased).isNotNull();
     }
 
     @Test
@@ -337,6 +349,22 @@ class AgentOneMutationDgsTest {
                 } }
                 """.formatted(fortyArabicCharacters), "data.accountRegister.errors"))
                 .hasMessageContaining("72 bytes");
+        verify(accountLifecycleSpi, never()).register(any(), any(), any());
+    }
+
+    @Test
+    void accountRegisterRejectsANonBlankChannelLikeEverySiblingRoot() {
+        // The 2026-11-05 #806 round-3 review (Minor): the input's channel
+        // field declares the same single-channel contract every sibling
+        // root rejects - accepting it silently let a client believe a
+        // channel-scoped registration happened.
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { accountRegister(input: { email: "chan@example.com",
+                        password: "aStrongPassword1!", channel: "channel-1" }) {
+                    errors { code }
+                } }
+                """, "data.accountRegister.errors"))
+                .hasMessageContaining("not implemented on this platform");
         verify(accountLifecycleSpi, never()).register(any(), any(), any());
     }
 
@@ -836,7 +864,7 @@ class AgentOneMutationDgsTest {
         // application's own ObjectMapper, parseable as a JSON object
         // with the Saleor contract's claim fields.
         when(tokenGrantService.verify("a-valid-token"))
-                .thenReturn(new PlatformTokenGrantService.VerifiedToken(true,
+                .thenReturn(PlatformTokenGrantService.VerifiedToken.valid(
                         new java.util.LinkedHashMap<>(Map.of(
                                 "iss", "https://auth.example.com",
                                 "sub", "agent-one@example.com",
@@ -846,9 +874,13 @@ class AgentOneMutationDgsTest {
                                 "exp", 1777000900L,
                                 "jti", "token-id-1")),
                         "agent-one@example.com"));
+        // The 2026-11-05 #806 round-3 pin: the invalid verdict carries the
+        // pinned Saleor 3.23.45 vocabulary (authentication/utils.py) - the
+        // generic invalid sentence under the JWT_INVALID_TOKEN code.
         when(tokenGrantService.verify("not-a-real-jwt"))
-                .thenReturn(new PlatformTokenGrantService.VerifiedToken(false,
-                        Map.of(), null));
+                .thenReturn(PlatformTokenGrantService.VerifiedToken.invalid());
+        when(tokenGrantService.verify("an-expired-token"))
+                .thenReturn(PlatformTokenGrantService.VerifiedToken.signatureExpired());
 
         Object payload = dgsQueryExecutor.executeAndExtractJsonPath("""
                 mutation { tokenVerify(token: "a-valid-token") { isValid payload } }
@@ -873,16 +905,59 @@ class AgentOneMutationDgsTest {
         assertThat(claims.get("roles").get(0).asText()).isEqualTo("CONSUMER");
         assertThat(claims.has("exp")).isTrue();
 
-        // And the invalid token answers the honest null payload — the
-        // platform's nullability contract on the VerifyToken shape.
+        // The 2026-11-05 #806 round-3 pins: the invalid verdict answers
+        // the accountErrors entry the pinned Saleor 3.23.45 contract
+        // declares (verify_token.py's get_payload/get_user vocabulary) -
+        // field "token", the failure sentence, the code - under BOTH the
+        // errors field and its deprecated accountErrors alias.
         Object invalid = dgsQueryExecutor.executeAndExtractJsonPath("""
-                mutation { tokenVerify(token: "not-a-real-jwt") { isValid payload } }
+                mutation { tokenVerify(token: "not-a-real-jwt") {
+                    isValid payload errors { field code message }
+                } }
                 """, "data.tokenVerify");
         assertThat(invalid).isNotNull();
         @SuppressWarnings("unchecked")
         Map<String, Object> invalidFields = (Map<String, Object>) invalid;
         assertThat(invalidFields.get("isValid")).isEqualTo(false);
         assertThat(invalidFields.get("payload")).isNull();
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> invalidErrors =
+                (java.util.List<Map<String, Object>>) invalidFields.get("errors");
+        assertThat(invalidErrors).hasSize(1);
+        assertThat(invalidErrors.get(0).get("field")).isEqualTo("token");
+        assertThat(invalidErrors.get(0).get("code")).isEqualTo("JWT_INVALID_TOKEN");
+        assertThat(invalidErrors.get(0).get("message")).isEqualTo("Invalid token");
+
+        // And the expired verdict answers its OWN sentence + code.
+        Object expired = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { tokenVerify(token: "an-expired-token") { isValid errors { field code message } } }
+                """, "data.tokenVerify");
+        assertThat(expired).isNotNull();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> expiredFields = (Map<String, Object>) expired;
+        assertThat(expiredFields.get("isValid")).isEqualTo(false);
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> expiredErrors =
+                (java.util.List<Map<String, Object>>) expiredFields.get("errors");
+        assertThat(expiredErrors).hasSize(1);
+        assertThat(expiredErrors.get(0).get("field")).isEqualTo("token");
+        assertThat(expiredErrors.get(0).get("code")).isEqualTo("JWT_SIGNATURE_EXPIRED");
+        assertThat(expiredErrors.get(0).get("message")).isEqualTo("Signature has expired");
+
+        // The deprecated accountErrors alias stays selectable (the SDL
+        // declares it [AccountError!]!): a null answer would be a
+        // non-null violation, not a silent alias.
+        Object aliased = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { tokenVerify(token: "not-a-real-jwt") { accountErrors { field code } } }
+                """, "data.tokenVerify");
+        assertThat(aliased).isNotNull();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> aliasedFields = (Map<String, Object>) aliased;
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> aliasErrors =
+                (java.util.List<Map<String, Object>>) aliasedFields.get("accountErrors");
+        assertThat(aliasErrors).hasSize(1);
+        assertThat(aliasErrors.get(0).get("code")).isEqualTo("JWT_INVALID_TOKEN");
     }
 
     @Test

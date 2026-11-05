@@ -207,8 +207,35 @@ public class PlatformTokenGrantService {
                                UserAccountView user) {
     }
 
-    /** The verification outcome (the VerifyToken payload's own shape). */
-    public record VerifiedToken(boolean valid, Map<String, Object> claims, String subject) {
+    /**
+     * The verification verdict with the Saleor 3.23.45 failure vocabulary
+     * (verify_token.py + authentication/utils.py, the pinned release):
+     * an INVALID verdict carries exactly one of the contract's three
+     * sentences — "Signature has expired" (JWT_SIGNATURE_EXPIRED),
+     * "Error decoding signature" (JWT_DECODE_ERROR) or "Invalid token"
+     * (JWT_INVALID_TOKEN) — a VALID verdict carries none.
+     */
+    public record VerifiedToken(boolean valid, Map<String, Object> claims, String subject,
+                                String failureMessage, String failureCode) {
+
+        public static VerifiedToken valid(Map<String, Object> claims, String subject) {
+            return new VerifiedToken(true, claims, subject, null, null);
+        }
+
+        public static VerifiedToken signatureExpired() {
+            return new VerifiedToken(false, Map.of(), null,
+                    "Signature has expired", "JWT_SIGNATURE_EXPIRED");
+        }
+
+        public static VerifiedToken decodeError() {
+            return new VerifiedToken(false, Map.of(), null,
+                    "Error decoding signature", "JWT_DECODE_ERROR");
+        }
+
+        public static VerifiedToken invalid() {
+            return new VerifiedToken(false, Map.of(), null,
+                    "Invalid token", "JWT_INVALID_TOKEN");
+        }
     }
 
     /**
@@ -445,9 +472,22 @@ public class PlatformTokenGrantService {
     public VerifiedToken verify(String token) {
         try {
             Jwt jwt = jwtDecoder().decode(token);
-            return new VerifiedToken(true, jwt.getClaims(), jwt.getSubject());
+            return VerifiedToken.valid(jwt.getClaims(), jwt.getSubject());
+        } catch (org.springframework.security.oauth2.jwt.JwtValidationException failure) {
+            // The pinned Saleor vocabulary classifies by CAUSE: the
+            // timestamp validator's "expired" description is the
+            // signature-expiry sentence; every other validation failure is
+            // the generic invalid-token sentence.
+            boolean expired = failure.getErrors().stream()
+                    .anyMatch(error -> error.getDescription() != null
+                            && error.getDescription().contains("expired"));
+            return expired ? VerifiedToken.signatureExpired() : VerifiedToken.invalid();
+        } catch (org.springframework.security.oauth2.jwt.BadJwtException failure) {
+            // Spring Security 7.1's malformed-token family (the hierarchy
+            // renamed JwtDecodingException to BadJwtException).
+            return VerifiedToken.decodeError();
         } catch (JwtException failure) {
-            return new VerifiedToken(false, Map.of(), null);
+            return VerifiedToken.invalid();
         }
     }
 
