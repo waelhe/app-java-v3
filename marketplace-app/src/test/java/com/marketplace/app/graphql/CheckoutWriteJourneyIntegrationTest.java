@@ -289,8 +289,14 @@ class CheckoutWriteJourneyIntegrationTest {
                 .path("checkoutDelete.errors").entityList(Object.class)
                 .satisfies(errors -> assertThat(errors).isEmpty());
 
-        // The retired checkout no longer resolves for its owner.
-        owner.document("""
+        // The retired checkout no longer resolves for its owner. The
+        // 2026-11-04 #807 round (Minor · Test Quality): testerFor's JWT
+        // stub is last-write-wins on the shared test token — the admin
+        // tester above re-pointed the identity, so the owner read must
+        // RE-ESTABLISH the owner's stub first (the previous form ran the
+        // "owner" document as ADMIN and measured the admin's view).
+        HttpGraphQlTester ownerAgain = testerFor(OWNER_SUBJECT, "CONSUMER");
+        ownerAgain.document("""
                         query($id: ID!) { checkout(id: $id) { id } }
                         """)
                 .variable("id", base64GlobalId("Checkout", ownerCartId))

@@ -330,10 +330,14 @@ class AttributeValueMutationDataFetcherDgsTest {
                 mutation { attributeValueCreate(attribute: "%s", input: {name: "Small", slug: "small"}) {
                     errors { field message code }
                     attributeValue { id }
+                    attribute { id }
                 } }
                 """.formatted(attributeGlobalId(UUID.randomUUID())), "data.attributeValueCreate");
 
         assertThat(payload.get("attributeValue")).isNull();
+        // The 2026-11-04 #807 round (Minor · Test Quality): the document
+        // now SELECTS the dual projection's other side — the previous
+        // assertion read an absent key and succeeded vacuously.
         assertThat(payload.get("attribute")).isNull();
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> errors = (List<Map<String, Object>>) payload.get("errors");

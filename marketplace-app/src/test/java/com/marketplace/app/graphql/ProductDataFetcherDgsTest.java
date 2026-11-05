@@ -401,9 +401,15 @@ class ProductDataFetcherDgsTest {
         Map<String, Object> connection = dgsQueryExecutor.executeAndExtractJsonPath(
                 "query { products(first: 1) { edges { node { productType { id } } } } }", "data.products");
 
+        // The 2026-11-04 #807 round (Minor · Test Quality): the assertion
+        // reads THROUGH the node — the previous edges-level read answered
+        // null for every document (productType lives inside node), so the
+        // isNull() succeeded vacuously.
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> edges = (List<Map<String, Object>>) connection.get("edges");
-        assertThat(edges.get(0).get("productType")).isNull();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> node = (Map<String, Object>) edges.get(0).get("node");
+        assertThat(node.get("productType")).isNull();
     }
 
     /**
@@ -433,9 +439,14 @@ class ProductDataFetcherDgsTest {
                 "query { products(first: 1) { edges { node { productType { id name } } } } }",
                 "data.products");
 
+        // The 2026-11-04 #807 round (Minor · Test Quality): the same
+        // through-the-node read — the previous edges-level read was
+        // vacuously null.
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> edges = (List<Map<String, Object>>) connection.get("edges");
-        assertThat(edges.get(0).get("productType")).isNull();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> node = (Map<String, Object>) edges.get(0).get("node");
+        assertThat(node.get("productType")).isNull();
     }
 
     /**
