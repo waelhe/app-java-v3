@@ -96,7 +96,12 @@ public class CategoryWriteService implements CategoryWriteSpi {
             errors.add(new CategoryMutationError("slug", CategoryMutationErrorCode.INVALID,
                     "A category slug is lowercase latin letters, digits and dashes (at most "
                             + CODE_MAX_LENGTH + " characters)"));
-        } else if (categoryRepository.findByCode(code).isPresent()) {
+        } else if (categoryRepository.countByCodeIncludingDeleted(code) > 0) {
+            // The 2026-11-05 #808 round (Major · Functional Correctness):
+            // the reserved-code check spans the RAW table — a soft-deleted
+            // category's code is still reserved by V70's global unique
+            // index, so the classified ALREADY_EXISTS answers BEFORE the
+            // save (never a raw DataIntegrityViolation from the index).
             errors.add(new CategoryMutationError("slug", CategoryMutationErrorCode.ALREADY_EXISTS,
                     "A category with the slug already exists"));
         }

@@ -16,6 +16,23 @@ public interface CategoryRepository extends JpaRepository<Category, java.util.UU
     /** The write gate's precheck — an ACTIVE registry row for the code or empty. */
     Optional<Category> findByCode(String code);
 
+    /**
+     * The reserved-code check (the 2026-11-05 #808 round, Major ·
+     * Functional Correctness): V70's unique index on {@code code} spans
+     * the RAW table — soft-deleted rows included — while
+     * {@code @SoftDelete} filters them from every derived query, so a
+     * soft-deleted category's code passed {@code findByCode} and the
+     * INSERT then died on the raw index violation instead of the
+     * classified ALREADY_EXISTS. The native count reads the raw table
+     * (no soft-delete filter): both live AND reserved codes answer the
+     * honest mutation error BEFORE the save. The native-query mechanism
+     * is the house's own documented way past the soft-delete filter
+     * (the AdCampaignRepository precedent).
+     */
+    @org.springframework.data.jpa.repository.Query(
+            value = "SELECT COUNT(*) FROM categories WHERE code = :code", nativeQuery = true)
+    long countByCodeIncludingDeleted(@org.springframework.data.repository.query.Param("code") String code);
+
     /** The public read, in the registry's display order. */
     List<Category> findAllByOrderByPositionAsc();
 }

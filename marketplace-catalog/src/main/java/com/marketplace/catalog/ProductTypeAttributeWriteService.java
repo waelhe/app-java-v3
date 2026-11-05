@@ -83,8 +83,14 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
     @Transactional
     public ProductTypeMutationResult assignAttributes(UUID productTypeId,
                                                       List<ProductTypeAttributeAssignOperation> operations) {
+        // The 2026-11-05 #808 round (Minor · Functional Correctness): the
+        // locked read — deleteProductType takes FOR UPDATE then checks
+        // live references, so an unlocked findById here raced the delete
+        // (the TOCTOU B21 closed on the productType-create side). The
+        // same lock the delete holds serializes this existence check
+        // against it.
         Optional<ProductType> type = productTypeId == null
-                ? Optional.empty() : productTypeRepository.findById(productTypeId);
+                ? Optional.empty() : productTypeRepository.findByIdForUpdate(productTypeId);
         if (type.isEmpty()) {
             return ProductTypeMutationResult.failure(List.of(new ProductTypeMutationError(
                     "productTypeId", ProductTypeMutationErrorCode.NOT_FOUND,

@@ -100,6 +100,19 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
     @Query("select v from ProductVariant v where v.productId = :productId order by v.sku asc")
     List<ProductVariant> findByProductIdOrderBySkuAscForUpdate(@Param("productId") UUID productId);
 
+    /**
+     * The single-row locked read for the DELETE paths (the 2026-11-05
+     * #808 round, Major · Functional Correctness): the variant
+     * reservation is a native UPDATE on the variant row alone, so the
+     * row's own pessimistic lock serializes the delete's
+     * guard-plus-soft-delete against a concurrent placement — the same
+     * money-path pattern ({@code VoucherRepository.findByCodeForUpdate})
+     * the product delete's wall rides.
+     */
+    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select v from ProductVariant v where v.id = :id")
+    Optional<ProductVariant> findByIdForUpdate(@Param("id") UUID id);
+
     /** Friendly precheck for the database-unique canonical typed option combination. */
     boolean existsByProductIdAndOptionCombinationKey(UUID productId, String optionCombinationKey);
 

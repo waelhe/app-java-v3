@@ -104,7 +104,7 @@ class CategoryWriteServiceTest {
 
     @Test
     void duplicateActiveSlugAnswersTheAlreadyExistsDomainError() {
-        when(repository.findByCode("taken")).thenReturn(Optional.of(row("taken", "Taken", 1)));
+        when(repository.countByCodeIncludingDeleted("taken")).thenReturn(1L);
 
         CategoryMutationResult result = service.createCategory(new CategoryCreateCommand("Fresh", "taken"));
 
@@ -117,7 +117,7 @@ class CategoryWriteServiceTest {
 
     @Test
     void happyCreateSavesTheRowWithTheNextPositionAndAnswersTheProjection() {
-        when(repository.findByCode("fresh-code")).thenReturn(Optional.empty());
+        when(repository.countByCodeIncludingDeleted("fresh-code")).thenReturn(0L);
         when(repository.findAllByOrderByPositionAsc()).thenReturn(List.of(row("a", "A", 1), row("b", "B", 2)));
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -139,7 +139,7 @@ class CategoryWriteServiceTest {
         // position plus one, never size+1 (which would collide with the
         // last row's own position and make the position order non-
         // deterministic between them).
-        when(repository.findByCode("fresh-code")).thenReturn(Optional.empty());
+        when(repository.countByCodeIncludingDeleted("fresh-code")).thenReturn(0L);
         when(repository.findAllByOrderByPositionAsc())
                 .thenReturn(List.of(row("a", "A", 1), row("b", "B", 5)));
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -153,7 +153,7 @@ class CategoryWriteServiceTest {
 
     @Test
     void createNormalizesTheSlugToTheRegistrysOwnLowercaseContract() {
-        when(repository.findByCode("mixed-case")).thenReturn(Optional.empty());
+        when(repository.countByCodeIncludingDeleted("mixed-case")).thenReturn(0L);
         when(repository.findAllByOrderByPositionAsc()).thenReturn(List.of());
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 

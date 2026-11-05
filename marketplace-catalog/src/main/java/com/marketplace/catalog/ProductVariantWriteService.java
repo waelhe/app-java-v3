@@ -232,12 +232,27 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
     @PreAuthorize("hasRole('PROVIDER')")
     @Transactional
     public ProductVariantMutationResult deleteVariant(UUID id, Authentication authentication) {
-        Optional<ProductVariant> addressed = ownedRow(id, authentication);
+        // The 2026-11-05 #808 round (Major · Functional Correctness): the
+        // row is loaded THROUGH the pessimistic locked read — the variant
+        // reservation is a native UPDATE on this row alone, so the lock
+        // serializes the wall below against a concurrent placement (the
+        // product delete's own B7-wall pattern, the single-row form).
+        Optional<ProductVariant> addressed = ownedRowForUpdate(id, authentication);
         if (addressed.isEmpty()) {
             return ProductVariantMutationResult.failure(List.of(new ProductVariantMutationError(
                     "id", ProductVariantMutationErrorCode.NOT_FOUND, "No product variant found for the id")));
         }
         ProductVariant row = addressed.get();
+        // The open-reservation wall — the product delete's own B7 law on
+        // the variant shelf: a variant holding reserved units is the paid
+        // order's stock and can never be released or fulfilled again once
+        // soft-deleted, so the delete refuses with the classified INVALID
+        // until the reservation is released or fulfilled.
+        if (row.getReservedQuantity() > 0) {
+            return ProductVariantMutationResult.failure(List.of(new ProductVariantMutationError(
+                    "id", ProductVariantMutationErrorCode.INVALID,
+                    "The product variant holds open reservations and cannot be deleted")));
+        }
         Optional<ProductVariantView> lastKnown = resolveView(row);
         if (lastKnown.isEmpty()) {
             // The wave-19 #808 review: a variant whose parent product is
@@ -261,9 +276,15 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
             // Unknown or stranger ids are skipped — the honest affected
             // count answers only what the caller owns and the registry
             // itself deleted (never a fabricated count, never an
-            // existence disclosure for another provider's row).
-            Optional<ProductVariant> addressed = ownedRow(id, authentication);
-            if (addressed.isPresent()) {
+            // existence disclosure for another provider's row). The
+            // 2026-11-05 #808 round (Major): each candidate rides the SAME
+            // locked read the single delete owns, and a row holding open
+            // reservations is SKIPPED — not counted, not deleted (the
+            // bulk shape of the wall above; the count-plus-errors law
+            // stays honest: the blocked row is neither deleted nor
+            // counted).
+            Optional<ProductVariant> addressed = ownedRowForUpdate(id, authentication);
+            if (addressed.isPresent() && addressed.get().getReservedQuantity() == 0) {
                 variantRepository.delete(addressed.get());
                 deleted++;
             }
@@ -312,6 +333,19 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
                                                               Authentication authentication,
                                                               String errorPolicy) {
         List<ProductVariantBulkOutcome> outcomes = new ArrayList<>(items.size());
+        // The 2026-11-05 #808 round (Minor · Data Integrity): the unknown
+        // policy answers the classified per-item INVALID up front — the
+        // bulkCreate root's own check. The previous shape fell through to
+        // atomic()'s false and silently saved the partial batch as if
+        // IGNORE_FAILED had been sent (the silent non-atomic save the
+        // policy contract exists to prevent).
+        ProductVariantMutationError policyError = unknownPolicyError(errorPolicy);
+        if (policyError != null) {
+            for (ProductVariantBulkUpdateItem item : items) {
+                outcomes.add(new ProductVariantBulkOutcome(null, List.of(policyError)));
+            }
+            return outcomes;
+        }
         for (ProductVariantBulkUpdateItem item : items) {
             // The shard review (2026-11-01, Minor · Data Integrity): the
             // Saleor product argument is a BINDING ownership claim — an
@@ -386,6 +420,24 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
             return Optional.empty();
         }
         return variantRepository.findById(id)
+                .filter(row -> row.getProviderId()
+                        .equals(currentUserProvider.getCurrentUserId(authentication)));
+    }
+
+    /**
+     * The DELETE paths' own ownership read — the SAME safe-absence law as
+     * {@link #ownedRow}, but through the pessimistic locked read
+     * ({@code findByIdForUpdate}): the variant reservation is a native
+     * UPDATE on the row alone, so the delete's reservation wall and its
+     * soft-delete both ride the row lock a concurrent placement
+     * serializes on (the 2026-11-05 #808 round — the product delete's
+     * own {@code ownedRowForUpdate} twin).
+     */
+    private Optional<ProductVariant> ownedRowForUpdate(UUID id, Authentication authentication) {
+        if (id == null) {
+            return Optional.empty();
+        }
+        return variantRepository.findByIdForUpdate(id)
                 .filter(row -> row.getProviderId()
                         .equals(currentUserProvider.getCurrentUserId(authentication)));
     }

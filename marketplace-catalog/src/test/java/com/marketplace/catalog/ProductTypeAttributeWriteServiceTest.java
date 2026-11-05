@@ -73,7 +73,12 @@ class ProductTypeAttributeWriteServiceTest {
         service = new ProductTypeAttributeWriteService(productTypeRepository,
                 attributeDefinitionRepository, attributeOptionRepository, assignmentRepository);
         type = ProductType.create("widgets", "Widget Schema", null, null);
+        // Both ownership reads stay stubbed: assignAttributes rides the
+        // locked read (the 2026-11-05 #808 round), the membership legs
+        // (unassign/reorder/move) ride the plain findById — manual mocks
+        // carry no strict-stub checking, so the unused twin is inert.
         when(productTypeRepository.findById(type.getId())).thenReturn(Optional.of(type));
+        when(productTypeRepository.findByIdForUpdate(type.getId())).thenReturn(Optional.of(type));
     }
 
     private static CatalogAttributeDefinition definition(String code, CatalogAttributeType valueType) {
