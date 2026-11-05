@@ -153,6 +153,9 @@ public class PerCallerRateLimitGuard {
     private final ObjectProvider<RateLimiterRegistry> sharedRegistry;
     private final RateLimiterRegistry perCallerRegistry;
 
+    /** The account-key family's OWN bounded store (round-3: never shared). */
+    private final RateLimiterRegistry perAccountRegistry;
+
     public PerCallerRateLimitGuard(
             ObjectProvider<RateLimiterRegistry> sharedRegistry,
             @Value("${marketplace.graphql.per-caller-rate-limit.max-tracked-callers:10000}")
@@ -192,12 +195,31 @@ public class PerCallerRateLimitGuard {
         RateLimiterConfig accountConfig = shared == null
                 ? DEFAULT_PER_ACCOUNT_CONFIG
                 : shared.getConfiguration(PER_ACCOUNT_CONFIG).orElse(DEFAULT_PER_ACCOUNT_CONFIG);
-        if (accountConfig.getLimitForPeriod() <= callerConfig.getLimitForPeriod()) {
+        // The 2026-11-05 #806 round-3 review (Major · Security & Privacy):
+        // the count-only comparison ignored limitRefreshPeriod — with a
+        // SHORTER per-caller window one address can burn
+        // callerLimit * ceil(accountWindow / callerWindow) permits inside
+        // ONE account window, which can exceed the account budget even
+        // when the raw counts compare cleanly (10/10s vs 30/60s: 60 > 30
+        // — the address alone locks the account out). The invariant is
+        // window-aware now: the MOST one address can obtain within one
+        // account window must stay within the account budget.
+        long accountWindowMs = accountConfig.getLimitRefreshPeriod().toMillis();
+        long callerWindowMs = Math.max(1, callerConfig.getLimitRefreshPeriod().toMillis());
+        long windowsPerAccountWindow =
+                (accountWindowMs + callerWindowMs - 1) / callerWindowMs; // ceil
+        long callerCeilingPerAccountWindow =
+                callerConfig.getLimitForPeriod() * windowsPerAccountWindow;
+        if (accountConfig.getLimitForPeriod() <= callerConfig.getLimitForPeriod()
+                || callerCeilingPerAccountWindow > accountConfig.getLimitForPeriod()) {
             throw new IllegalArgumentException(
                     "marketplace.graphql.per-caller-rate-limit: the perAccountGrant budget ("
-                            + accountConfig.getLimitForPeriod() + "/period) must strictly exceed the "
-                            + "perCallerGrant budget (" + callerConfig.getLimitForPeriod()
-                            + "/period) — otherwise one address alone exhausts an account's whole budget");
+                            + accountConfig.getLimitForPeriod() + "/"
+                            + accountConfig.getLimitRefreshPeriod() + ") must strictly exceed the "
+                            + "perCallerGrant budget (" + callerConfig.getLimitForPeriod() + "/"
+                            + callerConfig.getLimitRefreshPeriod() + ") AND the per-caller ceiling "
+                            + "within one account window (" + callerCeilingPerAccountWindow
+                            + ") — otherwise one address alone exhausts an account's whole budget");
         }
         // The wave-3 review (Major · Stability): dynamically keyed
         // instances in the AUTO-CONFIGURED registry would grow without
@@ -206,9 +228,18 @@ public class PerCallerRateLimitGuard {
         // tradeoff is documented: an address evicted at capacity re-earns
         // a fresh budget on its next request; the outer per-JVM ceilings
         // still bound the aggregate.
+        // The 2026-11-05 #806 round-3 review (Major · Security & Privacy):
+        // the two key families (per-address and per-account) previously
+        // shared ONE bounded store — at a small max-tracked-callers the
+        // address keys and the account keys evicted EACH OTHER (at 1: an
+        // alternating pair starts both budgets fresh every request and NO
+        // limit applies). Each family now carries its OWN bounded store.
         this.perCallerRegistry = RateLimiterRegistry.custom()
                 .withRegistryStore(new BoundedLruStore<>(maxTrackedCallers))
                 .addRateLimiterConfig(PER_CALLER_CONFIG, DEFAULT_PER_CALLER_CONFIG)
+                .build();
+        this.perAccountRegistry = RateLimiterRegistry.custom()
+                .withRegistryStore(new BoundedLruStore<>(maxTrackedCallers))
                 .addRateLimiterConfig(PER_ACCOUNT_CONFIG, DEFAULT_PER_ACCOUNT_CONFIG)
                 .build();
     }
@@ -225,7 +256,7 @@ public class PerCallerRateLimitGuard {
      */
     public void acquirePermit(DataFetchingEnvironment environment, String surface) {
         acquirePermitForKey(environment, surface, remoteAddressKey(environment),
-                PER_CALLER_CONFIG, DEFAULT_PER_CALLER_CONFIG);
+                PER_CALLER_CONFIG, DEFAULT_PER_CALLER_CONFIG, perCallerRegistry);
     }
 
     /**
@@ -279,7 +310,7 @@ public class PerCallerRateLimitGuard {
             return;
         }
         acquirePermitForKey(environment, surface + "-account", accountKey,
-                PER_ACCOUNT_CONFIG, DEFAULT_PER_ACCOUNT_CONFIG);
+                PER_ACCOUNT_CONFIG, DEFAULT_PER_ACCOUNT_CONFIG, perAccountRegistry);
     }
 
     /**
@@ -293,7 +324,8 @@ public class PerCallerRateLimitGuard {
      * default of that family.
      */
     private void acquirePermitForKey(DataFetchingEnvironment environment, String surface, String key,
-                                     String configName, RateLimiterConfig fallback) {
+                                     String configName, RateLimiterConfig fallback,
+                                     RateLimiterRegistry familyRegistry) {
         // The keyed budgets ride the yml's configs when the shared registry
         // declares them (the full application context); the guard's own
         // bounded registry owns the instances either way.
@@ -301,7 +333,7 @@ public class PerCallerRateLimitGuard {
                 ? sharedRegistry.getObject().getConfiguration(configName)
                         .orElse(fallback)
                 : fallback;
-        RateLimiter limiter = perCallerRegistry.rateLimiter(
+        RateLimiter limiter = familyRegistry.rateLimiter(
                 surface + "-caller:" + key, config);
         if (!limiter.acquirePermission()) {
             throw RequestNotPermitted.createRequestNotPermitted(limiter);
