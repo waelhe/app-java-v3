@@ -7,6 +7,7 @@ import graphql.GraphQLContext;
 import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.DataFetchingEnvironmentImpl;
 import io.github.resilience4j.ratelimiter.RateLimiterConfig;
+import static org.assertj.core.api.Assertions.assertThat;
 import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
 import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 import org.junit.jupiter.api.Test;
@@ -229,6 +230,80 @@ class PerCallerRateLimitGuardTest {
         // stuffing defense the account budget exists for.
         assertThatThrownBy(() -> guard.acquireAccountPermit(second, SURFACE))
                 .isInstanceOf(RequestNotPermitted.class);
+    }
+
+    /**
+     * The 2026-11-05 #806 round-3 review (Major · Security & Privacy): the
+     * grant comparison must be WINDOW-aware — a count-clean pair with a
+     * shorter caller window lets one address burn the account budget
+     * inside a single account window (10/10s + 30/60s: the address can
+     * obtain 60 permits per account window > 30). The construction must
+     * reject that configuration exactly like the count-only violation.
+     */
+    @Test
+    void aShorterCallerWindowThatOutrunsTheAccountBudgetIsRejectedAtConstruction() {
+        RateLimiterRegistry shared = RateLimiterRegistry.custom()
+                .addRateLimiterConfig(PerCallerRateLimitGuard.PER_CALLER_CONFIG,
+                        RateLimiterConfig.custom()
+                                .limitForPeriod(10)
+                                .limitRefreshPeriod(Duration.ofSeconds(10))
+                                .timeoutDuration(Duration.ZERO)
+                                .build())
+                .addRateLimiterConfig(PerCallerRateLimitGuard.PER_ACCOUNT_CONFIG,
+                        RateLimiterConfig.custom()
+                                .limitForPeriod(30)
+                                .limitRefreshPeriod(Duration.ofMinutes(1))
+                                .timeoutDuration(Duration.ZERO)
+                                .build())
+                .build();
+        ObjectProvider<RateLimiterRegistry> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(shared);
+        when(provider.getObject()).thenReturn(shared);
+
+        assertThatThrownBy(() -> new PerCallerRateLimitGuard(provider, 1000))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("per-caller ceiling");
+    }
+
+    /**
+     * The 2026-11-05 #806 round-3 review (Major · Security & Privacy): the
+     * address-key and account-key families carry SEPARATE bounded stores —
+     * under the single shared store, a max-tracked-callers of 1 made an
+     * alternating address/account pair evict each other and NO limit
+     * applied. With the split stores the address budget and the account
+     * budget each stay enforced at capacity 1.
+     */
+    @Test
+    void theTwoKeyFamiliesStayLimitedUnderAOneEntryStoreEach() {
+        ObjectProvider<RateLimiterRegistry> absent = mock(ObjectProvider.class);
+        when(absent.getIfAvailable()).thenReturn(null);
+        // Capacity ONE per family — the eviction stress shape.
+        PerCallerRateLimitGuard guard = new PerCallerRateLimitGuard(absent, 1);
+
+        // Alternate the two key families across requests (the old single
+        // store kept evicting the other family's only entry — both
+        // budgets reset every request and the flood never hit a limit).
+        DataFetchingEnvironment caller = environment("203.0.113.10", VICTIM_EMAIL);
+        int accepted = 0;
+        for (int attempt = 0; attempt < 25; attempt++) {
+            try {
+                guard.acquirePermit(caller, SURFACE);
+                accepted++;
+            } catch (RequestNotPermitted theAddressBudgetHeld) {
+                break;
+            }
+            try {
+                guard.acquireAccountPermit(caller, SURFACE);
+            } catch (RequestNotPermitted theAccountBudgetHeld) {
+                break;
+            }
+        }
+        // The address budget (10/min by default) must have rejected the
+        // flood — under the shared store every request saw a fresh
+        // limiter and ALL 25 passed.
+        assertThat(accepted)
+                .as("the address family's own store keeps its budget under cross-family eviction")
+                .isLessThanOrEqualTo(10);
     }
 
     /**
