@@ -5,7 +5,6 @@ import com.marketplace.shared.api.OrderRefundPort;
 import com.marketplace.shared.api.ProductStockPort;
 import com.marketplace.shared.api.RefundOutcome;
 import com.marketplace.shared.api.ResourceNotFoundException;
-import com.marketplace.shared.api.ServiceUnavailableException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
