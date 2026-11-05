@@ -94,10 +94,17 @@ class AgentOneGraphQlMappers {
     }
 
     com.marketplace.app.graphql.generated.types.StaffNotificationRecipient
-    toGraphQlRecipient(com.marketplace.identity.spi.RecipientView view) {
+    toGraphQlRecipient(com.marketplace.identity.spi.RecipientView view,
+                       com.marketplace.app.graphql.generated.types.User user) {
+        // The 2026-11-05 #806 round-3 review (Major · Functional
+        // Correctness): the user field was hardcoded null — a recipient
+        // created or updated WITH a user id answered no owner projection
+        // at all (the DB constraint is oneof user/email, so the email is
+        // empty on the user-owned rows). The caller resolves the user
+        // (the fetcher's own userById seam) and the oneof renders whole.
         return com.marketplace.app.graphql.generated.types.StaffNotificationRecipient.newBuilder()
                 .id(globalIdCodec.encode("StaffNotificationRecipient", view.id()))
-                .user(null)
+                .user(user)
                 .email(view.email())
                 .active(view.active())
                 .build();

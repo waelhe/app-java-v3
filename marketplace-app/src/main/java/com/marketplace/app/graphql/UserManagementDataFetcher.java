@@ -326,12 +326,14 @@ public class UserManagementDataFetcher {
     @RateLimiter(name = "graphqlAccountMutation")
     public StaffNotificationRecipientCreate staffNotificationRecipientCreate(
             @InputArgument StaffNotificationRecipientInput input) {
+        com.marketplace.identity.spi.RecipientView created =
+                userManagementSpi.createRecipient(currentAuthentication(),
+                        decodeNullableUserId(input == null ? null : input.getUser()),
+                        input == null ? null : input.getEmail(),
+                        input == null ? null : input.getActive());
         return StaffNotificationRecipientCreate.newBuilder()
-                .staffNotificationRecipient(mappers.toGraphQlRecipient(
-                        userManagementSpi.createRecipient(currentAuthentication(),
-                                decodeNullableUserId(input == null ? null : input.getUser()),
-                                input == null ? null : input.getEmail(),
-                                input == null ? null : input.getActive())))
+                .staffNotificationRecipient(mappers.toGraphQlRecipient(created,
+                        created.userId() == null ? null : userById(created.userId())))
                 .errors(mappers.emptyShopErrors())
                 .build();
     }
@@ -341,13 +343,15 @@ public class UserManagementDataFetcher {
     public StaffNotificationRecipientUpdate staffNotificationRecipientUpdate(
             @InputArgument String id,
             @InputArgument StaffNotificationRecipientInput input) {
+        com.marketplace.identity.spi.RecipientView updated =
+                userManagementSpi.updateRecipient(currentAuthentication(),
+                        decodeRecipientId(id),
+                        decodeNullableUserId(input == null ? null : input.getUser()),
+                        input == null ? null : input.getEmail(),
+                        input == null ? null : input.getActive());
         return StaffNotificationRecipientUpdate.newBuilder()
-                .staffNotificationRecipient(mappers.toGraphQlRecipient(
-                        userManagementSpi.updateRecipient(currentAuthentication(),
-                                decodeRecipientId(id),
-                                decodeNullableUserId(input == null ? null : input.getUser()),
-                                input == null ? null : input.getEmail(),
-                                input == null ? null : input.getActive())))
+                .staffNotificationRecipient(mappers.toGraphQlRecipient(updated,
+                        updated.userId() == null ? null : userById(updated.userId())))
                 .errors(mappers.emptyShopErrors())
                 .build();
     }
@@ -356,10 +360,11 @@ public class UserManagementDataFetcher {
     @RateLimiter(name = "graphqlAccountMutation")
     public StaffNotificationRecipientDelete staffNotificationRecipientDelete(
             @InputArgument String id) {
+        com.marketplace.identity.spi.RecipientView deleted =
+                userManagementSpi.deleteRecipient(currentAuthentication(), decodeRecipientId(id));
         return StaffNotificationRecipientDelete.newBuilder()
-                .staffNotificationRecipient(mappers.toGraphQlRecipient(
-                        userManagementSpi.deleteRecipient(currentAuthentication(),
-                                decodeRecipientId(id))))
+                .staffNotificationRecipient(mappers.toGraphQlRecipient(deleted,
+                        deleted.userId() == null ? null : userById(deleted.userId())))
                 .errors(mappers.emptyShopErrors())
                 .build();
     }
@@ -479,7 +484,18 @@ public class UserManagementDataFetcher {
     }
 
     private UUID resolveTarget(String externalReference, String id) {
-        if (externalReference != null && !externalReference.isBlank()) {
+        // The 2026-11-05 #806 round-3 review (Major · Functional
+        // Correctness): both selectors present is a client error, never a
+        // silent externalReference-wins — the caller must not believe a
+        // row was updated by an id the resolution never read.
+        boolean hasExternalReference = externalReference != null && !externalReference.isBlank();
+        boolean hasId = id != null && !id.isBlank();
+        if (hasExternalReference && hasId) {
+            throw new IllegalArgumentException(
+                    "Provide either id or externalReference, not both — the update/delete roots"
+                            + " resolve exactly one selector");
+        }
+        if (hasExternalReference) {
             return identitySpi.findUserAccountBySubject(externalReference, currentAuthentication())
                     .map(com.marketplace.identity.spi.UserAccountView::id)
                     .orElseThrow(() -> new com.marketplace.shared.api.ResourceNotFoundException(

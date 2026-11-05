@@ -207,7 +207,20 @@ public class CheckoutDataFetcher {
             log.info("checkoutLinesAdd lost the concurrent uniqueness race — {}", exception.getMessage(), exception);
             return payload(null, List.of(error("lines", LINE_CONFLICT, "INVALID")), true, authentication);
         }
-        return payload(updated, List.of(), true, authentication);
+        // The 2026-11-05 #806 round-3 review (Major · Data Integrity):
+        // the add is COMMITTED at this point — a failure while RENDERING
+        // the response (the catalog read behind renderedCheckout) must
+        // never surface as a GraphQL error the client would read as "the
+        // add failed" and retry (a duplicate quantity). The same
+        // post-write read-isolation law ProductMediaMutationDataFetcher
+        // carries: null the projection, log the failure, keep the success.
+        try {
+            return payload(updated, List.of(), true, authentication);
+        } catch (RuntimeException renderFailure) {
+            log.warn("checkoutLinesAdd committed but the response render failed — cart {} —"
+                    + " the client should re-read the cart: {}", cartId, renderFailure.getMessage());
+            return payload(null, List.of(), true, authentication);
+        }
     }
 
     @DgsMutation(field = "checkoutLinesUpdate")
@@ -288,7 +301,15 @@ public class CheckoutDataFetcher {
             log.info("checkoutLinesUpdate rejected INVALID (conflict) — {}", exception.getMessage(), exception);
             return payload(null, List.of(error("lines", LINE_CONFLICT, "INVALID")), true, authentication);
         }
-        return payload(updated, List.of(), true, authentication);
+        // The 2026-11-05 #806 round-3 review (Major · Data Integrity): the
+        // the same post-write render isolation the add root carries.
+        try {
+            return payload(updated, List.of(), true, authentication);
+        } catch (RuntimeException renderFailure) {
+            log.warn("checkoutLinesUpdate committed but the response render failed — cart {} —"
+                    + " the client should re-read the cart: {}", cartId, renderFailure.getMessage());
+            return payload(null, List.of(), true, authentication);
+        }
     }
 
     @DgsMutation(field = "checkoutLinesDelete")
@@ -349,7 +370,15 @@ public class CheckoutDataFetcher {
             log.info("checkoutLinesDelete rejected INVALID (conflict) — {}", exception.getMessage(), exception);
             return payload(null, List.of(error("linesIds", LINE_CONFLICT, "INVALID")), false, authentication);
         }
-        return payload(updated, List.of(), false, authentication);
+        // The 2026-11-05 #806 round-3 review (Major · Data Integrity): the
+        // the same post-write render isolation the add root carries.
+        try {
+            return payload(updated, List.of(), false, authentication);
+        } catch (RuntimeException renderFailure) {
+            log.warn("checkoutLinesDelete committed but the response render failed — cart {} —"
+                    + " the client should re-read the cart: {}", cartId, renderFailure.getMessage());
+            return payload(null, List.of(), false, authentication);
+        }
     }
 
     @DgsMutation(field = "checkoutLineDelete")
@@ -405,7 +434,15 @@ public class CheckoutDataFetcher {
             log.info("checkoutLineDelete rejected INVALID — {}", exception.getMessage(), exception);
             return payload(null, List.of(error("lineId", LINE_INVALID, "INVALID")), true, authentication);
         }
-        return payload(updated, List.of(), true, authentication);
+        // The 2026-11-05 #806 round-3 review (Major · Data Integrity):
+        // the same post-write render isolation the add root carries.
+        try {
+            return payload(updated, List.of(), true, authentication);
+        } catch (RuntimeException renderFailure) {
+            log.warn("checkoutLineDelete committed but the response render failed — cart {} —"
+                    + " the client should re-read the cart: {}", cartId, renderFailure.getMessage());
+            return payload(null, List.of(), true, authentication);
+        }
     }
 
     @DgsMutation(field = "checkoutDelete")
