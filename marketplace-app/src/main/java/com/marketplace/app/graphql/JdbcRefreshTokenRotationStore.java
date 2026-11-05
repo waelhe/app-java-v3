@@ -178,12 +178,18 @@ public class JdbcRefreshTokenRotationStore implements RefreshTokenRotationStore 
         return revoked > 0;
     }
 
-    /** The ledger's bounded-lifetime purge (V297's index serves the predicate). */
+    /**
+     * The ledger's bounded-lifetime purge (V297's index serves the
+     * predicate). The cutoff comparison rides the database's own clock
+     * (the 2026-11-05 #806 round-3 review, Major): {@code consumed_at}
+     * and the bound are BOTH database-time, so no host-clock skew can
+     * shorten the reuse-detection window.
+     */
     @Override
-    public int purgeConsumedBefore(java.time.Instant cutoff) {
+    public int purgeConsumedOlderThan(java.time.Duration retention) {
         return jdbcTemplate.update(
-                "DELETE FROM consumed_refresh_tokens WHERE consumed_at < ?",
-                java.sql.Timestamp.from(cutoff));
+                "DELETE FROM consumed_refresh_tokens WHERE consumed_at < now() - make_interval(secs => ?)",
+                (int) Math.max(0, Math.min(Integer.MAX_VALUE, retention.toSeconds())));
     }
 
     /** SHA-256 of the token value — the ledger never stores a bearer secret. */

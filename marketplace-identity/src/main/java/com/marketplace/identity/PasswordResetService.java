@@ -167,7 +167,15 @@ public class PasswordResetService {
      */
     @Observed(name = "password.reset.request")
     public void requestReset(String email) {
-        String subject = email.trim();
+        // The 2026-11-05 #806 round-3 review (Major · Functional
+        // Correctness): the case-insensitive account-identifier discipline
+        // (the registration leg lowercases before storing; the login
+        // lookups are case-sensitive) — a mixed-case address here would
+        // MISS the account and silently no-op the reset mail. The SAME
+        // normalization at the service seam covers both transports (the
+        // GraphQL root and the REST controller), the exact shape
+        // AccountEmailChangeService:95 documents.
+        String subject = email.trim().toLowerCase(java.util.Locale.ROOT);
         if (!userDetailsManager.userExists(subject)) {
             log.info("Password reset requested for an address with no login account — silent no-op");
             return;
