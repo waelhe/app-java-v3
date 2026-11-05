@@ -430,6 +430,56 @@ class AgentOneMutationDgsTest {
     }
 
     @Test
+    void staffNotificationRecipientCreateResolvesTheUserProjection() {
+        // The 2026-11-05 #806 round-3 review (Major · Functional
+        // Correctness): the oneof's USER arm renders its owner — a
+        // recipient created with a user id answers the user projection,
+        // never a hardcoded null (the email is empty on user-owned rows,
+        // so without the user the response carried NO owner at all).
+        actAs("agent-one-admin@example.com", "ADMIN");
+        UUID ownerId = UUID.randomUUID();
+        when(userManagementSpi.createRecipient(any(), eq(ownerId), isNull(), eq(true)))
+                .thenReturn(new com.marketplace.identity.spi.RecipientView(
+                        UUID.randomUUID(), ownerId, null, true));
+        when(identitySpi.findUserAccountById(eq(ownerId), any()))
+                .thenReturn(java.util.Optional.of(new com.marketplace.identity.spi.UserAccountView(
+                        ownerId, "owner@example.com", false, true,
+                        java.time.Instant.now(), java.time.Instant.now(), java.util.Set.of("CONSUMER"))));
+
+        Object response = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { staffNotificationRecipientCreate(input: { user: "%s", active: true }) {
+                    staffNotificationRecipient { id email user { id email } }
+                } }
+                """.formatted(globalId("User", ownerId)),
+                "data.staffNotificationRecipientCreate.staffNotificationRecipient");
+
+        assertThat(response).isNotNull();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> recipient = (Map<String, Object>) response;
+        assertThat(recipient.get("email")).isNull();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> user = (Map<String, Object>) recipient.get("user");
+        assertThat(user).isNotNull();
+        assertThat(user.get("email")).isEqualTo("owner@example.com");
+    }
+
+    @Test
+    void userUpdateRejectsBothSelectorsAtOnce() {
+        // The 2026-11-05 #806 round-3 review (Major · Functional
+        // Correctness): id + externalReference together is a client error —
+        // the old externalReference-wins silently ignored the id the client
+        // believed it had updated by.
+        actAs("agent-one-admin@example.com", "ADMIN");
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { customerUpdate(id: "%s",
+                        externalReference: "owner@example.com", input: { firstName: "X" }) {
+                    user { id }
+                } }
+                """.formatted(globalId("User", USER_ID)), "data.customerUpdate"))
+                .hasMessageContaining("not both");
+    }
+
+    @Test
     void staffNotificationRecipientCreateSurfacesTheOwnerOneofValidation() {
         actAs("agent-one-admin@example.com", "ADMIN");
         when(userManagementSpi.createRecipient(any(), any(), any(), any()))
