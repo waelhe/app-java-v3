@@ -33,11 +33,14 @@ import java.util.UUID;
  * <p><b>Soft delete is the registry's own discipline</b> — the
  * {@code BaseEntity} {@code @SoftDelete} filter the repository's derived
  * queries already ride: the single delete converts the row's
- * {@code is_deleted} flag through Hibernate's own soft-delete SQL, and a
- * soft-deleted row releases its code for reuse (the
- * {@code uq_categories_code_active} partial unique index, the V47 slug
- * precedent). The bulk delete answers the honestly-affected count —
- * unknown ids are skipped, never fabricated into the count.</p>
+ * {@code is_deleted} flag through Hibernate's own soft-delete SQL. A
+ * soft-deleted row's code stays RESERVED (the 2026-11-05 #808 round:
+ * {@code uq_categories_code} is a GLOBAL unique index — V70's own
+ * comment says "Code uniqueness is GLOBAL" — so the write gate's
+ * precheck counts the RAW table and a reserved code answers the
+ * classified ALREADY_EXISTS, never a raw index violation). The bulk
+ * delete answers the honestly-affected count — unknown ids are skipped,
+ * never fabricated into the count.</p>
  */
 @NamedInterface("catalog-spi")
 public interface CategoryWriteSpi {

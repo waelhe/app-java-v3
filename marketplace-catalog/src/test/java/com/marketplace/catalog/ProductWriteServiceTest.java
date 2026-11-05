@@ -267,7 +267,7 @@ class ProductWriteServiceTest {
     @Test
     void unknownIdAnswersTheNotFoundDomainError() {
         UUID unknown = UUID.randomUUID();
-        when(productRepository.findById(unknown)).thenReturn(Optional.empty());
+        when(productRepository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
 
         ProductMutationResult result = service.updateProduct(unknown,
                 new ProductUpdateCommand("New", null, null), caller);
@@ -280,7 +280,7 @@ class ProductWriteServiceTest {
     @Test
     void aStrangersRowAnswersTheSameSafeAbsence() {
         Product strangers = rowOwnedBy(ProviderIds.STRANGER);
-        when(productRepository.findById(strangers.getId())).thenReturn(Optional.of(strangers));
+        when(productRepository.findByIdForUpdate(strangers.getId())).thenReturn(Optional.of(strangers));
 
         ProductMutationResult result = service.updateProduct(strangers.getId(),
                 new ProductUpdateCommand("New", null, null), caller);
@@ -294,7 +294,7 @@ class ProductWriteServiceTest {
     @Test
     void emptyCommandAnswersTheCurrentProjectionWithoutASave() {
         Product owned = rowOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findById(owned.getId())).thenReturn(Optional.of(owned));
+        when(productRepository.findByIdForUpdate(owned.getId())).thenReturn(Optional.of(owned));
 
         ProductMutationResult result = service.updateProduct(owned.getId(),
                 new ProductUpdateCommand(null, null, null), caller);
@@ -307,7 +307,7 @@ class ProductWriteServiceTest {
     @Test
     void providedFieldsReplaceAndNullsPreserve() {
         Product owned = rowOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findById(owned.getId())).thenReturn(Optional.of(owned));
+        when(productRepository.findByIdForUpdate(owned.getId())).thenReturn(Optional.of(owned));
         when(productRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         ProductMutationResult result = service.updateProduct(owned.getId(),
@@ -323,7 +323,7 @@ class ProductWriteServiceTest {
     @Test
     void blankNameAnswersTheInvalidDomainError() {
         Product owned = rowOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findById(owned.getId())).thenReturn(Optional.of(owned));
+        when(productRepository.findByIdForUpdate(owned.getId())).thenReturn(Optional.of(owned));
 
         ProductMutationResult result = service.updateProduct(owned.getId(),
                 new ProductUpdateCommand("   ", null, null), caller);
@@ -337,7 +337,7 @@ class ProductWriteServiceTest {
     @Test
     void negativeMergedPriceAnswersTheInvalidDomainError() {
         Product owned = rowOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findById(owned.getId())).thenReturn(Optional.of(owned));
+        when(productRepository.findByIdForUpdate(owned.getId())).thenReturn(Optional.of(owned));
 
         ProductMutationResult result = service.updateProduct(owned.getId(),
                 new ProductUpdateCommand(null, null, -5L), caller);
@@ -352,7 +352,7 @@ class ProductWriteServiceTest {
     void anArchivedRowIsTerminalAndAnswersTheInvalidDomainError() {
         Product archived = rowOwnedBy(ProviderIds.CALLER);
         archived.archive();
-        when(productRepository.findById(archived.getId())).thenReturn(Optional.of(archived));
+        when(productRepository.findByIdForUpdate(archived.getId())).thenReturn(Optional.of(archived));
 
         ProductMutationResult result = service.updateProduct(archived.getId(),
                 new ProductUpdateCommand("New", null, null), caller);
@@ -487,7 +487,7 @@ class ProductWriteServiceTest {
         // The stale unlocked read the pre-lock guard used to consult
         // (kept as the race's own witness — the delete path no longer
         // reads through it).
-        when(productRepository.findById(raceId)).thenReturn(Optional.of(staleRead));
+        when(productRepository.findByIdForUpdate(raceId)).thenReturn(Optional.of(staleRead));
         // The locked read the delete path now rides.
         when(productRepository.findByIdForUpdate(raceId)).thenReturn(Optional.of(lockedRow));
 
