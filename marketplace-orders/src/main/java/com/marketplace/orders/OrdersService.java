@@ -98,6 +98,11 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
     private final CommercialPricingPort commercialPricingPort;
     private final OrderPriceComponentRepository orderPriceComponentRepository;
     private final com.marketplace.shared.api.CheckoutDeliveryPort checkoutDeliveryPort;
+    // The 2026-11-05 #811 round (Minor · Data Integrity): constructor
+    // injection (not @PersistenceContext) so the unit tests can mock the
+    // refresh contract — Spring injects the shared transactional
+    // EntityManager either way (the SavedSearchService precedent).
+    private final jakarta.persistence.EntityManager entityManager;
 
     public OrdersService(CartRepository cartRepository,
                          CartItemRepository cartItemRepository,
@@ -110,7 +115,8 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
                          OrderPaymentPort orderPaymentPort,
                          CommercialPricingPort commercialPricingPort,
                          OrderPriceComponentRepository orderPriceComponentRepository,
-                         com.marketplace.shared.api.CheckoutDeliveryPort checkoutDeliveryPort) {
+                         com.marketplace.shared.api.CheckoutDeliveryPort checkoutDeliveryPort,
+                         jakarta.persistence.EntityManager entityManager) {
         this.cartRepository = cartRepository;
         this.cartItemRepository = cartItemRepository;
         this.orderRepository = orderRepository;
@@ -123,6 +129,7 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
         this.commercialPricingPort = commercialPricingPort;
         this.orderPriceComponentRepository = orderPriceComponentRepository;
         this.checkoutDeliveryPort = checkoutDeliveryPort;
+        this.entityManager = entityManager;
     }
 
     // ------------------------------------------------------------------
@@ -1150,10 +1157,26 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
         // Serialize concurrent/delivered-again payment completion events on
         // the authoritative order row. A redelivery that observes CONFIRMED
         // after the lock is acquired is a no-op, not a stale-state conflict.
+        //
+        // The 2026-11-05 #811 round (Minor · Data Integrity): the second
+        // read alone did NOT re-read the state — JPA's first-level cache
+        // returns the ALREADY-MANAGED instance for findByIdForUpdate, so
+        // the PLACED filter below (and confirm's own requireStatus) could
+        // read the status the UNLOCKED findByPaymentIntentId loaded, while
+        // a concurrent confirm committed CONFIRMED between the two reads:
+        // a double confirm and a duplicate OrderConfirmedEvent. The
+        // JPA-documented re-read-under-lock is refresh(entity,
+        // PESSIMISTIC_WRITE): the row lock is taken AND the managed
+        // entity's state is reloaded from the authoritative row — the
+        // filter and the confirm both decide on the locked truth.
         orderRepository.findByPaymentIntentId(paymentIntentId)
-                .ifPresent(order -> orderRepository.findByIdForUpdate(order.getId())
-                        .filter(locked -> locked.getStatus() == OrderStatus.PLACED)
-                        .ifPresent(locked -> confirm(locked.getId())));
+                .ifPresent(order -> {
+                    entityManager.refresh(order,
+                            jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+                    if (order.getStatus() == OrderStatus.PLACED) {
+                        confirm(order.getId());
+                    }
+                });
     }
 
     /**

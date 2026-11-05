@@ -72,16 +72,61 @@ public class OrdersContentPurgeAdapter implements AuthoredContentPurgePort {
     @Override
     @Transactional
     public int purgeAuthoredTexts(UUID userId) {
-        int orders = jdbcTemplate.update(
+        // The 2026-11-05 #811 round (Major · Security & Privacy), two
+        // scope corrections on the measured schema:
+        //
+        // (1) The address purge EXCLUDES the orders that still need their
+        // delivery — the Art. 17(3)(b) contract-fulfillment ground the
+        // adapter itself already cites for the retained commercial
+        // record: a PLACED/CONFIRMED platform-delivery order's frozen
+        // address is the delivery's own destination, and erasing it
+        // mid-flight breaks the fulfillment. Those rows (and their audit
+        // history) keep the address until a later purge run — after the
+        // order reaches FULFILLED or CANCELLED — finds them erasable.
+        //
+        // (2) The subject's authored texts now include the buyer's own
+        // cancel reason (orders.cancel_reason, always pure authored text
+        // on a CANCELLED row) and the return REASON (order_returns.reason
+        // — the buyer's own words, never a delivery input). The returns'
+        // resolution_note STAYS: it is the merchant decision record
+        // (reject/cancel notes — the shared commercial record the
+        // retention decisions already keep), not the subject's authored
+        // text; the buyer-authored reason is the purged surface.
+        int ordersAddress = jdbcTemplate.update(
                 "UPDATE orders SET ship_to_address = ?, version = version + 1 "
                         + "WHERE consumer_id = ? AND ship_to_address IS NOT NULL "
-                        + "AND ship_to_address <> ?",
+                        + "AND ship_to_address <> ? "
+                        + "AND status NOT IN ('PLACED', 'CONFIRMED')",
                 AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
-        int auditRows = jdbcTemplate.update(
+        int ordersAddressAudit = jdbcTemplate.update(
                 "UPDATE orders_aud SET ship_to_address = ? WHERE consumer_id = ? "
-                        + "AND ship_to_address IS NOT NULL AND ship_to_address <> ?",
+                        + "AND ship_to_address IS NOT NULL AND ship_to_address <> ? "
+                        + "AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.id = orders_aud.id "
+                        + "AND o.status IN ('PLACED', 'CONFIRMED'))",
                 AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
-        log.info("Orders content purge: userId={}, orders={}, auditRows={}", userId, orders, auditRows);
-        return orders + auditRows;
+        int ordersCancelReason = jdbcTemplate.update(
+                "UPDATE orders SET cancel_reason = ?, version = version + 1 "
+                        + "WHERE consumer_id = ? AND cancel_reason IS NOT NULL "
+                        + "AND cancel_reason <> ?",
+                AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
+        int ordersCancelReasonAudit = jdbcTemplate.update(
+                "UPDATE orders_aud SET cancel_reason = ? WHERE consumer_id = ? "
+                        + "AND cancel_reason IS NOT NULL AND cancel_reason <> ?",
+                AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
+        int returnsReason = jdbcTemplate.update(
+                "UPDATE order_returns SET reason = ?, version = version + 1 "
+                        + "WHERE consumer_id = ? AND reason IS NOT NULL AND reason <> ?",
+                AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
+        int returnsReasonAudit = jdbcTemplate.update(
+                "UPDATE order_returns_aud SET reason = ? WHERE consumer_id = ? "
+                        + "AND reason IS NOT NULL AND reason <> ?",
+                AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
+        log.info("Orders content purge: userId={}, ordersAddress={}, ordersAddressAudit={}, "
+                        + "ordersCancelReason={}, ordersCancelReasonAudit={}, returnsReason={}, "
+                        + "returnsReasonAudit={}",
+                userId, ordersAddress, ordersAddressAudit, ordersCancelReason,
+                ordersCancelReasonAudit, returnsReason, returnsReasonAudit);
+        return ordersAddress + ordersAddressAudit + ordersCancelReason + ordersCancelReasonAudit
+                + returnsReason + returnsReasonAudit;
     }
 }

@@ -471,22 +471,22 @@ when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(or
     }
 
     /**
-     * ORD-02's loud-failure contract (rule B7's bound-before-compute),
-     * the 2026-11-04 classified form: a pathological magnitude whose
-     * product exceeds {@code Long} fails LOUDLY — as the house's
-     * CLASSIFIED 503 (ServiceUnavailableException, the delivery pricing
-     * precedent's own mapping; REST answers 503 SU-001, GraphQL the
-     * SU-001/availability envelope) — never a raw {@code
-     * ArithmeticException} the transports would mask as the generic
-     * 500/INTERNAL-001, and never a silently wrapped or fabricated
-     * share. The double form had NO magnitude guard at all: the same
-     * inputs flowed through a float64 intermediate and answered
-     * whatever the rounding produced. The expectation change from the
-     * raw ArithmeticException assertion is INTENTIONAL (the classified
-     * form is the fix's own contract).
+     * ORD-02's exact-arithmetic contract, the 2026-11-05 #811 round's
+     * form: a magnitude whose INTERMEDIATE PRODUCT exceeds {@code Long}
+     * while the FINAL QUOTIENT is representable — 4e9 × 4e9 = 1.6e19
+     * overflows, yet the share 1.6e19 / 4e9 = 4e9 fits comfortably —
+     * now computes the honest share through the BigInteger intermediate.
+     * The previous form (2026-11-04) refused this computable refund with
+     * the classified 503 because Math.multiplyExact rejected the
+     * PRODUCT; the reviewer's finding: the platform's ratio is
+     * discountedGoods/subtotal ≤ 1 ALWAYS (a discount reduces), so the
+     * quotient ≤ the goods value ≤ the money range — the loud 503
+     * remains ONLY as longValueExact's defense-in-depth for a corrupted
+     * magnitude beyond every declared bound, unreachable through the
+     * approve() construction itself.
      */
     @Test
-    void aPathologicalMagnitudeFailsLoudlyInsteadOfFreezingAWrappedShare() {
+    void aMagnitudeWhoseQuotientIsRepresentableComputesTheHonestShare() {
         Order order = fulfilledOrderWithShipping(4_000_000_000L, 0L, 0L, true, 1L);
         OrderItem item = itemOf(order, UUID.randomUUID(), 1, 4_000_000_000L);
         OrderReturn r = OrderReturn.requested(order.getId(), buyer,
@@ -496,15 +496,15 @@ when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(or
                 OrderReturnLine.of(r.getId(), item, 1)));
         when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
         when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(returns.save(any(OrderReturn.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        // 4e9 × 4e9 overflows Long — the classified loud refusal, never
-        // the raw ArithmeticException.
-        assertThatThrownBy(() -> service.approve(r.getId()))
-                .isInstanceOf(ServiceUnavailableException.class)
-                .isNotInstanceOf(ArithmeticException.class)
-                .hasMessageContaining("overflowed the signed 64-bit minor-unit domain")
-                .hasMessageContaining("0 .. 100000000");
-        org.mockito.Mockito.verify(returns, org.mockito.Mockito.never()).save(any(OrderReturn.class));
+        OrderReturn approved = service.approve(r.getId());
+
+        // 4e9 × 4e9 overflows Long — but the share IS the line's full
+        // value (no discount): 4e9 exactly, computed never refused.
+        assertThat(approved.getRefundAmountMinor()).isEqualTo(4_000_000_000L);
+        assertThat(approved.getStatus()).isEqualTo(OrderReturn.ReturnStatus.APPROVED);
     }
 
     @Test
