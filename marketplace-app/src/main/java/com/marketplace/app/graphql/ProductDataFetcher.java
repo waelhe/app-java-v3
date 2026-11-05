@@ -287,13 +287,17 @@ public class ProductDataFetcher {
             return CompletableFuture.completedFuture(null);
         }
         UUID nativeId = globalIdCodec.decode(reference, ProductTypeGraphQlMapper.PRODUCT_TYPE_TYPE);
-        // The caller travels with the key: the loader re-establishes the
-        // captured security context around the owner call on the dispatch
-        // thread (the DelegatingSecurityContext discipline — see
-        // ProductTypeDataLoader's contract).
+        // The 2026-11-05 #806 round-3 review (Major · Functional
+        // Correctness): a FIELD-level resolver must read the caller from
+        // the request's captured context, never the thread-local holder —
+        // the holder does not reach the dispatch thread this leg can run
+        // on (MarketplaceGraphQlContext.callerOf's own contract, the
+        // wave-4 CI evidence). currentAuthentication() here would throw
+        // AuthenticationCredentialsNotFoundException for an authenticated
+        // user whenever the field resolved off the servlet thread.
         DataLoader<UUID, Optional<ProductTypeView>> loader =
                 environment.getDataLoader(ProductTypeDataLoader.NAME);
-        return loader.load(nativeId, currentAuthentication())
+        return loader.load(nativeId, MarketplaceGraphQlContext.callerOf(environment))
                 .thenApply(view -> view.map(productTypeMapper::toGraphQlProductType).orElse(null));
     }
 
