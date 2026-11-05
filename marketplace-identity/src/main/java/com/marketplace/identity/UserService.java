@@ -1033,6 +1033,21 @@ public class UserService implements IdentitySpi {
      * own documented path; a subject with no row yet answers empty (the
      * honest absence the nullable {@code me} carries).
      */
+    /**
+     * The login store's own ENABLED truth (the 2026-11-05 #806 round-3
+     * review's disable race — see the SPI contract). The framework
+     * manager is the same bean the authentication chain reads from, so
+     * the answer is the chain's own truth, not a projection.
+     */
+    @Override
+    public boolean loginAccountEnabled(String subject) {
+        try {
+            return userDetailsManager.loadUserByUsername(subject).isEnabled();
+        } catch (org.springframework.security.core.userdetails.UsernameNotFoundException absent) {
+            return false;
+        }
+    }
+
     @Override
     @Transactional(readOnly = true)
     public java.util.Optional<com.marketplace.identity.spi.UserAccountView> findCurrentUserAccount(Authentication authentication) {

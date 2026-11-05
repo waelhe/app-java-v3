@@ -53,6 +53,17 @@ public abstract class ApiProblemDetailException extends ErrorResponseException {
     }
 
     /**
+     * The cause-carrying shape (the 2026-11-05 #806 round-3 review: the
+     * grant service's infrastructure failures keep their assembly cause
+     * for the server log while the wire body stays the same domain
+     * sentence — the official base's own third parameter).
+     */
+    protected ApiProblemDetailException(ApiErrorTaxonomy taxonomy, String detail, Throwable cause) {
+        super(taxonomy.statusCode(), problemDetailOf(taxonomy, detail), cause);
+        this.taxonomy = taxonomy;
+    }
+
+    /**
      * Builds the prebuilt RFC 9457 body the official base carries: the
      * taxonomy's status/type/title plus the house's two non-standard
      * properties ({@code errorCode}, {@code category}) — byte-identical to
