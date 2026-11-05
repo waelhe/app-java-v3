@@ -437,7 +437,7 @@ class ProductVariantWriteServiceTest {
     void theHappyDeleteSoftDeletesAndAnswersTheLastKnownProjection() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant row = variantUnder(parent, "SKU-1");
-        when(variantRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
         when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
 
         ProductVariantMutationResult result = service.deleteVariant(row.getId(), caller);
@@ -445,6 +445,85 @@ class ProductVariantWriteServiceTest {
         assertThat(result.success()).isTrue();
         assertThat(result.variant().sku()).isEqualTo("SKU-1");
         verify(variantRepository).delete(row);
+    }
+
+    /**
+     * The 2026-11-05 #808 round (Major · Functional Correctness): the
+     * variant shelf's own B7 wall — a variant holding reserved units is
+     * the paid order's stock and can never be released or fulfilled
+     * again once soft-deleted, so the single delete refuses with the
+     * classified INVALID through the SAME locked read the happy path
+     * rides.
+     */
+    @Test
+    void aReservedVariantRefusesTheDeleteThroughTheClassifiedInvalid() {
+        Product parent = productOwnedBy(ProviderIds.CALLER);
+        // The reserved row is a MOCK entity — the reservation counter is
+        // written by the repository's native UPDATE, not the entity's own
+        // vocabulary (the B7 wall tests' own fixture shape).
+        ProductVariant reserved = org.mockito.Mockito.mock(ProductVariant.class);
+        UUID reservedId = java.util.UUID.randomUUID();
+        when(reserved.getId()).thenReturn(reservedId);
+        when(reserved.getProviderId()).thenReturn(ProviderIds.CALLER);
+        when(reserved.getReservedQuantity()).thenReturn(5);
+        when(variantRepository.findByIdForUpdate(reservedId)).thenReturn(Optional.of(reserved));
+
+        ProductVariantMutationResult result = service.deleteVariant(reservedId, caller);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
+                .containsExactly(ProductVariantMutationErrorCode.INVALID, "id");
+        verify(variantRepository, never()).delete(any(ProductVariant.class));
+    }
+
+    /**
+     * The bulk shape of the wall (the 2026-11-05 #808 round): a reserved
+     * row is skipped — neither deleted nor counted (the honest
+     * affected-count law), while the free sibling still deletes.
+     */
+    @Test
+    void theBulkDeleteSkipsTheReservedRowAndCountsOnlyTheDeleted() {
+        Product parent = productOwnedBy(ProviderIds.CALLER);
+        ProductVariant free = variantUnder(parent, "SKU-FREE");
+        ProductVariant reserved = org.mockito.Mockito.mock(ProductVariant.class);
+        UUID reservedId = java.util.UUID.randomUUID();
+        when(reserved.getId()).thenReturn(reservedId);
+        when(reserved.getProviderId()).thenReturn(ProviderIds.CALLER);
+        when(reserved.getReservedQuantity()).thenReturn(3);
+        when(variantRepository.findByIdForUpdate(free.getId())).thenReturn(Optional.of(free));
+        when(variantRepository.findByIdForUpdate(reservedId)).thenReturn(Optional.of(reserved));
+
+        int deleted = service.deleteVariants(
+                java.util.List.of(free.getId(), reservedId), caller);
+
+        assertThat(deleted).isEqualTo(1);
+        verify(variantRepository).delete(free);
+        verify(variantRepository, never()).delete(reserved);
+    }
+
+    /**
+     * The 2026-11-05 #808 round (Minor · Data Integrity): the unknown
+     * errorPolicy answers the classified per-item INVALID up front — the
+     * bulkCreate root's own contract (never a silent partial save under
+     * an unpronounceable policy).
+     */
+    @Test
+    void theBulkUpdateRejectsTheUnknownPolicyPerItem() {
+        Product parent = productOwnedBy(ProviderIds.CALLER);
+        ProductVariant row = variantUnder(parent, "SKU-1");
+
+        var outcomes = service.bulkUpdateVariants(parent.getId(),
+                java.util.List.of(new ProductVariantBulkUpdateItem(row.getId(),
+                        new ProductVariantUpdateCommand("SKU-2", null, null))),
+                caller, "NOT_A_POLICY");
+
+        assertThat(outcomes).hasSize(1);
+        assertThat(outcomes.get(0).success()).isFalse();
+        assertThat(outcomes.get(0).errors()).singleElement()
+                .extracting(ProductVariantMutationError::field)
+                .isEqualTo("errorPolicy");
+        verify(variantRepository, never()).save(any(ProductVariant.class));
     }
 
     @Test
@@ -473,7 +552,7 @@ class ProductVariantWriteServiceTest {
     void aDeleteOfAVariantWhoseParentIsSoftDeletedAnswersTheClassifiedNotFound() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant row = variantUnder(parent, "SKU-ORPHAN");
-        when(variantRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
         when(productRepository.findById(parent.getId())).thenReturn(Optional.empty());
 
         ProductVariantMutationResult result = service.deleteVariant(row.getId(), caller);
@@ -491,8 +570,8 @@ class ProductVariantWriteServiceTest {
         ProductVariant owned = variantUnder(parent, "SKU-1");
         ProductVariant strangerOwned = variantUnder(productOwnedBy(ProviderIds.STRANGER), "SKU-9");
         UUID unknown = UUID.randomUUID();
-        when(variantRepository.findById(owned.getId())).thenReturn(Optional.of(owned));
-        when(variantRepository.findById(strangerOwned.getId())).thenReturn(Optional.of(strangerOwned));
+        when(variantRepository.findByIdForUpdate(owned.getId())).thenReturn(Optional.of(owned));
+        when(variantRepository.findByIdForUpdate(strangerOwned.getId())).thenReturn(Optional.of(strangerOwned));
         when(variantRepository.findById(unknown)).thenReturn(Optional.empty());
 
         int count = service.deleteVariants(
