@@ -63,6 +63,12 @@ class OrdersServiceAuthorizationTest {
     private OrderPriceComponentRepository orderPriceComponentRepository;
     @MockitoBean
     private CheckoutDeliveryPort checkoutDeliveryPort;
+    // The 2026-11-05 #811 round: the settlement listener's refresh-under-
+    // lock seam — the slice carries no JPA, so the EntityManager is the
+    // slice's own mock (the constructor-injection precedent's rationale:
+    // unit slices mock the refresh contract).
+    @MockitoBean
+    private jakarta.persistence.EntityManager entityManager;
 
     @Autowired
     private OrderCommandSpi orderCommandSpi;
