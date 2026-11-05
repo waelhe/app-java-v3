@@ -12,12 +12,7 @@
 CREATE TABLE IF NOT EXISTS consumed_refresh_tokens (
     authorization_id VARCHAR(100) NOT NULL,
     token_hash       BYTEA        NOT NULL,
-    -- The 2026-11-05 #806 round-3 review (Minor): clock_timestamp()
-    -- records the true statement instant; CURRENT_TIMESTAMP is the
-    -- TRANSACTION-start time, so a commit delayed past the 30s grace
-    -- window would have a post-commit replay classified as a LATE
-    -- theft-shaped replay by the window's own arithmetic.
-    consumed_at      TIMESTAMPTZ  NOT NULL DEFAULT clock_timestamp(),
+    consumed_at      TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (token_hash),
     CONSTRAINT fk_consumed_refresh_tokens_authorization
         FOREIGN KEY (authorization_id) REFERENCES oauth2_authorization (id)
