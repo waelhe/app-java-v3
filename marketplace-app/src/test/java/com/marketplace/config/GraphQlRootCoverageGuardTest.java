@@ -43,8 +43,6 @@ class GraphQlRootCoverageGuardTest {
     /** A root declaration line inside a Query/Mutation block: {@code name(args): Type}. */
     private static final Pattern ROOT_FIELD = Pattern.compile("^([a-zA-Z][a-zA-Z0-9_]*)\\s*[(:]");
 
-    private static final Pattern WORD = Pattern.compile("\\b%s\\b");
-
     @Test
     void everySdlRootIsTouchedByAtLeastOneTest() throws IOException {
         Path repoRoot = repoRoot();
@@ -56,7 +54,13 @@ class GraphQlRootCoverageGuardTest {
         String testBlob = wholeTestTree(repoRoot);
         List<String> untouched = new ArrayList<>();
         for (String root : roots.keySet()) {
-            Matcher matcher = WORD.matcher(testBlob);
+            // The 2026-11-04 #807 round (Major · Test Quality): the pattern
+            // is built PER ROOT — the previous literal "\\b%s\\b" never
+            // substituted the root name, so the same literal-%s search ran
+            // for every root and the guard measured nothing (any formatted
+            // string in the test tree satisfied all roots at once).
+            Matcher matcher = Pattern.compile("\\b" + Pattern.quote(root) + "\\b")
+                    .matcher(testBlob);
             if (!matcher.find()) {
                 untouched.add(root);
             }
