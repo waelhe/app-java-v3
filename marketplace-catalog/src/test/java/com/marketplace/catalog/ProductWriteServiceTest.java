@@ -484,14 +484,21 @@ class ProductWriteServiceTest {
         when(lockedRow.getId()).thenReturn(raceId);
         when(lockedRow.getProviderId()).thenReturn(ProviderIds.CALLER);
         when(lockedRow.getReservedQuantity()).thenReturn(5);
-        // The stale unlocked read the pre-lock guard used to consult
-        // (kept as the race's own witness — the delete path no longer
-        // reads through it).
-        when(productRepository.findByIdForUpdate(raceId)).thenReturn(Optional.of(staleRead));
+        // The stale unlocked read the pre-lock guard used to consult (kept
+        // as the race's own witness — the delete path no longer reads
+        // through it). The 2026-11-05 #809 round: this witness used to
+        // stub findByIdForUpdate TOO — Mockito's last-wins silently
+        // replaced it with the locked row, so the race's stale half was
+        // never actually served to any read; the unlocked findById stub
+        // restores the raced two-read shape the test exists to prove.
+        when(productRepository.findById(raceId)).thenReturn(Optional.of(staleRead));
         // The locked read the delete path now rides.
         when(productRepository.findByIdForUpdate(raceId)).thenReturn(Optional.of(lockedRow));
 
         ProductMutationResult result = service.deleteProduct(raceId, caller);
+        // The delete path consulted the LOCKED read (the stale unlocked
+        // witness never reaches the decision).
+        verify(productRepository).findByIdForUpdate(raceId);
 
         assertThat(result.success()).isFalse();
         assertThat(result.errors()).singleElement()

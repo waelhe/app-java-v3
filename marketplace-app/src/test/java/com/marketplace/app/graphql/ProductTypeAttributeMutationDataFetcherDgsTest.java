@@ -489,7 +489,14 @@ class ProductTypeAttributeMutationDataFetcherDgsTest {
         org.mockito.Mockito.verifyNoInteractions(attributeWriteSpi);
     }
 
-    /** A keyless reorder answers the classified validation error. */
+    /**
+     * A keyless reorder answers the classified validation error. The moves
+     * argument is {@code [ReorderInput!]!} in the SDL, so the rejection is
+     * the schema's own required-argument error (the 2026-11-05 #807 round:
+     * the assertion names the argument — the strongest classification the
+     * non-null contract allows; a payload error cannot exist for a value
+     * the schema itself refuses to admit).
+     */
     @Test
     void productTypeReorderAttributesWithoutMovesAnswersTheClassifiedValidationError() {
         authenticateAs("dgs-admin-subject", "ADMIN");
@@ -500,7 +507,8 @@ class ProductTypeAttributeMutationDataFetcherDgsTest {
                     productType { id }
                 } }
                 """.formatted(productTypeGlobalId(UUID.randomUUID())), "$"))
-                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class);
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("moves");
         org.mockito.Mockito.verifyNoInteractions(productTypeAttributeWriteSpi);
     }
 }

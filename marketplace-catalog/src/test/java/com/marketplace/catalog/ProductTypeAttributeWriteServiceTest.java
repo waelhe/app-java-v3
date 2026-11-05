@@ -436,6 +436,50 @@ class ProductTypeAttributeWriteServiceTest {
     }
 
     @Test
+    void theVariantFamilyReorderParksBeyondBothTheCurrentMaximumAndTheFinalRange() {
+        // The 2026-11-05 #808 round-3 review (Major · Functional Correctness,
+        // repeat): the VARIANT-family bucket merges TWO per-scope-numbered
+        // position spaces, so the merged list holds MORE members than the
+        // largest stored position (two attributes per scope: n=4, max=2).
+        // A park range starting at max+1 (3..6) overlapped the final 1..4
+        // range, and Hibernate's update-flush order (NOT the saveAll list
+        // order) could transiently duplicate a (product_type_id, scope,
+        // position) row against the live unique index. The park must start
+        // beyond BOTH bounds — here at max(2, 4)+1 = 5.
+        CatalogAttributeDefinition vA = definition("var-a", CatalogAttributeType.TEXT);
+        CatalogAttributeDefinition vB = definition("var-b", CatalogAttributeType.TEXT);
+        CatalogAttributeDefinition sA = definition("sel-a", CatalogAttributeType.TEXT);
+        CatalogAttributeDefinition sB = definition("sel-b", CatalogAttributeType.TEXT);
+        ProductTypeAttributeAssignment va = assigned(vA, ProductTypeAttributeScope.VARIANT, 1);
+        ProductTypeAttributeAssignment vb = assigned(vB, ProductTypeAttributeScope.VARIANT, 2);
+        ProductTypeAttributeAssignment sa = assigned(sA, ProductTypeAttributeScope.VARIANT_SELECTION, 1);
+        ProductTypeAttributeAssignment sb = assigned(sB, ProductTypeAttributeScope.VARIANT_SELECTION, 2);
+        when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
+                .thenReturn(List.of(va, sa, vb, sb));
+        List<List<Integer>> savedPositions = new ArrayList<>();
+        when(assignmentRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<ProductTypeAttributeAssignment> saved = invocation.getArgument(0);
+            savedPositions.add(saved.stream()
+                    .map(ProductTypeAttributeAssignment::getPosition)
+                    .toList());
+            return saved;
+        });
+
+        ProductTypeMutationResult result = service.reorderAttributes(type.getId(), "VARIANT",
+                List.of(new AttributeReorderMove(vB.getId(), -1)));
+
+        assertThat(result.success()).isTrue();
+        // The park write lands ENTIRELY beyond the final range: every parked
+        // position >= max(currentMax=2, orderedSize=4) + 1 = 5 — no parked
+        // position can collide with any final 1..4 write under ANY flush
+        // ordering. The finals are the dense merged order.
+        assertThat(savedPositions).hasSize(2);
+        assertThat(savedPositions.get(0)).allSatisfy(position -> assertThat(position).isGreaterThanOrEqualTo(5));
+        assertThat(savedPositions.get(0)).doesNotHaveDuplicates();
+        assertThat(savedPositions.get(1)).containsExactlyInAnyOrder(1, 2, 3, 4);
+    }
+
+    @Test
     void anOutOfRangeMoveAnswersTheInvalidDomainError() {
         CatalogAttributeDefinition first = definition("attr-one", CatalogAttributeType.TEXT);
         ProductTypeAttributeAssignment one = assigned(first, ProductTypeAttributeScope.PRODUCT, 1);
