@@ -195,6 +195,14 @@ resilience4j:
     # test address; only THESE two surfaces relax (the anonymous account
     # roots keep the tuned 10/min their flood proof depends on).
     configs:
+      # The account grant rides ABOVE the two relaxed surfaces (the
+      # window-aware lockout invariant the guard enforces at startup:
+      # accountLimit > callerLimit and callerLimit x ceil(accountWindow /
+      # callerWindow) <= accountLimit — 120 > 100 and 100 <= 120).
+      perAccountGrant:
+        limit-for-period: 120
+        limit-refresh-period: 1m
+        timeout-duration: 0
       perCallerGrant-graphqlOrderMutation:
         limit-for-period: 100
         limit-refresh-period: 1m
