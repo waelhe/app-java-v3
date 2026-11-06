@@ -114,10 +114,14 @@ class CmsNavigationGraphQlIntegrationTest {
                 .satisfy(errors -> assertThat(errors)
                         .anySatisfy(error -> assertThat(error.getMessage())
                                 .contains("menuItems first must not be negative")));
-        // Zero stays the documented empty page.
+        // Zero stays the documented empty page — with the honest null
+        // total (the same contract the orders family's empty first page
+        // pins: no rows were read, so no total is asserted).
         tester.document("query { menus(first: 0) { totalCount edges { cursor } } }")
                 .execute()
-                .path("menus.totalCount").entity(Integer.class).isEqualTo(0);
+                .errors().verify()
+                .path("menus.edges").entityList(Object.class).hasSize(0)
+                .path("menus.totalCount").valueIsNull();
     }
 
     @Test
