@@ -277,6 +277,22 @@ class AgentOneMutationDgsTest {
     }
 
     @Test
+    void requestPasswordResetNormalizesTheAddressLikeRegistration() {
+        // The 2026-11-05 #806 round-3 review (Minor · Functional
+        // Correctness): registration lowercases the address before the
+        // account is stored, so an uppercase-typed reset request must
+        // resolve the SAME stored row — trim alone made the lookup miss
+        // and the response still read as success (no email sent).
+        dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { requestPasswordReset(email: "  WHO@Example.COM ",
+                        redirectUrl: "https://app.example.com/reset") {
+                    errors { code }
+                } }
+                """, "data.requestPasswordReset.errors");
+        verify(accountLifecycleSpi).requestPasswordReset("who@example.com");
+    }
+
+    @Test
     void sendConfirmationEmailResendsTheAuthenticatedCallersOwnVerification() {
         // The pinned Saleor 3.23.45 contract: AUTHENTICATED_USER operating
         // on info.context.user — the resend targets the CALLER's own

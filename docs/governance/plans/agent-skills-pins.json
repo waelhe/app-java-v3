@@ -77,25 +77,25 @@
           "location": "rules/order-discount-allocation.md:107",
           "issue": "the rounding bound is phrased as 'at most a cent', which is blind to the currency's exponent",
           "verifiedFact": "flagged by the 2026-10-30 CodeRabbit review of PR #771; agents must treat the authoritative rounding rule as currency-precision-bound, not cent-bound",
-          "evidence": "CodeRabbit review 2026-10-30 (PR #771); verify against saleor/saleor@3.23.43 when consumed"
+          "evidence": "CodeRabbit review 2026-10-30 (PR #771); verify against the pinned saleor/saleor@3.23.45 (saleor-source-pins.json) when consumed"
         },
         {
           "location": "rules/stock-availability-modes.md:83-90",
           "issue": "the legacy-mode description attaches four shipping conditions to every Stock row",
           "verifiedFact": "flagged by the 2026-10-30 CodeRabbit review: for_channel_and_click_and_collect returns channel warehouses without requiring shipping-zone linkage, and for_channel_and_country includes click-and-collect warehouses when country_code is empty or include_cc_warehouses is true",
-          "evidence": "CodeRabbit review 2026-10-30 (PR #771); verify against saleor/saleor@3.23.43 when consumed"
+          "evidence": "CodeRabbit review 2026-10-30 (PR #771); verify against the pinned saleor/saleor@3.23.45 (saleor-source-pins.json) when consumed"
         },
         {
           "location": "rules/stock-availability-modes.md:135",
           "issue": "conflates accepting a GraphQL subscription with delivering its events",
           "verifiedFact": "flagged by the 2026-10-30 CodeRabbit review: subscriptions can be created in legacy mode while the four stock events are only delivered when useLegacyShippingZoneStockAvailability is disabled and the event fires",
-          "evidence": "CodeRabbit review 2026-10-30 (PR #771); verify against saleor/saleor@3.23.43 when consumed"
+          "evidence": "CodeRabbit review 2026-10-30 (PR #771); verify against the pinned saleor/saleor@3.23.45 (saleor-source-pins.json) when consumed"
         },
         {
           "location": "rules/stock-availability-modes.md:198",
           "issue": "claims one unified per-destination answer inside channel countries for the triple warehouse/channel/shipping-zone setting",
           "verifiedFact": "flagged by the 2026-10-30 CodeRabbit review: legacy mode keeps stock visibility dependent on the customer destination country being covered by the warehouse's shipping zone; direct mode removes the destination dependence",
-          "evidence": "CodeRabbit review 2026-10-30 (PR #771); verify against saleor/saleor@3.23.43 when consumed"
+          "evidence": "CodeRabbit review 2026-10-30 (PR #771); verify against the pinned saleor/saleor@3.23.45 (saleor-source-pins.json) when consumed"
         },
         {
           "location": "SKILL.md:11",

@@ -302,23 +302,56 @@ public class AttributeMutationDataFetcher {
             throw new IllegalArgumentException("attributeBulkUpdate requires a non-empty list of attributes");
         }
         properties.requireBoundedList(attributes, "attributeBulkUpdate");
-        List<AttributeBulkUpdateItem> items = new ArrayList<>(attributes.size());
-        for (AttributeBulkUpdateInput attribute : attributes) {
+        // The 2026-11-05 #806 round-3 review (Minor · Functional
+        // Correctness): the row-level policies answer at ROW level for a
+        // malformed row id too — the pinned contract keeps the valid rows
+        // and reports the refused row in its own results[i].errors, never
+        // letting a decode exception escape the batch before the SPI
+        // rides. The productVariantBulkUpdate root carries the same
+        // row-level law; the two bulk roots now behave identically.
+        boolean rowLevel = errorPolicy == ErrorPolicyEnum.IGNORE_FAILED
+                || errorPolicy == ErrorPolicyEnum.REJECT_FAILED_ROWS;
+        int size = attributes.size();
+        List<AttributeBulkUpdateItem> items = new ArrayList<>(size);
+        // The per-row stage: null = the row rides the SPI batch at the
+        // next item position; non-null = the boundary refused the row
+        // (the id decode refusal) and its result is fixed here.
+        @SuppressWarnings("unchecked")
+        List<AttributeBulkUpdateError>[] rowRefusals = new List[size];
+        for (int i = 0; i < size; i++) {
+            AttributeBulkUpdateInput attribute = attributes.get(i);
             if (attribute.getId() == null) {
                 throw new IllegalArgumentException(
                         "attributeBulkUpdate requires every item to carry the id of the attribute to update");
             }
-            items.add(new AttributeBulkUpdateItem(
-                    globalIdCodec.decode(attribute.getId(), AttributeGraphQlMapper.ATTRIBUTE_TYPE),
-                    new AttributeUpdateCommand(attribute.getFields() == null ? null : attribute.getFields().getName(),
-                            attribute.getFields() == null ? null : attribute.getFields().getSlug())));
+            try {
+                items.add(new AttributeBulkUpdateItem(
+                        globalIdCodec.decode(attribute.getId(), AttributeGraphQlMapper.ATTRIBUTE_TYPE),
+                        new AttributeUpdateCommand(
+                                attribute.getFields() == null ? null : attribute.getFields().getName(),
+                                attribute.getFields() == null ? null : attribute.getFields().getSlug())));
+            } catch (RuntimeException decodeRefusal) {
+                if (!rowLevel) {
+                    throw decodeRefusal;
+                }
+                rowRefusals[i] = List.of(decodeRefusalError(i, decodeRefusal));
+            }
         }
-        List<AttributeBulkOutcome> outcomes = attributeWriteSpi.bulkUpdateAttributes(
-                items, errorPolicy == null ? null : errorPolicy.name());
-        List<AttributeBulkUpdateResult> results = new ArrayList<>(outcomes.size());
+        List<AttributeBulkOutcome> outcomes = items.isEmpty()
+                ? List.of()
+                : attributeWriteSpi.bulkUpdateAttributes(
+                        items, errorPolicy == null ? null : errorPolicy.name());
+        List<AttributeBulkUpdateResult> results = new ArrayList<>(size);
         int count = 0;
-        for (int i = 0; i < outcomes.size(); i++) {
-            AttributeBulkOutcome outcome = outcomes.get(i);
+        int itemIndex = 0;
+        for (int i = 0; i < size; i++) {
+            if (rowRefusals[i] != null) {
+                results.add(AttributeBulkUpdateResult.newBuilder()
+                        .errors(rowRefusals[i])
+                        .build());
+                continue;
+            }
+            AttributeBulkOutcome outcome = outcomes.get(itemIndex++);
             if (outcome.success()) {
                 count++;
             }
@@ -332,6 +365,22 @@ public class AttributeMutationDataFetcher {
                 .count(count)
                 .results(results)
                 .errors(List.of())
+                .build();
+    }
+
+    /**
+     * The row-level id-decode refusal onto the bulk update's own error
+     * object — the classified wire vocabulary (the variant root's
+     * {@code decodeRefusalError} precedent; this type carries no
+     * separate {@code field}, so the pointer rides {@code path}).
+     */
+    private static AttributeBulkUpdateError decodeRefusalError(int index, RuntimeException decodeRefusal) {
+        SaleorMutationErrors.WireError wire =
+                SaleorMutationErrors.of(decodeRefusal, "id");
+        return AttributeBulkUpdateError.newBuilder()
+                .path("attributes." + index + "." + wire.field())
+                .message(wire.message())
+                .code(AttributeBulkUpdateErrorCode.valueOf(wire.code()))
                 .build();
     }
 

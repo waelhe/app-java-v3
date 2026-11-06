@@ -149,6 +149,12 @@ public class AttributeDataFetcher {
                     "attributes supports forward-only pagination (first/after) on this platform");
         }
 
+        // The 2026-11-05 #806 round-3 review (Minor · Security & Privacy):
+        // the ADMIN verdict precedes the degenerate-page early return —
+        // the empty page must answer the authorization failure for a
+        // non-ADMIN caller, never a success-shaped envelope (the orders
+        // root's own requireAdmin-before-early-returns order).
+        attributeReadSpi.requireAdmin();
         AttributeSort sort = toOwnerSort(sortBy);
         int requested = first == null ? properties.pagination().defaultPageSize() : first;
         if (requested <= 0) {

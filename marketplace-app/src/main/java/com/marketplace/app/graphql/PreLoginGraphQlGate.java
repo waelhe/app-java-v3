@@ -7,8 +7,12 @@ import graphql.ExecutionResultImpl;
 import graphql.language.Definition;
 import graphql.language.Document;
 import graphql.language.Field;
+import graphql.language.FragmentDefinition;
+import graphql.language.FragmentSpread;
+import graphql.language.InlineFragment;
 import graphql.language.OperationDefinition;
 import graphql.language.Selection;
+import graphql.language.SelectionSet;
 import graphql.parser.Parser;
 import org.springframework.graphql.execution.ErrorType;
 import org.springframework.graphql.server.WebGraphQlInterceptor;
@@ -139,14 +143,19 @@ public class PreLoginGraphQlGate implements WebGraphQlInterceptor {
      * document that fails to parse is NOT trusted — deny-by-default
      * answers the classified error, exactly like an unknown operation.
      *
-     * <p><b>The fragment discipline (round 2, the CodeRabbit security
-     * round):</b> a top-level selection that is anything other than a
-     * plain {@link Field} — a fragment SPREAD or an INLINE fragment — is
-     * refused outright. A spread can select ANY protected root
-     * ({@code mutation { tokenVerify(...) {...} ...F } fragment F on
-     * Mutation { protectedMutation {...} }}), so the pre-login family
-     * cannot be decided without resolving the fragment graph; the gate
-     * never resolves what it cannot decide — deny-by-default holds.</p>
+     * <p><b>The fragment discipline (round 2 → the 2026-11-05 round-3
+     * refinement):</b> a top-level fragment SPREAD or INLINE fragment is
+     * resolved against the document's OWN fragment definitions — a
+     * document whose every reachable root is a member of the pre-login
+     * family is decidable and answers its verdict, so a legitimate
+     * {@code query { ...F } fragment F on Query { tokenVerify } } from an
+     * anonymous caller no longer eats a blanket AUTHN-001. The deny
+     * walls stay: a fragment reference the document itself does not
+     * define, a cyclic reference, or any reachable root outside the
+     * family denies exactly like an unknown operation — the gate never
+     * resolves what it cannot decide. The walk is confined to the
+     * document's own definitions (no external fragments exist on this
+     * transport), and a visited set bounds the recursion.</p>
      */
     private boolean isPreLoginOnly(String document) {
         if (document == null || document.isBlank()) {
@@ -154,27 +163,91 @@ public class PreLoginGraphQlGate implements WebGraphQlInterceptor {
         }
         try {
             Document parsed = parser.parseDocument(document);
-            Set<String> operations = new java.util.HashSet<>();
+            Map<String, FragmentDefinition> fragments = new LinkedHashMap<>();
             for (Definition<?> definition : parsed.getDefinitions()) {
-                if (definition instanceof OperationDefinition operation) {
-                    for (Selection<?> selection : operation.getSelectionSet().getSelections()) {
-                        if (!(selection instanceof Field field)) {
-                            // A fragment (spread or inline) at the top level
-                            // can select any protected root — the gate
-                            // refuses the shape it cannot decide.
-                            return false;
-                        }
-                        operations.add(field.getName());
-                    }
+                if (definition instanceof FragmentDefinition fragmentDefinition) {
+                    fragments.put(fragmentDefinition.getName(), fragmentDefinition);
                 }
             }
-            return !operations.isEmpty() && PRE_LOGIN_OPERATIONS.containsAll(operations);
+            Set<String> operations = new java.util.HashSet<>();
+            boolean anySelection = false;
+            for (Definition<?> definition : parsed.getDefinitions()) {
+                if (definition instanceof OperationDefinition operation) {
+                    // The per-selection walk: a refusal (an undefined or
+                    // cyclic fragment reference, or a root outside the
+                    // family) short-circuits to the deny verdict.
+                    Boolean verdict = collectRoots(
+                            operation.getSelectionSet(), fragments,
+                            new java.util.HashSet<>(), operations);
+                    if (verdict == Boolean.FALSE) {
+                        return false;
+                    }
+                    anySelection |= verdict == Boolean.TRUE;
+                }
+            }
+            return anySelection && !operations.isEmpty()
+                    && PRE_LOGIN_OPERATIONS.containsAll(operations);
         } catch (RuntimeException failure) {
             // An unparsable document from an anonymous caller is denied by
             // the same rule as an unknown operation — the gate never
             // forwards what it cannot read.
             return false;
         }
+    }
+
+    /**
+     * Walks one selection set collecting the ROOT field names it selects,
+     * resolving fragment spreads and inline fragments against the
+     * document's own definitions. Answers {@code FALSE} the moment the
+     * walk meets an undefined or cyclic fragment reference (deny — the
+     * gate cannot decide what the document does not define); answers
+     * {@code TRUE} when at least one root was collected, {@code null}
+     * when the selection set is empty.
+     */
+    private Boolean collectRoots(SelectionSet selectionSet,
+                                  Map<String, FragmentDefinition> fragments,
+                                  Set<String> visiting,
+                                  Set<String> operations) {
+        if (selectionSet == null || selectionSet.getSelections().isEmpty()) {
+            return null;
+        }
+        Boolean any = null;
+        for (Selection<?> selection : selectionSet.getSelections()) {
+            if (selection instanceof Field field) {
+                operations.add(field.getName());
+                any = Boolean.TRUE;
+            } else if (selection instanceof FragmentSpread spread) {
+                if (!visiting.add(spread.getName())) {
+                    // A cycle (or a repeat reference already being
+                    // resolved) — undecidable, deny.
+                    return Boolean.FALSE;
+                }
+                FragmentDefinition definition = fragments.get(spread.getName());
+                if (definition == null) {
+                    // The document references a fragment it does not
+                    // define — undecidable, deny.
+                    return Boolean.FALSE;
+                }
+                Boolean nested = collectRoots(
+                        definition.getSelectionSet(), fragments, visiting, operations);
+                if (nested == Boolean.FALSE) {
+                    return Boolean.FALSE;
+                }
+                any = any == Boolean.TRUE || nested == Boolean.TRUE ? Boolean.TRUE : any;
+            } else if (selection instanceof InlineFragment inline) {
+                Boolean nested = collectRoots(
+                        inline.getSelectionSet(), fragments, visiting, operations);
+                if (nested == Boolean.FALSE) {
+                    return Boolean.FALSE;
+                }
+                any = any == Boolean.TRUE || nested == Boolean.TRUE ? Boolean.TRUE : any;
+            } else {
+                // Any other selection shape at the root level — the gate
+                // refuses the shape it cannot decide.
+                return Boolean.FALSE;
+            }
+        }
+        return any;
     }
 
     /**

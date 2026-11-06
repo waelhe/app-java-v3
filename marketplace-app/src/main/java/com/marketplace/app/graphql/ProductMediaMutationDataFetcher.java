@@ -27,6 +27,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * N-slice (the canonical Saleor plan §5-P2): the GraphQL adapter for
  * the Saleor Products-domain {@code productMediaDelete},
@@ -55,6 +58,9 @@ import java.util.UUID;
  */
 @DgsComponent
 public class ProductMediaMutationDataFetcher {
+
+    /** The isolated-projection degradation logger (the round-3 render law). */
+    private static final Logger log = LoggerFactory.getLogger(ProductMediaMutationDataFetcher.class);
 
     /** The Saleor {@code ProductMedia} type's own global-ID tag. */
     static final String PRODUCT_MEDIA_TYPE = "ProductMedia";
@@ -92,10 +98,17 @@ public class ProductMediaMutationDataFetcher {
         UUID nativeId = globalIdCodec.decode(id, PRODUCT_MEDIA_TYPE);
         ProductMediaMutationResult result = productMediaWriteSpi.deleteProductMedia(
                 nativeId, currentAuthentication());
+        // The 2026-11-05 #806 round-3 review (Minor · Functional
+        // Correctness): the write is COMMITTED when the response builds —
+        // a failure resolving the product projection must never surface as
+        // a GraphQL error the client would read as "the delete failed".
+        // The projection degrades to null, the failure logs.
+        com.marketplace.app.graphql.generated.types.Product deletedFrom =
+                resolveProductIsolated(result.productId(), "productMediaDelete");
         return ProductMediaDelete.newBuilder()
                 .errors(toProductErrors(result.errors()))
                 .media(result.media() == null ? null : toGraphQlProductMedia(result.media()))
-                .product(resolveProduct(result.productId()))
+                .product(deletedFrom)
                 .build();
     }
 
@@ -162,7 +175,12 @@ public class ProductMediaMutationDataFetcher {
         return ProductMediaReorder.newBuilder()
                 .errors(toProductErrors(result.errors()))
                 .media(media)
-                .product(resolveProduct(result.productId()))
+                // The 2026-11-05 #806 round-3 review's render-isolation law:
+                // the reorder is COMMITTED when the response builds — the
+                // same isolated projection the delete root carries (a
+                // projection failure never rewrites a committed write as a
+                // top-level error).
+                .product(resolveProductIsolated(result.productId(), "productMediaReorder"))
                 .build();
     }
 
@@ -178,6 +196,26 @@ public class ProductMediaMutationDataFetcher {
                     "Authentication is required for catalog administration");
         }
         return authentication;
+    }
+
+    /**
+     * The post-write product projection, ISOLATED (the 2026-11-05 #806
+     * round-3 review): the write is committed when this runs, so a
+     * projection failure degrades to the null projection and logs — it
+     * must never surface as a GraphQL error the client would read as
+     * "the write failed". The client re-reads the product for the
+     * authoritative post-write state.
+     */
+    private com.marketplace.app.graphql.generated.types.Product resolveProductIsolated(
+            UUID productId, String operation) {
+        try {
+            return resolveProduct(productId);
+        } catch (RuntimeException projectionFailure) {
+            log.warn("{} committed but the product projection failed — product {} —"
+                    + " the client should re-read: {}", operation, productId,
+                    projectionFailure.getMessage());
+            return null;
+        }
     }
 
     /**

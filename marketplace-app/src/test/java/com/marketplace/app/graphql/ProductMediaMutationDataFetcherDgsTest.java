@@ -294,6 +294,71 @@ class ProductMediaMutationDataFetcherDgsTest {
     }
 
     /**
+     * The 2026-11-05 #806 round-3 review (Minor · Functional
+     * Correctness): the delete is COMMITTED when the response builds — a
+     * failure resolving the owning product's projection must degrade to
+     * the null projection and LOG, never surface as a GraphQL error the
+     * client would read as "the delete failed".
+     */
+    @Test
+    void productMediaDeleteWithAFailingProjectionAnswersTheNullProductNotAnError() {
+        authenticateAs("dgs-media-provider-subject", "PROVIDER");
+        UUID mediaId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        when(productMediaWriteSpi.deleteProductMedia(eq(mediaId), any())).thenReturn(
+                ProductMediaMutationResult.success(
+                        new ProductMediaView(mediaId, productId, 2), productId));
+        when(productReadSpi.findProductById(eq(productId), any())).thenThrow(
+                new IllegalStateException("the projection seam is down"));
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { productMediaDelete(id: "%s") {
+                    errors { field message code }
+                    media { id }
+                    product { id }
+                } }
+                """.formatted(productMediaGlobalId(mediaId)), "data.productMediaDelete");
+
+        // The committed write's own payload answers: empty errors, the
+        // media projection, and the DEGRADED null product.
+        assertThat(payload.get("errors")).isEqualTo(List.of());
+        assertThat(payload.get("product")).isNull();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> media = (Map<String, Object>) payload.get("media");
+        assertThat(media.get("id")).isEqualTo(productMediaGlobalId(mediaId));
+    }
+
+    /**
+     * The same render-isolation law on the reorder root: the reorder is
+     * committed when the response builds, so a projection failure
+     * degrades to null — the client re-reads the product for the
+     * authoritative post-write state.
+     */
+    @Test
+    void productMediaReorderWithAFailingProjectionAnswersTheNullProductNotAnError() {
+        authenticateAs("dgs-media-provider-subject", "PROVIDER");
+        UUID productId = UUID.randomUUID();
+        UUID first = UUID.randomUUID();
+        when(productMediaWriteSpi.reorderProductMedia(eq(productId), any(), any())).thenReturn(
+                ProductMediaReorderResult.success(productId, List.of(
+                        new ProductMediaView(first, productId, 1))));
+        when(productReadSpi.findProductById(eq(productId), any())).thenThrow(
+                new IllegalStateException("the projection seam is down"));
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { productMediaReorder(productId: "%s", mediaIds: ["%s"]) {
+                    errors { field message code }
+                    media { id }
+                    product { id }
+                } }
+                """.formatted(productGlobalId(productId), productMediaGlobalId(first)),
+                "data.productMediaReorder");
+
+        assertThat(payload.get("errors")).isEqualTo(List.of());
+        assertThat(payload.get("product")).isNull();
+    }
+
+    /**
      * The domain validation outcome rides the payload's own errors field
      * — the registered "Mutation payload errors" ADAPT divergence: the
      * domain error entries map onto the Saleor ProductError vocabulary

@@ -90,6 +90,36 @@ class CmsNavigationGraphQlIntegrationTest {
                 .build();
     }
 
+    /**
+     * The 2026-11-05 #806 round-3 review (Minor · Functional
+     * Correctness): a NEGATIVE page size on the menus family answers the
+     * classified validation error (the VAL family through the real
+     * resolver), while zero stays the documented empty page — the old
+     * {@code <= 0} branch swallowed the client error into a success
+     * envelope.
+     */
+    @Test
+    void menusAndMenuItemsWithANegativeFirstAnswerTheClassifiedError() {
+        HttpGraphQlTester tester = testerFor(ADMIN_SUBJECT, "ADMIN");
+
+        tester.document("query { menus(first: -1) { totalCount } }")
+                .execute()
+                .errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
+                                .contains("menus first must not be negative")));
+        tester.document("query { menuItems(first: -1) { totalCount } }")
+                .execute()
+                .errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anySatisfy(error -> assertThat(error.getMessage())
+                                .contains("menuItems first must not be negative")));
+        // Zero stays the documented empty page.
+        tester.document("query { menus(first: 0) { totalCount edges { cursor } } }")
+                .execute()
+                .path("menus.totalCount").entity(Integer.class).isEqualTo(0);
+    }
+
     @Test
     void menuItemCreateReadsMenuAndParentFromSaleorInputAndPersistsTheTree() {
         HttpGraphQlTester admin = testerFor(ADMIN_SUBJECT, "ADMIN");

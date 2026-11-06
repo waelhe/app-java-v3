@@ -40,8 +40,10 @@ import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -370,7 +372,15 @@ public class CmsNavigationDataFetcher {
         }
         rejectChannel(channel);
         int requested = first == null ? properties.pagination().defaultPageSize() : first;
-        if (requested <= 0) {
+        // The 2026-11-05 #806 round-3 review (Minor · Functional
+        // Correctness): a NEGATIVE page size is a client error (the
+        // classified VAL-001 family), while zero and the absent value stay
+        // the documented empty page.
+        if (requested < 0) {
+            throw new IllegalArgumentException(
+                    "menus first must not be negative");
+        }
+        if (requested == 0) {
             return MenuCountableConnection.newBuilder()
                     .edges(List.of())
                     .pageInfo(pageInfoOf(null, null, false, false))
@@ -459,7 +469,14 @@ public class CmsNavigationDataFetcher {
         }
         rejectChannel(channel);
         int requested = first == null ? properties.pagination().defaultPageSize() : first;
-        if (requested <= 0) {
+        if (requested < 0) {
+            // The 2026-11-05 #806 round-3 review: a NEGATIVE page size is
+            // the classified VAL-001 client error; zero stays the
+            // documented empty page.
+            throw new IllegalArgumentException(
+                    "menuItems first must not be negative");
+        }
+        if (requested == 0) {
             return MenuItemCountableConnection.newBuilder()
                     .edges(List.of())
                     .pageInfo(pageInfoOf(null, null, false, false))
@@ -587,7 +604,17 @@ public class CmsNavigationDataFetcher {
         }
         int level = 0;
         UUID parentId = item.parentId();
-        while (parentId != null && level < 64) {
+        // The 2026-11-05 #806 round-3 review (Minor · Functional
+        // Correctness): the hop CAP (64) silently misreported the level
+        // of any chain deeper than 64 — the creator and mover impose no
+        // depth bound, so the rendered `level` must answer the true
+        // depth. The termination guard is the honest one: a visited set
+        // stops a cycle at its first repeat (the owner's cycle guard
+        // makes the case unreachable; the walk stays total regardless)
+        // without capping legitimate depth.
+        Set<UUID> visited = new HashSet<>();
+        visited.add(item.id());
+        while (parentId != null && visited.add(parentId)) {
             level++;
             CmsNavigationSpi.MenuItemView parent = byId.get(parentId);
             parentId = parent == null ? null : parent.parentId();

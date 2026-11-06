@@ -46,6 +46,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -351,6 +352,76 @@ class ProductTypeMutationDataFetcherDgsTest {
         assertThat(productType.get("id")).isEqualTo(productTypeGlobalId(rowId));
         assertThat(productType.get("name")).isEqualTo("Refreshed");
         assertThat(productType.get("slug")).isEqualTo("kept");
+    }
+
+    /**
+     * The 2026-11-05 #806 round-3 review (Minor · Functional
+     * Correctness): the field loader caches per execution, so a document
+     * that renders Product.productType BEFORE productTypeUpdate and again
+     * after it must never answer the SECOND render from the stale cached
+     * view — the mutation evicts the row it rewrote from this execution's
+     * loader cache and the next render re-reads the owner. Proven with
+     * two aliased media deletes (both render the owning product) around
+     * the type update, the owner answering the old name first and the
+     * renamed view after.
+     */
+    @Test
+    void productTypeUpdateEvictsTheFieldLoadersCachedRenderInTheSameDocument() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        UUID productId = UUID.randomUUID();
+        UUID typeId = UUID.randomUUID();
+        UUID firstMedia = UUID.randomUUID();
+        UUID secondMedia = UUID.randomUUID();
+        when(productMediaWriteSpi.deleteProductMedia(any(UUID.class), any())).thenAnswer(
+                invocation -> com.marketplace.media.spi.ProductMediaMutationResult.success(
+                        new com.marketplace.media.spi.ProductMediaView(
+                                invocation.getArgument(0), productId, 1),
+                        productId));
+        when(productReadSpi.findProductById(eq(productId), any())).thenReturn(
+                java.util.Optional.of(new com.marketplace.catalog.spi.ProductView(
+                        productId, "Machine", typeId, "ACTIVE")));
+        when(productTypeWriteSpi.updateProductType(eq(typeId), any())).thenReturn(
+                ProductTypeMutationResult.success(typeView(typeId, "Renamed", "kept")));
+        // The owner's first batch answers the OLD name; after the update
+        // (and the loader evict) the second batch answers the renamed view.
+        when(productTypeReadSpi.findProductTypesByIds(any(), any())).thenReturn(
+                        java.util.Map.of(typeId, java.util.Optional.of(typeView(typeId, "Old name", "kept"))))
+                .thenReturn(java.util.Map.of(typeId,
+                        java.util.Optional.of(typeView(typeId, "Renamed", "kept"))));
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation {
+                    first: productMediaDelete(id: "%s") { product { productType { name } } }
+                    update: productTypeUpdate(id: "%s", input: {name: "Renamed"}) { errors { code } }
+                    second: productMediaDelete(id: "%s") { product { productType { name } } }
+                }
+                """.formatted(productMediaGlobalIdOf(firstMedia), productTypeGlobalId(typeId),
+                        productMediaGlobalIdOf(secondMedia)),
+                "data");
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> first = (Map<String, Object>) payload.get("first");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> firstProduct = (Map<String, Object>) first.get("product");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> firstType = (Map<String, Object>) firstProduct.get("productType");
+        assertThat(firstType.get("name")).isEqualTo("Old name");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> second = (Map<String, Object>) payload.get("second");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> secondProduct = (Map<String, Object>) second.get("product");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> secondType = (Map<String, Object>) secondProduct.get("productType");
+        assertThat(secondType.get("name")).isEqualTo("Renamed");
+        // The owner read the type TWICE — once per render (the evict
+        // forced the second read; a stale cache would have answered it
+        // from the first).
+        verify(productTypeReadSpi, org.mockito.Mockito.times(2)).findProductTypesByIds(any(), any());
+    }
+
+    private static String productMediaGlobalIdOf(UUID id) {
+        return java.util.Base64.getEncoder()
+                .encodeToString(("ProductMedia:" + id).getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     /**
