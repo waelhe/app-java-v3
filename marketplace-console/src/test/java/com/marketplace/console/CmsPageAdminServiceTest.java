@@ -550,7 +550,10 @@ class CmsPageAdminServiceTest {
 
     @Test
     void createPageRefusesATakenSlug() {
-        when(pageTypeRepository.existsById(typeId)).thenReturn(true);
+        // The 2026-11-06 #810 round review: the creation leg's locked type
+        // load (the sibling createPage tests' own stub shape).
+        when(pageTypeRepository.findByIdForUpdate(typeId))
+                .thenReturn(Optional.of(CmsPageType.create("T", "t")));
         when(pageRepository.existsBySlug("taken")).thenReturn(true);
 
         assertThatThrownBy(() -> service.createPage(admin, "T", "taken", null, null, null,
