@@ -192,15 +192,19 @@ public class PasswordResetService {
                 return;
             }
         }
-        userRepository.findBySubject(subject).ifPresent(user -> {
+        // The lambda's own capture contract: the resolved subject (normalized,
+        // or the legacy exact-case store the fallback recovered) rides ONE
+        // effectively-final variable.
+        final String resolvedSubject = subject;
+        userRepository.findBySubject(resolvedSubject).ifPresent(user -> {
             authActionTokenService
-                    .issue(subject, AuthActionTokenPurpose.PASSWORD_RESET,
+                    .issue(resolvedSubject, AuthActionTokenPurpose.PASSWORD_RESET,
                             properties.passwordResetTtl())
                     .ifPresent(issued -> {
                         String resetLink = properties.mailBaseUrl() + RESET_ROUTE + issued.rawToken();
                         eventPublisher.publishEvent(new PasswordResetRequestedEvent(
                                 user.getId(), user.getDisplayName(), resetLink, issued.expiresAt()));
-                        log.info("Password reset token issued: subject={}", subject);
+                        log.info("Password reset token issued: subject={}", resolvedSubject);
                     });
         });
     }
