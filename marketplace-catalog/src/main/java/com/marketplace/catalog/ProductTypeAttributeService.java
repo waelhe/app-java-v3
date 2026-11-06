@@ -30,8 +30,27 @@ public class ProductTypeAttributeService {
     @Transactional(readOnly = true)
     @PreAuthorize("hasRole('PROVIDER') or hasRole('ADMIN')")
     public List<ProductTypeAttributeAssignment> list(UUID productTypeId) {
-        requireProductType(productTypeId);
-        return assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId);
+        // The 2026-11-06 #808 round review (Major · Stability &
+        // Availability): the read-only transaction CANNOT take the
+        // FOR-SHARE lock — PostgreSQL rejects SELECT ... FOR SHARE in a
+        // read-only transaction, so the list would answer a raw 500.
+        // The lock pairs the WRITE paths with the delete wall; a read
+        // surface never needed it (its own honest 404 stays).
+        productTypes.findById(productTypeId)
+                .orElseThrow(() -> new ResourceNotFoundException("ProductType", productTypeId));
+        // The 2026-11-06 #808 round review (Major · Functional
+        // Correctness): the SAME (position, scope, id) order the reorder
+        // path resolves its moves against — the read surface and the
+        // write surface share one bucket order, so a client's
+        // relative-move request addresses the neighbors it just read
+        // (the repository's scope-major order is not the position order
+        // when the two per-scope spaces overlap).
+        return assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId).stream()
+                .sorted(java.util.Comparator
+                        .comparingInt(ProductTypeAttributeAssignment::getPosition)
+                        .thenComparing(assignment -> assignment.getScope().ordinal())
+                        .thenComparing(ProductTypeAttributeAssignment::getId))
+                .toList();
     }
 
     @Observed(name = "catalog.product-type-attribute.assign")
@@ -40,7 +59,16 @@ public class ProductTypeAttributeService {
     public ProductTypeAttributeAssignment assign(UUID productTypeId, UUID attributeDefinitionId,
                                                  ProductTypeAttributeScope scope, boolean required, int position) {
         requireProductType(productTypeId);
-        CatalogAttributeDefinition definition = definitions.findById(attributeDefinitionId)
+        // The 2026-11-06 #808 round review (Major · Data Integrity &
+        // Integration): the definition read takes the row FOR SHARE —
+        // the attribute-delete path's FOR-UPDATE read of the same row
+        // serializes against THIS read (the assignment this method is
+        // about to create is the reference the delete's children-guard
+        // probes; an unlocked read let the delete pass with zero
+        // assignments while this insert was in flight — the FK accepts
+        // the physical row, the assignment stays live against a
+        // soft-deleted attribute).
+        CatalogAttributeDefinition definition = definitions.findByIdForShare(attributeDefinitionId)
                 .orElseThrow(() -> new ResourceNotFoundException("CatalogAttributeDefinition", attributeDefinitionId));
 
         if (scope == ProductTypeAttributeScope.VARIANT_SELECTION) {
@@ -75,6 +103,16 @@ public class ProductTypeAttributeService {
     }
 
     private void requireProductType(UUID id) {
-        productTypes.findById(id).orElseThrow(() -> new ResourceNotFoundException("ProductType", id));
+        // The 2026-11-06 #808 round review (Minor · Data Integrity &
+        // Integration): the FOR-SHARE read (PESSIMISTIC_READ, the
+        // deleteProductType B21 comment's own intended pairing) — an
+        // unlocked findById could read the type BEFORE the deleter's
+        // FOR-UPDATE lock, letting the delete's live-references count see
+        // zero and soft-delete the type, and the unlocked writer then
+        // committing an assignment that references a soft-deleted type
+        // (the FK accepts the physical row). The share lock serializes
+        // the create against the delete's committed verdict.
+        productTypes.findByIdForShare(id)
+                .orElseThrow(() -> new ResourceNotFoundException("ProductType", id));
     }
 }

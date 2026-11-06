@@ -94,7 +94,13 @@ public class ProductService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "StoreCategory", command.storeCategoryCode()));
         if (command.productTypeId() != null) {
-            productTypeRepository.findById(command.productTypeId())
+            // The 2026-11-06 #808 round review (Minor · Data Integrity &
+            // Integration): the FOR-SHARE read (the ProductWriteService
+            // register path's own precedent) — the unlocked findById let a
+            // concurrent deleteProductType's live-references count miss
+            // this in-flight product and soft-delete the type before this
+            // commit landed a live reference to it.
+            productTypeRepository.findByIdForShare(command.productTypeId())
                     .orElseThrow(() -> new ResourceNotFoundException("ProductType", command.productTypeId()));
         }
         UUID providerId = currentUserProvider.getCurrentUserId(authentication);

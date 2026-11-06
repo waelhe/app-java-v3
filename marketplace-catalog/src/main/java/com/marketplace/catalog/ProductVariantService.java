@@ -1,13 +1,8 @@
 package com.marketplace.catalog;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -53,6 +48,7 @@ public class ProductVariantService {
     private final CatalogAttributeDefinitionRepository definitions;
     private final CatalogAttributeOptionRepository options;
     private final ProductVariantAttributeValueRepository attributeValues;
+    private final ProductTypeRepository productTypes;
 
     public ProductVariantService(ProductVariantRepository variantRepository,
                                  ProductRepository productRepository,
@@ -60,7 +56,8 @@ public class ProductVariantService {
                                  ProductTypeAttributeAssignmentRepository assignments,
                                  CatalogAttributeDefinitionRepository definitions,
                                  CatalogAttributeOptionRepository options,
-                                 ProductVariantAttributeValueRepository attributeValues) {
+                                 ProductVariantAttributeValueRepository attributeValues,
+                                 ProductTypeRepository productTypes) {
         this.variantRepository = variantRepository;
         this.productRepository = productRepository;
         this.currentUserProvider = currentUserProvider;
@@ -68,6 +65,7 @@ public class ProductVariantService {
         this.definitions = definitions;
         this.options = options;
         this.attributeValues = attributeValues;
+        this.productTypes = productTypes;
     }
 
     /**
@@ -86,9 +84,32 @@ public class ProductVariantService {
             throw new ConflictException("SKU '" + command.sku() + "' is already used by variant "
                     + existing.getId() + " in this seller's namespace");
         });
+        // The 2026-11-06 #808 round (Minor · Data Integrity), extended to
+        // this register surface by the same proven root cause: V219's
+        // unique index is GLOBAL (a soft-deleted variant keeps its SKU
+        // reserved) while the derived probe above is filtered to live
+        // rows — the raw-table count answers the same friendly 409
+        // BEFORE the save dies on the constraint (the write service's
+        // own correction, mirrored here).
+        if (variantRepository.countSkuReservationsIncludingDeleted(providerId, command.sku()) > 0) {
+            throw new ConflictException("SKU '" + command.sku()
+                    + "' is already reserved in this seller's namespace");
+        }
         List<ProductTypeAttributeAssignment> typeAssignments = product.getProductTypeId() == null
                 ? List.of()
-                : assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(product.getProductTypeId());
+                // The 2026-11-06 #808 round review (Major · Data Integrity &
+                // Integration): the type row is read FOR SHARE BEFORE the
+                // assignments and held to COMMIT — updateAssignments holds
+                // the same row FOR UPDATE while it moves scopes and
+                // re-keys the affected variants, so this registration
+                // either sees the post-move schema whole (the share lock
+                // waited for the move's commit) or commits its variant
+                // before the move's guard walks it (the move's re-key
+                // covers it). An unlocked read let the registration derive
+                // its combination key on a stale schema and commit a
+                // duplicate under the new one. The type-less legacy
+                // product path stays unlocked (nothing to derive).
+                : readAssignmentsUnderTypeShareLock(product.getProductTypeId());
         List<ValidatedVariantAttribute> preparedValues = validateVariantAttributes(
                 product, typeAssignments, command.attributeValues());
         String combinationKey = canonicalCombinationKey(typeAssignments, preparedValues);
@@ -104,6 +125,20 @@ public class ProductVariantService {
                     .toList());
         }
         return saved;
+    }
+
+    /**
+     * The 2026-11-06 #808 round review (Major · Data Integrity &amp;
+     * Integration): the type row's FOR-SHARE read followed by the
+     * assignment load — the share lock is HELD to the registration's
+     * commit (the updateAssignments FOR-UPDATE writer serializes against
+     * it), so the schema this registration derives its combination key
+     * from is the schema the move-guarded writers themselves committed.
+     */
+    private List<ProductTypeAttributeAssignment> readAssignmentsUnderTypeShareLock(UUID productTypeId) {
+        productTypes.findByIdForShare(productTypeId)
+                .orElseThrow(() -> new ResourceNotFoundException("ProductType", productTypeId));
+        return assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId);
     }
 
     private List<ValidatedVariantAttribute> validateVariantAttributes(
@@ -159,6 +194,21 @@ public class ProductVariantService {
                 throw new ConflictException("VARIANT_SELECTION values must be CHOICE attributes");
             }
             if (definition.getValueType() == CatalogAttributeType.CHOICE) {
+                // The 2026-11-06 #808 round review (Major · Data Integrity
+                // & Integration): the option reference this registration is
+                // about to create takes the definition row FOR SHARE (the
+                // ProductTypeRepository.findByIdForShare precedent) — the
+                // option-delete guard's FOR-UPDATE read of the same row
+                // serializes against THIS read, so the guard's
+                // existsByOptionId probe can no longer answer zero while a
+                // reference is in flight (the probe's verdict is
+                // COMMITTED-stable). Without the share lock the guard's
+                // refusal was a TOCTOU: probe-at-t0, reference-committed-at-t1,
+                // delete-committed-at-t2 — the read path then rendered a
+                // soft-deleted option's id forever.
+                definitions.findByIdForShare(definition.getId())
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                "CatalogAttributeDefinition", definition.getId()));
                 CatalogAttributeOption option = options.findById(value.optionId())
                         .orElseThrow(() -> new ResourceNotFoundException("CatalogAttributeOption", value.optionId()));
                 if (!option.getAttributeDefinitionId().equals(definition.getId())) {
@@ -184,17 +234,14 @@ public class ProductVariantService {
         if (selectionAssignments.isEmpty()) return null;
         Map<UUID, CatalogAttributeValueInput> byAssignment = new HashMap<>();
         values.forEach(v -> byAssignment.put(v.assignment().getId(), v.input()));
-        String canonical = selectionAssignments.stream()
-                .filter(a -> byAssignment.containsKey(a.getId()))
-                .sorted(Comparator.comparing(a -> a.getId().toString()))
-                .map(a -> a.getId() + "=" + byAssignment.get(a.getId()).optionId())
-                .reduce((left, right) -> left + "\n" + right).orElse("");
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest);
-        } catch (NoSuchAlgorithmException impossible) {
-            throw new IllegalStateException("JDK SHA-256 implementation is required", impossible);
-        }
+        // The 2026-11-06 #808 round review (Major · Data Integrity &
+        // Integration): the derivation itself moved to the ONE shared
+        // home (VariantCombinationKeys) — the assignment-scope move guard
+        // re-derives existing variants' keys over the post-move schema
+        // with the SAME bytes this registration path computes, so a
+        // recomputed key and a fresh registration's key can never diverge
+        // by accident of a duplicated algorithm.
+        return VariantCombinationKeys.canonical(selectionAssignments, byAssignment);
     }
 
     private record ValidatedVariantAttribute(ProductTypeAttributeAssignment assignment,
