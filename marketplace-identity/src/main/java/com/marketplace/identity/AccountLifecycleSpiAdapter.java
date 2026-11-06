@@ -81,8 +81,19 @@ public class AccountLifecycleSpiAdapter implements AccountLifecycleSpi {
         if (email == null || token == null) {
             return;
         }
+        // The 2026-11-06 session-9 #806 final review (Minor · Functional
+        // Correctness): the ownership comparison is case-INSENSITIVE on
+        // both sides — the REST registration path stores the subject
+        // verbatim (AuthController.register trims but never lowercases,
+        // so mixed-case subjects exist) while the GraphQL accountRegister
+        // normalizes to lowercase, and a case-sensitive equals falsely
+        // rejected the CORRECT owner whenever the two sides normalized
+        // differently (the valid link answered "not valid for the
+        // identified account").
+        java.util.function.Predicate<String> sameAccount =
+                owner -> owner.trim().equalsIgnoreCase(email.trim());
         authActionTokenService.accountOf(token, purpose)
-                .filter(owner -> !owner.equals(email))
+                .filter(sameAccount.negate())
                 .ifPresent(owner -> {
                     throw new com.marketplace.shared.api.BadRequestException(
                             "This link is not valid for the identified account");

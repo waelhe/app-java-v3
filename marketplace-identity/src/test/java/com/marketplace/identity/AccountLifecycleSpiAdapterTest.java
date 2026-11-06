@@ -88,6 +88,49 @@ class AccountLifecycleSpiAdapterTest {
     }
 
     @Test
+    void theTokenOwnershipComparisonIsCaseInsensitiveOnBothSides() {
+        // The 2026-11-06 session-9 #806 final review (Minor · Functional
+        // Correctness): the REST registration path stores the subject
+        // verbatim (mixed case) while the GraphQL accountRegister
+        // lowercases — the CORRECT owner was falsely rejected whenever
+        // the two sides normalized differently. The ownership verdict is
+        // case-insensitive; the redemption still reaches its owner.
+        when(authActionTokenService.accountOf("verify-token",
+                com.marketplace.identity.AuthActionTokenPurpose.EMAIL_VERIFICATION))
+                .thenReturn(java.util.Optional.of("Member@Example.com"));
+
+        adapter.confirmAccount("member@example.com", "verify-token");
+        verify(emailVerificationService).completeVerification("verify-token");
+
+        // And the mirrored direction: a lowercased owner, a mixed-case
+        // caller — the valid link redeems either way.
+        when(authActionTokenService.accountOf("reset-token",
+                com.marketplace.identity.AuthActionTokenPurpose.PASSWORD_RESET))
+                .thenReturn(java.util.Optional.of("member@example.com"));
+
+        adapter.completePasswordReset("  Member@Example.COM ", "reset-token", "new-password");
+        verify(passwordResetService).completeReset("reset-token", "new-password");
+    }
+
+    @Test
+    void aKnownTokenOfADifferentAccountIsStillRefused() {
+        // The case-insensitive verdict is still an OWNERSHIP verdict: a
+        // known token minted for another account answers the classified
+        // bad-request refusal HERE and the owning service's consume never
+        // runs.
+        when(authActionTokenService.accountOf("verify-token",
+                com.marketplace.identity.AuthActionTokenPurpose.EMAIL_VERIFICATION))
+                .thenReturn(java.util.Optional.of("other@example.com"));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> adapter.confirmAccount("member@example.com", "verify-token"))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class)
+                .hasMessage("This link is not valid for the identified account");
+        verify(emailVerificationService, org.mockito.Mockito.never())
+                .completeVerification(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
     void theTokenLegsDelegateToTheirOwners() {
         adapter.deactivateAllTokens(caller);
         verify(tokenRevocationService).deactivateAllFor(caller);
