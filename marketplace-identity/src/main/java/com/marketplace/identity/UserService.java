@@ -249,7 +249,12 @@ public class UserService implements IdentitySpi {
      */
     public User register(String email, String rawPassword, String displayName) {
         requireDisplayNameBound(displayName);
-        requireRegisterableEmail(email);
+        // The 2026-11-06 #810 round review: the address is NORMALIZED first
+        // (trim + lowercase(Locale.ROOT)) — the shape/bound validation then
+        // reads the SAME form the store keeps, so a whitespace-padded or
+        // mixed-case input validates and stores once.
+        String subject = email == null ? null : email.trim().toLowerCase(java.util.Locale.ROOT);
+        requireRegisterableEmail(subject);
         // The shared password-shape gate FIRST (PasswordPolicy — 8..72
         // characters AND at most 72 UTF-8 bytes, the bcrypt ceiling): the
         // DTO's @Size counts characters only, so a compact-but-long
@@ -258,15 +263,12 @@ public class UserService implements IdentitySpi {
         if (!PasswordPolicy.withinSharedPolicy(rawPassword)) {
             throw PasswordPolicy.violation();
         }
-        // The 2026-11-06 #810 round review (Major · Functional
-        // Correctness): the case-insensitive account-identifier discipline
-        // the reset/verification legs already assume — the subject is
-        // normalized (trim + lowercase(Locale.ROOT)) BEFORE the duplicate
-        // check and the row write, so a mixed-case registration stores the
-        // SAME row the reset request's normalized lookup resolves, and a
-        // second registration differing in case alone answers the honest
-        // 409 instead of minting a near-duplicate account.
-        String subject = email.trim().toLowerCase(java.util.Locale.ROOT);
+        // The case-insensitive account-identifier discipline the
+        // reset/verification legs already assume — a mixed-case
+        // registration stores the SAME row the reset request's normalized
+        // lookup resolves, and a second registration differing in case
+        // alone answers the honest 409 instead of minting a
+        // near-duplicate account.
         if (userRepository.existsBySubject(subject)
                 || userDetailsManager.userExists(subject)) {
             throw new ConflictException("An account already exists for this email");
@@ -312,10 +314,11 @@ public class UserService implements IdentitySpi {
 
                               boolean enabled) {
         requireDisplayNameBound(displayName);
-        requireRegisterableEmail(email);
         // The 2026-11-06 #810 round review — the staff leg carries the
-        // same normalized-identifier discipline register now carries.
-        String subject = email.trim().toLowerCase(java.util.Locale.ROOT);
+        // same normalize-then-validate, normalized-identifier discipline
+        // register now carries.
+        String subject = email == null ? null : email.trim().toLowerCase(java.util.Locale.ROOT);
+        requireRegisterableEmail(subject);
         if (userRepository.existsBySubject(subject)
                 || userDetailsManager.userExists(subject)) {
             throw new ConflictException("An account already exists for this email");
