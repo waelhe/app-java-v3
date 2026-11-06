@@ -39,6 +39,15 @@ import org.hibernate.envers.Audited;
  * AGENTS.md rule (the V219 {@code product_variants_aud} mirror).
  */
 @Entity
+// The 2026-11-06 #808 round review (Major · Data Integrity & Integration):
+// the scope-move guard's recombine() manages the row and flushes beside a
+// concurrent reserve/commit/restock — the default full-column UPDATE would
+// rewrite the stock counters with the values AS LOADED (a lost update: an
+// open reservation vanishing, a shelf drifting). Hibernate's documented
+// @DynamicUpdate narrows the UPDATE to the DIRTY columns alone (here:
+// option_combination_key), so the money-path counters stay the atomic
+// writes' own.
+@org.hibernate.annotations.DynamicUpdate
 @Table(name = "product_variants")
 @Audited
 public class ProductVariant extends BaseEntity {

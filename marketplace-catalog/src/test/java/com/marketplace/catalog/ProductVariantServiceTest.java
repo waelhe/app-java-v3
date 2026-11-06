@@ -16,6 +16,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.instancio.Select.field;
 import static org.mockito.ArgumentMatchers.any;
@@ -58,6 +59,7 @@ class ProductVariantServiceTest {
     private CatalogAttributeOptionRepository options;
     @Mock
     private ProductVariantAttributeValueRepository attributeValues;
+    private ProductTypeRepository productTypes;
     @Mock
     private Authentication authentication;
 
@@ -68,8 +70,16 @@ class ProductVariantServiceTest {
 
     @BeforeEach
     void setUp() {
+        productTypes = mock(ProductTypeRepository.class);
+        // The 2026-11-06 #808 round (Major · Data Integrity): register
+        // reads the product TYPE for share before the assignments — the
+        // lenient default answers the type for any typed registration
+        // (tests override the rare negative cases).
+        org.mockito.Mockito.lenient().when(productTypes.findByIdForShare(org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(invocation -> Optional.of(
+                        ProductType.create("typed", "Typed", "مصنف", null)));
         service = new ProductVariantService(variantRepository, productRepository, currentUserProvider,
-                assignments, definitions, options, attributeValues);
+                assignments, definitions, options, attributeValues, productTypes);
     }
 
     /** The owning product — the seller's own live shelf, the register-honest fresh shape. */

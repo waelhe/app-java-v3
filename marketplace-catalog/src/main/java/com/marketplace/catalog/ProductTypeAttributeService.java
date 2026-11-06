@@ -30,7 +30,14 @@ public class ProductTypeAttributeService {
     @Transactional(readOnly = true)
     @PreAuthorize("hasRole('PROVIDER') or hasRole('ADMIN')")
     public List<ProductTypeAttributeAssignment> list(UUID productTypeId) {
-        requireProductType(productTypeId);
+        // The 2026-11-06 #808 round review (Major · Stability &
+        // Availability): the read-only transaction CANNOT take the
+        // FOR-SHARE lock — PostgreSQL rejects SELECT ... FOR SHARE in a
+        // read-only transaction, so the list would answer a raw 500.
+        // The lock pairs the WRITE paths with the delete wall; a read
+        // surface never needed it (its own honest 404 stays).
+        productTypes.findById(productTypeId)
+                .orElseThrow(() -> new ResourceNotFoundException("ProductType", productTypeId));
         // The 2026-11-06 #808 round review (Major · Functional
         // Correctness): the SAME (position, scope, id) order the reorder
         // path resolves its moves against — the read surface and the
@@ -52,7 +59,16 @@ public class ProductTypeAttributeService {
     public ProductTypeAttributeAssignment assign(UUID productTypeId, UUID attributeDefinitionId,
                                                  ProductTypeAttributeScope scope, boolean required, int position) {
         requireProductType(productTypeId);
-        CatalogAttributeDefinition definition = definitions.findById(attributeDefinitionId)
+        // The 2026-11-06 #808 round review (Major · Data Integrity &
+        // Integration): the definition read takes the row FOR SHARE —
+        // the attribute-delete path's FOR-UPDATE read of the same row
+        // serializes against THIS read (the assignment this method is
+        // about to create is the reference the delete's children-guard
+        // probes; an unlocked read let the delete pass with zero
+        // assignments while this insert was in flight — the FK accepts
+        // the physical row, the assignment stays live against a
+        // soft-deleted attribute).
+        CatalogAttributeDefinition definition = definitions.findByIdForShare(attributeDefinitionId)
                 .orElseThrow(() -> new ResourceNotFoundException("CatalogAttributeDefinition", attributeDefinitionId));
 
         if (scope == ProductTypeAttributeScope.VARIANT_SELECTION) {

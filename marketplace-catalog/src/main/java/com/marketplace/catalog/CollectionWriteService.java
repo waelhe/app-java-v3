@@ -201,7 +201,12 @@ public class CollectionWriteService implements CollectionWriteSpi {
         // The live membership rides the same transaction (the membership
         // rows reference the collection — the registry's own referential
         // law; a soft-deleted membership releases the pair for a later
-        // re-add, the release-on-delete law).
+        // re-add, the release-on-delete law). The 2026-11-06 #808 round
+        // review (Minor · Stability & Availability): the collection's
+        // advisory lock serializes the membership drain against a
+        // concurrent append — the pair index never sees an insert race a
+        // deleting drain.
+        collectionProductRepository.lockCollectionPositionAllocation(row.getId().toString());
         for (CollectionProduct member : collectionProductRepository
                 .findByCollectionIdOrderByPositionAscIdAsc(row.getId())) {
             collectionProductRepository.delete(member);
@@ -218,12 +223,19 @@ public class CollectionWriteService implements CollectionWriteSpi {
             return 0;
         }
         int deleted = 0;
-        for (UUID id : ids) {
+        // The 2026-11-06 #808 round review (Minor · Stability &
+        // Availability): the bulk drain takes each collection's advisory
+        // lock in a FIXED id order — two overlapping bulk deletes can
+        // never deadlock against each other or against a concurrent
+        // append (the single delete's own law, in the bulk's
+        // deterministic form).
+        for (UUID id : ids.stream().filter(java.util.Objects::nonNull).sorted().toList()) {
             // Unknown ids are skipped — the honest affected count answers
             // what the registry itself deleted (never a fabricated count,
             // never an error entry for an id the registry never knew).
-            Optional<Collection> addressed = id == null ? Optional.empty() : collectionRepository.findById(id);
+            Optional<Collection> addressed = collectionRepository.findById(id);
             if (addressed.isPresent()) {
+                collectionProductRepository.lockCollectionPositionAllocation(id.toString());
                 for (CollectionProduct member : collectionProductRepository
                         .findByCollectionIdOrderByPositionAscIdAsc(id)) {
                     collectionProductRepository.delete(member);
@@ -245,6 +257,18 @@ public class CollectionWriteService implements CollectionWriteSpi {
             return CollectionMutationResult.failure(List.of(new CollectionMutationError(
                     "id", CollectionMutationErrorCode.NOT_FOUND, "No collection found for the id")));
         }
+        // The 2026-11-06 #808 round review (Minor · Stability &
+        // Availability): the collection's position-allocation advisory
+        // lock is taken BEFORE the membership prechecks — the append's
+        // own lock used to sit AFTER them, so two concurrent addProducts
+        // for the same pair both passed the precheck and the loser died
+        // on the partial unique index's raw error instead of the
+        // classified DUPLICATED_INPUT_ITEM (the reorder's own B6 law,
+        // hoisted to the whole write). The delete paths take the SAME
+        // lock, so a concurrent collection delete serializes against
+        // this append (never a live membership left behind a
+        // soft-deleted collection).
+        collectionProductRepository.lockCollectionPositionAllocation(collectionId.toString());
         List<CollectionMutationError> errors = new ArrayList<>();
         List<UUID> duplicated = duplicatedIds(productIds);
         if (!duplicated.isEmpty()) {

@@ -58,6 +58,7 @@ class AttributeWriteServiceTest {
     private CatalogAttributeDefinitionRepository repository;
     private CatalogAttributeOptionRepository optionRepository;
     private ProductTypeAttributeAssignmentRepository assignmentRepository;
+    private ProductVariantAttributeValueRepository variantAttributeValues;
     private AttributeWriteSpi service;
 
     @BeforeEach
@@ -65,7 +66,15 @@ class AttributeWriteServiceTest {
         repository = mock(CatalogAttributeDefinitionRepository.class);
         optionRepository = mock(CatalogAttributeOptionRepository.class);
         assignmentRepository = mock(ProductTypeAttributeAssignmentRepository.class);
-        service = new AttributeWriteService(repository, optionRepository, assignmentRepository);
+        // The 2026-11-06 #808 round: the delete guards' live-variant probe
+        // answers NO references by default (each test overrides it).
+        variantAttributeValues = mock(ProductVariantAttributeValueRepository.class);
+        org.mockito.Mockito.lenient()
+                .when(variantAttributeValues.existsLiveVariantValueForAssignmentsOrOptions(
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(false);
+        service = new AttributeWriteService(repository, optionRepository, assignmentRepository,
+                variantAttributeValues);
     }
 
     private static CatalogAttributeDefinition row(String code, String nameEn) {
@@ -301,6 +310,58 @@ class AttributeWriteServiceTest {
         verify(repository, never()).save(any());
     }
 
+    @Test
+    void deleteRefusesWhenALiveVariantCarriesTheAttributesChildren() {
+        // The 2026-11-06 #808 round review (Major · Data Integrity): the
+        // attribute's assignments and options ARE the variant schema —
+        // deleting them under live variant values leaves the values bound
+        // to soft-deleted assignments and the keys computed on a dead
+        // schema. The refusal is the honest verdict: variants migrate
+        // first.
+        CatalogAttributeDefinition existing = row("held-attr", "Held");
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
+        org.mockito.Mockito.when(variantAttributeValues.existsLiveVariantValueForAssignmentsOrOptions(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(true);
+
+        AttributeMutationResult result = service.deleteAttribute(existing.getId());
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(AttributeMutationError::code, AttributeMutationError::field)
+                .containsExactly(AttributeMutationErrorCode.INVALID, "id");
+        verify(repository, never()).delete(any(CatalogAttributeDefinition.class));
+    }
+
+    @Test
+    void bulkDeleteSkipsTheAttributesALiveVariantStillCarries() {
+        // The same round: the bulk leg's honest-skip form of the same
+        // refusal — the count answers only what the registry itself
+        // deleted.
+        CatalogAttributeDefinition free = row("free-attr", "Free");
+        CatalogAttributeDefinition held = row("held-attr", "Held");
+        when(repository.findByIdForUpdate(free.getId())).thenReturn(Optional.of(free));
+        when(repository.findByIdForUpdate(held.getId())).thenReturn(Optional.of(held));
+        // The probe discriminates on the ASSIGNMENT ids the attribute's
+        // children carry: the held attribute has a live assignment, the
+        // free one has none.
+        ProductTypeAttributeAssignment heldAssignment = ProductTypeAttributeAssignment.create(
+                UUID.randomUUID(), held.getId(), ProductTypeAttributeScope.VARIANT_SELECTION, true, 1);
+        when(assignmentRepository.findAllByAttributeDefinitionId(held.getId()))
+                .thenReturn(List.of(heldAssignment));
+        when(assignmentRepository.findAllByAttributeDefinitionId(free.getId()))
+                .thenReturn(List.of());
+        org.mockito.Mockito.when(variantAttributeValues.existsLiveVariantValueForAssignmentsOrOptions(
+                org.mockito.ArgumentMatchers.anyCollection(), org.mockito.ArgumentMatchers.anyCollection()))
+                .thenAnswer(invocation -> !((java.util.Collection<?>) invocation.getArgument(0)).isEmpty());
+
+        int count = service.deleteAttributes(java.util.Arrays.asList(free.getId(), held.getId()));
+
+        assertThat(count).isEqualTo(1);
+        verify(repository).delete(free);
+        verify(repository, never()).delete(held);
+    }
+
     // ------------------------------------------------------------------
     // deleteAttribute / deleteAttributes
     // ------------------------------------------------------------------
@@ -308,7 +369,7 @@ class AttributeWriteServiceTest {
     @Test
     void deleteOfAnUnknownRowAnswersTheNotFoundDomainError() {
         UUID unknown = UUID.randomUUID();
-        when(repository.findById(unknown)).thenReturn(Optional.empty());
+        when(repository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
 
         AttributeMutationResult result = service.deleteAttribute(unknown);
 
@@ -321,7 +382,7 @@ class AttributeWriteServiceTest {
     @Test
     void deleteAnswersTheLastKnownProjection() {
         CatalogAttributeDefinition existing = row("gone-attr", "Gone");
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
 
         AttributeMutationResult result = service.deleteAttribute(existing.getId());
 
@@ -343,7 +404,7 @@ class AttributeWriteServiceTest {
                 existing.getId(), "gone-opt", "Gone Opt", null, 1);
         ProductTypeAttributeAssignment assignment = ProductTypeAttributeAssignment.create(
                 UUID.randomUUID(), existing.getId(), ProductTypeAttributeScope.PRODUCT, false, 1);
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(optionRepository.findAllByAttributeDefinitionIdOrderByPositionAsc(existing.getId()))
                 .thenReturn(List.of(option));
         when(assignmentRepository.findAllByAttributeDefinitionId(existing.getId()))
@@ -362,7 +423,7 @@ class AttributeWriteServiceTest {
         CatalogAttributeDefinition first = row("first-attr", "First");
         CatalogAttributeOption firstOption = CatalogAttributeOption.create(
                 first.getId(), "first-opt", "First Opt", null, 1);
-        when(repository.findById(first.getId())).thenReturn(Optional.of(first));
+        when(repository.findByIdForUpdate(first.getId())).thenReturn(Optional.of(first));
         when(optionRepository.findAllByAttributeDefinitionIdOrderByPositionAsc(first.getId()))
                 .thenReturn(List.of(firstOption));
         when(assignmentRepository.findAllByAttributeDefinitionId(first.getId()))
@@ -379,8 +440,8 @@ class AttributeWriteServiceTest {
     void bulkDeleteAnswersTheHonestCount() {
         CatalogAttributeDefinition first = row("first-attr", "First");
         CatalogAttributeDefinition second = row("second-attr", "Second");
-        when(repository.findById(first.getId())).thenReturn(Optional.of(first));
-        when(repository.findById(second.getId())).thenReturn(Optional.of(second));
+        when(repository.findByIdForUpdate(first.getId())).thenReturn(Optional.of(first));
+        when(repository.findByIdForUpdate(second.getId())).thenReturn(Optional.of(second));
 
         // Arrays.asList carries the null member the honest-skip case
         // feeds the owner (List.of's own null refusal is not the seam).
@@ -409,7 +470,7 @@ class AttributeWriteServiceTest {
         // fallback rule); a nameEn row renders nameEn.
         CatalogAttributeDefinition arOnly = CatalogAttributeDefinition.create(
                 "ar-attr", null, "الاسم العربي فقط", CatalogAttributeType.TEXT, null);
-        when(repository.findById(arOnly.getId())).thenReturn(Optional.of(arOnly));
+        when(repository.findByIdForUpdate(arOnly.getId())).thenReturn(Optional.of(arOnly));
 
         AttributeMutationResult result = service.deleteAttribute(arOnly.getId());
 

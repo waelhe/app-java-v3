@@ -152,7 +152,7 @@ class ProductTypeAttributeWriteServiceTest {
     @Test
     void aVariantSelectionRequiresTheChoiceValueShape() {
         CatalogAttributeDefinition text = definition("text-attr", CatalogAttributeType.TEXT);
-        when(attributeDefinitionRepository.findById(text.getId())).thenReturn(Optional.of(text));
+        when(attributeDefinitionRepository.findByIdForShare(text.getId())).thenReturn(Optional.of(text));
 
         ProductTypeMutationResult result = service.assignAttributes(type.getId(),
                 List.of(new ProductTypeAttributeAssignOperation(text.getId(), "VARIANT", true)));
@@ -165,7 +165,7 @@ class ProductTypeAttributeWriteServiceTest {
     @Test
     void aVariantSelectionRequiresAtLeastTwoOptions() {
         CatalogAttributeDefinition choice = definition("choice-attr", CatalogAttributeType.CHOICE);
-        when(attributeDefinitionRepository.findById(choice.getId())).thenReturn(Optional.of(choice));
+        when(attributeDefinitionRepository.findByIdForShare(choice.getId())).thenReturn(Optional.of(choice));
         when(attributeOptionRepository.countByAttributeDefinitionId(choice.getId())).thenReturn(1L);
 
         ProductTypeMutationResult result = service.assignAttributes(type.getId(),
@@ -179,7 +179,7 @@ class ProductTypeAttributeWriteServiceTest {
     @Test
     void aDuplicateAssignmentAnswersTheAlreadyExistsDomainError() {
         CatalogAttributeDefinition attribute = definition("attr", CatalogAttributeType.TEXT);
-        when(attributeDefinitionRepository.findById(attribute.getId())).thenReturn(Optional.of(attribute));
+        when(attributeDefinitionRepository.findByIdForShare(attribute.getId())).thenReturn(Optional.of(attribute));
         when(assignmentRepository.existsByProductTypeIdAndAttributeDefinitionId(type.getId(), attribute.getId()))
                 .thenReturn(true);
 
@@ -199,7 +199,7 @@ class ProductTypeAttributeWriteServiceTest {
         // of the same attribute (the unique index would otherwise answer
         // with an unclassified constraint throw).
         CatalogAttributeDefinition attribute = definition("attr", CatalogAttributeType.TEXT);
-        when(attributeDefinitionRepository.findById(attribute.getId())).thenReturn(Optional.of(attribute));
+        when(attributeDefinitionRepository.findByIdForShare(attribute.getId())).thenReturn(Optional.of(attribute));
         when(assignmentRepository.existsByProductTypeIdAndAttributeDefinitionId(type.getId(), attribute.getId()))
                 .thenReturn(false);
 
@@ -223,8 +223,8 @@ class ProductTypeAttributeWriteServiceTest {
         // would otherwise refuse the saveAll with a constraint throw).
         CatalogAttributeDefinition first = definition("first-attr", CatalogAttributeType.TEXT);
         CatalogAttributeDefinition second = definition("second-attr", CatalogAttributeType.TEXT);
-        when(attributeDefinitionRepository.findById(first.getId())).thenReturn(Optional.of(first));
-        when(attributeDefinitionRepository.findById(second.getId())).thenReturn(Optional.of(second));
+        when(attributeDefinitionRepository.findByIdForShare(first.getId())).thenReturn(Optional.of(first));
+        when(attributeDefinitionRepository.findByIdForShare(second.getId())).thenReturn(Optional.of(second));
         when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
                 .thenReturn(List.of());
         when(assignmentRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -255,8 +255,8 @@ class ProductTypeAttributeWriteServiceTest {
         // over the same starting shape: one existing PRODUCT-scope row at
         // position 1.
         CatalogAttributeDefinition size = definition("size-attr", CatalogAttributeType.TEXT);
-        when(attributeDefinitionRepository.findById(text.getId())).thenReturn(Optional.of(text));
-        when(attributeDefinitionRepository.findById(choice.getId())).thenReturn(Optional.of(choice));
+        when(attributeDefinitionRepository.findByIdForShare(text.getId())).thenReturn(Optional.of(text));
+        when(attributeDefinitionRepository.findByIdForShare(choice.getId())).thenReturn(Optional.of(choice));
         when(attributeOptionRepository.countByAttributeDefinitionId(choice.getId())).thenReturn(3L);
         when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
                 .thenReturn(List.of(assigned(size, ProductTypeAttributeScope.PRODUCT, 1)));
@@ -305,7 +305,7 @@ class ProductTypeAttributeWriteServiceTest {
         ProductTypeAttributeAssignment assignment = assigned(text, ProductTypeAttributeScope.VARIANT, 1);
         when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
                 .thenReturn(List.of(assignment));
-        when(attributeDefinitionRepository.findById(text.getId())).thenReturn(Optional.of(text));
+        when(attributeDefinitionRepository.findByIdForShare(text.getId())).thenReturn(Optional.of(text));
 
         ProductTypeMutationResult result = service.updateAssignments(type.getId(),
                 List.of(new ProductTypeAttributeAssignmentUpdateOperation(text.getId(), true)));
@@ -321,7 +321,7 @@ class ProductTypeAttributeWriteServiceTest {
         ProductTypeAttributeAssignment assignment = assigned(choice, ProductTypeAttributeScope.VARIANT, 1);
         when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
                 .thenReturn(List.of(assignment));
-        when(attributeDefinitionRepository.findById(choice.getId())).thenReturn(Optional.of(choice));
+        when(attributeDefinitionRepository.findByIdForShare(choice.getId())).thenReturn(Optional.of(choice));
         when(attributeOptionRepository.countByAttributeDefinitionId(choice.getId())).thenReturn(2L);
         when(assignmentRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -348,7 +348,7 @@ class ProductTypeAttributeWriteServiceTest {
                 ProductTypeAttributeScope.VARIANT_SELECTION, 1);
         when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
                 .thenReturn(List.of(moved, targetHolder));
-        when(attributeDefinitionRepository.findById(choice.getId())).thenReturn(Optional.of(choice));
+        when(attributeDefinitionRepository.findByIdForShare(choice.getId())).thenReturn(Optional.of(choice));
         when(attributeOptionRepository.countByAttributeDefinitionId(choice.getId())).thenReturn(2L);
         when(assignmentRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -597,6 +597,35 @@ class ProductTypeAttributeWriteServiceTest {
         verify(assignmentRepository, never()).saveAll(any());
     }
 
+    @Test
+    void theUnassignRefusesWhenALiveVariantCarriesTheAssignment() {
+        // The 2026-11-06 #808 round review (Major · Data Integrity): the
+        // whole request resolves FIRST — an assignment carrying live
+        // variant values answers the classified INVALID refusal and
+        // NOTHING is deleted (the unassignment's remove-shape of the
+        // scope-move guard's own law).
+        CatalogAttributeDefinition choice = definition("choice-attr", CatalogAttributeType.CHOICE);
+        ProductTypeAttributeAssignment held = assigned(choice,
+                ProductTypeAttributeScope.VARIANT_SELECTION, 1);
+        ProductTypeAttributeAssignment free = assigned(
+                definition("free-choice", CatalogAttributeType.CHOICE),
+                ProductTypeAttributeScope.PRODUCT, 1);
+        when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
+                .thenReturn(List.of(held, free));
+        when(variantAttributeValues.existsLiveVariantValueForAssignmentsOrOptions(
+                org.mockito.ArgumentMatchers.anyCollection(), org.mockito.ArgumentMatchers.anyCollection()))
+                .thenReturn(true);
+
+        ProductTypeMutationResult result = service.unassignAttributes(type.getId(),
+                List.of(choice.getId(), free.getId()));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductTypeMutationError::code, ProductTypeMutationError::field)
+                .containsExactly(ProductTypeMutationErrorCode.INVALID, "id");
+        verify(assignmentRepository, never()).delete(any(ProductTypeAttributeAssignment.class));
+    }
+
     // ------------------------------------------------------------------
     // updateAssignments — the 2026-11-06 #808 round's own verdicts
     // ------------------------------------------------------------------
@@ -615,7 +644,7 @@ class ProductTypeAttributeWriteServiceTest {
         // The first operation's own VARIANT_SELECTION gate passes (the
         // CHOICE shape and the two-option floor) — the ONLY error left is
         // the duplicate itself.
-        when(attributeDefinitionRepository.findById(choice.getId())).thenReturn(Optional.of(choice));
+        when(attributeDefinitionRepository.findByIdForShare(choice.getId())).thenReturn(Optional.of(choice));
         when(attributeOptionRepository.countByAttributeDefinitionId(choice.getId())).thenReturn(2L);
 
         ProductTypeMutationResult result = service.updateAssignments(type.getId(), List.of(
@@ -644,7 +673,7 @@ class ProductTypeAttributeWriteServiceTest {
                 ProductTypeAttributeScope.VARIANT_SELECTION, 1);
         when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
                 .thenReturn(List.of(moved, existing));
-        when(attributeDefinitionRepository.findById(choice.getId())).thenReturn(Optional.of(choice));
+        when(attributeDefinitionRepository.findByIdForShare(choice.getId())).thenReturn(Optional.of(choice));
         when(attributeOptionRepository.countByAttributeDefinitionId(choice.getId())).thenReturn(2L);
         Product product = Product.register("cat-code", "Affected", null, 1000L, "SAR",
                 UUID.randomUUID(), type.getId());
@@ -734,7 +763,7 @@ class ProductTypeAttributeWriteServiceTest {
                 ProductTypeAttributeScope.VARIANT, 1);
         when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
                 .thenReturn(List.of(keptAssignment, movedAssignment));
-        when(attributeDefinitionRepository.findById(moved.getId())).thenReturn(Optional.of(moved));
+        when(attributeDefinitionRepository.findByIdForShare(moved.getId())).thenReturn(Optional.of(moved));
         when(attributeOptionRepository.countByAttributeDefinitionId(moved.getId())).thenReturn(2L);
         when(assignmentRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(variantRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));

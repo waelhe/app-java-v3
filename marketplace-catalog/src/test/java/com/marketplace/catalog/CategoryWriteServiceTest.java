@@ -49,7 +49,11 @@ class CategoryWriteServiceTest {
     @BeforeEach
     void setUp() {
         repository = mock(CategoryRepository.class);
-        service = new CategoryWriteService(repository);
+        // The 2026-11-06 #808 round: the INSERT rides the executor's own
+        // transaction door (the AdBillingBatchExecutor precedent) — a REAL
+        // executor over the mocked repository carries the saveAndFlush
+        // stubs and throws exactly as the service's in-tx version did.
+        service = new CategoryWriteService(repository, new CategoryCreationExecutor(repository));
     }
 
     private static Category row(String code, String nameEn, int position) {

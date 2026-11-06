@@ -88,13 +88,17 @@ public class AttributeWriteService implements AttributeWriteSpi {
     private final CatalogAttributeDefinitionRepository attributeDefinitionRepository;
     private final CatalogAttributeOptionRepository attributeOptionRepository;
     private final ProductTypeAttributeAssignmentRepository assignmentRepository;
+    /** The live-variant reference probe the delete guards read (the 2026-11-06 #808 round). */
+    private final ProductVariantAttributeValueRepository variantAttributeValues;
 
     public AttributeWriteService(CatalogAttributeDefinitionRepository attributeDefinitionRepository,
                                  CatalogAttributeOptionRepository attributeOptionRepository,
-                                 ProductTypeAttributeAssignmentRepository assignmentRepository) {
+                                 ProductTypeAttributeAssignmentRepository assignmentRepository,
+                                 ProductVariantAttributeValueRepository variantAttributeValues) {
         this.attributeDefinitionRepository = attributeDefinitionRepository;
         this.attributeOptionRepository = attributeOptionRepository;
         this.assignmentRepository = assignmentRepository;
+        this.variantAttributeValues = variantAttributeValues;
     }
 
     @Override
@@ -199,15 +203,37 @@ public class AttributeWriteService implements AttributeWriteSpi {
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     public AttributeMutationResult deleteAttribute(UUID id) {
+        // The 2026-11-06 #808 round review (Major · Data Integrity &
+        // Integration): the FOR-UPDATE load — the assignment-creating
+        // paths read this row FOR SHARE (the ProductTypeAttributeService
+        // .assign / assignAttributes pairing), so the delete's
+        // children-guard verdict is COMMITTED-stable against an
+        // in-flight assignment save (never a live assignment left
+        // pointing at a soft-deleted attribute).
         Optional<CatalogAttributeDefinition> addressed = id == null
                 ? Optional.empty()
-                : attributeDefinitionRepository.findById(id);
+                : attributeDefinitionRepository.findByIdForUpdate(id);
         if (addressed.isEmpty()) {
             return AttributeMutationResult.failure(List.of(new AttributeMutationError(
                     "id", AttributeMutationErrorCode.NOT_FOUND, "No attribute found for the id")));
         }
         CatalogAttributeDefinition row = addressed.get();
         AttributeView lastKnown = toView(row);
+        // The 2026-11-06 #808 round review (Major · Data Integrity &
+        // Integration): the live-variant-values guard — the attribute's
+        // assignments and options ARE the variant schema; deleting them
+        // while a live variant carries their values leaves the value
+        // rows bound to soft-deleted assignments and the variant keys
+        // computed on a dead schema (a fresh registration under the
+        // shrunk schema could then duplicate the combination). The
+        // refuse is the honest verdict: the variants migrate first,
+        // then the attribute goes.
+        if (variantAttributeValuesLiveFor(row.getId())) {
+            return AttributeMutationResult.failure(List.of(new AttributeMutationError(
+                    "id", AttributeMutationErrorCode.INVALID,
+                    "An attribute whose assignments or options are referenced by a live"
+                            + " variant cannot be deleted — migrate the variants first")));
+        }
         // The wave-19 #808 review (Major · Data Integrity): the soft delete
         // updates only the definition's own is_deleted flag — the live
         // option and assignment rows would keep referencing a deleted
@@ -235,8 +261,13 @@ public class AttributeWriteService implements AttributeWriteSpi {
             // never an error entry for an id the registry never knew).
             Optional<CatalogAttributeDefinition> addressed = id == null
                     ? Optional.empty()
-                    : attributeDefinitionRepository.findById(id);
-            if (addressed.isPresent()) {
+                    // The 2026-11-06 #808 round review (Major · Data
+                    // Integrity): the bulk leg rides the SAME FOR-UPDATE
+                    // load and the SAME live-variant-values guard — the
+                    // single-item leg's own refusal, in the bulk's
+                    // honest-skip form.
+                    : attributeDefinitionRepository.findByIdForUpdate(id);
+            if (addressed.isPresent() && !variantAttributeValuesLiveFor(id)) {
                 // The single delete's cascade (the same wave-19 law): the
                 // children go with every deleted attribute row.
                 deleteAttributeChildren(id);
@@ -466,6 +497,27 @@ public class AttributeWriteService implements AttributeWriteSpi {
         List<ProductTypeAttributeAssignment> assignments = assignmentRepository
                 .findAllByAttributeDefinitionId(attributeId);
         assignmentRepository.deleteAll(assignments);
+    }
+
+    /**
+     * The 2026-11-06 #808 round review (Major · Data Integrity &amp;
+     * Integration): whether ANY live variant carries a value bound to the
+     * attribute's own children (its assignments or its options) — the
+     * delete's refusal probe (the single-item leg's classified INVALID,
+     * the bulk leg's honest skip; the values-and-keys migration demand
+     * the finding names).
+     */
+    private boolean variantAttributeValuesLiveFor(UUID attributeId) {
+        List<UUID> optionIds = attributeOptionRepository
+                .findAllByAttributeDefinitionIdOrderByPositionAsc(attributeId).stream()
+                .map(CatalogAttributeOption::getId)
+                .toList();
+        List<UUID> assignmentIds = assignmentRepository
+                .findAllByAttributeDefinitionId(attributeId).stream()
+                .map(ProductTypeAttributeAssignment::getId)
+                .toList();
+        return variantAttributeValues.existsLiveVariantValueForAssignmentsOrOptions(
+                assignmentIds, optionIds);
     }
 
     /** The bounded projection — the read service's own rendering rule. */

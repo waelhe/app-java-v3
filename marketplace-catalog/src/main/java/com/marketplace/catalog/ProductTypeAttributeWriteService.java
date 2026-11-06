@@ -131,7 +131,14 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
                 continue;
             }
             Optional<CatalogAttributeDefinition> definition = operation.attributeId() == null
-                    ? Optional.empty() : attributeDefinitionRepository.findById(operation.attributeId());
+                    // The 2026-11-06 #808 round review (Major · Data
+                    // Integrity & Integration): the reference-CREATING
+                    // read takes the definition row FOR SHARE — the
+                    // attribute-delete wall's FOR-UPDATE read of the same
+                    // row serializes against the assignment this method
+                    // is about to save (the ProductTypeAttributeService
+                    // .assign pairing verbatim).
+                    ? Optional.empty() : attributeDefinitionRepository.findByIdForShare(operation.attributeId());
             if (definition.isEmpty()) {
                 errors.add(new ProductTypeMutationError("id", ProductTypeMutationErrorCode.NOT_FOUND,
                         "No attribute found for the id"));
@@ -252,7 +259,11 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
             if (target == ProductTypeAttributeScope.VARIANT_SELECTION
                     && assignment.getScope() != ProductTypeAttributeScope.VARIANT_SELECTION) {
                 Optional<CatalogAttributeDefinition> definition =
-                        attributeDefinitionRepository.findById(operation.attributeId());
+                        // The same round: the CHOICE-gate read rides the
+                        // FOR-SHARE row lock (the move stages a reference-
+                        // carrying assignment; the delete wall serializes
+                        // against it).
+                        attributeDefinitionRepository.findByIdForShare(operation.attributeId());
                 if (definition.isEmpty()
                         || definition.get().getValueType() != CatalogAttributeType.CHOICE) {
                     errors.add(new ProductTypeMutationError("id", ProductTypeMutationErrorCode.INVALID,
@@ -431,10 +442,35 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
                     "No product type found for the id")));
         }
         // Unknown ids are the owner's own honest skip — the payload's
-        // empty error list answers the registry's own truth.
+        // empty error list answers the registry's own truth. The
+        // 2026-11-06 #808 round review (Major · Data Integrity &
+        // Integration): the whole REQUEST is resolved FIRST and its
+        // verdict passes BEFORE any assignment is deleted — an
+        // unassigned VARIANT_SELECTION assignment would leave the live
+        // variant values bound to a soft-deleted assignment and the
+        // variant keys computed on the dead schema (a fresh registration
+        // under the shrunk schema could then duplicate the combination;
+        // the updateAssignments scope-move guard's own law, applied to
+        // the unassignment's remove-shape). An assignment carrying live
+        // variant values answers the classified INVALID refusal — the
+        // variants migrate first, then the assignment goes.
+        List<ProductTypeAttributeAssignment> addressedAssignments = new ArrayList<>();
         for (UUID attributeId : attributeIds) {
             findAssignment(productTypeId, attributeId)
-                    .ifPresent(assignmentRepository::delete);
+                    .ifPresent(addressedAssignments::add);
+        }
+        if (!addressedAssignments.isEmpty()
+                && variantAttributeValues.existsLiveVariantValueForAssignmentsOrOptions(
+                        addressedAssignments.stream()
+                                .map(ProductTypeAttributeAssignment::getId).toList(),
+                        List.of())) {
+            return ProductTypeMutationResult.failure(List.of(new ProductTypeMutationError(
+                    "id", ProductTypeMutationErrorCode.INVALID,
+                    "An assignment referenced by a live variant cannot be unassigned — "
+                            + "migrate the variants first")));
+        }
+        for (ProductTypeAttributeAssignment assignment : addressedAssignments) {
+            assignmentRepository.delete(assignment);
         }
         return ProductTypeMutationResult.success(toView(type.get()));
     }

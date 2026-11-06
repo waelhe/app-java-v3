@@ -30,13 +30,30 @@ class ProductTypeAttributeServiceTest {
         service = new ProductTypeAttributeService(productTypes, definitions, options, assignments);
         // The 2026-11-06 #808 round (#10): the reference-creating assign
         // path reads the type FOR SHARE (the deleteProductType FOR-UPDATE
-        // wall's own pairing) — the stub rides the locked read.
+        // wall's own pairing) — the stub rides the locked read. The round's
+        // follow-up (Major · Stability): the READ-ONLY list path keeps the
+        // PLAIN findById — PostgreSQL rejects FOR SHARE inside a read-only
+        // transaction, so the list would answer a raw 500.
+        when(productTypes.findById(typeId)).thenReturn(Optional.of(
+                ProductType.create("apparel", "Apparel", "ملابس", null)));
         when(productTypes.findByIdForShare(typeId)).thenReturn(Optional.of(
                 ProductType.create("apparel", "Apparel", "ملابس", null)));
     }
 
+    @Test void listReadsTheTypeWithoutTheShareLock() {
+        // The 2026-11-06 #808 round review (Major · Stability): the
+        // read-only list path keeps the PLAIN findById — PostgreSQL
+        // rejects FOR SHARE inside a read-only transaction, and the list
+        // would answer a raw 500 instead of the roster.
+        service.list(typeId);
+
+        verify(productTypes).findById(typeId);
+        verify(productTypes, never()).findByIdForShare(any());
+        verify(productTypes, never()).findByIdForUpdate(any());
+    }
+
     @Test void variantSelectionRequiresChoiceAndAtLeastTwoOptions() {
-        when(definitions.findById(attributeId)).thenReturn(Optional.of(
+        when(definitions.findByIdForShare(attributeId)).thenReturn(Optional.of(
                 CatalogAttributeDefinition.create("color", "Color", "اللون", CatalogAttributeType.CHOICE, null)));
         when(options.countByAttributeDefinitionId(attributeId)).thenReturn(2L);
         when(assignments.existsByProductTypeIdAndAttributeDefinitionId(typeId, attributeId)).thenReturn(false);
@@ -51,13 +68,13 @@ class ProductTypeAttributeServiceTest {
     }
 
     @Test void variantSelectionRejectsNonChoiceAndInsufficientOptions() {
-        when(definitions.findById(attributeId)).thenReturn(Optional.of(
+        when(definitions.findByIdForShare(attributeId)).thenReturn(Optional.of(
                 CatalogAttributeDefinition.create("weight", "Weight", "الوزن", CatalogAttributeType.NUMBER, null)));
         assertThatThrownBy(() -> service.assign(typeId, attributeId, ProductTypeAttributeScope.VARIANT_SELECTION, true, 0))
                 .isInstanceOf(ConflictException.class).hasMessageContaining("CHOICE");
         verify(assignments, never()).save(any());
 
-        when(definitions.findById(attributeId)).thenReturn(Optional.of(
+        when(definitions.findByIdForShare(attributeId)).thenReturn(Optional.of(
                 CatalogAttributeDefinition.create("size", "Size", "المقاس", CatalogAttributeType.CHOICE, null)));
         when(options.countByAttributeDefinitionId(attributeId)).thenReturn(1L);
         assertThatThrownBy(() -> service.assign(typeId, attributeId, ProductTypeAttributeScope.VARIANT_SELECTION, true, 0))
@@ -66,7 +83,7 @@ class ProductTypeAttributeServiceTest {
     }
 
     @Test void variantSelectionCannotBeDeclaredOptional() {
-        when(definitions.findById(attributeId)).thenReturn(Optional.of(
+        when(definitions.findByIdForShare(attributeId)).thenReturn(Optional.of(
                 CatalogAttributeDefinition.create("color", "Color", "اللون", CatalogAttributeType.CHOICE, null)));
         when(options.countByAttributeDefinitionId(attributeId)).thenReturn(2L);
         assertThatThrownBy(() -> service.assign(typeId, attributeId,
@@ -76,7 +93,7 @@ class ProductTypeAttributeServiceTest {
     }
 
     @Test void duplicateAssignmentAndDuplicatePositionAreRejected() {
-        when(definitions.findById(attributeId)).thenReturn(Optional.of(
+        when(definitions.findByIdForShare(attributeId)).thenReturn(Optional.of(
                 CatalogAttributeDefinition.create("material", "Material", "الخامة", CatalogAttributeType.TEXT, null)));
         when(assignments.existsByProductTypeIdAndAttributeDefinitionId(typeId, attributeId)).thenReturn(true);
         assertThatThrownBy(() -> service.assign(typeId, attributeId, ProductTypeAttributeScope.PRODUCT, false, 0))

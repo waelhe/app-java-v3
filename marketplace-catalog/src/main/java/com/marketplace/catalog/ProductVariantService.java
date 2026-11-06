@@ -48,6 +48,7 @@ public class ProductVariantService {
     private final CatalogAttributeDefinitionRepository definitions;
     private final CatalogAttributeOptionRepository options;
     private final ProductVariantAttributeValueRepository attributeValues;
+    private final ProductTypeRepository productTypes;
 
     public ProductVariantService(ProductVariantRepository variantRepository,
                                  ProductRepository productRepository,
@@ -55,7 +56,8 @@ public class ProductVariantService {
                                  ProductTypeAttributeAssignmentRepository assignments,
                                  CatalogAttributeDefinitionRepository definitions,
                                  CatalogAttributeOptionRepository options,
-                                 ProductVariantAttributeValueRepository attributeValues) {
+                                 ProductVariantAttributeValueRepository attributeValues,
+                                 ProductTypeRepository productTypes) {
         this.variantRepository = variantRepository;
         this.productRepository = productRepository;
         this.currentUserProvider = currentUserProvider;
@@ -63,6 +65,7 @@ public class ProductVariantService {
         this.definitions = definitions;
         this.options = options;
         this.attributeValues = attributeValues;
+        this.productTypes = productTypes;
     }
 
     /**
@@ -94,7 +97,19 @@ public class ProductVariantService {
         }
         List<ProductTypeAttributeAssignment> typeAssignments = product.getProductTypeId() == null
                 ? List.of()
-                : assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(product.getProductTypeId());
+                // The 2026-11-06 #808 round review (Major · Data Integrity &
+                // Integration): the type row is read FOR SHARE BEFORE the
+                // assignments and held to COMMIT — updateAssignments holds
+                // the same row FOR UPDATE while it moves scopes and
+                // re-keys the affected variants, so this registration
+                // either sees the post-move schema whole (the share lock
+                // waited for the move's commit) or commits its variant
+                // before the move's guard walks it (the move's re-key
+                // covers it). An unlocked read let the registration derive
+                // its combination key on a stale schema and commit a
+                // duplicate under the new one. The type-less legacy
+                // product path stays unlocked (nothing to derive).
+                : readAssignmentsUnderTypeShareLock(product.getProductTypeId());
         List<ValidatedVariantAttribute> preparedValues = validateVariantAttributes(
                 product, typeAssignments, command.attributeValues());
         String combinationKey = canonicalCombinationKey(typeAssignments, preparedValues);
@@ -110,6 +125,20 @@ public class ProductVariantService {
                     .toList());
         }
         return saved;
+    }
+
+    /**
+     * The 2026-11-06 #808 round review (Major · Data Integrity &amp;
+     * Integration): the type row's FOR-SHARE read followed by the
+     * assignment load — the share lock is HELD to the registration's
+     * commit (the updateAssignments FOR-UPDATE writer serializes against
+     * it), so the schema this registration derives its combination key
+     * from is the schema the move-guarded writers themselves committed.
+     */
+    private List<ProductTypeAttributeAssignment> readAssignmentsUnderTypeShareLock(UUID productTypeId) {
+        productTypes.findByIdForShare(productTypeId)
+                .orElseThrow(() -> new ResourceNotFoundException("ProductType", productTypeId));
+        return assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId);
     }
 
     private List<ValidatedVariantAttribute> validateVariantAttributes(

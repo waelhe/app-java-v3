@@ -83,9 +83,13 @@ public class CategoryWriteService implements CategoryWriteSpi {
     private static final String CODE_UNIQUENESS_CONSTRAINT = "uq_categories_code";
 
     private final CategoryRepository categoryRepository;
+    /** The insert's own transaction door (the 2026-11-06 #808 round — the AdBillingBatchExecutor precedent). */
+    private final CategoryCreationExecutor creationExecutor;
 
-    public CategoryWriteService(CategoryRepository categoryRepository) {
+    public CategoryWriteService(CategoryRepository categoryRepository,
+                                 CategoryCreationExecutor creationExecutor) {
         this.categoryRepository = categoryRepository;
+        this.creationExecutor = creationExecutor;
     }
 
     @Override
@@ -123,13 +127,16 @@ public class CategoryWriteService implements CategoryWriteSpi {
         }
         Category created;
         try {
-            // saveAndFlush (not save): the INSERT must flush INSIDE the
-            // try so the loser of a concurrent same-code create answers
-            // the classified error here — a deferred flush would surface
-            // the violation at commit, past this boundary (the
-            // VoucherWriteService flush-seam precedent).
-            created = categoryRepository.saveAndFlush(
-                    Category.create(code, name, null, nextPosition()));
+            // The 2026-11-06 #808 round review (Minor · Data Integrity &
+            // Integration): the INSERT moved to the executor's OWN
+            // transaction — the violation marks the flushing transaction
+            // rollback-only, and a catch inside it returns into a commit
+            // that throws UnexpectedRollbackException instead of the
+            // classified result (the finding's exact 500). Crossing the
+            // executor's boundary the loser arrives fully rolled back,
+            // and the classification below answers it honestly (the
+            // AdBillingBatchExecutor precedent verbatim).
+            created = creationExecutor.insert(code, name);
         } catch (DataIntegrityViolationException violation) {
             // The 2026-11-06 #808 round (Minor · Stability &
             // Availability): the reserved-code precheck is honest but
