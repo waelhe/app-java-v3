@@ -304,10 +304,10 @@ class UserDataFetcherDgsTest {
         List<Map<String, Object>> permissions = (List<Map<String, Object>>) me.get("userPermissions");
         assertThat(permissions)
                 .extracting(p -> p.get("code"))
-                .containsExactly("MANAGE_USERS", "MANAGE_STAFF", "MANAGE_ORDERS");
+                .containsExactly("MANAGE_USERS", "MANAGE_STAFF", "MANAGE_DISCOUNTS", "MANAGE_ORDERS");
         assertThat(permissions)
                 .extracting(p -> p.get("name"))
-                .containsExactly("Manage users.", "Manage staff.", "Manage orders.");
+                .containsExactly("Manage users.", "Manage staff.", "Manage discounts.", "Manage orders.");
     }
 
     /**

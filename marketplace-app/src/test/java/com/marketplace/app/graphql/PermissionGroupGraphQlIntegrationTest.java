@@ -137,9 +137,9 @@ class PermissionGroupGraphQlIntegrationTest {
                 // The Admin group's granted permission codes — the tested
                 // catalog rendering of the ADMIN role's capabilities.
                 .path("permissionGroups.edges[0].node.permissions[*].code").entityList(String.class)
-                .containsExactly("MANAGE_USERS", "MANAGE_STAFF", "MANAGE_ORDERS")
+                .containsExactly("MANAGE_USERS", "MANAGE_STAFF", "MANAGE_DISCOUNTS", "MANAGE_ORDERS")
                 .path("permissionGroups.edges[0].node.permissions[*].name").entityList(String.class)
-                .containsExactly("Manage users.", "Manage staff.", "Manage orders.")
+                .containsExactly("Manage users.", "Manage staff.", "Manage discounts.", "Manage orders.")
                 // The Consumer group's honest empty capability set.
                 .path("permissionGroups.edges[1].node.permissions").entityList(Object.class).hasSize(0)
                 // The Provider group's ownership-scoped capability.
@@ -296,7 +296,7 @@ class PermissionGroupGraphQlIntegrationTest {
                 .path("permissionGroup.name").entity(String.class).isEqualTo("Admin")
                 .path("permissionGroup.userCanManage").entity(Boolean.class).isEqualTo(true)
                 .path("permissionGroup.permissions[*].code").entityList(String.class)
-                .containsExactly("MANAGE_USERS", "MANAGE_STAFF", "MANAGE_ORDERS");
+                .containsExactly("MANAGE_USERS", "MANAGE_STAFF", "MANAGE_DISCOUNTS", "MANAGE_ORDERS");
 
         // The wire identity is the deterministic native handle: the same
         // group answers the same global ID on a fresh list read.
