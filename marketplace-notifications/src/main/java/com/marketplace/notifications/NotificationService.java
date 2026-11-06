@@ -495,6 +495,51 @@ public class NotificationService {
     }
 
     /**
+     * B11 (ORD-03 — the 2026-11-03 adversarial review, review-pr-811): the
+     * account self-deletion journey's mail leg. The event's own frozen
+     * contract (the payload-exception convention: the one-time credential
+     * IS the mail's content) carried no consumer since its landing — the
+     * journey froze at the token issue. The same measured exception as the
+     * password-reset pair above: the mail channel ALONE (the caller asked
+     * to LEAVE the application; no in-app row can reach them), no
+     * preference gate on a security mail.
+     */
+    public void onAccountDeletionRequested(UUID userId, String email, String deletionToken,
+                                           java.time.Instant expiresAt) {
+        long expirationMinutes = Math.max(0,
+                java.time.Duration.between(java.time.Instant.now(), expiresAt).toMinutes());
+        // The 2026-11-05 #810 round review: the explicit-address send (the
+        // event's pinned email — the email-change leg's own sendEmailTo
+        // shape), never the userId-keyed CURRENT-address lookup.
+        emailNotificationService.sendEmailTo(email, "Confirm Your Account Deletion",
+                "email/account-deletion",
+                Map.of("deletionToken", deletionToken,
+                        "expirationMinutes", expirationMinutes));
+    }
+
+    /**
+     * B11 (ORD-03): the email-change journey's mail leg — the same frozen
+     * payload-exception contract and the same mail-only exception (the
+     * redemption right belongs to the NEW address's mailbox, which no
+     * in-app channel can reach yet).
+     */
+    public void onEmailChangeRequested(UUID userId, String oldEmail, String newEmail,
+                                       String changeToken, java.time.Instant expiresAt) {
+        long expirationMinutes = Math.max(0,
+                java.time.Duration.between(java.time.Instant.now(), expiresAt).toMinutes());
+        // The redemption right belongs to the NEW address's mailbox (the
+        // pinned Saleor behavior: the change confirmation mails the new
+        // address — possession of the one-time token is the proof the new
+        // address works, which is the whole point of the confirmation).
+        emailNotificationService.sendEmailTo(newEmail, "Confirm Your Email Change",
+                "email/email-change",
+                Map.of("oldEmail", oldEmail,
+                        "newEmail", newEmail,
+                        "changeToken", changeToken,
+                        "expirationMinutes", expirationMinutes));
+    }
+
+    /**
      * A-11 (official-compliance plan §6 wave C — C.1: the order machine's
      * CONFIRMED leg). The recipient is the order's CONSUMER alone — the
      * party waiting on the merchant's acceptance. The same delivery shape

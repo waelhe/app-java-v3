@@ -20,6 +20,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -91,6 +92,33 @@ class PasswordResetServiceTest {
         assertThat(event.getValue().resetLink())
                 .isEqualTo("http://localhost:3000/reset-password?token=raw-one-time-token");
         assertThat(event.getValue().expiresAt()).isEqualTo(NOW.plus(TTL));
+    }
+
+    @Test
+    void requestReset_normalizesAMixedCaseAddressToTheStoredIdentifier() {
+        // The 2026-11-05 #806 round-3 review (Major): registration
+        // lowercases before storing and the login lookups are
+        // case-sensitive - a mixed-case reset request would MISS the
+        // account and silently no-op the mail. The service seam now
+        // applies the same discipline for BOTH transports (the GraphQL
+        // root and the REST controller).
+        when(userDetailsManager.userExists(EMAIL)).thenReturn(true);
+        when(userRepository.findBySubject(EMAIL)).thenReturn(Optional.of(member()));
+        when(authActionTokenService.issue(eq(EMAIL),
+                org.mockito.ArgumentMatchers.any(AuthActionTokenPurpose.class),
+                org.mockito.ArgumentMatchers.eq(TTL)))
+                .thenReturn(Optional.of(new AuthActionTokenService.IssuedToken(
+                        "raw-one-time-token", NOW.plus(TTL))));
+
+        service.requestReset("  Member@Example.COM ");
+
+        // The stored (lowercase) identifier - never the raw input shape.
+        verify(userDetailsManager).userExists(EMAIL);
+        verify(userRepository).findBySubject(EMAIL);
+        verify(authActionTokenService).issue(eq(EMAIL),
+                org.mockito.ArgumentMatchers.eq(AuthActionTokenPurpose.PASSWORD_RESET),
+                org.mockito.ArgumentMatchers.eq(TTL));
+        verify(eventPublisher).publishEvent(any(PasswordResetRequestedEvent.class));
     }
 
     @Test

@@ -182,6 +182,26 @@ class UserServiceTest {
     }
 
     @Test
+    void register_normalizesMixedCaseAddressesLikeTheResetLookup() {
+        // The 2026-11-06 #810 round review (Major · Functional
+        // Correctness): the case-insensitive account-identifier discipline
+        // — the stored subject (and email column) is the NORMALIZED
+        // address the reset request's own normalized lookup resolves, so
+        // a mixed-case registration and a lowercase reset request hit the
+        // SAME account (and the duplicate check closes the case-only
+        // near-duplicate hole).
+        when(userRepository.existsBySubject("mixed@example.com")).thenReturn(false);
+        when(userDetailsManager.userExists("mixed@example.com")).thenReturn(false);
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        User created = userService.register("  Mixed@Example.COM ", "clear-password", "Mixed");
+
+        assertEquals("mixed@example.com", created.getSubject());
+        assertEquals("mixed@example.com", created.getEmail());
+        verify(emailVerificationService).issueFor("mixed@example.com");
+    }
+
+    @Test
     void register_loginSideRemnantWithoutDomainRowAlsoAnswersConflict() {
         // The drifted-pair stock the S2/N4/N6 work documented: a login side
         // without its domain row must not be silently re-adopted by a
@@ -775,6 +795,26 @@ class UserServiceTest {
     /** The derivation result the mocked SubjectPseudonymizer hands back. */
     private static final String DERIVED_SUBJECT =
             "anon-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    /**
+     * Row 7 (agent findings 2026-10-26 14:33 export, CWE-613): the
+     * login-identity move's own aftermath — the retired subject's grants
+     * die AND the surviving-session kill fact is published in the same
+     * transaction (consumed AFTER_COMMIT under the retired name — the
+     * name the session index is built on), so a live browser session
+     * authenticated under the retired subject cannot keep minting fresh
+     * authorization codes after the move.
+     */
+    @Test
+    void loginIdentityMoved_killsTheRetiredGrants_andPublishesTheSessionKillFact() {
+        userService.loginIdentityMoved("retired-subject@example.com");
+
+        verify(jdbcTemplate).update(UserService.DELETE_AUTHORIZATIONS_BY_PRINCIPAL,
+                "retired-subject@example.com");
+        verify(eventPublisher).publishEvent(any(CacheInvalidationRequested.class));
+        verify(eventPublisher).publishEvent(
+                new com.marketplace.shared.api.AccountLoginIdentityMoved("retired-subject@example.com"));
+    }
 
     // Review round (CodeRabbit on the 4a split, 2026-10-28): the @Test was
     // missing — JUnit never ran this test, and the invalidateOutstanding →
