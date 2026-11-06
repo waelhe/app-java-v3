@@ -68,7 +68,7 @@ public class CmsPageAdminService implements CmsPageSpi {
                                UUID pageTypeId) {
         requireAdmin(caller);
         String trimmedTitle = requireTitle(title);
-        UUID type = requirePageTypeExists(pageTypeId);
+        UUID type = requirePageTypeExistsForCreate(pageTypeId);
         requireFieldLimits(slug, seoTitle, seoDescription);
         String resolvedSlug = requireFreeSlug(slug == null || slug.isBlank()
                 ? slugify(trimmedTitle) : slug.trim());
@@ -294,7 +294,12 @@ public class CmsPageAdminService implements CmsPageSpi {
     @Observed(name = "cms.page_type.delete")
     public PageTypeView deletePageType(Authentication caller, UUID id) {
         requireAdmin(caller);
-        CmsPageType row = requirePageType(id);
+        // The 2026-11-06 #810 round review (Minor · Data Integrity): the
+        // locked load — the reference check and the attribute wipe ride
+        // the SAME serialization the assignment family carries, so a
+        // concurrent assignPageTypeAttributes or createPage cannot
+        // interleave a committed reference to the deleted type.
+        CmsPageType row = requirePageTypeForUpdate(id);
         if (pageRepository.existsByPageTypeId(id)) {
             throw new ConflictException(
                     "Pages still reference the page type — move or delete them first");
@@ -312,7 +317,10 @@ public class CmsPageAdminService implements CmsPageSpi {
         requireAdmin(caller);
         int count = 0;
         for (UUID id : ids) {
-            Optional<CmsPageType> row = pageTypeRepository.findById(id);
+            // The 2026-11-06 #810 round review — the bulk leg rides the
+            // same locked load + reference check the single delete
+            // carries (the honest per-row skip stays).
+            Optional<CmsPageType> row = pageTypeRepository.findByIdForUpdate(id);
             if (row.isPresent() && !pageRepository.existsByPageTypeId(id)) {
                 attributeRepository.findAllByPageTypeIdOrderByPositionAscIdAsc(id)
                         .forEach(attributeRepository::delete);
@@ -622,8 +630,16 @@ public class CmsPageAdminService implements CmsPageSpi {
                 .orElseThrow(() -> new ResourceNotFoundException("No page type " + id));
     }
 
-    private UUID requirePageTypeExists(UUID id) {
-        if (id == null || !pageTypeRepository.existsById(id)) {
+    /**
+     * The 2026-11-06 #810 round review (Minor · Data Integrity): the
+          * page-creation leg's type reference serializes on the type row —
+     * the PESSIMISTIC_WRITE load the delete path carries, so a page
+     * creation and the type's deletion cannot interleave a committed
+     * orphan (a live page referencing a soft-deleted type).
+     */
+    private UUID requirePageTypeExistsForCreate(UUID id) {
+        if (id == null
+                || pageTypeRepository.findByIdForUpdate(id).isEmpty()) {
             throw new ResourceNotFoundException("No page type " + id);
         }
         return id;
@@ -644,6 +660,14 @@ public class CmsPageAdminService implements CmsPageSpi {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("A page type name is required");
         }
+        // The 2026-11-06 #810 round review (Minor · Functional
+        // Correctness): the create path's own 255 bound (cms_page_types'
+        // VARCHAR(255) columns) — the classified validation error, never
+        // the flush's raw database error; the derived slug (slugify of a
+        // long name) is bounded on the slug leg below.
+        if (name.trim().length() > 255) {
+            throw new IllegalArgumentException("The page type name exceeds 255 characters");
+        }
         return name.trim();
     }
 
@@ -657,6 +681,11 @@ public class CmsPageAdminService implements CmsPageSpi {
 
     private String requireFreeTypeSlug(String slug) {
         requireSlugShape(slug);
+        // The 2026-11-06 #810 round review: the slug's own 255 bound —
+        // the derived slug (a slugify of a long name) lands here too.
+        if (slug.length() > 255) {
+            throw new IllegalArgumentException("The slug exceeds 255 characters");
+        }
         if (pageTypeRepository.existsBySlug(slug)) {
             throw new ConflictException("The slug already exists: " + slug);
         }

@@ -75,14 +75,26 @@ public class AccountLifecycleSpiAdapter implements AccountLifecycleSpi {
      * through to the owning service's own honest error, a KNOWN token of
      * the wrong owner answers the classified bad-request refusal HERE
      * (and the owning service's consume never runs).
+     *
+     * <p>The 2026-11-06 #810 round review (Minor · Functional
+     * Correctness): the ownership verdict is CASE-INSENSITIVE — the token
+     * carries the normalized (lowercased) subject the reset/verification
+     * request minted it for, while the redemption's typed-in address can
+     * carry any case; an equals comparison rejected a VALID token whose
+     * owner was merely typed with different casing. The trimmed,
+     * case-insensitive comparison keeps the cross-account refusal (a
+     * different ADDRESS still fails) while accepting the same address in
+     * any casing — the identifier discipline the whole lifecycle family
+     * now shares.</p>
      */
     private void requireTokenOwnedBy(String email, String token,
                                      AuthActionTokenPurpose purpose) {
         if (email == null || token == null) {
             return;
         }
+        String identified = email.trim();
         authActionTokenService.accountOf(token, purpose)
-                .filter(owner -> !owner.equals(email))
+                .filter(owner -> !owner.equalsIgnoreCase(identified))
                 .ifPresent(owner -> {
                     throw new com.marketplace.shared.api.BadRequestException(
                             "This link is not valid for the identified account");

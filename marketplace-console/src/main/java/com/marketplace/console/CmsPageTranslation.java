@@ -133,7 +133,11 @@ public class CmsPageTranslation extends BaseEntity {
             // The 2026-11-05 #810 round review: readTree answers null for
             // the empty/blank document without throwing — the same
             // classified VAL-001 the page's own guard now carries.
-            if (CONTENT_JSON.readTree(content) == null) {
+            // The 2026-11-06 #810 round review: Jackson 3's readTree
+            // answers a MISSING NODE (not null) for the blank document —
+            // both empty shapes answer the same refusal.
+            tools.jackson.databind.JsonNode parsed = CONTENT_JSON.readTree(content);
+            if (parsed == null || parsed.isMissingNode()) {
                 throw new IllegalArgumentException(
                         "The page translation content must be a serialized JSON document"
                                 + " (rich text): the document is empty");

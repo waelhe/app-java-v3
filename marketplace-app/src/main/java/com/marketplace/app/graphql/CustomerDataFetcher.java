@@ -202,7 +202,14 @@ public class CustomerDataFetcher {
     /** The executed sort's owning property — the cursor's fingerprint axis. */
     private static String sortProperty(UserAccountSort sort) {
         return switch (sort.field()) {
-            case EMAIL -> "email";
+            // The 2026-11-06 #810 round review (Major): the EMAIL-vocabulary
+            // cursor fingerprints the SUBJECT axis — the column the owner's
+            // scroll actually sorts by (the always-present identifier; the
+            // email column is nullable for OIDC accounts without an email
+            // claim, and a nullable keyset key drops rows). The cursor stays
+            // opaque to clients; the fingerprint must match the executed
+            // key or the gate would refuse its own follow-up cursors.
+            case EMAIL -> "subject";
             case CREATED_AT -> "createdAt";
             case LAST_MODIFIED_AT -> "updatedAt";
         };

@@ -154,7 +154,11 @@ public class CmsPage extends BaseEntity {
             // document WITHOUT throwing — the guard used to swallow that
             // and let the value reach the jsonb column's own rejection at
             // flush. A null/missing node is the same classified VAL-001.
-            if (CONTENT_JSON.readTree(content) == null) {
+            // The 2026-11-06 #810 round review: Jackson 3's readTree
+            // answers a MISSING NODE (not null) for the blank document —
+            // the same empty-document refusal, both shapes.
+            tools.jackson.databind.JsonNode parsed = CONTENT_JSON.readTree(content);
+            if (parsed == null || parsed.isMissingNode()) {
                 throw new IllegalArgumentException(
                         "The " + owner + " content must be a serialized JSON document (rich text):"
                                 + " the document is empty");

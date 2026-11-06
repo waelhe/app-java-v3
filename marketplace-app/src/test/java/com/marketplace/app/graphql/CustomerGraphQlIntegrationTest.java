@@ -84,6 +84,10 @@ class CustomerGraphQlIntegrationTest {
     // so the forward-only follow-through always has a next page.
     private static final UUID CONSUMER_FOUR_ROW_ID = UUID.fromString("56565656-5656-4656-8656-565656565606");
     private static final UUID CONSUMER_FIVE_ROW_ID = UUID.fromString("56565656-5656-4656-8656-565656565607");
+    // The 2026-11-06 #810 round review: the OIDC-without-email-claim row —
+    // seeded per-test (the class's deterministic five-row surface stays
+    // intact for the siblings) and cleaned by the same setUp DELETEs.
+    private static final UUID OIDC_NO_EMAIL_ROW_ID = UUID.fromString("56565656-5656-4656-8656-565656565608");
 
     @Container
     @ServiceConnection
@@ -114,12 +118,14 @@ class CustomerGraphQlIntegrationTest {
      */
     @BeforeEach
     void setUp() {
-        jdbcTemplate.update("DELETE FROM user_role_assignments WHERE user_id IN (?, ?, ?, ?, ?, ?, ?)",
+        jdbcTemplate.update("DELETE FROM user_role_assignments WHERE user_id IN (?, ?, ?, ?, ?, ?, ?, ?)",
                 ADMIN_ROW_ID, PROVIDER_ROW_ID, CONSUMER_ONE_ROW_ID, CONSUMER_TWO_ROW_ID,
-                CONSUMER_THREE_ROW_ID, CONSUMER_FOUR_ROW_ID, CONSUMER_FIVE_ROW_ID);
-        jdbcTemplate.update("DELETE FROM users WHERE id IN (?, ?, ?, ?, ?, ?, ?)",
+                CONSUMER_THREE_ROW_ID, CONSUMER_FOUR_ROW_ID, CONSUMER_FIVE_ROW_ID,
+                OIDC_NO_EMAIL_ROW_ID);
+        jdbcTemplate.update("DELETE FROM users WHERE id IN (?, ?, ?, ?, ?, ?, ?, ?)",
                 ADMIN_ROW_ID, PROVIDER_ROW_ID, CONSUMER_ONE_ROW_ID, CONSUMER_TWO_ROW_ID,
-                CONSUMER_THREE_ROW_ID, CONSUMER_FOUR_ROW_ID, CONSUMER_FIVE_ROW_ID);
+                CONSUMER_THREE_ROW_ID, CONSUMER_FOUR_ROW_ID, CONSUMER_FIVE_ROW_ID,
+                OIDC_NO_EMAIL_ROW_ID);
         insertUser(ADMIN_ROW_ID, ADMIN_SUBJECT, "p1c-admin@example.com", "P1C Admin", "ADMIN");
         insertUser(PROVIDER_ROW_ID, PROVIDER_SUBJECT, "p1c-provider@example.com", "P1C Provider", "PROVIDER");
         insertUser(CONSUMER_ONE_ROW_ID, "p1c-customer-one-subject", "p1c-customer-one@example.com", "P1C Customer One", "CONSUMER");
@@ -254,6 +260,52 @@ class CustomerGraphQlIntegrationTest {
                 // The class's own fifth consumer row sits beyond the second
                 // page — the honest hasNextPage fact of the follow-through.
                 .path("customers.pageInfo.hasNextPage").entity(Boolean.class).isEqualTo(true);
+    }
+
+    @Test
+    void anOidcAccountWithoutAnEmailClaimAppearsExactlyOnceAcrossThePagedScrolls() {
+        // The 2026-11-06 #810 round review (Major · Functional Correctness):
+        // the EMAIL-vocabulary scroll keys on the SUBJECT column — an
+        // OIDC-provisioned account whose token carried no email claim keeps
+        // a NULL email, and a nullable keyset sort key silently DROPS rows
+        // from the windowed pages. The account must appear EXACTLY ONCE
+        // across the full forward-only follow-through (no drops, no
+        // duplicates — the whole population walks the pages).
+        jdbcTemplate.update("""
+                INSERT INTO users (id, subject, email, display_name, role)
+                VALUES (?, ?, NULL, 'P1C OIDC No Email', 'CONSUMER')
+                """,
+                OIDC_NO_EMAIL_ROW_ID, "p1c-oidc-no-email-subject");
+        HttpGraphQlTester adminTester = testerFor(ADMIN_SUBJECT, "ADMIN");
+        List<String> seen = new java.util.ArrayList<>();
+        String after = null;
+        int pages = 0;
+        boolean hasNext;
+        do {
+            var page = adminTester.document("""
+                            query($after: String) { customers(first: 2, after: $after) {
+                                edges { node { id } }
+                                pageInfo { hasNextPage endCursor }
+                            } }
+                            """)
+                    .variable("after", after)
+                    .execute()
+                    .errors().verify();
+            seen.addAll(page.path("customers.edges[*].node.id").entityList(String.class).get());
+            hasNext = page.path("customers.pageInfo.hasNextPage").entity(Boolean.class).get();
+            after = page.path("customers.pageInfo.endCursor").entity(String.class).get();
+            pages++;
+            assertThat(pages).as("the follow-through must terminate").isLessThan(10);
+        } while (hasNext);
+        String oidcGlobalId = globalIdOf(OIDC_NO_EMAIL_ROW_ID);
+        assertThat(seen).contains(oidcGlobalId);
+        assertThat(seen.stream().filter(oidcGlobalId::equals).count())
+                .as("the null-email account appears exactly once")
+                .isEqualTo(1);
+        assertThat(seen).as("no account is dropped or duplicated across the pages")
+                .doesNotHaveDuplicates();
+        assertThat(seen).as("the whole seeded population walks the pages")
+                .contains(globalIdOf(CONSUMER_ONE_ROW_ID), globalIdOf(CONSUMER_FIVE_ROW_ID));
     }
 
     @Test

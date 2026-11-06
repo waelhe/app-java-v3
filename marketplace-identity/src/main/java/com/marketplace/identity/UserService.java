@@ -258,13 +258,21 @@ public class UserService implements IdentitySpi {
         if (!PasswordPolicy.withinSharedPolicy(rawPassword)) {
             throw PasswordPolicy.violation();
         }
-        String subject = email;
+        // The 2026-11-06 #810 round review (Major · Functional
+        // Correctness): the case-insensitive account-identifier discipline
+        // the reset/verification legs already assume — the subject is
+        // normalized (trim + lowercase(Locale.ROOT)) BEFORE the duplicate
+        // check and the row write, so a mixed-case registration stores the
+        // SAME row the reset request's normalized lookup resolves, and a
+        // second registration differing in case alone answers the honest
+        // 409 instead of minting a near-duplicate account.
+        String subject = email.trim().toLowerCase(java.util.Locale.ROOT);
         if (userRepository.existsBySubject(subject)
                 || userDetailsManager.userExists(subject)) {
             throw new ConflictException("An account already exists for this email");
         }
         User user = userRepository.save(
-                User.create(subject, email, displayName, UserRole.CONSUMER));
+                User.create(subject, subject, displayName, UserRole.CONSUMER));
         // The A-04 hold: the login row is born disabled — the framework's
         // account-state primitive is the ONLY enabled bit (no second
         // "verified" column is invented outside the official model); the
@@ -305,13 +313,15 @@ public class UserService implements IdentitySpi {
                               boolean enabled) {
         requireDisplayNameBound(displayName);
         requireRegisterableEmail(email);
-        String subject = email;
+        // The 2026-11-06 #810 round review — the staff leg carries the
+        // same normalized-identifier discipline register now carries.
+        String subject = email.trim().toLowerCase(java.util.Locale.ROOT);
         if (userRepository.existsBySubject(subject)
                 || userDetailsManager.userExists(subject)) {
             throw new ConflictException("An account already exists for this email");
         }
         User user = userRepository.save(
-                User.create(subject, email, displayName, UserRole.ADMIN));
+                User.create(subject, subject, displayName, UserRole.ADMIN));
         userDetailsManager.createUser(org.springframework.security.core.userdetails.User
                 .withUsername(subject)
                 .password(passwordEncoder.getObject().encode(rawPassword))
@@ -1179,10 +1189,14 @@ public class UserService implements IdentitySpi {
         // a tombstone the operator cannot act on and a total nobody can
         // reconcile.
         org.springframework.data.domain.Window<User> window = switch (sort.field()) {
+            // The 2026-11-06 #810 round review (Major): the EMAIL-vocabulary
+            // sort keys on the SUBJECT column — the always-present identifier
+            // (an OIDC account with no email claim keeps a NULL email column,
+            // and a nullable keyset key drops rows from the windowed pages).
             case EMAIL -> sort.ascending()
-                    ? userRepository.findByRoleAndPseudonymizedAtIsNullOrderByEmailAscIdAsc(
+                    ? userRepository.findByRoleAndPseudonymizedAtIsNullOrderBySubjectAscIdAsc(
                             UserRole.CONSUMER, position, limit)
-                    : userRepository.findByRoleAndPseudonymizedAtIsNullOrderByEmailDescIdDesc(
+                    : userRepository.findByRoleAndPseudonymizedAtIsNullOrderBySubjectDescIdDesc(
                             UserRole.CONSUMER, position, limit);
             case CREATED_AT -> sort.ascending()
                     ? userRepository.findByRoleAndPseudonymizedAtIsNullOrderByCreatedAtAscIdAsc(

@@ -83,7 +83,25 @@ public class EmailNotificationService {
     public void sendEmailTo(String to, String subject, String template, Map<String, Object> variables) {
         emailService.ifPresent(es -> {
             es.send(to, subject, template, variables);
-            log.info("Email notification sent: to={}, subject={}", to, subject);
+            // The 2026-11-06 #810 round review (Minor · Security &
+            // Privacy): the full recipient address never rides the logs
+            // (the sibling send() logs the userId alone) — the security
+            // legs (deletion, email change) carry the MOST sensitive
+            // addresses; a masked local-part answers the operator's
+            // "which mailbox" question without the PII.
+            log.info("Email notification sent: to={}, subject={}", mask(to), subject);
         });
+    }
+
+    /** The logging-safe rendering: the first character plus the domain. */
+    private static String mask(String address) {
+        if (address == null) {
+            return null;
+        }
+        int at = address.indexOf('@');
+        if (at <= 0) {
+            return "***";
+        }
+        return address.charAt(0) + "***" + address.substring(at);
     }
 }

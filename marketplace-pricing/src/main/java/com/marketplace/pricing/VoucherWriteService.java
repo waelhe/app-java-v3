@@ -61,10 +61,29 @@ public class VoucherWriteService implements VoucherWriteSpi {
     private final VoucherRepository voucherRepository;
     private final VoucherRedemptionRepository redemptionRepository;
 
+    /**
+     * The 2026-11-06 #810 round review (Minor · Data Integrity): the
+     * insert's OWN transaction (REQUIRES_NEW) — {@code Voucher} carries a
+     * manually-assigned UUID id, so {@code save} defers the INSERT to the
+     * commit-time flush and the unique-index race NEVER reaches the
+     * method's own catch (the raw error escaped to the caller instead of
+     * the payload's ALREADY_EXISTS). The insert runs here with
+     * {@code saveAndFlush}, so the violation throws INSIDE this template
+     * and is classified OUTSIDE it — the inner transaction rolls back
+     * alone and never marks the caller's transaction rollback-only (the
+     * UserAccountAdminService per-row precedent).
+     */
+    private final org.springframework.transaction.support.TransactionTemplate insertTransaction;
+
     public VoucherWriteService(VoucherRepository voucherRepository,
-                               VoucherRedemptionRepository redemptionRepository) {
+                               VoucherRedemptionRepository redemptionRepository,
+                               org.springframework.transaction.PlatformTransactionManager transactionManager) {
         this.voucherRepository = voucherRepository;
         this.redemptionRepository = redemptionRepository;
+        this.insertTransaction = new org.springframework.transaction.support.TransactionTemplate(
+                transactionManager);
+        this.insertTransaction.setPropagationBehavior(
+                org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     @Override
@@ -103,15 +122,20 @@ public class VoucherWriteService implements VoucherWriteSpi {
         // The 2026-11-05 #810 round review (Minor · Functional
         // Correctness): the code-reservation RACE — two concurrent creates
         // (or a create racing an update's new code) both pass the
-        // findByCode probe and the loser dies on the unique index at
-        // flush; the SAME one classifier the platform's surfaces share
-        // answers the payload's own ALREADY_EXISTS instead of the raw
-        // database error.
+        // findByCode probe and the loser dies on the unique index; the
+        // SAME one classifier the platform's surfaces share answers the
+        // payload's own ALREADY_EXISTS instead of the raw database error.
+        // The 2026-11-06 #810 round review: the insert commits in its OWN
+        // transaction (see insertTransaction) so the violation actually
+        // reaches this catch — the update path's code change rides the
+        // same arbitration below.
         Voucher created;
         try {
-            created = voucherRepository.save(Voucher.of(code, name, currency, type,
-                    discountValue, minSpend, startsAt, endsAt, usageLimit,
-                    Boolean.TRUE.equals(command.applyOncePerCustomer()) ? 1L : null, true));
+            created = insertTransaction.execute(status -> voucherRepository.saveAndFlush(
+                    Voucher.of(code, name, currency, type,
+                            discountValue, minSpend, startsAt, endsAt, usageLimit,
+                            Boolean.TRUE.equals(command.applyOncePerCustomer()) ? 1L : null,
+                            true)));
         } catch (org.springframework.dao.DataIntegrityViolationException race) {
             if (com.marketplace.shared.api.GlobalExceptionHandler.isUniqueViolation(race)) {
                 return VoucherMutationResult.failure(List.of(new VoucherMutationError(
@@ -125,8 +149,30 @@ public class VoucherWriteService implements VoucherWriteSpi {
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
-    @Transactional
     public VoucherMutationResult updateVoucher(UUID id, VoucherUpdateCommand command) {
+        // The 2026-11-06 #810 round review (Minor · Data Integrity): the
+        // update's code change races uq_vouchers_code exactly like the
+        // create (a concurrent create's code — or another update's —
+        // commits between this path's findByCode probe and its flush).
+        // The WHOLE update runs in the insert's own REQUIRES_NEW
+        // transaction (lock + revise + saveAndFlush inside it — never a
+        // cross-transaction self-deadlock on the row lock), so the
+        // violation throws INSIDE the template and is classified OUTSIDE
+        // it; the participating-repository rollback-only trap never arms
+        // because no outer transaction participates.
+        try {
+            return insertTransaction.execute(status -> doUpdateVoucher(id, command));
+        } catch (org.springframework.dao.DataIntegrityViolationException race) {
+            if (com.marketplace.shared.api.GlobalExceptionHandler.isUniqueViolation(race)) {
+                return VoucherMutationResult.failure(List.of(new VoucherMutationError(
+                        "code", VoucherMutationErrorCode.ALREADY_EXISTS,
+                        "A voucher with the code already exists")));
+            }
+            throw race;
+        }
+    }
+
+    private VoucherMutationResult doUpdateVoucher(UUID id, VoucherUpdateCommand command) {
         // The 2026-11-03 adversarial scan: the code-stability verdict rides
         // the SAME row lock the settlement path (settleVoucher's
         // findByCodeForUpdate) serializes on — an unlocked check-then-act
@@ -240,7 +286,10 @@ public class VoucherWriteService implements VoucherWriteSpi {
         }
         row.revise(mergedCode, mergedName, mergedType, mergedValue, mergedCurrency,
                 mergedMinSpend, mergedStarts, mergedEnds, mergedUsageLimit, mergedPerUser);
-        return VoucherMutationResult.success(toView(voucherRepository.save(row)));
+        // The explicit flush INSIDE the template's transaction — the
+        // unique-index race (if it fires) throws here, classified by the
+        // wrapper's catch, never at a commit nobody owns.
+        return VoucherMutationResult.success(toView(voucherRepository.saveAndFlush(row)));
     }
 
     @Override

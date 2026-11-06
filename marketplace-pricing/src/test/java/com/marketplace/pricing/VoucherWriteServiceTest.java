@@ -51,7 +51,16 @@ class VoucherWriteServiceTest {
     void setUp() {
         voucherRepository = mock(VoucherRepository.class);
         redemptionRepository = mock(VoucherRedemptionRepository.class);
-        service = new VoucherWriteService(voucherRepository, redemptionRepository);
+        // The 2026-11-06 #810 round review: the insert's own REQUIRES_NEW
+        // transaction — a stubbed manager executes the template's callback
+        // (getTransaction -> status, commit -> no-op) so the unit tests run
+        // the REAL arbitration shape without a database.
+        org.springframework.transaction.PlatformTransactionManager transactionManager =
+                mock(org.springframework.transaction.PlatformTransactionManager.class);
+        org.mockito.Mockito.when(transactionManager.getTransaction(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(mock(org.springframework.transaction.TransactionStatus.class));
+        service = new VoucherWriteService(voucherRepository, redemptionRepository,
+                transactionManager);
     }
 
     private static Voucher row(String code) {
@@ -197,9 +206,33 @@ class VoucherWriteServiceTest {
     }
 
     @Test
+    void theLosingSideOfAUniqueCodeRaceAnswersTheAlreadyExistsDomainError() {
+        // The 2026-11-06 #810 round review (Minor · Data Integrity): the
+        // INSERT now flushes INSIDE its own REQUIRES_NEW transaction, so
+        // the unique-index loser's 23505 violation actually REACHES the
+        // method's catch (the deferred commit-time flush used to escape to
+        // the caller as the raw database error).
+        when(voucherRepository.findByCode("TEST-CODE")).thenReturn(Optional.empty());
+        java.sql.SQLException unique = new java.sql.SQLException(
+                "duplicate key value violates unique constraint \"uq_vouchers_code\"",
+                "23505");
+        when(voucherRepository.saveAndFlush(any())).thenThrow(
+                new org.springframework.dao.DataIntegrityViolationException(
+                        "could not execute statement", unique));
+
+        VoucherMutationResult result = service.createVoucher(create("TEST-CODE", "FIXED", 500L, "SAR"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(VoucherMutationError::code, VoucherMutationError::field)
+                .containsExactly(VoucherMutationErrorCode.ALREADY_EXISTS, "code");
+    }
+
+    @Test
     void happyCreateNormalizesTheCodeAndAnswersTheProjection() {
         when(voucherRepository.findByCode("TEST-CODE")).thenReturn(Optional.empty());
-        when(voucherRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(voucherRepository.saveAndFlush(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
         when(redemptionRepository.countByVoucherId(any(UUID.class))).thenReturn(0L);
 
         VoucherMutationResult result = service.createVoucher(new VoucherCreateCommand(
@@ -256,7 +289,8 @@ class VoucherWriteServiceTest {
     void providedFieldsReplaceAndNullsPreserve() {
         Voucher existing = row("KEEP-CODE");
         when(voucherRepository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
-        when(voucherRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(voucherRepository.saveAndFlush(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
         when(redemptionRepository.countByVoucherId(existing.getId())).thenReturn(0L);
 
         VoucherMutationResult result = service.updateVoucher(existing.getId(),
@@ -298,7 +332,8 @@ class VoucherWriteServiceTest {
         // operator's explicit correction path stays open. The view's own
         // vocabulary carries no amounts (the settlement path's internal
         // facts), so the restated pair is verified on the persisted row.
-        when(voucherRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(voucherRepository.saveAndFlush(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
         VoucherMutationResult restated = service.updateVoucher(existing.getId(),
                 new VoucherUpdateCommand(null, null, null, 1000L, "USD", 250L,
                         null, null, null, null));
@@ -394,7 +429,8 @@ class VoucherWriteServiceTest {
         Voucher existing = Voucher.of("TYPE-FITS", "Row", "SAR",
                 Voucher.DiscountType.FIXED, 500L, 0L, null, null, null, null, true);
         when(voucherRepository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
-        when(voucherRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(voucherRepository.saveAndFlush(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
         when(redemptionRepository.countByVoucherId(existing.getId())).thenReturn(0L);
 
         VoucherMutationResult result = service.updateVoucher(existing.getId(),
@@ -412,7 +448,8 @@ class VoucherWriteServiceTest {
         Voucher existing = row("IDLE-CODE");
         when(voucherRepository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(voucherRepository.findByCode("FRESH-CODE")).thenReturn(Optional.empty());
-        when(voucherRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(voucherRepository.saveAndFlush(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
         when(redemptionRepository.countByVoucherId(existing.getId())).thenReturn(0L);
 
         VoucherMutationResult result = service.updateVoucher(existing.getId(),
@@ -445,7 +482,8 @@ class VoucherWriteServiceTest {
         Voucher perUser = Voucher.of("PERU-CODE", "Row", "SAR", Voucher.DiscountType.FIXED, 500L, 0L,
                 null, null, null, 1L, true);
         when(voucherRepository.findByIdForUpdate(perUser.getId())).thenReturn(Optional.of(perUser));
-        when(voucherRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(voucherRepository.saveAndFlush(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
         when(redemptionRepository.countByVoucherId(perUser.getId())).thenReturn(0L);
 
         // true -> 1 (rendered back as applyOncePerCustomer=true) ...

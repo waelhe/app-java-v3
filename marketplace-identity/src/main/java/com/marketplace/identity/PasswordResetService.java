@@ -176,9 +176,21 @@ public class PasswordResetService {
         // GraphQL root and the REST controller), the exact shape
         // AccountEmailChangeService:95 documents.
         String subject = email.trim().toLowerCase(java.util.Locale.ROOT);
+        // The 2026-11-06 #810 round review (Major · Functional
+        // Correctness): registration now normalizes the subject before
+        // storing, so the normalized lookup resolves every NEW account.
+        // A LEGACY mixed-case store (written before the normalization
+        // landed) still resolves through its exact-case subject — the
+        // recovery right is preserved for accounts that already exist;
+        // both misses stay the enumeration-safe silent no-op.
         if (!userDetailsManager.userExists(subject)) {
-            log.info("Password reset requested for an address with no login account — silent no-op");
-            return;
+            String legacySubject = email.trim();
+            if (!legacySubject.equals(subject) && userDetailsManager.userExists(legacySubject)) {
+                subject = legacySubject;
+            } else {
+                log.info("Password reset requested for an address with no login account — silent no-op");
+                return;
+            }
         }
         userRepository.findBySubject(subject).ifPresent(user -> {
             authActionTokenService

@@ -159,10 +159,18 @@ public class UserAccountAdminService implements com.marketplace.identity.spi.Use
     @Observed(name = "customer.admin.bulk_delete")
     public int bulkDeleteCustomers(Authentication caller, List<UUID> userIds) {
         requireAdmin(caller);
+        // The 2026-11-06 #810 round review (Minor · Functional
+        // Correctness): the honest count the bulkSetActive fix established
+        // for this family — the request's ids are DEDUPLICATED and the
+        // already-pseudonymized tombstones are skipped, so a repeated id
+        // (or a double submission racing the single delete) counts the
+        // erasure exactly once and the returned total is the number of
+        // accounts this call actually erased.
         int count = 0;
-        for (UUID id : userIds) {
+        for (UUID id : userIds.stream().distinct().toList()) {
             Optional<User> user = userRepository.findById(id)
-                    .filter(row -> row.getRole() == UserRole.CONSUMER);
+                    .filter(row -> row.getRole() == UserRole.CONSUMER)
+                    .filter(row -> row.getPseudonymizedAt() == null);
             if (user.isPresent()) {
                 userService.pseudonymizeAccount(id, "customer bulk deletion (dashboard)",
                         caller.getName());
@@ -249,7 +257,13 @@ public class UserAccountAdminService implements com.marketplace.identity.spi.Use
     public java.util.UUID createStaff(Authentication caller, UserWriteFields fields, boolean sendSetPassword) {
         requireAdmin(caller);
         String email = requireEmail(fields.email());
-        String displayName = fields.displayName();
+        // The 2026-11-06 #810 round review (Minor · Functional
+        // Correctness): the same 200-character bound + trim the sibling
+        // create/update paths carry — the staff CREATE leg was the last
+        // path passing the raw value (the owning service's own check
+        // answers a storage-time 500 shape instead of this classified
+        // validation error when the composite name runs long).
+        String displayName = requireDisplayNameBound(fields.displayName());
         byte[] secret = new byte[32];
         SECURE_RANDOM.nextBytes(secret);
         User created = userService.registerStaff(email,
@@ -300,10 +314,13 @@ public class UserAccountAdminService implements com.marketplace.identity.spi.Use
     @Observed(name = "staff.admin.bulk_delete")
     public int bulkDeleteStaff(Authentication caller, List<UUID> userIds) {
         requireAdmin(caller);
+        // The 2026-11-06 #810 round review — the staff leg carries the
+        // same deduplicated, tombstone-skipping honest count.
         int count = 0;
-        for (UUID id : userIds) {
+        for (UUID id : userIds.stream().distinct().toList()) {
             Optional<User> user = userRepository.findById(id)
-                    .filter(row -> row.getRole() == UserRole.ADMIN);
+                    .filter(row -> row.getRole() == UserRole.ADMIN)
+                    .filter(row -> row.getPseudonymizedAt() == null);
             if (user.isPresent()) {
                 userService.pseudonymizeAccount(id, "staff bulk deletion (dashboard)",
                         caller.getName());

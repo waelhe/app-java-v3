@@ -182,6 +182,26 @@ class UserServiceTest {
     }
 
     @Test
+    void register_normalizesMixedCaseAddressesLikeTheResetLookup() {
+        // The 2026-11-06 #810 round review (Major · Functional
+        // Correctness): the case-insensitive account-identifier discipline
+        // — the stored subject (and email column) is the NORMALIZED
+        // address the reset request's own normalized lookup resolves, so
+        // a mixed-case registration and a lowercase reset request hit the
+        // SAME account (and the duplicate check closes the case-only
+        // near-duplicate hole).
+        when(userRepository.existsBySubject("mixed@example.com")).thenReturn(false);
+        when(userDetailsManager.userExists("mixed@example.com")).thenReturn(false);
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        User created = userService.register("  Mixed@Example.COM ", "clear-password", "Mixed");
+
+        assertEquals("mixed@example.com", created.getSubject());
+        assertEquals("mixed@example.com", created.getEmail());
+        verify(emailVerificationService).issueFor("mixed@example.com");
+    }
+
+    @Test
     void register_loginSideRemnantWithoutDomainRowAlsoAnswersConflict() {
         // The drifted-pair stock the S2/N4/N6 work documented: a login side
         // without its domain row must not be silently re-adopted by a

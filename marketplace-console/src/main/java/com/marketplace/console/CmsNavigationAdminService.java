@@ -679,6 +679,14 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
             throw new IllegalArgumentException(
                     "A menu item targets at most one of a URL, a category or a page");
         }
+        // The 2026-11-06 #810 round review (Minor · Functional
+        // Correctness): the URL's own 2048 bound (cms_menu_items.url's
+        // column width) — every sibling field answers its classified
+        // validation error, so a longer URL must too, never the flush's
+        // raw database error.
+        if (url != null && url.trim().length() > 2048) {
+            throw new IllegalArgumentException("The URL exceeds 2048 characters");
+        }
     }
 
     /**

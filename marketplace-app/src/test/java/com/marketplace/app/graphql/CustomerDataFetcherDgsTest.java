@@ -292,10 +292,10 @@ class CustomerDataFetcherDgsTest {
                                 consumerView(second, "customer-two@example.com")), index -> {
                             if (index == 0) {
                                 return ScrollPosition.forward(Map.of(
-                                        "email", "customer-one@example.com", "id", first));
+                                        "subject", "customer-one@example.com", "id", first));
                             }
                             return ScrollPosition.forward(Map.of(
-                                    "email", "customer-two@example.com", "id", second));
+                                    "subject", "customer-two@example.com", "id", second));
                         }, true);
         when(identitySpi.scrollCustomers(any(org.springframework.security.core.Authentication.class),
                         any(UserAccountSort.class), any(), any(Limit.class)))
@@ -318,12 +318,12 @@ class CustomerDataFetcherDgsTest {
         assertThat(edges).hasSize(2);
         assertThat(edges.get(0).get("cursor"))
                 .isEqualTo(cursorStrategy.toCursor(KeysetCursorGate.stamped(
-                        ScrollPosition.forward(Map.of("email", "customer-one@example.com", "id", first)),
-                        "customers with the same sortBy", "email", true)));
+                        ScrollPosition.forward(Map.of("subject", "customer-one@example.com", "id", first)),
+                        "customers with the same sortBy", "subject", true)));
         assertThat(edges.get(1).get("cursor"))
                 .isEqualTo(cursorStrategy.toCursor(KeysetCursorGate.stamped(
-                        ScrollPosition.forward(Map.of("email", "customer-two@example.com", "id", second)),
-                        "customers with the same sortBy", "email", true)));
+                        ScrollPosition.forward(Map.of("subject", "customer-two@example.com", "id", second)),
+                        "customers with the same sortBy", "subject", true)));
         @SuppressWarnings("unchecked")
         Map<String, Object> firstNode = (Map<String, Object>) edges.get(0).get("node");
         // The typed global ID the SHARED mapper emits — never a raw UUID.

@@ -57,7 +57,10 @@ class CmsPageAdminServiceTest {
 
     @Test
     void createPageDerivesTheSlugAndRequiresTheType() {
-        when(pageTypeRepository.existsById(typeId)).thenReturn(true);
+        // The 2026-11-06 #810 round review: the creation leg's type
+        // reference serializes on the locked load (findByIdForUpdate).
+        when(pageTypeRepository.findByIdForUpdate(typeId))
+                .thenReturn(Optional.of(CmsPageType.create("T", "t")));
         when(pageRepository.existsBySlug("about-us")).thenReturn(false);
 
         var view = service.createPage(admin, "About Us", null, "{\"blocks\":[]}", true, null, null, typeId);
@@ -69,7 +72,7 @@ class CmsPageAdminServiceTest {
 
     @Test
     void createPageRefusesAnUnknownType() {
-        when(pageTypeRepository.existsById(typeId)).thenReturn(false);
+        when(pageTypeRepository.findByIdForUpdate(typeId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.createPage(admin, "T", "t", null, null, null, null, typeId))
                 .isInstanceOf(ResourceNotFoundException.class);
@@ -470,7 +473,7 @@ class CmsPageAdminServiceTest {
     @Test
     void deletePageTypeRefusesPagesStillReferencingIt() {
         when(pageRepository.existsByPageTypeId(typeId)).thenReturn(true);
-        when(pageTypeRepository.findById(typeId))
+        when(pageTypeRepository.findByIdForUpdate(typeId))
                 .thenReturn(Optional.of(CmsPageType.create("T", "t")));
 
         assertThatThrownBy(() -> service.deletePageType(admin, typeId))
@@ -481,7 +484,7 @@ class CmsPageAdminServiceTest {
     @Test
     void deletePageTypeCascadeClearsAttributesAndBulkFollows() {
         UUID typeA = UUID.randomUUID();
-        when(pageTypeRepository.findById(typeA))
+        when(pageTypeRepository.findByIdForUpdate(typeA))
                 .thenReturn(Optional.of(CmsPageType.create("A", "a")));
         when(pageRepository.existsByPageTypeId(typeA)).thenReturn(false);
         CmsPageTypeAttribute pair = CmsPageTypeAttribute.create(typeA, UUID.randomUUID(), 0);
@@ -534,7 +537,8 @@ class CmsPageAdminServiceTest {
 
     @Test
     void createPageRefusesAMalformedSlugAndLongTitle() {
-        when(pageTypeRepository.existsById(typeId)).thenReturn(true);
+        when(pageTypeRepository.findByIdForUpdate(typeId))
+                .thenReturn(Optional.of(CmsPageType.create("T", "t")));
 
         assertThatThrownBy(() -> service.createPage(admin, "T", "Not Kebab", null, null, null,
                 null, typeId))

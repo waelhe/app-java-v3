@@ -227,6 +227,16 @@ public class CustomerTypeService implements com.marketplace.identity.spi.Custome
                                               List<UUID> attributeIds, List<Integer> deltas) {
         requireAdmin(caller);
         CustomerType row = requireType(customerTypeId);
+        // The 2026-11-06 #810 round review (Minor · Functional
+        // Correctness): the argument contract is a classified validation
+        // error, never a raw NPE/IndexOutOfBounds — one delta entry per
+        // attribute ID (both lists present, both the same length; the
+        // EMPTY pair stays the accepted no-op it always was).
+        if (attributeIds == null || deltas == null
+                || attributeIds.size() != deltas.size()) {
+            throw new IllegalArgumentException(
+                    "One delta entry per attribute ID is required");
+        }
         List<CustomerTypeAttribute> pairs = new java.util.ArrayList<>(
                 attributeRepository.findAllByCustomerTypeIdOrderByPositionAscIdAsc(customerTypeId));
         for (int i = 0; i < attributeIds.size(); i++) {

@@ -110,11 +110,22 @@ public interface UserRepository extends JpaRepository<User, UUID>, RevisionRepos
      * as the roster methods, plus the count, each with
      * {@code pseudonymizedAt IS NULL} (the admin surface's own visibility
      * law; soft-deleted rows are already absent via @SoftDelete).
+     *
+     * <p>The 2026-11-06 #810 round review (Major · Functional
+     * Correctness): the EMAIL-vocabulary scrolls key on the SUBJECT
+     * column, not the email column — the subject is the account's
+     * ALWAYS-PRESENT identifier (the normalized address for password
+     * accounts, the mandatory {@code sub} claim for OIDC-provisioned
+     * ones), while the email column is NULL for an OIDC account whose
+     * token carried no {@code email} claim; a nullable keyset sort key
+     * silently drops rows from the windowed pages. Saleor's
+     * UserSortingInput.EMAIL keeps its wire vocabulary — the executed
+     * key is the platform's own non-null identifier.</p>
      */
-    Window<User> findByRoleAndPseudonymizedAtIsNullOrderByEmailAscIdAsc(
+    Window<User> findByRoleAndPseudonymizedAtIsNullOrderBySubjectAscIdAsc(
             UserRole role, KeysetScrollPosition position, Limit limit);
 
-    Window<User> findByRoleAndPseudonymizedAtIsNullOrderByEmailDescIdDesc(
+    Window<User> findByRoleAndPseudonymizedAtIsNullOrderBySubjectDescIdDesc(
             UserRole role, KeysetScrollPosition position, Limit limit);
 
     Window<User> findByRoleAndPseudonymizedAtIsNullOrderByCreatedAtAscIdAsc(
