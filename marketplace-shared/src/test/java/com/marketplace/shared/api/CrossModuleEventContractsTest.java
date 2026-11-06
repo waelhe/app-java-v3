@@ -147,10 +147,16 @@ class CrossModuleEventContractsTest {
         assertThat(event.expiresAt()).isEqualTo(expiresAt);
         assertThat(event).isEqualTo(new AccountDeletionRequestedEvent(
                 userId, "maged@example.com", "one-time-erasure-token", expiresAt));
-        // No toString() assertion here BY DESIGN (the CodeRabbit round on
-        // the follow-up PR): the generated diagnostic representation is not
-        // part of the event payload contract, and freezing the raw
-        // one-time token in it would fight a future diagnostic redaction.
+        // The 2026-11-06 session-9 #811 final review (Major · Security &
+        // Privacy): the diagnostic redaction landed — the one-time
+        // erasure credential (and the address) never reach a log line or
+        // an exception message through toString(); the deferral this
+        // comment used to record is closed.
+        assertThat(event.toString())
+                .doesNotContain("one-time-erasure-token")
+                .doesNotContain("maged@example.com")
+                .contains("deletionToken=[REDACTED]")
+                .contains(userId.toString());
     }
 
     /**
@@ -174,6 +180,15 @@ class CrossModuleEventContractsTest {
         assertThat(event.expiresAt()).isEqualTo(expiresAt);
         assertThat(event).isEqualTo(new EmailChangeRequestedEvent(
                 userId, "old@example.com", "new@example.com", "one-time-change-token", expiresAt));
-        assertThat(event.toString()).contains("new@example.com");
+        // The 2026-11-06 session-9 #811 final review (Major · Security &
+        // Privacy): the diagnostic redaction — the one-time change
+        // credential AND both addresses (PII) never reach a log line or an
+        // exception message through toString().
+        assertThat(event.toString())
+                .doesNotContain("one-time-change-token")
+                .doesNotContain("old@example.com")
+                .doesNotContain("new@example.com")
+                .contains("changeToken=[REDACTED]")
+                .contains(userId.toString());
     }
 }

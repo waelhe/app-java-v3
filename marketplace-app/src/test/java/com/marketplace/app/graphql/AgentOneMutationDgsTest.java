@@ -672,6 +672,27 @@ class AgentOneMutationDgsTest {
         verify(customerTypeSpi, never()).scroll(any(), any(), any(), any(), any());
     }
 
+    /**
+     * The 2026-11-06 session-9 #806 final review (Minor · Security &
+     * Privacy): the B24 shared authenticated-caller wall — an anonymous
+     * token answers isAuthenticated() == true, so the customerType roots
+     * must refuse it exactly like the identity family's other fetchers
+     * (the pre-login gate stays the HTTP boundary; this is the fetcher's
+     * own defense-in-depth when invoked outside it).
+     */
+    @Test
+    void customerTypesRefuseAnAnonymousTokenEvenThoughItAnswersAuthenticated() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.AnonymousAuthenticationToken(
+                        "key", "anonymousUser",
+                        org.springframework.security.core.authority.AuthorityUtils
+                                .createAuthorityList("ROLE_ANONYMOUS")));
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                query { customerTypes(first: 1) { totalCount } }
+                """, "data.customerTypes"))
+                .hasMessageContaining("Authentication required");
+    }
+
     // ---------------------------------------------------------------------
     // CMS — the page lifecycle + the navigation tree
     // ---------------------------------------------------------------------

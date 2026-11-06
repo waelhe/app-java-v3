@@ -22,4 +22,20 @@ public record EmailChangeRequestedEvent(
         String changeToken,
         Instant expiresAt
 ) {
+
+    /**
+     * The 2026-11-06 session-9 #811 final review (Major · Security &
+     * Privacy): the generated diagnostic representation carried the RAW
+     * one-time redemption right AND both addresses (PII) — any log line
+     * or exception message that included the event printed them, and a
+     * log reader could execute the email change before {@code expiresAt}.
+     * The diagnostic shape keeps the identifier and the expiry; the
+     * credential and the addresses are redacted (the payload-exception
+     * convention governs the MAIL leg, never the logs).
+     */
+    @Override
+    public String toString() {
+        return "EmailChangeRequestedEvent[userId=" + userId + ", oldEmail=[REDACTED], "
+                + "newEmail=[REDACTED], changeToken=[REDACTED], expiresAt=" + expiresAt + "]";
+    }
 }
