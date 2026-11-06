@@ -452,7 +452,7 @@ public class SecurityConfig {
                         // plain Field whose name is in the enumerated
                         // pre-login family (tokenCreate, tokenRefresh,
                         // tokenVerify, requestPasswordReset, confirmAccount,
-                        // setPassword, confirmEmailChange, accountRegister)
+                        // setPassword, accountRegister)
                         // — every one carries its own proof in the payload
                         // or CREATES the account. The family's single
                         // authority is the gate's own
