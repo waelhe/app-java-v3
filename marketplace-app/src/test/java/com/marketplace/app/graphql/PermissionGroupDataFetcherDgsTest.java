@@ -474,6 +474,31 @@ class PermissionGroupDataFetcherDgsTest {
                         .containsEntry("errorCode", "VAL-001"));
     }
 
+    /**
+     * The 2026-11-05 #806 round-3 review (Minor · Functional
+     * Correctness): the CURSOR verdict precedes the degenerate page — an
+     * invalid {@code after} answers the classified validation error even
+     * when the page size itself is empty (first: 0), never a
+     * success-shaped envelope that hides the malformed cursor.
+     */
+    @Test
+    void anInvalidAfterStillAnswersTheValidationErrorOnTheDegeneratePage() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        String createdAtCursor = cursorStrategy.toCursor(
+                ScrollPosition.forward(Map.of("createdAt", java.time.Instant.parse("2026-10-01T00:00:00Z"),
+                        "id", UUID.randomUUID())));
+
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
+                "query($after: String) { permissionGroups(first: 0, after: $after) { totalCount } }",
+                "$", Map.of("after", createdAtCursor)))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("after must be a forward keyset cursor")
+                .satisfies(ex -> assertThat(
+                                ((com.netflix.graphql.dgs.exceptions.QueryException) ex).getErrors().get(0)
+                                        .getExtensions())
+                        .containsEntry("errorCode", "VAL-001"));
+    }
+
     /** The unauthenticated guard: no security context answers the credentials error, never a silent read. */
     @Test
     void unauthenticatedCallerAnswersTheCredentialsError() {

@@ -124,6 +124,11 @@ byte-identical to `neondatabase/agent-skills@51c7d594`, 34 files).
   against `saleor/saleor@3.23.43` (the undefined `unit_discount_reason`
   in the discount-precedence snippet; `StockQuerySet` living in
   `saleor/warehouse/models.py`, not the nonexistent `managers.py`).
-  Errata are warnings for consumers, recorded here because vendored
+  Those version mentions are the HISTORICAL measurement facts (dated
+  2026-10-30), not the reference pin: the canonical reference schema is
+  `saleor/saleor@3.23.45` per `docs/governance/plans/saleor-source-pins.json`
+  (the precedence layer above), and any fresh verification an agent runs
+  at consumption time reads THAT pin, never the errata's measurement
+  stamp. Errata are warnings for consumers, recorded here because vendored
   files stay byte-for-byte: fixing them belongs upstream, and a fresh
   upstream snapshot re-vendors through the reviewed-PR procedure.

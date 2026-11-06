@@ -23,6 +23,17 @@ import org.springframework.modulith.NamedInterface;
 public interface AttributeReadSpi {
 
     /**
+     * The staff-surface verdict seam — the orders root's own
+     * {@code requireAdmin()} precedent (the 2026-11-05 #806 round-3
+     * review): the ADMIN decision must precede the boundary's
+     * degenerate-page and unimplemented-argument early returns, so a
+     * non-ADMIN caller always answers the authorization failure (never
+     * a success-shaped empty page and never a validation error about
+     * arguments the caller cannot use).
+     */
+    void requireAdmin();
+
+    /**
      * The attribute lookup by the native UUID behind the typed global ID.
      * An unknown but well-formed UUID answers empty (the safe absence the
      * nullable root carries — never an error, never a fabricated

@@ -122,6 +122,11 @@ public class ProductTypeDataFetcher {
                     "productTypes supports forward-only pagination (first/after) on this platform");
         }
 
+        // The 2026-11-05 #806 round-3 review (Minor · Security & Privacy):
+        // the ADMIN verdict precedes the degenerate-page early return —
+        // the same requireAdmin-before-early-returns order the attributes
+        // root now carries.
+        productTypeReadSpi.requireAdmin();
         ProductTypeSort sort = toOwnerSort(sortBy);
         int requested = first == null ? properties.pagination().defaultPageSize() : first;
         if (requested <= 0) {

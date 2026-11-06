@@ -448,6 +448,89 @@ class CollectionDataFetcherDgsTest {
     }
 
     /**
+     * The 2026-11-05 #806 round-3 review (Minor · Functional
+     * Correctness): the membership cursor's fingerprint binds the
+     * EMITTING collection — a cursor answered by collection A must fail
+     * the same classified refusal on collection B (the position floor it
+     * carries is only meaningful inside its own membership), never
+     * execute a foreign floor as a short or empty page.
+     */
+    @Test
+    void aProductsCursorFromAnotherCollectionIsRefused() {
+        authenticateAs("dgs-consumer-subject", "CONSUMER");
+        UUID collectionA = UUID.randomUUID();
+        UUID collectionB = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        when(collectionReadSpi.findCollectionById(any(UUID.class),
+                        any(org.springframework.security.core.Authentication.class)))
+                .thenAnswer(invocation -> java.util.Optional.of(collectionView(
+                        invocation.getArgument(0), "Curated", "منتقاة", "curated", true)));
+        Window<ProductView> windowA = Window.from(List.of(
+                        new ProductView(productId, "First", null, "ACTIVE")),
+                index -> ScrollPosition.forward(Map.of("position", 1, "id", productId)),
+                true);
+        when(collectionReadSpi.scrollCollectionProducts(eq(collectionA), any(), any(Limit.class),
+                        any(org.springframework.security.core.Authentication.class)))
+                .thenReturn(new CollectionProductsPage(windowA, 1));
+
+        Map<String, Object> first = dgsQueryExecutor.executeAndExtractJsonPath(
+                "query($id: ID!) { collection(id: $id) { products(first: 1) {"
+                        + " edges { cursor } } } }",
+                "data.collection", Map.of("id", collectionGlobalId(collectionA)));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> edges = (List<Map<String, Object>>)
+                ((Map<String, Object>) first.get("products")).get("edges");
+        String foreignCursor = (String) edges.get(0).get("cursor");
+
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
+                "query($id: ID!, $after: String) { collection(id: $id) {"
+                        + " products(first: 1, after: $after) { edges { cursor } } } }",
+                "data.collection",
+                Map.of("id", collectionGlobalId(collectionB), "after", foreignCursor)))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("forward keyset cursor emitted by");
+        verify(collectionReadSpi, org.mockito.Mockito.never()).scrollCollectionProducts(
+                eq(collectionB), any(), any(Limit.class),
+                any(org.springframework.security.core.Authentication.class));
+    }
+
+    /**
+     * The 2026-11-05 #806 round-3 review (Minor · Functional
+     * Correctness, the sibling leg): a Number-typed cursor payload the
+     * int-typed position column could never have emitted — a FRACTIONAL
+     * position — answers the classified cursor refusal; the old
+     * {@code intValue()} coercion silently truncated 1.5 to a WRONG page.
+     */
+    @Test
+    void aFractionalPositionCursorIsRefused() {
+        authenticateAs("dgs-consumer-subject", "CONSUMER");
+        UUID collectionId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        when(collectionReadSpi.findCollectionById(eq(collectionId),
+                        any(org.springframework.security.core.Authentication.class)))
+                .thenReturn(java.util.Optional.of(
+                        collectionView(collectionId, "Curated", "منتقاة", "curated", true)));
+        // A cursor carrying the collection's OWN fingerprint (so the
+        // fingerprint gate passes) but a fractional position value the
+        // int-typed membership column never emits.
+        String scrollFingerprint = "collection products with the same display order"
+                + " (collection " + collectionId + ")|position|ASC";
+        String fractionalCursor = cursorStrategy.toCursor(ScrollPosition.forward(
+                Map.of("position", 1.5, "id", productId, "__scroll", scrollFingerprint)));
+
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
+                "query($id: ID!, $after: String) { collection(id: $id) {"
+                        + " products(first: 1, after: $after) { edges { cursor } } } }",
+                "data.collection",
+                Map.of("id", collectionGlobalId(collectionId), "after", fractionalCursor)))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("forward keyset cursor emitted by");
+        verify(collectionReadSpi, org.mockito.Mockito.never()).scrollCollectionProducts(
+                eq(collectionId), any(), any(Limit.class),
+                any(org.springframework.security.core.Authentication.class));
+    }
+
+    /**
      * The sort mapping reaches the owning use case: NAME with DESC maps
      * onto the owner's executed keyset sort — and the omitted sortBy maps
      * onto the NAME-ascending default — never a silent fallback.

@@ -95,6 +95,20 @@ public class CollectionDataFetcher {
     private static final String COLLECTION_PRODUCTS_SCROLL_ID =
             "collection products with the same display order";
 
+    /**
+     * The 2026-11-05 #806 round-3 review (Minor · Functional
+     * Correctness): the collection-products cursor's fingerprint must
+     * bind the emitting collection — the membership position a cursor
+     * carries is only meaningful inside ITS collection, so a cursor
+     * answered by any OTHER collection must fail the same fingerprint
+     * refusal any other scroll's cursor already fails. The id rides the
+     * scroll identity (the gate's own fingerprint input), never the
+     * position keys Spring Data sees.
+     */
+    private static String collectionProductsScrollId(UUID collectionId) {
+        return COLLECTION_PRODUCTS_SCROLL_ID + " (collection " + collectionId + ")";
+    }
+
     private final CollectionReadSpi collectionReadSpi;
     private final CollectionGraphQlMapper collectionMapper;
     private final ProductGraphQlMapper productMapper;
@@ -323,14 +337,26 @@ public class CollectionDataFetcher {
         // The membership's own ordering key is int-typed (the position
         // column's own law — the normalizer hands the gate the declared
         // type, the same discipline every owning sort carries).
+        //
+        // The 2026-11-05 #806 round-3 review (Minor · Functional
+        // Correctness, both legs): (a) a Number-typed cursor payload must
+        // answer the classified cursor refusal — intValue() silently
+        // truncated the fractional (1.5 -> 1) and the overflowing
+        // (4294967297 -> 1) values into a WRONG page instead of the
+        // validation error; every value now parses through the same
+        // strict parseInt the text branch carries. (b) the cursor's
+        // fingerprint must bind the COLLECTION it was emitted for — a
+        // cursor from collection A applied to collection B passed the
+        // shared scroll fingerprint and executed a foreign position
+        // floor (a short or empty page); the per-collection scroll id
+        // makes the gate refuse it like any other scroll's cursor.
         KeysetScrollPosition position = KeysetCursorGate.forwardKeyset(
                 cursorStrategy, after, "position",
-                value -> value instanceof Number number ? number.intValue()
-                        : Integer.parseInt(String.valueOf(value)),
-                COLLECTION_PRODUCTS_SCROLL_ID, true);
+                value -> Integer.parseInt(String.valueOf(value)),
+                collectionProductsScrollId(collectionId), true);
         CollectionProductsPage page = collectionReadSpi.scrollCollectionProducts(
                 collectionId, position, Limit.of(pageSize), authentication);
-        return toProductsConnection(page, position);
+        return toProductsConnection(collectionId, page, position);
     }
 
     /**
@@ -397,7 +423,8 @@ public class CollectionDataFetcher {
      * The member-products connection envelope — the same declared Saleor
      * shape over the membership's own ordering key.
      */
-    private ProductCountableConnection toProductsConnection(CollectionProductsPage page,
+    private ProductCountableConnection toProductsConnection(UUID collectionId,
+                                                            CollectionProductsPage page,
                                                             KeysetScrollPosition position) {
         Window<ProductView> window = page.window();
         List<ProductView> content = window.getContent();
@@ -406,7 +433,8 @@ public class CollectionDataFetcher {
             edges.add(ProductCountableEdge.newBuilder()
                     .node(productMapper.toGraphQlProduct(content.get(i)))
                     .cursor(cursorStrategy.toCursor(KeysetCursorGate.stamped(
-                            window.positionAt(i), COLLECTION_PRODUCTS_SCROLL_ID, "position", true)))
+                            window.positionAt(i), collectionProductsScrollId(collectionId),
+                            "position", true)))
                     .build());
         }
         String startCursor = edges.isEmpty() ? null : edges.get(0).getCursor();

@@ -93,7 +93,8 @@ public class ProductTypeMutationDataFetcher {
     @DgsMutation(field = DgsConstants.MUTATION.ProductTypeUpdate)
     @RateLimiter(name = "graphqlProductTypeMutation")
     public ProductTypeUpdate productTypeUpdate(@InputArgument String id,
-                                               @InputArgument ProductTypeInput input) {
+                                               @InputArgument ProductTypeInput input,
+                                               graphql.schema.DataFetchingEnvironment environment) {
         requireInput(input, "productTypeUpdate");
         if (id == null) {
             throw new IllegalArgumentException("productTypeUpdate requires the id of the product type to update");
@@ -101,6 +102,17 @@ public class ProductTypeMutationDataFetcher {
         UUID nativeId = globalIdCodec.decode(id, ProductTypeGraphQlMapper.PRODUCT_TYPE_TYPE);
         ProductTypeMutationResult result = productTypeWriteSpi.updateProductType(
                 nativeId, new ProductTypeUpdateCommand(input.getName(), input.getSlug()));
+        // The 2026-11-05 #806 round-3 review (Minor · Functional
+        // Correctness): the field loader caches per execution, so a
+        // document that renders Product.productType BEFORE this mutation
+        // and again after it answered the SECOND render from the stale
+        // cached view (the loader's own caching=true contract). The
+        // mutation evicts the row it just rewrote from THIS execution's
+        // loader cache — the next render re-reads the owner (the same
+        // request-scoped registry DGS builds per execution).
+        if (result.errors().isEmpty()) {
+            environment.getDataLoader(ProductTypeDataLoader.NAME).clear(nativeId);
+        }
         return ProductTypeUpdate.newBuilder()
                 .errors(toProductErrors(result.errors()))
                 .productType(result.productType() == null
@@ -117,12 +129,19 @@ public class ProductTypeMutationDataFetcher {
      */
     @DgsMutation(field = DgsConstants.MUTATION.ProductTypeDelete)
     @RateLimiter(name = "graphqlProductTypeMutation")
-    public ProductTypeDelete productTypeDelete(@InputArgument String id) {
+    public ProductTypeDelete productTypeDelete(@InputArgument String id,
+                                               graphql.schema.DataFetchingEnvironment environment) {
         if (id == null) {
             throw new IllegalArgumentException("productTypeDelete requires the id of the product type to delete");
         }
         UUID nativeId = globalIdCodec.decode(id, ProductTypeGraphQlMapper.PRODUCT_TYPE_TYPE);
         ProductTypeMutationResult result = productTypeWriteSpi.deleteProductType(nativeId);
+        // The 2026-11-05 #806 round-3 review's stale-cache class, the
+        // delete sibling: a cached pre-delete render must never
+        // resurrect the deleted type in the same document.
+        if (result.errors().isEmpty()) {
+            environment.getDataLoader(ProductTypeDataLoader.NAME).clear(nativeId);
+        }
         return ProductTypeDelete.newBuilder()
                 .errors(toProductErrors(result.errors()))
                 .productType(result.productType() == null

@@ -78,7 +78,15 @@ public class AccountLifecycleDataFetcher {
         if (email == null || email.isBlank()) {
             throw new IllegalArgumentException("An email is required");
         }
-        accountLifecycleSpi.requestPasswordReset(email.trim());
+        // The 2026-11-05 #806 round-3 review (Minor · Functional
+        // Correctness): registration lowercases the address before the
+        // account is stored (accountRegister's own normalization), so a
+        // reset request typed in uppercase must resolve the SAME stored
+        // row — trim alone made the lookup miss, no email was sent, and
+        // the response still read as success. The identical
+        // trim+lowercase(Locale.ROOT) pair registration carries.
+        accountLifecycleSpi.requestPasswordReset(
+                email.trim().toLowerCase(java.util.Locale.ROOT));
         return RequestPasswordReset.newBuilder()
                 .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors()).build();

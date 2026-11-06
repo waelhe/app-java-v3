@@ -123,6 +123,12 @@ public class PermissionGroupDataFetcher {
         }
 
         PermissionGroupSort sort = toOwnerSort(sortBy);
+        // The 2026-11-05 #806 round-3 review (Minor · Functional
+        // Correctness): the cursor verdict precedes the degenerate page —
+        // an invalid `after` answers the validation error even when the
+        // page size itself is empty (never a success-shaped envelope that
+        // hides the malformed cursor).
+        KeysetScrollPosition earlyPosition = keysetPosition(after, sort);
         int requested = first == null ? properties.pagination().defaultPageSize() : first;
         if (requested <= 0) {
             // The degenerate page: no query executes (the staffUsers field's
@@ -137,7 +143,9 @@ public class PermissionGroupDataFetcher {
                     .build();
         }
         int pageSize = Math.min(requested, properties.pagination().maxPageSize());
-        KeysetScrollPosition position = keysetPosition(after, sort);
+        // the position was already validated above (the cursor verdict
+        // precedes the degenerate page — the same earlyPosition)
+        KeysetScrollPosition position = earlyPosition;
         PermissionGroupPage page = identitySpi.scrollPermissionGroups(
                 currentAuthentication(), sort, position, Limit.of(pageSize));
         return toConnection(page, position, sort);

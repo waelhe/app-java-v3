@@ -124,6 +124,18 @@ public class ProductTypeReadService implements ProductTypeReadSpi {
     }
 
     /**
+     * The staff-surface verdict seam (the 2026-11-05 #806 round-3
+     * review): the same ADMIN decision the scroll carries, factored for
+     * the boundary's degenerate paths — the orders root's own
+     * {@code requireAdmin()} precedent.
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    public void requireAdmin() {
+        // the annotation IS the verdict
+    }
+
+    /**
      * The product-type collection's forward-only keyset scroll —
      * ADMIN-enforced, the owning NAME sort with the {@code id} tiebreaker,
      * plus the collection total Saleor's {@code totalCount} field carries.

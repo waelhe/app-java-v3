@@ -539,6 +539,27 @@ class AttributeDataFetcherDgsTest {
     }
 
     /**
+     * The 2026-11-05 #806 round-3 review (Minor · Security & Privacy):
+     * the ADMIN verdict PRECEDES the degenerate-page early return — the
+     * empty page (first: 0) must still consult the owning seam's verdict
+     * (the orders root's own requireAdmin-before-early-returns order), so
+     * a non-ADMIN caller can never read a success-shaped envelope from
+     * the staff surface, empty or not.
+     */
+    @Test
+    void attributesWithADegeneratePageSizeStillConsultsTheAdminVerdict() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath(
+                "query { attributes(first: 0) { edges { cursor } } }",
+                "data.attributes");
+
+        // The degenerate page: the empty envelope, AFTER the verdict.
+        assertThat(payload.get("edges")).isEqualTo(List.of());
+        verify(attributeReadSpi).requireAdmin();
+    }
+
+    /**
      * The unowned sort fields (VALUE_REQUIRED, IS_VARIANT_ONLY,
      * VISIBLE_IN_STOREFRONT, the four deprecated flags) answer the
      * explicit classified not-implemented error — never a silent fallback

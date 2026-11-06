@@ -55,6 +55,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 /**
  * P3 (the canonical Saleor plan §5-P3): the DGS data-fetcher layer proof
@@ -440,6 +441,24 @@ class PromotionDataFetcherDgsTest {
                 "$"))
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
                 .hasMessageContaining("forward-only");
+    }
+
+    /**
+     * The 2026-11-05 #806 round-3 review (Minor · Security & Privacy):
+     * the ADMIN verdict PRECEDES the degenerate-page early return — the
+     * exact order the vouchers root carries.
+     */
+    @Test
+    void promotionsWithADegeneratePageSizeStillConsultsTheAdminVerdict() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath(
+                "query { promotions(first: 0) { edges { cursor } } }",
+                "data.promotions");
+
+        // The degenerate page: the empty envelope, AFTER the verdict.
+        assertThat(payload.get("edges")).isEqualTo(List.of());
+        verify(discountReadSpi).requireAdmin();
     }
 
     /**

@@ -129,6 +129,11 @@ public class PromotionDataFetcher {
                     "promotions supports forward-only pagination (first/after) on this platform");
         }
 
+        // The 2026-11-05 #806 round-3 review (Minor · Security & Privacy):
+        // the ADMIN verdict precedes the degenerate-page early return —
+        // the exact order the vouchers root carries (the pricing owner's
+        // own requireAdmin seam).
+        discountReadSpi.requireAdmin();
         PromotionSort sort = toOwnerSort(sortBy);
         int requested = first == null ? properties.pagination().defaultPageSize() : first;
         if (requested <= 0) {

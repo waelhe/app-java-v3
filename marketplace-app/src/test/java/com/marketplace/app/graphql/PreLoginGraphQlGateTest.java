@@ -209,4 +209,72 @@ class PreLoginGraphQlGateTest {
 
         assertDeniedWithAuthn();
     }
+
+    @Test
+    void aFragmentSpreadResolvingOnlyPreLoginRootsPassesThrough() {
+        // The 2026-11-05 #806 round-3 review (Minor · Functional
+        // Correctness): a legitimate anonymous document shaped
+        // `mutation { ...F } fragment F on Mutation { tokenVerify }` is
+        // decidable from the document's own definitions — the blanket
+        // round-2 refusal answered it AUTHN-001 for a valid document.
+        anonymous();
+        when(request.getDocument()).thenReturn(
+                "mutation { ...Verify }"
+                        + " fragment Verify on Mutation {"
+                        + " tokenVerify(token: \"x\") { isValid } }");
+
+        WebGraphQlResponse response = gate.intercept(request, chain).block();
+
+        assertThat(response).isNotNull();
+        verify(chain).next(request);
+    }
+
+    @Test
+    void anInlineFragmentSelectingOnlyPreLoginRootsPassesThrough() {
+        anonymous();
+        when(request.getDocument()).thenReturn(
+                "mutation { ... on Mutation {"
+                        + " tokenVerify(token: \"x\") { isValid } } }");
+
+        WebGraphQlResponse response = gate.intercept(request, chain).block();
+
+        assertThat(response).isNotNull();
+        verify(chain).next(request);
+    }
+
+    @Test
+    void anUndefinedFragmentSpreadIsDeniedByDefault() {
+        // The document references a fragment it does not define — the
+        // gate cannot decide what it selects, deny-by-default holds.
+        anonymous();
+        when(request.getDocument()).thenReturn(
+                "mutation { ...Missing }");
+
+        assertDeniedWithAuthn();
+    }
+
+    @Test
+    void aCyclicFragmentReferenceIsDeniedByDefault() {
+        anonymous();
+        when(request.getDocument()).thenReturn(
+                "query { ...A }"
+                        + " fragment A on Query { ...B }"
+                        + " fragment B on Query { ...A }");
+
+        assertDeniedWithAuthn();
+    }
+
+    @Test
+    void aFragmentSpreadSelectingAProtectedRootIsRefused() {
+        // The fragment graph is RESOLVED now, but the reachable root is
+        // outside the family — the verdict stays deny (the round-3
+        // refinement resolves, it never opens).
+        anonymous();
+        when(request.getDocument()).thenReturn(
+                "mutation { ...Protected }"
+                        + " fragment Protected on Mutation {"
+                        + " passwordChange(newPassword: \"whatever-123\") { errors { code } } }");
+
+        assertDeniedWithAuthn();
+    }
 }

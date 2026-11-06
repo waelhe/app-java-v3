@@ -54,6 +54,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 /**
  * P2 (the canonical Saleor plan §5-P2): the DGS data-fetcher layer proof
@@ -424,6 +425,24 @@ class ProductTypeDataFetcherDgsTest {
                 "$"))
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
                 .hasMessageContaining("forward-only");
+    }
+
+    /**
+     * The 2026-11-05 #806 round-3 review (Minor · Security & Privacy):
+     * the ADMIN verdict PRECEDES the degenerate-page early return — the
+     * attributes root's own order, applied to this sibling root.
+     */
+    @Test
+    void productTypesWithADegeneratePageSizeStillConsultsTheAdminVerdict() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath(
+                "query { productTypes(first: 0) { edges { cursor } } }",
+                "data.productTypes");
+
+        // The degenerate page: the empty envelope, AFTER the verdict.
+        assertThat(payload.get("edges")).isEqualTo(List.of());
+        verify(productTypeReadSpi).requireAdmin();
     }
 
     /**

@@ -50,6 +50,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -584,6 +585,72 @@ class AttributeMutationDataFetcherDgsTest {
         verify(attributeWriteSpi).bulkUpdateAttributes(argThat((List<AttributeBulkUpdateItem> items) ->
                 items.size() == 1 && items.get(0).id().equals(rowId)
                         && "Renamed".equals(items.get(0).fields().name())), any());
+    }
+
+    /**
+     * The 2026-11-05 #806 round-3 review (Minor · Functional
+     * Correctness): under a ROW-LEVEL error policy a malformed row id is
+     * the refused ROW's own INVALID result at its own index — the valid
+     * row still rides the owner batch and the SPI sees only the decodable
+     * items (the productVariantBulkUpdate root's own row-level law; the
+     * two bulk roots behave identically).
+     */
+    @Test
+    void attributeBulkUpdateUnderARowLevelPolicyRefusesAMalformedRowAtItsOwnIndex() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        UUID goodRow = UUID.randomUUID();
+        when(attributeWriteSpi.bulkUpdateAttributes(anyList(), any())).thenReturn(List.of(
+                new AttributeBulkOutcome(
+                        new AttributeView(goodRow, "Renamed", "kept",
+                                com.marketplace.catalog.CatalogAttributeType.TEXT), List.of())));
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { attributeBulkUpdate(
+                        attributes: [{id: "not-a-global-id", fields: {name: "Bad"}},
+                                     {id: "%s", fields: {name: "Renamed"}}],
+                        errorPolicy: IGNORE_FAILED) {
+                    count
+                    results { attribute { id } errors { path code } }
+                } }
+                """.formatted(attributeGlobalId(goodRow)), "data.attributeBulkUpdate");
+
+        // The SPI batch carried ONLY the decodable row.
+        verify(attributeWriteSpi).bulkUpdateAttributes(argThat((List<AttributeBulkUpdateItem> items) ->
+                items.size() == 1 && items.get(0).id().equals(goodRow)), eq("IGNORE_FAILED"));
+        assertThat(payload.get("count")).isEqualTo(1);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> results = (List<Map<String, Object>>) payload.get("results");
+        assertThat(results).hasSize(2);
+        // The refused row: its own result at index 0, the INVALID code,
+        // the pointer at the row's own id.
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> refused = (List<Map<String, Object>>) results.get(0).get("errors");
+        assertThat(refused).hasSize(1);
+        assertThat(refused.get(0).get("path")).isEqualTo("attributes.0.id");
+        assertThat(refused.get(0).get("code")).isEqualTo("INVALID");
+        // The valid row's result at index 1.
+        assertThat(results.get(1).get("errors")).isEqualTo(List.of());
+    }
+
+    /**
+     * The sibling law: under the WHOLE-CALL policies (the default and
+     * REJECT_EVERYTHING) the malformed id is still the whole call's
+     * classified validation error — the batch never reaches the owner.
+     */
+    @Test
+    void attributeBulkUpdateUnderTheWholeCallPolicyStillAnswersTheClassifiedError() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { attributeBulkUpdate(
+                        attributes: [{id: "not-a-global-id", fields: {name: "Bad"}}]) {
+                    count
+                    results { errors { path } }
+                } }
+                """, "$"))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("Invalid global ID");
+        org.mockito.Mockito.verifyNoInteractions(attributeWriteSpi);
     }
 
     @Test
