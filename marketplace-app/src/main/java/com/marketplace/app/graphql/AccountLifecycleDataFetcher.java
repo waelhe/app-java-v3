@@ -144,7 +144,16 @@ public class AccountLifecycleDataFetcher {
             throw new IllegalArgumentException(
                     "confirmAccount password (the merge mode) is not implemented on this platform yet");
         }
-        accountLifecycleSpi.confirmAccount(email == null ? null : email.trim(), token);
+        // The 2026-11-06 #806 review (Minor · Functional Correctness): the
+        // redemption keys on the SAME normalized address the token was
+        // minted for — registration lowercases before storing, so a
+        // mixed-case confirmAccount email must reach the owner's
+        // token-ownership comparison (requireTokenOwnedBy's
+        // owner.equals(email)) already normalized, exactly like
+        // requestPasswordReset above — trim alone made a valid token's
+        // redemption answer the wrong-owner refusal.
+        accountLifecycleSpi.confirmAccount(
+                email == null ? null : email.trim().toLowerCase(java.util.Locale.ROOT), token);
         return ConfirmAccount.newBuilder()
                 .user(null)
                 .accountErrors(mappers.emptyAccountErrors())
@@ -167,7 +176,12 @@ public class AccountLifecycleDataFetcher {
         if (token == null || token.isBlank() || password == null || password.isBlank()) {
             throw new IllegalArgumentException("A token and a new password are required");
         }
-        accountLifecycleSpi.completePasswordReset(email == null ? null : email.trim(), token,
+        // The 2026-11-06 #806 review (Minor · Functional Correctness): the
+        // same trim+lowercase(Locale.ROOT) pair confirmAccount carries —
+        // the reset redemption must resolve the SAME stored row the reset
+        // request (already normalized above) minted the token for.
+        accountLifecycleSpi.completePasswordReset(
+                email == null ? null : email.trim().toLowerCase(java.util.Locale.ROOT), token,
                 password);
         return SetPassword.newBuilder()
                 .user(null)

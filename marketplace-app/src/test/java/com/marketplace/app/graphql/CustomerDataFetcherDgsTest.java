@@ -55,6 +55,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -369,6 +370,34 @@ class CustomerDataFetcherDgsTest {
         assertThat(sortCaptor.getValue().field()).isEqualTo(UserAccountSort.Field.EMAIL);
         assertThat(sortCaptor.getValue().ascending()).isTrue();
         assertThat(limitCaptor.getValue().max()).isEqualTo(7);
+    }
+
+    /**
+     * The 2026-11-06 #806 review (Minor · Functional Correctness): the
+     * cursor verdict precedes the degenerate page — a REAL encoded cursor
+     * from a DIFFERENT scroll (createdAt keys no customers sort carries)
+     * answers the classified validation error even when the page size
+     * itself is empty, never a success-shaped envelope that hides the
+     * malformed cursor (the permissionGroups root's own early-position
+     * pattern).
+     */
+    @Test
+    void anInvalidAfterStillAnswersTheValidationErrorOnTheDegeneratePage() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        String foreignCursor = cursorStrategy.toCursor(
+                ScrollPosition.forward(Map.of("createdAt",
+                        java.time.Instant.parse("2026-10-01T00:00:00Z"),
+                        "id", UUID.randomUUID())));
+
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
+                "query($after: String) { customers(first: 0, after: $after) { totalCount } }",
+                "$", Map.of("after", foreignCursor)))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("after must be a forward keyset cursor emitted by"
+                        + " customers with the same sortBy");
+        verify(identitySpi, never()).scrollCustomers(
+                any(org.springframework.security.core.Authentication.class),
+                any(UserAccountSort.class), any(), any(Limit.class));
     }
 
     /**

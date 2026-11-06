@@ -135,6 +135,13 @@ public class CustomerDataFetcher {
         }
 
         UserAccountSort sort = toOwnerSort(sortBy);
+        // The 2026-11-06 #806 review (Minor · Functional Correctness): the
+        // cursor verdict precedes the degenerate page — an invalid `after`
+        // answers the classified validation error even when the page size
+        // itself is empty (never a success-shaped envelope that hides the
+        // malformed cursor). The permissionGroups root's own early-position
+        // pattern.
+        KeysetScrollPosition position = keysetPosition(after, sort);
         int requested = first == null ? properties.pagination().defaultPageSize() : first;
         if (requested <= 0) {
             // The degenerate page: no query executes (the staffUsers field's
@@ -149,7 +156,6 @@ public class CustomerDataFetcher {
                     .build();
         }
         int pageSize = Math.min(requested, properties.pagination().maxPageSize());
-        KeysetScrollPosition position = keysetPosition(after, sort);
         UserAccountPage page = identitySpi.scrollCustomers(
                 currentAuthentication(), sort, position, Limit.of(pageSize));
         return toConnection(page, position, sort);

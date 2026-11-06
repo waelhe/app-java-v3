@@ -571,6 +571,48 @@ class CollectionWriteServiceTest {
     }
 
     @Test
+    void aZeroBasedLiveOrderParksBeyondTheFinalRange() {
+        // The 2026-11-06 #806 review (Minor · Data Integrity): V253 permits
+        // a zero-based live order, so the parking range derived from the
+        // current maximum alone (0,1 -> 2,3) OVERLAPS the final dense range
+        // (1..size) — under the V298 live-position unique index a flush
+        // that assigns a final position before its parked tenant vacates it
+        // dies on 23505. The park must start strictly above BOTH the
+        // current maximum and the final range's own top (size).
+        UUID collectionId = UUID.randomUUID();
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        when(collectionRepository.findById(collectionId))
+                .thenReturn(Optional.of(row("slug", "Old", true)));
+        when(membershipRepository.findByCollectionIdOrderByPositionAscIdAsc(collectionId))
+                .thenReturn(List.of(
+                        CollectionProduct.create(collectionId, first, 0),
+                        CollectionProduct.create(collectionId, second, 1)));
+        List<List<Integer>> phasePositions = new java.util.ArrayList<>();
+        when(membershipRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<Integer> positions = new java.util.ArrayList<>();
+            for (CollectionProduct member : (Iterable<CollectionProduct>) invocation.getArgument(0)) {
+                positions.add(member.getPosition());
+            }
+            phasePositions.add(positions);
+            return invocation.getArgument(0);
+        });
+
+        CollectionMutationResult result = service.reorderProducts(collectionId,
+                List.of(new CollectionProductMove(second, -1)));
+
+        assertThat(result.success()).isTrue();
+        // The zero-based swap: phase 1 parks at 3,4 (max(1, size=2)+1 = 3 —
+        // never 2, which a final position claims), phase 2 writes the
+        // final dense 1,2 — every intermediate state stays unique under
+        // the partial unique index regardless of the flush order.
+        assertThat(phasePositions).containsExactly(
+                List.of(3, 4),
+                List.of(1, 2));
+        verify(membershipRepository).flush();
+    }
+
+    @Test
     void aZeroMoveLeavesTheOrderUnchangedWithoutAWrite() {
         UUID collectionId = UUID.randomUUID();
         UUID productId = UUID.randomUUID();

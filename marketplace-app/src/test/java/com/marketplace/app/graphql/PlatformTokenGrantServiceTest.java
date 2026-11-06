@@ -223,6 +223,26 @@ class PlatformTokenGrantServiceTest {
     }
 
     @Test
+    void theDisableVerdictDoesNotRideTheAccountProjection() {
+        // The 2026-11-06 #806 review (Minor · Stability & Availability):
+        // an EMPTY account projection (identity hiding completing between
+        // the authentication and the projection read) must never skip the
+        // state wall — the login store's own truth decides alone, and the
+        // raced row is revoked by the SAME object the save wrote (a
+        // concurrent family revoke can no longer turn remove(null) into
+        // an unclassified 500 either).
+        assertThat(authorizationStore.size()).isZero();
+        when(identitySpi.findCurrentUserAccount(any())).thenReturn(Optional.empty());
+        when(identitySpi.loginAccountEnabled(PRINCIPAL)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.grant(PRINCIPAL, PASSWORD))
+                .isInstanceOf(org.springframework.security.authentication.DisabledException.class);
+        assertThat(authorizationStore.size())
+                .as("the raced grant's row must not survive the disable")
+                .isZero();
+    }
+
+    @Test
     void theRefreshLegRevokesTheFamilyOfADisabledAccount() {
         PlatformTokenGrantService.IssuedTokens granted = service.grant(PRINCIPAL, PASSWORD);
 

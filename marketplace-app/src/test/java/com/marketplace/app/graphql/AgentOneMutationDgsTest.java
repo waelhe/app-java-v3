@@ -21,6 +21,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.validation.autoconfigure.ValidationAutoConfiguration;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.domain.ScrollPosition;
+import org.springframework.graphql.data.pagination.EncodingCursorStrategy;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -64,6 +66,12 @@ class AgentOneMutationDgsTest {
 
     @Autowired
     private DgsQueryExecutor dgsQueryExecutor;
+
+    // The encoded-cursor seam (the customers/permissionGroups test
+    // precedent) — the cursor-validation legs build REAL encoded cursors
+    // with foreign fingerprints.
+    @Autowired
+    private EncodingCursorStrategy<ScrollPosition> cursorStrategy;
 
     @MockitoBean
     private IdentitySpi identitySpi;
@@ -211,6 +219,80 @@ class AgentOneMutationDgsTest {
     }
 
     @Test
+    void accountAddressCreateRendersTheCallerUserThroughTheSharedMapper() {
+        // The 2026-11-06 #806 review (Minor · Functional Correctness): the
+        // payload user field — Saleor's accountAddress* payloads return the
+        // affected user; the identity projection read renders it through
+        // the SHARED user mapper (the CreateToken.user precedent).
+        actAs("agent-one@example.com", "CONSUMER");
+        AddressView view = new AddressView(ADDRESS_ID, USER_ID, "One", "Caller", null,
+                "Street 1", null, "City", null, "12345", "DE", null, "+49", false, true);
+        when(addressManagementSpi.createForCaller(any(), any(), eq(null))).thenReturn(view);
+        when(identitySpi.findCurrentUserAccount(any())).thenReturn(Optional.of(new UserAccountView(
+                USER_ID, "agent-one@example.com", false, true,
+                java.time.Instant.parse("2026-01-01T00:00:00Z"),
+                java.time.Instant.parse("2026-01-02T00:00:00Z"), java.util.Set.of("CONSUMER"))));
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation($input: AddressInput!) {
+                    accountAddressCreate(input: $input) {
+                        address { id }
+                        user { id email isActive }
+                        errors { code }
+                    }
+                }
+                """, "data.accountAddressCreate",
+                Map.of("input", Map.of("firstName", "One", "lastName", "Caller",
+                        "streetAddress1", "Street 1", "city", "City", "postalCode", "12345",
+                        "country", "DE")));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> user = (Map<String, Object>) payload.get("user");
+        assertThat(user).isNotNull();
+        assertThat(user.get("email")).isEqualTo("agent-one@example.com");
+        assertThat(user.get("isActive")).isEqualTo(true);
+        // The typed global ID the SHARED mapper emits — never a raw UUID.
+        assertThat(user.get("id")).isEqualTo(java.util.Base64.getEncoder()
+                .encodeToString(("User:" + USER_ID).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+    }
+
+    @Test
+    void addressCreateRendersTheAddressedUserOnTheStaffLeg() {
+        // The 2026-11-06 #806 review — the staff legs load the ADDRESSED
+        // account (the created address's owner), not the calling admin.
+        actAs("agent-one-admin@example.com", "ADMIN");
+        AddressView view = new AddressView(ADDRESS_ID, USER_ID, "One", "Target", null,
+                "Street 1", null, "City", null, "12345", "DE", null, "+49", false, false);
+        when(addressManagementSpi.createForUser(any(), eq(USER_ID), any())).thenReturn(view);
+        when(identitySpi.findUserAccountById(eq(USER_ID), any())).thenReturn(Optional.of(
+                new UserAccountView(USER_ID, "target@example.com", false, true,
+                        java.time.Instant.parse("2026-01-01T00:00:00Z"),
+                        java.time.Instant.parse("2026-01-02T00:00:00Z"), java.util.Set.of("CONSUMER"))));
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation($input: AddressInput!, $userId: ID!) {
+                    addressCreate(input: $input, userId: $userId) {
+                        address { id }
+                        user { id email }
+                        errors { code }
+                    }
+                }
+                """, "data.addressCreate",
+                Map.of("input", Map.of("firstName", "One", "lastName", "Target",
+                        "streetAddress1", "Street 1", "city", "City", "postalCode", "12345",
+                        "country", "DE"),
+                        "userId", java.util.Base64.getEncoder()
+                                .encodeToString(("User:" + USER_ID)
+                                        .getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> user = (Map<String, Object>) payload.get("user");
+        assertThat(user).isNotNull();
+        assertThat(user.get("email")).isEqualTo("target@example.com");
+        verify(identitySpi).findUserAccountById(eq(USER_ID), any());
+    }
+
+    @Test
     void addressQueryRejectsARawUuidWithTheCodecClassifiedError() {
         actAs("agent-one@example.com", "ADMIN");
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
@@ -290,6 +372,31 @@ class AgentOneMutationDgsTest {
                 } }
                 """, "data.requestPasswordReset.errors");
         verify(accountLifecycleSpi).requestPasswordReset("who@example.com");
+    }
+
+    @Test
+    void confirmAccountNormalizesTheAddressLikeTheResetRequest() {
+        // The 2026-11-06 #806 review (Minor · Functional Correctness): the
+        // redemption must key on the SAME normalized address the token was
+        // minted for — trim alone made the owner's case-SENSITIVE
+        // requireTokenOwnedBy comparison reject a valid token.
+        dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { confirmAccount(email: "  WHO@Example.COM ",
+                        token: "the-token") { errors { code } } }
+                """, "data.confirmAccount.errors");
+        verify(accountLifecycleSpi).confirmAccount("who@example.com", "the-token");
+    }
+
+    @Test
+    void setPasswordNormalizesTheAddressLikeTheResetRequest() {
+        // The 2026-11-06 #806 review — the reset redemption leg carries
+        // the identical trim+lowercase(Locale.ROOT) pair.
+        dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { setPassword(email: "  WHO@Example.COM ",
+                        token: "the-token", password: "new-password") { errors { code } } }
+                """, "data.setPassword.errors");
+        verify(accountLifecycleSpi).completePasswordReset("who@example.com", "the-token",
+                "new-password");
     }
 
     @Test
@@ -541,6 +648,28 @@ class AgentOneMutationDgsTest {
                 query { customerTypes(where: { isDefault: true }) { edges { node { id } } } }
                 """, "data.customerTypes"))
                 .hasMessageContaining("where filter is not implemented");
+    }
+
+    @Test
+    void customerTypesAnswersTheCursorValidationErrorOnTheDegeneratePage() {
+        // The 2026-11-06 #806 review (Minor · Functional Correctness): the
+        // cursor verdict precedes the degenerate page — a REAL encoded
+        // cursor from a DIFFERENT scroll (the createdAt keys no
+        // customerTypes sort carries) answers the classified validation
+        // error even when the page size itself is empty, never a
+        // success-shaped envelope that hides the malformed cursor.
+        actAs("agent-one-admin@example.com", "ADMIN");
+        String foreignCursor = cursorStrategy.toCursor(
+                ScrollPosition.forward(java.util.Map.of("createdAt",
+                        java.time.Instant.parse("2026-10-01T00:00:00Z"),
+                        "id", java.util.UUID.randomUUID())));
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                query($after: String) { customerTypes(first: 0, after: $after) { edges { node { id } } } }
+                """, "data.customerTypes", java.util.Map.of("after", foreignCursor)))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("after must be a forward keyset cursor emitted by"
+                        + " customerTypes with the same sortBy");
+        verify(customerTypeSpi, never()).scroll(any(), any(), any(), any(), any());
     }
 
     // ---------------------------------------------------------------------
