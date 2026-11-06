@@ -243,11 +243,37 @@ public class CmsNavigationDataFetcher {
         CmsNavigationSpi.MenuItemView deleted = navigationPort.deleteMenuItem(caller,
                 decodeId(id, MENU_ITEM_TAG, "A menu item ID is required"));
         MenuTreeContext deletedContext = menuTreeContextOf(caller, deleted.menuId());
+        // The 2026-11-06 #806 round review (Minor · Functional
+        // Correctness): the deleted row is absent from the POST-deletion
+        // tree, so the context's levels map never carried it — the
+        // rendered `level` fell back to the default 0 even for a deeply
+        // nested item. The deleted row's own parentId still addresses its
+        // SURVIVING parent chain (the subtree re-parents to the parent —
+        // the owner's own never-orphan law), so the level is derived from
+        // the parent's own computed level + 1.
+        Map<UUID, Integer> levelsWithDeleted = new HashMap<>(deletedContext.levels());
+        levelsWithDeleted.put(deleted.id(), deletedLevelOf(deleted, deletedContext));
         return MenuItemDelete.newBuilder()
                 .menuItem(toGraphQlMenuItem(deleted, deletedContext.byParent(),
-                        deletedContext.levels()))
+                        levelsWithDeleted))
                 .errors(mappersEmpty())
                 .build();
+    }
+
+    /**
+     * The deleted row's own level — derived from its SURVIVING parent
+     * chain in the post-deletion tree (the deletion re-parents the
+     * subtree to the deleted row's parent, so every ancestor survives
+     * with its own level in the context; a root-level deletion answers
+     * the honest 0).
+     */
+    private static int deletedLevelOf(CmsNavigationSpi.MenuItemView deleted,
+                                      MenuTreeContext context) {
+        if (deleted.parentId() == null) {
+            return 0;
+        }
+        Integer parentLevel = context.levels().get(deleted.parentId());
+        return parentLevel == null ? 0 : parentLevel + 1;
     }
 
     @DgsMutation(field = DgsConstants.MUTATION.MenuItemBulkDelete)

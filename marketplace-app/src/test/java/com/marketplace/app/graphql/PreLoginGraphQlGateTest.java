@@ -265,6 +265,47 @@ class PreLoginGraphQlGateTest {
     }
 
     @Test
+    void aRepeatedFragmentReferenceIsNotACycleAndPassesThrough() {
+        // The 2026-11-06 #806 round review (Minor · Functional
+        // Correctness): a REPEAT reference to a completed fragment is a
+        // valid document — `mutation { ...F ...F }` was denied by the
+        // visiting-set's never-removal (the repeat hit the same
+        // membership check a true cycle hits). The completed-fragments
+        // memo skips the re-walk; a true cycle stays denied (its own
+        // test above).
+        anonymous();
+        when(request.getDocument()).thenReturn(
+                "mutation { ...Verify ...Verify }"
+                        + " fragment Verify on Mutation {"
+                        + " tokenVerify(token: \"x\") { isValid } }");
+
+        WebGraphQlResponse response = gate.intercept(request, chain).block();
+
+        assertThat(response).isNotNull();
+        verify(chain).next(request);
+    }
+
+    @Test
+    void aFragmentReferencedAcrossSiblingsIsResolvedOnceAndPassesThrough() {
+        // The same round: two DIFFERENT fragments each referencing a
+        // shared inner fragment — the shared fragment completes on the
+        // first reference and the second reference skips the re-walk
+        // (never re-entering the visiting set).
+        anonymous();
+        when(request.getDocument()).thenReturn(
+                "mutation { ...OuterA ...OuterB }"
+                        + " fragment OuterA on Mutation { ...Shared }"
+                        + " fragment OuterB on Mutation { ...Shared }"
+                        + " fragment Shared on Mutation {"
+                        + " tokenVerify(token: \"x\") { isValid } }");
+
+        WebGraphQlResponse response = gate.intercept(request, chain).block();
+
+        assertThat(response).isNotNull();
+        verify(chain).next(request);
+    }
+
+    @Test
     void aFragmentSpreadSelectingAProtectedRootIsRefused() {
         // The fragment graph is RESOLVED now, but the reachable root is
         // outside the family — the verdict stays deny (the round-3

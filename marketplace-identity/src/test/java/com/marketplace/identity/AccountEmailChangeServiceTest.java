@@ -205,6 +205,8 @@ class AccountEmailChangeServiceTest {
     @Test
     void theConfirmLegMovesTheWholeLoginIdentityInOneTransaction() {
         userRow.requestEmailChange(NEW_EMAIL);
+        when(authActionTokenService.accountOf("the-token", AuthActionTokenPurpose.EMAIL_CHANGE))
+                .thenReturn(Optional.of(OLD_SUBJECT));
         when(authActionTokenService.consume("the-token", AuthActionTokenPurpose.EMAIL_CHANGE))
                 .thenReturn(redeemedToken());
         when(userRepository.findBySubject(OLD_SUBJECT)).thenReturn(Optional.of(userRow));
@@ -212,7 +214,7 @@ class AccountEmailChangeServiceTest {
         when(userDetailsManager.userExists(NEW_EMAIL)).thenReturn(false);
         when(userDetailsManager.loadUserByUsername(OLD_SUBJECT)).thenReturn(loginRow());
 
-        String answered = service.confirmChange("the-token");
+        String answered = service.confirmChange(caller, "the-token");
 
         assertThat(answered).isEqualTo(NEW_EMAIL);
         // B8: the subject moved TOGETHER with the email (the platform's
@@ -231,33 +233,77 @@ class AccountEmailChangeServiceTest {
     @Test
     void theConfirmLegRefusesATakenAddress() {
         userRow.requestEmailChange(NEW_EMAIL);
+        when(authActionTokenService.accountOf("the-token", AuthActionTokenPurpose.EMAIL_CHANGE))
+                .thenReturn(Optional.of(OLD_SUBJECT));
         when(authActionTokenService.consume("the-token", AuthActionTokenPurpose.EMAIL_CHANGE))
                 .thenReturn(redeemedToken());
         when(userRepository.findBySubject(OLD_SUBJECT)).thenReturn(Optional.of(userRow));
         when(userRepository.existsBySubject(NEW_EMAIL)).thenReturn(true);
 
-        assertThatThrownBy(() -> service.confirmChange("the-token"))
+        assertThatThrownBy(() -> service.confirmChange(caller, "the-token"))
                 .isInstanceOf(ConflictException.class);
         verify(userDetailsManager, never()).deleteUser(any());
     }
 
     @Test
     void theConfirmLegRefusesARightWithoutAPendingPair() {
+        when(authActionTokenService.accountOf("the-token", AuthActionTokenPurpose.EMAIL_CHANGE))
+                .thenReturn(Optional.of(OLD_SUBJECT));
         when(authActionTokenService.consume("the-token", AuthActionTokenPurpose.EMAIL_CHANGE))
                 .thenReturn(redeemedToken());
         when(userRepository.findBySubject(OLD_SUBJECT)).thenReturn(Optional.of(userRow));
 
-        assertThatThrownBy(() -> service.confirmChange("the-token"))
+        assertThatThrownBy(() -> service.confirmChange(caller, "the-token"))
                 .isInstanceOf(ConflictException.class);
     }
 
     @Test
     void theConfirmLegRefusesAnUnknownAccount() {
+        when(authActionTokenService.accountOf("the-token", AuthActionTokenPurpose.EMAIL_CHANGE))
+                .thenReturn(Optional.of(OLD_SUBJECT));
         when(authActionTokenService.consume("the-token", AuthActionTokenPurpose.EMAIL_CHANGE))
                 .thenReturn(redeemedToken());
         when(userRepository.findBySubject(OLD_SUBJECT)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.confirmChange("the-token"))
+        assertThatThrownBy(() -> service.confirmChange(caller, "the-token"))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    /**
+     * The 2026-11-06 #806 round review (Major · Security &amp; Privacy):
+     * the redemption is bound to the authenticated CALLER — the pinned
+     * Saleor 3.23.45 contract resolves the user from the request context
+     * and rejects any token whose owner is someone else. The mismatch
+     * answers the classified conflict WITHOUT consuming the right: the
+     * legitimate owner's one-time token survives the probe.
+     */
+    @Test
+    void theConfirmLegRefusesARightOwnedByAnotherAccountWithoutConsumingIt() {
+        when(authActionTokenService.accountOf("the-token", AuthActionTokenPurpose.EMAIL_CHANGE))
+                .thenReturn(Optional.of("someone-else@example.com"));
+
+        assertThatThrownBy(() -> service.confirmChange(caller, "the-token"))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("different account");
+        // The right is NOT consumed — the owner can still redeem it.
+        verify(authActionTokenService, never())
+                .consume(anyString(), any(AuthActionTokenPurpose.class));
+    }
+
+    /**
+     * The same round: an unknown token answers the SAME unknown-token
+     * denial the consumption path would (the accountOf javadoc's own
+     * contract — never a second, drift-prone message).
+     */
+    @Test
+    void theConfirmLegAnswersAnUnknownTokenWithTheConsumptionPathDenial() {
+        when(authActionTokenService.accountOf("the-token", AuthActionTokenPurpose.EMAIL_CHANGE))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.confirmChange(caller, "the-token"))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class)
+                .hasMessageContaining("invalid or has already been used");
+        verify(authActionTokenService, never())
+                .consume(anyString(), any(AuthActionTokenPurpose.class));
     }
 }

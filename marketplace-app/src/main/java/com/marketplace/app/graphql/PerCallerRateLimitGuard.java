@@ -158,6 +158,8 @@ public class PerCallerRateLimitGuard {
 
     public PerCallerRateLimitGuard(
             ObjectProvider<RateLimiterRegistry> sharedRegistry,
+            ObjectProvider<io.github.resilience4j.springboot.ratelimiter.autoconfigure.RateLimiterProperties>
+                    rateLimiterProperties,
             @Value("${marketplace.graphql.per-caller-rate-limit.max-tracked-callers:10000}")
             int maxTrackedCallers) {
         this.sharedRegistry = sharedRegistry;
@@ -204,22 +206,50 @@ public class PerCallerRateLimitGuard {
         // — the address alone locks the account out). The invariant is
         // window-aware now: the MOST one address can obtain within one
         // account window must stay within the account budget.
-        long accountWindowMs = accountConfig.getLimitRefreshPeriod().toMillis();
-        long callerWindowMs = Math.max(1, callerConfig.getLimitRefreshPeriod().toMillis());
-        long windowsPerAccountWindow =
-                (accountWindowMs + callerWindowMs - 1) / callerWindowMs; // ceil
-        long callerCeilingPerAccountWindow =
-                callerConfig.getLimitForPeriod() * windowsPerAccountWindow;
-        if (accountConfig.getLimitForPeriod() <= callerConfig.getLimitForPeriod()
-                || callerCeilingPerAccountWindow > accountConfig.getLimitForPeriod()) {
-            throw new IllegalArgumentException(
-                    "marketplace.graphql.per-caller-rate-limit: the perAccountGrant budget ("
-                            + accountConfig.getLimitForPeriod() + "/"
-                            + accountConfig.getLimitRefreshPeriod() + ") must strictly exceed the "
-                            + "perCallerGrant budget (" + callerConfig.getLimitForPeriod() + "/"
-                            + callerConfig.getLimitRefreshPeriod() + ") AND the per-caller ceiling "
-                            + "within one account window (" + callerCeilingPerAccountWindow
-                            + ") — otherwise one address alone exhausts an account's whole budget");
+        requireWindowAwareAccountHeadroom(PER_CALLER_CONFIG, callerConfig, accountConfig);
+        // The 2026-11-06 #806 round review (Minor · Security & Privacy):
+        // resolveConfig prefers the SURFACE-specific override
+        // (<family>-<surface>, e.g. perCallerGrant-graphqlCheckoutMutation)
+        // over the family-wide entry the invariant above just validated —
+        // a per-surface override could quietly break the lockout
+        // protection the family check enforces (and, riding base-config:
+        // default, inherit the DEFAULT family's 5s queue timeout instead
+        // of the fail-fast zero these budgets document). The SAME
+        // invariants therefore validate every declared per-surface
+        // override at startup: the official RateLimiterProperties bean
+        // (the starter's own configuration surface — the registry API has
+        // no name enumeration) supplies the declared names; the registry's
+        // own merged configs supply each entry's EFFECTIVE values.
+        io.github.resilience4j.springboot.ratelimiter.autoconfigure.RateLimiterProperties
+                declaredLimiters = rateLimiterProperties == null
+                        ? null : rateLimiterProperties.getIfAvailable();
+        if (shared != null && declaredLimiters != null) {
+            java.util.Set<String> surfaceNames = new java.util.TreeSet<>();
+            for (java.util.Map.Entry<String, ?> entry
+                    : declaredLimiters.getConfigs().entrySet()) {
+                collectBudgetSurface(PER_CALLER_CONFIG, entry.getKey(), surfaceNames);
+                collectBudgetSurface(PER_ACCOUNT_CONFIG, entry.getKey(), surfaceNames);
+            }
+            for (java.util.Map.Entry<String, ?> entry
+                    : declaredLimiters.getInstances().entrySet()) {
+                collectBudgetSurface(PER_CALLER_CONFIG, entry.getKey(), surfaceNames);
+                collectBudgetSurface(PER_ACCOUNT_CONFIG, entry.getKey(), surfaceNames);
+            }
+            for (String surface : surfaceNames) {
+                // Every override in these families is a fail-fast budget:
+                // a queued 5s wait would hold the request thread against
+                // the documented zero-timeout contract.
+                RateLimiterConfig surfaceCaller = shared
+                        .getConfiguration(PER_CALLER_CONFIG + "-" + surface)
+                        .orElse(callerConfig);
+                RateLimiterConfig surfaceAccount = shared
+                        .getConfiguration(PER_ACCOUNT_CONFIG + "-" + surface)
+                        .orElse(accountConfig);
+                requireZeroTimeout(PER_CALLER_CONFIG + "-" + surface, surfaceCaller);
+                requireZeroTimeout(PER_ACCOUNT_CONFIG + "-" + surface, surfaceAccount);
+                requireWindowAwareAccountHeadroom(
+                        PER_CALLER_CONFIG + "-" + surface, surfaceCaller, surfaceAccount);
+            }
         }
         // The wave-3 review (Major · Stability): dynamically keyed
         // instances in the AUTO-CONFIGURED registry would grow without
@@ -242,6 +272,69 @@ public class PerCallerRateLimitGuard {
                 .withRegistryStore(new BoundedLruStore<>(maxTrackedCallers))
                 .addRateLimiterConfig(PER_ACCOUNT_CONFIG, DEFAULT_PER_ACCOUNT_CONFIG)
                 .build();
+    }
+
+    /**
+     * The window-aware lockout invariant (the 2026-11-05 #806 round-3
+     * review, Major · Security &amp; Privacy): the account budget must
+     * strictly exceed the caller budget AND the MOST one address can
+     * obtain within one account window (callerLimit × ceil(accountWindow
+     * / callerWindow)) must stay within the account budget — otherwise
+     * one address alone exhausts an account's whole budget and locks the
+     * owner out. Shared by the family-wide startup check and every
+     * per-surface override check (the 2026-11-06 #806 round review).
+     */
+    private static void requireWindowAwareAccountHeadroom(
+            String configName, RateLimiterConfig callerConfig, RateLimiterConfig accountConfig) {
+        long accountWindowMs = accountConfig.getLimitRefreshPeriod().toMillis();
+        long callerWindowMs = Math.max(1, callerConfig.getLimitRefreshPeriod().toMillis());
+        long windowsPerAccountWindow =
+                (accountWindowMs + callerWindowMs - 1) / callerWindowMs; // ceil
+        long callerCeilingPerAccountWindow =
+                callerConfig.getLimitForPeriod() * windowsPerAccountWindow;
+        if (accountConfig.getLimitForPeriod() <= callerConfig.getLimitForPeriod()
+                || callerCeilingPerAccountWindow > accountConfig.getLimitForPeriod()) {
+            throw new IllegalArgumentException(
+                    "marketplace.graphql.per-caller-rate-limit: the " + configName
+                            + " pair violates the lockout invariant — the account budget ("
+                            + accountConfig.getLimitForPeriod() + "/"
+                            + accountConfig.getLimitRefreshPeriod() + ") must strictly exceed the "
+                            + "caller budget (" + callerConfig.getLimitForPeriod() + "/"
+                            + callerConfig.getLimitRefreshPeriod() + ") AND the per-caller ceiling "
+                            + "within one account window (" + callerCeilingPerAccountWindow
+                            + ") — otherwise one address alone exhausts an account's whole budget");
+        }
+    }
+
+    /**
+     * The fail-fast timeout contract of the keyed budget families: every
+     * entry (family-wide or per-surface override) queues for ZERO — a
+     * positive timeout would hold the request thread for the wait against
+     * the documented reject-immediately semantics (the 2026-11-06 #806
+     * round review: an override riding {@code base-config: default}
+     * inherits the DEFAULT family's 5s queue).
+     */
+    private static void requireZeroTimeout(String configName, RateLimiterConfig config) {
+        if (!config.getTimeoutDuration().isZero()) {
+            throw new IllegalArgumentException(
+                    "marketplace.graphql.per-caller-rate-limit: " + configName
+                            + " must declare timeout-duration: 0 (fail-fast), got "
+                            + config.getTimeoutDuration());
+        }
+    }
+
+    /**
+     * Collects the surface name of a {@code <family>-<surface>} override
+     * entry (e.g. {@code perCallerGrant-graphqlCheckoutMutation} yields
+     * {@code graphqlCheckoutMutation}) — the names the per-surface
+     * startup validation iterates.
+     */
+    private static void collectBudgetSurface(String family, String entryName,
+                                             java.util.Set<String> surfaces) {
+        if (entryName != null && entryName.startsWith(family + "-")
+                && entryName.length() > family.length() + 1) {
+            surfaces.add(entryName.substring(family.length() + 1));
+        }
     }
 
     /**
@@ -555,7 +648,14 @@ public class PerCallerRateLimitGuard {
         try {
             byte[] octets = java.net.InetAddress.getByName(ipLiteral).getAddress();
             if (octets.length != 16) {
-                return ipLiteral; // IPv4 (4 bytes): the address itself IS the /32 key
+                // The 2026-11-06 #806 round review (Minor · Functional
+                // Correctness): the CANONICAL dotted form, never the raw
+                // literal — the JDK collapses an IPv4-mapped IPv6 literal
+                // (::ffff:1.2.3.4) to the same 4-byte array as 1.2.3.4,
+                // and the raw text would split ONE machine's address into
+                // TWO budget keys (the mapped form and the plain form).
+                // The canonical render unifies them.
+                return java.net.InetAddress.getByAddress(octets).getHostAddress();
             }
             byte[] prefix = octets.clone();
             java.util.Arrays.fill(prefix, 8, 16, (byte) 0);

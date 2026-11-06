@@ -206,7 +206,12 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
 1. Read the governing file + SYSTEM.md §14.2 matrix and the relevant
    task-specific pinned skills → 2. verify the applicable official docs
    and matching official source repository → 3. measure current code,
-   live contracts, and baseline → 4. create a remote branch from the
+   live contracts, and baseline. The baseline is a MEASURED record with
+   a named source, never an assumed value: either the latest completed
+   GitHub Actions run on the observed base SHA (its run link cited in
+   the PR) or the locally recorded Stage-3 output when local execution
+   is available — docs/METHODOLOGY.md's BEFORE/AFTER/DELTA table cites
+   whichever source produced each number → 4. create a remote branch from the
    observed GitHub base SHA → 5. implement on that branch with the
    AGENTS.md §0.2 declaration and the official supported APIs/extension
    points → 6. add regression pins and run relevant tests. Run local

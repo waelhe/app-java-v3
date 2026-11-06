@@ -48,8 +48,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * GraphQL document and lets an anonymous caller reach execution ONLY
  * for the enumerated pre-login family (tokenCreate, tokenRefresh,
  * tokenVerify, requestPasswordReset, confirmAccount, setPassword,
- * confirmEmailChange, accountRegister — every one
- * carries its own proof in the payload or CREATES the account).
+ * accountRegister — every one
+ * carries its own proof in the payload or CREATES the account;
+ * confirmEmailChange left the family on 2026-11-06: the pinned Saleor
+ * 3.23.45 contract requires AUTHENTICATED_USER on the redemption and
+ * binds it to the authenticated caller).
  * Everything else answers the classified AUTHN-001 GraphQL error before
  * dispatch. This is the §13 decision record's documented reopening
  * condition satisfied — "an approved public-discovery journey after

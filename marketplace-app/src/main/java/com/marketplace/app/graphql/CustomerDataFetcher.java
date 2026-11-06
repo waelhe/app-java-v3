@@ -134,6 +134,14 @@ public class CustomerDataFetcher {
                     "customers supports forward-only pagination (first/after) on this platform");
         }
 
+        // The 2026-11-06 #806 round review (Minor · Security & Privacy):
+        // the ADMIN verdict precedes the degenerate page — the empty-page
+        // branch used to return before {@code scrollCustomers} ran, and
+        // the ADMIN wall lives on that scroll, so an authenticated
+        // NON-admin read a success-shaped empty connection instead of the
+        // classified denial. The same seam the orders/attribute roots'
+        // requireAdmin-before-early-returns order established.
+        identitySpi.requireAdmin();
         UserAccountSort sort = toOwnerSort(sortBy);
         // The 2026-11-06 #806 review (Minor · Functional Correctness): the
         // cursor verdict precedes the degenerate page — an invalid `after`

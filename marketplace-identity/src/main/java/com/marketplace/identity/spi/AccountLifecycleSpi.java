@@ -37,8 +37,22 @@ public interface AccountLifecycleSpi {
     /** {@code requestEmailChange}: the password-verified request leg. */
     void requestEmailChange(Authentication caller, String newEmail, String password);
 
-    /** {@code confirmEmailChange}: the redemption leg — answers the new email. */
-    String confirmEmailChange(String token);
+    /**
+     * {@code confirmEmailChange}: the redemption leg — answers the new
+     * email. The 2026-11-06 #806 round review (Major · Security &amp;
+     * Privacy): the pinned Saleor 3.23.45 contract binds the redemption
+     * to the AUTHENTICATED caller (AuthorizationFilters.AUTHENTICATED_
+     * USER; a token whose user_id claim mismatches the caller is
+     * rejected) — the caller's identity is verified against the right's
+     * owner BEFORE the consumption, so a mismatched authenticated caller
+     * answers the classified denial and the legitimate owner's right
+     * survives.
+     *
+     * @param caller the authenticated caller, who must own the right
+     * @param token  the one-time email-change right
+     * @return the confirmed new email address
+     */
+    String confirmEmailChange(Authentication caller, String token);
 
     /** {@code accountRegister}: the standing registration flow — answers the created id. */
     UUID register(String email, String password, String displayName);

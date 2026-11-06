@@ -297,6 +297,13 @@ public class CustomerTypeDataFetcher {
             throw new IllegalArgumentException(
                     "Between one and a hundred attribute IDs are required");
         }
+        // The 2026-11-06 #806 round review (Minor · Functional
+        // Correctness): the CONFIGURED bulk bound applies before the
+        // per-id decode + registry probe — a max-list-items below the
+        // identity owner's hard 100 cap used to ride a longer list
+        // through one registry read PER id (the requireBoundedList seam
+        // every bulk root already carries).
+        properties.requireBoundedList(attributeIds, "customerType attribute assignments");
         Authentication caller = currentAuthentication();
         List<UUID> decoded = attributeIds.stream()
                 .map(id -> globalIdCodec.decode(id, "Attribute"))

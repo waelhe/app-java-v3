@@ -217,15 +217,18 @@ public class AccountLifecycleDataFetcher {
 
     /** Saleor {@code confirmEmailChange(channel, token)}. */
     @DgsMutation(field = DgsConstants.MUTATION.ConfirmEmailChange)
-    // The wave-4 review (Major · Stability & Availability): both roots are
-    // anonymous-reachable (PreLoginGraphQlGate PRE_LOGIN_OPERATIONS) yet
-    // rode the SHARED authenticated graphqlAccountMutation budget with no
-    // per-caller guard — one anonymous flood could exhaust the documented
-    // customer*/staff*/address* budget for every user. They now ride the
-    // anonymous surface with the per-caller budget, the exact shape
-    // confirmAccount/setPassword already carry.
-    @PerCallerBudget(surface = "graphqlAccountAnonymousMutation")
-    @RateLimiter(name = "graphqlAccountAnonymousMutation")
+    // The 2026-11-06 #806 round review (Major · Security & Privacy): the
+    // pinned Saleor 3.23.45 contract (AuthorizationFilters.AUTHENTICATED_
+    // USER on perform_mutation — the user resolved from
+    // info.context.user, any token whose user_id claim mismatches the
+    // authenticated caller is rejected) binds the redemption to the
+    // CALLER's identity, never the token alone. The root left the
+    // anonymous surface (the PreLoginGraphQlGate allowlist) and now rides
+    // the authenticated graphqlAccountMutation family its request leg
+    // already carries; the owning service verifies the caller IS the
+    // right's owner BEFORE the consumption (a mismatched caller answers
+    // the classified denial and the legitimate owner's right survives).
+    @RateLimiter(name = "graphqlAccountMutation")
     public ConfirmEmailChange confirmEmailChange(@InputArgument String channel,
                                                  @InputArgument String token,
                                                  graphql.schema.DataFetchingEnvironment environment) {
@@ -233,7 +236,7 @@ public class AccountLifecycleDataFetcher {
         if (token == null || token.isBlank()) {
             throw new IllegalArgumentException("A token is required");
         }
-        accountLifecycleSpi.confirmEmailChange(token);
+        accountLifecycleSpi.confirmEmailChange(currentAuthentication(), token);
         return ConfirmEmailChange.newBuilder()
                 .user(null)
                 .accountErrors(mappers.emptyAccountErrors())

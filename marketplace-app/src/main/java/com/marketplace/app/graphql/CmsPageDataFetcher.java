@@ -224,6 +224,17 @@ public class CmsPageDataFetcher {
         // ID is absent, even for an *Update mutation. Mirror that wire behavior
         // rather than imposing a stricter ID! contract at the resolver boundary.
         if (id == null || id.isBlank()) {
+            // The 2026-11-06 #806 round review (Minor · Functional
+            // Correctness): the CREATE leg has no existing page type to
+            // remove attributes FROM — a non-empty removeAttributes on
+            // this leg used to be silently ignored after the write
+            // committed. The nonsense combination answers the classified
+            // validation error BEFORE anything runs (the requestPassword
+            // Reset-vs-login seam's own one-of discipline).
+            if (input.getRemoveAttributes() != null && !input.getRemoveAttributes().isEmpty()) {
+                throw new IllegalArgumentException(
+                        "removeAttributes requires an existing page type — the create leg cannot remove");
+            }
             return PageTypeUpdate.newBuilder()
                     .pageType(toGraphQlPageType(cmsPageSpi.createPageType(currentAuthentication(),
                             input.getName(), input.getSlug(),

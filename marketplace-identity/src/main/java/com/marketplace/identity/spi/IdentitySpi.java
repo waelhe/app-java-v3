@@ -266,6 +266,16 @@ public interface IdentitySpi {
     java.util.Optional<UserAccountView> findUserAccountBySubject(String subject, Authentication authentication);
 
     /**
+     * The staff-surface verdict seam (the 2026-11-06 #806 round review,
+     * Minor · Security &amp; Privacy): the same ADMIN decision the scrolls
+     * carry, factored for the boundary's degenerate paths — the orders
+     * root's own {@code requireAdmin()} precedent. The {@code customers}
+     * and {@code staffUsers} roots' empty-page branches must answer the
+     * ADMIN verdict, never a success-shaped envelope that hides it.
+     */
+    void requireAdmin();
+
+    /**
      * P1 (the Saleor {@code staffUsers} root): one bounded page of the
      * staff/user roster as a forward-only keyset scroll in the requested
      * sort (an owning column + the {@code id} tiebreaker — the

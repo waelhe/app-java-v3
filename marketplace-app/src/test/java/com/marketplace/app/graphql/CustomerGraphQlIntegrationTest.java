@@ -437,6 +437,24 @@ class CustomerGraphQlIntegrationTest {
                 .path("customers.pageInfo.hasNextPage").entity(Boolean.class).isEqualTo(false);
     }
 
+    @Test
+    void providerCallerIsDeniedTheDegenerateEmptyPageToo() {
+        // The 2026-11-06 #806 round review (Minor · Security & Privacy):
+        // the ADMIN verdict precedes the degenerate page — a NON-admin
+        // issuing first: 0 used to read a success-shaped empty connection
+        // (the branch returned before the ADMIN-walled scroll ran). The
+        // same AUTHZ-001 denial answers the empty-page shape now.
+        HttpGraphQlTester providerTester = testerFor(PROVIDER_SUBJECT, "PROVIDER");
+        providerTester.document("query { customers(first: 0) { edges { node { id } } } }")
+                .execute()
+                .errors()
+                .satisfy(errors -> {
+                    var error = errors.getFirst();
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "AUTHZ-001");
+                })
+                .path("customers").valueIsNull();
+    }
+
     // ------------------------------------------------------------------
     // the customers journey's global-ID contract (read-back via the
     // user root — the customers root itself takes no id argument)

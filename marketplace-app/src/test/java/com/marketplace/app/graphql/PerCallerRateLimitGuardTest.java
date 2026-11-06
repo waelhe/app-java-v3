@@ -45,14 +45,24 @@ class PerCallerRateLimitGuardTest {
     private static final String VICTIM_EMAIL = "victim@example.com";
 
     /**
+     * The absent starter-properties provider (the slice semantics — no
+     * resilience4j auto-configuration, so no per-surface override
+     * validation applies; the programmatic defaults hold).
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> ObjectProvider<T> absentProvider() {
+        ObjectProvider<T> absent = mock(ObjectProvider.class);
+        when(absent.getIfAvailable()).thenReturn(null);
+        return absent;
+    }
+
+    /**
      * The guard with NO shared registry (the slice semantics): the
      * programmatic defaults apply — perCallerGrant 10/min and the SEPARATE
      * perAccountGrant 30/min.
      */
     private PerCallerRateLimitGuard guardWithDefaults() {
-        ObjectProvider<RateLimiterRegistry> absent = mock(ObjectProvider.class);
-        when(absent.getIfAvailable()).thenReturn(null);
-        return new PerCallerRateLimitGuard(absent, 1000);
+        return new PerCallerRateLimitGuard(absentProvider(), absentProvider(), 1000);
     }
 
     /**
@@ -71,7 +81,7 @@ class PerCallerRateLimitGuardTest {
         ObjectProvider<RateLimiterRegistry> provider = mock(ObjectProvider.class);
         when(provider.getIfAvailable()).thenReturn(shared);
         when(provider.getObject()).thenReturn(shared);
-        return new PerCallerRateLimitGuard(provider, 1000);
+        return new PerCallerRateLimitGuard(provider, absentProvider(), 1000);
     }
 
     private static RateLimiterConfig config(int limitForPeriod) {
@@ -260,7 +270,7 @@ class PerCallerRateLimitGuardTest {
         when(provider.getIfAvailable()).thenReturn(shared);
         when(provider.getObject()).thenReturn(shared);
 
-        assertThatThrownBy(() -> new PerCallerRateLimitGuard(provider, 1000))
+        assertThatThrownBy(() -> new PerCallerRateLimitGuard(provider, absentProvider(), 1000))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("per-caller ceiling");
     }
@@ -275,10 +285,8 @@ class PerCallerRateLimitGuardTest {
      */
     @Test
     void theTwoKeyFamiliesStayLimitedUnderAOneEntryStoreEach() {
-        ObjectProvider<RateLimiterRegistry> absent = mock(ObjectProvider.class);
-        when(absent.getIfAvailable()).thenReturn(null);
         // Capacity ONE per family — the eviction stress shape.
-        PerCallerRateLimitGuard guard = new PerCallerRateLimitGuard(absent, 1);
+        PerCallerRateLimitGuard guard = new PerCallerRateLimitGuard(absentProvider(), absentProvider(), 1);
 
         // Alternate the two key families across requests (the old single
         // store kept evicting the other family's only entry — both
@@ -315,12 +323,10 @@ class PerCallerRateLimitGuardTest {
      */
     @Test
     void maxTrackedCallersBelowOneIsRejectedAtConstruction() {
-        ObjectProvider<RateLimiterRegistry> absent = mock(ObjectProvider.class);
-        when(absent.getIfAvailable()).thenReturn(null);
-        assertThatThrownBy(() -> new PerCallerRateLimitGuard(absent, 0))
+        assertThatThrownBy(() -> new PerCallerRateLimitGuard(absentProvider(), absentProvider(), 0))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("max-tracked-callers");
-        assertThatThrownBy(() -> new PerCallerRateLimitGuard(absent, -3))
+        assertThatThrownBy(() -> new PerCallerRateLimitGuard(absentProvider(), absentProvider(), -3))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("max-tracked-callers");
     }
@@ -490,5 +496,138 @@ class PerCallerRateLimitGuardTest {
         } finally {
             Locale.setDefault(original);
         }
+    }
+
+    /**
+     * The 2026-11-06 #806 round review (Minor · Security & Privacy): a
+     * per-SURFACE override that violates the window-aware lockout
+     * invariant is rejected at STARTUP — resolveConfig prefers the
+     * surface entry over the validated family-wide one, so the same
+     * check must cover the override the acquire seam would actually use.
+     */
+    @Test
+    void aSurfaceOverrideViolatingTheLockoutInvariantIsRejectedAtStartup() {
+        // The surface override raises the caller budget to the account
+        // budget (100 vs the family 30) — exactly the lockout shape the
+        // family-wide check rejects, hidden behind the surface entry.
+        RateLimiterRegistry shared = RateLimiterRegistry.custom()
+                .addRateLimiterConfig(PerCallerRateLimitGuard.PER_CALLER_CONFIG, config(10))
+                .addRateLimiterConfig(PerCallerRateLimitGuard.PER_ACCOUNT_CONFIG, config(30))
+                .addRateLimiterConfig(
+                        PerCallerRateLimitGuard.PER_CALLER_CONFIG + "-" + SURFACE, config(100))
+                .build();
+        ObjectProvider<RateLimiterRegistry> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(shared);
+
+        assertThatThrownBy(() -> new PerCallerRateLimitGuard(
+                provider, propertiesDeclaringSurface(SURFACE), 1000))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("lockout invariant");
+    }
+
+    /**
+     * The same round: a per-surface override that queues instead of
+     * failing fast (riding base-config: default, it inherits the DEFAULT
+     * family's 5s timeout) is rejected at startup — these budgets'
+     * documented contract is reject-immediately.
+     */
+    @Test
+    void aSurfaceOverrideWithAQueuedTimeoutIsRejectedAtStartup() {
+        RateLimiterRegistry shared = RateLimiterRegistry.custom()
+                .addRateLimiterConfig(PerCallerRateLimitGuard.PER_CALLER_CONFIG, config(10))
+                .addRateLimiterConfig(PerCallerRateLimitGuard.PER_ACCOUNT_CONFIG, config(30))
+                .addRateLimiterConfig(
+                        PerCallerRateLimitGuard.PER_CALLER_CONFIG + "-" + SURFACE,
+                        RateLimiterConfig.custom()
+                                .limitForPeriod(10)
+                                .limitRefreshPeriod(Duration.ofMinutes(1))
+                                .timeoutDuration(Duration.ofSeconds(5))
+                                .build())
+                .build();
+        ObjectProvider<RateLimiterRegistry> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(shared);
+
+        assertThatThrownBy(() -> new PerCallerRateLimitGuard(
+                provider, propertiesDeclaringSurface(SURFACE), 1000))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("timeout-duration: 0");
+    }
+
+    /**
+     * The same round: a VALID per-surface override pair (the fail-fast
+     * shape, the account headroom preserved) constructs cleanly — the
+     * validation rejects the misconfiguration, never the mechanism.
+     */
+    @Test
+    void aValidSurfaceOverridePairConstructsCleanly() {
+        RateLimiterRegistry shared = RateLimiterRegistry.custom()
+                .addRateLimiterConfig(PerCallerRateLimitGuard.PER_CALLER_CONFIG, config(10))
+                .addRateLimiterConfig(PerCallerRateLimitGuard.PER_ACCOUNT_CONFIG, config(30))
+                .addRateLimiterConfig(
+                        PerCallerRateLimitGuard.PER_CALLER_CONFIG + "-" + SURFACE, config(20))
+                .addRateLimiterConfig(
+                        PerCallerRateLimitGuard.PER_ACCOUNT_CONFIG + "-" + SURFACE, config(60))
+                .build();
+        ObjectProvider<RateLimiterRegistry> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(shared);
+
+        PerCallerRateLimitGuard guard = new PerCallerRateLimitGuard(
+                provider, propertiesDeclaringSurface(SURFACE), 1000);
+        assertThat(guard).isNotNull();
+    }
+
+    /**
+     * The official starter properties bean declaring ONE per-surface
+     * override entry (the configs map the yml's
+     * {@code resilience4j.ratelimiter.configs.<name>} binds) — the
+     * enumeration source the startup validation iterates (the registry
+     * API has no name enumeration).
+     */
+    @SuppressWarnings("unchecked")
+    private static ObjectProvider<io.github.resilience4j.springboot.ratelimiter.autoconfigure.RateLimiterProperties>
+            propertiesDeclaringSurface(String surface) {
+        io.github.resilience4j.springboot.ratelimiter.autoconfigure.RateLimiterProperties properties =
+                mock(io.github.resilience4j.springboot.ratelimiter.autoconfigure.RateLimiterProperties.class);
+        java.util.Map<String, io.github.resilience4j.common.ratelimiter.configuration
+                .CommonRateLimiterConfigurationProperties.InstanceProperties> configs =
+                new java.util.HashMap<>();
+        configs.put(PerCallerRateLimitGuard.PER_CALLER_CONFIG + "-" + surface,
+                new io.github.resilience4j.common.ratelimiter.configuration
+                        .CommonRateLimiterConfigurationProperties.InstanceProperties());
+        when(properties.getConfigs()).thenReturn(configs);
+        when(properties.getInstances()).thenReturn(java.util.Map.of());
+        when(properties.getLimiters()).thenReturn(java.util.Map.of());
+        ObjectProvider<io.github.resilience4j.springboot.ratelimiter.autoconfigure.RateLimiterProperties>
+                provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(properties);
+        return provider;
+    }
+
+    /**
+     * The 2026-11-06 #806 round review (Minor · Functional Correctness):
+     * an IPv4-MAPPED IPv6 literal ({@code ::ffff:203.0.113.10}) and its
+     * plain dotted form are ONE machine — the JDK collapses the mapped
+     * literal to the same 4-byte array, so the budget key must render the
+     * CANONICAL dotted form for both (the raw literal used to split one
+     * machine's address into two budgets).
+     */
+    @Test
+    void anIpv4MappedLiteralSharesThePlainFormsBudget() {
+        PerCallerRateLimitGuard guard = guardWithDefaults();
+        // The PUBLIC edge path (the route budgetKeyOf normalizes): ten
+        // requests whose X-Real-IP is the PLAIN dotted form exhaust its
+        // budget (perCallerGrant 10/min).
+        for (int attempt = 0; attempt < 10; attempt++) {
+            guard.acquirePermit(
+                    publicEdgeEnvironment(null, "203.0.113.10", "203.0.113.99", VICTIM_EMAIL),
+                    SURFACE);
+        }
+        // The IPv4-MAPPED form of the SAME address must share the budget
+        // (rejected): the raw-literal key would have opened a fresh
+        // budget for it and accepted.
+        assertThatThrownBy(() -> guard.acquirePermit(
+                publicEdgeEnvironment(null, "::ffff:203.0.113.10", "203.0.113.99", VICTIM_EMAIL),
+                SURFACE))
+                .isInstanceOf(RequestNotPermitted.class);
     }
 }

@@ -1117,6 +1117,19 @@ public class UserService implements IdentitySpi {
     }
 
     /**
+     * The staff-surface verdict seam (the 2026-11-06 #806 round review,
+     * Minor · Security &amp; Privacy): the same ADMIN decision the scrolls
+     * carry, factored for the boundary's degenerate paths — the
+     * {@code AttributeReadService.requireAdmin} precedent (the annotation
+     * IS the verdict).
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    public void requireAdmin() {
+        // the annotation IS the verdict (the AttributeReadService precedent)
+    }
+
+    /**
      * P1 (the Saleor {@code staffUsers} root): the roster's forward-only
      * keyset scroll — ADMIN-enforced, one owning sort with the {@code id}
      * tiebreaker, plus the collection total Saleor's {@code totalCount}

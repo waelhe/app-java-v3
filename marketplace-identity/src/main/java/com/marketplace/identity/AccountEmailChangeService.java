@@ -10,6 +10,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails;
+import com.marketplace.shared.api.BadRequestException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.UserDetailsManager;
@@ -141,9 +142,43 @@ public class AccountEmailChangeService {
                 });
     }
 
-    /** The confirm leg — consumes the right, moves both stores, answers the new email. */
+    /**
+     * The confirm leg — consumes the right, moves both stores, answers the
+     * new email.
+     *
+     * <p>The 2026-11-06 #806 round review (Major · Security &amp;
+     * Privacy): the redemption is bound to the authenticated CALLER — the
+     * pinned Saleor 3.23.45 contract ({@code AuthorizationFilters.
+     * AUTHENTICATED_USER} on the mutation's {@code perform_mutation})
+     * resolves the user from the request context and rejects any token
+     * whose {@code user_id} claim belongs to someone else. The owner
+     * verdict runs on the {@link AuthActionTokenService#accountOf}
+     * pre-redemption read — BEFORE the consumption — so a mismatched
+     * authenticated caller answers the classified denial while the
+     * legitimate owner's one-time right SURVIVES the probe (never a
+     * denial-of-service that burns the right); the consumption itself
+     * stays one-time on the happy path.</p>
+     *
+     * @param caller the authenticated caller, who must own the right
+     * @param token  the one-time email-change right
+     * @return the confirmed new email address
+     */
     @Observed(name = "account.email_change.confirm")
-    public String confirmChange(String token) {
+    public String confirmChange(Authentication caller, String token) {
+        String callerSubject = caller.getName();
+        // The owner verdict on the pre-redemption read (CWE-367's own
+        // seam): an unknown token answers the SAME unknown-token denial
+        // the consumption would (the accountOf javadoc's own contract);
+        // a token that belongs to ANOTHER account answers the
+        // caller-mismatch denial WITHOUT consuming it.
+        String ownerSubject = authActionTokenService
+                .accountOf(token, AuthActionTokenPurpose.EMAIL_CHANGE)
+                .orElseThrow(() -> new BadRequestException(
+                        "This email change link is invalid or has already been used"));
+        if (!ownerSubject.equals(callerSubject)) {
+            throw new ConflictException(
+                    "The email change right belongs to a different account");
+        }
         AuthActionToken redeemed = authActionTokenService
                 .consume(token, AuthActionTokenPurpose.EMAIL_CHANGE);
         String oldSubject = redeemed.getUsername();

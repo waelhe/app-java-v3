@@ -111,8 +111,12 @@ public class AccountLifecycleSpiAdapter implements AccountLifecycleSpi {
     }
 
     @Override
-    public String confirmEmailChange(String token) {
-        return emailChangeService.confirmChange(token);
+    public String confirmEmailChange(Authentication caller, String token) {
+        // The 2026-11-06 #806 round review (Major · Security & Privacy):
+        // the caller's identity rides the redemption — the pinned Saleor
+        // 3.23.45 contract resolves the user from the authenticated
+        // context and rejects any token that belongs to someone else.
+        return emailChangeService.confirmChange(caller, token);
     }
 
     @Override

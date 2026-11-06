@@ -29,7 +29,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * The wave-4 review's ordering + budget-isolation contract over the REAL
- * chain: the anonymous {@code confirmEmailChange} flood is rejected by
+ * chain: the anonymous {@code accountRegister} flood is rejected by
  * its own per-caller budget BEFORE the shared
  * {@code graphqlAccountMutation} permit is ever consulted — so the
  * authenticated customer/staff admin mutations keep their budget while
@@ -56,16 +56,27 @@ import static org.mockito.Mockito.when;
  * {@code accountDelete} is now denied by the GATE (the classified
  * AUTHN-001, before ANY budget is consulted), pinned by its own leg
  * below. The wave-4 ordering/isolation regression keeps a REAL
- * anonymous carrier: {@code confirmEmailChange}.</p>
+ * anonymous carrier: {@code accountRegister}.</p>
  *
- * <p><b>Measured here:</b> twelve anonymous {@code confirmEmailChange}
+ * <p><b>The 2026-11-06 #806 round review (Major · Security &amp;
+ * Privacy) completed the family narrowing:</b> {@code confirmEmailChange}
+ * left PRE_LOGIN_OPERATIONS for the SAME pinned-contract reason (the
+ * 3.23.45 mutation requires AUTHENTICATED_USER and binds the redemption
+ * to the authenticated caller — the owning service now verifies the
+ * caller IS the right's owner). The anonymous {@code confirmEmailChange}
+ * answers the GATE's AUTHN-001 exactly like {@code accountDelete},
+ * pinned by its own leg below; the flood leg carries on the remaining
+ * anonymous {@code accountRegister} surface.</p>
+ *
+ * <p><b>Measured here:</b> twelve anonymous {@code accountRegister}
  * attempts from one caller — the later ones answer the classified RL-001
  * rate-limit error at the response level (the root throws before any
  * payload is built), and an authenticated {@code customerCreate} (the
  * {@code graphqlAccountMutation} surface) still executes its domain flow
  * without any rate-limit error — the shared budget survived the flood
- * untouched; and one anonymous {@code accountDelete} answers AUTHN-001
- * (the gate), never RL-001.</p>
+ * untouched; and one anonymous {@code accountDelete} or
+ * {@code confirmEmailChange} answers AUTHN-001 (the gate), never
+ * RL-001.</p>
  *
  * <p><b>Schema source (the suite's own recorded trap):</b> this test
  * seeds {@code users} with raw SQL — the test profile's default schema
@@ -127,7 +138,7 @@ class AccountAnonymousBudgetOrderingIntegrationTest {
     }
 
     @Test
-    void anAnonymousConfirmEmailChangeFloodIsRejectedByItsOwnBudgetAndTheSharedAuthenticatedBudgetSurvives() {
+    void anAnonymousAccountRegisterFloodIsRejectedByItsOwnBudgetAndTheSharedAuthenticatedBudgetSurvives() {
         HttpGraphQlTester anonymous = testerFor(null, null);
 
         // Twelve attempts from ONE anonymous caller: the per-caller budget
@@ -137,7 +148,8 @@ class AccountAnonymousBudgetOrderingIntegrationTest {
         for (int attempt = 0; attempt < 12; attempt++) {
             var response = anonymous.document("""
                     mutation {
-                        confirmEmailChange(token: "not-a-real-email-change-right-%d") {
+                        accountRegister(input: { email: "budget-flood-%s@example.com",
+                                password: "not-a-real-password-A1!" }) {
                             errors { code }
                         }
                     }
@@ -188,6 +200,29 @@ class AccountAnonymousBudgetOrderingIntegrationTest {
                 .anyMatch(error -> "AUTHN-001".equals(
                         String.valueOf(error.getExtensions().get("errorCode")))))
                 .as("the gate must answer the anonymous accountDelete with AUTHN-001")
+                .isTrue());
+    }
+
+    @Test
+    void anAnonymousConfirmEmailChangeIsDeniedByTheGateBeforeAnyBudget() {
+        // The 2026-11-06 #806 round review (Major · Security & Privacy):
+        // the pinned Saleor 3.23.45 contract requires AUTHENTICATED_USER on
+        // confirmEmailChange and binds the redemption to the authenticated
+        // caller (the owning service verifies the caller IS the right's
+        // owner) — the anonymous presentation is the GATE's classified
+        // AUTHN-001, never a budget question.
+        HttpGraphQlTester anonymous = testerFor(null, null);
+        var response = anonymous.document("""
+                mutation {
+                    confirmEmailChange(channel: null, token: "not-a-real-email-change-right") {
+                        errors { code }
+                    }
+                }
+                """).execute();
+        response.errors().satisfy(errors -> assertThat(errors.stream()
+                .anyMatch(error -> "AUTHN-001".equals(
+                        String.valueOf(error.getExtensions().get("errorCode")))))
+                .as("the gate must answer the anonymous confirmEmailChange with AUTHN-001")
                 .isTrue());
     }
 

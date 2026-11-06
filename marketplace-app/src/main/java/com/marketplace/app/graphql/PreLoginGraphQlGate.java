@@ -105,8 +105,18 @@ public class PreLoginGraphQlGate implements WebGraphQlInterceptor {
             "requestPasswordReset",
             "confirmAccount",
             "setPassword",
-            "confirmEmailChange",
             "accountRegister");
+    // The 2026-11-06 #806 round review (Major · Security & Privacy):
+    // confirmEmailChange LEFT the anonymous surface — the pinned Saleor
+    // 3.23.45 contract (schema blob b8fa0dd8, release commit e5b7e5f)
+    // declares the mutation's permission as
+    // AuthorizationFilters.AUTHENTICATED_USER and its perform_mutation
+    // resolves the user from info.context.user, rejecting any token whose
+    // user_id claim does not match the AUTHENTICATED caller. The root now
+    // rides the authenticated family (the graphqlAccountMutation budget)
+    // and the owning service binds the redemption to the caller's
+    // identity — an anonymous caller answers the gate's standard
+    // non-pre-login rejection.
 
     private final Parser parser = new Parser();
 
@@ -175,10 +185,14 @@ public class PreLoginGraphQlGate implements WebGraphQlInterceptor {
                 if (definition instanceof OperationDefinition operation) {
                     // The per-selection walk: a refusal (an undefined or
                     // cyclic fragment reference, or a root outside the
-                    // family) short-circuits to the deny verdict.
+                    // family) short-circuits to the deny verdict. The
+                    // completed-fragments memo is PER DOCUMENT: a second
+                    // operation re-referencing a fragment the first one
+                    // already resolved skips the re-walk (the memo's own
+                    // answer stands).
                     Boolean verdict = collectRoots(
                             operation.getSelectionSet(), fragments,
-                            new java.util.HashSet<>(), operations);
+                            new java.util.HashSet<>(), new java.util.HashSet<>(), operations);
                     if (verdict == Boolean.FALSE) {
                         return false;
                     }
@@ -203,10 +217,20 @@ public class PreLoginGraphQlGate implements WebGraphQlInterceptor {
      * gate cannot decide what the document does not define); answers
      * {@code TRUE} when at least one root was collected, {@code null}
      * when the selection set is empty.
+     *
+     * <p>The 2026-11-06 #806 round review (Minor · Functional
+     * Correctness): a REPEAT reference to a completed fragment is NOT a
+     * cycle — {@code mutation { ...F ...F } } is a valid document whose
+     * roots the gate must decide. The {@code completed} memo holds the
+     * fragments whose walk already returned; a repeat reference skips
+     * the re-walk (its roots are already collected), while {@code visiting}
+     * keeps guarding the ACTIVE path — a true cycle still fails the
+     * {@code add} and answers the deny verdict.</p>
      */
     private Boolean collectRoots(SelectionSet selectionSet,
                                   Map<String, FragmentDefinition> fragments,
                                   Set<String> visiting,
+                                  Set<String> completed,
                                   Set<String> operations) {
         if (selectionSet == null || selectionSet.getSelections().isEmpty()) {
             return null;
@@ -217,9 +241,16 @@ public class PreLoginGraphQlGate implements WebGraphQlInterceptor {
                 operations.add(field.getName());
                 any = Boolean.TRUE;
             } else if (selection instanceof FragmentSpread spread) {
+                if (completed.contains(spread.getName())) {
+                    // A repeat reference to an already-completed fragment —
+                    // not a cycle; its roots are already in the collected
+                    // set (and `any` already carries the first reference's
+                    // verdict), so the memo skips the re-walk entirely.
+                    continue;
+                }
                 if (!visiting.add(spread.getName())) {
-                    // A cycle (or a repeat reference already being
-                    // resolved) — undecidable, deny.
+                    // A cycle (a reference back into the ACTIVE path) —
+                    // undecidable, deny.
                     return Boolean.FALSE;
                 }
                 FragmentDefinition definition = fragments.get(spread.getName());
@@ -229,14 +260,18 @@ public class PreLoginGraphQlGate implements WebGraphQlInterceptor {
                     return Boolean.FALSE;
                 }
                 Boolean nested = collectRoots(
-                        definition.getSelectionSet(), fragments, visiting, operations);
+                        definition.getSelectionSet(), fragments, visiting, completed, operations);
                 if (nested == Boolean.FALSE) {
                     return Boolean.FALSE;
                 }
+                // The walk returned — the fragment is complete: leave the
+                // active path and memoize so repeat references skip.
+                visiting.remove(spread.getName());
+                completed.add(spread.getName());
                 any = any == Boolean.TRUE || nested == Boolean.TRUE ? Boolean.TRUE : any;
             } else if (selection instanceof InlineFragment inline) {
                 Boolean nested = collectRoots(
-                        inline.getSelectionSet(), fragments, visiting, operations);
+                        inline.getSelectionSet(), fragments, visiting, completed, operations);
                 if (nested == Boolean.FALSE) {
                     return Boolean.FALSE;
                 }

@@ -167,7 +167,17 @@ public class UserDataFetcher {
                     "staffUsers supports forward-only pagination (first/after) on this platform");
         }
 
+        // The 2026-11-06 #806 round review (Minor · Security & Privacy +
+        // Minor · Functional Correctness): the ADMIN verdict and the
+        // cursor verdict BOTH precede the degenerate page — the
+        // empty-page branch used to return before {@code scrollStaffUsers}
+        // ran, hiding both the ADMIN wall that lives on that scroll (an
+        // authenticated NON-admin read a success-shaped empty connection)
+        // and the malformed-{@code after} validation (the customers root's
+        // own early-position order, applied to its twin).
+        identitySpi.requireAdmin();
         UserAccountSort sort = toOwnerSort(sortBy);
+        KeysetScrollPosition position = keysetPosition(after, sort);
         int requested = first == null ? properties.pagination().defaultPageSize() : first;
         if (requested <= 0) {
             // The degenerate page: no query executes (the services field's
@@ -182,7 +192,6 @@ public class UserDataFetcher {
                     .build();
         }
         int pageSize = Math.min(requested, properties.pagination().maxPageSize());
-        KeysetScrollPosition position = keysetPosition(after, sort);
         UserAccountPage page = identitySpi.scrollStaffUsers(
                 currentAuthentication(), sort, position, Limit.of(pageSize));
         return toConnection(page, position, sort);

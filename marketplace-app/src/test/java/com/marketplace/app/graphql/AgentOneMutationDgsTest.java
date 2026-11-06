@@ -880,6 +880,63 @@ class AgentOneMutationDgsTest {
     }
 
     @Test
+    void pageTypeUpdateWithoutIdRejectsRemoveAttributes() {
+        // The 2026-11-06 #806 round review (Minor · Functional
+        // Correctness): the CREATE leg has no existing page type to
+        // remove attributes FROM — a non-empty removeAttributes used to
+        // be silently ignored after the write committed; the nonsense
+        // combination answers the classified validation error BEFORE
+        // anything runs.
+        actAs("agent-one-admin@example.com", "ADMIN");
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation {
+                    pageTypeUpdate(id: null, input: { name: "Created", slug: "created",
+                            removeAttributes: ["%s"] }) {
+                        pageType { id }
+                        errors { code }
+                    }
+                }
+                """.formatted(globalId("Attribute", UUID.randomUUID())), "data.pageTypeUpdate"))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("the create leg cannot remove");
+        verify(cmsPageSpi, never()).createPageType(any(), any(), any(), any());
+    }
+
+    @Test
+    void menuItemDeleteRendersTheDeletedRowsOwnLevel() {
+        // The 2026-11-06 #806 round review (Minor · Functional
+        // Correctness): the deleted row is absent from the POST-deletion
+        // tree, so its rendered `level` used to fall back to the default
+        // 0 even for a deeply nested item — the level is derived from the
+        // surviving parent chain now (parent level + 1).
+        actAs("agent-one-admin@example.com", "ADMIN");
+        UUID menuId = UUID.randomUUID();
+        UUID parentId = UUID.randomUUID();
+        UUID deletedId = UUID.randomUUID();
+        CmsNavigationSpi.MenuItemView deleted = new CmsNavigationSpi.MenuItemView(
+                deletedId, menuId, parentId, "Nested", "/nested", null, null, 1, java.util.Map.of());
+        // The post-deletion tree: the parent survives at level 1 (its own
+        // parent — the deleted row's grandparent — is the root's child).
+        UUID grandparentId = UUID.randomUUID();
+        CmsNavigationSpi.MenuItemView grandparent = new CmsNavigationSpi.MenuItemView(
+                grandparentId, menuId, null, "Root Child", "/root-child", null, null, 1, java.util.Map.of());
+        CmsNavigationSpi.MenuItemView parent = new CmsNavigationSpi.MenuItemView(
+                parentId, menuId, grandparentId, "Parent", "/parent", null, null, 1, java.util.Map.of());
+        when(cmsNavigationSpi.deleteMenuItem(any(), any(UUID.class))).thenReturn(deleted);
+        when(cmsNavigationSpi.listMenuItems(any(), eq(menuId)))
+                .thenReturn(List.of(grandparent, parent));
+
+        Object level = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { menuItemDelete(id: "%s") { menuItem { id level } } }
+                """.formatted(globalId("MenuItem", deletedId)),
+                "data.menuItemDelete.menuItem.level");
+
+        // The deleted row's parent sits at level 1 → the deleted row
+        // itself renders its TRUE level 2 (never the fallback 0).
+        assertThat(String.valueOf(level)).isEqualTo("2");
+    }
+
+    @Test
     void menuQueryWithoutAnyKeyAnswersTheClassifiedError() {
         actAs("agent-one-admin@example.com", "ADMIN");
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""

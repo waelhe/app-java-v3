@@ -74,8 +74,17 @@ class AccountLifecycleSpiAdapterTest {
 
     @Test
     void theRedemptionLegsDelegateToTheirOwners() {
-        adapter.confirmEmailChange("change-token");
-        verify(emailChangeService).confirmChange("change-token");
+        // The 2026-11-06 #806 round review (Major · Security & Privacy):
+        // the email-change redemption carries the authenticated CALLER —
+        // the pinned Saleor 3.23.45 contract binds the redemption to the
+        // caller's identity, and the adapter passes it through unchanged.
+        org.springframework.security.core.Authentication caller =
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        "member@example.com", null,
+                        java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority(
+                                "ROLE_CONSUMER")));
+        adapter.confirmEmailChange(caller, "change-token");
+        verify(emailChangeService).confirmChange(caller, "change-token");
 
         adapter.requestPasswordReset("member@example.com");
         verify(passwordResetService).requestReset("member@example.com");
