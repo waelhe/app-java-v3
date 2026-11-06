@@ -110,7 +110,7 @@ class ProductServiceTest {
         UUID productTypeId = UUID.randomUUID();
         when(storeCategoryRepository.findByCode("home-appliances"))
                 .thenReturn(Optional.of(StoreCategory.register("home-appliances", "Home appliances", "أجهزة منزلية", 0)));
-        when(productTypeRepository.findById(productTypeId)).thenReturn(Optional.of(
+        when(productTypeRepository.findByIdForShare(productTypeId)).thenReturn(Optional.of(
                 ProductType.create("home-appliances", "Home appliances", "الأجهزة المنزلية", null)));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
         when(productRepository.save(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -127,7 +127,7 @@ class ProductServiceTest {
         UUID attributeId = UUID.randomUUID();
         when(storeCategoryRepository.findByCode("home-appliances"))
                 .thenReturn(Optional.of(StoreCategory.register("home-appliances", "Home appliances", "أجهزة منزلية", 0)));
-        when(productTypeRepository.findById(productTypeId)).thenReturn(Optional.of(
+        when(productTypeRepository.findByIdForShare(productTypeId)).thenReturn(Optional.of(
                 ProductType.create("home-appliances", "Home appliances", "الأجهزة المنزلية", null)));
         ProductTypeAttributeAssignment assignment = ProductTypeAttributeAssignment.create(
                 productTypeId, attributeId, ProductTypeAttributeScope.PRODUCT, true, 0);
@@ -153,7 +153,7 @@ class ProductServiceTest {
         UUID attributeId = UUID.randomUUID();
         when(storeCategoryRepository.findByCode("home-appliances"))
                 .thenReturn(Optional.of(StoreCategory.register("home-appliances", "Home appliances", "أجهزة منزلية", 0)));
-        when(productTypeRepository.findById(productTypeId)).thenReturn(Optional.of(
+        when(productTypeRepository.findByIdForShare(productTypeId)).thenReturn(Optional.of(
                 ProductType.create("home-appliances", "Home appliances", "الأجهزة المنزلية", null)));
         ProductTypeAttributeAssignment assignment = ProductTypeAttributeAssignment.create(
                 productTypeId, attributeId, ProductTypeAttributeScope.PRODUCT, false, 0);
@@ -173,7 +173,7 @@ class ProductServiceTest {
         UUID unknownType = UUID.randomUUID();
         when(storeCategoryRepository.findByCode("home-appliances"))
                 .thenReturn(Optional.of(StoreCategory.register("home-appliances", "Home appliances", "أجهزة منزلية", 0)));
-        when(productTypeRepository.findById(unknownType)).thenReturn(Optional.empty());
+        when(productTypeRepository.findByIdForShare(unknownType)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.register(typedCommand("home-appliances", unknownType), authentication))
                 .isInstanceOf(ResourceNotFoundException.class)

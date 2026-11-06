@@ -1,0 +1,563 @@
+package com.marketplace.catalog;
+
+import com.marketplace.catalog.spi.ProductVariantPage;
+import com.marketplace.catalog.spi.ProductVariantSort;
+import com.marketplace.catalog.spi.ProductVariantView;
+import com.marketplace.catalog.spi.ProductView;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.KeysetScrollPosition;
+import org.springframework.data.domain.Limit;
+import org.springframework.data.domain.ScrollPosition;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+
+import java.lang.reflect.Field;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.when;
+
+/**
+ * P2 (the canonical Saleor plan §5-P2 — packet campaign-b5-a, the
+ * {@code productVariant}/{@code productVariants} read roots): the owning
+ * use case's unit proof — the JUnit 5 + Mockito style the module's own
+ * {@code ProductReadServiceTest} established (no Spring context: the
+ * {@code @Transactional} proxies are integration concerns proven by the
+ * app module's real-stack tests; the business decisions the boundary
+ * owns are proven HERE).
+ *
+ * <p>Coverage target: every method branch of
+ * {@link ProductVariantReadService} reachable through its typed seam —
+ * the PERMISSION-AWARE population selection (the ADMIN capability's
+ * include-unpublished derived scroll and count vs the public
+ * two-row-gated native scroll and count, both sort fields, both
+ * directions), the public scroll's own keyset binds (the
+ * {@code after}-cursor's updatedAt/id values reaching the native
+ * methods, the pageSize+1 has-next fetch), the lookup's
+ * readable-population boundary (null key, unknown key, the ACTIVE row
+ * readable by any caller, the non-ACTIVE variant AND the
+ * ACTIVE-variant-under-non-ACTIVE-parent both readable ONLY by the
+ * ADMIN capability — the two-row data-scope negative), the
+ * required-sort/positive-page guards, and the bounded projection
+ * itself (the parent projection riding the view).</p>
+ */
+class ProductVariantReadServiceTest {
+
+    private ProductVariantRepository variantRepository;
+    private ProductRepository productRepository;
+    private ProductVariantReadService service;
+    private Authentication publicCaller;
+    private Authentication adminCaller;
+
+    @BeforeEach
+    void setUp() {
+        variantRepository = mock(ProductVariantRepository.class);
+        productRepository = mock(ProductRepository.class);
+        service = new ProductVariantReadService(variantRepository, productRepository);
+        publicCaller = mock(Authentication.class);
+        // Authentication.getAuthorities() returns Collection<? extends
+        // GrantedAuthority> (the Spring Security 7.1.1 interface contract) —
+        // a wildcard-capture return Mockito's when(...).thenReturn(...) cannot
+        // type-check; doReturn().when(...) is Mockito's own documented form
+        // for stubbing wildcard-generic returns.
+        doReturn(List.<GrantedAuthority>of()).when(publicCaller).getAuthorities();
+        adminCaller = mock(Authentication.class);
+        doReturn(List.of(new SimpleGrantedAuthority("ROLE_ADMIN")))
+                .when(adminCaller).getAuthorities();
+    }
+
+    private static Product activeProduct(String title) {
+        // register without a goods schema: the factory's own ACTIVE path.
+        return Product.register("b5a-cat", title, null, 1000L, "SAR", UUID.randomUUID());
+    }
+
+    private static Product suspendedProduct(String title) {
+        Product product = Product.register("b5a-cat", title, null, 1000L, "SAR", UUID.randomUUID());
+        product.suspend();
+        return product;
+    }
+
+    private static ProductVariant activeVariant(Product product, String sku) {
+        return ProductVariant.register(product, sku, "b5a " + sku, 900L);
+    }
+
+    private static ProductVariant suspendedVariant(Product product, String sku) {
+        ProductVariant variant = ProductVariant.register(product, sku, "b5a " + sku, 900L);
+        variant.suspend();
+        return variant;
+    }
+
+    /** BaseEntity's audit instant is the listener's own write — set it directly for the keyset rows. */
+    private static void stampUpdatedAt(ProductVariant variant, Instant instant) {
+        try {
+            Field field = com.marketplace.shared.jpa.BaseEntity.class.getDeclaredField("updatedAt");
+            field.setAccessible(true);
+            field.set(variant, instant);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("test stamp failed", exception);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // findVariantById — the permission-aware readable population
+    // ------------------------------------------------------------------
+
+    @Test
+    void nullKeyAnswersEmpty() {
+        assertThat(service.findVariantById(null, publicCaller)).isEmpty();
+        verify(variantRepository, org.mockito.Mockito.never()).findById(any());
+    }
+
+    @Test
+    void unknownKeyAnswersTheSafeAbsence() {
+        UUID unknown = UUID.randomUUID();
+        when(variantRepository.findById(unknown)).thenReturn(Optional.empty());
+
+        assertThat(service.findVariantById(unknown, publicCaller)).isEmpty();
+        assertThat(service.findVariantById(unknown, adminCaller)).isEmpty();
+    }
+
+    @Test
+    void activeVariantUnderActiveParentIsReadableByAnyCaller() {
+        Product parent = activeProduct("b5a Parent Widget");
+        ProductVariant variant = activeVariant(parent, "b5a-sku-1");
+        when(variantRepository.findById(variant.getId())).thenReturn(Optional.of(variant));
+        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+
+        Optional<ProductVariantView> publicView = service.findVariantById(variant.getId(), publicCaller);
+        assertThat(publicView).isPresent();
+        assertThat(publicView.get().sku()).isEqualTo("b5a-sku-1");
+        assertThat(publicView.get().status()).isEqualTo("ACTIVE");
+        assertThat(publicView.get().name()).isEqualTo("b5a b5a-sku-1");
+        assertThat(publicView.get().product()).isEqualTo(new ProductView(
+                parent.getId(), parent.getTitle(), parent.getProductTypeId(), "ACTIVE"));
+
+        assertThat(service.findVariantById(variant.getId(), adminCaller)).isPresent();
+    }
+
+    @Test
+    void activeVariantUnderSuspendedParentIsReadableOnlyByTheAdminCapability() {
+        Product parent = suspendedProduct("b5a Suspended Parent");
+        ProductVariant variant = activeVariant(parent, "b5a-sku-2");
+        when(variantRepository.findById(variant.getId())).thenReturn(Optional.of(variant));
+        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+
+        // The two-row data-scope negative: the variant's own shelf is
+        // ACTIVE, the parent's is not — the public caller answers the
+        // safe empty absence.
+        assertThat(service.findVariantById(variant.getId(), publicCaller)).isEmpty();
+        assertThat(service.findVariantById(variant.getId(), adminCaller)).isPresent();
+    }
+
+    @Test
+    void suspendedVariantIsReadableOnlyByTheAdminCapability() {
+        Product parent = activeProduct("b5a Parent Widget");
+        ProductVariant variant = suspendedVariant(parent, "b5a-sku-3");
+        when(variantRepository.findById(variant.getId())).thenReturn(Optional.of(variant));
+        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+
+        assertThat(service.findVariantById(variant.getId(), publicCaller)).isEmpty();
+        assertThat(service.findVariantById(variant.getId(), adminCaller)).isPresent();
+    }
+
+    @Test
+    void unresolvableParentAnswersTheSafeAbsenceEvenForTheAdminCapability() {
+        Product parent = activeProduct("b5a Vanishing Parent");
+        ProductVariant variant = activeVariant(parent, "b5a-sku-4");
+        when(variantRepository.findById(variant.getId())).thenReturn(Optional.of(variant));
+        when(productRepository.findById(parent.getId())).thenReturn(Optional.empty());
+
+        // Referential honesty: include-unpublished widens lifecycle
+        // states, never integrity — a null Product! is never rendered.
+        assertThat(service.findVariantById(variant.getId(), adminCaller)).isEmpty();
+    }
+
+    // ------------------------------------------------------------------
+    // findVariantsForCheckoutLines — the batched checkout render seam
+    // (the 12:44:42Z #806 review's N+1 fix)
+    // ------------------------------------------------------------------
+
+    @Test
+    void batchedCheckoutReadPreservesSuspendedVariantsAndParentsWithoutWideningStorefrontReads() {
+        Product parent = suspendedProduct("b5a Batched Checkout Parent");
+        ProductVariant a = suspendedVariant(parent, "b5a-checkout-batched-a");
+        ProductVariant b = suspendedVariant(parent, "b5a-checkout-batched-b");
+        when(variantRepository.findAllById(Set.of(a.getId(), b.getId())))
+                .thenReturn(List.of(a, b));
+        when(productRepository.findAllById(Set.of(parent.getId()))).thenReturn(List.of(parent));
+
+        // Duplicates collapse to one read per DISTINCT variant.
+        Map<UUID, ProductVariantView> views = service.findVariantsForCheckoutLines(
+                List.of(a.getId(), b.getId(), a.getId()));
+
+        assertThat(views).containsOnlyKeys(a.getId(), b.getId());
+        // The checkout-only seam never widens the storefront read: the
+        // suspended variant stays invisible to the public productVariant
+        // root's two-row ACTIVE gate.
+        assertThat(service.findVariantById(a.getId(), publicCaller)).isEmpty();
+        assertThat(views.get(a.getId())).isEqualTo(new ProductVariantView(a.getId(),
+                a.getName(), a.getSku(), a.getStatus().name(),
+                new ProductView(parent.getId(), parent.getTitle(), parent.getProductTypeId(),
+                        parent.getStatus().name())));
+        assertThat(views.get(b.getId())).isEqualTo(new ProductVariantView(b.getId(),
+                b.getName(), b.getSku(), b.getStatus().name(),
+                new ProductView(parent.getId(), parent.getTitle(), parent.getProductTypeId(),
+                        parent.getStatus().name())));
+    }
+
+    @Test
+    void batchedCheckoutReadIsOneQueryPairNeverAPerLineNPlusOne() {
+        // The N+1 proof the 12:44:42Z review demanded: ONE variants
+        // findAllById + ONE parents findAllById for the WHOLE distinct
+        // set — never a per-line read on every checkout render.
+        Product parent = activeProduct("b5a Batched N+1 Parent");
+        ProductVariant v1 = activeVariant(parent, "b5a-checkout-n1");
+        ProductVariant v2 = activeVariant(parent, "b5a-checkout-n2");
+        ProductVariant v3 = activeVariant(parent, "b5a-checkout-n3");
+        when(variantRepository.findAllById(Set.of(v1.getId(), v2.getId(), v3.getId())))
+                .thenReturn(List.of(v1, v2, v3));
+        when(productRepository.findAllById(Set.of(parent.getId()))).thenReturn(List.of(parent));
+
+        service.findVariantsForCheckoutLines(List.of(v1.getId(), v2.getId(), v3.getId()));
+
+        verify(variantRepository, times(1)).findAllById(org.mockito.ArgumentMatchers.any());
+        verify(productRepository, times(1)).findAllById(org.mockito.ArgumentMatchers.any());
+        verifyNoMoreInteractions(variantRepository, productRepository);
+    }
+
+    @Test
+    void batchedCheckoutReadOmitsUnknownVariantsAndThoseWhoseParentNoLongerResolves() {
+        Product parent = activeProduct("b5a Batched Missing Parent");
+        ProductVariant v = activeVariant(parent, "b5a-checkout-batched-missing-parent");
+        when(variantRepository.findAllById(Set.of(v.getId()))).thenReturn(List.of(v));
+        when(productRepository.findAllById(Set.of(parent.getId()))).thenReturn(List.of());
+
+        assertThat(service.findVariantsForCheckoutLines(List.of(v.getId()))).isEmpty();
+
+        // An unknown but well-formed id answers the same safe absence.
+        UUID unknown = UUID.randomUUID();
+        when(variantRepository.findAllById(Set.of(unknown))).thenReturn(List.of());
+        assertThat(service.findVariantsForCheckoutLines(List.of(unknown))).isEmpty();
+    }
+
+    @Test
+    void batchedCheckoutReadAnswersEmptyForEmptyAndNullInput() {
+        assertThat(service.findVariantsForCheckoutLines(List.of())).isEmpty();
+        assertThat(service.findVariantsForCheckoutLines(null)).isEmpty();
+        verifyNoInteractions(variantRepository, productRepository);
+    }
+
+    // ------------------------------------------------------------------
+    // scrollVariants — the guards
+    // ------------------------------------------------------------------
+
+    @Test
+    void missingSortIsRejected() {
+        assertThatThrownBy(() -> service.scrollVariants(publicCaller, null,
+                ScrollPosition.keyset(), Limit.of(10)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void nonPositivePageSizeIsRejected() {
+        assertThatThrownBy(() -> service.scrollVariants(publicCaller,
+                ProductVariantSort.of(ProductVariantSort.Field.ID, true),
+                ScrollPosition.keyset(), Limit.of(0)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void nullLimitIsRejected() {
+        // The owner's guidance point 2: the null/unlimited/non-positive
+        // guards are ALL pinned by proof — null is the caller's own
+        // absence and must never become an unbounded load.
+        assertThatThrownBy(() -> service.scrollVariants(publicCaller,
+                ProductVariantSort.of(ProductVariantSort.Field.ID, true),
+                ScrollPosition.keyset(), null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("positive page size");
+        verify(variantRepository, org.mockito.Mockito.never()).scrollPublicByIdAsc(any(), anyInt());
+    }
+
+    @Test
+    void unlimitedLimitIsRejected() {
+        // The installed Spring Data 4.1.1 Limit contract: Unlimited.isLimited()
+        // answers false — the keyset scroll REQUIRES a bounded page, so an
+        // unlimited instance is refused at the boundary, never silently
+        // degraded into an unbounded load.
+        assertThatThrownBy(() -> service.scrollVariants(publicCaller,
+                ProductVariantSort.of(ProductVariantSort.Field.ID, true),
+                ScrollPosition.keyset(), Limit.unlimited()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("positive page size");
+        verify(variantRepository, org.mockito.Mockito.never()).scrollPublicByIdAsc(any(), anyInt());
+    }
+
+    // ------------------------------------------------------------------
+    // scrollVariants — the ADMIN population (native parent-live-gated
+    // scroll — the 2026-11-06 #808 round review, Minor · Data Integrity)
+    // ------------------------------------------------------------------
+
+    @Test
+    void adminScrollRidesTheParentLiveGatedUpdatedAtScrollAndItsOwnCount() {
+        Product parent = activeProduct("b5a Admin Parent");
+        ProductVariant variant = activeVariant(parent, "b5a-sku-5");
+        stampUpdatedAt(variant, Instant.parse("2026-10-21T10:00:00Z"));
+        // The page fetch: pageSize+1 rows — a full fetch is hasNext.
+        when(variantRepository.scrollAdminByUpdatedAtDesc(null, null, 11))
+                .thenReturn(List.of(variant));
+        when(variantRepository.countAdminPopulation()).thenReturn(41L);
+        when(productRepository.findAllById(any())).thenReturn(List.of(parent));
+
+        ProductVariantPage page = service.scrollVariants(adminCaller,
+                ProductVariantSort.of(ProductVariantSort.Field.LAST_MODIFIED_AT, false),
+                ScrollPosition.keyset(), Limit.of(10));
+
+        verify(variantRepository).scrollAdminByUpdatedAtDesc(null, null, 11);
+        assertThat(page.total()).isEqualTo(41L);
+        assertThat(page.window().hasNext()).isFalse();
+        assertThat(page.window().getContent()).hasSize(1);
+        assertThat(page.window().getContent().get(0).product().name()).isEqualTo("b5a Admin Parent");
+    }
+
+    @Test
+    void adminScrollRidesTheParentLiveGatedIdScroll() {
+        Product parent = activeProduct("b5a Admin Parent");
+        ProductVariant variant = activeVariant(parent, "b5a-sku-6");
+        // pageSize+1 = 3 rows fetched, 2 kept — the database's own hasNext.
+        ProductVariant second = activeVariant(parent, "b5a-sku-7");
+        ProductVariant past = activeVariant(parent, "b5a-sku-8");
+        when(variantRepository.scrollAdminByIdAsc(null, 3))
+                .thenReturn(List.of(variant, second, past));
+        when(variantRepository.countAdminPopulation()).thenReturn(2L);
+        when(productRepository.findAllById(any())).thenReturn(List.of(parent));
+
+        ProductVariantPage page = service.scrollVariants(adminCaller,
+                ProductVariantSort.of(ProductVariantSort.Field.ID, true),
+                ScrollPosition.keyset(), Limit.of(2));
+
+        verify(variantRepository).scrollAdminByIdAsc(null, 3);
+        assertThat(page.total()).isEqualTo(2L);
+        assertThat(page.window().hasNext()).isTrue();
+        assertThat(page.window().getContent()).hasSize(2);
+    }
+
+    @Test
+    void adminScrollCutsThePageBeforeTheParentResolutionNotAfter() {
+        // The 2026-11-06 #808 round review (Minor · Data Integrity): the
+        // parent-live EXISTS gate excludes the orphans AT THE QUERY — a
+        // page can never consist ENTIRELY of unresolvable-parent variants
+        // (the old derived scroll answered an empty window with
+        // hasNext=true and no usable position — an uncontinuable scroll),
+        // and the count rides the SAME population (never the orphan-
+        // counting raw count()).
+        Product parent = activeProduct("b5a Admin Parent");
+        ProductVariant variant = activeVariant(parent, "b5a-sku-9");
+        when(variantRepository.scrollAdminByIdAsc(null, 3))
+                .thenReturn(List.of(variant));
+        when(variantRepository.countAdminPopulation()).thenReturn(1L);
+        when(productRepository.findAllById(any())).thenReturn(List.of(parent));
+
+        ProductVariantPage page = service.scrollVariants(adminCaller,
+                ProductVariantSort.of(ProductVariantSort.Field.ID, true),
+                ScrollPosition.keyset(), Limit.of(2));
+
+        // The orphan never reached the page (the gate excluded it at the
+        // query), and the vanish-window skip stays belt-and-braces only.
+        assertThat(page.window().getContent()).hasSize(1);
+        assertThat(page.total()).isEqualTo(1L);
+        verify(variantRepository, org.mockito.Mockito.never()).count();
+    }
+
+    // ------------------------------------------------------------------
+    // scrollVariants — the PUBLIC population (native two-row-gated scroll)
+    // ------------------------------------------------------------------
+
+    @Test
+    void publicScrollRidesTheNativeIdScrollWithThePlusOneFetch() {
+        Product parent = activeProduct("b5a Public Parent");
+        ProductVariant variant = activeVariant(parent, "b5a-sku-7");
+        when(variantRepository.scrollPublicByIdAsc(null, 11)).thenReturn(List.of(variant));
+        when(variantRepository.countPublicPopulation()).thenReturn(7L);
+        when(productRepository.findAllById(any())).thenReturn(List.of(parent));
+
+        ProductVariantPage page = service.scrollVariants(publicCaller,
+                ProductVariantSort.of(ProductVariantSort.Field.ID, true),
+                ScrollPosition.keyset(), Limit.of(10));
+
+        // The pageSize+1 fetch contract: hasNext is the database's own answer.
+        verify(variantRepository).scrollPublicByIdAsc(null, 11);
+        assertThat(page.total()).isEqualTo(7L);
+        assertThat(page.window().hasNext()).isFalse();
+        assertThat(page.window().getContent()).hasSize(1);
+        // The window's own position carries the ID sort's single key.
+        ScrollPosition position = page.window().positionAt(0);
+        assertThat(((KeysetScrollPosition) position).getKeys())
+                .isEqualTo(Map.of("id", variant.getId()));
+    }
+
+    @Test
+    void publicScrollTruncatesTheFullFetchToThePageAndAnswersHasNext() {
+        Product parent = activeProduct("b5a Public Parent");
+        ProductVariant first = activeVariant(parent, "b5a-sku-8");
+        ProductVariant second = activeVariant(parent, "b5a-sku-9");
+        when(variantRepository.scrollPublicByIdAsc(null, 3))
+                .thenReturn(List.of(first, second, activeVariant(parent, "b5a-sku-10")));
+        when(variantRepository.countPublicPopulation()).thenReturn(30L);
+        when(productRepository.findAllById(any())).thenReturn(List.of(parent));
+
+        ProductVariantPage page = service.scrollVariants(publicCaller,
+                ProductVariantSort.of(ProductVariantSort.Field.ID, true),
+                ScrollPosition.keyset(), Limit.of(2));
+
+        assertThat(page.window().hasNext()).isTrue();
+        assertThat(page.window().getContent()).hasSize(2);
+        assertThat(page.total()).isEqualTo(30L);
+    }
+
+    @Test
+    void publicUpdatedAtScrollBindsTheDecodedCursorKeys() {
+        Product parent = activeProduct("b5a Public Parent");
+        ProductVariant variant = activeVariant(parent, "b5a-sku-11");
+        stampUpdatedAt(variant, Instant.parse("2026-10-21T11:00:00Z"));
+        Instant cursorInstant = Instant.parse("2026-10-21T10:00:00Z");
+        UUID cursorId = UUID.randomUUID();
+        KeysetScrollPosition cursor = (KeysetScrollPosition) ScrollPosition.forward(Map.of(
+                "updatedAt", cursorInstant, "id", cursorId));
+        OffsetDateTime expectedBind = cursorInstant.atOffset(ZoneOffset.UTC);
+        when(variantRepository.scrollPublicByUpdatedAtDesc(expectedBind, cursorId, 11))
+                .thenReturn(List.of(variant));
+        when(variantRepository.countPublicPopulation()).thenReturn(1L);
+        when(productRepository.findAllById(any())).thenReturn(List.of(parent));
+
+        ProductVariantPage page = service.scrollVariants(publicCaller,
+                ProductVariantSort.of(ProductVariantSort.Field.LAST_MODIFIED_AT, false),
+                cursor, Limit.of(10));
+
+        verify(variantRepository).scrollPublicByUpdatedAtDesc(expectedBind, cursorId, 11);
+        assertThat(page.window().getContent()).hasSize(1);
+        // The window's own position carries the executed sort's keys with
+        // the ROW's values — the same vocabulary the framework emits.
+        assertThat(((KeysetScrollPosition) page.window().positionAt(0)).getKeys())
+                .isEqualTo(Map.of("updatedAt", Instant.parse("2026-10-21T11:00:00Z"),
+                        "id", variant.getId()));
+    }
+
+    @Test
+    void publicScrollInTheOtherDirectionsReachesTheDescendingMethods() {
+        Product parent = activeProduct("b5a Public Parent");
+        ProductVariant variant = activeVariant(parent, "b5a-sku-12");
+        stampUpdatedAt(variant, Instant.parse("2026-10-21T09:00:00Z"));
+        when(variantRepository.scrollPublicByIdDesc(null, 6)).thenReturn(List.of(variant));
+        when(variantRepository.scrollPublicByUpdatedAtAsc(null, null, 6))
+                .thenReturn(List.of(variant));
+        when(variantRepository.countPublicPopulation()).thenReturn(1L);
+        when(productRepository.findAllById(any())).thenReturn(List.of(parent));
+
+        service.scrollVariants(publicCaller,
+                ProductVariantSort.of(ProductVariantSort.Field.ID, false),
+                ScrollPosition.keyset(), Limit.of(5));
+        verify(variantRepository).scrollPublicByIdDesc(null, 6);
+
+        service.scrollVariants(publicCaller,
+                ProductVariantSort.of(ProductVariantSort.Field.LAST_MODIFIED_AT, true),
+                ScrollPosition.keyset(), Limit.of(5));
+        verify(variantRepository).scrollPublicByUpdatedAtAsc(null, null, 6);
+    }
+
+    @Test
+    void publicScrollBatchesTheParentProjections() {
+        Product parent = activeProduct("b5a Shared Parent");
+        ProductVariant first = activeVariant(parent, "b5a-sku-13");
+        ProductVariant second = activeVariant(parent, "b5a-sku-14");
+        when(variantRepository.scrollPublicByIdAsc(null, 3)).thenReturn(List.of(first, second));
+        when(variantRepository.countPublicPopulation()).thenReturn(2L);
+        when(productRepository.findAllById(any())).thenReturn(List.of(parent));
+
+        ProductVariantPage page = service.scrollVariants(publicCaller,
+                ProductVariantSort.of(ProductVariantSort.Field.ID, true),
+                ScrollPosition.keyset(), Limit.of(2));
+
+        // ONE batched findAllById over the page's distinct parents — never a per-row N+1.
+        verify(productRepository).findAllById(any());
+        assertThat(page.window().getContent())
+                .allSatisfy(view -> assertThat(view.product().name()).isEqualTo("b5a Shared Parent"));
+        assertThat(page.window().getContent()).hasSize(2);
+    }
+
+    @Test
+    void forwardPagesOverTheSamePopulationNeverOverlapOrSkip() {
+        // The owner's guidance point 2: consecutive forward pages over the
+        // SAME population — the second call rides the FIRST page's own
+        // emitted keyset (the last row's keys), so page two starts exactly
+        // AFTER the last row page one returned: no row twice (overlap) and
+        // no row jumped over (skip). The native scroll's bind is the proof
+        // seam: the second repository call must receive the first page's
+        // LAST id, and only the rows strictly beyond it are rendered.
+        Product parent = activeProduct("b5a Keyset Parent");
+        ProductVariant first = activeVariant(parent, "b5a-sku-15");
+        ProductVariant second = activeVariant(parent, "b5a-sku-16");
+        ProductVariant third = activeVariant(parent, "b5a-sku-17");
+
+        // page one: pageSize=2, the +1 fetch returns three rows -> hasNext
+        when(variantRepository.scrollPublicByIdAsc(null, 3))
+                .thenReturn(List.of(first, second, third));
+        when(variantRepository.countPublicPopulation()).thenReturn(3L);
+        when(productRepository.findAllById(any())).thenReturn(List.of(parent));
+
+        ProductVariantPage pageOne = service.scrollVariants(publicCaller,
+                ProductVariantSort.of(ProductVariantSort.Field.ID, true),
+                ScrollPosition.keyset(), Limit.of(2));
+
+        assertThat(pageOne.window().hasNext()).isTrue();
+        assertThat(pageOne.window().getContent())
+                .extracting(ProductVariantView::sku)
+                .containsExactly("b5a-sku-15", "b5a-sku-16");
+        // the page's own emitted keyset — the last RETURNED row's key
+        KeysetScrollPosition continuation = (KeysetScrollPosition) pageOne.window().positionAt(1);
+        assertThat(continuation.getKeys())
+                .isEqualTo(Map.of("id", second.getId()));
+
+        // page two: the continuation cursor reaches the repository as the
+        // same population's NEXT keyset bound — strictly after sku-16
+        when(variantRepository.scrollPublicByIdAsc(second.getId(), 3))
+                .thenReturn(List.of(third));
+
+        ProductVariantPage pageTwo = service.scrollVariants(publicCaller,
+                ProductVariantSort.of(ProductVariantSort.Field.ID, true),
+                continuation, Limit.of(2));
+
+        // the no-overlap/no-skip bind itself: page two's fetch keyed the
+        // FIRST page's last id — never null (skip-free restart) and never
+        // first's id (overlap)
+        verify(variantRepository).scrollPublicByIdAsc(null, 3);
+        verify(variantRepository).scrollPublicByIdAsc(second.getId(), 3);
+        // and the rendered walk covers the population exactly once, in order
+        assertThat(pageOne.window().getContent())
+                .extracting(ProductVariantView::sku)
+                .containsExactly("b5a-sku-15", "b5a-sku-16");
+        assertThat(pageTwo.window().getContent())
+                .extracting(ProductVariantView::sku)
+                .containsExactly("b5a-sku-17");
+        assertThat(pageTwo.window().hasNext()).isFalse();
+        assertThat(pageTwo.total()).isEqualTo(3L);
+    }
+}
