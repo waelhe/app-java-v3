@@ -122,7 +122,7 @@
 ## C · Domain-specific rules
 
 ### C1 — Saleor contract fidelity *(trigger: any Dashboard/commerce SDL or DataFetcher work)*
-- **Invariant:** the published contract matches pinned Saleor 3.23.43 in root names, argument containers, and nullability; every divergence is registered, owned, tested, and approved (D-SALEOR-FULL-001; `saleor-contract-divergences.csv`).
+- **Invariant:** the published contract matches the pinned Saleor reference schema (`referenceSchema` in `docs/governance/plans/saleor-source-pins.json` — currently 3.23.45, blob-verified) in root names, argument containers, and nullability; every divergence is registered, owned, tested, and approved (D-SALEOR-FULL-001; `saleor-contract-divergences.csv`). The registry file is the authority; this rule never hardcodes a version that can drift.
 - **Must satisfy:** SDL fragments aligned from source (not hand-recalled); DataFetchers read from the input object; nullable semantics match; the Root Contract Gate green or a registered divergence present.
 - **History:** E-11. **Enforcement:** D3. **Status:** verified-systematic.
 
