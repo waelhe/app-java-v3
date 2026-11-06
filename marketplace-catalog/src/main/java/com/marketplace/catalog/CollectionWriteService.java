@@ -389,7 +389,19 @@ public class CollectionWriteService implements CollectionWriteSpi {
             // stored order — nothing changes, nothing writes.
             return CollectionMutationResult.success(toView(addressed.get()));
         }
-        int park = reordered.stream().mapToInt(CollectionProduct::getPosition).max().orElse(0) + 1;
+        // The 2026-11-06 #806 review (Minor · Data Integrity): the parking
+        // range must clear BOTH the current maximum AND the final dense
+        // range (1..size) — V253 permits a zero-based live order, so a
+        // park derived from the current maximum alone (0,1 -> 2,3) can
+        // collide with a FINAL position under the V298 live-position
+        // unique index whenever Hibernate's flush order assigns a final
+        // position before its parked tenant vacates it (the 23505
+        // transient duplicate). The Math.max(currentMax, size) floor puts
+        // the whole parking range strictly above every position any phase
+        // of this rewrite can hold — the invariant becomes structural,
+        // never flush-order dependent.
+        int park = Math.max(reordered.stream().mapToInt(CollectionProduct::getPosition).max().orElse(0),
+                reordered.size()) + 1;
         for (CollectionProduct member : reordered) {
             member.reposition(park++);
         }

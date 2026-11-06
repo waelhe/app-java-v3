@@ -41,13 +41,35 @@ public class AddressDataFetcher {
     private final AddressManagementSpi addressSpi;
     private final SaleorGlobalIdCodec globalIdCodec;
     private final AgentOneGraphQlMappers mappers;
+    // The 2026-11-06 #806 review (Minor · Functional Correctness): the
+    // payload user field — Saleor's accountAddress*/address* payloads
+    // return the affected user; the identity projection read + the SHARED
+    // user mapper (the CreateToken.user precedent) render it.
+    private final com.marketplace.identity.spi.IdentitySpi identitySpi;
+    private final UserGraphQlMapper userMapper;
 
     public AddressDataFetcher(AddressManagementSpi addressSpi,
                               SaleorGlobalIdCodec globalIdCodec,
-                              AgentOneGraphQlMappers mappers) {
+                              AgentOneGraphQlMappers mappers,
+                              com.marketplace.identity.spi.IdentitySpi identitySpi,
+                              UserGraphQlMapper userMapper) {
         this.addressSpi = addressSpi;
         this.globalIdCodec = globalIdCodec;
         this.mappers = mappers;
+        this.identitySpi = identitySpi;
+        this.userMapper = userMapper;
+    }
+
+    /** The caller's own account projection, rendered through the shared user mapper. */
+    private com.marketplace.app.graphql.generated.types.User callerUser() {
+        return identitySpi.findCurrentUserAccount(currentAuthentication())
+                .map(userMapper::toGraphQlUser).orElse(null);
+    }
+
+    /** The addressed account's projection — the staff legs' target user. */
+    private com.marketplace.app.graphql.generated.types.User addressedUser(UUID userId) {
+        return identitySpi.findUserAccountById(userId, currentAuthentication())
+                .map(userMapper::toGraphQlUser).orElse(null);
     }
 
     // ---------------------------------------------------------------------
@@ -64,7 +86,7 @@ public class AddressDataFetcher {
                 toFields(input), type == null ? null : type.name());
         return AccountAddressCreate.newBuilder()
                 .address(mappers.toGraphQlAddress(created))
-                .user(null)
+                .user(callerUser())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -77,7 +99,7 @@ public class AddressDataFetcher {
                 decodeAddressId(id), toFields(input));
         return AccountAddressUpdate.newBuilder()
                 .address(mappers.toGraphQlAddress(updated))
-                .user(null)
+                .user(callerUser())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -89,7 +111,7 @@ public class AddressDataFetcher {
                 decodeAddressId(id));
         return AccountAddressDelete.newBuilder()
                 .address(mappers.toGraphQlAddress(deleted))
-                .user(null)
+                .user(callerUser())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -103,7 +125,7 @@ public class AddressDataFetcher {
         }
         addressSpi.setCallerDefault(currentAuthentication(), decodeAddressId(id), type.name());
         return AccountSetDefaultAddress.newBuilder()
-                .user(null)
+                .user(callerUser())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -120,7 +142,7 @@ public class AddressDataFetcher {
                 decodeUserId(userId), toFields(input));
         return AddressCreate.newBuilder()
                 .address(mappers.toGraphQlAddress(created))
-                .user(null)
+                .user(addressedUser(created.userId()))
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -133,7 +155,7 @@ public class AddressDataFetcher {
                 decodeAddressId(id), toFields(input));
         return AddressUpdate.newBuilder()
                 .address(mappers.toGraphQlAddress(updated))
-                .user(null)
+                .user(addressedUser(updated.userId()))
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -145,7 +167,7 @@ public class AddressDataFetcher {
                 decodeAddressId(id));
         return AddressDelete.newBuilder()
                 .address(mappers.toGraphQlAddress(deleted))
-                .user(null)
+                .user(addressedUser(deleted.userId()))
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -161,7 +183,7 @@ public class AddressDataFetcher {
         addressSpi.setUserDefault(currentAuthentication(), decodeAddressId(addressId),
                 type.name(), decodeUserId(userId));
         return AddressSetDefault.newBuilder()
-                .user(null)
+                .user(addressedUser(decodeUserId(userId)))
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }

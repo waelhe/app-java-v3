@@ -59,14 +59,43 @@ final class SaleorMutationErrors {
         }
         if (failure instanceof IllegalArgumentException
                 || failure instanceof jakarta.validation.ConstraintViolationException) {
-            return messageRequires(failure.getMessage()) ? "REQUIRED" : "INVALID";
+            return messageRequires(failure) ? "REQUIRED" : "INVALID";
         }
         return "GRAPHQL_ERROR";
     }
 
-    private static boolean messageRequires(String message) {
-        return message != null && message.toLowerCase().contains("is required");
+    /**
+     * The REQUIRED/INVALID split for the validation family.
+     *
+     * <p>The 2026-11-06 #806 review (Minor · Functional Correctness): the
+     * bean-validation leg decides on the CONSTRAINT's own type — a
+     * {@code NotNull}/{@code NotBlank}/{@code NotEmpty} violation is a
+     * missing REQUIRED field whatever its rendered message says (the
+     * free-text locale messages never carry a stable "is required"
+     * substring); the IllegalArgumentException leg keeps the authored-
+     * message match this codebase's own fetchers write ("An email is
+     * required", "A confirmation token is required"), pinned to
+     * {@code Locale.ROOT} so the JVM's default locale can never flip the
+     * verdict (the Turkish-i class of mismatch).</p>
+     */
+    private static boolean messageRequires(Throwable failure) {
+        if (failure instanceof jakarta.validation.ConstraintViolationException violations) {
+            return violations.getConstraintViolations().stream().anyMatch(violation ->
+                    violation.getConstraintDescriptor() != null
+                            && violation.getConstraintDescriptor().getAnnotation() != null
+                            && REQUIRED_CONSTRAINTS.contains(
+                                    violation.getConstraintDescriptor().getAnnotation().annotationType()));
+        }
+        String message = failure.getMessage();
+        return message != null
+                && message.toLowerCase(java.util.Locale.ROOT).contains("is required");
     }
+
+    /** The bean-validation constraints whose violation means a missing required field. */
+    private static final java.util.Set<Class<? extends java.lang.annotation.Annotation>> REQUIRED_CONSTRAINTS =
+            java.util.Set.of(jakarta.validation.constraints.NotNull.class,
+                    jakarta.validation.constraints.NotBlank.class,
+                    jakarta.validation.constraints.NotEmpty.class);
 
     /** The payload error triple the generated builders consume. */
     record WireError(String field, String message, String code) {

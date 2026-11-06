@@ -271,8 +271,15 @@ public class PlatformTokenGrantService {
         Instant now = Instant.now();
         String accessToken = mintAccessToken(principal, roles, now);
         String refreshToken = opaqueToken();
-        authorizationService().save(authorizationRow(principal, roles, accessToken,
-                refreshToken, now));
+        // The 2026-11-06 #806 review (Minor · Stability & Availability): the
+        // raced row is revoked by the SAME object the save wrote — the
+        // previous findByToken leg could answer null (a concurrent family
+        // revoke between the save and the re-verification) and Spring's
+        // JdbcOAuth2AuthorizationService.remove asserts non-null, trading
+        // the unified DisabledException answer for an unclassified 500.
+        OAuth2Authorization issuedRow = authorizationRow(principal, roles, accessToken,
+                refreshToken, now);
+        authorizationService().save(issuedRow);
         // m7 (the CodeRabbit correctness round): the account projection read
         // needs the SAME subject-shaped authentication the refresh leg
         // passes — the DaoAuthenticationProvider's own Authentication
@@ -289,11 +296,15 @@ public class PlatformTokenGrantService {
         // live authorization row the refresh leg kept renewing until the
         // family-age cap. The raced grant loses its row and answers the
         // SAME account-state failure the pre-authentication wall carries.
-        if (user != null && !identitySpi.loginAccountEnabled(principal)) {
-            authorizationService().remove(authorizationService().findByToken(
-                    refreshToken, new OAuth2TokenType(OAuth2TokenType.REFRESH_TOKEN.getValue())));
+        // The 2026-11-06 #806 review (Minor · Stability & Availability):
+        // the verdict no longer rides the account projection — an empty
+        // findCurrentUserAccount (identity hiding completing between the
+        // authentication and the projection read) must never skip the
+        // state wall; the login store's own truth decides alone.
+        if (!identitySpi.loginAccountEnabled(principal)) {
+            authorizationService().remove(issuedRow);
             log.warn("Platform password grant revoked at issue: the account was disabled"
-                    + " while the grant raced (userId={})", user.id());
+                    + " while the grant raced (userId={})", user == null ? null : user.id());
             throw new org.springframework.security.authentication.DisabledException(
                     "User is disabled");
         }
@@ -419,13 +430,19 @@ public class PlatformTokenGrantService {
         // attribute is bounded from the presented token's issuedAt (the
         // conservative floor) and seeded onto the row by THIS rotation,
         // so every legacy family converges under the cap within one
-        // refresh. (The account-state side of the finding is the identity
-        // owner's own recorded contract: account disable/email change/
+        // refresh. (The account-state side of the finding is a TWO-LAYER
+        // design — the 2026-11-06 #806 review corrected this comment to
+        // describe the code that actually runs: layer one is the identity
+        // owner's own recorded contract — account disable/email change/
         // self-deletion and role revoke DELETE the principal's
-        // oauth2_authorization rows in the same transaction — UserService
-        // and RoleAssignmentService's own DELETE statements — so a
-        // disabled account cannot refresh; NO parallel per-refresh
-        // account read is added here, per the reviewer's own guidance.
+        // oauth2_authorization rows in the same transaction (UserService
+        // and RoleAssignmentService's own DELETE statements); layer two
+        // is the loginAccountEnabled check at the refresh door above,
+        // which covers the race window a deletion committing after this
+        // method's findByToken leg would otherwise leave open. The
+        // per-refresh projection read below the rotation populates the
+        // response's user field only — it is never an authorization
+        // decision.
         // B26/ORD-07 — the 2026-11-03 adversarial review, review-pr-811 —
         // the CONCURRENT interleaving rides the same arbitration: a
         // deactivation committing between this method's findByToken leg

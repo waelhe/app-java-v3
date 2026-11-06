@@ -27,7 +27,6 @@ import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.ScrollPosition;
 import org.springframework.graphql.data.pagination.EncodingCursorStrategy;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -254,6 +253,18 @@ public class CustomerTypeDataFetcher {
             throw new IllegalArgumentException(
                     "customerTypes where filter is not implemented on this platform yet");
         }
+        CustomerTypeSpi.CustomerTypeSort sort = toSort(sortBy);
+        // The 2026-11-06 #806 review (Minor · Functional Correctness): the
+        // cursor verdict precedes the degenerate page — an invalid `after`
+        // answers the classified validation error even when the page size
+        // itself is empty (never a success-shaped envelope that hides the
+        // malformed cursor). The permissionGroups root's own early-position
+        // pattern.
+        KeysetScrollPosition position = after == null
+                ? org.springframework.data.domain.ScrollPosition.keyset()
+                : KeysetCursorGate.forwardKeyset(cursorStrategy, after,
+                        sortProperty(sort), sortValueFunction(sort),
+                        SCROLL_ID, sort.ascending());
         int requested = first == null ? properties.pagination().defaultPageSize() : first;
         if (requested <= 0) {
             return CustomerTypeCountableConnection.newBuilder()
@@ -262,12 +273,6 @@ public class CustomerTypeDataFetcher {
                             .hasNextPage(false).hasPreviousPage(false).build())
                     .build();
         }
-        CustomerTypeSpi.CustomerTypeSort sort = toSort(sortBy);
-        KeysetScrollPosition position = after == null
-                ? org.springframework.data.domain.ScrollPosition.keyset()
-                : KeysetCursorGate.forwardKeyset(cursorStrategy, after,
-                        sortProperty(sort), sortValueFunction(sort),
-                        SCROLL_ID, sort.ascending());
         CustomerTypeSpi.CustomerTypePage page = customerTypeSpi.scroll(currentAuthentication(),
                 sort, position, Limit.of(Math.min(requested, properties.pagination().maxPageSize())),
                 search);
@@ -338,12 +343,12 @@ public class CustomerTypeDataFetcher {
     }
 
     private Authentication currentAuthentication() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) {
-            throw new org.springframework.security.authentication
-                    .AuthenticationCredentialsNotFoundException(
-                    "Authentication is required for customer type administration");
-        }
-        return authentication;
+        // The 2026-11-06 #806 review (Minor · Security & Privacy): the
+        // shared non-anonymous wall the other identity fetchers
+        // (Address, User, UserManagement, Customer, PermissionGroup,
+        // Token) already carry — a local null/isAuthenticated pair alone
+        // silently ACCEPTS an anonymous caller when the pre-login gate's
+        // allowlist widens; one authority, one shape.
+        return AuthenticatedCallers.require("customer type administration");
     }
 }

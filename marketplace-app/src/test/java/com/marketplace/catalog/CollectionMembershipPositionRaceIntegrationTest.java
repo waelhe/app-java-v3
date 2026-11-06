@@ -226,6 +226,47 @@ class CollectionMembershipPositionRaceIntegrationTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    /**
+     * The 2026-11-06 session-9 #806 final review (Minor · Data Integrity):
+     * V253's own law permits position 0 (the column's DEFAULT — a legacy
+     * row can carry it), so a membership shaped {@code {0, 1}} parked its
+     * two-phase rewrite at {@code max+1 = 2} — INSIDE the final 1..n
+     * range — and phase 2's UPDATE order decided between success and a
+     * transient 23505. The park base now clears BOTH the current and the
+     * final ranges; the zero-starting swap rewrites densely regardless of
+     * the flush order.
+     */
+    @Test
+    void aZeroStartingMembershipReordersDenselyThroughTheParkWindow() {
+        Collection collection = persistCollection();
+        Product first = persistProduct("b6 zero A");
+        Product second = persistProduct("b6 zero B");
+        collectionWriteService.addProducts(collection.getId(),
+                List.of(first.getId(), second.getId()));
+        // The legacy zero: the column's own DEFAULT, the {0, 1} shape the
+        // review measured (a raw SQL move mirrors the pre-law row's birth).
+        jdbcTemplate.update("UPDATE collection_products SET position = 0 "
+                + "WHERE collection_id = ? AND product_id = ?", collection.getId(), first.getId());
+
+        com.marketplace.catalog.spi.CollectionMutationResult result =
+                collectionWriteService.reorderProducts(collection.getId(),
+                        List.of(new com.marketplace.catalog.spi.CollectionProductMove(
+                                second.getId(), -1)));
+
+        assertThat(result.success())
+                .as("the zero-starting swap must succeed, never a transient 23505")
+                .isTrue();
+        List<CollectionProduct> membership = collectionProductRepository
+                .findByCollectionIdOrderByPositionAscIdAsc(collection.getId());
+        assertThat(membership).hasSize(2);
+        // Dense 1..2 — the park window cleared both ranges.
+        assertThat(membership.stream().mapToInt(CollectionProduct::getPosition))
+                .containsExactly(1, 2);
+        // And the swap actually happened: second now precedes first.
+        assertThat(membership.get(0).getProductId()).isEqualTo(second.getId());
+        assertThat(membership.get(1).getProductId()).isEqualTo(first.getId());
+    }
+
     // ------------------------------------------------------------------
     // the harness
     // ------------------------------------------------------------------
