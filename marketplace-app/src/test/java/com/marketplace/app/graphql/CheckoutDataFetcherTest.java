@@ -1,0 +1,605 @@
+package com.marketplace.app.graphql;
+
+import com.marketplace.orders.spi.CheckoutSpi;
+import com.marketplace.orders.spi.CheckoutView;
+import com.marketplace.orders.spi.OrderCommandSpi;
+import com.marketplace.shared.api.ResourceNotFoundException;
+import graphql.schema.DataFetchingEnvironment;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
+/**
+ * D-UUID-001 (Option A, decided 2026-10-23) resolver acceptance matrix: the
+ * deprecated {@code token} UUID alias is the checkout's NATIVE cart UUID
+ * (never decoded through the typed global-ID codec), {@code id} and the
+ * deprecated {@code checkoutId} decode through {@link SaleorGlobalIdCodec},
+ * the three identifiers are mutually exclusive per request (rejected even
+ * when they denote the same cart — no supplied identifier is silently
+ * ignored, and a SUPPLIED-but-blank identifier is a rejected validation
+ * failure, never an absent argument), and EVERY path delegates to the
+ * SAME {@link CheckoutSpi} use
+ * case with the caller's authentication unchanged: a token never bypasses
+ * the authentication wall, the owning use case's ownership/ADMIN wall, or
+ * the classified NOT_FOUND answers for guessed and wrong-owner UUIDs.
+ */
+class CheckoutDataFetcherTest {
+    private CheckoutSpi checkoutSpi;
+    private CheckoutGraphQlMapper mapper;
+    private OrderCommandSpi orderCommandSpi;
+    private CheckoutDataFetcher fetcher;
+    private SaleorGlobalIdCodec codec;
+
+    @BeforeEach
+    void setUp() {
+        checkoutSpi = mock(CheckoutSpi.class);
+        mapper = mock(CheckoutGraphQlMapper.class);
+        orderCommandSpi = mock(OrderCommandSpi.class);
+        codec = new SaleorGlobalIdCodec();
+        // The shard review (2026-11-01 wave 2) wired the bulk-list bound
+        // into the line roots — the same bound-constructor shape
+        // OrderMutationDataFetcherTest uses.
+        GraphQlProperties properties = new GraphQlProperties(
+                null, null, null, new GraphQlProperties.Bulk(200));
+        fetcher = new CheckoutDataFetcher(checkoutSpi, orderCommandSpi, mapper, codec, properties);
+        // The wave-4 #806 remediation: the fetcher renders through
+        // mapper.render(view) (which also reports the stale lines for the
+        // owner-side purge) — the default answers a healthy empty render;
+        // individual tests stub their own checkout projection.
+        lenient().when(mapper.render(any())).thenReturn(
+                new CheckoutGraphQlMapper.RenderedCheckout(Map.of(), List.of()));
+        SecurityContextHolder.getContext().setAuthentication(
+                UsernamePasswordAuthenticationToken.authenticated("checkout-owner", "n/a",
+                        List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+    }
+
+    @AfterEach
+    void clearContext() {
+        SecurityContextHolder.clearContext();
+    }
+
+    private static String checkoutGlobalId(UUID cartId) {
+        return new SaleorGlobalIdCodec().encode("Checkout", cartId);
+    }
+
+    private static String variantGlobalId(UUID variantId) {
+        return new SaleorGlobalIdCodec().encode("ProductVariant", variantId);
+    }
+
+    private static String lineGlobalId(UUID lineId) {
+        return new SaleorGlobalIdCodec().encode("CheckoutLine", lineId);
+    }
+
+    /**
+     * The execution environment carrying the deprecated token alias. The
+     * argument is deliberately undeclared in this branch's SDL (A0's ordered
+     * shared-SDL change declares it at assembly), so the resolver reads it
+     * from the environment — the tests inject it exactly the way the
+     * declared-alias execution will deliver the coerced UUID.
+     */
+    private static DataFetchingEnvironment environmentWithToken(UUID token) {
+        DataFetchingEnvironment environment = mock(DataFetchingEnvironment.class);
+        when(environment.getArgument("token")).thenReturn(token);
+        return environment;
+    }
+
+    private static DataFetchingEnvironment environment() {
+        return environmentWithToken(null);
+    }
+
+    @Test
+    void absentOptionalIdAnswersNullWithoutCallingTheOwner() {
+        // Absent means the argument carries no value (null) — exactly how
+        // the pinned Saleor resolver helpers treat a None argument as not
+        // provided; the nullable query field answers null.
+        assertThat(fetcher.checkout(null, environment())).isNull();
+        verifyNoInteractions(checkoutSpi, mapper);
+    }
+
+    /**
+     * The A0 review defect (2026-10-23): {@code isBlank()} used to decide
+     * PRESENCE, so a SUPPLIED-but-blank {@code id} was treated as absent.
+     * Presence and validity are now separate: a blank supplied identifier
+     * is a validation failure — never a silent null.
+     */
+    @Test
+    void blankSuppliedIdentifierIsRejectedNeverSilentlyIgnored() {
+        assertThatThrownBy(() -> fetcher.checkout("", environment()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("must not be blank");
+        assertThatThrownBy(() -> fetcher.checkout("   ", environment()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("must not be blank");
+        verifyNoInteractions(checkoutSpi, mapper);
+    }
+
+    /**
+     * The A0 review's exact regression matrix: a blank supplied identifier
+     * together with a valid {@code token} is REJECTED (two supplied
+     * identifiers) on every checkout root, and the {@link CheckoutSpi} use
+     * case is never reached.
+     */
+    @Test
+    void blankSuppliedIdentifierNeverFallsThroughToTheTokenAlias() {
+        UUID token = UUID.randomUUID();
+        String variantId = variantGlobalId(UUID.randomUUID());
+        List<Map<String, Object>> lines = List.of(Map.of("quantity", 1, "variantId", variantId));
+
+        // the query form throws (it has no error-envelope field)
+        assertThatThrownBy(() -> fetcher.checkout("", environmentWithToken(token)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Only one checkout identifier");
+
+        // the mutation forms answer the classified INVALID payload
+        assertInvalidIdentifierPayload(
+                fetcher.checkoutLinesAdd(null, "   ", environmentWithToken(token), lines));
+        assertInvalidIdentifierPayload(
+                fetcher.checkoutLinesUpdate("", null, environmentWithToken(token),
+                        List.of(Map.of("quantity", 1))));
+        assertInvalidIdentifierPayload(
+                fetcher.checkoutLinesDelete("", environmentWithToken(token), List.of()));
+        assertInvalidIdentifierPayload(
+                fetcher.checkoutLineDelete(null, "   ", environmentWithToken(token),
+                        lineGlobalId(UUID.randomUUID())));
+
+        // a blank identifier ALONE on a mutation is equally rejected
+        Map<String, Object> blankAlone = fetcher.checkoutLinesAdd("", null, environment(), lines);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> blankAloneErrors =
+                (List<Map<String, Object>>) blankAlone.get("errors");
+        assertThat(blankAloneErrors).hasSize(1);
+        assertThat(blankAloneErrors.get(0)).containsEntry("code", "INVALID");
+        assertThat((String) blankAloneErrors.get(0).get("message")).contains("must not be blank");
+
+        verifyNoInteractions(checkoutSpi, mapper);
+    }
+
+    @Test
+    void checkoutDeleteAuthorizationDenialPrecedesGlobalIdDecoding() {
+        doThrow(new AccessDeniedException("ADMIN required")).when(orderCommandSpi).requireAdmin();
+
+        assertThatThrownBy(() -> fetcher.checkoutDelete("not-a-checkout-global-id", null))
+                .isInstanceOf(AccessDeniedException.class);
+
+        verify(orderCommandSpi).requireAdmin();
+        verifyNoInteractions(checkoutSpi);
+    }
+
+    @Test
+    void malformedNonEmptyIdRemainsAClassifiedValidationFailure() {
+        assertThatThrownBy(() -> fetcher.checkout("not-a-checkout-global-id", environment()))
+                .isInstanceOf(IllegalArgumentException.class);
+        verifyNoInteractions(checkoutSpi, mapper);
+    }
+
+    // ------------------------------------------------------------------
+    // D-UUID-001: the deprecated token alias is the native cart UUID
+    // ------------------------------------------------------------------
+
+    @Test
+    void tokenAloneDelegatesWithTheNativeCartUuidUntouchedByTheGlobalIdCodec() {
+        UUID token = UUID.randomUUID();
+        CheckoutView view = new CheckoutView(token, List.of(), 0);
+        when(checkoutSpi.findCheckout(eq(token), any())).thenReturn(view);
+        when(mapper.render(view)).thenReturn(new CheckoutGraphQlMapper.RenderedCheckout(
+                Map.of("id", checkoutGlobalId(token)), List.of()));
+
+        assertThat(fetcher.checkout(null, environmentWithToken(token))).isNotNull();
+
+        ArgumentCaptor<Authentication> authenticationCaptor =
+                ArgumentCaptor.forClass(Authentication.class);
+        verify(checkoutSpi).findCheckout(eq(token), authenticationCaptor.capture());
+        assertThat(authenticationCaptor.getValue())
+                .isSameAs(SecurityContextHolder.getContext().getAuthentication());
+    }
+
+    @Test
+    void queryRejectsIdAndTokenTogetherEvenWhenTheyDenoteTheSameCart() {
+        UUID cartId = UUID.randomUUID();
+        String id = checkoutGlobalId(cartId);
+
+        assertThatThrownBy(() -> fetcher.checkout(id, environmentWithToken(cartId)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Only one checkout identifier");
+
+        verifyNoInteractions(checkoutSpi, mapper);
+    }
+
+    @Test
+    void guessedTokenUuidAnswersNullOnTheQueryWithNoPayloadLeakage() {
+        UUID guessed = UUID.randomUUID();
+        when(checkoutSpi.findCheckout(eq(guessed), any()))
+                .thenThrow(new ResourceNotFoundException("Checkout", guessed));
+
+        assertThat(fetcher.checkout(null, environmentWithToken(guessed))).isNull();
+    }
+
+    // ------------------------------------------------------------------
+    // the mutation matrix: token / checkoutId / id delegation + conflicts
+    // ------------------------------------------------------------------
+
+    @Test
+    void tokenAloneOnLinesAddDelegatesToTheSameUseCaseWithTheNativeUuid() {
+        UUID token = UUID.randomUUID();
+        String variantId = variantGlobalId(UUID.randomUUID());
+        CheckoutView view = new CheckoutView(token, List.of(), 0);
+        when(checkoutSpi.addLines(eq(token), anyList(), any())).thenReturn(view);
+
+        Map<String, Object> result = fetcher.checkoutLinesAdd(null, null, environmentWithToken(token),
+                List.of(Map.of("quantity", 2, "variantId", variantId)));
+
+        assertThat(result.get("errors")).isEqualTo(List.of());
+        verify(checkoutSpi).addLines(eq(token), anyList(),
+                eq(SecurityContextHolder.getContext().getAuthentication()));
+    }
+
+    @Test
+    void legacyCheckoutIdAloneOnLinesAddDecodesThroughTheTypedGlobalIdCodec() {
+        UUID cartId = UUID.randomUUID();
+        String variantId = variantGlobalId(UUID.randomUUID());
+        when(checkoutSpi.addLines(eq(cartId), anyList(), any()))
+                .thenReturn(new CheckoutView(cartId, List.of(), 0));
+
+        fetcher.checkoutLinesAdd(null, checkoutGlobalId(cartId), environment(),
+                List.of(Map.of("quantity", 1, "variantId", variantId)));
+
+        verify(checkoutSpi).addLines(eq(cartId), anyList(), any());
+    }
+
+    @Test
+    void linesAddRejectsEveryIdentifierPairEvenWhenBothDenoteTheSameCart() {
+        UUID cartId = UUID.randomUUID();
+        String id = checkoutGlobalId(cartId);
+        String legacyId = checkoutGlobalId(cartId);
+        String variantId = variantGlobalId(UUID.randomUUID());
+        List<Map<String, Object>> lines = List.of(Map.of("quantity", 1, "variantId", variantId));
+
+        assertInvalidIdentifierPayload(fetcher.checkoutLinesAdd(id, legacyId, environment(), lines));
+        assertInvalidIdentifierPayload(fetcher.checkoutLinesAdd(id, null, environmentWithToken(cartId), lines));
+        assertInvalidIdentifierPayload(fetcher.checkoutLinesAdd(null, legacyId, environmentWithToken(cartId), lines));
+
+        verifyNoInteractions(checkoutSpi);
+    }
+
+    @Test
+    void linesAddWithoutAnyIdentifierIsRejected() {
+        Map<String, Object> result = fetcher.checkoutLinesAdd(null, null, environment(), List.of());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> errors = (List<Map<String, Object>>) result.get("errors");
+        assertThat(errors).hasSize(1);
+        assertThat(errors.get(0)).containsEntry("code", "INVALID");
+        assertThat(errors.get(0)).containsEntry("field", "id");
+        assertThat((String) errors.get(0).get("message")).contains("required");
+        verifyNoInteractions(checkoutSpi);
+    }
+
+    @Test
+    void tokenAloneOnLinesUpdateDelegatesWithTheNativeUuid() {
+        UUID token = UUID.randomUUID();
+        String lineId = lineGlobalId(UUID.randomUUID());
+        when(checkoutSpi.updateLines(eq(token), anyList(), any()))
+                .thenReturn(new CheckoutView(token, List.of(), 0));
+
+        Map<String, Object> result = fetcher.checkoutLinesUpdate(null, null, environmentWithToken(token),
+                List.of(Map.of("lineId", lineId, "quantity", 3)));
+
+        assertThat(result.get("errors")).isEqualTo(List.of());
+        verify(checkoutSpi).updateLines(eq(token), anyList(), any());
+    }
+
+    @Test
+    void linesUpdateRejectsConflictingIdentifiers() {
+        UUID cartId = UUID.randomUUID();
+        Map<String, Object> line = Map.of("quantity", 1);
+
+        assertInvalidIdentifierPayload(
+                fetcher.checkoutLinesUpdate(checkoutGlobalId(cartId), null, environmentWithToken(cartId), List.of(line)));
+        assertInvalidIdentifierPayload(
+                fetcher.checkoutLinesUpdate(checkoutGlobalId(cartId), checkoutGlobalId(cartId), environment(), List.of(line)));
+
+        verifyNoInteractions(checkoutSpi);
+    }
+
+    @Test
+    void tokenAloneOnLinesDeleteDelegatesWithTheNativeUuid() {
+        UUID token = UUID.randomUUID();
+        String lineId = lineGlobalId(UUID.randomUUID());
+        when(checkoutSpi.deleteLines(eq(token), anyList(), any()))
+                .thenReturn(new CheckoutView(token, List.of(), 0));
+
+        Map<String, Object> result = fetcher.checkoutLinesDelete(null, environmentWithToken(token), List.of(lineId));
+
+        assertThat(result.get("errors")).isEqualTo(List.of());
+        verify(checkoutSpi).deleteLines(eq(token), anyList(), any());
+    }
+
+    @Test
+    void linesDeleteRejectsIdAndTokenTogetherAndRequiresAnIdentifier() {
+        UUID cartId = UUID.randomUUID();
+
+        assertInvalidIdentifierPayload(
+                fetcher.checkoutLinesDelete(checkoutGlobalId(cartId), environmentWithToken(cartId), List.of()));
+
+        Map<String, Object> noIdentifier = fetcher.checkoutLinesDelete(null, environment(), List.of());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> errors =
+                (List<Map<String, Object>>) noIdentifier.get("errors");
+        assertThat(errors).hasSize(1);
+        assertThat(errors.get(0)).containsEntry("code", "INVALID");
+        assertThat((String) errors.get(0).get("message")).contains("required");
+
+        verifyNoInteractions(checkoutSpi);
+    }
+
+    @Test
+    void tokenAloneOnLineDeleteDelegatesWithTheNativeUuid() {
+        UUID token = UUID.randomUUID();
+        String lineId = lineGlobalId(UUID.randomUUID());
+        when(checkoutSpi.deleteLines(eq(token), anyList(), any()))
+                .thenReturn(new CheckoutView(token, List.of(), 0));
+
+        Map<String, Object> result = fetcher.checkoutLineDelete(null, null, environmentWithToken(token), lineId);
+
+        assertThat(result.get("errors")).isEqualTo(List.of());
+        verify(checkoutSpi).deleteLines(eq(token), anyList(), any());
+    }
+
+    @Test
+    void lineDeleteRejectsConflictingIdentifiersBeforeTouchingTheOwner() {
+        UUID cartId = UUID.randomUUID();
+        String lineId = lineGlobalId(UUID.randomUUID());
+
+        assertInvalidIdentifierPayload(
+                fetcher.checkoutLineDelete(checkoutGlobalId(cartId), checkoutGlobalId(cartId), environment(), lineId));
+        assertInvalidIdentifierPayload(
+                fetcher.checkoutLineDelete(null, checkoutGlobalId(cartId), environmentWithToken(cartId), lineId));
+
+        verifyNoInteractions(checkoutSpi);
+    }
+
+    @Test
+    void guessedTokenUuidOnLinesAddAnswersTheClassifiedNotFoundWithoutLeakage() {
+        UUID guessed = UUID.randomUUID();
+        String variantId = variantGlobalId(UUID.randomUUID());
+        when(checkoutSpi.addLines(eq(guessed), anyList(), any()))
+                .thenThrow(new ResourceNotFoundException("Checkout", guessed));
+
+        Map<String, Object> result = fetcher.checkoutLinesAdd(null, null, environmentWithToken(guessed),
+                List.of(Map.of("quantity", 1, "variantId", variantId)));
+
+        assertThat(result.get("checkout")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> errors = (List<Map<String, Object>>) result.get("errors");
+        assertThat(errors).hasSize(1);
+        assertThat(errors.get(0)).containsEntry("code", "NOT_FOUND");
+        String message = (String) errors.get(0).get("message");
+        assertThat(message).doesNotContain("consumer").doesNotContain("owner");
+    }
+
+    @Test
+    void guessedTokenUuidOnLinesUpdateAnswersNotFoundUnderTheIdFieldLikeItsSiblings() {
+        // The 2026-11-03 #806 review (Minor · Functional Correctness):
+        // checkoutLinesAdd/Delete answer CHECKOUT_NOT_FOUND under `id`;
+        // linesUpdate used to answer the SAME semantic error under
+        // `lines` — a client binding the wrong field. The payload's own
+        // identity error owns `id`; the line-VALIDATION errors keep
+        // `lines`.
+        UUID guessed = UUID.randomUUID();
+        String lineId = lineGlobalId(UUID.randomUUID());
+        when(checkoutSpi.updateLines(eq(guessed), anyList(), any()))
+                .thenThrow(new ResourceNotFoundException("Checkout", guessed));
+
+        Map<String, Object> result = fetcher.checkoutLinesUpdate(null, null, environmentWithToken(guessed),
+                List.of(Map.of("lineId", lineId, "quantity", 3)));
+
+        assertThat(result.get("checkout")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> errors = (List<Map<String, Object>>) result.get("errors");
+        assertThat(errors).hasSize(1);
+        assertThat(errors.get(0)).containsEntry("code", "NOT_FOUND");
+        assertThat(errors.get(0)).containsEntry("field", "id");
+    }
+
+    @Test
+    void linesUpdateClassifiesTheMissingLineUnderLinesNotTheCheckout() {
+        // The pinned Saleor 3.23.45 checkout_lines_update.py answers a
+        // missed line under line_id with CheckoutErrorCode.GRAPHQL_ERROR
+        // (get_nodes_or_error) — translated to this root's `lines`
+        // argument field, the same translation the delete root applies.
+        UUID cartId = UUID.randomUUID();
+        UUID missedLineId = UUID.randomUUID();
+        String lineId = lineGlobalId(missedLineId);
+        when(checkoutSpi.updateLines(eq(cartId), anyList(), any()))
+                .thenThrow(new ResourceNotFoundException("CheckoutLine", missedLineId));
+
+        Map<String, Object> result = fetcher.checkoutLinesUpdate(null, null, environmentWithToken(cartId),
+                List.of(Map.of("lineId", lineId, "quantity", 3)));
+
+        assertThat(result.get("checkout")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> errors = (List<Map<String, Object>>) result.get("errors");
+        assertThat(errors).hasSize(1);
+        assertThat(errors.get(0)).containsEntry("field", "lines");
+        assertThat(errors.get(0)).containsEntry("code", "GRAPHQL_ERROR");
+    }
+
+    @Test
+    void lineDeleteClassifiesTheMissingCheckoutUnderIdAndTheMissingLineUnderLineId() {
+        // The 12:44:42Z #806 review (Minor · Functional Correctness):
+        // OrdersService.deleteLines throws the SAME exception type for
+        // both resources; the fetcher now classifies by the MISSED
+        // RESOURCE (the exception's own resourceType — never its message
+        // text): the checkout's absence answers CHECKOUT_NOT_FOUND under
+        // `id` (the field every sibling root uses), the line's absence
+        // stays LINE_NOT_FOUND under `lineId` — the pinned Saleor
+        // contract (get_node_or_error(only_type=CheckoutLine,
+        // field="line_id", NOT_FOUND) vs get_checkout's
+        // NonExistingCheckout under id).
+        UUID cartId = UUID.randomUUID();
+        UUID lineId = UUID.randomUUID();
+
+        when(checkoutSpi.deleteLines(eq(cartId), anyList(), any()))
+                .thenThrow(new ResourceNotFoundException("Checkout", cartId));
+        Map<String, Object> missingCheckout = fetcher.checkoutLineDelete(
+                null, null, environmentWithToken(cartId), lineGlobalId(lineId));
+        assertThat(missingCheckout.get("checkout")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> checkoutErrors =
+                (List<Map<String, Object>>) missingCheckout.get("errors");
+        assertThat(checkoutErrors).hasSize(1);
+        assertThat(checkoutErrors.get(0)).containsEntry("field", "id");
+        assertThat(checkoutErrors.get(0)).containsEntry("code", "NOT_FOUND");
+
+        when(checkoutSpi.deleteLines(eq(cartId), anyList(), any()))
+                .thenThrow(new ResourceNotFoundException("CheckoutLine", lineId));
+        Map<String, Object> missingLine = fetcher.checkoutLineDelete(
+                null, null, environmentWithToken(cartId), lineGlobalId(lineId));
+        assertThat(missingLine.get("checkout")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> lineErrors =
+                (List<Map<String, Object>>) missingLine.get("errors");
+        assertThat(lineErrors).hasSize(1);
+        assertThat(lineErrors.get(0)).containsEntry("field", "lineId");
+        assertThat(lineErrors.get(0)).containsEntry("code", "NOT_FOUND");
+    }
+
+    @Test
+    void linesDeleteClassifiesTheMissingLineUnderLinesIdsNotTheCheckout() {
+        // Saleor 3.23.45 checkoutLinesDelete: a line outside the checkout
+        // is the linesIds VALIDATION error (validate_lines raises
+        // "Provided line_ids aren't part of checkout." under line_id),
+        // never a checkout-wide NOT_FOUND — the same resource
+        // classification the single root now carries.
+        UUID cartId = UUID.randomUUID();
+        when(checkoutSpi.deleteLines(eq(cartId), anyList(), any()))
+                .thenThrow(new ResourceNotFoundException("CheckoutLine", UUID.randomUUID()));
+
+        Map<String, Object> result = fetcher.checkoutLinesDelete(null, environmentWithToken(cartId),
+                List.of(lineGlobalId(UUID.randomUUID())));
+
+        assertThat(result.get("checkout")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> errors = (List<Map<String, Object>>) result.get("errors");
+        assertThat(errors).hasSize(1);
+        assertThat(errors.get(0)).containsEntry("field", "linesIds");
+        assertThat(errors.get(0)).containsEntry("code", "INVALID");
+    }
+
+    // ------------------------------------------------------------------
+    // the security gate: a token is never an authentication grant
+    // ------------------------------------------------------------------
+
+    @Test
+    void tokenNeverBypassesTheAuthenticationWall() {
+        SecurityContextHolder.clearContext();
+        UUID token = UUID.randomUUID();
+
+        assertThatThrownBy(() -> fetcher.checkout(null, environmentWithToken(token)))
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+        assertThatThrownBy(() -> fetcher.checkoutLinesAdd(null, null, environmentWithToken(token), List.of()))
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+        assertThatThrownBy(() -> fetcher.checkoutLinesDelete(null, environmentWithToken(token), List.of()))
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+
+        verifyNoInteractions(checkoutSpi, mapper);
+    }
+
+    @Test
+    void anonymousAuthenticationIsRejectedLikeAMissingOne() {
+        // The wave-11 #806 review (Major · Security): AnonymousAuthenticationToken
+        // answers isAuthenticated() == true — the type check is the only honest
+        // wall (the account-lifecycle fetcher's wave-3 guard, same semantics).
+        SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.AnonymousAuthenticationToken(
+                        "key", "anonymousUser",
+                        List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS"))));
+
+        assertThatThrownBy(() -> fetcher.checkout(null, null))
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+        assertThatThrownBy(() -> fetcher.checkoutLinesAdd(null, null, null, List.of()))
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+        assertThatThrownBy(() -> fetcher.checkoutLinesUpdate(null, null, null, List.of()))
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+        assertThatThrownBy(() -> fetcher.checkoutLinesDelete(null, null, List.of()))
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+        assertThatThrownBy(() -> fetcher.checkoutLineDelete(null, null, null, "raw"))
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+
+        verifyNoInteractions(checkoutSpi, mapper, orderCommandSpi);
+    }
+
+    @Test
+    void adminAuthenticationFlowsToTheUseCaseUnchangedOnEveryIdentifierPath() {
+        Authentication admin = UsernamePasswordAuthenticationToken.authenticated(
+                "checkout-admin", "n/a", List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+        SecurityContextHolder.getContext().setAuthentication(admin);
+
+        UUID cartId = UUID.randomUUID();
+        when(checkoutSpi.findCheckout(any(), any())).thenReturn(new CheckoutView(cartId, List.of(), 0));
+
+        fetcher.checkout(checkoutGlobalId(cartId), environment());
+        fetcher.checkout(null, environmentWithToken(cartId));
+
+        ArgumentCaptor<Authentication> captor = ArgumentCaptor.forClass(Authentication.class);
+        verify(checkoutSpi, org.mockito.Mockito.times(2)).findCheckout(any(), captor.capture());
+        assertThat(captor.getAllValues()).allSatisfy(auth -> assertThat(auth).isSameAs(admin));
+    }
+
+    private static void assertInvalidIdentifierPayload(Map<String, Object> result) {
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> errors = (List<Map<String, Object>>) result.get("errors");
+        assertThat(errors).hasSize(1);
+        assertThat(errors.get(0)).containsEntry("code", "INVALID");
+        // The 2026-11-03 #806 review (Minor · Functional Correctness): the
+        // checkout's own identity errors own the payload's `id` field in
+        // EVERY mutation — checkoutLineDelete used to answer them under
+        // `lineId` (the same wrong-field defect fixed for linesUpdate's
+        // NOT_FOUND).
+        assertThat(errors.get(0)).containsEntry("field", "id");
+        assertThat((String) errors.get(0).get("message")).contains("Only one checkout identifier");
+    }
+
+    @Test
+    void lineDeleteAnswersTheMalformedLineIdUnderTheLineIdField() {
+        // The same review: the lineId decode failure keeps ITS OWN field
+        // (`lineId`) with the constant message shape the sibling paths
+        // use — the split catch keeps both fields honest.
+        UUID cartId = UUID.randomUUID();
+        Map<String, Object> result = fetcher.checkoutLineDelete(
+                checkoutGlobalId(cartId), null, environment(), "not-a-global-id");
+
+        assertThat(result.get("checkout")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> errors = (List<Map<String, Object>>) result.get("errors");
+        assertThat(errors).hasSize(1);
+        assertThat(errors.get(0)).containsEntry("field", "lineId");
+        assertThat(errors.get(0)).containsEntry("code", "INVALID");
+        assertThat((String) errors.get(0).get("message"))
+                .isEqualTo("Invalid checkout line global ID");
+        verifyNoInteractions(checkoutSpi);
+    }
+}

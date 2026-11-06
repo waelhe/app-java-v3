@@ -74,7 +74,13 @@ import static org.mockito.Mockito.when;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
                 "marketplace.graphql.pagination.default-page-size=3",
-                "marketplace.graphql.pagination.max-page-size=5"})
+                "marketplace.graphql.pagination.max-page-size=5",
+                // B29 (TST-09 — the 2026-11-03 adversarial review,
+                // review-pr-807): the REAL migration schema — the same
+                // Flyway contract the wire ITs established. The
+                // create-drop default masked migration drift.
+                "spring.flyway.enabled=true",
+                "spring.jpa.hibernate.ddl-auto=none"})
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
 class HomeGraphQlIntegrationTest {
@@ -303,7 +309,12 @@ class HomeGraphQlIntegrationTest {
     // field level while discovery resolves its honest empty list.
     // ------------------------------------------------------------------
 
-    /** The endpoint's own gate: an anonymous caller is rejected before any adapter runs. */
+    /**
+     * The endpoint's own gate: an anonymous caller is rejected by the
+     * reopened pre-login wall BEFORE any adapter runs — the classified
+     * AUTHN-001 GraphQL error inside the envelope (HTTP 200, no data);
+     * the resolver-blocked proof is the mock verification below.
+     */
     @Test
     void anAnonymousCallerIsRejectedBeforeAnyAdapterRuns() {
         WebTestClient anonymous = WebTestClient.bindToServer()
@@ -313,9 +324,12 @@ class HomeGraphQlIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("{\"query\":\"{ discovery { row } }\"}")
                 .exchange()
-                .expectStatus().isUnauthorized()
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
                 .expectBody()
-                .jsonPath("$.errorCode").isEqualTo("AUTHN-001");
+                .jsonPath("$.errors[0].extensions.errorCode").isEqualTo("AUTHN-001")
+                .jsonPath("$.errors[0].extensions.category").isEqualTo("authz")
+                .jsonPath("$.data").doesNotExist();
 
         verify(discoveryService, never()).homeRows(any());
         verify(postService, never()).getFeed(any(), any(), any());
@@ -392,7 +406,7 @@ class HomeGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> {
-                    assertThat(errors).isNotEmpty();
+                    assertThat(errors).hasSizeGreaterThan(0);
                     var error = errors.getFirst();
                     assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
                 });
@@ -420,7 +434,7 @@ class HomeGraphQlIntegrationTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> {
-                    assertThat(errors).isNotEmpty();
+                    assertThat(errors).hasSizeGreaterThan(0);
                     var error = errors.getFirst();
                     assertThat(error.getExtensions()).containsEntry("errorCode", "VAL-001");
                     assertThat(error.getMessage()).contains("not aligned");

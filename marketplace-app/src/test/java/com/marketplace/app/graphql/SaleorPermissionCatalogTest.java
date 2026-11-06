@@ -18,12 +18,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SaleorPermissionCatalogTest {
 
     @Test
-    void adminHoldsTheStaffUserOrderManagementSetTheP1SliceEnforces() {
+    void adminHoldsTheStaffUserOrderDiscountManagementSetTheOwnersEnforce() {
+        // The 2026-11-05 #811 round-3 review: the catalog stays in sync
+        // with the implemented interfaces — the discounts family
+        // (promotions/vouchers) is ADMIN-enforced at its owning use
+        // cases, so Saleor's own discount code joins the granted set.
         assertThat(SaleorPermissionCatalog.permissionsForRoles(Set.of("ADMIN")))
                 .containsExactlyInAnyOrder(
                         PermissionEnum.MANAGE_STAFF,
                         PermissionEnum.MANAGE_USERS,
-                        PermissionEnum.MANAGE_ORDERS);
+                        PermissionEnum.MANAGE_ORDERS,
+                        PermissionEnum.MANAGE_DISCOUNTS);
     }
 
     @Test
