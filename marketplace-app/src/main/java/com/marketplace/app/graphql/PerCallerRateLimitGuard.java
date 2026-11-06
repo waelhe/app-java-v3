@@ -314,6 +314,24 @@ public class PerCallerRateLimitGuard {
     }
 
     /**
+     * Resolves the budget config: the SURFACE-specific entry
+     * ({@code <configName>-<surface>}, e.g.
+     * {@code perCallerGrant-graphqlCheckoutMutation}) first, then the
+     * family-wide {@code configName} (perCallerGrant / perAccountGrant),
+     * then the programmatic fallback — the registry's own configuration
+     * lookup API, never a second config path.
+     */
+    private RateLimiterConfig resolveConfig(String configName, String surface, RateLimiterConfig fallback) {
+        if (sharedRegistry.getIfAvailable() == null) {
+            return fallback;
+        }
+        var registry = sharedRegistry.getObject();
+        return registry.getConfiguration(configName + "-" + surface)
+                .or(() -> registry.getConfiguration(configName))
+                .orElse(fallback);
+    }
+
+    /**
      * Consumes one permit of the keyed budget. The CONFIG is resolved per
      * FAMILY — the address budget rides {@code perCallerGrant}, the account
      * budget rides the SEPARATE {@code perAccountGrant} (the wave-4 #806
@@ -329,10 +347,20 @@ public class PerCallerRateLimitGuard {
         // The keyed budgets ride the yml's configs when the shared registry
         // declares them (the full application context); the guard's own
         // bounded registry owns the instances either way.
-        RateLimiterConfig config = sharedRegistry.getIfAvailable() != null
-                ? sharedRegistry.getObject().getConfiguration(configName)
-                        .orElse(fallback)
-                : fallback;
+        //
+        // The 2026-11-06 #806 round (Minor · Stability & Availability): a
+        // surface may carry its OWN grant config — {@code <family
+        // config>-<surface>} (e.g. perCallerGrant-graphqlCheckoutMutation)
+        // — resolved FIRST through the same official registry config
+        // lookup, falling back to the family-wide config. The high-volume
+        // checkout surface (the platform's highest-frequency writes, per
+        // the aggregate-ceiling reasoning) and the admin order surface
+        // join the per-caller model with this override point, so a
+        // deployment can size one surface's per-caller grant without
+        // touching the anonymous account roots' tuned 10/min — and the
+        // test profile relaxes exactly those two surfaces without
+        // weakening the anonymous-flood proof.
+        RateLimiterConfig config = resolveConfig(configName, surface, fallback);
         RateLimiter limiter = familyRegistry.rateLimiter(
                 surface + "-caller:" + key, config);
         if (!limiter.acquirePermission()) {

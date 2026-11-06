@@ -188,6 +188,21 @@ management:
 # they otherwise ride the shared default's full 60 seconds.
 resilience4j:
   ratelimiter:
+    # The 2026-11-06 #806 round: the order/checkout mutation families'
+    # per-caller grants — surface-specific overrides resolved BEFORE the
+    # family-wide perCallerGrant (PerCallerRateLimitGuard.resolveConfig).
+    # The write journeys issue more than ten mutations from the single
+    # test address; only THESE two surfaces relax (the anonymous account
+    # roots keep the tuned 10/min their flood proof depends on).
+    configs:
+      perCallerGrant-graphqlOrderMutation:
+        limit-for-period: 100
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      perCallerGrant-graphqlCheckoutMutation:
+        limit-for-period: 100
+        limit-refresh-period: 1m
+        timeout-duration: 0
     instances:
       graphqlAccountMutation:
         limit-refresh-period: 1s
@@ -246,6 +261,10 @@ resilience4j:
       graphqlStoreProductQuery:
         limit-refresh-period: 1s
       graphqlTokenMutation:
+        limit-refresh-period: 1s
+      graphqlOrderMutation:
+        limit-refresh-period: 1s
+      graphqlCheckoutMutation:
         limit-refresh-period: 1s
       graphqlUserQuery:
         limit-refresh-period: 1s

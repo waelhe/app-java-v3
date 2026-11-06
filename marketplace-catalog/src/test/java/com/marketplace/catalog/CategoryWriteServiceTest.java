@@ -112,14 +112,52 @@ class CategoryWriteServiceTest {
         assertThat(result.errors()).singleElement()
                 .extracting(CategoryMutationError::code, CategoryMutationError::field)
                 .containsExactly(CategoryMutationErrorCode.ALREADY_EXISTS, "slug");
-        verify(repository, never()).save(any());
+        verify(repository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void aConcurrentCodeConflictAnswersTheSameClassifiedAlreadyExists() {
+        // The 2026-11-06 #808 round (Minor · Stability & Availability):
+        // two concurrent creates of the same code both pass the honest
+        // precheck; V70's global unique index is the backstop, and the
+        // loser's raw violation answers the SAME classified
+        // ALREADY_EXISTS — bound to uq_categories_code ONLY.
+        when(repository.countByCodeIncludingDeleted("fresh-code")).thenReturn(0L);
+        when(repository.findAllByOrderByPositionAsc()).thenReturn(List.of());
+        when(repository.saveAndFlush(any())).thenThrow(new org.springframework.dao.DataIntegrityViolationException(
+                "could not execute statement; SQL [n/a]; constraint [uq_categories_code "
+                        + "ON categories (code)]"));
+
+        CategoryMutationResult result = service.createCategory(
+                new CategoryCreateCommand("Fresh Code", "fresh-code"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(CategoryMutationError::code, CategoryMutationError::field)
+                .containsExactly(CategoryMutationErrorCode.ALREADY_EXISTS, "slug");
+    }
+
+    @Test
+    void aForeignConstraintViolationStillPropagatesUntouched() {
+        // The discrimination's negative leg: a DIVE naming a DIFFERENT
+        // constraint is a real registry bug — it keeps its own
+        // propagation (never a blanket catch that would hide it).
+        when(repository.countByCodeIncludingDeleted("fresh-code")).thenReturn(0L);
+        when(repository.findAllByOrderByPositionAsc()).thenReturn(List.of());
+        when(repository.saveAndFlush(any())).thenThrow(new org.springframework.dao.DataIntegrityViolationException(
+                "could not execute statement; constraint [chk_categories_code_shape "
+                        + "ON categories]"));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.createCategory(
+                        new CategoryCreateCommand("Fresh Code", "fresh-code")))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
     }
 
     @Test
     void happyCreateSavesTheRowWithTheNextPositionAndAnswersTheProjection() {
         when(repository.countByCodeIncludingDeleted("fresh-code")).thenReturn(0L);
         when(repository.findAllByOrderByPositionAsc()).thenReturn(List.of(row("a", "A", 1), row("b", "B", 2)));
-        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         CategoryMutationResult result = service.createCategory(
                 new CategoryCreateCommand("Fresh Code", "fresh-code"));
@@ -129,7 +167,7 @@ class CategoryWriteServiceTest {
         assertThat(result.category().slug()).isEqualTo("fresh-code");
         assertThat(result.category().name()).isEqualTo("Fresh Code");
         assertThat(result.category().position()).isEqualTo(3);
-        verify(repository).save(any());
+        verify(repository).saveAndFlush(any());
     }
 
     @Test
@@ -142,7 +180,7 @@ class CategoryWriteServiceTest {
         when(repository.countByCodeIncludingDeleted("fresh-code")).thenReturn(0L);
         when(repository.findAllByOrderByPositionAsc())
                 .thenReturn(List.of(row("a", "A", 1), row("b", "B", 5)));
-        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         CategoryMutationResult result = service.createCategory(
                 new CategoryCreateCommand("Fresh Code", "fresh-code"));
@@ -155,7 +193,7 @@ class CategoryWriteServiceTest {
     void createNormalizesTheSlugToTheRegistrysOwnLowercaseContract() {
         when(repository.countByCodeIncludingDeleted("mixed-case")).thenReturn(0L);
         when(repository.findAllByOrderByPositionAsc()).thenReturn(List.of());
-        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         CategoryMutationResult result = service.createCategory(
                 new CategoryCreateCommand("Fresh", "Mixed-Case"));

@@ -130,7 +130,15 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
             errors.add(new ProductVariantMutationError("sku", ProductVariantMutationErrorCode.INVALID,
                     "A variant SKU is at most " + SKU_MAX_LENGTH + " characters"));
         } else if (variantRepository
-                .findByProviderIdAndSku(parent.get().getProviderId(), sku).isPresent()) {
+                .countSkuReservationsIncludingDeleted(parent.get().getProviderId(), sku) > 0) {
+            // The 2026-11-06 #808 round (Minor · Data Integrity): the
+            // SKU reservation spans the RAW table — V219's unique index
+            // is GLOBAL (not partial over the live rows), so a
+            // soft-deleted variant keeps reserving its SKU while the
+            // derived probe (filtered to live rows) misses it and the
+            // write dies on the raw constraint error instead of the
+            // classified ALREADY_EXISTS. The native count sees every
+            // reservation — live AND soft-deleted.
             errors.add(new ProductVariantMutationError("sku", ProductVariantMutationErrorCode.ALREADY_EXISTS,
                     "The SKU is already used in this seller's namespace"));
         }
@@ -201,11 +209,17 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
             // The seller's namespace freedom precheck — the V219 unique
             // index remains the concurrent-write backstop (the same
             // no-TOCTOU stance the category code precheck takes).
-            variantRepository.findByProviderIdAndSku(row.getProviderId(), mergedSku)
-                    .filter(existing -> !existing.getId().equals(id))
-                    .ifPresent(existing -> errors.add(new ProductVariantMutationError(
-                            "sku", ProductVariantMutationErrorCode.ALREADY_EXISTS,
-                            "The SKU is already used in this seller's namespace")));
+            // The 2026-11-06 #808 round (Minor · Data Integrity): the
+            // reservation spans the RAW table (soft-deleted rows keep
+            // their SKU), and the update leg excludes the addressed
+            // row itself — the same-sku re-send stays the idempotent
+            // no-op.
+            if (variantRepository.countSkuReservationsIncludingDeletedExcluding(
+                    row.getProviderId(), mergedSku, id) > 0) {
+                errors.add(new ProductVariantMutationError(
+                        "sku", ProductVariantMutationErrorCode.ALREADY_EXISTS,
+                        "The SKU is already used in this seller's namespace"));
+            }
         }
         String mergedName = command.name() == null ? row.getName() : command.name().strip();
         if (mergedName != null && mergedName.length() > NAME_MAX_LENGTH) {

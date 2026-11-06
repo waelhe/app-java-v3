@@ -86,6 +86,17 @@ public class ProductVariantService {
             throw new ConflictException("SKU '" + command.sku() + "' is already used by variant "
                     + existing.getId() + " in this seller's namespace");
         });
+        // The 2026-11-06 #808 round (Minor · Data Integrity), extended to
+        // this register surface by the same proven root cause: V219's
+        // unique index is GLOBAL (a soft-deleted variant keeps its SKU
+        // reserved) while the derived probe above is filtered to live
+        // rows — the raw-table count answers the same friendly 409
+        // BEFORE the save dies on the constraint (the write service's
+        // own correction, mirrored here).
+        if (variantRepository.countSkuReservationsIncludingDeleted(providerId, command.sku()) > 0) {
+            throw new ConflictException("SKU '" + command.sku()
+                    + "' is already reserved in this seller's namespace");
+        }
         List<ProductTypeAttributeAssignment> typeAssignments = product.getProductTypeId() == null
                 ? List.of()
                 : assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(product.getProductTypeId());

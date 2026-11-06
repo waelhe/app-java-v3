@@ -240,6 +240,30 @@ class ProductVariantServiceTest {
     }
 
     @Test
+    void aSoftDeletedRowsSkuStaysReservedAnswersTheSame409() {
+        // The 2026-11-06 #808 round (Minor · Data Integrity), this
+        // register surface: V219's unique index is GLOBAL — a
+        // soft-deleted variant keeps its SKU reserved while the derived
+        // probe (filtered to live rows) sees nothing; the raw-table
+        // count answers the same friendly 409 BEFORE the save dies on
+        // the constraint.
+        Product product = product();
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
+        when(variantRepository.findByProviderIdAndSku(seller, "RED-XL"))
+                .thenReturn(Optional.empty());
+        when(variantRepository.countSkuReservationsIncludingDeleted(seller, "RED-XL"))
+                .thenReturn(1L);
+
+        assertThatThrownBy(() -> service.register(product.getId(),
+                new ProductVariantService.RegisterVariantCommand("RED-XL", null, 100),
+                authentication))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("RED-XL");
+        verify(variantRepository, never()).save(any());
+    }
+
+    @Test
     void theSameSkuIsFreeInAnotherSellersNamespace() {
         Product product = product();
         when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));

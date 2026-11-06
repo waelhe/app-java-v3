@@ -11,6 +11,7 @@ import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import graphql.schema.DataFetchingEnvironment;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
@@ -131,6 +132,16 @@ public class CheckoutDataFetcher {
         return renderedCheckout(view, authentication);
     }
 
+    // The 2026-11-06 #806 round (Minor · Stability & Availability): the
+    // checkout mutations carry the SAME two-layer budget every other
+    // mutation family carries — the per-caller address budget FIRST
+    // (PerCallerBudget precedes the shared aspect, so a rejected caller
+    // never burns the platform budget), then the named per-JVM outer
+    // ceiling (raised to the aggregate shape: cart interactions are the
+    // platform's highest-frequency writes). The list bounds cap ONE
+    // request's size; these cap the CALL RATE.
+    @PerCallerBudget(surface = "graphqlCheckoutMutation")
+    @RateLimiter(name = "graphqlCheckoutMutation")
     @DgsMutation(field = "checkoutLinesAdd")
     public Map<String, Object> checkoutLinesAdd(@InputArgument String id,
                                                 @InputArgument String checkoutId,
@@ -223,6 +234,16 @@ public class CheckoutDataFetcher {
         }
     }
 
+    // The 2026-11-06 #806 round (Minor · Stability & Availability): the
+    // checkout mutations carry the SAME two-layer budget every other
+    // mutation family carries — the per-caller address budget FIRST
+    // (PerCallerBudget precedes the shared aspect, so a rejected caller
+    // never burns the platform budget), then the named per-JVM outer
+    // ceiling (raised to the aggregate shape: cart interactions are the
+    // platform's highest-frequency writes). The list bounds cap ONE
+    // request's size; these cap the CALL RATE.
+    @PerCallerBudget(surface = "graphqlCheckoutMutation")
+    @RateLimiter(name = "graphqlCheckoutMutation")
     @DgsMutation(field = "checkoutLinesUpdate")
     public Map<String, Object> checkoutLinesUpdate(@InputArgument String id,
                                                    @InputArgument String checkoutId,
@@ -312,6 +333,16 @@ public class CheckoutDataFetcher {
         }
     }
 
+    // The 2026-11-06 #806 round (Minor · Stability & Availability): the
+    // checkout mutations carry the SAME two-layer budget every other
+    // mutation family carries — the per-caller address budget FIRST
+    // (PerCallerBudget precedes the shared aspect, so a rejected caller
+    // never burns the platform budget), then the named per-JVM outer
+    // ceiling (raised to the aggregate shape: cart interactions are the
+    // platform's highest-frequency writes). The list bounds cap ONE
+    // request's size; these cap the CALL RATE.
+    @PerCallerBudget(surface = "graphqlCheckoutMutation")
+    @RateLimiter(name = "graphqlCheckoutMutation")
     @DgsMutation(field = "checkoutLinesDelete")
     public Map<String, Object> checkoutLinesDelete(@InputArgument String id,
                                                    DataFetchingEnvironment environment,
@@ -381,6 +412,16 @@ public class CheckoutDataFetcher {
         }
     }
 
+    // The 2026-11-06 #806 round (Minor · Stability & Availability): the
+    // checkout mutations carry the SAME two-layer budget every other
+    // mutation family carries — the per-caller address budget FIRST
+    // (PerCallerBudget precedes the shared aspect, so a rejected caller
+    // never burns the platform budget), then the named per-JVM outer
+    // ceiling (raised to the aggregate shape: cart interactions are the
+    // platform's highest-frequency writes). The list bounds cap ONE
+    // request's size; these cap the CALL RATE.
+    @PerCallerBudget(surface = "graphqlCheckoutMutation")
+    @RateLimiter(name = "graphqlCheckoutMutation")
     @DgsMutation(field = "checkoutLineDelete")
     public Map<String, Object> checkoutLineDelete(@InputArgument String id,
                                                   @InputArgument String checkoutId,
@@ -445,8 +486,19 @@ public class CheckoutDataFetcher {
         }
     }
 
+    // The 2026-11-06 #806 round (Minor · Stability & Availability): the
+    // checkout mutations carry the SAME two-layer budget every other
+    // mutation family carries — the per-caller address budget FIRST
+    // (PerCallerBudget precedes the shared aspect, so a rejected caller
+    // never burns the platform budget), then the named per-JVM outer
+    // ceiling (raised to the aggregate shape: cart interactions are the
+    // platform's highest-frequency writes). The list bounds cap ONE
+    // request's size; these cap the CALL RATE.
+    @PerCallerBudget(surface = "graphqlCheckoutMutation")
+    @RateLimiter(name = "graphqlCheckoutMutation")
     @DgsMutation(field = "checkoutDelete")
-    public Map<String, Object> checkoutDelete(@InputArgument String id) {
+    public Map<String, Object> checkoutDelete(@InputArgument String id,
+                                              DataFetchingEnvironment environment) {
         orderCommandSpi.requireAdmin();
         final UUID cartId;
         try {

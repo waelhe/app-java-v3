@@ -31,7 +31,19 @@ public class ProductTypeAttributeService {
     @PreAuthorize("hasRole('PROVIDER') or hasRole('ADMIN')")
     public List<ProductTypeAttributeAssignment> list(UUID productTypeId) {
         requireProductType(productTypeId);
-        return assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId);
+        // The 2026-11-06 #808 round review (Major · Functional
+        // Correctness): the SAME (position, scope, id) order the reorder
+        // path resolves its moves against — the read surface and the
+        // write surface share one bucket order, so a client's
+        // relative-move request addresses the neighbors it just read
+        // (the repository's scope-major order is not the position order
+        // when the two per-scope spaces overlap).
+        return assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId).stream()
+                .sorted(java.util.Comparator
+                        .comparingInt(ProductTypeAttributeAssignment::getPosition)
+                        .thenComparing(assignment -> assignment.getScope().ordinal())
+                        .thenComparing(ProductTypeAttributeAssignment::getId))
+                .toList();
     }
 
     @Observed(name = "catalog.product-type-attribute.assign")

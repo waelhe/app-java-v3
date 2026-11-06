@@ -87,6 +87,7 @@ public class AddressDataFetcher {
         return AccountAddressCreate.newBuilder()
                 .address(mappers.toGraphQlAddress(created))
                 .user(callerUser())
+                .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -100,6 +101,7 @@ public class AddressDataFetcher {
         return AccountAddressUpdate.newBuilder()
                 .address(mappers.toGraphQlAddress(updated))
                 .user(callerUser())
+                .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -112,6 +114,7 @@ public class AddressDataFetcher {
         return AccountAddressDelete.newBuilder()
                 .address(mappers.toGraphQlAddress(deleted))
                 .user(callerUser())
+                .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -126,6 +129,7 @@ public class AddressDataFetcher {
         addressSpi.setCallerDefault(currentAuthentication(), decodeAddressId(id), type.name());
         return AccountSetDefaultAddress.newBuilder()
                 .user(callerUser())
+                .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -143,6 +147,7 @@ public class AddressDataFetcher {
         return AddressCreate.newBuilder()
                 .address(mappers.toGraphQlAddress(created))
                 .user(addressedUser(created.userId()))
+                .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -156,6 +161,7 @@ public class AddressDataFetcher {
         return AddressUpdate.newBuilder()
                 .address(mappers.toGraphQlAddress(updated))
                 .user(addressedUser(updated.userId()))
+                .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -168,6 +174,7 @@ public class AddressDataFetcher {
         return AddressDelete.newBuilder()
                 .address(mappers.toGraphQlAddress(deleted))
                 .user(addressedUser(deleted.userId()))
+                .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -184,6 +191,7 @@ public class AddressDataFetcher {
                 type.name(), decodeUserId(userId));
         return AddressSetDefault.newBuilder()
                 .user(addressedUser(decodeUserId(userId)))
+                .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }

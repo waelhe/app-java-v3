@@ -8,6 +8,7 @@ import com.marketplace.catalog.spi.CategoryUpdateCommand;
 import com.marketplace.catalog.spi.CategoryView;
 import com.marketplace.catalog.spi.CategoryWriteSpi;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,12 +34,15 @@ import java.util.regex.Pattern;
  * <p><b>The validation rules are the registry's own contracts</b> — the
  * entity's own documented shapes: the code is the stable API-facing key
  * whose DB CHECK pins lowercase latin/digits/dashes (the {@code V70}
- * shape), and the {@code uq_categories_code_active} partial unique index
- * keeps ACTIVE rows unique while a soft-deleted row releases its code
- * for reuse (the V47 slug precedent). The service re-checks both BEFORE
- * the write (the honest precheck over the derived {@code findByCode}
- * lookup) and lets the partial unique index remain the concurrent-write
- * backstop — the same no-TOCTOU stance the repository's own javadoc
+ * shape), and the GLOBAL {@code uq_categories_code} unique index keeps
+ * every code reserved — soft-deleted rows included (the V70 identity
+ * stance: referential identity values are never recycled, unlike the
+ * V47 slug's presentation identity). The service re-checks both BEFORE
+ * the write (the honest precheck over the RAW-table count, which sees
+ * the soft-deleted reservations the derived {@code findByCode} lookup
+ * cannot) and the global unique index remains the concurrent-write
+ * backstop whose loser answers the SAME classified ALREADY_EXISTS —
+ * the same no-TOCTOU stance the repository's own javadoc
  * documents. Domain validation outcomes answer as result error entries
  * (the Saleor payload-error ADAPT); transport concerns (malformed typed
  * global IDs, denied authorization) never reach this service.</p>
@@ -68,6 +72,15 @@ public class CategoryWriteService implements CategoryWriteSpi {
     /** The registry's own column ceilings (the entity's own length contracts). */
     private static final int CODE_MAX_LENGTH = 50;
     private static final int NAME_MAX_LENGTH = 100;
+
+    /**
+     * The registry's code-identity constraint — V70's GLOBAL unique index
+     * name, the concurrent-create backstop the classified catch binds to
+     * (the AdBillingJob discrimination precedent: a DIVE carries more
+     * than uniqueness, so only the violation that names THIS constraint
+     * answers the payload error).
+     */
+    private static final String CODE_UNIQUENESS_CONSTRAINT = "uq_categories_code";
 
     private final CategoryRepository categoryRepository;
 
@@ -108,9 +121,49 @@ public class CategoryWriteService implements CategoryWriteSpi {
         if (!errors.isEmpty()) {
             return CategoryMutationResult.failure(errors);
         }
-        Category created = categoryRepository.save(
-                Category.create(code, name, null, nextPosition()));
+        Category created;
+        try {
+            // saveAndFlush (not save): the INSERT must flush INSIDE the
+            // try so the loser of a concurrent same-code create answers
+            // the classified error here — a deferred flush would surface
+            // the violation at commit, past this boundary (the
+            // VoucherWriteService flush-seam precedent).
+            created = categoryRepository.saveAndFlush(
+                    Category.create(code, name, null, nextPosition()));
+        } catch (DataIntegrityViolationException violation) {
+            // The 2026-11-06 #808 round (Minor · Stability &
+            // Availability): the reserved-code precheck is honest but
+            // not atomic — two concurrent creates of the same code both
+            // pass it and V70's global unique index is the backstop. The
+            // loser's raw violation answers the SAME classified
+            // ALREADY_EXISTS, bound to uq_categories_code ONLY — every
+            // other integrity violation keeps its own propagation (never
+            // a blanket catch that would hide real registry bugs).
+            if (isCategoryCodeConflict(violation)) {
+                return CategoryMutationResult.failure(List.of(new CategoryMutationError(
+                        "slug", CategoryMutationErrorCode.ALREADY_EXISTS,
+                        "A category with the slug already exists")));
+            }
+            throw violation;
+        }
         return CategoryMutationResult.success(toView(created));
+    }
+
+    /**
+     * The DIVE discrimination: the violation's most specific cause names
+     * the code-identity constraint — the same cause-chain walk the
+     * AdBillingJob window-uniqueness discrimination uses.
+     */
+    private static boolean isCategoryCodeConflict(DataIntegrityViolationException violation) {
+        Throwable cause = violation;
+        while (cause != null) {
+            String message = cause.getMessage();
+            if (message != null && message.contains(CODE_UNIQUENESS_CONSTRAINT)) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
     }
 
     @Override

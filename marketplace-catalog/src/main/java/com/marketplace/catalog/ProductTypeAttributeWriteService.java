@@ -176,8 +176,15 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
     @Transactional
     public ProductTypeMutationResult updateAssignments(UUID productTypeId,
                                                        List<ProductTypeAttributeAssignmentUpdateOperation> operations) {
+        // The 2026-11-06 #808 round review (Minor · Stability &
+        // Availability): the SAME PESSIMISTIC_WRITE type load the assign
+        // path carries — every writer that derives positions from a
+        // prior read (updateAssignments' pendingNextPosition,
+        // reorderAttributes' park range) serializes on the type row, so
+        // no two writers can derive the same position and answer the
+        // unique index's raw error instead of the classified one.
         Optional<ProductType> type = productTypeId == null
-                ? Optional.empty() : productTypeRepository.findById(productTypeId);
+                ? Optional.empty() : productTypeRepository.findByIdForUpdate(productTypeId);
         if (type.isEmpty()) {
             return ProductTypeMutationResult.failure(List.of(new ProductTypeMutationError(
                     "productTypeId", ProductTypeMutationErrorCode.NOT_FOUND,
@@ -275,8 +282,15 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     public ProductTypeMutationResult unassignAttributes(UUID productTypeId, List<UUID> attributeIds) {
+        // The 2026-11-06 #808 round review (Minor · Stability &
+        // Availability): the SAME PESSIMISTIC_WRITE type load the assign
+        // path carries — every writer that derives positions from a
+        // prior read (updateAssignments' pendingNextPosition,
+        // reorderAttributes' park range) serializes on the type row, so
+        // no two writers can derive the same position and answer the
+        // unique index's raw error instead of the classified one.
         Optional<ProductType> type = productTypeId == null
-                ? Optional.empty() : productTypeRepository.findById(productTypeId);
+                ? Optional.empty() : productTypeRepository.findByIdForUpdate(productTypeId);
         if (type.isEmpty()) {
             return ProductTypeMutationResult.failure(List.of(new ProductTypeMutationError(
                     "productTypeId", ProductTypeMutationErrorCode.NOT_FOUND,
@@ -296,8 +310,15 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
     @Transactional
     public ProductTypeMutationResult reorderAttributes(UUID productTypeId, String attributeType,
                                                        List<AttributeReorderMove> moves) {
+        // The 2026-11-06 #808 round review (Minor · Stability &
+        // Availability): the SAME PESSIMISTIC_WRITE type load the assign
+        // path carries — every writer that derives positions from a
+        // prior read (updateAssignments' pendingNextPosition,
+        // reorderAttributes' park range) serializes on the type row, so
+        // no two writers can derive the same position and answer the
+        // unique index's raw error instead of the classified one.
         Optional<ProductType> type = productTypeId == null
-                ? Optional.empty() : productTypeRepository.findById(productTypeId);
+                ? Optional.empty() : productTypeRepository.findByIdForUpdate(productTypeId);
         if (type.isEmpty()) {
             return ProductTypeMutationResult.failure(List.of(new ProductTypeMutationError(
                     "productTypeId", ProductTypeMutationErrorCode.NOT_FOUND,
@@ -314,11 +335,25 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
         // The bucket's ordered membership (BOTH VARIANT-family scopes
         // — the VARIANT and VARIANT_SELECTION assignments share the
         // variant bucket's order).
+        // The 2026-11-06 #808 round review (Major · Functional
+        // Correctness): the merged bucket is sorted by the STORED
+        // POSITION with a deterministic tie-break — the two per-scope
+        // position spaces overlap (each scope numbers 1..k
+        // independently), so the repository's scope-major order is NOT
+        // the position order; a shift resolved against the scope-major
+        // list could move the wrong neighbor, and the no-change verdict
+        // compared a scope-major list against dense 1..n positions it
+        // never carried. The (position, scope, id) sort pins ONE order
+        // the read path shares and the dense rewrite preserves.
         List<ProductTypeAttributeAssignment> bucket = assignmentRepository
                 .findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId).stream()
                 .filter(assignment -> "PRODUCT".equals(attributeType)
                         ? assignment.getScope() == ProductTypeAttributeScope.PRODUCT
                         : assignment.getScope() != ProductTypeAttributeScope.PRODUCT)
+                .sorted(java.util.Comparator
+                        .comparingInt(ProductTypeAttributeAssignment::getPosition)
+                        .thenComparing(assignment -> assignment.getScope().ordinal())
+                        .thenComparing(ProductTypeAttributeAssignment::getId))
                 .toList();
         Map<UUID, ProductTypeAttributeAssignment> byAttribute = new LinkedHashMap<>();
         for (ProductTypeAttributeAssignment assignment : bucket) {

@@ -84,6 +84,7 @@ public class UserManagementDataFetcher {
                 toFields(input), input.getRedirectUrl() != null);
         return CustomerCreate.newBuilder()
                 .user(userById(userId))
+                .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -97,6 +98,7 @@ public class UserManagementDataFetcher {
         userManagementSpi.updateCustomer(currentAuthentication(), target, toFields(input));
         return CustomerUpdate.newBuilder()
                 .user(userById(target))
+                .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -109,6 +111,7 @@ public class UserManagementDataFetcher {
         userManagementSpi.deleteCustomer(currentAuthentication(), target);
         return CustomerDelete.newBuilder()
                 .user(null)
+                .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -121,6 +124,7 @@ public class UserManagementDataFetcher {
         int count = userManagementSpi.bulkDeleteCustomers(currentAuthentication(), targets);
         return CustomerBulkDelete.newBuilder()
                 .count(count)
+                .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -263,6 +267,7 @@ public class UserManagementDataFetcher {
                 toFields(input), input.getRedirectUrl() != null);
         return StaffCreate.newBuilder()
                 .user(userById(userId))
+                .staffErrors(mappers.emptyStaffErrors())
                 .errors(mappers.emptyStaffErrors())
                 .build();
     }
@@ -275,6 +280,7 @@ public class UserManagementDataFetcher {
         userManagementSpi.updateStaff(currentAuthentication(), target, toFields(input));
         return StaffUpdate.newBuilder()
                 .user(userById(target))
+                .staffErrors(mappers.emptyStaffErrors())
                 .errors(mappers.emptyStaffErrors())
                 .build();
     }
@@ -286,6 +292,7 @@ public class UserManagementDataFetcher {
         userManagementSpi.deleteStaff(currentAuthentication(), target);
         return StaffDelete.newBuilder()
                 .user(null)
+                .staffErrors(mappers.emptyStaffErrors())
                 .errors(mappers.emptyStaffErrors())
                 .build();
     }
@@ -298,6 +305,7 @@ public class UserManagementDataFetcher {
         int count = userManagementSpi.bulkDeleteStaff(currentAuthentication(), targets);
         return StaffBulkDelete.newBuilder()
                 .count(count)
+                .staffErrors(mappers.emptyStaffErrors())
                 .errors(mappers.emptyStaffErrors())
                 .build();
     }
@@ -314,6 +322,7 @@ public class UserManagementDataFetcher {
         int count = userManagementSpi.bulkSetActive(currentAuthentication(), targets, isActive);
         return UserBulkSetActive.newBuilder()
                 .count(count)
+                .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();
     }
@@ -334,6 +343,7 @@ public class UserManagementDataFetcher {
         return StaffNotificationRecipientCreate.newBuilder()
                 .staffNotificationRecipient(mappers.toGraphQlRecipient(created,
                         created.userId() == null ? null : userById(created.userId())))
+                .shopErrors(mappers.emptyShopErrors())
                 .errors(mappers.emptyShopErrors())
                 .build();
     }
@@ -352,6 +362,7 @@ public class UserManagementDataFetcher {
         return StaffNotificationRecipientUpdate.newBuilder()
                 .staffNotificationRecipient(mappers.toGraphQlRecipient(updated,
                         updated.userId() == null ? null : userById(updated.userId())))
+                .shopErrors(mappers.emptyShopErrors())
                 .errors(mappers.emptyShopErrors())
                 .build();
     }
@@ -365,6 +376,7 @@ public class UserManagementDataFetcher {
         return StaffNotificationRecipientDelete.newBuilder()
                 .staffNotificationRecipient(mappers.toGraphQlRecipient(deleted,
                         deleted.userId() == null ? null : userById(deleted.userId())))
+                .shopErrors(mappers.emptyShopErrors())
                 .errors(mappers.emptyShopErrors())
                 .build();
     }

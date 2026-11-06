@@ -162,6 +162,20 @@ public class MediaAsset extends BaseEntity {
     }
 
     /**
+     * The 2026-11-06 #809 round (Major · Functional Correctness): expires
+     * an abandoned pending upload — only legal from PENDING_UPLOAD, and
+     * only the SYSTEM cleanup job reaches it (an upload past the presign
+     * horizon plus the grace window its owner never confirmed). The
+     * transition law makes the row permanently un-confirmable
+     * ({@code confirmUpload}'s PENDING_UPLOAD gate refuses it), and the
+     * caller best-effort deletes the storage object first.
+     */
+    public void expirePending() {
+        this.status.validateTransitionTo(MediaAssetStatus.EXPIRED);
+        this.status = MediaAssetStatus.EXPIRED;
+    }
+
+    /**
      * L28: pins the thumbnail key after processing — write-once: an existing
      * value makes the whole processing idempotent (the listener re-running
      * after a resubmission must not re-store or flip the pointer).

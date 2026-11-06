@@ -181,7 +181,7 @@ class CheckoutDataFetcherTest {
     void checkoutDeleteAuthorizationDenialPrecedesGlobalIdDecoding() {
         doThrow(new AccessDeniedException("ADMIN required")).when(orderCommandSpi).requireAdmin();
 
-        assertThatThrownBy(() -> fetcher.checkoutDelete("not-a-checkout-global-id"))
+        assertThatThrownBy(() -> fetcher.checkoutDelete("not-a-checkout-global-id", null))
                 .isInstanceOf(AccessDeniedException.class);
 
         verify(orderCommandSpi).requireAdmin();

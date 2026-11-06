@@ -83,6 +83,23 @@ public class GraphQlExceptionResolver extends DataFetcherExceptionResolverAdapte
         if (ex instanceof ResourceNotFoundException) {
             return buildError(env, ErrorType.NOT_FOUND, ApiErrorTaxonomy.NOT_FOUND, ex.getMessage());
         }
+        // The 2026-11-06 #806 round (Minor · Functional Correctness): the
+        // house's own CLASSIFIED 409 domain exception — thrown by the
+        // owning services' friendly-conflict paths (ProductVariantService's
+        // SKU collision, the follow-service's duplicate) — used to fall
+        // through to the masked INTERNAL-001 envelope here, while the REST
+        // advice maps the SAME exception to 409 CONFLICT through the
+        // ApiProblemDetailException branch. The GraphQL surface answers
+        // the SAME classified conflict (the taxonomy pair the exception
+        // itself carries) with the domain message preserved — the same
+        // designated-safe passthrough REST applies, never a second copy
+        // that drifts. ErrorType stays BAD_REQUEST for the same reason
+        // the uniqueness-race branch uses it: GraphQL's fixed five-value
+        // vocabulary has no conflict value and the authoritative machine
+        // contract is the extensions pair.
+        if (ex instanceof com.marketplace.shared.api.ConflictException conflict) {
+            return buildError(env, ErrorType.BAD_REQUEST, ApiErrorTaxonomy.CONFLICT, conflict.getMessage());
+        }
         if (ex instanceof IllegalArgumentException) {
             return buildError(env, ErrorType.BAD_REQUEST, ApiErrorTaxonomy.VALIDATION, ex.getMessage());
         }

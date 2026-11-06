@@ -57,7 +57,7 @@ class OrderMutationDataFetcherTest {
                                 "Order cannot be cancelled"))));
 
         Map<String, Object> result = fetcher.orderBulkCancel(List.of(
-                codec.encode("Order", first), codec.encode("Order", second)));
+                codec.encode("Order", first), codec.encode("Order", second)), null);
 
         assertThat(result).containsEntry("count", 1);
         List<?> errors = (List<?>) result.get("orderErrors");
@@ -73,7 +73,7 @@ class OrderMutationDataFetcherTest {
         when(orderCommandSpi.bulkCancelAsAdmin(List.of()))
                 .thenReturn(new com.marketplace.orders.spi.OrderBulkCancelResult(0, List.of()));
 
-        Map<String, Object> result = fetcher.orderBulkCancel(List.of());
+        Map<String, Object> result = fetcher.orderBulkCancel(List.of(), null);
 
         assertThat(result).containsEntry("count", 0);
         assertThat((List<?>) result.get("orderErrors")).isEmpty();
@@ -83,7 +83,7 @@ class OrderMutationDataFetcherTest {
 
     @Test
     void bulkCancellationRejectsMalformedIdsBeforeCallingOwner() {
-        Map<String, Object> result = fetcher.orderBulkCancel(List.of(codec.encode("Order", UUID.randomUUID()), "bad-id"));
+        Map<String, Object> result = fetcher.orderBulkCancel(List.of(codec.encode("Order", UUID.randomUUID()), "bad-id"), null);
 
         assertThat(result).containsEntry("count", 0);
         List<?> errors = (List<?>) result.get("orderErrors");
@@ -104,7 +104,7 @@ class OrderMutationDataFetcherTest {
         when(orderCommandSpi.cancelAsAdmin(id)).thenReturn(cancelled);
         when(mapper.toGraphQlOrder(any(OrderView.class))).thenReturn(graphQlOrder);
 
-        Map<String, Object> result = fetcher.orderCancel(codec.encode("Order", id));
+        Map<String, Object> result = fetcher.orderCancel(codec.encode("Order", id), null);
 
         assertThat(result).containsEntry("order", graphQlOrder);
         assertThat((List<?>) result.get("orderErrors")).isEmpty();
@@ -119,7 +119,7 @@ class OrderMutationDataFetcherTest {
     void mistypedGlobalIdReturnsValidationPayloadWithoutCallingOwner() {
         UUID id = UUID.randomUUID();
 
-        Map<String, Object> result = fetcher.orderCancel(codec.encode("Product", id));
+        Map<String, Object> result = fetcher.orderCancel(codec.encode("Product", id), null);
 
         assertThat(result.get("order")).isNull();
         List<?> errors = (List<?>) result.get("orderErrors");
@@ -137,7 +137,7 @@ class OrderMutationDataFetcherTest {
         doThrow(new AccessDeniedException("ADMIN required"))
                 .when(orderCommandSpi).requireAdmin();
 
-        assertThatThrownBy(() -> fetcher.orderBulkCancel(List.of("bad-id")))
+        assertThatThrownBy(() -> fetcher.orderBulkCancel(List.of("bad-id"), null))
                 .isInstanceOf(AccessDeniedException.class);
 
         verify(orderCommandSpi, never()).bulkCancelAsAdmin(any());
@@ -149,7 +149,7 @@ class OrderMutationDataFetcherTest {
         doThrow(new AccessDeniedException("ADMIN required"))
                 .when(orderCommandSpi).requireAdmin();
 
-        assertThatThrownBy(() -> fetcher.orderCancel("not-an-order-global-id"))
+        assertThatThrownBy(() -> fetcher.orderCancel("not-an-order-global-id", null))
                 .isInstanceOf(AccessDeniedException.class);
 
         verify(orderCommandSpi).requireAdmin();
@@ -163,7 +163,7 @@ class OrderMutationDataFetcherTest {
         when(orderCommandSpi.cancelAsAdmin(id))
                 .thenThrow(new ConflictException("Order cannot be cancelled in its current state"));
 
-        Map<String, Object> result = fetcher.orderCancel(codec.encode("Order", id));
+        Map<String, Object> result = fetcher.orderCancel(codec.encode("Order", id), null);
 
         assertThat(result.get("order")).isNull();
         List<?> errors = (List<?>) result.get("orderErrors");

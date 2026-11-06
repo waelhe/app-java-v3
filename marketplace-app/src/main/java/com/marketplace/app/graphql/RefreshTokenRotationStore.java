@@ -114,12 +114,18 @@ public interface RefreshTokenRotationStore {
      * The ledger's bounded lifetime (the shard review's nitpick,
      * 2026-11-01 wave 2): deletes the consumed-value rows whose
      * reuse-detection meaning has expired — a consumed value matters only
-     * while the successor it was replaced by can still be alive, so a row
-     * older than the refresh TTL past its consumption is inert (a replay
-     * of that value dies at {@code findByToken} as an unknown token long
-     * before the ledger row matters). The ON DELETE CASCADE cannot bound
-     * the table on its own: an ACTIVE family rotates forever, and every
-     * rotation adds a row.
+     * while its family can still be alive, so a row older than the
+     * family's ABSOLUTE session bound past its consumption is inert (the
+     * retention horizon is {@code refresh-family-max-age-seconds}, the
+     * SAME cap the rotation law enforces — NOT the refresh TTL: a family
+     * outlives any single consumed value by rotating, and the TTL rule
+     * was the superseded early-deletion stance that disabled
+     * {@code revokeFamilyIfConsumed}'s late-replay theft revocation; a
+     * replay past the family's bound dies at {@code findByToken} as an
+     * unknown token long before the ledger row matters — the cleanup
+     * job's own javadoc carries the full rationale). The ON DELETE
+     * CASCADE cannot bound the table on its own: an ACTIVE family
+     * rotates forever, and every rotation adds a row.
      *
      * <p><b>The cutoff rides the DATABASE clock, never the host clock</b>
      * (the 2026-11-05 #806 round-3 review, Major): {@code consumed_at}

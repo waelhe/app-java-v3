@@ -1158,6 +1158,29 @@ resilience4j:
         base-config: default
         limit-for-period: 50
         timeout-duration: 0
+      # The 2026-11-06 #806 round (Minor · Stability & Availability): the
+      # order and checkout mutation families carried NO call-rate budget
+      # at all — the bulk-list bounds capped one request's size only, and
+      # neither the named instances nor PerCallerBudgetAspect reached
+      # them. Two new families, the same two-layer model every other
+      # mutation family carries: the per-caller address budget (the
+      # perCallerGrant config, 10/min fail-fast per address, consumed
+      # FIRST through PerCallerBudget's aspect ordering) plus this named
+      # per-JVM outer ceiling. graphqlCheckoutMutation rides the
+      # aggregate shape (60/min — cart writes are the platform's
+      # highest-frequency mutations; a 10/min ceiling would let ONE
+      # caller's cart traffic starve every other cart, the wave-3
+      # starvation precedent); graphqlOrderMutation rides the admin
+      # mutation shape (10/min — orderCancel/orderBulkCancel are
+      # ADMIN-gated, low-frequency money-moving writes).
+      graphqlOrderMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlCheckoutMutation:
+        base-config: default
+        limit-for-period: 60
+        timeout-duration: 0
 
 app:
   commission:
@@ -1182,6 +1205,16 @@ marketplace:
   # Unset means activations without an explicit date answer 409 — the
   # "no silently-immortal listing" rule; the cooldown bounds renewal
   # recycling (one renewal per day by default).
+  media:
+    # The 2026-11-06 #809 round (Major · Functional Correctness): the
+    # abandoned pending-upload reaper's horizon and cadence — a PENDING
+    # upload row is expired (terminal state, un-confirmable, object
+    # best-effort deleted, cap slot freed) only once it is older than
+    # presignTtl PLUS this grace (an object genuinely uploaded before the
+    # URL expired stays confirmable inside the window), on the scheduled
+    # pass cadence below (the ConsumedRefreshTokenCleanupJob model).
+    pending-upload-expiry-grace-hours: ${MARKETPLACE_MEDIA_PENDING_UPLOAD_GRACE_HOURS:24}
+    pending-upload-cleanup-interval-ms: ${MARKETPLACE_MEDIA_PENDING_UPLOAD_CLEANUP_INTERVAL_MS:3600000}
   catalog:
     expiry:
       expiry-days: ${MARKETPLACE_CATALOG_EXPIRY_DAYS:90}

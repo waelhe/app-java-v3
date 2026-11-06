@@ -97,7 +97,11 @@ class ProductMediaTargetTest {
         // refusal, checked under the advisory lock (the
         // maxAssetsPerReview posture verbatim).
         mockOwner();
-        when(repository.countByProductId(productId)).thenReturn(200L);
+        // The 2026-11-06 #809 round: the cap rides the LIVE count — every
+        // status except the reaper's terminal EXPIRED (PENDING rows still
+        // occupy their slots; presign expiry alone never frees one).
+        when(repository.countByProductIdAndStatusNot(productId, MediaAssetStatus.EXPIRED))
+                .thenReturn(200L);
 
         assertThatThrownBy(() ->
                 service.requestProductUpload(productId, "image/jpeg", 1024L, authentication))

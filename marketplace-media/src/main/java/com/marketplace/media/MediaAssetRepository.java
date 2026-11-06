@@ -117,4 +117,21 @@ public interface MediaAssetRepository extends JpaRepository<MediaAsset, UUID> {
      * deletes — they free their slots.
      */
     long countByProductId(UUID productId);
+
+    /**
+     * The 2026-11-06 #809 round (Major · Functional Correctness): the
+     * product cap's LIVE count — every status except the system-expired
+     * terminal one (an abandoned pending upload the cleanup job already
+     * retired never occupies a slot again; PENDING rows still do, exactly
+     * as before — presign expiry alone never frees a slot, only the job's
+     * expiry does).
+     */
+    long countByProductIdAndStatusNot(UUID productId, MediaAssetStatus status);
+
+    /**
+     * The 2026-11-06 #809 round's cleanup feed: the PENDING uploads whose
+     * age passed the cutoff — the job's own derived lookup (BaseEntity's
+     * {@code createdAt} against the presign-plus-grace horizon).
+     */
+    java.util.List<MediaAsset> findByStatusAndCreatedAtBefore(MediaAssetStatus status, java.time.Instant cutoff);
 }

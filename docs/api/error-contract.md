@@ -140,11 +140,12 @@ For domain/runtime failures resolved by the central GraphQL exception resolver, 
 |---|---|---|---|
 | Not found (`ResourceNotFoundException`) | `NF-001` | `not-found` | `NOT_FOUND` |
 | Validation (`IllegalArgumentException`, `ConstraintViolationException`) | `VAL-001` | `validation` | `BAD_REQUEST` |
-| Domain conflict (`IllegalStateException`) | `CONFLICT-001` | `conflict` | `BAD_REQUEST` |
+| Domain conflict (`IllegalStateException`, the services' classified `ConflictException`, and the uniqueness races of `DataIntegrityViolationException` — SQLSTATE 23505 — the shared backstop indexes raise) | `CONFLICT-001` | `conflict` | `BAD_REQUEST` |
+| Authentication (`AuthenticationException`, minus `AuthenticationServiceException` — the infra family stays the masked internal row below) | `AUTHN-001` | `authz` | `UNAUTHORIZED` |
 | Authorization (`AccessDeniedException`) | `AUTHZ-001` | `authz` | `FORBIDDEN` |
 | Rate limit (`RequestNotPermitted`, resilience4j instances) | `RL-001` | `rate-limit` | `BAD_REQUEST` |
 | Service unavailable (`ServiceUnavailableException` — the classified 503 family: unbound optional channels, the RMA exact-ratio magnitude ceiling) | `SU-001` | `availability` | `INTERNAL_ERROR` |
-| Unknown/internal (masked) | `INT-001` | `internal` | `INTERNAL_ERROR` |
+| Unknown/internal (masked; includes non-uniqueness `DataIntegrityViolationException` and `AuthenticationServiceException`) | `INT-001` | `internal` | `INTERNAL_ERROR` |
 
 - The GraphQL-spec `errorType` is derived from spring-graphql's fixed five-value vocabulary (it has no rate-limit, conflict or availability/503 value); the authoritative machine contract is the extensions pair.
 - `traceId`: propagated correlation identifier, included only when `marketplace.graphql.errors.include-trace-id=true`.

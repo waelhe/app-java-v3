@@ -110,8 +110,18 @@ type Checkout {
 # Saleor CheckoutLine exposes its variant directly as ProductVariant!.
 # The resolver uses the checkout-scoped catalog read only after CheckoutSpi
 # has enforced cart ownership; public storefront variant visibility is
-# unchanged. Missing/soft-deleted variants and legacy product-level lines
-# without a variant UUID fail closed rather than fabricating a non-null value.
+# unchanged. The two unrenderable shapes are handled by EXCLUSION, never
+# by failing the read (the render's own law, mirroring
+# CheckoutGraphQlMapper's class contract):
+# - a legacy product-level line (no variant UUID) is excluded from this
+#   projection but stays owned by the legacy REST cart surface (never
+#   reported, never purged);
+# - a line whose variant no longer resolves (missing/soft-deleted) is
+#   excluded here AND purged on read through the owner-authorized delete
+#   use case (the stale-line self-healing);
+# quantity counts the rendered lines only. The non-null variant edge is
+# registered as the release gate divergence D-CHECKOUT-VARIANT-001 (the
+# checkout row of saleor-458-root-inventory.csv).
 type CheckoutLine {
     id: ID!
     variant: ProductVariant!

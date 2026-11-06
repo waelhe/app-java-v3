@@ -75,6 +75,33 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
      */
     Optional<ProductVariant> findByProviderIdAndSku(UUID providerId, String sku);
 
+    /**
+     * The 2026-11-06 #808 round review (Minor · Data Integrity): the
+     * SKU reservation spans the RAW table — V219's unique index is
+     * GLOBAL (not partial over the live rows), so a soft-deleted
+     * variant keeps reserving its SKU while the derived probe above
+     * (filtered to live rows) misses it and the write dies on the raw
+     * constraint error instead of the classified ALREADY_EXISTS. The
+     * native count bypasses the soft-delete filter the derived query
+     * carries.
+     */
+    @org.springframework.data.jpa.repository.Query(value =
+            "SELECT COUNT(*) FROM product_variants WHERE provider_id = :providerId AND sku = :sku",
+            nativeQuery = true)
+    long countSkuReservationsIncludingDeleted(
+            @org.springframework.data.repository.query.Param("providerId") UUID providerId,
+            @org.springframework.data.repository.query.Param("sku") String sku);
+
+    /** The update leg's own reservation count — the addressed row itself excluded. */
+    @org.springframework.data.jpa.repository.Query(value =
+            "SELECT COUNT(*) FROM product_variants WHERE provider_id = :providerId AND sku = :sku"
+                    + " AND id <> :excludeId",
+            nativeQuery = true)
+    long countSkuReservationsIncludingDeletedExcluding(
+            @org.springframework.data.repository.query.Param("providerId") UUID providerId,
+            @org.springframework.data.repository.query.Param("sku") String sku,
+            @org.springframework.data.repository.query.Param("excludeId") UUID excludeId);
+
     /** The product's live roster (the owner's list surface — the V219 partial index's read). */
     List<ProductVariant> findByProductIdOrderBySkuAsc(UUID productId);
 

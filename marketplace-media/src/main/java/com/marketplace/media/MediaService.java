@@ -218,8 +218,15 @@ public class MediaService {
         // one — a product above that bound could never be reordered again.
         // The cap counts PENDING uploads too (they occupy positions until
         // cleaned), so the displayable set can never outgrow the reorderable
-        // bound; deleted rows are hard deletes and free their slots.
-        long attached = mediaAssetRepository.countByProductId(productId);
+        // bound; deleted rows are hard deletes and free their slots. The
+        // 2026-11-06 #809 round: the count is the LIVE one — an abandoned
+        // pending upload the PendingUploadCleanupJob reaped (terminal
+        // EXPIRED, un-confirmable, object best-effort deleted) never
+        // occupies a slot again, while a merely presign-EXPIRED row still
+        // does (presign expiry alone never frees a slot; only the job's
+        // expiry does).
+        long attached = mediaAssetRepository
+                .countByProductIdAndStatusNot(productId, MediaAssetStatus.EXPIRED);
         if (attached >= properties.limits().maxAssetsPerProduct()) {
             throw new BadRequestException(
                     "A product carries at most " + properties.limits().maxAssetsPerProduct()

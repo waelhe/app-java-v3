@@ -8,6 +8,7 @@ import com.marketplace.shared.api.ResourceNotFoundException;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -62,7 +63,18 @@ public class OrderMutationDataFetcher {
      * a partial set of money-moving state transitions.
      */
     @DgsMutation(field = "orderBulkCancel")
-    public Map<String, Object> orderBulkCancel(@InputArgument List<String> ids) {
+    // The 2026-11-06 #806 round (Minor · Stability & Availability): the
+    // order mutations carry the SAME two-layer budget every other
+    // mutation family carries — the per-caller address budget FIRST
+    // (PerCallerBudget precedes the shared aspect, so a rejected caller
+    // never burns the platform budget), then the named per-JVM outer
+    // ceiling. The bulk-list bound caps ONE request's size; these cap
+    // the CALL RATE (the review's finding: neither limiter reached this
+    // family before).
+    @PerCallerBudget(surface = "graphqlOrderMutation")
+    @RateLimiter(name = "graphqlOrderMutation")
+    public Map<String, Object> orderBulkCancel(@InputArgument List<String> ids,
+                                               graphql.schema.DataFetchingEnvironment environment) {
         // Permission is decided before any caller-supplied ID is decoded, and
         // before an empty request can return a success-shaped payload.
         orderCommandSpi.requireAdmin();
@@ -107,7 +119,13 @@ public class OrderMutationDataFetcher {
      * of being reported as successful mutations.
      */
     @DgsMutation(field = "orderCancel")
-    public Map<String, Object> orderCancel(@InputArgument String id) {
+    // The 2026-11-06 #806 round (Minor · Stability & Availability): the
+    // same two-layer budget orderBulkCancel carries — per-caller address
+    // budget first, then the named outer ceiling (see orderBulkCancel).
+    @PerCallerBudget(surface = "graphqlOrderMutation")
+    @RateLimiter(name = "graphqlOrderMutation")
+    public Map<String, Object> orderCancel(@InputArgument String id,
+                                           graphql.schema.DataFetchingEnvironment environment) {
         orderCommandSpi.requireAdmin();
         final UUID orderId;
         try {

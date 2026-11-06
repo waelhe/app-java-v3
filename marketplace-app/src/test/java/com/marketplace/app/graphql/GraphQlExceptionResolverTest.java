@@ -89,6 +89,29 @@ class GraphQlExceptionResolverTest {
     }
 
     /**
+     * The 2026-11-06 #806 round (Minor · Functional Correctness): the
+     * house's own classified 409 domain exception (ConflictException —
+     * the owning services' friendly-conflict paths, e.g. the variant
+     * register surface's SKU collision) answers the CONFLICT taxonomy
+     * with the DOMAIN MESSAGE PRESERVED (the same designated-safe
+     * passthrough the REST advice applies) — never the masked INTERNAL
+     * envelope it used to fall through to.
+     */
+    @Test
+    void mapsConflictExceptionToConflictTaxonomyWithTheDomainMessagePreserved() {
+        GraphQLError error = first(resolver.resolveException(
+                new com.marketplace.shared.api.ConflictException(
+                        "SKU 'RED-XL' is already used by variant 123 in this seller's namespace"),
+                env).block());
+
+        assertThat(error.getErrorType()).isEqualTo(org.springframework.graphql.execution.ErrorType.BAD_REQUEST);
+        assertThat(error.getExtensions()).containsEntry("errorCode", ApiErrorTaxonomy.CONFLICT.errorCode());
+        assertThat(error.getExtensions()).containsEntry("category", ApiErrorTaxonomy.CONFLICT.category());
+        assertThat(error.getMessage())
+                .contains("SKU 'RED-XL' is already used by variant 123");
+    }
+
+    /**
      * Bean Validation failures (surfaced by spring-graphql's ValidationHelper
      * for @Valid @Argument parameters) must carry the canonical VALIDATION
      * pair (VAL-001 / validation) — the same semantics the REST
