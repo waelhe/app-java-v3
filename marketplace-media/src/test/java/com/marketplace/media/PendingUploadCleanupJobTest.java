@@ -82,7 +82,8 @@ class PendingUploadCleanupJobTest {
 
         job.reapAbandonedPendingUploads();
 
-        verify(repository).findByStatusAndCreatedAtBefore(MediaAssetStatus.PENDING_UPLOAD,
+        verify(repository).findByStatusAndCreatedAtBefore(
+                org.mockito.ArgumentMatchers.eq(MediaAssetStatus.PENDING_UPLOAD),
                 org.mockito.ArgumentMatchers.argThat(cutoff ->
                         java.time.Duration.between(cutoff, Instant.now()).toHours() >= 24));
         verify(s3, never()).deleteObject(anyString());

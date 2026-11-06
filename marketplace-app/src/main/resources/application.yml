@@ -1205,16 +1205,6 @@ marketplace:
   # Unset means activations without an explicit date answer 409 — the
   # "no silently-immortal listing" rule; the cooldown bounds renewal
   # recycling (one renewal per day by default).
-  media:
-    # The 2026-11-06 #809 round (Major · Functional Correctness): the
-    # abandoned pending-upload reaper's horizon and cadence — a PENDING
-    # upload row is expired (terminal state, un-confirmable, object
-    # best-effort deleted, cap slot freed) only once it is older than
-    # presignTtl PLUS this grace (an object genuinely uploaded before the
-    # URL expired stays confirmable inside the window), on the scheduled
-    # pass cadence below (the ConsumedRefreshTokenCleanupJob model).
-    pending-upload-expiry-grace-hours: ${MARKETPLACE_MEDIA_PENDING_UPLOAD_GRACE_HOURS:24}
-    pending-upload-cleanup-interval-ms: ${MARKETPLACE_MEDIA_PENDING_UPLOAD_CLEANUP_INTERVAL_MS:3600000}
   catalog:
     expiry:
       expiry-days: ${MARKETPLACE_CATALOG_EXPIRY_DAYS:90}
@@ -1285,6 +1275,15 @@ marketplace:
       # Presigned URL lifetime (upload + download). Official bounds: 1s to 7d
       # (R2 doc + S3Presigner javadoc).
       presign-ttl: ${MEDIA_PRESIGN_TTL:15m}
+    # The 2026-11-06 #809 round (Major · Functional Correctness): the
+    # abandoned pending-upload reaper's horizon and cadence — a PENDING
+    # upload row is expired (terminal state, un-confirmable, object
+    # best-effort deleted, cap slot freed) only once it is older than
+    # presignTtl PLUS this grace (an object genuinely uploaded before the
+    # URL expired stays confirmable inside the window), on the scheduled
+    # pass cadence below (the ConsumedRefreshTokenCleanupJob model).
+    pending-upload-expiry-grace-hours: ${MARKETPLACE_MEDIA_PENDING_UPLOAD_GRACE_HOURS:24}
+    pending-upload-cleanup-interval-ms: ${MARKETPLACE_MEDIA_PENDING_UPLOAD_CLEANUP_INTERVAL_MS:3600000}
   security:
     jwt:
       audience: ${JWT_AUDIENCE:marketplace-api}
