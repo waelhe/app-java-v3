@@ -248,13 +248,33 @@ public class UserService implements IdentitySpi {
      *                          honest 409 before any store is written
      */
     public User register(String email, String rawPassword, String displayName) {
-        String subject = email;
+        requireDisplayNameBound(displayName);
+        // The 2026-11-06 #810 round review: the address is NORMALIZED first
+        // (trim + lowercase(Locale.ROOT)) — the shape/bound validation then
+        // reads the SAME form the store keeps, so a whitespace-padded or
+        // mixed-case input validates and stores once.
+        String subject = email == null ? null : email.trim().toLowerCase(java.util.Locale.ROOT);
+        requireRegisterableEmail(subject);
+        // The shared password-shape gate FIRST (PasswordPolicy — 8..72
+        // characters AND at most 72 UTF-8 bytes, the bcrypt ceiling): the
+        // DTO's @Size counts characters only, so a compact-but-long
+        // multi-byte password must be rejected here — the honest 400
+        // before any store is read or written, never an encoder-time 500.
+        if (!PasswordPolicy.withinSharedPolicy(rawPassword)) {
+            throw PasswordPolicy.violation();
+        }
+        // The case-insensitive account-identifier discipline the
+        // reset/verification legs already assume — a mixed-case
+        // registration stores the SAME row the reset request's normalized
+        // lookup resolves, and a second registration differing in case
+        // alone answers the honest 409 instead of minting a
+        // near-duplicate account.
         if (userRepository.existsBySubject(subject)
                 || userDetailsManager.userExists(subject)) {
             throw new ConflictException("An account already exists for this email");
         }
         User user = userRepository.save(
-                User.create(subject, email, displayName, UserRole.CONSUMER));
+                User.create(subject, subject, displayName, UserRole.CONSUMER));
         // The A-04 hold: the login row is born disabled — the framework's
         // account-state primitive is the ONLY enabled bit (no second
         // "verified" column is invented outside the official model); the
@@ -269,6 +289,49 @@ public class UserService implements IdentitySpi {
                 .build());
         emailVerificationService.issueFor(subject);
         log.info("Account registered — awaiting email verification: subject={}, role=CONSUMER", subject);
+        return user;
+    }
+
+    /**
+     * Agent 1 (the Saleor 458-root campaign, assignment packet PR #696):
+     * the staff-account birth — the ADMIN-role projection row plus the
+     * login row in one transaction (the register() two-store discipline
+     * verbatim). The caller (the owning admin surface) supplies a
+     * generated unknowable secret; the set-password journey is the emailed
+     * reset right (Saleor's STAFF_SET_PASSWORD_REQUESTED shape), so no
+     * verification hold applies — staff accounts are born enabled (the
+     * admin who created them vouched for the address) unless the caller
+     * disables them.
+     *
+     * @param email       the staff account's address (becomes the subject)
+     * @param rawPassword the generated unknowable secret — encoded here
+     * @param displayName the optional display name
+     * @param enabled     whether the login row is born enabled
+     * @return the created domain row
+     * @throws ConflictException the address already owns an account
+     */
+    public User registerStaff(String email, String rawPassword, String displayName,
+
+                              boolean enabled) {
+        requireDisplayNameBound(displayName);
+        // The 2026-11-06 #810 round review — the staff leg carries the
+        // same normalize-then-validate, normalized-identifier discipline
+        // register now carries.
+        String subject = email == null ? null : email.trim().toLowerCase(java.util.Locale.ROOT);
+        requireRegisterableEmail(subject);
+        if (userRepository.existsBySubject(subject)
+                || userDetailsManager.userExists(subject)) {
+            throw new ConflictException("An account already exists for this email");
+        }
+        User user = userRepository.save(
+                User.create(subject, subject, displayName, UserRole.ADMIN));
+        userDetailsManager.createUser(org.springframework.security.core.userdetails.User
+                .withUsername(subject)
+                .password(passwordEncoder.getObject().encode(rawPassword))
+                .roles("ADMIN")
+                .disabled(!enabled)
+                .build());
+        log.info("Staff account registered: subject={}, role=ADMIN, enabled={}", subject, enabled);
         return user;
     }
 
@@ -535,6 +598,63 @@ public class UserService implements IdentitySpi {
 
         log.info("Account role audit: userId={}, username={}, role: {} -> {}, actor={}",
                 userId, username, previous, target, actor);
+    }
+
+    /**
+     * Agent 1 (the CodeRabbit integrity round — the login-identity move's
+     * shared aftermath): the legs EVERY path that moves a login identity
+     * owes once the login row lands under the new address — the OLD
+     * principal's issued authorizations die with their refresh grants (the
+     * same L23 documented SAS basis as {@link #updateUserRole}: the
+     * old-name rows survive the rename as orphans otherwise, and a leaked
+     * refresh token minted for the dead name keeps rotating), and the two
+     * user caches drop their stale subject-keyed copies through the
+     * standing AFTER_COMMIT channel (the I5-guarded mechanism, not a new
+     * one). Package-private on purpose: both owning paths (the
+     * self-service email change and the administrative moveEmail) live in
+     * this module and call this after their own writes.
+     */
+    void loginIdentityMoved(String oldSubject) {
+        jdbcTemplate.update(DELETE_AUTHORIZATIONS_BY_PRINCIPAL, oldSubject);
+        eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));
+        // Row 7 (agent findings 2026-10-26 14:33 export, CWE-613): the
+        // retired subject's own AFTER_COMMIT session kill. The grants die
+        // above, but a live browser session authenticated under the RETIRED
+        // subject keeps its cached principal and authorities — without this
+        // expiry it keeps minting fresh authorization codes under the dead
+        // name, and a later demotion or disablement (indexed under the
+        // REPLACEMENT subject) never reaches it. The house R8 channel: the
+        // move fact published in THIS transaction, consumed AFTER_COMMIT by
+        // AccountStatusSessionInvalidator under the retired name (the name
+        // the session index is built on), the framework's resubmission on
+        // failure.
+        eventPublisher.publishEvent(
+                new com.marketplace.shared.api.AccountLoginIdentityMoved(oldSubject));
+    }
+
+    /**
+     * Agent 1 (the CodeRabbit correctness round — the {@code accountUpdate}
+     * leg): the TRANSACTIONAL own-profile write. {@link #getBySubject} is
+     * {@code @Cacheable} and read-only: the returned {@link User} is a
+     * JDK-deserialized cache copy or an entity detached at the read-only
+     * boundary, so {@code updateProfile} on it is invisible to dirty
+     * checking — the adapter's one-liner returned success while the
+     * display name never changed. This method loads the LIVE row through
+     * the repository, applies the update inside the transaction, and
+     * publishes the standing cache invalidation (the
+     * {@code updateUserRole} hazard comment documents the same trap).
+     */
+    public void updateOwnProfileBySubject(String subject, String displayName) {
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the same 200-byte bound the create paths carry —
+        // a longer own-profile rename answers the classified validation
+        // error, never the flush's raw database error.
+        requireDisplayNameBound(displayName);
+        User user = userRepository.findBySubject(subject)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No account for the authenticated subject: " + subject));
+        user.updateProfile(null, displayName);
+        eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));
     }
 
     /**
@@ -936,6 +1056,21 @@ public class UserService implements IdentitySpi {
      * own documented path; a subject with no row yet answers empty (the
      * honest absence the nullable {@code me} carries).
      */
+    /**
+     * The login store's own ENABLED truth (the 2026-11-05 #806 round-3
+     * review's disable race — see the SPI contract). The framework
+     * manager is the same bean the authentication chain reads from, so
+     * the answer is the chain's own truth, not a projection.
+     */
+    @Override
+    public boolean loginAccountEnabled(String subject) {
+        try {
+            return userDetailsManager.loadUserByUsername(subject).isEnabled();
+        } catch (org.springframework.security.core.userdetails.UsernameNotFoundException absent) {
+            return false;
+        }
+    }
+
     @Override
     @Transactional(readOnly = true)
     public java.util.Optional<com.marketplace.identity.spi.UserAccountView> findCurrentUserAccount(Authentication authentication) {
@@ -982,6 +1117,19 @@ public class UserService implements IdentitySpi {
     }
 
     /**
+     * The staff-surface verdict seam (the 2026-11-06 #806 round review,
+     * Minor · Security &amp; Privacy): the same ADMIN decision the scrolls
+     * carry, factored for the boundary's degenerate paths — the
+     * {@code AttributeReadService.requireAdmin} precedent (the annotation
+     * IS the verdict).
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    public void requireAdmin() {
+        // the annotation IS the verdict (the AttributeReadService precedent)
+    }
+
+    /**
      * P1 (the Saleor {@code staffUsers} root): the roster's forward-only
      * keyset scroll — ADMIN-enforced, one owning sort with the {@code id}
      * tiebreaker, plus the collection total Saleor's {@code totalCount}
@@ -1013,6 +1161,268 @@ public class UserService implements IdentitySpi {
         };
         return new com.marketplace.identity.spi.UserAccountPage(
                 window.map(this::toAccountView), userRepository.count());
+    }
+
+    /**
+     * P1 (the Saleor {@code customers} root): the CUSTOMER population's
+     * forward-only keyset scroll — ADMIN-enforced at this owning use-case
+     * boundary (Saleor requires MANAGE_ORDERS/MANAGE_USERS — the platform's
+     * server-side ADMIN mapping of the merged SaleorPermissionCatalog
+     * contract), one owning sort with the {@code id} tiebreaker, plus the
+     * CUSTOMER population's own total Saleor's {@code totalCount} field
+     * carries (the population's count, never the whole roster's).
+     *
+     * <p><b>The population is the single identity store's customer-account
+     * slice</b> (the packet's ADAPT disposition: no duplicate identity
+     * store): the accounts whose primary role is {@code CONSUMER} — the
+     * closed {@link UserRole} vocabulary's own customer/consumer concept,
+     * the complementary population the {@code staffUsers} roster scroll
+     * reads in full. The scoping rides the SAME keyset SQL contract as the
+     * roster (one derived role predicate plus the fixed
+     * sort-and-tiebreaker), so cursors stay row-sort-key cursors over the
+     * identical column shapes — a cursor emitted by the roster's scroll of
+     * the same sort is accepted here only because the key set and ordering
+     * are literally the same; the populations differ, the contract does
+     * not. Soft-deleted rows are absent by the entity's own
+     * {@code @SoftDelete} filter (the same visibility every identity read
+     * applies).</p>
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional(readOnly = true)
+    public com.marketplace.identity.spi.UserAccountPage scrollCustomers(
+            Authentication authentication,
+            com.marketplace.identity.spi.UserAccountSort sort,
+            org.springframework.data.domain.KeysetScrollPosition position,
+            org.springframework.data.domain.Limit limit) {
+        if (sort == null || sort.field() == null) {
+            throw new IllegalArgumentException("A customer sort is required");
+        }
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the pseudonymized customers are EXCLUDED from the
+        // window and the total — a deleted customer keeps its CONSUMER row
+        // (the identity gone), so the plain role predicate used to answer
+        // a tombstone the operator cannot act on and a total nobody can
+        // reconcile.
+        org.springframework.data.domain.Window<User> window = switch (sort.field()) {
+            // The 2026-11-06 #810 round review (Major): the EMAIL-vocabulary
+            // sort keys on the SUBJECT column — the always-present identifier
+            // (an OIDC account with no email claim keeps a NULL email column,
+            // and a nullable keyset key drops rows from the windowed pages).
+            case EMAIL -> sort.ascending()
+                    ? userRepository.findByRoleAndPseudonymizedAtIsNullOrderBySubjectAscIdAsc(
+                            UserRole.CONSUMER, position, limit)
+                    : userRepository.findByRoleAndPseudonymizedAtIsNullOrderBySubjectDescIdDesc(
+                            UserRole.CONSUMER, position, limit);
+            case CREATED_AT -> sort.ascending()
+                    ? userRepository.findByRoleAndPseudonymizedAtIsNullOrderByCreatedAtAscIdAsc(
+                            UserRole.CONSUMER, position, limit)
+                    : userRepository.findByRoleAndPseudonymizedAtIsNullOrderByCreatedAtDescIdDesc(
+                            UserRole.CONSUMER, position, limit);
+            case LAST_MODIFIED_AT -> sort.ascending()
+                    ? userRepository.findByRoleAndPseudonymizedAtIsNullOrderByUpdatedAtAscIdAsc(
+                            UserRole.CONSUMER, position, limit)
+                    : userRepository.findByRoleAndPseudonymizedAtIsNullOrderByUpdatedAtDescIdDesc(
+                            UserRole.CONSUMER, position, limit);
+        };
+        return new com.marketplace.identity.spi.UserAccountPage(
+                window.map(this::toAccountView),
+                userRepository.countByRoleAndPseudonymizedAtIsNull(UserRole.CONSUMER));
+    }
+
+    /**
+     * P1 (the canonical Saleor plan §5-P1 — the Saleor {@code permissionGroup}
+     * root): the permission-group lookup by the native UUID behind the typed
+     * global ID — ADMIN-enforced at the owning use-case boundary (the
+     * platform's server-side mapping of Saleor's MANAGE_STAFF requirement —
+     * the divergence registry's RBAC row). An unknown but well-formed UUID
+     * answers empty: the nullable root's own honest absence, never an error
+     * and never a fabricated group.
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional(readOnly = true)
+    public java.util.Optional<com.marketplace.identity.spi.PermissionGroupView> findPermissionGroupById(
+            UUID id, Authentication authentication) {
+        if (id == null) {
+            return java.util.Optional.empty();
+        }
+        return permissionGroups(authentication).stream()
+                .filter(group -> group.id().equals(id))
+                .findFirst();
+    }
+
+    /**
+     * P1 (the Saleor {@code permissionGroups} root): the permission-group
+     * collection's forward-only keyset scroll — ADMIN-enforced, the owning
+     * NAME sort with the {@code id} tiebreaker, plus the collection total
+     * Saleor's {@code totalCount} field carries.
+     *
+     * <p><b>The collection is the closed role vocabulary</b> (no stored group
+     * table exists — the divergence registry's permission-group rows), so
+     * the scroll executes in memory with the SAME semantics the roster's SQL
+     * keyset executes: the cursor identifies one row's own sort key
+     * {@code (name, id)}, the page follows it strictly in the requested
+     * direction, and {@code hasNext} states whether elements remain — never
+     * an absolute offset. The boundary's {@code KeysetCursorGate} has already
+     * validated the cursor's {@code (name, id)} key set against this
+     * scroll's own vocabulary; a position that is not the initial one must
+     * still carry those keys here, or the honest
+     * {@link IllegalArgumentException} answers — never a silent no-op.</p>
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional(readOnly = true)
+    public com.marketplace.identity.spi.PermissionGroupPage scrollPermissionGroups(
+            Authentication authentication,
+            com.marketplace.identity.spi.PermissionGroupSort sort,
+            org.springframework.data.domain.KeysetScrollPosition position,
+            org.springframework.data.domain.Limit limit) {
+        if (sort == null || sort.field() == null) {
+            throw new IllegalArgumentException("A permission-group sort is required");
+        }
+        java.util.List<com.marketplace.identity.spi.PermissionGroupView> groups =
+                new java.util.ArrayList<>(permissionGroups(authentication));
+
+        // The deterministic ordering — the owning sort field with the id
+        // tiebreaker, both in the requested direction (the roster's SQL
+        // keyset methods' own shape: ...AscIdAsc / ...DescIdDesc).
+        java.util.Comparator<String> nameOrder = sort.ascending()
+                ? java.util.Comparator.naturalOrder()
+                : java.util.Comparator.reverseOrder();
+        java.util.Comparator<UUID> idOrder = sort.ascending()
+                ? java.util.Comparator.naturalOrder()
+                : java.util.Comparator.reverseOrder();
+        groups.sort(java.util.Comparator
+                .comparing(com.marketplace.identity.spi.PermissionGroupView::name, nameOrder)
+                .thenComparing(com.marketplace.identity.spi.PermissionGroupView::id, idOrder));
+
+        // The keyset predicate: elements strictly AFTER the cursor's own
+        // (name, id) sort key in the requested direction — the same
+        // "greater than the sort key" the framework's keyset predicate
+        // builds for the SQL scrolls.
+        java.util.List<com.marketplace.identity.spi.PermissionGroupView> scrollable = groups;
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the DIRECTION gate runs before the isInitial()
+        // branch — Spring Data Commons 4.x defines isInitial() as
+        // keys.isEmpty() (direction-blind), so an empty BACKWARD position
+        // used to slip past the guard and answer a forward page with
+        // forward cursors from the wrong end of the math; the forward-only
+        // contract is the direction itself.
+        if (position != null && !position.scrollsForward()) {
+            throw new IllegalArgumentException(
+                    "The permission-group scroll supports forward-only pagination");
+        }
+        if (position != null && !position.isInitial()) {
+            if (!(position instanceof org.springframework.data.domain.KeysetScrollPosition keyset)
+                    || keyset.getKeys().get("name") == null
+                    || keyset.getKeys().get("id") == null) {
+                throw new IllegalArgumentException(
+                        "The permission-group scroll position must be a forward keyset over (name, id)");
+            }
+            String cursorName = String.valueOf(keyset.getKeys().get("name"));
+            UUID cursorId = keyset.getKeys().get("id") instanceof UUID uuid
+                    ? uuid
+                    : UUID.fromString(String.valueOf(keyset.getKeys().get("id")));
+            scrollable = groups.stream()
+                    .filter(group -> {
+                        int byName = nameOrder.compare(group.name(), cursorName);
+                        return byName != 0 ? byName > 0
+                                : idOrder.compare(group.id(), cursorId) > 0;
+                    })
+                    .toList();
+        }
+
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): Limit.of(int) does NOT validate the sign (Spring
+        // Data Commons' own javadoc: "a negative value may be valid within
+        // a defined context") — a negative limit used to reach subList and
+        // answer the raw IndexOutOfBoundsException instead of the
+        // classified validation error.
+        if (limit != null && limit.isLimited() && limit.max() < 0) {
+            throw new IllegalArgumentException(
+                    "The permission-group scroll limit must not be negative");
+        }
+        int pageSize = limit == null || !limit.isLimited()
+                ? scrollable.size()
+                : Math.min(limit.max(), scrollable.size());
+        boolean hasNext = scrollable.size() > pageSize;
+        java.util.List<com.marketplace.identity.spi.PermissionGroupView> content =
+                scrollable.subList(0, pageSize);
+        org.springframework.data.domain.Window<com.marketplace.identity.spi.PermissionGroupView> window =
+                org.springframework.data.domain.Window.from(content, index ->
+                        org.springframework.data.domain.ScrollPosition.forward(java.util.Map.of(
+                                "name", content.get(index).name(),
+                                "id", content.get(index).id())),
+                        hasNext);
+        return new com.marketplace.identity.spi.PermissionGroupPage(window, groups.size());
+    }
+
+    /**
+     * The stable wire-identity namespace of the permission-group
+     * collection: the platform's groups are the closed {@link UserRole}
+     * vocabulary (no stored group table exists), so each group's native
+     * handle is the deterministic name-based UUID (RFC 4122 v3) derived
+     * from {@code "<namespace><ROLE>"} — stable across restarts and
+     * services by construction, opaque behind the boundary's typed global
+     * ID, and never a capability in itself (the codec treats it purely as
+     * an identifier).
+     */
+    private static final String PERMISSION_GROUP_ID_NAMESPACE =
+            "marketplace-identity:user-role:";
+
+    /**
+     * P1: the permission-group collection — the closed role vocabulary
+     * rendered as the bounded group projections, one per {@link UserRole}
+     * (the V187 CHECK's own list; the collection's size is therefore the
+     * vocabulary's size — the honest {@code totalCount}).
+     *
+     * <p>{@code grantedRoles} carries the role whose capabilities the group
+     * grants — the owner's own vocabulary, the same seam
+     * {@code toAccountView} emits for accounts; the GraphQL boundary renders
+     * the Saleor permission codes from it (the tested catalog stays the one
+     * source of that rendering). {@code userCanManage} is computed from the
+     * caller's actual authorities — the honest manage-right fact (the same
+     * ADMIN capability the grant/revoke commands gate), never a
+     * constant.</p>
+     */
+    private java.util.List<com.marketplace.identity.spi.PermissionGroupView> permissionGroups(
+            Authentication authentication) {
+        boolean canManage = authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+        java.util.List<com.marketplace.identity.spi.PermissionGroupView> groups = new java.util.ArrayList<>();
+        for (UserRole role : UserRole.values()) {
+            groups.add(new com.marketplace.identity.spi.PermissionGroupView(
+                    permissionGroupIdOf(role),
+                    permissionGroupDisplayName(role),
+                    java.util.Set.of(role.name()),
+                    canManage));
+        }
+        return groups;
+    }
+
+    /**
+     * The group's native handle — the deterministic name-based UUID over the
+     * closed vocabulary's namespace (see
+     * {@link #PERMISSION_GROUP_ID_NAMESPACE}).
+     */
+    private static UUID permissionGroupIdOf(UserRole role) {
+        return UUID.nameUUIDFromBytes(
+                (PERMISSION_GROUP_ID_NAMESPACE + role.name())
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /**
+     * The role's display name — the humanized closed-vocabulary name (no
+     * separate group-name store exists; the rendering is deterministic and
+     * stable so the wire identity never drifts).
+     */
+    private static String permissionGroupDisplayName(UserRole role) {
+        return switch (role) {
+            case ADMIN -> "Admin";
+            case PROVIDER -> "Provider";
+            case CONSUMER -> "Consumer";
+        };
     }
 
     /**
@@ -1067,5 +1477,39 @@ public class UserService implements IdentitySpi {
                 user.getUpdatedAt(),
                 user.getPseudonymizedAt()
         );
+    }
+
+    /**
+     * The 2026-11-05 #810 round review (Minor · Functional Correctness):
+     * the display name's own column bound (VARCHAR(200), the User
+     * entity's @Column length) validated at the boundary — every path
+     * that writes a display name (register, registerStaff, the own-profile
+     * update) answers the classified validation error, never the flush's
+     * raw database error. Null and blank stay the caller's "no name"
+     * semantics (the entity keeps whatever it carries).
+     */
+    /**
+     * The 2026-11-05 #810 round review (Minor · Functional Correctness):
+     * the registration email's OWN shape and bound, at the OWNING SERVICE
+     * boundary — the direct {@code AccountLifecycleSpi.register} leg used
+     * to bypass the transport DTO's @Email/@Size validation, so a
+     * malformed address passed every gate and a >50-character one died on
+     * the auth_users.username column with the raw database error. The
+     * fetcher's own check stays (defense in depth); THIS is the boundary
+     * every register caller shares.
+     */
+    private static void requireRegisterableEmail(String email) {
+        if (email == null || email.isBlank()
+                || email.length() > 50
+                || !email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+            throw new IllegalArgumentException(
+                    "A valid email address of at most 50 characters is required");
+        }
+    }
+
+    private static void requireDisplayNameBound(String displayName) {
+        if (displayName != null && !displayName.isBlank() && displayName.trim().length() > 200) {
+            throw new IllegalArgumentException("The display name exceeds 200 characters");
+        }
     }
 }

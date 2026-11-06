@@ -238,7 +238,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ProblemDetail handleUniqueViolation(DataIntegrityViolationException ex, HttpServletRequest request) {
-        if (uniqueViolation(ex)) {
+        if (isUniqueViolation(ex)) {
             log.warn("Unique constraint conflict for {}: {}", request.getRequestURI(), rootMessage(ex));
             return problem(ApiErrorTaxonomy.CONFLICT,
                     "The resource already exists (unique constraint conflict)", request, null, "detail");
@@ -253,8 +253,16 @@ public class GlobalExceptionHandler {
      * chain (the pgjdbc contract: the state rides the exception, not the
      * message text), with a message fallback for wrappers that stringify
      * it instead.
+     *
+     * <p>Public since the 2026-11-04 adversarial-scan round: the GraphQL
+     * exception resolver answers the SAME 23505-vs-other-integrity split
+     * on its surface ({@code GraphQlExceptionResolver}) — the classifier
+     * is one mechanism, never two copies that drift.</p>
+     *
+     * @param ex the caught failure chain
+     * @return true when the chain carries the unique-violation SQLSTATE
      */
-    private static boolean uniqueViolation(Throwable ex) {
+    public static boolean isUniqueViolation(Throwable ex) {
         Throwable cause = ex;
         while (cause != null) {
             if (cause instanceof java.sql.SQLException sql
