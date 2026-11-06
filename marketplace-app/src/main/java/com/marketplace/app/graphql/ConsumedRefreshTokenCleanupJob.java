@@ -56,6 +56,19 @@ public class ConsumedRefreshTokenCleanupJob {
             RefreshTokenRotationStore store,
             @Value("${marketplace.security.token.refresh-family-max-age-seconds:2592000}")
             long refreshFamilyMaxAgeSeconds) {
+        // The 2026-11-06 #806 round-5 review (Major · Stability &
+        // Availability): the family bound IS its own age ceiling — a
+        // non-positive value would make this job's cutoff reach into the
+        // PAST and delete the consumed_refresh_tokens ledger rows that
+        // are still live evidence (silently disabling
+        // revokeFamilyIfConsumed's late-replay theft revocation), while
+        // the SAME value in the rotation law refuses every renewal. The
+        // misconfiguration fails FAST at startup, never at runtime.
+        if (refreshFamilyMaxAgeSeconds <= 0) {
+            throw new IllegalArgumentException(
+                    "marketplace.security.token.refresh-family-max-age-seconds must be positive, got "
+                            + refreshFamilyMaxAgeSeconds);
+        }
         this.store = store;
         this.retention = Duration.ofSeconds(refreshFamilyMaxAgeSeconds);
     }

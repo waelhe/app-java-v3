@@ -638,6 +638,17 @@ public class CheckoutDataFetcher {
             } catch (ResourceNotFoundException | BadRequestException | ConflictException exception) {
                 log.warn("Checkout line purge deferred: cart {} lines {} — {}",
                         view.id(), rendered.staleLineIds(), exception.getMessage());
+            } catch (org.springframework.dao.OptimisticLockingFailureException lostDeleteRace) {
+                // The 2026-11-06 #806 round-5 review (Minor · Stability &
+                // Availability): two concurrent reads of the SAME cart can
+                // both resolve the SAME stale line and both delete it —
+                // with the row's @Version discipline the SECOND delete
+                // fails the optimistic check. The read's data is already
+                // in hand and correct (the line is gone either way), so
+                // the loser logs and keeps rendering — never an internal
+                // GraphQL error over a read whose purge already happened.
+                log.warn("Checkout line purge lost the concurrent delete race: cart {} lines {} — {}",
+                        view.id(), rendered.staleLineIds(), lostDeleteRace.getMessage());
             }
         }
         return rendered.checkout();

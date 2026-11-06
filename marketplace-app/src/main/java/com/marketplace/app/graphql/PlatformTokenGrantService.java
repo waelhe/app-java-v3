@@ -200,6 +200,16 @@ public class PlatformTokenGrantService {
         // The absolute session bound (default 30d = 2× the 14d refresh
         // TTL): a family kept alive by rotation forever is the reviewer's
         // exact finding — the cap forces a fresh password grant.
+        // The 2026-11-06 #806 round-5 review (Major · Stability &
+        // Availability): a non-positive bound is a broken deployment —
+        // it would refuse every renewal here while the cleanup job's
+        // same value deleted live ledger evidence — so it fails FAST at
+        // startup (the job validates its own copy the same way).
+        if (refreshFamilyMaxAgeSeconds <= 0) {
+            throw new IllegalArgumentException(
+                    "marketplace.security.token.refresh-family-max-age-seconds must be positive, got "
+                            + refreshFamilyMaxAgeSeconds);
+        }
         this.refreshFamilyMaxAge = java.time.Duration.ofSeconds(refreshFamilyMaxAgeSeconds);
     }
 

@@ -197,6 +197,50 @@ class PerCallerRateLimitGuardTest {
         }).doesNotThrowAnyException();
     }
 
+    /**
+     * The 2026-11-06 #806 round-5 review (Minor · Functional Correctness):
+     * the runtime lookup and the startup validation must resolve the SAME
+     * {@code perAccountGrant-<surface>} pair — the "-account" suffix is
+     * the INSTANCE key's own namespacing, never part of the CONFIG name.
+     */
+    @Test
+    void theAccountSurfaceOverrideFeedsBothTheRuntimeAndTheStartupCheckTheSamePair() {
+        RateLimiterRegistry shared = RateLimiterRegistry.custom()
+                .addRateLimiterConfig(PerCallerRateLimitGuard.PER_CALLER_CONFIG, config(10))
+                .addRateLimiterConfig(PerCallerRateLimitGuard.PER_ACCOUNT_CONFIG, config(30))
+                .addRateLimiterConfig("perAccountGrant-graphqlTokenMutation", config(2))
+                .build();
+        ObjectProvider<RateLimiterRegistry> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(shared);
+        when(provider.getObject()).thenReturn(shared);
+        // The startup check accepts the pair (2 strictly under the
+        // family's 30) — construction succeeds.
+        PerCallerRateLimitGuard guard = new PerCallerRateLimitGuard(provider, absentProvider(), 1000);
+
+        DataFetchingEnvironment first = environment("9.9.9.9", VICTIM_EMAIL);
+        DataFetchingEnvironment second = environment("8.8.8.8", VICTIM_EMAIL);
+        guard.acquireAccountPermit(first, SURFACE);
+        guard.acquireAccountPermit(second, SURFACE);
+        // The SURFACE-specific account budget (2) — never the family-wide
+        // 30 — caps the next attempt for the same victim account.
+        assertThatThrownBy(() -> guard.acquireAccountPermit(first, SURFACE))
+                .isInstanceOf(RequestNotPermitted.class);
+
+        // And the startup check enforces the SAME pair: an override ABOVE
+        // the account family's own budget fails construction.
+        RateLimiterRegistry violating = RateLimiterRegistry.custom()
+                .addRateLimiterConfig(PerCallerRateLimitGuard.PER_CALLER_CONFIG, config(10))
+                .addRateLimiterConfig(PerCallerRateLimitGuard.PER_ACCOUNT_CONFIG, config(30))
+                .addRateLimiterConfig("perAccountGrant-graphqlTokenMutation", config(40))
+                .build();
+        ObjectProvider<RateLimiterRegistry> violatingProvider = mock(ObjectProvider.class);
+        when(violatingProvider.getIfAvailable()).thenReturn(violating);
+        when(violatingProvider.getObject()).thenReturn(violating);
+        assertThatThrownBy(() -> new PerCallerRateLimitGuard(violatingProvider, absentProvider(), 1000))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("perAccountGrant-graphqlTokenMutation");
+    }
+
     @Test
     void theAccountBudgetReadsItsOwnPerAccountGrantConfigAndStillCapsStuffing() {
         // The account family answers to perAccountGrant (20 here), NEVER

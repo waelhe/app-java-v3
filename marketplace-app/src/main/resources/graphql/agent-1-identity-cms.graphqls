@@ -987,6 +987,10 @@ type PageTypeReorderAttributes {
 }
 
 type AssignNavigation {
+    # The 2026-11-06 #806 round-5 review (Minor · Data Integrity &
+    # Integration): the pinned Saleor contract returns the assigned menu
+    # on success — null when the call DETACHED the navigation (menu: null).
+    menu: Menu
     shopErrors: [ShopError!]! @deprecated(reason: "Use `errors` field instead.")
     errors: [ShopError!]!
 }

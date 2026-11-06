@@ -348,7 +348,7 @@ public class PerCallerRateLimitGuard {
      *                             limiters raise
      */
     public void acquirePermit(DataFetchingEnvironment environment, String surface) {
-        acquirePermitForKey(environment, surface, remoteAddressKey(environment),
+        acquirePermitForKey(environment, surface, "-caller:" + remoteAddressKey(environment),
                 PER_CALLER_CONFIG, DEFAULT_PER_CALLER_CONFIG, perCallerRegistry);
     }
 
@@ -402,7 +402,12 @@ public class PerCallerRateLimitGuard {
             // budget beyond the address permit already taken.
             return;
         }
-        acquirePermitForKey(environment, surface + "-account", accountKey,
+        // The 2026-11-06 #806 round-5 review (Minor · Functional
+        // Correctness): the CONFIG override name is the RAW surface
+        // (perAccountGrant-<surface>) — exactly the pair the startup
+        // validation checks — while the "-account" suffix stays on the
+        // INSTANCE key only (the account family's own namespacing).
+        acquirePermitForKey(environment, surface, "-account:" + accountKey,
                 PER_ACCOUNT_CONFIG, DEFAULT_PER_ACCOUNT_CONFIG, perAccountRegistry);
     }
 
@@ -434,7 +439,7 @@ public class PerCallerRateLimitGuard {
      * (the full application context), else the guard's own programmatic
      * default of that family.
      */
-    private void acquirePermitForKey(DataFetchingEnvironment environment, String surface, String key,
+    private void acquirePermitForKey(DataFetchingEnvironment environment, String surface, String keySuffix,
                                      String configName, RateLimiterConfig fallback,
                                      RateLimiterRegistry familyRegistry) {
         // The keyed budgets ride the yml's configs when the shared registry
@@ -455,7 +460,7 @@ public class PerCallerRateLimitGuard {
         // weakening the anonymous-flood proof.
         RateLimiterConfig config = resolveConfig(configName, surface, fallback);
         RateLimiter limiter = familyRegistry.rateLimiter(
-                surface + "-caller:" + key, config);
+                surface + keySuffix, config);
         if (!limiter.acquirePermission()) {
             throw RequestNotPermitted.createRequestNotPermitted(limiter);
         }

@@ -114,9 +114,21 @@ public class CmsNavigationDataFetcher {
         if (navigationType == null) {
             throw new IllegalArgumentException("A navigation type (MAIN or SECONDARY) is required");
         }
-        navigationPort.assignNavigation(currentAuthentication(), navigationType.name(),
-                menu == null || menu.isBlank() ? null : decodeId(menu, MENU_TAG, "A menu ID"));
+        java.util.UUID menuId = menu == null || menu.isBlank()
+                ? null : decodeId(menu, MENU_TAG, "A menu ID");
+        navigationPort.assignNavigation(currentAuthentication(), navigationType.name(), menuId);
+        // The 2026-11-06 #806 round-5 review (Minor · Data Integrity &
+        // Integration): the pinned Saleor contract returns the ASSIGNED
+        // menu on success — re-read after the assignment (the same
+        // items-carrying render the menu mutations use), and keep menu
+        // null for the detach call (menu: null) exactly as the contract
+        // states.
+        Menu assigned = menuId == null ? null
+                : navigationPort.findMenuById(currentAuthentication(), menuId)
+                        .map(view -> toMenuWithItems(currentAuthentication(), view))
+                        .orElse(null);
         return AssignNavigation.newBuilder()
+                .menu(assigned)
                 .errors(List.of())
                 .build();
     }
@@ -387,7 +399,8 @@ public class CmsNavigationDataFetcher {
                                          @InputArgument Integer last,
                                          @InputArgument String channel,
                                          @InputArgument Object filter,
-                                         @InputArgument MenuSortingInput sortBy) {
+                                         @InputArgument MenuSortingInput sortBy,
+                                         graphql.schema.DataFetchingEnvironment environment) {
         if (before != null || last != null) {
             throw new IllegalArgumentException(
                     "menus supports forward-only pagination (first/after) on this platform");
@@ -430,11 +443,18 @@ public class CmsNavigationDataFetcher {
         // page is bounded by max-list-items/max-page-size, the same bound
         // every per-node field resolution on this surface already pays).
         Authentication menusCaller = currentAuthentication();
+        // The 2026-11-06 #806 round-5 review (Minor · Performance &
+        // Scalability): the item tree loads ONLY when the client actually
+        // selects items — a page of menus that omits the field (the
+        // common list view) pays no per-menu listMenuItems round at all.
+        boolean wantsItems = environment.getSelectionSet().contains("edges/node/items");
         List<com.marketplace.app.graphql.generated.types.MenuCountableEdge> edges =
                 new ArrayList<>(window.window().getContent().size());
         for (int i = 0; i < window.window().getContent().size(); i++) {
             edges.add(com.marketplace.app.graphql.generated.types.MenuCountableEdge.newBuilder()
-                    .node(toMenuWithItems(menusCaller, window.window().getContent().get(i)))
+                    .node(wantsItems
+                            ? toMenuWithItems(menusCaller, window.window().getContent().get(i))
+                            : toGraphQlMenu(window.window().getContent().get(i)))
                     .cursor(cursorStrategy.toCursor(KeysetCursorGate.stamped(
                             window.window().positionAt(i), MENUS_SCROLL_ID,
                             cursorProperty(field), ascending)))

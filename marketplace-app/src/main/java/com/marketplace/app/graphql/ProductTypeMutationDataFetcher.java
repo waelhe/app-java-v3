@@ -160,7 +160,8 @@ public class ProductTypeMutationDataFetcher {
      */
     @DgsMutation(field = DgsConstants.MUTATION.ProductTypeBulkDelete)
     @RateLimiter(name = "graphqlProductTypeMutation")
-    public ProductTypeBulkDelete productTypeBulkDelete(@InputArgument List<String> ids) {
+    public ProductTypeBulkDelete productTypeBulkDelete(@InputArgument List<String> ids,
+                                                       graphql.schema.DataFetchingEnvironment environment) {
         properties.requireBoundedList(ids, "productTypeBulkDelete");
         if (ids == null || ids.isEmpty()) {
             throw new IllegalArgumentException("productTypeBulkDelete requires a non-empty list of ids");
@@ -169,8 +170,23 @@ public class ProductTypeMutationDataFetcher {
         for (String id : ids) {
             nativeIds.add(globalIdCodec.decode(id, ProductTypeGraphQlMapper.PRODUCT_TYPE_TYPE));
         }
+        int deleted = productTypeWriteSpi.deleteProductTypes(nativeIds);
+        // The 2026-11-06 #806 round-5 review (Minor · Functional
+        // Correctness): the single delete/update roots evict their row
+        // from THIS execution's loader cache (the stale-cache class the
+        // round-3 review established); the bulk root owed the same
+        // eviction — a later mutation in the SAME document (a
+        // productUpdate rendering Product.productType) could resurrect a
+        // type this bulk round already deleted. Every requested key is
+        // evicted (the unknown-but-well-formed skips are absent from the
+        // cache anyway — clearing them is a no-op).
+        if (deleted > 0) {
+            for (UUID nativeId : nativeIds) {
+                environment.getDataLoader(ProductTypeDataLoader.NAME).clear(nativeId);
+            }
+        }
         return ProductTypeBulkDelete.newBuilder()
-                .count(productTypeWriteSpi.deleteProductTypes(nativeIds))
+                .count(deleted)
                 .errors(List.of())
                 .build();
     }

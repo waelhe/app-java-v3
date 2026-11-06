@@ -1273,7 +1273,9 @@
          never active in a normal local or CI build): the 2026-10-14 app-suite
          sharding fans marketplace-app's failsafe-selected test files (the
          count DocumentationNumbersGuardTest derives from the test trees —
-         192 app files at this writing, 195 across the reactor) across 8 CI jobs,
+         the same number SYSTEM.md pins and the guard keeps honest; this
+         comment deliberately carries NO hardcoded figure, the 2026-11-06
+         #806 round-5 review caught its 192/195 having drifted) across 8 CI jobs,
          so the module's JaCoCo execution data arrives as 9 partial *.exec
          files (8 IT shards + the unit pass). The merge mojo is the plugin's
          own documented way to combine them (jacoco merge-mojo fileSets —
