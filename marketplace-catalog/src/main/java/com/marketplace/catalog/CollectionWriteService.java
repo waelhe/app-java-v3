@@ -335,7 +335,13 @@ public class CollectionWriteService implements CollectionWriteSpi {
                 continue;
             }
             int shift = move.sortOrder() == null ? 0 : move.sortOrder();
-            requested.merge(move.productId(), shift, Integer::sum);
+            // The 2026-11-06 #808 round review (Minor · Functional
+            // Correctness): the pinned Saleor contract applies each
+            // product's LATEST move (the m2m dict assignment
+            // operations[m2m_info.pk] = move_info.sort_order) — it never
+            // accumulates a repeated [A:+1, A:+1] into +2. The merge's
+            // remapping function keeps ONLY the last shift per product.
+            requested.merge(move.productId(), shift, (previous, latest) -> latest);
         }
         if (!nonMembers.isEmpty()) {
             return CollectionMutationResult.failure(List.of(new CollectionMutationError(

@@ -75,11 +75,15 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
 
     private final CatalogAttributeOptionRepository attributeOptionRepository;
     private final CatalogAttributeDefinitionRepository attributeDefinitionRepository;
+    /** The live-variant references the option-delete guard reads (the #808 round). */
+    private final ProductVariantAttributeValueRepository variantAttributeValues;
 
     public AttributeValueWriteService(CatalogAttributeOptionRepository attributeOptionRepository,
-                                      CatalogAttributeDefinitionRepository attributeDefinitionRepository) {
+                                      CatalogAttributeDefinitionRepository attributeDefinitionRepository,
+                                      ProductVariantAttributeValueRepository variantAttributeValues) {
         this.attributeOptionRepository = attributeOptionRepository;
         this.attributeDefinitionRepository = attributeDefinitionRepository;
+        this.variantAttributeValues = variantAttributeValues;
     }
 
     @Override
@@ -90,9 +94,15 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
         List<AttributeMutationError> errors = new ArrayList<>();
         String name = command.name() == null ? null : command.name().strip();
         String code = command.slug() == null ? null : command.slug().strip().toLowerCase(Locale.ROOT);
+        // The 2026-11-06 #808 round review (Minor · Stability &
+        // Availability): the append position derives from the locked
+        // definition row — two concurrent creates of values under the
+        // same attribute serialize on the row and never derive the same
+        // append position (the ProductTypeRepository.findByIdForUpdate
+        // precedent).
         Optional<CatalogAttributeDefinition> parent = attributeId == null
                 ? Optional.empty()
-                : attributeDefinitionRepository.findById(attributeId);
+                : attributeDefinitionRepository.findByIdForUpdate(attributeId);
         if (parent.isEmpty()) {
             errors.add(new AttributeMutationError("attribute", AttributeMutationErrorCode.NOT_FOUND,
                     "No attribute found for the id"));
@@ -155,9 +165,22 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
         CatalogAttributeOption row = addressed.get();
         Optional<CatalogAttributeDefinition> parent =
                 attributeDefinitionRepository.findById(row.getAttributeDefinitionId());
+        if (parent.isEmpty()) {
+            // The 2026-11-06 #808 round review (Minor · Functional
+            // Correctness): a concurrently soft-deleted parent attribute
+            // used to answer a SUCCESS payload with a null `attribute`
+            // (a result-contract violation — the TranslationWriteService
+            // precedent answers the classified NOT_FOUND). The parent's
+            // absence is the addressed value's own truth: the value's
+            // owning attribute no longer resolves.
+            return AttributeValueMutationResult.failure(List.of(new AttributeMutationError(
+                    "attribute", AttributeMutationErrorCode.NOT_FOUND,
+                    "No attribute found for the value")));
+        }
         if (command.isEmpty()) {
             return AttributeValueMutationResult.success(
-                    parent.map(AttributeValueWriteService::toAttributeView).orElse(null), toValueView(row));
+                    Optional.of(parent.get()).map(AttributeValueWriteService::toAttributeView).orElse(null),
+                    toValueView(row));
         }
         List<AttributeMutationError> errors = new ArrayList<>();
         String name = command.name() == null ? null : command.name().strip();
@@ -202,7 +225,8 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
         row.revise(mergedNameEn, row.getNameAr());
         CatalogAttributeOption updated = attributeOptionRepository.save(row);
         return AttributeValueMutationResult.success(
-                parent.map(AttributeValueWriteService::toAttributeView).orElse(null), toValueView(updated));
+                Optional.of(parent.get()).map(AttributeValueWriteService::toAttributeView).orElse(null),
+                toValueView(updated));
     }
 
     @Override
@@ -218,9 +242,32 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
         }
         CatalogAttributeOption row = addressed.get();
         AttributeValueView lastKnown = toValueView(row);
-        AttributeView parent = attributeDefinitionRepository.findById(row.getAttributeDefinitionId())
+        // The 2026-11-06 #808 round review (Major · Data Integrity &
+        // Integration): the parent read takes the definition row's own
+        // FOR-UPDATE lock — the delete's existsByOptionId probe and a
+        // concurrent variant registration's FOR-SHARE definition read
+        // (the ProductVariantService CHOICE leg) serialize on this row,
+        // so the probe's zero-references answer is COMMITTED-stable,
+        // never a TOCTOU window the registration lands a reference
+        // through. A concurrently soft-deleted parent answers its own
+        // null view — the family's registrations are already impossible
+        // against a dead definition, so the probe stays honest.
+        AttributeView parent = attributeDefinitionRepository.findByIdForUpdate(row.getAttributeDefinitionId())
                 .map(AttributeValueWriteService::toAttributeView)
                 .orElse(null);
+        // The 2026-11-06 #808 round review (Major · Data Integrity &
+        // Integration): a variant value referencing the option blocks the
+        // soft delete — the read path would keep rendering the option's
+        // id while the registry's option list no longer carries it, and
+        // every future variant registration against the combination
+        // answers the unknown-option refusal (the deleteProductType
+        // live-references precedent: the references own their own
+        // lifecycle, no cascade).
+        if (variantAttributeValues.existsByOptionId(row.getId())) {
+            return AttributeValueMutationResult.failure(List.of(new AttributeMutationError(
+                    "id", AttributeMutationErrorCode.INVALID,
+                    "An attribute value referenced by a live variant cannot be deleted")));
+        }
         attributeOptionRepository.delete(row);
         return AttributeValueMutationResult.success(parent, lastKnown);
     }
@@ -237,10 +284,26 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
             // Unknown ids are skipped — the honest affected count answers
             // what the registry itself deleted (never a fabricated count,
             // never an error entry for an id the registry never knew).
+            // The 2026-11-06 #808 round review (Major · Data Integrity &
+            // Integration): options referenced by live variants are
+            // skipped for the same honest-count reason — the single-item
+            // leg's own classified refusal, in bulk form.
             Optional<CatalogAttributeOption> addressed = id == null
                     ? Optional.empty()
                     : attributeOptionRepository.findById(id);
-            if (addressed.isPresent()) {
+            if (addressed.isPresent()
+                    && !variantAttributeValues.existsByOptionId(addressed.get().getId())) {
+                // The 2026-11-06 #808 round review (Major · Data
+                // Integrity): the bulk leg rides the SAME definition-row
+                // FOR-UPDATE lock the single-item leg takes — the
+                // existsByOptionId probe's zero-references answer must be
+                // COMMITTED-stable against a concurrent registration's
+                // FOR-SHARE read of the same row (the single leg's own
+                // pairing, in bulk form). A soft-deleted definition
+                // answers no row — no lock is taken and none is needed:
+                // no registration can reference a dead family's option.
+                attributeDefinitionRepository.findByIdForUpdate(
+                        addressed.get().getAttributeDefinitionId());
                 attributeOptionRepository.delete(addressed.get());
                 deleted++;
             }

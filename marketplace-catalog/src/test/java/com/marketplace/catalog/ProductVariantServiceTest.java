@@ -137,6 +137,11 @@ class ProductVariantServiceTest {
         when(variantRepository.findByProviderIdAndSku(seller, "TYPED-RED")).thenReturn(Optional.empty());
         when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId)).thenReturn(List.of(selection));
         when(definitions.findById(definitionId)).thenReturn(Optional.of(definition));
+        // The 2026-11-06 #808 round (Major · Data Integrity): the CHOICE
+        // leg now reads the definition FOR SHARE before the option lookup
+        // — the option-delete guard's FOR-UPDATE read of the same row
+        // serializes against it (the probe's verdict stays stable).
+        when(definitions.findByIdForShare(definitionId)).thenReturn(Optional.of(definition));
         when(options.findById(option.getId())).thenReturn(Optional.of(option));
         when(variantRepository.existsByProductIdAndOptionCombinationKey(
                 org.mockito.ArgumentMatchers.eq(product.getId()), org.mockito.ArgumentMatchers.anyString())).thenReturn(false);
@@ -167,6 +172,11 @@ class ProductVariantServiceTest {
         when(variantRepository.findByProviderIdAndSku(seller, "DUP-RED")).thenReturn(Optional.empty());
         when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId)).thenReturn(List.of(selection));
         when(definitions.findById(definitionId)).thenReturn(Optional.of(definition));
+        // The 2026-11-06 #808 round (Major · Data Integrity): the CHOICE
+        // leg now reads the definition FOR SHARE before the option lookup
+        // — the option-delete guard's FOR-UPDATE read of the same row
+        // serializes against it (the probe's verdict stays stable).
+        when(definitions.findByIdForShare(definitionId)).thenReturn(Optional.of(definition));
         when(options.findById(option.getId())).thenReturn(Optional.of(option));
         when(variantRepository.existsByProductIdAndOptionCombinationKey(
                 org.mockito.ArgumentMatchers.eq(product.getId()), org.mockito.ArgumentMatchers.anyString())).thenReturn(true);

@@ -35,4 +35,14 @@ public interface CategoryRepository extends JpaRepository<Category, java.util.UU
 
     /** The public read, in the registry's display order. */
     List<Category> findAllByOrderByPositionAsc();
+
+    /**
+     * The 2026-11-06 #808 round review (Minor · Data Integrity &amp;
+     * Integration): the registry's display order with the fixed {@code id}
+     * tie-break — the append position is a max+1 derivation with no
+     * position-unique index, so two concurrent creates can legitimately
+     * land the SAME position; the tie-break keeps every read's order
+     * deterministic (never an unstable interleave of equal positions).
+     */
+    List<Category> findAllByOrderByPositionAscIdAsc();
 }

@@ -31,6 +31,17 @@ public interface ProductRepository extends JpaRepository<Product, UUID>, JpaSpec
     /** Owner-scoped roster for the legacy REST list. */
     java.util.List<Product> findByProviderId(UUID providerId);
 
+    /**
+     * The type's live products (the {@code @SoftDelete} filter rides the
+     * derived query automatically) — the 2026-11-06 #808 round review's
+     * assignment-scope move guard (Major · Data Integrity &amp;
+     * Integration): the variant-consistency verdict walks every product
+     * whose variants the scope move can re-key, so the move's refusal or
+     * completion is decided over the AFFECTED population itself, never a
+     * sample.
+     */
+    java.util.List<Product> findByProductTypeId(UUID productTypeId);
+
     /** Bounded owner-scoped roster for the existing offset/page contract. */
     org.springframework.data.domain.Page<Product> findByProviderId(
             UUID providerId, org.springframework.data.domain.Pageable pageable);

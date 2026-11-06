@@ -28,7 +28,10 @@ class ProductTypeAttributeServiceTest {
         options = mock(CatalogAttributeOptionRepository.class);
         assignments = mock(ProductTypeAttributeAssignmentRepository.class);
         service = new ProductTypeAttributeService(productTypes, definitions, options, assignments);
-        when(productTypes.findById(typeId)).thenReturn(Optional.of(
+        // The 2026-11-06 #808 round (#10): the reference-creating assign
+        // path reads the type FOR SHARE (the deleteProductType FOR-UPDATE
+        // wall's own pairing) — the stub rides the locked read.
+        when(productTypes.findByIdForShare(typeId)).thenReturn(Optional.of(
                 ProductType.create("apparel", "Apparel", "ملابس", null)));
     }
 

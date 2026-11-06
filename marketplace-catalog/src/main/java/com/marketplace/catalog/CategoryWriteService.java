@@ -263,7 +263,7 @@ public class CategoryWriteService implements CategoryWriteSpi {
      * deterministic between them).
      */
     private int nextPosition() {
-        return categoryRepository.findAllByOrderByPositionAsc().stream()
+        return categoryRepository.findAllByOrderByPositionAscIdAsc().stream()
                 .mapToInt(Category::getPosition)
                 .max().orElse(0) + 1;
     }

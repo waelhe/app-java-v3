@@ -60,6 +60,9 @@ class ProductTypeAttributeWriteServiceTest {
     private CatalogAttributeDefinitionRepository attributeDefinitionRepository;
     private CatalogAttributeOptionRepository attributeOptionRepository;
     private ProductTypeAttributeAssignmentRepository assignmentRepository;
+    private ProductRepository productRepository;
+    private ProductVariantRepository variantRepository;
+    private ProductVariantAttributeValueRepository variantAttributeValues;
     private ProductTypeAttributeWriteSpi service;
     private final Authentication caller = new TestingAuthenticationToken("admin-subject", "n/a", "ROLE_ADMIN");
 
@@ -71,8 +74,18 @@ class ProductTypeAttributeWriteServiceTest {
         attributeDefinitionRepository = mock(CatalogAttributeDefinitionRepository.class);
         attributeOptionRepository = mock(CatalogAttributeOptionRepository.class);
         assignmentRepository = mock(ProductTypeAttributeAssignmentRepository.class);
+        // The 2026-11-06 #808 round's scope-consistency guard (Major ·
+        // Data Integrity): the move verdict walks the type's products'
+        // typed variants — manual mocks answer the EMPTY population by
+        // default, so every pre-existing test rides the guard's trivial
+        // pass (no products, no variants, nothing to re-key) unless a
+        // test stubs the affected population explicitly.
+        productRepository = mock(ProductRepository.class);
+        variantRepository = mock(ProductVariantRepository.class);
+        variantAttributeValues = mock(ProductVariantAttributeValueRepository.class);
         service = new ProductTypeAttributeWriteService(productTypeRepository,
-                attributeDefinitionRepository, attributeOptionRepository, assignmentRepository);
+                attributeDefinitionRepository, attributeOptionRepository, assignmentRepository,
+                productRepository, variantRepository, variantAttributeValues);
         type = ProductType.create("widgets", "Widget Schema", null, null);
         // Every write leg rides the locked read now (the 2026-11-05 #808
         // round locked assignAttributes; the 2026-11-06 round locked its
@@ -582,5 +595,179 @@ class ProductTypeAttributeWriteServiceTest {
 
         assertThat(result.success()).isTrue();
         verify(assignmentRepository, never()).saveAll(any());
+    }
+
+    // ------------------------------------------------------------------
+    // updateAssignments — the 2026-11-06 #808 round's own verdicts
+    // ------------------------------------------------------------------
+
+    @Test
+    void aRepeatedAttributeIdWithinOneUpdateAnswersTheInvalidDomainError() {
+        // The 2026-11-06 #808 round review (Minor · Functional
+        // Correctness): ONE operation per attribute per call — the
+        // repeated id read the same deferred (not-yet-mutated) row twice
+        // and staged two moves for one entity; the duplicate now answers
+        // the classified INVALID refusal, never a silent first/last-wins.
+        CatalogAttributeDefinition choice = definition("choice-attr", CatalogAttributeType.CHOICE);
+        ProductTypeAttributeAssignment assignment = assigned(choice, ProductTypeAttributeScope.VARIANT, 1);
+        when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
+                .thenReturn(List.of(assignment));
+        // The first operation's own VARIANT_SELECTION gate passes (the
+        // CHOICE shape and the two-option floor) — the ONLY error left is
+        // the duplicate itself.
+        when(attributeDefinitionRepository.findById(choice.getId())).thenReturn(Optional.of(choice));
+        when(attributeOptionRepository.countByAttributeDefinitionId(choice.getId())).thenReturn(2L);
+
+        ProductTypeMutationResult result = service.updateAssignments(type.getId(), List.of(
+                new ProductTypeAttributeAssignmentUpdateOperation(choice.getId(), true),
+                new ProductTypeAttributeAssignmentUpdateOperation(choice.getId(), false)));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductTypeMutationError::code, ProductTypeMutationError::field)
+                .containsExactly(ProductTypeMutationErrorCode.INVALID, "id");
+        verify(assignmentRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void theSelectionMoveRefusesWhenATypedVariantLacksTheMovedAttribute() {
+        // The 2026-11-06 #808 round review (Major · Data Integrity):
+        // the move INTO the selection schema re-keys the affected typed
+        // variants or refuses — a variant without a value for the moved
+        // assignment can never cover the post-move selection set, so the
+        // move answers the classified refusal (the migration demand is
+        // named by SKU) and NOTHING mutates.
+        CatalogAttributeDefinition choice = definition("choice-attr", CatalogAttributeType.CHOICE);
+        ProductTypeAttributeAssignment moved = assigned(choice, ProductTypeAttributeScope.VARIANT, 1);
+        ProductTypeAttributeAssignment existing = assigned(
+                definition("existing-choice", CatalogAttributeType.CHOICE),
+                ProductTypeAttributeScope.VARIANT_SELECTION, 1);
+        when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
+                .thenReturn(List.of(moved, existing));
+        when(attributeDefinitionRepository.findById(choice.getId())).thenReturn(Optional.of(choice));
+        when(attributeOptionRepository.countByAttributeDefinitionId(choice.getId())).thenReturn(2L);
+        Product product = Product.register("cat-code", "Affected", null, 1000L, "SAR",
+                UUID.randomUUID(), type.getId());
+        ProductVariant typed = ProductVariant.register(product, "sku-a", "A", 900L, "old-shape-key");
+        // The typed variant covers ONLY the existing selection assignment
+        // — the moved assignment has no value at all.
+        when(productRepository.findByProductTypeId(type.getId())).thenReturn(List.of(product));
+        when(variantRepository.findByProductIdOrderBySkuAsc(product.getId())).thenReturn(List.of(typed));
+        when(variantAttributeValues.findAllByProductVariantIdOrderByAssignmentIdAsc(typed.getId()))
+                .thenReturn(List.of(ProductVariantAttributeValue.create(typed.getId(),
+                        new CatalogAttributeValueInput(existing.getId(), null, null, null, UUID.randomUUID()))));
+
+        ProductTypeMutationResult result = service.updateAssignments(type.getId(),
+                List.of(new ProductTypeAttributeAssignmentUpdateOperation(choice.getId(), true)));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductTypeMutationError::code, ProductTypeMutationError::field)
+                .containsExactly(ProductTypeMutationErrorCode.INVALID, "id");
+        assertThat(result.errors().get(0).message()).contains("sku-a");
+        verify(assignmentRepository, never()).saveAll(any());
+        verify(variantRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void theSelectionMoveOutRefusesWhenTheRekeyCollidesTwoVariants() {
+        // The same round: moving an attribute OUT of the selection schema
+        // re-derives every typed variant's key over the SMALLER set — two
+        // variants that differed ONLY in the moved attribute collapse
+        // onto the same combination, and the move answers the classified
+        // refusal naming both SKUs instead of dying on the raw unique
+        // index.
+        CatalogAttributeDefinition kept = definition("kept-choice", CatalogAttributeType.CHOICE);
+        CatalogAttributeDefinition leaving = definition("leaving-choice", CatalogAttributeType.CHOICE);
+        ProductTypeAttributeAssignment keptAssignment = assigned(kept,
+                ProductTypeAttributeScope.VARIANT_SELECTION, 1);
+        ProductTypeAttributeAssignment leavingAssignment = assigned(leaving,
+                ProductTypeAttributeScope.VARIANT_SELECTION, 2);
+        when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
+                .thenReturn(List.of(keptAssignment, leavingAssignment));
+        Product product = Product.register("cat-code", "Affected", null, 1000L, "SAR",
+                UUID.randomUUID(), type.getId());
+        ProductVariant first = ProductVariant.register(product, "sku-one", "One", 900L, "key-one");
+        ProductVariant second = ProductVariant.register(product, "sku-two", "Two", 900L, "key-two");
+        UUID sharedOption = UUID.randomUUID();
+        when(productRepository.findByProductTypeId(type.getId())).thenReturn(List.of(product));
+        when(variantRepository.findByProductIdOrderBySkuAsc(product.getId()))
+                .thenReturn(List.of(first, second));
+        when(variantAttributeValues.findAllByProductVariantIdOrderByAssignmentIdAsc(first.getId()))
+                .thenReturn(List.of(
+                        ProductVariantAttributeValue.create(first.getId(), new CatalogAttributeValueInput(
+                                keptAssignment.getId(), null, null, null, sharedOption)),
+                        ProductVariantAttributeValue.create(first.getId(), new CatalogAttributeValueInput(
+                                leavingAssignment.getId(), null, null, null, UUID.randomUUID()))));
+        when(variantAttributeValues.findAllByProductVariantIdOrderByAssignmentIdAsc(second.getId()))
+                .thenReturn(List.of(
+                        ProductVariantAttributeValue.create(second.getId(), new CatalogAttributeValueInput(
+                                keptAssignment.getId(), null, null, null, sharedOption)),
+                        ProductVariantAttributeValue.create(second.getId(), new CatalogAttributeValueInput(
+                                leavingAssignment.getId(), null, null, null, UUID.randomUUID()))));
+
+        ProductTypeMutationResult result = service.updateAssignments(type.getId(),
+                List.of(new ProductTypeAttributeAssignmentUpdateOperation(leaving.getId(), false)));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductTypeMutationError::code, ProductTypeMutationError::field)
+                .containsExactly(ProductTypeMutationErrorCode.INVALID, "id");
+        assertThat(result.errors().get(0).message()).contains("sku-one").contains("sku-two");
+        verify(assignmentRepository, never()).saveAll(any());
+        verify(variantRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void theHappySelectionMoveRekeysTheTypedVariantsOverThePostMoveSchema() {
+        // The same round: the verdict's PASSING leg — the typed variants'
+        // keys are re-derived over the post-move selection schema (the
+        // registration path's own VariantCombinationKeys bytes), so a
+        // fresh registration under the new schema and a re-keyed veteran
+        // answer the SAME key for the same combination — the duplicate-
+        // registration hole the finding proved is closed.
+        CatalogAttributeDefinition kept = definition("kept-choice", CatalogAttributeType.CHOICE);
+        CatalogAttributeDefinition moved = definition("moved-choice", CatalogAttributeType.CHOICE);
+        ProductTypeAttributeAssignment keptAssignment = assigned(kept,
+                ProductTypeAttributeScope.VARIANT_SELECTION, 1);
+        ProductTypeAttributeAssignment movedAssignment = assigned(moved,
+                ProductTypeAttributeScope.VARIANT, 1);
+        when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
+                .thenReturn(List.of(keptAssignment, movedAssignment));
+        when(attributeDefinitionRepository.findById(moved.getId())).thenReturn(Optional.of(moved));
+        when(attributeOptionRepository.countByAttributeDefinitionId(moved.getId())).thenReturn(2L);
+        when(assignmentRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(variantRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        Product product = Product.register("cat-code", "Affected", null, 1000L, "SAR",
+                UUID.randomUUID(), type.getId());
+        ProductVariant typed = ProductVariant.register(product, "sku-a", "A", 900L, "old-shape-key");
+        UUID keptOption = UUID.randomUUID();
+        UUID movedOption = UUID.randomUUID();
+        when(productRepository.findByProductTypeId(type.getId())).thenReturn(List.of(product));
+        when(variantRepository.findByProductIdOrderBySkuAsc(product.getId())).thenReturn(List.of(typed));
+        when(variantAttributeValues.findAllByProductVariantIdOrderByAssignmentIdAsc(typed.getId()))
+                .thenReturn(List.of(
+                        ProductVariantAttributeValue.create(typed.getId(), new CatalogAttributeValueInput(
+                                keptAssignment.getId(), null, null, null, keptOption)),
+                        ProductVariantAttributeValue.create(typed.getId(), new CatalogAttributeValueInput(
+                                movedAssignment.getId(), null, null, null, movedOption))));
+
+        ProductTypeMutationResult result = service.updateAssignments(type.getId(),
+                List.of(new ProductTypeAttributeAssignmentUpdateOperation(moved.getId(), true)));
+
+        assertThat(result.success()).isTrue();
+        // The re-derived key: the post-move selection set is BOTH
+        // assignments — the registration path's own derivation over the
+        // same values answers the same bytes.
+        String expected = VariantCombinationKeys.canonical(
+                List.of(keptAssignment, movedAssignment),
+                java.util.Map.of(keptAssignment.getId(),
+                        new CatalogAttributeValueInput(keptAssignment.getId(), null, null, null, keptOption),
+                        movedAssignment.getId(),
+                        new CatalogAttributeValueInput(movedAssignment.getId(), null, null, null, movedOption)));
+        verify(variantRepository).saveAll(argThat((List<ProductVariant> saved) ->
+                saved.size() == 1
+                        && saved.get(0).getOptionCombinationKey().equals(expected)
+                        && !saved.get(0).getOptionCombinationKey().equals("old-shape-key")));
     }
 }

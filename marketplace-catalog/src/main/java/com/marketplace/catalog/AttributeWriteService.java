@@ -251,8 +251,14 @@ public class AttributeWriteService implements AttributeWriteSpi {
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     public AttributeMutationResult reorderValues(UUID attributeId, List<AttributeReorderMove> moves) {
+        // The 2026-11-06 #808 round review (Minor · Stability &
+        // Availability): the two-phase rewrite serializes on the locked
+        // definition row — a concurrent create's append and this
+        // reorder's park range never interleave their position writes
+        // (the ProductTypeRepository.findByIdForUpdate precedent).
         Optional<CatalogAttributeDefinition> addressed =
-                attributeId == null ? Optional.empty() : attributeDefinitionRepository.findById(attributeId);
+                attributeId == null ? Optional.empty()
+                        : attributeDefinitionRepository.findByIdForUpdate(attributeId);
         if (addressed.isEmpty()) {
             return AttributeMutationResult.failure(List.of(new AttributeMutationError(
                     "attributeId", AttributeMutationErrorCode.NOT_FOUND, "No attribute found for the id")));
@@ -302,7 +308,20 @@ public class AttributeWriteService implements AttributeWriteSpi {
             // stored order — nothing changes, nothing writes.
             return AttributeMutationResult.success(toView(addressed.get()));
         }
-        int park = ordered.stream().mapToInt(CatalogAttributeOption::getPosition).max().orElse(0) + 1;
+        // The 2026-11-06 #808 round review (Minor · Stability &amp;
+        // Availability): the park range starts beyond BOTH the stored
+        // maximum AND the bucket's own size — a position-0 option pair
+        // (0 and 1, both legal through registerOption and the DB check)
+        // parks at [2, 3] under the max-only rule, and phase 2's dense
+        // rewrite [1, 2] can land a row ON position 2 BEFORE Hibernate
+        // issues the row-at-2's own vacating update (the flush order is
+        // not guaranteed across managed entities) — the unique index
+        // throws mid-rewrite. Parking at max(maxPosition, size) + 1
+        // keeps the final dense range strictly below the parked range,
+        // so no phase-2 write can collide with a not-yet-vacated seat.
+        int park = Math.max(
+                ordered.stream().mapToInt(CatalogAttributeOption::getPosition).max().orElse(0),
+                ordered.size()) + 1;
         for (CatalogAttributeOption option : ordered) {
             option.reposition(park++);
         }

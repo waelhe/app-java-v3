@@ -182,6 +182,25 @@ public class ProductVariant extends BaseEntity {
     }
 
     /**
+     * The assignment-scope move's own re-derivation ({@code
+     * ProductTypeAttributeWriteService.updateAssignments} — the
+     * 2026-11-06 #808 round review, Major · Data Integrity &amp;
+     * Integration): re-binds the canonical combination key to the
+     * product type's CURRENT variant-selection schema. The move guard
+     * verified the variant's coverage of the post-move selection set and
+     * the per-product uniqueness FIRST — this write is the schema
+     * change's own completion, never a free mutation (the registration
+     * path's own {@code VariantCombinationKeys.canonical} bytes, so a
+     * recomputed key and a fresh registration under the same schema are
+     * the same key — the move's whole guarantee: no variant keeps a
+     * key the new schema can no longer produce, and no duplicate
+     * combination can slip past the unique index by key-shape drift).
+     */
+    public void recombine(String optionCombinationKey) {
+        this.optionCombinationKey = optionCombinationKey;
+    }
+
+    /**
      * The display amendment — the row's own amendable facts (the
      * {@code Product.updateDetails} twin, the Saleor
      * {@code productVariantUpdate} root's movable set): the SKU, the

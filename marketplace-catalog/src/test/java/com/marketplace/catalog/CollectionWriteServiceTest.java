@@ -628,6 +628,50 @@ class CollectionWriteServiceTest {
         verify(membershipRepository, never()).save(any());
     }
 
+    @Test
+    void aRepeatedProductMoveAppliesOnlyTheLatestShiftPerProduct() {
+        // The 2026-11-06 #808 round review (Minor · Functional
+        // Correctness): the pinned Saleor contract applies each product's
+        // LATEST move (the m2m dict assignment
+        // operations[m2m_info.pk] = move_info.sort_order) — it never
+        // accumulates a repeated [A:-1, A:-2] into -3. The discriminator:
+        // third sits at position 3; the LATEST shift (-2) moves it to the
+        // front ([third, first, second]) while the SUM (-3) would answer
+        // the out-of-range INVALID refusal — the two semantics disagree,
+        // and the contract's own answer is the latest.
+        UUID collectionId = UUID.randomUUID();
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        UUID third = UUID.randomUUID();
+        when(collectionRepository.findById(collectionId))
+                .thenReturn(Optional.of(row("slug", "Old", true)));
+        when(membershipRepository.findByCollectionIdOrderByPositionAscIdAsc(collectionId))
+                .thenReturn(List.of(
+                        CollectionProduct.create(collectionId, first, 1),
+                        CollectionProduct.create(collectionId, second, 2),
+                        CollectionProduct.create(collectionId, third, 3)));
+        List<List<UUID>> phaseOrders = new java.util.ArrayList<>();
+        when(membershipRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<UUID> order = new java.util.ArrayList<>();
+            for (CollectionProduct member : (Iterable<CollectionProduct>) invocation.getArgument(0)) {
+                order.add(member.getProductId());
+            }
+            phaseOrders.add(order);
+            return invocation.getArgument(0);
+        });
+
+        CollectionMutationResult result = service.reorderProducts(collectionId,
+                List.of(new CollectionProductMove(third, -1), new CollectionProductMove(third, -2)));
+
+        assertThat(result.success()).isTrue();
+        // The latest shift (-2) alone: third lands at the front, both
+        // phases carry the SAME final order (the park then the dense
+        // rewrite).
+        assertThat(phaseOrders).hasSize(2);
+        assertThat(phaseOrders.get(0)).containsExactly(third, first, second);
+        assertThat(phaseOrders.get(1)).containsExactly(third, first, second);
+    }
+
     // ------------------------------------------------------------------
     // translateCollection — the bilingual translation ladder (the shared
     // TranslationWriteService proof lives in its own test)

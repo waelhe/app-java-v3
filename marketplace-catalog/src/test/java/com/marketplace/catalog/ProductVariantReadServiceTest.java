@@ -313,51 +313,79 @@ class ProductVariantReadServiceTest {
     }
 
     // ------------------------------------------------------------------
-    // scrollVariants — the ADMIN population (derived framework scroll)
+    // scrollVariants — the ADMIN population (native parent-live-gated
+    // scroll — the 2026-11-06 #808 round review, Minor · Data Integrity)
     // ------------------------------------------------------------------
 
     @Test
-    void adminScrollRidesTheDerivedUpdatedAtScrollAndTheWholeCount() {
+    void adminScrollRidesTheParentLiveGatedUpdatedAtScrollAndItsOwnCount() {
         Product parent = activeProduct("b5a Admin Parent");
         ProductVariant variant = activeVariant(parent, "b5a-sku-5");
-        Window<ProductVariant> frameworkWindow = Window.from(
-                List.of(variant), i -> ScrollPosition.forward(Map.of(
-                        "updatedAt", Instant.parse("2026-10-21T10:00:00Z"), "id", variant.getId())),
-                true);
-        when(variantRepository.findByOrderByUpdatedAtDescIdDesc(any(), any()))
-                .thenReturn(frameworkWindow);
-        when(variantRepository.count()).thenReturn(41L);
+        stampUpdatedAt(variant, Instant.parse("2026-10-21T10:00:00Z"));
+        // The page fetch: pageSize+1 rows — a full fetch is hasNext.
+        when(variantRepository.scrollAdminByUpdatedAtDesc(null, null, 11))
+                .thenReturn(List.of(variant));
+        when(variantRepository.countAdminPopulation()).thenReturn(41L);
         when(productRepository.findAllById(any())).thenReturn(List.of(parent));
 
         ProductVariantPage page = service.scrollVariants(adminCaller,
                 ProductVariantSort.of(ProductVariantSort.Field.LAST_MODIFIED_AT, false),
                 ScrollPosition.keyset(), Limit.of(10));
 
-        verify(variantRepository).findByOrderByUpdatedAtDescIdDesc(any(), any());
+        verify(variantRepository).scrollAdminByUpdatedAtDesc(null, null, 11);
         assertThat(page.total()).isEqualTo(41L);
-        assertThat(page.window().hasNext()).isTrue();
+        assertThat(page.window().hasNext()).isFalse();
         assertThat(page.window().getContent()).hasSize(1);
         assertThat(page.window().getContent().get(0).product().name()).isEqualTo("b5a Admin Parent");
     }
 
     @Test
-    void adminScrollRidesTheDerivedIdScroll() {
+    void adminScrollRidesTheParentLiveGatedIdScroll() {
         Product parent = activeProduct("b5a Admin Parent");
         ProductVariant variant = activeVariant(parent, "b5a-sku-6");
-        Window<ProductVariant> frameworkWindow = Window.from(
-                List.of(variant), i -> ScrollPosition.forward(Map.of("id", variant.getId())), false);
-        when(variantRepository.findByOrderByIdAsc(any(), any())).thenReturn(frameworkWindow);
-        when(variantRepository.count()).thenReturn(1L);
+        // pageSize+1 = 3 rows fetched, 2 kept — the database's own hasNext.
+        ProductVariant second = activeVariant(parent, "b5a-sku-7");
+        ProductVariant past = activeVariant(parent, "b5a-sku-8");
+        when(variantRepository.scrollAdminByIdAsc(null, 3))
+                .thenReturn(List.of(variant, second, past));
+        when(variantRepository.countAdminPopulation()).thenReturn(2L);
         when(productRepository.findAllById(any())).thenReturn(List.of(parent));
 
         ProductVariantPage page = service.scrollVariants(adminCaller,
                 ProductVariantSort.of(ProductVariantSort.Field.ID, true),
-                ScrollPosition.keyset(), Limit.of(10));
+                ScrollPosition.keyset(), Limit.of(2));
 
-        verify(variantRepository).findByOrderByIdAsc(any(), any());
-        assertThat(page.total()).isEqualTo(1L);
-        assertThat(page.window().hasNext()).isFalse();
+        verify(variantRepository).scrollAdminByIdAsc(null, 3);
+        assertThat(page.total()).isEqualTo(2L);
+        assertThat(page.window().hasNext()).isTrue();
+        assertThat(page.window().getContent()).hasSize(2);
+    }
+
+    @Test
+    void adminScrollCutsThePageBeforeTheParentResolutionNotAfter() {
+        // The 2026-11-06 #808 round review (Minor · Data Integrity): the
+        // parent-live EXISTS gate excludes the orphans AT THE QUERY — a
+        // page can never consist ENTIRELY of unresolvable-parent variants
+        // (the old derived scroll answered an empty window with
+        // hasNext=true and no usable position — an uncontinuable scroll),
+        // and the count rides the SAME population (never the orphan-
+        // counting raw count()).
+        Product parent = activeProduct("b5a Admin Parent");
+        ProductVariant variant = activeVariant(parent, "b5a-sku-9");
+        when(variantRepository.scrollAdminByIdAsc(null, 3))
+                .thenReturn(List.of(variant));
+        when(variantRepository.countAdminPopulation()).thenReturn(1L);
+        when(productRepository.findAllById(any())).thenReturn(List.of(parent));
+
+        ProductVariantPage page = service.scrollVariants(adminCaller,
+                ProductVariantSort.of(ProductVariantSort.Field.ID, true),
+                ScrollPosition.keyset(), Limit.of(2));
+
+        // The orphan never reached the page (the gate excluded it at the
+        // query), and the vanish-window skip stays belt-and-braces only.
         assertThat(page.window().getContent()).hasSize(1);
+        assertThat(page.total()).isEqualTo(1L);
+        verify(variantRepository, org.mockito.Mockito.never()).count();
     }
 
     // ------------------------------------------------------------------

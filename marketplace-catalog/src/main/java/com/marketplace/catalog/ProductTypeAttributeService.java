@@ -87,6 +87,16 @@ public class ProductTypeAttributeService {
     }
 
     private void requireProductType(UUID id) {
-        productTypes.findById(id).orElseThrow(() -> new ResourceNotFoundException("ProductType", id));
+        // The 2026-11-06 #808 round review (Minor · Data Integrity &
+        // Integration): the FOR-SHARE read (PESSIMISTIC_READ, the
+        // deleteProductType B21 comment's own intended pairing) — an
+        // unlocked findById could read the type BEFORE the deleter's
+        // FOR-UPDATE lock, letting the delete's live-references count see
+        // zero and soft-delete the type, and the unlocked writer then
+        // committing an assignment that references a soft-deleted type
+        // (the FK accepts the physical row). The share lock serializes
+        // the create against the delete's committed verdict.
+        productTypes.findByIdForShare(id)
+                .orElseThrow(() -> new ResourceNotFoundException("ProductType", id));
     }
 }

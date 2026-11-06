@@ -58,12 +58,22 @@ import org.springframework.data.repository.query.Param;
  * keys — deterministic with the {@code id} tiebreaker), states BOTH
  * soft-delete filters explicitly, and fetches one row PAST the page so
  * the service's {@code hasNext} is the database's own answer — REAL SQL
- * forward-only keyset scrolling, never an offset. The ADMIN
- * population's scrolls are the derived {@code Window}-returning methods
- * (the {@code scrollStaffUsers} precedent): no gate at all — the
- * include-unpublished population is every live row — so the framework's
- * own keyset machinery executes with Hibernate's {@code @SoftDelete}
- * filter applied automatically.</p>
+ * forward-only keyset scrolling, never an offset. The ADMIN population's
+ * scrolls (the 2026-11-06 #808 round review, Minor · Data Integrity &amp;
+ * Integration) are the SAME native shape with the ADMIN's own gate: the
+ * parent EXISTS keeps the include-unpublished LIFECYCLE widening (no
+ * variant or product status filter) but requires the parent row to
+ * RESOLVE LIVE — the derived {@code Window} methods the path rode had
+ * NO gate at all, so a concurrent product delete could orphan a whole
+ * page's worth of variants and the service's parent-resolution skip
+ * answered an EMPTY page with {@code hasNext=true} and no usable scroll
+ * position (an uncontinuable scroll), while the path's {@code count()}
+ * counted the orphans the population can never render. The parent-live
+ * EXISTS at the QUERY is the exclusion the finding demands — BEFORE the
+ * page is cut — and the population's own count rides the identical
+ * predicate (the honest caller-scoped total). The belt-and-braces
+ * parent-null skip stays in the service for the vanish window BETWEEN
+ * the page query and the parent projections load.</p>
  */
 public interface ProductVariantRepository extends JpaRepository<ProductVariant, UUID> {
 
@@ -144,26 +154,104 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
     boolean existsByProductIdAndOptionCombinationKey(UUID productId, String optionCombinationKey);
 
     // ------------------------------------------------------------------
-    // Campaign packet campaign-b5-a (the Saleor productVariants read
-    // root): the ADMIN population's derived keyset scrolls — the
-    // scrollStaffUsers precedent (Window-returning, KeysetScrollPosition/
-    // Limit-taking, the static ordering baked into the method name with
-    // the id tiebreaker). No population gate: the include-unpublished
-    // population is every live row, so Hibernate's own @SoftDelete filter
-    // and the framework's own keyset predicate carry the whole contract.
+    // Campaign packet campaign-b5-a: the ADMIN population's native
+    // keyset scrolls — the parent-live EXISTS gate (the 2026-11-06 #808
+    // round review, Minor · Data Integrity): the include-unpublished
+    // population widens lifecycle states, NOT integrity — a variant whose
+    // parent product no longer resolves live is not a renderable roster
+    // member and never reaches the page cut. The gate spans TWO rows
+    // (the variant's own live shelf AND the parent's live shelf, ANY
+    // product status), so the scroll is NATIVE like the public twins:
+    // the parent EXISTS over the plain product_id column with BOTH
+    // soft-delete filters explicit. The keyset predicate is the expanded
+    // row-value comparison over the executed sort keys with the id
+    // tiebreaker; :lastUpdatedAt/:lastId bind NULL on the initial page
+    // (the IS NULL occurrences carry the explicit casts — the wave-19
+    // review's own fix). Each method fetches :fetchCount rows (the
+    // service passes pageSize+1) — a full fetch is the database's own
+    // hasNext answer.
     // ------------------------------------------------------------------
 
-    /** The ADMIN (include-unpublished) population's LAST_MODIFIED_AT-ascending keyset scroll. */
-    Window<ProductVariant> findByOrderByUpdatedAtAscIdAsc(KeysetScrollPosition position, Limit limit);
+    /** The ADMIN population's LAST_MODIFIED_AT-ascending keyset scroll (the parent-live gate). */
+    @Query(value = """
+            SELECT v.* FROM product_variants v
+             WHERE v.is_deleted = FALSE
+               AND EXISTS (SELECT 1
+                             FROM products p
+                            WHERE p.id = v.product_id
+                              AND p.is_deleted = FALSE)
+               AND (CAST(:lastUpdatedAt AS timestamptz) IS NULL
+                    OR v.updated_at > :lastUpdatedAt
+                    OR (v.updated_at = :lastUpdatedAt AND v.id > :lastId))
+             ORDER BY v.updated_at ASC, v.id ASC
+             LIMIT :fetchCount
+            """, nativeQuery = true)
+    List<ProductVariant> scrollAdminByUpdatedAtAsc(
+            @Param("lastUpdatedAt") java.time.OffsetDateTime lastUpdatedAt,
+            @Param("lastId") UUID lastId,
+            @Param("fetchCount") int fetchCount);
 
-    /** The ADMIN (include-unpublished) population's LAST_MODIFIED_AT-descending keyset scroll. */
-    Window<ProductVariant> findByOrderByUpdatedAtDescIdDesc(KeysetScrollPosition position, Limit limit);
+    /** The ADMIN population's LAST_MODIFIED_AT-descending keyset scroll (the parent-live gate). */
+    @Query(value = """
+            SELECT v.* FROM product_variants v
+             WHERE v.is_deleted = FALSE
+               AND EXISTS (SELECT 1
+                             FROM products p
+                            WHERE p.id = v.product_id
+                              AND p.is_deleted = FALSE)
+               AND (CAST(:lastUpdatedAt AS timestamptz) IS NULL
+                    OR v.updated_at < :lastUpdatedAt
+                    OR (v.updated_at = :lastUpdatedAt AND v.id < :lastId))
+             ORDER BY v.updated_at DESC, v.id DESC
+             LIMIT :fetchCount
+            """, nativeQuery = true)
+    List<ProductVariant> scrollAdminByUpdatedAtDesc(
+            @Param("lastUpdatedAt") java.time.OffsetDateTime lastUpdatedAt,
+            @Param("lastId") UUID lastId,
+            @Param("fetchCount") int fetchCount);
 
-    /** The ADMIN (include-unpublished) population's ID-ascending keyset scroll (the unique key alone). */
-    Window<ProductVariant> findByOrderByIdAsc(KeysetScrollPosition position, Limit limit);
+    /** The ADMIN population's ID-ascending keyset scroll (the parent-live gate, the unique key alone). */
+    @Query(value = """
+            SELECT v.* FROM product_variants v
+             WHERE v.is_deleted = FALSE
+               AND EXISTS (SELECT 1
+                             FROM products p
+                            WHERE p.id = v.product_id
+                              AND p.is_deleted = FALSE)
+               AND (CAST(:lastId AS uuid) IS NULL OR v.id > :lastId)
+             ORDER BY v.id ASC
+             LIMIT :fetchCount
+            """, nativeQuery = true)
+    List<ProductVariant> scrollAdminByIdAsc(
+            @Param("lastId") UUID lastId,
+            @Param("fetchCount") int fetchCount);
 
-    /** The ADMIN (include-unpublished) population's ID-descending keyset scroll (the unique key alone). */
-    Window<ProductVariant> findByOrderByIdDesc(KeysetScrollPosition position, Limit limit);
+    /** The ADMIN population's ID-descending keyset scroll (the parent-live gate, the unique key alone). */
+    @Query(value = """
+            SELECT v.* FROM product_variants v
+             WHERE v.is_deleted = FALSE
+               AND EXISTS (SELECT 1
+                             FROM products p
+                            WHERE p.id = v.product_id
+                              AND p.is_deleted = FALSE)
+               AND (CAST(:lastId AS uuid) IS NULL OR v.id < :lastId)
+             ORDER BY v.id DESC
+             LIMIT :fetchCount
+            """, nativeQuery = true)
+    List<ProductVariant> scrollAdminByIdDesc(
+            @Param("lastId") UUID lastId,
+            @Param("fetchCount") int fetchCount);
+
+    /** The ADMIN population's own count — the SAME parent-live gate (the honest caller-scoped totalCount). */
+    @Query(value = """
+            SELECT COUNT(*) FROM product_variants v
+             WHERE v.is_deleted = FALSE
+               AND EXISTS (SELECT 1
+                             FROM products p
+                            WHERE p.id = v.product_id
+                              AND p.is_deleted = FALSE)
+            """, nativeQuery = true)
+    long countAdminPopulation();
 
     // ------------------------------------------------------------------
     // Campaign packet campaign-b5-a: the PUBLIC population's native

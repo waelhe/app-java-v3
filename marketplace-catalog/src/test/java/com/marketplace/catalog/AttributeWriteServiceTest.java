@@ -440,7 +440,7 @@ class AttributeWriteServiceTest {
         CatalogAttributeOption one = CatalogAttributeOption.create(parent.getId(), "one", "One", null, 1);
         CatalogAttributeOption two = CatalogAttributeOption.create(parent.getId(), "two", "Two", null, 2);
         CatalogAttributeOption three = CatalogAttributeOption.create(parent.getId(), "three", "Three", null, 3);
-        when(repository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(repository.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
         when(optionRepository.findAllByAttributeDefinitionIdOrderByPositionAsc(parent.getId()))
                 .thenReturn(List.of(one, two, three));
         // The stub snapshots each write's positions AT INVOCATION TIME: both
@@ -484,7 +484,7 @@ class AttributeWriteServiceTest {
     @Test
     void reorderValuesAnswersTheNotFoundForAnUnknownValue() {
         CatalogAttributeDefinition parent = row("choice-attr", "Choice Attr");
-        when(repository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(repository.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
         when(optionRepository.findAllByAttributeDefinitionIdOrderByPositionAsc(parent.getId()))
                 .thenReturn(List.of());
 
@@ -500,7 +500,7 @@ class AttributeWriteServiceTest {
     void reorderValuesAnswersTheInvalidForAnOutOfRangeMove() {
         CatalogAttributeDefinition parent = row("choice-attr", "Choice Attr");
         CatalogAttributeOption one = CatalogAttributeOption.create(parent.getId(), "one", "One", null, 1);
-        when(repository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(repository.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
         when(optionRepository.findAllByAttributeDefinitionIdOrderByPositionAsc(parent.getId()))
                 .thenReturn(List.of(one));
 
@@ -517,7 +517,7 @@ class AttributeWriteServiceTest {
     void reorderValuesWithAZeroShiftIsTheIdempotentNoOp() {
         CatalogAttributeDefinition parent = row("choice-attr", "Choice Attr");
         CatalogAttributeOption one = CatalogAttributeOption.create(parent.getId(), "one", "One", null, 1);
-        when(repository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(repository.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
         when(optionRepository.findAllByAttributeDefinitionIdOrderByPositionAsc(parent.getId()))
                 .thenReturn(List.of(one));
 
@@ -642,5 +642,43 @@ class AttributeWriteServiceTest {
                     .extracting(AttributeMutationError::code)
                     .isEqualTo(AttributeMutationErrorCode.ALREADY_EXISTS);
         }
+    }
+
+    /**
+     * The 2026-11-06 #808 round review (Minor · Stability &amp;
+     * Availability): a bucket holding the LEGAL positions 0 and 1 (both
+     * reachable through registerOption's first position and the DB's
+     * position-check) parks at max(maxPosition, size) + 1 = 3 — under
+     * the max-only rule the park range [2, 3] overlapped the phase-2
+     * dense range [1, 2] and a phase-2 write could land on a
+     * not-yet-vacated seat (the flush order is not guaranteed). The
+     * captured two-phase sequence proves the disjoint ranges.
+     */
+    @Test
+    void reorderValuesParksAZeroBasedBucketBeyondTheDenseRange() {
+        CatalogAttributeDefinition parent = row("zero-attr", "Zero Attr");
+        CatalogAttributeOption zero = CatalogAttributeOption.create(parent.getId(), "zero", "Zero", null, 0);
+        CatalogAttributeOption one = CatalogAttributeOption.create(parent.getId(), "one", "One", null, 1);
+        when(repository.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        when(optionRepository.findAllByAttributeDefinitionIdOrderByPositionAsc(parent.getId()))
+                .thenReturn(List.of(zero, one));
+        List<List<Integer>> savedPositions = new ArrayList<>();
+        when(optionRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<CatalogAttributeOption> saved = invocation.getArgument(0);
+            savedPositions.add(saved.stream()
+                    .map(CatalogAttributeOption::getPosition).toList());
+            return saved;
+        });
+
+        AttributeMutationResult result = service.reorderValues(parent.getId(),
+                List.of(new AttributeReorderMove(one.getId(), -1)));
+
+        assertThat(result.success()).isTrue();
+        // Phase 1 parks at [3, 4] — strictly above BOTH the stored max (1)
+        // and the dense target range [1, 2] — then phase 2 writes [2, 1]
+        // (the one moved up, zero shifted down).
+        assertThat(savedPositions).hasSize(2);
+        assertThat(savedPositions.get(0)).containsExactly(3, 4);
+        assertThat(savedPositions.get(1)).containsExactly(1, 2);
     }
 }

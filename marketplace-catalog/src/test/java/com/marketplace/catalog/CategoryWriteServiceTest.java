@@ -123,7 +123,7 @@ class CategoryWriteServiceTest {
         // loser's raw violation answers the SAME classified
         // ALREADY_EXISTS — bound to uq_categories_code ONLY.
         when(repository.countByCodeIncludingDeleted("fresh-code")).thenReturn(0L);
-        when(repository.findAllByOrderByPositionAsc()).thenReturn(List.of());
+        when(repository.findAllByOrderByPositionAscIdAsc()).thenReturn(List.of());
         when(repository.saveAndFlush(any())).thenThrow(new org.springframework.dao.DataIntegrityViolationException(
                 "could not execute statement; SQL [n/a]; constraint [uq_categories_code "
                         + "ON categories (code)]"));
@@ -143,7 +143,7 @@ class CategoryWriteServiceTest {
         // constraint is a real registry bug — it keeps its own
         // propagation (never a blanket catch that would hide it).
         when(repository.countByCodeIncludingDeleted("fresh-code")).thenReturn(0L);
-        when(repository.findAllByOrderByPositionAsc()).thenReturn(List.of());
+        when(repository.findAllByOrderByPositionAscIdAsc()).thenReturn(List.of());
         when(repository.saveAndFlush(any())).thenThrow(new org.springframework.dao.DataIntegrityViolationException(
                 "could not execute statement; constraint [chk_categories_code_shape "
                         + "ON categories]"));
@@ -156,7 +156,7 @@ class CategoryWriteServiceTest {
     @Test
     void happyCreateSavesTheRowWithTheNextPositionAndAnswersTheProjection() {
         when(repository.countByCodeIncludingDeleted("fresh-code")).thenReturn(0L);
-        when(repository.findAllByOrderByPositionAsc()).thenReturn(List.of(row("a", "A", 1), row("b", "B", 2)));
+        when(repository.findAllByOrderByPositionAscIdAsc()).thenReturn(List.of(row("a", "A", 1), row("b", "B", 2)));
         when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         CategoryMutationResult result = service.createCategory(
@@ -178,7 +178,7 @@ class CategoryWriteServiceTest {
         // last row's own position and make the position order non-
         // deterministic between them).
         when(repository.countByCodeIncludingDeleted("fresh-code")).thenReturn(0L);
-        when(repository.findAllByOrderByPositionAsc())
+        when(repository.findAllByOrderByPositionAscIdAsc())
                 .thenReturn(List.of(row("a", "A", 1), row("b", "B", 5)));
         when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -192,7 +192,7 @@ class CategoryWriteServiceTest {
     @Test
     void createNormalizesTheSlugToTheRegistrysOwnLowercaseContract() {
         when(repository.countByCodeIncludingDeleted("mixed-case")).thenReturn(0L);
-        when(repository.findAllByOrderByPositionAsc()).thenReturn(List.of());
+        when(repository.findAllByOrderByPositionAscIdAsc()).thenReturn(List.of());
         when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         CategoryMutationResult result = service.createCategory(

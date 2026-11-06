@@ -149,8 +149,10 @@ public class ProductVariantReadService implements ProductVariantReadSpi {
      * The variant population's REAL SQL forward-only keyset scroll — the
      * caller's own population: the two-row-gated public population
      * (variant ACTIVE AND parent product ACTIVE) for non-ADMIN callers,
-     * every live row for the ADMIN capability (the include-unpublished
-     * variant). The page's total is the SAME population's count — never
+     * every live row whose parent RESOLVES LIVE for the ADMIN capability
+     * (the include-unpublished lifecycle widening — any product status,
+     * never a soft-deleted parent: the 2026-11-06 #808 round's own
+     * parent-live gate). The page's total is the SAME population's count — never
      * another scope's.
      */
     @Override
@@ -176,38 +178,51 @@ public class ProductVariantReadService implements ProductVariantReadSpi {
     }
 
     // ------------------------------------------------------------------
-    // The ADMIN population — the derived framework keyset scroll
+    // The ADMIN population — the native parent-live-gated keyset scroll
+    // (the 2026-11-06 #808 round review, Minor · Data Integrity: the
+    // derived Window scroll had no parent gate at all, so a page of
+    // parent-orphans answered an empty window with hasNext=true and no
+    // usable position, while count() counted the unrenderable orphans)
     // ------------------------------------------------------------------
 
     private ProductVariantPage scrollAdminPopulation(ProductVariantSort sort,
                                                      KeysetScrollPosition position,
                                                      Limit limit) {
-        Window<ProductVariant> window = switch (sort.field()) {
+        OffsetDateTime lastUpdatedAt = lastUpdatedAt(sort, position);
+        UUID lastId = lastId(sort, position);
+        int fetchCount = limit.max() + 1;
+        List<ProductVariant> rows = switch (sort.field()) {
             case LAST_MODIFIED_AT -> sort.ascending()
-                    ? variantRepository.findByOrderByUpdatedAtAscIdAsc(position, limit)
-                    : variantRepository.findByOrderByUpdatedAtDescIdDesc(position, limit);
+                    ? variantRepository.scrollAdminByUpdatedAtAsc(lastUpdatedAt, lastId, fetchCount)
+                    : variantRepository.scrollAdminByUpdatedAtDesc(lastUpdatedAt, lastId, fetchCount);
             case ID -> sort.ascending()
-                    ? variantRepository.findByOrderByIdAsc(position, limit)
-                    : variantRepository.findByOrderByIdDesc(position, limit);
+                    ? variantRepository.scrollAdminByIdAsc(lastId, fetchCount)
+                    : variantRepository.scrollAdminByIdDesc(lastId, fetchCount);
         };
-        List<ProductVariant> content = window.getContent();
+        boolean hasNext = rows.size() > limit.max();
+        List<ProductVariant> content =
+                hasNext ? new ArrayList<>(rows.subList(0, limit.max())) : rows;
         Map<UUID, ProductView> parents = parentProjections(content);
         List<ProductVariantView> views = new ArrayList<>(content.size());
         List<ScrollPosition> positions = new ArrayList<>(content.size());
-        for (int i = 0; i < content.size(); i++) {
-            ProductVariant row = content.get(i);
+        for (ProductVariant row : content) {
             ProductView parent = parents.get(row.getProductId());
             if (parent == null) {
-                // The referential-honesty stance: a roster row whose parent
-                // no longer resolves is never rendered as a null Product! —
-                // include-unpublished widens lifecycle states, not integrity.
+                // The vanish window's belt-and-braces (the public twin's
+                // own stance): the parent-live EXISTS gate already held at
+                // the page query, so this can only fire when the parent
+                // soft-deleted BETWEEN the page fetch and this projection
+                // load — a mid-transaction race, never a population fact.
+                // The skip keeps the page honest (never a null Product!)
+                // while the gate keeps the scroll continuable (the
+                // orphans never filled the page in the first place).
                 continue;
             }
             views.add(toView(row, parent));
-            positions.add(window.positionAt(i));
+            positions.add(keysetPosition(sort, row));
         }
-        Window<ProductVariantView> result = Window.from(views, positions::get, window.hasNext());
-        return new ProductVariantPage(result, variantRepository.count());
+        Window<ProductVariantView> window = Window.from(views, positions::get, hasNext);
+        return new ProductVariantPage(window, variantRepository.countAdminPopulation());
     }
 
     // ------------------------------------------------------------------

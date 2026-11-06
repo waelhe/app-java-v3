@@ -15,6 +15,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -47,13 +48,18 @@ class AttributeValueWriteServiceTest {
 
     private CatalogAttributeOptionRepository options;
     private CatalogAttributeDefinitionRepository definitions;
+    private ProductVariantAttributeValueRepository variantValues;
     private AttributeValueWriteSpi service;
 
     @BeforeEach
     void setUp() {
         options = mock(CatalogAttributeOptionRepository.class);
         definitions = mock(CatalogAttributeDefinitionRepository.class);
-        service = new AttributeValueWriteService(options, definitions);
+        variantValues = mock(ProductVariantAttributeValueRepository.class);
+        // The 2026-11-06 #808 round: the option-delete guard's live-reference
+        // probe answers NO references by default (each test overrides it).
+        lenient().when(variantValues.existsByOptionId(any())).thenReturn(false);
+        service = new AttributeValueWriteService(options, definitions, variantValues);
     }
 
     private static CatalogAttributeDefinition choiceParent() {
@@ -73,7 +79,7 @@ class AttributeValueWriteServiceTest {
     @Test
     void missingParentAnswersTheNotFoundDomainError() {
         UUID unknown = UUID.randomUUID();
-        when(definitions.findById(unknown)).thenReturn(Optional.empty());
+        when(definitions.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
 
         AttributeValueMutationResult result = service.createAttributeValue(unknown,
                 new AttributeValueCreateCommand("Small", "small"));
@@ -88,7 +94,7 @@ class AttributeValueWriteServiceTest {
     @Test
     void nonChoiceParentAnswersTheInvalidDomainError() {
         CatalogAttributeDefinition parent = textParent();
-        when(definitions.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
 
         AttributeValueMutationResult result = service.createAttributeValue(parent.getId(),
                 new AttributeValueCreateCommand("Small", "small"));
@@ -105,7 +111,7 @@ class AttributeValueWriteServiceTest {
     @Test
     void blankNameAnswersTheRequiredDomainError() {
         CatalogAttributeDefinition parent = choiceParent();
-        when(definitions.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
 
         AttributeValueMutationResult result = service.createAttributeValue(parent.getId(),
                 new AttributeValueCreateCommand("  ", "small"));
@@ -119,7 +125,7 @@ class AttributeValueWriteServiceTest {
     @Test
     void invalidSlugShapeAnswersTheInvalidDomainError() {
         CatalogAttributeDefinition parent = choiceParent();
-        when(definitions.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
 
         AttributeValueMutationResult result = service.createAttributeValue(parent.getId(),
                 new AttributeValueCreateCommand("Small", "Not_A_Slug"));
@@ -134,7 +140,7 @@ class AttributeValueWriteServiceTest {
     @Test
     void duplicateSlugWithinTheAttributeAnswersTheAlreadyExistsDomainError() {
         CatalogAttributeDefinition parent = choiceParent();
-        when(definitions.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
         when(options.findByAttributeDefinitionIdAndCode(parent.getId(), "taken"))
                 .thenReturn(Optional.of(CatalogAttributeOption.create(parent.getId(), "taken", "Taken", null, 0)));
 
@@ -151,7 +157,7 @@ class AttributeValueWriteServiceTest {
     @Test
     void happyCreateAppendsAfterTheHighestPositionAndAnswersTheDualProjection() {
         CatalogAttributeDefinition parent = choiceParent();
-        when(definitions.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
         when(options.findByAttributeDefinitionIdAndCode(parent.getId(), "small"))
                 .thenReturn(Optional.empty());
         when(options.findFirstByAttributeDefinitionIdOrderByPositionDesc(parent.getId()))
@@ -176,7 +182,7 @@ class AttributeValueWriteServiceTest {
         // start made every fresh single-option attribute look "changed"
         // to the probe and forced a renumbering write on a true no-op.
         CatalogAttributeDefinition parent = choiceParent();
-        when(definitions.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
         when(options.findByAttributeDefinitionIdAndCode(parent.getId(), "small"))
                 .thenReturn(Optional.empty());
         when(options.findFirstByAttributeDefinitionIdOrderByPositionDesc(parent.getId()))
@@ -249,6 +255,11 @@ class AttributeValueWriteServiceTest {
         CatalogAttributeOption existing = CatalogAttributeOption.create(
                 parent.getId(), "keep-val", "Kept", null, 2);
         when(options.findById(existing.getId())).thenReturn(Optional.of(existing));
+        // The 2026-11-06 #808 round (#11): the update path now answers the
+        // classified NOT_FOUND when the parent attribute is gone — these
+        // validation verdicts need the parent PRESENT to reach their own
+        // error branch.
+        when(definitions.findById(parent.getId())).thenReturn(Optional.of(parent));
 
         AttributeValueMutationResult result = service.updateAttributeValue(existing.getId(),
                 new AttributeValueUpdateCommand("   ", null));
@@ -265,6 +276,11 @@ class AttributeValueWriteServiceTest {
         CatalogAttributeOption existing = CatalogAttributeOption.create(
                 parent.getId(), "keep-val", "Kept", null, 2);
         when(options.findById(existing.getId())).thenReturn(Optional.of(existing));
+        // The 2026-11-06 #808 round (#11): the update path now answers the
+        // classified NOT_FOUND when the parent attribute is gone — these
+        // validation verdicts need the parent PRESENT to reach their own
+        // error branch.
+        when(definitions.findById(parent.getId())).thenReturn(Optional.of(parent));
 
         AttributeValueMutationResult result = service.updateAttributeValue(existing.getId(),
                 new AttributeValueUpdateCommand(null, "fresh-name"));
@@ -323,7 +339,7 @@ class AttributeValueWriteServiceTest {
         CatalogAttributeOption existing = CatalogAttributeOption.create(
                 parent.getId(), "gone-val", "Gone", null, 2);
         when(options.findById(existing.getId())).thenReturn(Optional.of(existing));
-        when(definitions.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
 
         AttributeValueMutationResult result = service.deleteAttributeValue(existing.getId());
 
@@ -371,7 +387,7 @@ class AttributeValueWriteServiceTest {
         CatalogAttributeOption arOnly = CatalogAttributeOption.create(
                 parent.getId(), "ar-val", null, "القيمة العربية فقط", 0);
         when(options.findById(arOnly.getId())).thenReturn(Optional.of(arOnly));
-        when(definitions.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
 
         AttributeValueMutationResult result = service.deleteAttributeValue(arOnly.getId());
 
@@ -383,5 +399,70 @@ class AttributeValueWriteServiceTest {
     /** The append-position assertion's own matcher. */
     private static CatalogAttributeOption argOptionWithPosition(int position) {
         return org.mockito.ArgumentMatchers.argThat(option -> option.getPosition() == position);
+    }
+
+    /**
+     * The 2026-11-06 #808 round review (Major · Data Integrity &
+     * Integration): an option referenced by a live variant answers the
+     * classified INVALID refusal — the deleteProductType
+     * live-references precedent (the references own their own
+     * lifecycle, no cascade).
+     */
+    @Test
+    void deleteAttributeValueRefusesAnOptionReferencedByALiveVariant() {
+        CatalogAttributeDefinition parent = choiceParent();
+        CatalogAttributeOption existing = CatalogAttributeOption.create(
+                parent.getId(), "existing", "Existing", null, 1);
+        when(options.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        when(variantValues.existsByOptionId(existing.getId())).thenReturn(true);
+
+        AttributeValueMutationResult result = service.deleteAttributeValue(existing.getId());
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).hasSize(1);
+        assertThat(result.errors().get(0).code()).isEqualTo(AttributeMutationErrorCode.INVALID);
+        verify(options, never()).delete(any());
+    }
+
+    /** The same round: the bulk leg skips the referenced options — the honest count. */
+    @Test
+    void deleteAttributeValuesSkipsReferencedOptions() {
+        CatalogAttributeDefinition parent = choiceParent();
+        CatalogAttributeOption free = CatalogAttributeOption.create(
+                parent.getId(), "free", "Free", null, 1);
+        CatalogAttributeOption held = CatalogAttributeOption.create(
+                parent.getId(), "held", "Held", null, 2);
+        when(options.findById(free.getId())).thenReturn(Optional.of(free));
+        when(options.findById(held.getId())).thenReturn(Optional.of(held));
+        when(variantValues.existsByOptionId(held.getId())).thenReturn(true);
+
+        int count = service.deleteAttributeValues(java.util.Arrays.asList(free.getId(), held.getId()));
+
+        assertThat(count).isEqualTo(1);
+        verify(options).delete(free);
+        verify(options, never()).delete(held);
+        // The 2026-11-06 #808 round (Major · Data Integrity): the bulk
+        // leg takes the SAME definition-row FOR-UPDATE lock the single
+        // leg takes — the existsByOptionId probe's zero-references answer
+        // is COMMITTED-stable against a concurrent registration's
+        // FOR-SHARE read of the row.
+        verify(definitions).findByIdForUpdate(parent.getId());
+    }
+
+    /** The same round: a concurrently-deleted parent answers the classified NOT_FOUND. */
+    @Test
+    void updateAttributeValueAnswersNotFoundWhenTheParentAttributeIsGone() {
+        CatalogAttributeDefinition parent = choiceParent();
+        CatalogAttributeOption existing = CatalogAttributeOption.create(
+                parent.getId(), "existing", "Existing", null, 1);
+        when(options.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.empty());
+
+        AttributeValueMutationResult result = service.updateAttributeValue(existing.getId(),
+                new AttributeValueUpdateCommand("Renamed", null));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors().get(0).code()).isEqualTo(AttributeMutationErrorCode.NOT_FOUND);
     }
 }

@@ -67,15 +67,24 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
     private final CatalogAttributeDefinitionRepository attributeDefinitionRepository;
     private final CatalogAttributeOptionRepository attributeOptionRepository;
     private final ProductTypeAttributeAssignmentRepository assignmentRepository;
+    private final ProductRepository productRepository;
+    private final ProductVariantRepository variantRepository;
+    private final ProductVariantAttributeValueRepository variantAttributeValues;
 
     public ProductTypeAttributeWriteService(ProductTypeRepository productTypeRepository,
                                             CatalogAttributeDefinitionRepository attributeDefinitionRepository,
                                             CatalogAttributeOptionRepository attributeOptionRepository,
-                                            ProductTypeAttributeAssignmentRepository assignmentRepository) {
+                                            ProductTypeAttributeAssignmentRepository assignmentRepository,
+                                            ProductRepository productRepository,
+                                            ProductVariantRepository variantRepository,
+                                            ProductVariantAttributeValueRepository variantAttributeValues) {
         this.productTypeRepository = productTypeRepository;
         this.attributeDefinitionRepository = attributeDefinitionRepository;
         this.attributeOptionRepository = attributeOptionRepository;
         this.assignmentRepository = assignmentRepository;
+        this.productRepository = productRepository;
+        this.variantRepository = variantRepository;
+        this.variantAttributeValues = variantAttributeValues;
     }
 
     @Override
@@ -196,6 +205,15 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
         // deferred moves — nothing mutates a managed entity before the
         // failure verdict passes.
         List<DeferredMove> deferredMoves = new ArrayList<>();
+        // The 2026-11-06 #808 round review (Minor · Functional
+        // Correctness): ONE operation per attribute per call — a repeated
+        // attributeId read the same deferred (not-yet-mutated) row twice,
+        // staging two moves for one entity where the last target won
+        // silently while the first's allocated position stayed a wasted
+        // gap. The duplicate answers the classified INVALID refusal: the
+        // whole operation is deterministic, never first-wins or
+        // last-wins by accident.
+        java.util.Set<UUID> seenAttributeIds = new java.util.HashSet<>();
         // The wave-19 #808 review (Major · Functional Correctness): the
         // moved row's position must be derived from the TARGET scope
         // BEFORE the move (after moveToScope the moved row itself sits in
@@ -206,6 +224,11 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
         // classified INVALID vocabulary, never a constraint throw.
         Map<ProductTypeAttributeScope, Integer> pendingNextPosition = new HashMap<>();
         for (ProductTypeAttributeAssignmentUpdateOperation operation : operations) {
+            if (!seenAttributeIds.add(operation.attributeId())) {
+                errors.add(new ProductTypeMutationError("id", ProductTypeMutationErrorCode.INVALID,
+                        "One operation per attribute — the attribute id is repeated"));
+                continue;
+            }
             Optional<ProductTypeAttributeAssignment> addressed = findAssignment(
                     productTypeId, operation.attributeId());
             if (addressed.isEmpty()) {
@@ -261,6 +284,28 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
         if (!errors.isEmpty()) {
             return ProductTypeMutationResult.failure(errors);
         }
+        // The 2026-11-06 #808 round review (Major · Data Integrity &
+        // Integration): the scope-consistency verdict — the selection
+        // schema's move re-keys the AFFECTED variants or refuses the
+        // move, and NOTHING mutates before the verdict passes (the
+        // deferred-move discipline's own law: a managed entity mutated
+        // before a failure return still commits). The guard computes the
+        // post-move selection set in memory, verifies every typed
+        // variant of the type's products COVERS it, re-derives each
+        // variant's combination key over the post-move schema, and
+        // refuses on a coverage gap or a per-product key collision —
+        // the alternative (leave the old keys) left two holes: a variant
+        // whose key missed the moved attribute could never collide with
+        // a fresh registration's new-shape key (duplicates registered),
+        // and two existing variants that differed only in a
+        // moved-OUT attribute kept distinct old keys over what the new
+        // schema calls the same combination.
+        List<PendingRecombine> pendingRecombines = new ArrayList<>();
+        ProductTypeMutationError consistencyError =
+                verifySelectionConsistency(productTypeId, deferredMoves, pendingRecombines);
+        if (consistencyError != null) {
+            return ProductTypeMutationResult.failure(List.of(consistencyError));
+        }
         // The verdict passed — the deferred moves apply now, inside the
         // same transaction, exactly once.
         for (DeferredMove move : deferredMoves) {
@@ -270,7 +315,96 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
         if (!toSave.isEmpty()) {
             assignmentRepository.saveAll(toSave);
         }
+        // The re-derivations ride the same committed verdict — the
+        // variants' keys now match the schema their own assignment rows
+        // just moved into (the registration path's own bytes).
+        if (!pendingRecombines.isEmpty()) {
+            variantRepository.saveAll(pendingRecombines.stream()
+                    .map(pending -> {
+                        pending.variant().recombine(pending.combinationKey());
+                        return pending.variant();
+                    })
+                    .toList());
+        }
         return ProductTypeMutationResult.success(toView(type.get()));
+    }
+
+    /**
+     * The scope-consistency verdict (the 2026-11-06 #808 round review,
+     * Major · Data Integrity &amp; Integration) — PURE verification, zero
+     * mutation: walks the type's live products' typed variants (a null
+     * combination key is the legacy free-form population — the
+     * publication gate owns its refusal, never this move), checks each
+     * variant COVERS the post-move selection set with an option-bearing
+     * value per selection assignment, re-derives the variant's key over
+     * that set, and detects the per-product collision the re-derivation
+     * can create. The planned re-derivations land in {@code planned} for
+     * the caller to apply ONLY after the whole verdict passes.
+     *
+     * @return the classified refusal, or null when the move preserves
+     *         every guarantee
+     */
+    private ProductTypeMutationError verifySelectionConsistency(UUID productTypeId,
+                                                                 List<DeferredMove> deferredMoves,
+                                                                 List<PendingRecombine> planned) {
+        if (deferredMoves.isEmpty()) {
+            // No scope move — the selection set is untouched and every
+            // existing key stays the schema's own truth.
+            return null;
+        }
+        // The post-move selection set, derived IN MEMORY (the managed
+        // assignment rows are still pre-move — the deferred discipline
+        // holds until the verdict).
+        java.util.Map<UUID, ProductTypeAttributeScope> targetById = new java.util.HashMap<>();
+        for (DeferredMove move : deferredMoves) {
+            targetById.put(move.assignment().getId(), move.target());
+        }
+        List<ProductTypeAttributeAssignment> postMoveSelection = assignmentRepository
+                .findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId).stream()
+                .filter(assignment -> targetById.getOrDefault(
+                        assignment.getId(), assignment.getScope())
+                        == ProductTypeAttributeScope.VARIANT_SELECTION)
+                .toList();
+        for (Product product : productRepository.findByProductTypeId(productTypeId)) {
+            java.util.Map<String, ProductVariant> newKeyOwners = new java.util.HashMap<>();
+            for (ProductVariant variant : variantRepository.findByProductIdOrderBySkuAsc(product.getId())) {
+                if (variant.getOptionCombinationKey() == null) {
+                    // The legacy free-form population: no typed values, no
+                    // key — the publication gate's own ConflictException
+                    // owns its migration, and a null key never collides
+                    // with a derived one (the partial index ignores it).
+                    continue;
+                }
+                java.util.Map<UUID, CatalogAttributeValueInput> valuesByAssignment = new java.util.HashMap<>();
+                for (ProductVariantAttributeValue value : variantAttributeValues
+                        .findAllByProductVariantIdOrderByAssignmentIdAsc(variant.getId())) {
+                    valuesByAssignment.put(value.getAssignmentId(), value.toInput());
+                }
+                for (ProductTypeAttributeAssignment selection : postMoveSelection) {
+                    CatalogAttributeValueInput covered = valuesByAssignment.get(selection.getId());
+                    if (covered == null || covered.optionId() == null) {
+                        return new ProductTypeMutationError("id", ProductTypeMutationErrorCode.INVALID,
+                                "The variant-selection move leaves variant '" + variant.getSku()
+                                        + "' without an option for a selection attribute — "
+                                        + "migrate the variant before the move");
+                    }
+                }
+                String rederived = VariantCombinationKeys.canonical(postMoveSelection, valuesByAssignment);
+                ProductVariant clash = newKeyOwners.putIfAbsent(rederived, variant);
+                if (clash != null) {
+                    return new ProductTypeMutationError("id", ProductTypeMutationErrorCode.INVALID,
+                            "The variant-selection move collapses variants '" + clash.getSku()
+                                    + "' and '" + variant.getSku()
+                                    + "' onto the same typed option combination");
+                }
+                planned.add(new PendingRecombine(variant, rederived));
+            }
+        }
+        return null;
+    }
+
+    /** The verified re-derivation, staged for the post-verdict apply — the variant and its post-move key. */
+    private record PendingRecombine(ProductVariant variant, String combinationKey) {
     }
 
     /** The deferred move carrier — the assignment, its target scope, and the derived position. */

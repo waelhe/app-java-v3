@@ -1,13 +1,8 @@
 package com.marketplace.catalog;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -170,6 +165,21 @@ public class ProductVariantService {
                 throw new ConflictException("VARIANT_SELECTION values must be CHOICE attributes");
             }
             if (definition.getValueType() == CatalogAttributeType.CHOICE) {
+                // The 2026-11-06 #808 round review (Major · Data Integrity
+                // & Integration): the option reference this registration is
+                // about to create takes the definition row FOR SHARE (the
+                // ProductTypeRepository.findByIdForShare precedent) — the
+                // option-delete guard's FOR-UPDATE read of the same row
+                // serializes against THIS read, so the guard's
+                // existsByOptionId probe can no longer answer zero while a
+                // reference is in flight (the probe's verdict is
+                // COMMITTED-stable). Without the share lock the guard's
+                // refusal was a TOCTOU: probe-at-t0, reference-committed-at-t1,
+                // delete-committed-at-t2 — the read path then rendered a
+                // soft-deleted option's id forever.
+                definitions.findByIdForShare(definition.getId())
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                "CatalogAttributeDefinition", definition.getId()));
                 CatalogAttributeOption option = options.findById(value.optionId())
                         .orElseThrow(() -> new ResourceNotFoundException("CatalogAttributeOption", value.optionId()));
                 if (!option.getAttributeDefinitionId().equals(definition.getId())) {
@@ -195,17 +205,14 @@ public class ProductVariantService {
         if (selectionAssignments.isEmpty()) return null;
         Map<UUID, CatalogAttributeValueInput> byAssignment = new HashMap<>();
         values.forEach(v -> byAssignment.put(v.assignment().getId(), v.input()));
-        String canonical = selectionAssignments.stream()
-                .filter(a -> byAssignment.containsKey(a.getId()))
-                .sorted(Comparator.comparing(a -> a.getId().toString()))
-                .map(a -> a.getId() + "=" + byAssignment.get(a.getId()).optionId())
-                .reduce((left, right) -> left + "\n" + right).orElse("");
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest);
-        } catch (NoSuchAlgorithmException impossible) {
-            throw new IllegalStateException("JDK SHA-256 implementation is required", impossible);
-        }
+        // The 2026-11-06 #808 round review (Major · Data Integrity &
+        // Integration): the derivation itself moved to the ONE shared
+        // home (VariantCombinationKeys) — the assignment-scope move guard
+        // re-derives existing variants' keys over the post-move schema
+        // with the SAME bytes this registration path computes, so a
+        // recomputed key and a fresh registration's key can never diverge
+        // by accident of a duplicated algorithm.
+        return VariantCombinationKeys.canonical(selectionAssignments, byAssignment);
     }
 
     private record ValidatedVariantAttribute(ProductTypeAttributeAssignment assignment,
