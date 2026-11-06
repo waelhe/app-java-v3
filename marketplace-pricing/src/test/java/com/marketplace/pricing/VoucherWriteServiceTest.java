@@ -88,7 +88,7 @@ class VoucherWriteServiceTest {
         assertThat(result.errors()).singleElement()
                 .extracting(VoucherMutationError::code, VoucherMutationError::field)
                 .containsExactly(VoucherMutationErrorCode.INVALID, "code");
-        verify(voucherRepository, never()).save(any());
+        verify(voucherRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -202,7 +202,7 @@ class VoucherWriteServiceTest {
         assertThat(result.errors()).singleElement()
                 .extracting(VoucherMutationError::code, VoucherMutationError::field)
                 .containsExactly(VoucherMutationErrorCode.ALREADY_EXISTS, "code");
-        verify(voucherRepository, never()).save(any());
+        verify(voucherRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -248,7 +248,7 @@ class VoucherWriteServiceTest {
         assertThat(result.voucher().applyOncePerCustomer()).isTrue();
         assertThat(result.voucher().startsAt()).isEqualTo(Instant.parse("2026-11-01T00:00:00Z"));
         assertThat(result.voucher().endsAt()).isEqualTo(Instant.parse("2026-12-01T00:00:00Z"));
-        verify(voucherRepository).save(any());
+        verify(voucherRepository).saveAndFlush(any());
     }
 
     // ------------------------------------------------------------------
@@ -282,7 +282,7 @@ class VoucherWriteServiceTest {
         assertThat(result.success()).isTrue();
         assertThat(result.voucher().code()).isEqualTo("KEEP-CODE");
         assertThat(result.voucher().timesUsed()).isEqualTo(2L);
-        verify(voucherRepository, never()).save(any());
+        verify(voucherRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -326,7 +326,7 @@ class VoucherWriteServiceTest {
             assertThat(error.field()).isEqualTo("currency");
             assertThat(error.code()).isEqualTo(VoucherMutationErrorCode.INVALID);
         });
-        verify(voucherRepository, never()).save(any());
+        verify(voucherRepository, never()).saveAndFlush(any());
 
         // The same currency restated WITH both amounts lands — the
         // operator's explicit correction path stays open. The view's own
@@ -340,7 +340,7 @@ class VoucherWriteServiceTest {
 
         assertThat(restated.success()).isTrue();
         assertThat(restated.voucher().currency()).isEqualTo("USD");
-        verify(voucherRepository).save(org.mockito.ArgumentMatchers.argThat(saved ->
+        verify(voucherRepository).saveAndFlush(org.mockito.ArgumentMatchers.argThat(saved ->
                 "USD".equals(saved.getCurrency())
                         && saved.getDiscountValue() == 1000L
                         && saved.getMinSpendMinor() == 250L));
@@ -376,7 +376,7 @@ class VoucherWriteServiceTest {
         assertThat(result.errors()).singleElement()
                 .extracting(VoucherMutationError::code, VoucherMutationError::field)
                 .containsExactly(VoucherMutationErrorCode.VOUCHER_ALREADY_USED, "code");
-        verify(voucherRepository, never()).save(any());
+        verify(voucherRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -397,7 +397,7 @@ class VoucherWriteServiceTest {
         assertThat(result.errors()).singleElement()
                 .extracting(VoucherMutationError::code, VoucherMutationError::field)
                 .containsExactly(VoucherMutationErrorCode.INVALID, "code");
-        verify(voucherRepository, never()).save(any());
+        verify(voucherRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -418,7 +418,7 @@ class VoucherWriteServiceTest {
         assertThat(result.errors()).singleElement()
                 .extracting(VoucherMutationError::code, VoucherMutationError::field)
                 .containsExactly(VoucherMutationErrorCode.INVALID, "discountValue");
-        verify(voucherRepository, never()).save(any());
+        verify(voucherRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -440,7 +440,7 @@ class VoucherWriteServiceTest {
         assertThat(result.success()).isTrue();
         assertThat(result.voucher().discountValueType())
                 .isEqualTo(com.marketplace.pricing.spi.VoucherView.DiscountType.PERCENTAGE);
-        verify(voucherRepository).save(any());
+        verify(voucherRepository).saveAndFlush(any());
     }
 
     @Test
