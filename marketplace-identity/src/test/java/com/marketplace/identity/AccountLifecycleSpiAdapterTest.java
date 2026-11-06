@@ -35,6 +35,8 @@ class AccountLifecycleSpiAdapterTest {
     private UserService userService;
     @Mock
     private TokenRevocationService tokenRevocationService;
+    @Mock
+    private AuthActionTokenService authActionTokenService;
 
     private AccountLifecycleSpiAdapter adapter;
 
@@ -43,7 +45,8 @@ class AccountLifecycleSpiAdapterTest {
     @BeforeEach
     void setUp() {
         adapter = new AccountLifecycleSpiAdapter(passwordResetService, emailVerificationService,
-                emailChangeService, selfServiceTokenService, userService, tokenRevocationService);
+                emailChangeService, selfServiceTokenService, userService, tokenRevocationService,
+                authActionTokenService);
         caller = new UsernamePasswordAuthenticationToken("member@example.com", null,
                 List.of(new SimpleGrantedAuthority("ROLE_CONSUMER")));
     }

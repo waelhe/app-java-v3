@@ -239,6 +239,13 @@ public class PasswordResetService {
         // updateUser replay could restore a removed authority).
         jdbcTemplate.update(UPDATE_PASSWORD_ONLY,
                 passwordEncoder.getObject().encode(newPassword), username);
+        // The 2026-11-05 #810 round review (Minor · Security & Privacy):
+        // the rotation kills the outstanding EMAIL_CHANGE rights too — a
+        // password reset means the OLD secret was compromised-shaped; a
+        // pre-issued email-change link minted under that secret regime
+        // must not outlive it (the attacker-with-inbox path: transfer the
+        // login to his address, then reset the password again through it).
+        authActionTokenService.invalidateOutstanding(username);
         // Issued authorizations die with the change — the same measured SAS
         // kill the role/status/pseudonymize surfaces run: a refresh token
         // minted under the OLD password must not survive the owner rotating

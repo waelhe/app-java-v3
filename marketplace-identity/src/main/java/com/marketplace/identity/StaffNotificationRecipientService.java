@@ -52,6 +52,14 @@ public class StaffNotificationRecipientService {
         requireAdmin(caller);
         boolean isActive = active == null || active;
         StaffNotificationRecipient row;
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the CREATE leg carries the update leg's own
+        // oneof law — both identifiers provided used to silently keep the
+        // user and drop the email.
+        if (userId != null && email != null && !email.isBlank()) {
+            throw new IllegalArgumentException(
+                    "The user reference and the email address are mutually exclusive");
+        }
         if (userId != null) {
             requireUser(userId);
             if (repository.findByUserId(userId).isPresent()) {
@@ -61,6 +69,12 @@ public class StaffNotificationRecipientService {
             row = StaffNotificationRecipient.forUser(userId, isActive);
         } else if (email != null && !email.isBlank()) {
             String address = email.trim();
+            // The 2026-11-05 #810 round review: the column's own bound —
+            // VARCHAR(320) — validated at the boundary (the classified
+            // validation error, never the flush's raw database error).
+            if (address.length() > 320) {
+                throw new IllegalArgumentException("The email address exceeds 320 characters");
+            }
             if (!EMAIL_SHAPE.matcher(address).matches()) {
                 throw new IllegalArgumentException("A valid email address is required");
             }
@@ -100,6 +114,11 @@ public class StaffNotificationRecipientService {
         }
         if (email != null && !email.isBlank()) {
             String address = email.trim();
+            // The 2026-11-05 #810 round review: the same 320 bound the
+            // create leg now carries.
+            if (address.length() > 320) {
+                throw new IllegalArgumentException("The email address exceeds 320 characters");
+            }
             if (!EMAIL_SHAPE.matcher(address).matches()) {
                 throw new IllegalArgumentException("A valid email address is required");
             }

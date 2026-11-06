@@ -95,12 +95,24 @@ public class CustomerTypeService implements com.marketplace.identity.spi.Custome
             row.apply(requireName(name), null);
         }
         if (slug != null && !slug.isBlank()) {
-            String resolved = resolveSlug(slug.trim());
-            if (!resolved.equals(row.getSlug())
-                    && typeRepository.existsBySlug(resolved)) {
-                throw new ConflictException("The slug already exists: " + resolved);
+            // The 2026-11-05 #810 round review (Minor · Functional
+            // Correctness): a re-sent CURRENT slug is a no-op, not a
+            // conflict — resolveSlug's uniqueness probe used to fire
+            // before the row's own value was compared, so "keep the same
+            // slug" answered ALREADY_EXISTS against the row itself. The
+            // shape check still runs (a malformed slug stays the
+            // classified error even when it equals the current value).
+            String trimmed = slug.trim();
+            if (!SLUG_SHAPE.matcher(trimmed).matches()) {
+                throw new IllegalArgumentException(
+                        "The slug must be lowercase kebab-case: " + trimmed);
             }
-            row.apply(null, resolved);
+            if (!trimmed.equals(row.getSlug())) {
+                if (typeRepository.existsBySlug(trimmed)) {
+                    throw new ConflictException("The slug already exists: " + trimmed);
+                }
+                row.apply(null, trimmed);
+            }
         }
         if (isDefault != null) {
             if (isDefault && !row.isDefault()) {
@@ -226,7 +238,10 @@ public class CustomerTypeService implements com.marketplace.identity.spi.Custome
             }
             int delta = deltas.get(i) == null ? 0 : deltas.get(i);
             CustomerTypeAttribute pair = pairs.remove(from);
-            int to = Math.max(0, Math.min(from + delta, pairs.size()));
+            // The 2026-11-05 #810 round review: the clamp runs in LONG —
+            // from + Integer.MAX_VALUE overflows int to a negative the
+            // clamp used to read as 0 (a wrong-but-accepted move).
+            int to = (int) Math.max(0L, Math.min((long) from + delta, pairs.size()));
             pairs.add(to, pair);
         }
         for (int i = 0; i < pairs.size(); i++) {
@@ -254,6 +269,16 @@ public class CustomerTypeService implements com.marketplace.identity.spi.Custome
                                    KeysetScrollPosition position, Limit limit,
                                    String search) {
         requireAdmin(caller);
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the forward-only contract enforced at the SPI
+        // boundary BEFORE the repository — Spring Data Commons' isInitial()
+        // is keys.isEmpty() (direction-blind), so the DIRECTION gate is
+        // the honest one (an empty backward position used to execute a
+        // reverse window against a forward-only contract).
+        if (position != null && !position.scrollsForward()) {
+            throw new IllegalArgumentException(
+                    "The customer type scroll supports forward-only pagination");
+        }
         if (search != null && !search.isBlank()) {
             String needle = search.trim();
             // The search leg (the CodeRabbit pagination round): the SAME
@@ -326,6 +351,14 @@ public class CustomerTypeService implements com.marketplace.identity.spi.Custome
         if (attributeIds == null || attributeIds.isEmpty() || attributeIds.size() > 100) {
             throw new IllegalArgumentException(
                     "Between one and a hundred attribute IDs are required");
+        }
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): a null ELEMENT answers the classified validation
+        // error here — the old path passed it to the row's NOT NULL
+        // column and answered the flush's raw database error.
+        if (attributeIds.stream().anyMatch(java.util.Objects::isNull)) {
+            throw new IllegalArgumentException(
+                    "The attribute IDs must not contain null entries");
         }
     }
 

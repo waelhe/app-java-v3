@@ -87,8 +87,14 @@ public class NotificationEventListener {
      */
     @ApplicationModuleListener
     public void onAccountDeletionRequested(com.marketplace.shared.api.AccountDeletionRequestedEvent event) {
+        // The 2026-11-05 #810 round review (Minor · Security & Privacy):
+        // the one-time erasure right mails the address the EVENT pinned —
+        // the account's CURRENT address can have moved since the token
+        // was issued (the userId-keyed lookup used to answer the NEW
+        // address, or nothing at all when the row moved), and the
+        // deletion right must reach the mailbox that requested it.
         notificationService.onAccountDeletionRequested(
-                event.userId(), event.deletionToken(), event.expiresAt());
+                event.userId(), event.email(), event.deletionToken(), event.expiresAt());
         log.info("Account deletion mail sent: userId={}", event.userId());
     }
 

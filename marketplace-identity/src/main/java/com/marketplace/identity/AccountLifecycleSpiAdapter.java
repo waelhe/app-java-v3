@@ -24,19 +24,22 @@ public class AccountLifecycleSpiAdapter implements AccountLifecycleSpi {
     private final AccountSelfServiceTokenService selfServiceTokenService;
     private final UserService userService;
     private final TokenRevocationService tokenRevocationService;
+    private final AuthActionTokenService authActionTokenService;
 
     public AccountLifecycleSpiAdapter(PasswordResetService passwordResetService,
                                       EmailVerificationService emailVerificationService,
                                       AccountEmailChangeService emailChangeService,
                                       AccountSelfServiceTokenService selfServiceTokenService,
                                       UserService userService,
-                                      TokenRevocationService tokenRevocationService) {
+                                      TokenRevocationService tokenRevocationService,
+                                      AuthActionTokenService authActionTokenService) {
         this.passwordResetService = passwordResetService;
         this.emailVerificationService = emailVerificationService;
         this.emailChangeService = emailChangeService;
         this.selfServiceTokenService = selfServiceTokenService;
         this.userService = userService;
         this.tokenRevocationService = tokenRevocationService;
+        this.authActionTokenService = authActionTokenService;
     }
 
     @Override
@@ -51,12 +54,39 @@ public class AccountLifecycleSpiAdapter implements AccountLifecycleSpi {
 
     @Override
     public void confirmAccount(String email, String token) {
+        requireTokenOwnedBy(email, token, AuthActionTokenPurpose.EMAIL_VERIFICATION);
         emailVerificationService.completeVerification(token);
     }
 
     @Override
     public void completePasswordReset(String email, String token, String newPassword) {
+        requireTokenOwnedBy(email, token, AuthActionTokenPurpose.PASSWORD_RESET);
         passwordResetService.completeReset(token, newPassword);
+    }
+
+    /**
+     * The 2026-11-05 #810 round review (Minor · Security & Privacy): the
+     * request identifies an ACCOUNT and redeems a RIGHT — the right must
+     * belong to the identified account. A token minted for account B used
+     * to pass untouched while the request named account A (the email
+     * argument was silently ignored): the redemption still hit B, and the
+     * caller read success for a request that named A. The peek is
+     * non-consuming ({@code accountOf}); an unknown or spent token falls
+     * through to the owning service's own honest error, a KNOWN token of
+     * the wrong owner answers the classified bad-request refusal HERE
+     * (and the owning service's consume never runs).
+     */
+    private void requireTokenOwnedBy(String email, String token,
+                                     AuthActionTokenPurpose purpose) {
+        if (email == null || token == null) {
+            return;
+        }
+        authActionTokenService.accountOf(token, purpose)
+                .filter(owner -> !owner.equals(email))
+                .ifPresent(owner -> {
+                    throw new com.marketplace.shared.api.BadRequestException(
+                            "This link is not valid for the identified account");
+                });
     }
 
     @Override

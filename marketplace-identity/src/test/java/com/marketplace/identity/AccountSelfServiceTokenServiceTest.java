@@ -145,6 +145,11 @@ class AccountSelfServiceTokenServiceTest {
         when(encoder.getObject()).thenReturn(passwordEncoder);
         when(passwordEncoder.matches("old", "{bcrypt}old")).thenReturn(true);
         when(passwordEncoder.encode("new-password-1")).thenReturn("{bcrypt}new");
+        // The 2026-11-05 #810 round review: the rotation is a
+        // verify-and-swap — the CAS write answers ONE row (the verified
+        // old hash matched).
+        when(jdbcTemplate.update(any(String.class), any(), any(), any()))
+                .thenAnswer(invocation -> 1);
 
         service.changePassword(caller, "old", "new-password-1");
 
@@ -153,8 +158,15 @@ class AccountSelfServiceTokenServiceTest {
         // (the pre-fix replay bound the verification-time enabled flag and
         // authorities into the write) — plus the AFTER_COMMIT rotation
         // fact that kills the surviving sessions.
-        verify(jdbcTemplate).update(PasswordResetService.UPDATE_PASSWORD_ONLY,
-                "{bcrypt}new", SUBJECT);
+        // The verify-and-swap predicate carries the VERIFIED old hash —
+        // a concurrent rotation answers zero rows and this call fails
+        // instead of overwriting the winner's hash.
+        verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.eq("UPDATE auth_users SET password = ?"
+                        + " WHERE username = ? AND password = ?"),
+                org.mockito.ArgumentMatchers.eq("{bcrypt}new"),
+                org.mockito.ArgumentMatchers.eq(SUBJECT),
+                org.mockito.ArgumentMatchers.eq("{bcrypt}old"));
         verify(userDetailsManager, never()).updateUser(any());
         verify(jdbcTemplate).update(
                 "DELETE FROM oauth2_authorization WHERE principal_name = ?", SUBJECT);

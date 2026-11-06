@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -47,15 +48,18 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
     private final CmsMenuItemRepository itemRepository;
     private final CmsMenuItemTranslationRepository itemTranslationRepository;
     private final CmsNavigationSlotRepository slotRepository;
+    private final CmsPageRepository pageRepository;
 
     public CmsNavigationAdminService(CmsMenuRepository menuRepository,
                                      CmsMenuItemRepository itemRepository,
                                      CmsMenuItemTranslationRepository itemTranslationRepository,
-                                     CmsNavigationSlotRepository slotRepository) {
+                                     CmsNavigationSlotRepository slotRepository,
+                                     CmsPageRepository pageRepository) {
         this.menuRepository = menuRepository;
         this.itemRepository = itemRepository;
         this.itemTranslationRepository = itemTranslationRepository;
         this.slotRepository = slotRepository;
+        this.pageRepository = pageRepository;
     }
 
     // ---------------------------------------------------------------------
@@ -103,6 +107,15 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
     public MenuView updateMenu(Authentication caller, UUID id, String name, String slug) {
         requireAdmin(caller);
         CmsMenu row = requireMenu(id);
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): a non-empty name longer than the VARCHAR(255)
+        // column must answer the classified validation error HERE — the
+        // old path let the value reach the flush and answered the raw
+        // database error instead (null and blank stay "no information",
+        // the entity's own apply contract).
+        if (name != null && !name.isBlank() && name.trim().length() > 255) {
+            throw new IllegalArgumentException("The name exceeds 255 characters");
+        }
         if (slug != null && !slug.isBlank()) {
             String resolved = requireSlugShape(slug.trim());
             if (!resolved.equals(row.getSlug()) && menuRepository.existsBySlug(resolved)) {
@@ -160,9 +173,10 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
         requireMenu(menuId);
         String trimmed = requireName(name);
         if (parentId == null) {
-            requireFreeRootName(menuId, trimmed, null);
+            requireFreeRootName(menuId, trimmed);
         }
         validateTarget(url, categoryId, pageId);
+        requireLinkablePage(pageId);
         if (parentId != null) {
             CmsMenuItem parent = requireItem(parentId);
             if (!parent.getMenuId().equals(menuId)) {
@@ -188,6 +202,14 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
         requireAdmin(caller);
         CmsMenuItem row = requireItem(id);
         validateTarget(url, categoryId, pageId);
+        requireLinkablePage(pageId);
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the same 255 bound the create path carries — a
+        // non-empty rename longer than the column answers the classified
+        // validation error, never the flush's raw database error.
+        if (name != null && !name.isBlank() && name.trim().length() > 255) {
+            throw new IllegalArgumentException("The name exceeds 255 characters");
+        }
         // A root item's rename carries the per-menu root-name invariant
         // (the V283 partial unique index) — checked HERE so the client
         // receives the classified ConflictException instead of the raw
@@ -212,11 +234,16 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
         // checked HERE so the client receives the classified
         // ConflictException instead of the raw database error the V283
         // partial unique index would otherwise throw (the CodeRabbit
-        // integrity round).
+        // integrity round). The 2026-11-05 #810 round review refines the
+        // exclusion set: the row BEING DELETED no longer occupies the
+        // root-name space for its promoted children (deleting root "Home"
+        // with a child also named "Home" used to conflict against the
+        // doomed row itself).
         for (CmsMenuItem child : itemRepository.findAllByMenuIdOrderByPositionAscIdAsc(row.getMenuId())) {
             if (id.equals(child.getParentId())) {
                 if (row.getParentId() == null) {
-                    requireFreeRootName(child.getMenuId(), child.getName(), child.getId());
+                    requireFreeRootName(child.getMenuId(), child.getName(),
+                            child.getId(), id);
                 }
                 child.reParent(row.getParentId());
             }
@@ -231,8 +258,17 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
     @Observed(name = "cms.menu_item.bulk_delete")
     public int bulkDeleteMenuItems(Authentication caller, List<UUID> ids) {
         requireAdmin(caller);
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the batch deletes DEPTH-FIRST — deleting a parent
+        // before its child promoted the child into the root group first
+        // (a root-name conflict with a SURVIVING root then failed the
+        // whole batch before anything was deleted); the deepest nodes
+        // first means no promotion ever happens for a batch that deletes
+        // a whole subtree.
+        List<UUID> deepestFirst = new ArrayList<>(ids);
+        deepestFirst.sort(java.util.Comparator.comparingInt((UUID id) -> depthOf(id)).reversed());
         int count = 0;
-        for (UUID id : ids) {
+        for (UUID id : deepestFirst) {
             if (itemRepository.existsById(id)) {
                 deleteMenuItem(caller, id);
                 count++;
@@ -240,6 +276,18 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
         }
         log.info("CMS menu items bulk-deleted: count={}, actor={}", count, caller.getName());
         return count;
+    }
+
+    /** The node's depth in its menu tree (roots are 0) — the bulk-delete ordering key. */
+    private int depthOf(UUID itemId) {
+        int depth = 0;
+        UUID parentId = itemRepository.findById(itemId).map(CmsMenuItem::getParentId).orElse(null);
+        java.util.Set<UUID> visited = new HashSet<>();
+        while (parentId != null && visited.add(parentId)) {
+            depth++;
+            parentId = itemRepository.findById(parentId).map(CmsMenuItem::getParentId).orElse(null);
+        }
+        return depth;
     }
 
     @Override
@@ -251,6 +299,12 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
         String language = requireLanguage(languageCode);
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("A translated name is required");
+        }
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the translation's own column bound — the
+        // classified validation error, never the flush's raw error.
+        if (name.trim().length() > 255) {
+            throw new IllegalArgumentException("The translated name exceeds 255 characters");
         }
         CmsMenuItemTranslation translation = itemTranslationRepository
                 .findByMenuItemIdAndLanguageCode(id, language)
@@ -273,6 +327,22 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
                                             List<Integer> sortOrders) {
         requireAdmin(caller);
         requireMenu(menuId);
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the three lists are one-per-item by contract — a
+        // length mismatch (or a missing list) answered the raw
+        // IndexOutOfBoundsException/NullPointerException mid-batch; the
+        // classified validation error precedes ANY database read.
+        if (itemIds == null || itemIds.isEmpty()) {
+            throw new IllegalArgumentException("moveMenuItems requires a non-empty itemIds list");
+        }
+        if (parentIds == null || parentIds.size() != itemIds.size()) {
+            throw new IllegalArgumentException(
+                    "moveMenuItems requires parentIds with exactly one entry per item");
+        }
+        if (sortOrders == null || sortOrders.size() != itemIds.size()) {
+            throw new IllegalArgumentException(
+                    "moveMenuItems requires sortOrders with exactly one entry per item");
+        }
         List<CmsMenuItem> movedItems = new ArrayList<>(itemIds.size());
         for (int i = 0; i < itemIds.size(); i++) {
             CmsMenuItem item = requireItem(itemIds.get(i));
@@ -292,16 +362,46 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
                     throw new ConflictException(
                             "The move would create a cycle in the menu tree");
                 }
-            } else {
-                // The item joins the menu's ROOT group on this path — the
-                // per-menu root-name invariant applies here too, with the
-                // classified ConflictException instead of the raw database
-                // error the V283 partial unique index would otherwise throw
-                // (the CodeRabbit integrity round).
-                requireFreeRootName(menuId, item.getName(), item.getId());
             }
             item.reParent(newParent);
             movedItems.add(item);
+        }
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the root-name invariant evaluates the batch's
+        // FINAL state, never the per-move intermediate one — a batch that
+        // frees a root name (its holder moves UNDER another item) and
+        // grants it to another item in the SAME batch is a legal end
+        // state the old per-item check rejected at the first move. The
+        // check: every item JOINING the root group must be unique against
+        // the roots that STAY (the moved set excluded — their post-batch
+        // homes are already decided in memory) and against the other
+        // joiners.
+        List<CmsMenuItem> joiningRoot = movedItems.stream()
+                .filter(item -> item.getParentId() == null)
+                .toList();
+        if (!joiningRoot.isEmpty()) {
+            java.util.Set<UUID> movedIds = new HashSet<>(itemIds);
+            List<CmsMenuItem> stayingRoots = itemRepository
+                    .findAllByMenuIdAndParentIdIsNullOrderByPositionAscIdAsc(menuId).stream()
+                    .filter(root -> !movedIds.contains(root.getId()))
+                    .toList();
+            for (CmsMenuItem joining : joiningRoot) {
+                stayingRoots.stream()
+                        .filter(staying -> staying.getName().equals(joining.getName()))
+                        .findFirst()
+                        .ifPresent(staying -> {
+                            throw new ConflictException("A root menu item with this name already"
+                                    + " exists in the menu: " + joining.getName());
+                        });
+                joiningRoot.stream()
+                        .filter(other -> other != joining
+                                && other.getName().equals(joining.getName()))
+                        .findFirst()
+                        .ifPresent(other -> {
+                            throw new ConflictException("A root menu item with this name already"
+                                    + " exists in the menu: " + joining.getName());
+                        });
+            }
         }
         applyRelativeSortOrders(menuId, itemIds, sortOrders);
         log.info("CMS menu items moved: menuId={}, moves={}, actor={}", menuId, itemIds.size(),
@@ -331,7 +431,7 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
     @Transactional(readOnly = true)
     public Optional<MenuView> findMenuByName(Authentication caller, String name) {
         requireAdmin(caller);
-        return menuRepository.findByName(name).map(this::toView);
+        return menuRepository.findFirstByNameOrderByIdAsc(name).map(this::toView);
     }
 
     @Override
@@ -484,9 +584,15 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
      * raw DataIntegrityViolationException instead of the classified
      * {@link ConflictException} the create path already answers.
      */
-    private void requireFreeRootName(UUID menuId, String name, UUID excludeId) {
+    private void requireFreeRootName(UUID menuId, String name, UUID... excludeIds) {
+        java.util.Set<UUID> excluded = new HashSet<>();
+        for (UUID excludedId : excludeIds) {
+            if (excludedId != null) {
+                excluded.add(excludedId);
+            }
+        }
         itemRepository.findByMenuIdAndNameAndParentIdIsNull(menuId, name)
-                .filter(existing -> !existing.getId().equals(excludeId))
+                .filter(existing -> !excluded.contains(existing.getId()))
                 .ifPresent(existing -> {
                     throw new ConflictException(
                             "A root menu item with this name already exists in the menu: " + name);
@@ -575,6 +681,23 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
         }
     }
 
+    /**
+     * The 2026-11-05 #810 round review (Minor · Functional Correctness):
+     * the page-link serialization — a menu item linking a page locks the
+     * page row PESSIMISTIC_WRITE BEFORE its insert, so the page's own
+     * delete (which locks the same row before its reference check) can
+     * never interleave a committed orphan (a live item pointing at a
+     * deleted page). The lock ALSO classifies the dangling-page reference
+     * (the honest ResourceNotFound, never the FK's raw flush error).
+     */
+    private void requireLinkablePage(UUID pageId) {
+        if (pageId == null) {
+            return;
+        }
+        pageRepository.findByIdForUpdate(pageId)
+                .orElseThrow(() -> new ResourceNotFoundException("No page " + pageId));
+    }
+
     private static String normalizeSlot(String navigationType) {
         if (navigationType == null) {
             throw new IllegalArgumentException("A navigation type (MAIN or SECONDARY) is required");
@@ -626,8 +749,14 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
     }
 
     private static void requireAdmin(Authentication caller) {
-        boolean admin = caller.getAuthorities().stream()
-                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+        // The 2026-11-05 #810 round review (Minor · Security & Privacy):
+        // the verdict requires an AUTHENTICATED principal carrying
+        // ROLE_ADMIN — an unauthenticated Authentication object with the
+        // authority (a fabricated or stale token) used to pass the
+        // role-only check.
+        boolean admin = caller != null && caller.isAuthenticated()
+                && caller.getAuthorities().stream()
+                        .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
         if (!admin) {
             throw new AccessDeniedException(
                     "CMS navigation administration requires the ADMIN capability");

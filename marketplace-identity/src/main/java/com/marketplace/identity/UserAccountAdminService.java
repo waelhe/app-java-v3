@@ -108,10 +108,7 @@ public class UserAccountAdminService implements com.marketplace.identity.spi.Use
     public java.util.UUID createCustomer(Authentication caller, UserWriteFields fields, boolean sendSetPassword) {
         requireAdmin(caller);
         String email = requireEmail(fields.email());
-        String displayName = fields.displayName();
-        if (displayName != null && displayName.length() > 200) {
-            throw new IllegalArgumentException("The display name exceeds 200 characters");
-        }
+        String displayName = requireDisplayNameBound(fields.displayName());
         byte[] secret = new byte[32];
         SECURE_RANDOM.nextBytes(secret);
         String generated = Base64.getEncoder().encodeToString(secret);
@@ -134,12 +131,15 @@ public class UserAccountAdminService implements com.marketplace.identity.spi.Use
                 && !fields.email().trim().equalsIgnoreCase(nullSafe(user.getEmail()))) {
             moveEmail(user, fields.email().trim());
         }
-        String displayName = fields.displayName();
+        String displayName = requireDisplayNameBound(fields.displayName());
         if (displayName != null) {
             user.updateProfile(null, displayName);
         }
         if (fields.isActive() != null) {
-            applyActivation(user, fields.isActive());
+            // The 2026-11-05 #810 round review (Minor · Functional
+            // Correctness): the status change's audit line records the
+            // ACTING administrator, never a fabricated constant.
+            applyActivation(user, fields.isActive(), caller.getName());
         }
         log.info("Customer updated: userId={}, actor={}", userId, caller.getName());
         return user.getId();
@@ -204,6 +204,25 @@ public class UserAccountAdminService implements com.marketplace.identity.spi.Use
                 results.add(new BulkRowResult(id, "NOT_FOUND", failure.getMessage()));
             } catch (com.marketplace.shared.api.ConflictException failure) {
                 results.add(new BulkRowResult(id, "ALREADY_EXISTS", failure.getMessage()));
+            } catch (org.springframework.dao.DataIntegrityViolationException failure) {
+                // The 2026-11-05 #810 round review (Minor · Functional
+                // Correctness): the email-reservation RACE lands here —
+                // two concurrent rows (or a concurrent registration) both
+                // pass the exists-probe and the loser dies on the unique
+                // index at flush. The SAME one classifier the REST and
+                // GraphQL surfaces use decides the verdict; a
+                // non-uniqueness integrity failure stays the row's own
+                // INVALID with the raw message internal (the IAE leg's
+                // own law).
+                if (com.marketplace.shared.api.GlobalExceptionHandler
+                        .isUniqueViolation(failure)) {
+                    results.add(new BulkRowResult(id, "ALREADY_EXISTS",
+                            "The email address already owns an account"));
+                } else {
+                    log.debug("bulkUpdateCustomers row rejected at flush; the raw"
+                            + " message stays internal", failure);
+                    results.add(new BulkRowResult(id, "INVALID", "The row input was rejected"));
+                }
             } catch (IllegalArgumentException failure) {
                 // The 2026-11-03 preemptive review: this broad catch cannot
                 // tell the use case's own authored validation from a
@@ -254,12 +273,14 @@ public class UserAccountAdminService implements com.marketplace.identity.spi.Use
                 && !fields.email().trim().equalsIgnoreCase(nullSafe(user.getEmail()))) {
             moveEmail(user, fields.email().trim());
         }
-        String displayName = fields.displayName();
+        String displayName = requireDisplayNameBound(fields.displayName());
         if (displayName != null) {
             user.updateProfile(null, displayName);
         }
         if (fields.isActive() != null) {
-            applyActivation(user, fields.isActive());
+            // The 2026-11-05 #810 round review: the acting administrator
+            // rides the status change's audit line here too.
+            applyActivation(user, fields.isActive(), caller.getName());
         }
         log.info("Staff updated: userId={}, actor={}", userId, caller.getName());
         return user.getId();
@@ -301,8 +322,13 @@ public class UserAccountAdminService implements com.marketplace.identity.spi.Use
     @Observed(name = "user.admin.bulk_set_active")
     public int bulkSetActive(Authentication caller, List<UUID> userIds, boolean active) {
         requireAdmin(caller);
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the batch de-duplicates its ids FIRST — a repeated
+        // account used to count twice and publish the status event and the
+        // audit line twice (the count answers the AFFECTED accounts).
+        java.util.Set<UUID> distinctIds = new java.util.LinkedHashSet<>(userIds);
         int count = 0;
-        for (UUID id : userIds) {
+        for (UUID id : distinctIds) {
             if (userRepository.existsById(id)) {
                 userService.updateUserStatus(id, active ? "ENABLED" : "DISABLED",
                         "dashboard bulk set-active", caller.getName());
@@ -370,22 +396,43 @@ public class UserAccountAdminService implements com.marketplace.identity.spi.Use
         userService.loginIdentityMoved(oldSubject);
     }
 
-    private void applyActivation(User user, boolean active) {
+    private void applyActivation(User user, boolean active, String actor) {
         userService.updateUserStatus(user.getId(), active ? "ENABLED" : "DISABLED",
-                "dashboard account update", "dashboard");
+                "dashboard account update", actor);
+    }
+
+    /**
+     * The 2026-11-05 #810 round review (Minor · Functional Correctness):
+     * the display name's column bound (VARCHAR(200)) at the ONE boundary
+     * every admin write path rides — createCustomer carried it, the
+     * staff/customer update legs did not (the flush answered the raw
+     * database error, and the bulk path's row classification could not
+     * catch it). Null stays "no information".
+     */
+    private static String requireDisplayNameBound(String displayName) {
+        if (displayName != null && !displayName.isBlank() && displayName.trim().length() > 200) {
+            throw new IllegalArgumentException("The display name exceeds 200 characters");
+        }
+        return displayName == null ? null : displayName.trim();
     }
 
     private static String requireEmail(String email) {
         // The round-2 CodeRabbit finding: the length cap lives HERE so the
         // create paths and the move path share it — auth_users.username is
-        // VARCHAR(50) (V13), the login store's own domain.
-        if (email == null || email.isBlank()
-                || !email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
-                || email.trim().length() > 50) {
+        // VARCHAR(50) (V13), the login store's own domain. The
+        // 2026-11-05 #810 round review (Minor · Functional Correctness):
+        // the TRIM runs BEFORE the shape validation — a padded address
+        // (" customer@example.com ") used to fail the raw pattern while
+        // the update path accepted it (it trimmed first); both paths now
+        // share one normalization order.
+        String trimmed = email == null ? null : email.trim();
+        if (trimmed == null || trimmed.isBlank()
+                || !trimmed.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
+                || trimmed.length() > 50) {
             throw new IllegalArgumentException(
                     "A valid email address of at most 50 characters is required");
         }
-        return email.trim().toLowerCase(Locale.ROOT);
+        return trimmed.toLowerCase(Locale.ROOT);
     }
 
     private User requireUser(UUID userId) {

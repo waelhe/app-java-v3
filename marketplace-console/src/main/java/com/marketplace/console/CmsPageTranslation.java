@@ -130,7 +130,14 @@ public class CmsPageTranslation extends BaseEntity {
      */
     private static String requireSerializedJsonDocument(String content) {
         try {
-            CONTENT_JSON.readTree(content);
+            // The 2026-11-05 #810 round review: readTree answers null for
+            // the empty/blank document without throwing — the same
+            // classified VAL-001 the page's own guard now carries.
+            if (CONTENT_JSON.readTree(content) == null) {
+                throw new IllegalArgumentException(
+                        "The page translation content must be a serialized JSON document"
+                                + " (rich text): the document is empty");
+            }
         } catch (JacksonException malformed) {
             throw new IllegalArgumentException(
                     "The page translation content must be a serialized JSON document"
