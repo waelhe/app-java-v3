@@ -15,6 +15,7 @@ import org.springframework.security.core.Authentication;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -73,10 +74,12 @@ class ProductTypeAttributeWriteServiceTest {
         service = new ProductTypeAttributeWriteService(productTypeRepository,
                 attributeDefinitionRepository, attributeOptionRepository, assignmentRepository);
         type = ProductType.create("widgets", "Widget Schema", null, null);
-        // Both ownership reads stay stubbed: assignAttributes rides the
-        // locked read (the 2026-11-05 #808 round), the membership legs
-        // (unassign/reorder/move) ride the plain findById — manual mocks
-        // carry no strict-stub checking, so the unused twin is inert.
+        // Every write leg rides the locked read now (the 2026-11-05 #808
+        // round locked assignAttributes; the 2026-11-06 round locked its
+        // three siblings — the assignment writes of one type serialize on
+        // the ProductType row). Both stubs stay: other suites' reuse of
+        // this setup may read the plain findById — manual mocks carry no
+        // strict-stub checking, so the unused twin is inert.
         when(productTypeRepository.findById(type.getId())).thenReturn(Optional.of(type));
         when(productTypeRepository.findByIdForUpdate(type.getId())).thenReturn(Optional.of(type));
     }
@@ -477,6 +480,58 @@ class ProductTypeAttributeWriteServiceTest {
         assertThat(savedPositions.get(0)).allSatisfy(position -> assertThat(position).isGreaterThanOrEqualTo(5));
         assertThat(savedPositions.get(0)).doesNotHaveDuplicates();
         assertThat(savedPositions.get(1)).containsExactlyInAnyOrder(1, 2, 3, 4);
+    }
+
+    @Test
+    void theVariantFamilyReorderRidesTheCanonicalPositionFirstOrder() {
+        // The 2026-11-06 #808 round (Minor · Functional Correctness): the
+        // merged VARIANT-family bucket's canonical order is POSITION-first
+        // (scope as the tie-break), NOT the repository's (scope, position)
+        // read. A previous reorder wrote interleaved positions across the
+        // two scopes (vA=1, sA=2, vB=3, sB=4); the repository read returns
+        // them scope-at-a-time (vA, vB, sA, sB), so a shift applied on the
+        // repository order moved the WRONG neighbor and a round-trip read
+        // a different order than the first reorder wrote. The reorder must
+        // resolve moves on the canonical order.
+        CatalogAttributeDefinition vA = definition("var-a", CatalogAttributeType.TEXT);
+        CatalogAttributeDefinition vB = definition("var-b", CatalogAttributeType.TEXT);
+        CatalogAttributeDefinition sA = definition("sel-a", CatalogAttributeType.TEXT);
+        CatalogAttributeDefinition sB = definition("sel-b", CatalogAttributeType.TEXT);
+        ProductTypeAttributeAssignment va = assigned(vA, ProductTypeAttributeScope.VARIANT, 1);
+        ProductTypeAttributeAssignment vb = assigned(vB, ProductTypeAttributeScope.VARIANT, 3);
+        ProductTypeAttributeAssignment sa = assigned(sA, ProductTypeAttributeScope.VARIANT_SELECTION, 2);
+        ProductTypeAttributeAssignment sb = assigned(sB, ProductTypeAttributeScope.VARIANT_SELECTION, 4);
+        // The repository's own (scope, position) order — scope-at-a-time.
+        when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
+                .thenReturn(List.of(va, vb, sa, sb));
+        List<List<ProductTypeAttributeAssignment>> writes = new ArrayList<>();
+        when(assignmentRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<ProductTypeAttributeAssignment> saved = invocation.getArgument(0);
+            writes.add(new ArrayList<>(saved));
+            return saved;
+        });
+
+        ProductTypeMutationResult result = service.reorderAttributes(type.getId(), "VARIANT",
+                List.of(new AttributeReorderMove(vB.getId(), -1)));
+
+        assertThat(result.success()).isTrue();
+        // Two passes: the park write, then the final dense write.
+        assertThat(writes).hasSize(2);
+        List<ProductTypeAttributeAssignment> finalWrite = writes.get(1);
+        Map<String, Integer> written = new java.util.HashMap<>();
+        for (ProductTypeAttributeAssignment row : finalWrite) {
+            written.put(row.getAttributeDefinitionId().equals(vA.getId()) ? "var-a"
+                    : row.getAttributeDefinitionId().equals(vB.getId()) ? "var-b"
+                    : row.getAttributeDefinitionId().equals(sA.getId()) ? "sel-a" : "sel-b",
+                    row.getPosition());
+        }
+        // Canonical order [vA, sA, vB, sB] with vB shifted -1 lands at
+        // [vA, vB, sA, sB] — the finals: vA=1, vB=2, sA=3, sB=4. On the
+        // repository's scope-at-a-time order the same shift would have
+        // produced [vB, vA, sA, sB] (vB=1, vA=2, sA=3, sB=4) — the wrong
+        // neighbor.
+        assertThat(written).containsEntry("var-a", 1).containsEntry("var-b", 2)
+                .containsEntry("sel-a", 3).containsEntry("sel-b", 4);
     }
 
     @Test

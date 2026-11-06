@@ -36,6 +36,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -254,6 +255,44 @@ class AgentOneMutationDgsTest {
         // The typed global ID the SHARED mapper emits — never a raw UUID.
         assertThat(user.get("id")).isEqualTo(java.util.Base64.getEncoder()
                 .encodeToString(("User:" + USER_ID).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+    }
+
+    @Test
+    void accountAddressCreateRendersTheDeprecatedAccountErrorsAliasAsAnEmptyList() {
+        // The 2026-11-06 #806 round (Major · Data Integrity & Integration):
+        // the deprecated `accountErrors` alias is NON-NULL in the SDL
+        // ([AccountError!]!); a payload that set only `errors` answered a
+        // null payload plus a GraphQL error for every client still
+        // selecting the alias — AFTER the write had committed. All eight
+        // address mutations now carry both fields.
+        actAs("agent-one@example.com", "CONSUMER");
+        AddressView view = new AddressView(ADDRESS_ID, USER_ID, "One", "Caller", null,
+                "Street 1", null, "City", null, "12345", "DE", null, "+49", false, true);
+        when(addressManagementSpi.createForCaller(any(), any(), eq(null))).thenReturn(view);
+        when(identitySpi.findCurrentUserAccount(any())).thenReturn(Optional.of(new UserAccountView(
+                USER_ID, "agent-one@example.com", false, true,
+                java.time.Instant.parse("2026-01-01T00:00:00Z"),
+                java.time.Instant.parse("2026-01-02T00:00:00Z"), java.util.Set.of("CONSUMER"))));
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation($input: AddressInput!) {
+                    accountAddressCreate(input: $input) {
+                        address { id }
+                        accountErrors { code }
+                        errors { code }
+                    }
+                }
+                """, "data.accountAddressCreate",
+                Map.of("input", Map.of("firstName", "One", "lastName", "Caller",
+                        "streetAddress1", "Street 1", "city", "City", "postalCode", "12345",
+                        "country", "DE")));
+
+        // The payload itself must render (a null accountErrors would have
+        // null-ed the WHOLE payload through the non-null field)…
+        assertThat(payload).isNotNull();
+        // …and the alias answers the same empty list `errors` does.
+        assertThat(payload.get("accountErrors")).isEqualTo(List.of());
+        assertThat(payload.get("errors")).isEqualTo(List.of());
     }
 
     @Test
@@ -538,6 +577,58 @@ class AgentOneMutationDgsTest {
                 mutation { customerCreate(input: { firstName: "No" }) { errors { code } } }
                 """, "data.customerCreate"))
                 .hasMessageContaining("A customer email is required");
+    }
+
+    @Test
+    void customerCreateRendersTheDeprecatedAccountErrorsAliasAsAnEmptyList() {
+        // The 2026-11-06 #806 round (Minor · Data Integrity & Integration):
+        // the deprecated alias fields (accountErrors/staffErrors/shopErrors)
+        // are NON-NULL in the SDL — a payload that set only `errors`
+        // null-ed the whole mutation response after the committed write
+        // for every client still selecting the alias.
+        actAs("agent-one-admin@example.com", "ADMIN");
+        when(userManagementSpi.createCustomer(any(), any(), anyBoolean())).thenReturn(USER_ID);
+        when(identitySpi.findUserAccountById(eq(USER_ID), any()))
+                .thenReturn(java.util.Optional.of(new com.marketplace.identity.spi.UserAccountView(
+                        USER_ID, "created@example.com", false, true,
+                        java.time.Instant.parse("2026-01-01T00:00:00Z"),
+                        java.time.Instant.parse("2026-01-02T00:00:00Z"), java.util.Set.of("CONSUMER"))));
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { customerCreate(input: { email: "created@example.com",
+                        firstName: "Created", lastName: "Customer" }) {
+                    user { email }
+                    accountErrors { code }
+                    errors { code }
+                } }
+                """, "data.customerCreate");
+
+        assertThat(payload).isNotNull();
+        assertThat(payload.get("accountErrors")).isEqualTo(List.of());
+        assertThat(payload.get("errors")).isEqualTo(List.of());
+    }
+
+    @Test
+    void staffNotificationRecipientCreateRendersTheDeprecatedShopErrorsAliasAsAnEmptyList() {
+        // The same #806 round: the recipient family's own alias is
+        // `shopErrors` — same non-null contract, same empty-list answer.
+        actAs("agent-one-admin@example.com", "ADMIN");
+        when(userManagementSpi.createRecipient(any(), isNull(), eq("watcher@example.com"), eq(true)))
+                .thenReturn(new com.marketplace.identity.spi.RecipientView(
+                        UUID.randomUUID(), null, "watcher@example.com", true));
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { staffNotificationRecipientCreate(
+                        input: { email: "watcher@example.com", active: true }) {
+                    staffNotificationRecipient { email active }
+                    shopErrors { code }
+                    errors { code }
+                } }
+                """, "data.staffNotificationRecipientCreate");
+
+        assertThat(payload).isNotNull();
+        assertThat(payload.get("shopErrors")).isEqualTo(List.of());
+        assertThat(payload.get("errors")).isEqualTo(List.of());
     }
 
     @Test

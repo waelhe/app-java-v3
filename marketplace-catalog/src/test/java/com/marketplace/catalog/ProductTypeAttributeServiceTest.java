@@ -85,4 +85,50 @@ class ProductTypeAttributeServiceTest {
                 .isInstanceOf(ConflictException.class).hasMessageContaining("position");
         verify(assignments, never()).save(any());
     }
+
+    @Test void listRendersTheVariantFamilyTailInTheCanonicalPositionFirstOrder() {
+        // The 2026-11-06 #808 round (Minor · Functional Correctness): the
+        // merged VARIANT-family bucket's canonical order is POSITION-first
+        // (scope as the tie-break) — the SAME order the write service's
+        // reorderAttributes reads and writes — so a reorder round-trips
+        // faithfully through the read API. The repository's own
+        // (scope, position) order reads the two per-scope number spaces
+        // scope-at-a-time; the read API must not leak that order.
+        java.util.UUID prodDef = java.util.UUID.randomUUID();
+        java.util.UUID varDef = java.util.UUID.randomUUID();
+        java.util.UUID selDef = java.util.UUID.randomUUID();
+        ProductTypeAttributeAssignment product =
+                ProductTypeAttributeAssignment.create(typeId, prodDef, ProductTypeAttributeScope.PRODUCT, true, 1);
+        ProductTypeAttributeAssignment variant =
+                ProductTypeAttributeAssignment.create(typeId, varDef, ProductTypeAttributeScope.VARIANT, false, 1);
+        ProductTypeAttributeAssignment selection =
+                ProductTypeAttributeAssignment.create(typeId, selDef, ProductTypeAttributeScope.VARIANT_SELECTION, true, 2);
+        // The repository's scope-at-a-time order: PRODUCT first, then
+        // VARIANT (pos 1), then VARIANT_SELECTION (pos 2) — the stored
+        // interleaved state (variant=1, selection=2) is what a prior
+        // reorder wrote.
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(typeId))
+                .thenReturn(java.util.List.of(product, variant, selection));
+
+        java.util.List<ProductTypeAttributeAssignment> listed = service.list(typeId);
+
+        // The PRODUCT head keeps its place; the variant-family tail rides
+        // the canonical (position, scope) order — here variant (pos 1)
+        // before selection (pos 2), the round-trip-stable order.
+        assertThat(listed).containsExactly(product, variant, selection);
+        // The discriminator case: a stored state where the SELECTION holds
+        // the LOWER position (selection=1, variant=2) must list the
+        // selection FIRST in the tail — the repository order would have
+        // listed the variant first.
+        ProductTypeAttributeAssignment variantHigh =
+                ProductTypeAttributeAssignment.create(typeId, varDef, ProductTypeAttributeScope.VARIANT, false, 2);
+        ProductTypeAttributeAssignment selectionLow =
+                ProductTypeAttributeAssignment.create(typeId, selDef, ProductTypeAttributeScope.VARIANT_SELECTION, true, 1);
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(typeId))
+                .thenReturn(java.util.List.of(product, variantHigh, selectionLow));
+
+        java.util.List<ProductTypeAttributeAssignment> relisted = service.list(typeId);
+
+        assertThat(relisted).containsExactly(product, selectionLow, variantHigh);
+    }
 }
