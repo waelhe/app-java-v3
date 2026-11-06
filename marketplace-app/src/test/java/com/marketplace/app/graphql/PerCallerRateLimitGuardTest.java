@@ -226,19 +226,22 @@ class PerCallerRateLimitGuardTest {
         assertThatThrownBy(() -> guard.acquireAccountPermit(first, SURFACE))
                 .isInstanceOf(RequestNotPermitted.class);
 
-        // And the startup check enforces the SAME pair: an override ABOVE
-        // the account family's own budget fails construction.
+        // And the startup check enforces the SAME pair: an account
+        // override BELOW the surface's caller budget fails construction —
+        // proof the check read perAccountGrant-graphqlTokenMutation (the
+        // raw-surface name), because the family-wide 30 would have passed.
         RateLimiterRegistry violating = RateLimiterRegistry.custom()
                 .addRateLimiterConfig(PerCallerRateLimitGuard.PER_CALLER_CONFIG, config(10))
                 .addRateLimiterConfig(PerCallerRateLimitGuard.PER_ACCOUNT_CONFIG, config(30))
-                .addRateLimiterConfig("perAccountGrant-graphqlTokenMutation", config(40))
+                .addRateLimiterConfig("perAccountGrant-graphqlTokenMutation", config(5))
                 .build();
         ObjectProvider<RateLimiterRegistry> violatingProvider = mock(ObjectProvider.class);
         when(violatingProvider.getIfAvailable()).thenReturn(violating);
         when(violatingProvider.getObject()).thenReturn(violating);
-        assertThatThrownBy(() -> new PerCallerRateLimitGuard(violatingProvider, absentProvider(), 1000))
+        assertThatThrownBy(() -> new PerCallerRateLimitGuard(
+                violatingProvider, propertiesDeclaringSurface(SURFACE), 1000))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("perAccountGrant-graphqlTokenMutation");
+                .hasMessageContaining("graphqlTokenMutation");
     }
 
     @Test
