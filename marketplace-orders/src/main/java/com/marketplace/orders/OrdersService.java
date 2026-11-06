@@ -938,10 +938,18 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
     @Transactional
     @Observed(name = "order.cancel")
     public Order cancel(UUID orderId, String reason) {
+        // The buyer-facing default: the platform's standing cancel surface
+        // (V300's attribution) — the seller and administrative legs name
+        // their own authorship through the three-argument core.
+        return cancel(orderId, reason, "CONSUMER");
+    }
+
+    @Transactional
+    public Order cancel(UUID orderId, String reason, String cancelAuthor) {
         Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
         requireCancellableOrder(order);
-        order.cancel(reason, Instant.now());
+        order.cancel(reason, Instant.now(), cancelAuthor);
         if (order.isStockReserved()) {
             productStockPort.release(productStockMapOf(order.getId()));
             productStockPort.releaseVariants(variantStockMapOf(order.getId()));
@@ -1324,7 +1332,9 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
     @Transactional
     public OrderDetail cancelForUser(UUID orderId, String reason, Authentication authentication) {
         Order order = getOrderForUser(orderId, authentication);
-        Order cancelled = cancel(order.getId(), reason);
+        // The 2026-11-05 #811 round-3 review: the BUYER's own words (the
+        // erasure surface V300 attributes).
+        Order cancelled = cancel(order.getId(), reason, "CONSUMER");
         return new OrderDetail(cancelled, orderItemRepository.findByOrderId(orderId));
     }
 

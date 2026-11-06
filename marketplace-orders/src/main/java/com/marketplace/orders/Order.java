@@ -56,6 +56,16 @@ public class Order extends BaseEntity {
     @Column(name = "cancel_reason", columnDefinition = "TEXT")
     private String cancelReason;
 
+    /**
+     * The 2026-11-05 #811 round-3 review (Major · Security & Privacy):
+     * WHO authored the cancel reason — the buyer's own words are the
+     * erasure surface; a seller's or an administrator's reason is THEIR
+     * authored text on the shared commercial record (V300's closed
+     * vocabulary). NULL is the pre-attribution legacy population.
+     */
+    @Column(name = "cancel_author", length = 20)
+    private String cancelAuthor;
+
     @Column(name = "total_amount_minor", nullable = false)
     private Long totalAmountMinor;
 
@@ -224,10 +234,21 @@ public class Order extends BaseEntity {
         this.fulfilledAt = at;
     }
 
-    public void cancel(String reason, Instant at) {
+    public void cancel(String reason, Instant at, String author) {
         this.status = OrderStatus.CANCELLED;
         this.cancelReason = reason;
+        this.cancelAuthor = author;
         this.cancelledAt = at;
+    }
+
+    /** The un-attributed legacy entry point (NULL author = the pre-V300 population). */
+    public void cancel(String reason, Instant at) {
+        cancel(reason, at, null);
+    }
+
+    /** The cancel reason's author (V300's closed vocabulary; NULL = legacy). */
+    public String getCancelAuthor() {
+        return cancelAuthor;
     }
 
     public void linkPaymentIntent(UUID paymentIntentId) {

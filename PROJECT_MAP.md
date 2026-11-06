@@ -1,75 +1,75 @@
-# Saleor Campaign — live execution and branch/PR inventory (2026-10-31)
+# حملة Saleor — جرد التنفيذ الحي والفروع/PRs (2026-10-31)
 
-**Status measurement:** 2026-10-31, live GitHub check. This block is the current snapshot. Older dates/SHAs in the historical sections below are evidence only and must not be reused as a dispatch baseline.
+**قياس الحالة:** 2026-10-31، فحص GitHub حي. هذا القسم هو اللقطة الحالية. التواريخ/الـSHAs الأقدم في الأقسام التاريخية أدناه أدلة فقط ولا يجوز إعادة استخدامها كأساس إيفاد.
 
-## Repository heads
+## رؤوس المستودع
 
 - `main`: `f2349deca955cee435e6be3ca56be8a4c251d00a`.
-- `integration/saleor-full-commerce-20261021`: `90c11e07987ccdc0061278c5241af2381600d6e1` (live HEAD measured immediately before this PROJECT_MAP snapshot update).
-- GitHub compare: integration is **154 commits ahead / 0 behind** main; merge base is exactly `f2349deca955cee435e6be3ca56be8a4c251d00a`. Do not merge main into commerce again; the main-to-commerce reconciliation is already complete.
-- Current common dispatch baseline at this measurement: `90c11e07987ccdc0061278c5241af2381600d6e1`. The A0 documentation/governance batch is on the integration candidate. This PROJECT_MAP refresh is itself a docs-only commit; after it, A0 advances A2/A3/A4 to the new live integration HEAD. Always fetch the live ref before starting; never rely on a snapshot SHA after the branch moves.
+- `integration/saleor-full-commerce-20261021`: `90c11e07987ccdc0061278c5241af2381600d6e1` (الرأس الحي المقيس مباشرة قبل تحديث لقطة PROJECT_MAP هذه).
+- مقارنة GitHub: فرع التكامل **متقدم بـ154 commit / متأخر بصفر** عن main؛ وقاعدة الدمج هي بالضبط `f2349deca955cee435e6be3ca56be8a4c251d00a`. لا تدمج main في فرع التجارة مجدداً؛ المصالحة بين main وفرع التجارة مكتملة أصلاً.
+- أساس الإيفاد المشترك الحالي عند هذا القياس: `90c11e07987ccdc0061278c5241af2381600d6e1`. دفعة التوثيق/الحوكمة A0 على مرشح التكامل. تحديث PROJECT_MAP هذا نفسه commit توثيقي فقط؛ بعده يقدم A0 موجات A2/A3/A4 إلى رأس التكامل الحي الجديد. اجلب الـref الحي دائماً قبل البدء؛ لا تعتمد أبداً على SHA لقطة بعد تحرك الفرع.
 
-## Governing document hierarchy
+## تراتبية الوثائق الحاكمة
 
-1. **Sole scope and execution authority:** `docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md` (D-SALEOR-FULL-001).
-2. Multi-agent execution protocol: `docs/governance/campaign/saleor-multi-agent-execution-playbook.md`.
-3. Skill/semantic evidence directive: `docs/governance/campaign/saleor-agent-skills-semantic-audit-directive.md`.
-4. A0 role/ownership and shared-file protocol: `docs/governance/campaign/A0-EXECUTION-DIRECTIVE-20261028.md`.
-5. Saleor skill pins/provenance: `docs/governance/agent-skills-policy.md`, `docs/governance/plans/agent-skills-pins.json`, and the official-resource inventory `docs/governance/plans/saleor-ai-resource-surface.json`.
-6. Domain navigation companion (not a plan or root ledger): `docs/governance/campaign/saleor-domain-knowledge-map.md`.
+1. **المرجع الوحيد للنطاق والتنفيذ:** `docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md` (D-SALEOR-FULL-001).
+2. بروتوكول التنفيذ متعدد الوكلاء: `docs/governance/campaign/saleor-multi-agent-execution-playbook.md`.
+3. توجيه أدلة المهارات/الدلالات: `docs/governance/campaign/saleor-agent-skills-semantic-audit-directive.md`.
+4. دور A0 والملكية وبروتوكول الملفات المشتركة: `docs/governance/campaign/A0-EXECUTION-DIRECTIVE-20261028.md`.
+5. تثبيتات مهارات Saleor ومصدرها: `docs/governance/agent-skills-policy.md` و`docs/governance/plans/agent-skills-pins.json` وجرد الموارد الرسمية `docs/governance/plans/saleor-ai-resource-surface.json`.
+6. رفيق التنقل الدوميني (ليس خطة ولا سجل جذور): `docs/governance/campaign/saleor-domain-knowledge-map.md`.
 
-Historical Dashboard adaptation and schema-parity plans are superseded; preserve them as evidence only. The canonical plan forbids hiding/disabling/removing retained Dashboard 3.23.41 routes/workbenches/controls to accommodate a backend gap. The missing backend capability must be implemented; P7 stays blocked until it is.
+خطط تكييف Dashboard والتكافؤ المخططي التاريخية متجاوزة؛ تُحفظ كأدلة فقط. الخطة الكانونية تمنع إخفاء/تعطيل/إزالة مسارات/منصات عمل/أدوات التحكم المبقاة في Dashboard 3.23.41 لاستيعاب فجوة خلفية. القدرة الخلفية الناقصة يجب أن تُنفَّذ؛ وP7 يبقى محجوزاً حتى ذلك الحين.
 
-## Active concurrent execution — three implementation agents + A0 steward
+## التنفيذ المتوازي الحالي — ثلاثة وكلاء تنفيذ + مسؤول الإشراف A0
 
-The current campaign dispatch uses **three concurrent coding agents only**: A2, A3, A4. A0 is Integration Lead / Contract Steward, not a fourth domain implementer. A1–A7 remain the stable domain-ownership taxonomy in the playbook; they are not seven simultaneously dispatched coding sessions.
+إيفاد الحملة الحالي يستخدم **ثلاثة وكلاء برمجة متوازيين فقط**: A2 وA3 وA4. أما A0 فهو قائد التكامل / حارس العقود، وليس منفذاً رابعاً للنطاق. تبقى A1–A7 التراتبية المستقرة لملكية النطاقات في دليل التشغيل؛ وليست سبع جلسات برمجة متزامنة.
 
-| Role | Scope | Active workspace | Base |
+| الدور | النطاق | مساحة العمل النشطة | الأساس |
 |---|---|---|---|
-| A2 | P2 catalog, attributes, variants, inventory/stock/warehouse semantics | `agent/a2-p2-stock-audit-20261031` | `90c11e07987c` |
-| A3 | Entire P3: discounts, gift cards, taxes, channels, shop/settings (85 roots) | `agent/a3-p3-commercial-20261031` | `90c11e07987c` |
-| A4 | P4 checkout, orders, payments, shipping and financial allocation | `agent/a4-p4-checkout-audit-20261031` | `90c11e07987c` |
-| A0 | Shared-contract stewardship, evidence review, knowledge map and candidate assembly | `integration/saleor-full-commerce-20261021` (A0 docs assembled) | Same live candidate; A0 owns shared changes |
+| A2 | كتالوج P2 والسمات والمتغيرات ودلالات المخزون/الأسهم/المستودعات | `agent/a2-p2-stock-audit-20261031` | `90c11e07987c` |
+| A3 | كامل P3: الخصومات وبطاقات الهدايا والضرائب والقنوات والمتجر/الإعدادات (85 جذراً) | `agent/a3-p3-commercial-20261031` | `90c11e07987c` |
+| A4 | سلة شراء P4 والطلبات والمدفوعات والشحن والتوزيع المالي | `agent/a4-p4-checkout-audit-20261031` | `90c11e07987c` |
+| A0 | حراسة العقود المشتركة ومراجعة الأدلة وخريطة المعرفة وتجميع المرشح | `integration/saleor-full-commerce-20261021` (وثائق A0 مجمعة) | نفس المرشح الحي؛ A0 يملك التغييرات المشتركة |
 
-A2/A3/A4 must use isolated worktrees from the same frozen base. They commit their work locally and deliver commit SHAs, changed paths, exact test identifiers, XML reports and blockers to A0. **No individual wave PRs.** A0 assembles commits continuously in dependency order. After the Implementation Complete gate and independent reviews, A0 opens one final release PR to `main`; only the owner authorizes the merge.
+على A2/A3/A4 استخدام أشجار عمل معزولة من الأساس المجمد نفسه. يسلمون عملهم بـcommits محلية ويسلمون A0 عناوين SHAs والمسارات المتغيرة ومعرفات الاختبارات الدقيقة وتقارير XML والعوائق. **لا PRs موجات فردية.** يجمع A0 الـcommits باستمرار بترتيب التبعيات. بعد بوابة اكتمال التنفيذ والمراجعات المستقلة، يفتح A0 PR إصدار نهائياً واحداً إلى `main`؛ والمالك وحده يأذن بالدمج.
 
-## P3 ownership — one A3 workspace, five linked checklists
+## ملكية P3 — مساحة عمل A3 واحدة وخمس قوائم مرتبطة
 
-Parent issue [#778](https://github.com/waelhe/app-java-v3/issues/778) owns the P3 coordination. A3 has one branch/workspace only.
+الإصدار الأب [#778](https://github.com/waelhe/app-java-v3/issues/778) يملك تنسيق P3. لـA3 فرع/مساحة عمل واحدة فقط.
 
-- Discounts, 33 roots: [#774](https://github.com/waelhe/app-java-v3/issues/774).
-- Gift cards, 21 roots: [#779](https://github.com/waelhe/app-java-v3/issues/779).
-- Taxes, 14 roots: [#780](https://github.com/waelhe/app-java-v3/issues/780).
-- Channels, 8 roots: [#781](https://github.com/waelhe/app-java-v3/issues/781).
-- Shop/settings, 9 roots: [#782](https://github.com/waelhe/app-java-v3/issues/782).
+- الخصومات، 33 جذراً: [#774](https://github.com/waelhe/app-java-v3/issues/774).
+- بطاقات الهدايا، 21 جذراً: [#779](https://github.com/waelhe/app-java-v3/issues/779).
+- الضرائب، 14 جذراً: [#780](https://github.com/waelhe/app-java-v3/issues/780).
+- القنوات، 8 جذور: [#781](https://github.com/waelhe/app-java-v3/issues/781).
+- المتجر/الإعدادات، 9 جذور: [#782](https://github.com/waelhe/app-java-v3/issues/782).
 
-Issues #779–#782 are specialist evidence/decision checklists **inside A3's same workspace**. They do not represent separate agents, branches or PRs. P3 central-ledger snapshot remains 85 roots = 8 INTEGRATED + 59 NOT_STARTED + 18 BLOCKED_BY_DECISION; the central CSV remains the only authority for exact root states.
+الإصدارات #779–#782 قوائم أدلة/قرارات تخصصية **داخل مساحة عمل A3 نفسها**. لا تمثل وكلاء أو فروعاً أو PRs منفصلة. لقطة السجل المركزي لـP3 تبقى 85 جذراً = 8 INTEGRATED + 59 NOT_STARTED + 18 BLOCKED_BY_DECISION؛ وCSV المركزي يبقى المرجع الوحيد للحالات الدقيقة للجذور.
 
-The old D-WHSE-001 platform-stage deferral is superseded for the full-commerce target by the canonical plan. A2 owns warehouse/location inventory, stock, reservation and allocation; A3 owns channel-to-warehouse membership and ordering; A4 owns checkout/shipping/fulfilment use. This work must use public SPIs; do not leave warehouse/channel roots blocked merely because of the historical deferral.
+تأجيل D-WHSE-001 القديم لمرحلة المنصة متجاوزٌ لهدف التجارة الكاملة بموجب الخطة الكانونية. A2 يملك جرد المستودعات/المواقع والمخزون والحجز والتخصيص؛ وA3 يملك عضوية القناة بالمستودع وترتيبها؛ وA4 يملك استخدام سلة الشراء/الشحن/التنفيذ. هذا العمل يجب أن يستخدم SPIs عامة؛ لا تترك جذور المستودعات/القنوات محجوبة لمجرد التأجيل التاريخي.
 
-## Current pull-request inventory
+## جرد طلبات السحب الحالية
 
-| PR | Status | Purpose | Current disposition |
+| PR | الحالة | الغرض | التسوية الحالية |
 |---|---|---|---|
-| [#773](https://github.com/waelhe/app-java-v3/pull/773) | Open, not merged; currently non-mergeable | Saleor AI skill provenance and official resource-surface registry; migrates the adopted `saleor-core` source pin and adds fail-closed governance tests | Purpose is valid, but this is stale: head `ad5c394c`; recorded base `435b895d`; compare to live integration is **diverged: 16 ahead / 21 behind**, GitHub `mergeable=false`. CI, Integration Test and Snyk succeeded on inspected head; its CodeRabbit approval is not current for the head. Keep unmerged; A0 must reconcile its 8 changed files on top of the live integration in a new reviewable head/PR update, rerun CI/Snyk, obtain an exact-head independent review, then ask owner authorization. The current active skill pin remains `saleor/agent-skills@fb1a5725` until approved merge. |
-| [#783](https://github.com/waelhe/app-java-v3/pull/783) | Closed without merge; branch preserved | Seven proposed ownership ADRs and an obsolete copy of canonical-plan changes | Archived review material only. Its draft recommendations are not approved decisions or an execution plan. The proposal branch remains for traceability. |
+| [#773](https://github.com/waelhe/app-java-v3/pull/773) | مفتوح، غير مدمج؛ غير قابل للدمج حالياً | مصدر مهارات Saleor AI وجرد الموارد الرسمية؛ ينقل تثبيت `saleor-core` المعتمد ويضيف اختبارات حوكمة مغلقة الفشل | الغرض صحيح، لكنه متقادم: الرأس `ad5c394c`؛ الأساس المسجل `435b895d`؛ والمقارنة مع التكامل الحي **متباعدة: متقدم بـ16 / متأخر بـ21**، و`mergeable=false` في GitHub. نجحت CI واختبار التكامل وSnyk على الرأس المفحوص؛ وموافقة CodeRabbit عليه غير محدثة للرأس. يبقى غير مدمج؛ على A0 مصالحة ملفاته الثمانية المعدلة فوق التكامل الحي في رأس/تحديث PR جديد قابل للمراجعة، وإعادة تشغيل CI/Snyk، والحصول على مراجعة مستقلة للرأس المحدد، ثم طلب إذن المالك. تثبيت المهارات النشط الحالي يبقى `saleor/agent-skills@fb1a5725` حتى الدمج المعتمد. |
+| [#783](https://github.com/waelhe/app-java-v3/pull/783) | مغلق دون دمج؛ الفرع محفوظ | سبعة ADRs مقترحة للملكية ونسخة متقادمة من تغييرات الخطة الكانونية | مادة مراجعة مؤرشفة فقط. توصياته المسودة ليست قرارات معتمدة ولا خطة تنفيذ. يبقى فرع الاقتراح للتنقيب. |
 
-The active skill pin on integration remains the merged `saleor/agent-skills@fb1a5725` snapshot until #773 is reviewed and merged. The proposed `saleor/saleor-docs@2cdf6590` provenance is not yet active. #773 is a separate provenance track; it does not replace the canonical plan or block unrelated A2/A3/A4 implementation using the currently valid pin.
+تثبيت المهارات النشط على التكامل يبقى لقطة `saleor/agent-skills@fb1a5725` المدمجة حتى مراجعة #773 ودمجه. مصدر `saleor/saleor-docs@2cdf6590` المقترح غير مفعل بعد. #773 مسار مصدر منفصل؛ لا يستبدل الخطة الكانونية ولا يحجب تنفيذ A2/A3/A4 غير المرتبط بالتثبيت الساري.
 
-## Retired empty branch references
+## مراجع الفروع الفارغة المتقاعدة
 
-The earlier A3 discount-only branch and four A3 specialist branches were not used for implementation. They were fast-forwarded to the common baseline and are retired; do not dispatch agents from them. The old specialist issues have been converted to checklists under A3's unified branch. The GitHub connector used for this cleanup exposes branch creation and fast-forward ref updates but no branch-delete operation, so these empty branch refs remain parked pending deletion through GitHub's branch UI/API by an authorized maintainer. Their preservation is intentional and no unique commits are lost.
+فرع A3 المخصص للخصومات فقط وأربعة فروع تخصصية لـA3 لم تُستخدم في التنفيذ. تم تثبيتها سريعاً على الأساس المشترك وتقاعدت؛ لا تُوفد وكلاء منها. حُولت الإصدارات التخصصية القديمة إلى قوائم تحت الفرع الموحد لـA3. موصل GitHub المستخدم في هذا التنظيف يوفر إنشاء الفروع وتحديث الـrefs السريع لكنه لا يوفر حذف الفروع، لذا تبقى هذه الـrefs الفارغة متوقفة بانتظار الحذف عبر واجهة/واجهة برمجية لـGitHub بيد مشرف مصرح له. حفظها مقصود ولا تُفقد أي commits فريدة.
 
-## A0 knowledge-map integration
+## تكامل خريطة معرفة A0
 
-The A0 branch was reconciled onto the current integration head with a two-parent merge commit:
-- A0 docs-only reconciliation merge: `9f6dde3b3732f014e1b422ad15cbcb4ada186d3e`; this contains the A0-owned knowledge map and governance corrections and is now the integration candidate tip. Re-fetch the live tip after this PROJECT_MAP refresh.
-- Merge parents: live integration `34d37457df53790afc92decd68af1773e6ff8578` and prior A0 knowledge-map branch tip `5e73753ca6f97e796beef27615a0ed94a6c59237`.
-- A0-owned files include `docs/governance/campaign/saleor-domain-knowledge-map.md`, links in `AGENTS.md` and `SYSTEM.md`, the corrected §8 of the multi-agent playbook (retained Dashboard route rule), and live baseline addenda in the promotion plan and semantic-audit directive. This live snapshot is also A0-owned. The map is a navigation companion, not a second plan or root inventory.
+تمت مصالحة فرع A0 على رأس التكامل الحي بـcommit دمج ذي أبوين:
+- دمج مصالحة A0 التوثيقي: `9f6dde3b3732f014e1b422ad15cbcb4ada186d3e`؛ يحمل خريطة المعرفة التي يملكها A0 وتصحيحات الحوكمة وهو الآن رأس مرشح التكامل. أعد جلب الرأس الحي بعد تحديث PROJECT_MAP هذا.
+- الأبووان: التكامل الحي `34d37457df53790afc92decd68af1773e6ff8578` ورأس فرع خريطة معرفة A0 السابق `5e73753ca6f97e796beef27615a0ed94a6c59237`.
+- ملفات A0 تشمل `docs/governance/campaign/saleor-domain-knowledge-map.md` والروابط في `AGENTS.md` و`SYSTEM.md` والـ§8 المصحح من دليل التشغيل متعدد الوكلاء (قاعدة مسار Dashboard المبقي)، والملاحق الحية للأساس في خطة الترويج وتوجيه التدقيق الدلالي. هذه اللقطة الحية يملكها A0 أيضاً. الخريطة رفيق تنقل، وليست خطة ثانية ولا سجل جذور.
 
-## Launch state and permissions
+## حالة الإطلاق والصلاحيات
 
-Branch preparation does not start external coding-agent sessions. GitHub Assignees remain empty because individual agent GitHub usernames were not provided. A0 has issued explicit branch/startup/test/delivery instructions in #774–#782. Do not create additional specialist agents or parallel branches for P3.
+تجهيز الفروع لا يبدأ جلسات وكلاء البرمجة الخارجية. تبقى Assignees في GitHub فارغة لأن أسماء مستخدمي GitHub للوكلاء الأفراد لم تُقدم. أصدر A0 تعليمات فروع/بدء/اختبار/تسليم صريحة في #774–#782. لا تنشئ وكلاء تخصصيين إضافيين أو فروعاً موازية لـP3.
 
 ---
 ---

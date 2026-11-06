@@ -65,8 +65,16 @@ on:
     # monitor runs during the campaign. Informational only, never a
     # merge-required check.
     branches: [ integration/saleor-full-commerce-20261021 ]
-  pull_request:
-    branches: [main]
+    #
+    # The 2026-11-05 #811 round-3 review (Minor - Stability & Availability):
+    # the pull_request trigger is REMOVED - the monitor measures the
+    # REPO's health (the runs feed, the gate workflows, the open PRs),
+    # never a PR's own content: running it as a PR check answered
+    # unrelated failures (provider refusals in other runs) on every PR
+    # to main - the pipeline log measured exactly that. The file's own
+    # header pins the monitor as "alarm, not a blocker"; the push
+    # trigger (the campaign's own line) and the nightly schedule stay
+    # the measured, documented triggers.
 
 permissions:
   actions: read
@@ -75,7 +83,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: gate-health
+  # The 2026-11-05 #811 round-3 review: the group splits per event - a
+  # single shared group let a pending PR run cancel a pending
+  # schedule/push run (GitHub keeps ONE pending run per group), so a
+  # burst of pushes could silently cancel the nightly's authoritative
+  # measurement.
+  group: gate-health-${{ github.event_name }}
   cancel-in-progress: false
 
 jobs:

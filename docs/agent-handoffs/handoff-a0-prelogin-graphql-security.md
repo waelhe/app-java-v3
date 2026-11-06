@@ -140,8 +140,12 @@ void anonymousOperationNameSpoofDoesNotBypassTheGate() throws Exception {
 void anonymousPreLoginOperationExecutesCleanly() throws Exception {
     mockMvc.perform(post("/graphql")
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content("{\"query\":\"mutation { tokenVerify(token: \""
-                            + "not-a-real-jwt\") { isValid } }\"}"))
+                    // The 2026-11-05 #811 round-3 review: the inner quotes
+                    // must be ESCAPED (\\") — the unescaped pair made the
+                    // JSON body itself unparsable, so the request died at
+                    // the transport and proved nothing about the gate.
+                    .content("{\"query\":\"mutation { tokenVerify(token: \\\""
+                            + "not-a-real-jwt\\\") { isValid } }\"}"))
             .andExpect(status().isOk())
             .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
             .andExpect(jsonPath("$.data.tokenVerify.isValid").value(false));
