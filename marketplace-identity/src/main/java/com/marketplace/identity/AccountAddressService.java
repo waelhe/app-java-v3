@@ -169,7 +169,13 @@ public class AccountAddressService implements com.marketplace.identity.spi.Addre
     /** The {@code User.defaultShippingAddress/defaultBillingAddress} read-back. */
     @Transactional(readOnly = true)
     public Optional<AddressView> findDefault(UUID userId, String type) {
-        List<AccountAddress> rows = "SHIPPING".equalsIgnoreCase(type)
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the READ normalizes the type exactly like the
+        // write — " SHIPPING " (padded) used to answer the BILLING
+        // default (the else branch), and an unknown type silently read
+        // billing instead of the classified validation error.
+        String normalized = normalizeType(type);
+        List<AccountAddress> rows = "SHIPPING".equals(normalized)
                 ? addressRepository.findByUserIdAndDefaultShippingTrue(userId)
                 : addressRepository.findByUserIdAndDefaultBillingTrue(userId);
         return rows.stream().findFirst().map(com.marketplace.identity.AccountAddressService::toView);
@@ -192,6 +198,16 @@ public class AccountAddressService implements com.marketplace.identity.spi.Addre
         } else {
             // Saleor's convenience: the FIRST address of an account becomes
             // its default for both types unless the caller said otherwise.
+            // The 2026-11-05 #810 round review (Minor · Functional
+            // Correctness): the count-then-mark reads the ACCOUNT row
+            // PESSIMISTIC_WRITE first — two concurrent first-address
+            // creates both counted one live row and both marked default
+            // (the V248 partial unique index then rejected the loser as a
+            // raw database error mid-transaction). The account-row lock
+            // serializes the whole read-count-mark window (the same
+            // reservation-wall pattern the catalog carries).
+            userRepository.findByIdForUpdate(userId).orElseThrow(
+                    () -> new ResourceNotFoundException("No account " + userId));
             if (addressRepository.countByUserId(userId) == 1) {
                 row.markDefaultShipping(true);
                 row.markDefaultBilling(true);

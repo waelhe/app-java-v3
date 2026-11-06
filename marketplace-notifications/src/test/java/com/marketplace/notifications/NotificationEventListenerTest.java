@@ -555,7 +555,11 @@ class NotificationEventListenerTest {
                 new com.marketplace.shared.api.AccountDeletionRequestedEvent(
                         userId, "member@example.com", "deletion-token", expiresAt));
 
-        verify(notificationService).onAccountDeletionRequested(userId, "deletion-token", expiresAt);
+        // The 2026-11-05 #810 round review: the event's pinned EMAIL
+        // travels with the delegation (the right mails the requesting
+        // mailbox, never the account's moved CURRENT address).
+        verify(notificationService).onAccountDeletionRequested(
+                userId, "member@example.com", "deletion-token", expiresAt);
     }
 
     @Test

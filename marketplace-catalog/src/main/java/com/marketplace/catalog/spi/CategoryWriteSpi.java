@@ -66,7 +66,14 @@ public interface CategoryWriteSpi {
      * @param command the amendment command (name, slug — either may be
      *                null to preserve)
      * @return the result with the amended row's projection, or the
-     *         domain errors (NOT_FOUND, INVALID, ALREADY_EXISTS)
+     *         domain errors (NOT_FOUND, INVALID). The slug is the
+     *         category's stable reference identity and does NOT change
+     *         after creation: a {@code slug} equal to the row's own code
+     *         is the idempotent re-send (the column is preserved), any
+     *         DIFFERENT slug answers INVALID (the code-immutability
+     *         contract the entity pins — the 2026-11-05 #808 review's
+     *         doc correction: ALREADY_EXISTS is a CREATE-only outcome
+     *         here, never an update's).
      */
     CategoryMutationResult updateCategory(UUID id, CategoryUpdateCommand command);
 

@@ -73,7 +73,7 @@ public class VoucherWriteService implements VoucherWriteSpi {
     public VoucherMutationResult createVoucher(VoucherCreateCommand command) {
         List<VoucherMutationError> errors = new ArrayList<>();
         String code = normalizeCode(command.code(), errors);
-        Voucher.DiscountType type = normalizeType(command.discountValueType(), errors, true);
+        Voucher.DiscountType type = normalizeType(command.discountValueType(), errors, true, false);
         String currency = normalizeCurrency(command.currency(), errors);
         long discountValue = normalizeDiscountValue(command.discountValue(), type, errors);
         long minSpend = command.minSpend() == null ? 0L : command.minSpend();
@@ -100,9 +100,26 @@ public class VoucherWriteService implements VoucherWriteSpi {
         if (!errors.isEmpty()) {
             return VoucherMutationResult.failure(errors);
         }
-        Voucher created = voucherRepository.save(Voucher.of(code, name, currency, type,
-                discountValue, minSpend, startsAt, endsAt, usageLimit,
-                Boolean.TRUE.equals(command.applyOncePerCustomer()) ? 1L : null, true));
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the code-reservation RACE — two concurrent creates
+        // (or a create racing an update's new code) both pass the
+        // findByCode probe and the loser dies on the unique index at
+        // flush; the SAME one classifier the platform's surfaces share
+        // answers the payload's own ALREADY_EXISTS instead of the raw
+        // database error.
+        Voucher created;
+        try {
+            created = voucherRepository.save(Voucher.of(code, name, currency, type,
+                    discountValue, minSpend, startsAt, endsAt, usageLimit,
+                    Boolean.TRUE.equals(command.applyOncePerCustomer()) ? 1L : null, true));
+        } catch (org.springframework.dao.DataIntegrityViolationException race) {
+            if (com.marketplace.shared.api.GlobalExceptionHandler.isUniqueViolation(race)) {
+                return VoucherMutationResult.failure(List.of(new VoucherMutationError(
+                        "code", VoucherMutationErrorCode.ALREADY_EXISTS,
+                        "A voucher with the code already exists")));
+            }
+            throw race;
+        }
         return VoucherMutationResult.success(toView(created));
     }
 
@@ -144,7 +161,7 @@ public class VoucherWriteService implements VoucherWriteSpi {
         }
         boolean typeChanged = command.discountValueType() != null;
         Voucher.DiscountType mergedType = typeChanged
-                ? normalizeType(command.discountValueType(), errors, false)
+                ? normalizeType(command.discountValueType(), errors, false, true)
                 : row.getDiscountType();
         // The MERGED (type, value) pair is re-validated together — never
         // only the command's value: an update that changes the type alone
@@ -167,8 +184,14 @@ public class VoucherWriteService implements VoucherWriteSpi {
         // requires BOTH the discount value and the minimum spend in the
         // new currency — the same re-validation-together discipline the
         // (type, value) pair above carries.
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the change verdict compares the NORMALIZED merged
+        // currency — a lowercased "sar" against a stored "SAR" row used to
+        // read as a CHANGE and demand the restatement the caller already
+        // carried (the same currency, differently cased).
         if (command.currency() != null
-                && !command.currency().equals(row.getCurrency())
+                && mergedCurrency != null
+                && !mergedCurrency.equals(row.getCurrency())
                 && (command.discountValue() == null || command.minSpend() == null)) {
             errors.add(new VoucherMutationError("currency", VoucherMutationErrorCode.INVALID,
                     "Changing a voucher's currency requires restating both its discountValue "
@@ -179,9 +202,18 @@ public class VoucherWriteService implements VoucherWriteSpi {
             errors.add(new VoucherMutationError("minSpend", VoucherMutationErrorCode.INVALID,
                     "A voucher's minimum spend cannot be negative"));
         }
-        Instant mergedStarts = command.startDate() == null ? row.getStartsAt()
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): a BLANK date string is "no information" exactly
+        // like an absent one — the old path parsed it to null, SKIPPED the
+        // window check on the null leg, and let the row keep a stored
+        // start that the new endDate now preceded (the flush's own
+        // constraint answered the raw database error). The blank merges to
+        // the KEPT value and the window check sees the merged truth.
+        Instant mergedStarts = command.startDate() == null || command.startDate().isBlank()
+                ? row.getStartsAt()
                 : parseInstant(command.startDate(), "startDate", errors);
-        Instant mergedEnds = command.endDate() == null ? row.getEndsAt()
+        Instant mergedEnds = command.endDate() == null || command.endDate().isBlank()
+                ? row.getEndsAt()
                 : parseInstant(command.endDate(), "endDate", errors);
         Long mergedUsageLimit = command.usageLimit() == null
                 ? row.getMaxRedemptions()
@@ -249,9 +281,18 @@ public class VoucherWriteService implements VoucherWriteSpi {
     // ------------------------------------------------------------------
 
     private static String normalizeCode(String raw, List<VoucherMutationError> errors) {
-        String normalized = raw == null ? "" : raw.strip().toUpperCase(Locale.ROOT);
-        if (normalized.length() < CODE_MIN_LENGTH || normalized.length() > CODE_MAX_LENGTH) {
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the vocabulary distinction — an ABSENT code is
+        // REQUIRED, a PRESENT code outside the length bound is INVALID
+        // (the caller sent a value; the value is malformed).
+        if (raw == null || raw.isBlank()) {
             errors.add(new VoucherMutationError("code", VoucherMutationErrorCode.REQUIRED,
+                    "A voucher code is " + CODE_MIN_LENGTH + ".." + CODE_MAX_LENGTH + " characters"));
+            return null;
+        }
+        String normalized = raw.strip().toUpperCase(Locale.ROOT);
+        if (normalized.length() < CODE_MIN_LENGTH || normalized.length() > CODE_MAX_LENGTH) {
+            errors.add(new VoucherMutationError("code", VoucherMutationErrorCode.INVALID,
                     "A voucher code is " + CODE_MIN_LENGTH + ".." + CODE_MAX_LENGTH + " characters"));
             return null;
         }
@@ -264,11 +305,19 @@ public class VoucherWriteService implements VoucherWriteSpi {
     }
 
     private static Voucher.DiscountType normalizeType(String raw, List<VoucherMutationError> errors,
-                                                      boolean required) {
+                                                      boolean required, boolean blankIsInvalid) {
         if (raw == null || raw.isBlank()) {
             if (required) {
                 errors.add(new VoucherMutationError("discountValueType", VoucherMutationErrorCode.REQUIRED,
                         "A voucher requires a discount value type"));
+            } else if (blankIsInvalid && raw != null) {
+                // The 2026-11-05 #810 round review (Minor · Functional
+                // Correctness): an update that SENDS a blank type answers
+                // INVALID — the old path silently merged null and let the
+                // flush hit the NOT NULL column's raw database error.
+                errors.add(new VoucherMutationError("discountValueType",
+                        VoucherMutationErrorCode.INVALID,
+                        "A voucher's discount value type is PERCENTAGE or FIXED"));
             }
             return null;
         }
@@ -282,9 +331,17 @@ public class VoucherWriteService implements VoucherWriteSpi {
     }
 
     private static String normalizeCurrency(String raw, List<VoucherMutationError> errors) {
-        String normalized = raw == null ? "" : raw.strip().toUpperCase(Locale.ROOT);
-        if (!normalized.matches("[A-Z]{3}")) {
+        // The 2026-11-05 #810 round review: the same vocabulary
+        // distinction the code carries — absent is REQUIRED, present and
+        // malformed is INVALID.
+        if (raw == null || raw.isBlank()) {
             errors.add(new VoucherMutationError("currency", VoucherMutationErrorCode.REQUIRED,
+                    "A voucher is denominated in a 3-letter ISO-4217 currency"));
+            return null;
+        }
+        String normalized = raw.strip().toUpperCase(Locale.ROOT);
+        if (!normalized.matches("[A-Z]{3}")) {
+            errors.add(new VoucherMutationError("currency", VoucherMutationErrorCode.INVALID,
                     "A voucher is denominated in a 3-letter ISO-4217 currency"));
             return null;
         }

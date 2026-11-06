@@ -130,9 +130,15 @@ public class AccountEmailChangeService {
                     eventPublisher.publishEvent(new com.marketplace.shared.api
                             .EmailChangeRequestedEvent(user.getId(), subject, target,
                             issued.rawToken(), issued.expiresAt()));
+                    // The 2026-11-05 #810 round review (Minor · Functional
+                    // Correctness): the log records the RIGHT the system
+                    // actually issued — the throttled window issues NOTHING
+                    // (the enumeration-safe silent success), so a computed
+                    // "now + TTL" line used to log an expiry that never
+                    // existed.
+                    log.info("Email change requested: subject={}, expiresAt={}", subject,
+                            issued.expiresAt());
                 });
-        log.info("Email change requested: subject={}, expiresAt={}", subject,
-                java.time.Instant.now().plus(EMAIL_CHANGE_TTL));
     }
 
     /** The confirm leg — consumes the right, moves both stores, answers the new email. */

@@ -12,6 +12,19 @@ import java.util.UUID;
 
 public interface UserRepository extends JpaRepository<User, UUID>, RevisionRepository<User, UUID, Integer> {
 
+    /**
+     * The 2026-11-05 #810 round review (Minor · Functional Correctness):
+     * the account-row serialization seam — the pessimistic write lock the
+     * address service's first-default computation (and any other
+     * read-then-mark window on the account's own row) takes BEFORE the
+     * read, so two concurrent firsts cannot both pass the count check (the
+     * official Spring Data JPA @Lock derived-query contract).
+     */
+    @org.springframework.data.jpa.repository.Lock(
+            jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select user from User user where user.id = :id")
+    Optional<User> findByIdForUpdate(@org.springframework.data.repository.query.Param("id") UUID id);
+
     Optional<User> findBySubject(String subject);
 
     Optional<User> findByEmail(String email);
@@ -86,4 +99,36 @@ public interface UserRepository extends JpaRepository<User, UUID>, RevisionRepos
      * total, never a fabricated number).
      */
     long countByRole(UserRole role);
+
+    /**
+     * The 2026-11-05 #810 round review (Minor · Functional Correctness):
+     * the customer population EXCLUDES the pseudonymized accounts — a
+     * deleted customer keeps its CONSUMER row (pseudonymized, the identity
+     * gone), so the plain role predicate used to scroll and count the
+     * tombstone in the admin surface (a Window row the operator cannot
+     * act on, and a total nobody can reconcile). The same six-sorts shape
+     * as the roster methods, plus the count, each with
+     * {@code pseudonymizedAt IS NULL} (the admin surface's own visibility
+     * law; soft-deleted rows are already absent via @SoftDelete).
+     */
+    Window<User> findByRoleAndPseudonymizedAtIsNullOrderByEmailAscIdAsc(
+            UserRole role, KeysetScrollPosition position, Limit limit);
+
+    Window<User> findByRoleAndPseudonymizedAtIsNullOrderByEmailDescIdDesc(
+            UserRole role, KeysetScrollPosition position, Limit limit);
+
+    Window<User> findByRoleAndPseudonymizedAtIsNullOrderByCreatedAtAscIdAsc(
+            UserRole role, KeysetScrollPosition position, Limit limit);
+
+    Window<User> findByRoleAndPseudonymizedAtIsNullOrderByCreatedAtDescIdDesc(
+            UserRole role, KeysetScrollPosition position, Limit limit);
+
+    Window<User> findByRoleAndPseudonymizedAtIsNullOrderByUpdatedAtAscIdAsc(
+            UserRole role, KeysetScrollPosition position, Limit limit);
+
+    Window<User> findByRoleAndPseudonymizedAtIsNullOrderByUpdatedAtDescIdDesc(
+            UserRole role, KeysetScrollPosition position, Limit limit);
+
+    /** The customer population's honest total — the pseudonymized excluded. */
+    long countByRoleAndPseudonymizedAtIsNull(UserRole role);
 }

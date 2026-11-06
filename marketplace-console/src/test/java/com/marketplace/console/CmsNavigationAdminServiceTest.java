@@ -41,6 +41,8 @@ class CmsNavigationAdminServiceTest {
     private CmsMenuItemTranslationRepository itemTranslationRepository;
     @Mock
     private CmsNavigationSlotRepository slotRepository;
+    @Mock
+    private CmsPageRepository pageRepository;
 
     private CmsNavigationAdminService service;
 
@@ -50,7 +52,7 @@ class CmsNavigationAdminServiceTest {
     @BeforeEach
     void setUp() {
         service = new CmsNavigationAdminService(menuRepository, itemRepository,
-                itemTranslationRepository, slotRepository);
+                itemTranslationRepository, slotRepository, pageRepository);
         admin = new UsernamePasswordAuthenticationToken("admin@example.com", null,
                 List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
         menuId = UUID.randomUUID();
@@ -139,11 +141,17 @@ class CmsNavigationAdminServiceTest {
     void moveMenuItemsToRootCarriesTheRootNameInvariant() {
         CmsMenuItem parent = root("Parent", 0);
         CmsMenuItem item = child(parent, "Home", 0);
+        CmsMenuItem stayingHomeRoot = root("Home", 1);
         when(menuRepository.findById(menuId))
                 .thenReturn(Optional.of(CmsMenu.create("Main", "main")));
         when(itemRepository.findById(item.getId())).thenReturn(Optional.of(item));
-        when(itemRepository.findByMenuIdAndNameAndParentIdIsNull(menuId, "Home"))
-                .thenReturn(Optional.of(root("Home", 1)));
+        // The 2026-11-05 #810 round review: the root-name invariant
+        // evaluates the batch's FINAL state — the STAYING roots are the
+        // moved set excluded (their post-batch homes are already decided
+        // in memory), so the final-state query is the roots list, not the
+        // per-name lookup.
+        when(itemRepository.findAllByMenuIdAndParentIdIsNullOrderByPositionAscIdAsc(menuId))
+                .thenReturn(List.of(parent, stayingHomeRoot));
 
         // m2: the move-to-root path previously flushed straight into the
         // V283 partial unique index's raw database error.
@@ -151,6 +159,60 @@ class CmsNavigationAdminServiceTest {
                 List.of(item.getId()), java.util.Arrays.asList((UUID) null), List.of(0)))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("root menu item with this name");
+    }
+
+    /**
+     * The 2026-11-05 #810 round review (Minor · Functional Correctness):
+     * a batch that FREES a root name (its holder moves UNDER another
+     * item) and grants it to another item in the SAME batch is a legal
+     * end state — the old per-move intermediate check rejected it at the
+     * first move.
+     */
+    @Test
+    void moveMenuItemsEvaluatesTheBatchFinalStateNotTheIntermediateOne() {
+        CmsMenuItem homeRoot = root("Home", 0);
+        CmsMenuItem holder = root("Holder", 1);
+        CmsMenuItem homeChild = child(holder, "Home", 0);
+        when(menuRepository.findById(menuId))
+                .thenReturn(Optional.of(CmsMenu.create("Main", "main")));
+        when(itemRepository.findById(homeRoot.getId())).thenReturn(Optional.of(homeRoot));
+        when(itemRepository.findById(holder.getId())).thenReturn(Optional.of(holder));
+        when(itemRepository.findById(homeChild.getId())).thenReturn(Optional.of(homeChild));
+        when(itemRepository.findAllByMenuIdAndParentIdIsNullOrderByPositionAscIdAsc(menuId))
+                .thenReturn(List.of(homeRoot, holder));
+        when(itemRepository.findAllByMenuIdOrderByPositionAscIdAsc(menuId))
+                .thenReturn(List.of(homeRoot, holder, homeChild));
+
+        // homeRoot moves UNDER holder; homeChild moves to the ROOT group —
+        // the intermediate state (homeRoot still a root when homeChild
+        // joins) used to conflict; the FINAL state has exactly one root
+        // "Home".
+        service.moveMenuItems(admin, menuId,
+                List.of(homeRoot.getId(), homeChild.getId()),
+                java.util.Arrays.asList(holder.getId(), null), List.of(0, 0));
+
+        assertThat(homeRoot.getParentId()).isEqualTo(holder.getId());
+        assertThat(homeChild.getParentId()).isNull();
+    }
+
+    /**
+     * The 2026-11-05 #810 round review: the three lists are one-per-item
+     * by contract — a length mismatch answers the classified validation
+     * error before any database read.
+     */
+    @Test
+    void moveMenuItemsRefusesAMismatchedListLength() {
+        when(menuRepository.findById(menuId))
+                .thenReturn(Optional.of(CmsMenu.create("Main", "main")));
+
+        assertThatThrownBy(() -> service.moveMenuItems(admin, menuId,
+                List.of(UUID.randomUUID()), List.of(), List.of(0)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("one entry per item");
+        assertThatThrownBy(() -> service.moveMenuItems(admin, menuId,
+                List.of(UUID.randomUUID()), java.util.Arrays.asList((UUID) null), List.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("one entry per item");
     }
 
     @Test
@@ -184,6 +246,106 @@ class CmsNavigationAdminServiceTest {
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("root menu item with this name");
         verify(itemRepository, never()).delete(any(CmsMenuItem.class));
+    }
+
+    /**
+     * The 2026-11-05 #810 round review: the deleted root no longer
+     * occupies the root-name space for its promoted children — deleting
+     * root "Home" with a child also named "Home" is a legal promotion.
+     */
+    @Test
+    void deleteMenuItemPromotesAChildNamedLikeTheDoomedRoot() {
+        CmsMenuItem parent = root("Home", 0);
+        CmsMenuItem kid = child(parent, "Home", 0);
+        when(itemRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(itemRepository.findAllByMenuIdOrderByPositionAscIdAsc(menuId))
+                .thenReturn(List.of(parent, kid));
+        when(itemRepository.findByMenuIdAndNameAndParentIdIsNull(menuId, "Home"))
+                .thenReturn(Optional.of(parent));
+
+        service.deleteMenuItem(admin, parent.getId());
+
+        assertThat(kid.getParentId()).isNull();
+        verify(itemRepository).delete(parent);
+    }
+
+    /**
+     * The 2026-11-05 #810 round review: the name-length bounds answer the
+     * classified validation error on the update paths (updateMenu,
+     * updateMenuItem, translateMenuItem) — never the flush's raw database
+     * error.
+     */
+    @Test
+    void theNameLengthBoundAnswersTheClassifiedErrorOnEveryWritePath() {
+        String longName = "N".repeat(256);
+        CmsMenu menu = CmsMenu.create("Main", "main");
+        UUID menuRowId = UUID.randomUUID();
+        when(menuRepository.findById(menuRowId)).thenReturn(Optional.of(menu));
+
+        CmsMenuItem item = root("Item", 0);
+        UUID itemRowId = UUID.randomUUID();
+        when(itemRepository.findById(itemRowId)).thenReturn(Optional.of(item));
+
+        assertThatThrownBy(() -> service.updateMenu(admin, menuRowId, longName, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("exceeds 255");
+        assertThatThrownBy(() -> service.updateMenuItem(admin, itemRowId, longName,
+                null, null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("exceeds 255");
+        assertThatThrownBy(() -> service.translateMenuItem(admin, itemRowId, "en", longName))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("exceeds 255");
+    }
+
+    /**
+     * The 2026-11-05 #810 round review (Minor · Security & Privacy): the
+     * ADMIN verdict requires an AUTHENTICATED principal — an
+     * unauthenticated Authentication object carrying ROLE_ADMIN no longer
+     * passes the role-only check.
+     */
+    @Test
+    void anUnauthenticatedPrincipalCarryingTheAdminRoleIsRefused() {
+        // An Authentication object that carries ROLE_ADMIN but answers
+        // isAuthenticated()=false (the shape the security chain can hand
+        // through on a failed or forged login) — the role-only check used
+        // to let it administrate.
+        org.springframework.security.core.Authentication unauthenticated =
+                org.mockito.Mockito.mock(org.springframework.security.core.Authentication.class);
+        org.mockito.Mockito.when(unauthenticated.isAuthenticated()).thenReturn(false);
+        org.mockito.Mockito.lenient().when(unauthenticated.getAuthorities())
+                .thenReturn((java.util.Collection) List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+
+        assertThatThrownBy(() -> service.findMenuById(unauthenticated, UUID.randomUUID()))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+    }
+
+    /**
+     * The 2026-11-05 #810 round review: the bulk delete orders DEPTH-FIRST
+     * — a parent and its child delete in one batch without the parent's
+     * deletion promoting the child into a root-name conflict first.
+     */
+    @Test
+    void bulkDeleteMenuItemsDeletesTheDeepestNodesFirst() {
+        CmsMenuItem parent = root("Home", 0);
+        CmsMenuItem kid = child(parent, "Home", 0);
+        CmsMenuItem otherRoot = root("Home", 1);
+        // The parent's chain: root (depth 0); the kid: depth 1.
+        when(itemRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(itemRepository.findById(kid.getId())).thenReturn(Optional.of(kid));
+        when(itemRepository.findAllByMenuIdOrderByPositionAscIdAsc(menuId))
+                .thenReturn(List.of(parent, otherRoot, kid));
+        // The kid's promotion (parent still alive at that point in the OLD
+        // order) would collide with otherRoot; deepest-first deletes the
+        // kid before the parent, so no promotion ever happens.
+        when(itemRepository.existsById(parent.getId())).thenReturn(true, true, false);
+        when(itemRepository.existsById(kid.getId())).thenReturn(true, false);
+
+        int count = service.bulkDeleteMenuItems(admin, List.of(parent.getId(), kid.getId()));
+
+        assertThat(count).isEqualTo(2);
+        verify(itemRepository).delete(kid);
+        verify(itemRepository).delete(parent);
     }
 
     @Test
@@ -352,7 +514,7 @@ class CmsNavigationAdminServiceTest {
         CmsMenu menu = CmsMenu.create("Main", "main");
         when(menuRepository.findById(menu.getId())).thenReturn(Optional.of(menu));
         when(menuRepository.findBySlug("main")).thenReturn(Optional.of(menu));
-        when(menuRepository.findByName("Main")).thenReturn(Optional.of(menu));
+        when(menuRepository.findFirstByNameOrderByIdAsc("Main")).thenReturn(Optional.of(menu));
 
         assertThat(service.findMenuById(admin, menu.getId())).isPresent();
         assertThat(service.findMenuBySlug(admin, "main")).isPresent();

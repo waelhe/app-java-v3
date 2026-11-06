@@ -78,7 +78,7 @@ class CmsPageAdminServiceTest {
     @Test
     void deletePageRefusesAMenuReferencedTarget() {
         UUID id = UUID.randomUUID();
-        when(pageRepository.findById(id))
+        when(pageRepository.findByIdForUpdate(id))
                 .thenReturn(Optional.of(CmsPage.create(typeId, "x", "X")));
         when(menuItemRepository.existsByPageId(id)).thenReturn(true);
 
@@ -105,7 +105,7 @@ class CmsPageAdminServiceTest {
 
     @Test
     void assignPairsRejectsADuplicateInsideOneRequest() {
-        when(pageTypeRepository.findById(typeId))
+        when(pageTypeRepository.findByIdForUpdate(typeId))
                 .thenReturn(Optional.of(CmsPageType.create("T", "t")));
         when(attributeRepository.findAllByPageTypeIdOrderByPositionAscIdAsc(typeId))
                 .thenReturn(List.of());
@@ -121,7 +121,7 @@ class CmsPageAdminServiceTest {
 
     @Test
     void assignPairsRejectsARepeatOfAnExistingPair() {
-        when(pageTypeRepository.findById(typeId))
+        when(pageTypeRepository.findByIdForUpdate(typeId))
                 .thenReturn(Optional.of(CmsPageType.create("T", "t")));
         UUID attributeId = UUID.randomUUID();
         when(attributeRepository.findAllByPageTypeIdOrderByPositionAscIdAsc(typeId))
@@ -134,7 +134,7 @@ class CmsPageAdminServiceTest {
 
     @Test
     void reorderAppliesDeterministicRemoveAndReinsert() {
-        when(pageTypeRepository.findById(typeId))
+        when(pageTypeRepository.findByIdForUpdate(typeId))
                 .thenReturn(Optional.of(CmsPageType.create("T", "t")));
         UUID a = UUID.randomUUID();
         UUID b = UUID.randomUUID();
@@ -156,7 +156,7 @@ class CmsPageAdminServiceTest {
     @Test
     void updatePageTypeRejectsATakenSlug() {
         UUID id = UUID.randomUUID();
-        when(pageTypeRepository.findById(id))
+        when(pageTypeRepository.findByIdForUpdate(id))
                 .thenReturn(Optional.of(CmsPageType.create("T", "t")));
         when(pageTypeRepository.existsBySlug("taken")).thenReturn(true);
 
@@ -272,6 +272,93 @@ class CmsPageAdminServiceTest {
                     org.springframework.data.domain.ScrollPosition.keyset(),
                     org.springframework.data.domain.Limit.of(10));
         }
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the branch MAPPING is now verified per field —
+        // PUBLICATION_DATE rides the createdAt columns per the registered
+        // DECISION-10 divergence (a single hasNext assertion could not
+        // tell the branches apart), and an UNKNOWN field answers the
+        // classified validation error, never a silent fallback to the
+        // default sort.
+        org.mockito.Mockito.verify(pageRepository).findAllByOrderBySlugAscIdAsc(any(), any());
+        org.mockito.Mockito.verify(pageRepository).findAllByOrderBySlugDescIdDesc(any(), any());
+        org.mockito.Mockito.verify(pageRepository).findAllByOrderByTitleAscIdAsc(any(), any());
+        org.mockito.Mockito.verify(pageRepository).findAllByOrderByTitleDescIdDesc(any(), any());
+        org.mockito.Mockito.verify(pageRepository, org.mockito.Mockito.times(2))
+                .findAllByOrderByCreatedAtAscIdAsc(any(), any());
+        org.mockito.Mockito.verify(pageRepository, org.mockito.Mockito.times(2))
+                .findAllByOrderByCreatedAtDescIdDesc(any(), any());
+        assertThatThrownBy(() -> service.scrollPages(admin, "RATING", true,
+                org.springframework.data.domain.ScrollPosition.keyset(),
+                org.springframework.data.domain.Limit.of(10)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Unsupported pages sort field");
+    }
+
+    /**
+     * The 2026-11-05 #810 round review: the forward-only scroll contract —
+     * an empty BACKWARD keyset position (Spring Data Commons defines
+     * isInitial() as keys.isEmpty(), direction-independent) answers the
+     * classified validation error, and the page-types family carries the
+     * same two laws.
+     */
+    @Test
+    void theScrollLegsRejectBackwardPositionsAndUnknownSortFields() {
+        // Spring Data Commons' own reverse(): the empty BACKWARD keyset
+        // position (isInitial() is keys.isEmpty() — direction-blind).
+        org.springframework.data.domain.KeysetScrollPosition backward =
+                org.springframework.data.domain.ScrollPosition.keyset().reverse();
+
+        // Every leg answers the classified error BEFORE the repository
+        // (no stubs needed — the verdict precedes the read).
+        assertThatThrownBy(() -> service.scrollPages(admin, null, true, backward,
+                org.springframework.data.domain.Limit.of(10)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("forward-only");
+        assertThatThrownBy(() -> service.scrollPageTypes(admin, null, true, backward,
+                org.springframework.data.domain.Limit.of(10)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("forward-only");
+        assertThatThrownBy(() -> service.scrollPageTypes(admin, "RATING", true,
+                org.springframework.data.domain.ScrollPosition.keyset(),
+                org.springframework.data.domain.Limit.of(10)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Unsupported page types sort field");
+    }
+
+    /**
+     * The 2026-11-05 #810 round review: the reorder's list contract — a
+     * missing deltas list or a length mismatch answers the classified
+     * validation error before any database read, and the clamp arithmetic
+     * runs in long (from + Integer.MAX_VALUE no longer overflows into a
+     * wrongly-accepted 0).
+     */
+    @Test
+    void reorderPageTypeAttributesValidatesTheListsAndClampsInLong() {
+        CmsPageType type = CmsPageType.create("T", "t");
+        UUID typeId = type.getId();
+        when(pageTypeRepository.findByIdForUpdate(typeId)).thenReturn(Optional.of(type));
+        CmsPageTypeAttribute first = CmsPageTypeAttribute.create(typeId, UUID.randomUUID(), 0);
+        CmsPageTypeAttribute second = CmsPageTypeAttribute.create(typeId, UUID.randomUUID(), 1);
+        when(attributeRepository.findAllByPageTypeIdOrderByPositionAscIdAsc(typeId))
+                .thenReturn(List.of(first, second));
+
+        // A missing/mismatched deltas list answers the classified error.
+        assertThatThrownBy(() -> service.reorderPageTypeAttributes(admin, typeId,
+                List.of(first.getAttributeId()), null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("one entry per attribute");
+        assertThatThrownBy(() -> service.reorderPageTypeAttributes(admin, typeId,
+                List.of(first.getAttributeId()), List.of(1, 1)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("one entry per attribute");
+
+        // The overflow clamp: Integer.MAX_VALUE delta on position 0 — the
+        // long sum clamps to the list's end (the item lands LAST), never
+        // overflows to a negative the old int math read as 0.
+        service.reorderPageTypeAttributes(admin, typeId,
+                List.of(first.getAttributeId()), List.of(Integer.MAX_VALUE));
+        assertThat(first.getPosition()).isEqualTo(1);
+        assertThat(second.getPosition()).isEqualTo(0);
     }
 
     @Test
@@ -333,7 +420,7 @@ class CmsPageAdminServiceTest {
     void deletePageRemovesTheTranslationsWithTheRow() {
         UUID id = UUID.randomUUID();
         CmsPage page = CmsPage.create(typeId, "a", "A");
-        when(pageRepository.findById(id)).thenReturn(Optional.of(page));
+        when(pageRepository.findByIdForUpdate(id)).thenReturn(Optional.of(page));
         when(menuItemRepository.existsByPageId(id)).thenReturn(false);
         CmsPageTranslation translation = CmsPageTranslation.create(id, "ar");
         when(translationRepository.findAllByPageId(id)).thenReturn(List.of(translation));
@@ -348,9 +435,9 @@ class CmsPageAdminServiceTest {
     void bulkDeletePagesSkipsMenuReferencedRows() {
         UUID free = UUID.randomUUID();
         UUID referenced = UUID.randomUUID();
-        when(pageRepository.findById(free))
+        when(pageRepository.findByIdForUpdate(free))
                 .thenReturn(Optional.of(CmsPage.create(typeId, "free", "Free")));
-        when(pageRepository.findById(referenced))
+        when(pageRepository.findByIdForUpdate(referenced))
                 .thenReturn(Optional.of(CmsPage.create(typeId, "ref", "Ref")));
         when(menuItemRepository.existsByPageId(free)).thenReturn(false);
         when(menuItemRepository.existsByPageId(referenced)).thenReturn(true);
@@ -364,7 +451,7 @@ class CmsPageAdminServiceTest {
     @Test
     void unassignRemovesThePairsAndResequences() {
         UUID id = UUID.randomUUID();
-        when(pageTypeRepository.findById(id))
+        when(pageTypeRepository.findByIdForUpdate(id))
                 .thenReturn(Optional.of(CmsPageType.create("T", "t")));
         UUID a = UUID.randomUUID();
         UUID b = UUID.randomUUID();

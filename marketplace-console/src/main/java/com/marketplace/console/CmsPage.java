@@ -149,7 +149,16 @@ public class CmsPage extends BaseEntity {
      */
     private static String requireSerializedJsonDocument(String content, String owner) {
         try {
-            CONTENT_JSON.readTree(content);
+            // The 2026-11-05 #810 round review (Minor · Functional
+            // Correctness): readTree answers null for the empty/blank
+            // document WITHOUT throwing — the guard used to swallow that
+            // and let the value reach the jsonb column's own rejection at
+            // flush. A null/missing node is the same classified VAL-001.
+            if (CONTENT_JSON.readTree(content) == null) {
+                throw new IllegalArgumentException(
+                        "The " + owner + " content must be a serialized JSON document (rich text):"
+                                + " the document is empty");
+            }
         } catch (JacksonException malformed) {
             throw new IllegalArgumentException(
                     "The " + owner + " content must be a serialized JSON document (rich text): "

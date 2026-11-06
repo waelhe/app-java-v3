@@ -49,6 +49,17 @@ import java.time.Duration;
 @Transactional
 public class AccountSelfServiceTokenService {
 
+    /**
+     * The 2026-11-05 #810 round review (Minor · Security & Privacy): the
+     * verify-and-swap password write — the same surgical column shape as
+     * {@code PasswordResetService.UPDATE_PASSWORD_ONLY} with the VERIFIED
+     * old hash in the predicate (a concurrent rotation makes the write
+     * match zero rows instead of silently overwriting the winner's hash).
+     */
+    private static final String UPDATE_PASSWORD_IF_UNCHANGED =
+            "UPDATE auth_users SET password = ? WHERE username = ? AND password = ?";
+
+
     private static final Logger log = LoggerFactory.getLogger(AccountSelfServiceTokenService.class);
 
     static final Duration DELETION_TTL = Duration.ofHours(24);
@@ -169,8 +180,25 @@ public class AccountSelfServiceTokenService {
         // the flags and authorities stay exactly as their owning admin
         // surfaces wrote them (each under the account row lock), this
         // surface rotates the credential and nothing else.
-        jdbcTemplate.update(PasswordResetService.UPDATE_PASSWORD_ONLY,
-                encoder.getObject().encode(newPassword), subject);
+        // The 2026-11-05 #810 round review (Minor · Security & Privacy):
+        // the rotation is a verify-and-swap — the UPDATE carries the
+        // VERIFIED old hash in its predicate, so a concurrent rotation
+        // that already replaced the password makes this write match ZERO
+        // rows (the old int math blindly overwrote the winner's hash with
+        // a password its owner never chose). A zero-row answer is the
+        // measured race: the caller re-verifies the CURRENT password.
+        String encoded = encoder.getObject().encode(newPassword);
+        int rotated = jdbcTemplate.update(
+                UPDATE_PASSWORD_IF_UNCHANGED, encoded, subject, stored.getPassword());
+        if (rotated == 0) {
+            throw new org.springframework.dao.OptimisticLockingFailureException(
+                    "The password changed concurrently — verify the current password and retry");
+        }
+        // The 2026-11-05 #810 round review (Minor · Security & Privacy):
+        // the rotation kills the outstanding EMAIL_CHANGE rights too — the
+        // password-reset completion's own shape (an email-change link
+        // minted under the OLD secret must not outlive the rotation).
+        authActionTokenService.invalidateOutstanding(subject);
         // Issued authorizations die with the change — the same measured SAS
         // kill every secret-rotating surface applies: a refresh token minted
         // under the OLD password must not survive the owner rotating the

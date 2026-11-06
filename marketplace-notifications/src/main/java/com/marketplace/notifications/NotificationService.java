@@ -504,11 +504,14 @@ public class NotificationService {
      * to LEAVE the application; no in-app row can reach them), no
      * preference gate on a security mail.
      */
-    public void onAccountDeletionRequested(UUID userId, String deletionToken,
+    public void onAccountDeletionRequested(UUID userId, String email, String deletionToken,
                                            java.time.Instant expiresAt) {
         long expirationMinutes = Math.max(0,
                 java.time.Duration.between(java.time.Instant.now(), expiresAt).toMinutes());
-        emailNotificationService.sendEmail(userId, "Confirm Your Account Deletion",
+        // The 2026-11-05 #810 round review: the explicit-address send (the
+        // event's pinned email — the email-change leg's own sendEmailTo
+        // shape), never the userId-keyed CURRENT-address lookup.
+        emailNotificationService.sendEmailTo(email, "Confirm Your Account Deletion",
                 "email/account-deletion",
                 Map.of("deletionToken", deletionToken,
                         "expirationMinutes", expirationMinutes));

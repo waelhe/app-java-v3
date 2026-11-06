@@ -15,7 +15,13 @@ public interface CmsMenuRepository extends JpaRepository<CmsMenu, UUID>,
 
     Optional<CmsMenu> findBySlug(String slug);
 
-    Optional<CmsMenu> findByName(String name);
+    /**
+     * The 2026-11-05 #810 round review (Minor · Functional Correctness):
+     * two menus MAY share a name when their slugs differ (the uniqueness
+     * law is the slug's) — the lookup answers ONE row by the deterministic
+     * (name, id) order instead of the derived query's non-unique failure.
+     */
+    Optional<CmsMenu> findFirstByNameOrderByIdAsc(String name);
 
     boolean existsBySlug(String slug);
 

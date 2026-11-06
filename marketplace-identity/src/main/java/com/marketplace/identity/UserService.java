@@ -248,6 +248,8 @@ public class UserService implements IdentitySpi {
      *                          honest 409 before any store is written
      */
     public User register(String email, String rawPassword, String displayName) {
+        requireDisplayNameBound(displayName);
+        requireRegisterableEmail(email);
         // The shared password-shape gate FIRST (PasswordPolicy — 8..72
         // characters AND at most 72 UTF-8 bytes, the bcrypt ceiling): the
         // DTO's @Size counts characters only, so a compact-but-long
@@ -299,7 +301,10 @@ public class UserService implements IdentitySpi {
      * @throws ConflictException the address already owns an account
      */
     public User registerStaff(String email, String rawPassword, String displayName,
+
                               boolean enabled) {
+        requireDisplayNameBound(displayName);
+        requireRegisterableEmail(email);
         String subject = email;
         if (userRepository.existsBySubject(subject)
                 || userDetailsManager.userExists(subject)) {
@@ -627,6 +632,11 @@ public class UserService implements IdentitySpi {
      * {@code updateUserRole} hazard comment documents the same trap).
      */
     public void updateOwnProfileBySubject(String subject, String displayName) {
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the same 200-byte bound the create paths carry —
+        // a longer own-profile rename answers the classified validation
+        // error, never the flush's raw database error.
+        requireDisplayNameBound(displayName);
         User user = userRepository.findBySubject(subject)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "No account for the authenticated subject: " + subject));
@@ -1162,19 +1172,32 @@ public class UserService implements IdentitySpi {
         if (sort == null || sort.field() == null) {
             throw new IllegalArgumentException("A customer sort is required");
         }
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the pseudonymized customers are EXCLUDED from the
+        // window and the total — a deleted customer keeps its CONSUMER row
+        // (the identity gone), so the plain role predicate used to answer
+        // a tombstone the operator cannot act on and a total nobody can
+        // reconcile.
         org.springframework.data.domain.Window<User> window = switch (sort.field()) {
             case EMAIL -> sort.ascending()
-                    ? userRepository.findByRoleOrderByEmailAscIdAsc(UserRole.CONSUMER, position, limit)
-                    : userRepository.findByRoleOrderByEmailDescIdDesc(UserRole.CONSUMER, position, limit);
+                    ? userRepository.findByRoleAndPseudonymizedAtIsNullOrderByEmailAscIdAsc(
+                            UserRole.CONSUMER, position, limit)
+                    : userRepository.findByRoleAndPseudonymizedAtIsNullOrderByEmailDescIdDesc(
+                            UserRole.CONSUMER, position, limit);
             case CREATED_AT -> sort.ascending()
-                    ? userRepository.findByRoleOrderByCreatedAtAscIdAsc(UserRole.CONSUMER, position, limit)
-                    : userRepository.findByRoleOrderByCreatedAtDescIdDesc(UserRole.CONSUMER, position, limit);
+                    ? userRepository.findByRoleAndPseudonymizedAtIsNullOrderByCreatedAtAscIdAsc(
+                            UserRole.CONSUMER, position, limit)
+                    : userRepository.findByRoleAndPseudonymizedAtIsNullOrderByCreatedAtDescIdDesc(
+                            UserRole.CONSUMER, position, limit);
             case LAST_MODIFIED_AT -> sort.ascending()
-                    ? userRepository.findByRoleOrderByUpdatedAtAscIdAsc(UserRole.CONSUMER, position, limit)
-                    : userRepository.findByRoleOrderByUpdatedAtDescIdDesc(UserRole.CONSUMER, position, limit);
+                    ? userRepository.findByRoleAndPseudonymizedAtIsNullOrderByUpdatedAtAscIdAsc(
+                            UserRole.CONSUMER, position, limit)
+                    : userRepository.findByRoleAndPseudonymizedAtIsNullOrderByUpdatedAtDescIdDesc(
+                            UserRole.CONSUMER, position, limit);
         };
         return new com.marketplace.identity.spi.UserAccountPage(
-                window.map(this::toAccountView), userRepository.countByRole(UserRole.CONSUMER));
+                window.map(this::toAccountView),
+                userRepository.countByRoleAndPseudonymizedAtIsNull(UserRole.CONSUMER));
     }
 
     /**
@@ -1249,9 +1272,19 @@ public class UserService implements IdentitySpi {
         // "greater than the sort key" the framework's keyset predicate
         // builds for the SQL scrolls.
         java.util.List<com.marketplace.identity.spi.PermissionGroupView> scrollable = groups;
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the DIRECTION gate runs before the isInitial()
+        // branch — Spring Data Commons 4.x defines isInitial() as
+        // keys.isEmpty() (direction-blind), so an empty BACKWARD position
+        // used to slip past the guard and answer a forward page with
+        // forward cursors from the wrong end of the math; the forward-only
+        // contract is the direction itself.
+        if (position != null && !position.scrollsForward()) {
+            throw new IllegalArgumentException(
+                    "The permission-group scroll supports forward-only pagination");
+        }
         if (position != null && !position.isInitial()) {
             if (!(position instanceof org.springframework.data.domain.KeysetScrollPosition keyset)
-                    || !keyset.scrollsForward()
                     || keyset.getKeys().get("name") == null
                     || keyset.getKeys().get("id") == null) {
                 throw new IllegalArgumentException(
@@ -1270,6 +1303,16 @@ public class UserService implements IdentitySpi {
                     .toList();
         }
 
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): Limit.of(int) does NOT validate the sign (Spring
+        // Data Commons' own javadoc: "a negative value may be valid within
+        // a defined context") — a negative limit used to reach subList and
+        // answer the raw IndexOutOfBoundsException instead of the
+        // classified validation error.
+        if (limit != null && limit.isLimited() && limit.max() < 0) {
+            throw new IllegalArgumentException(
+                    "The permission-group scroll limit must not be negative");
+        }
         int pageSize = limit == null || !limit.isLimited()
                 ? scrollable.size()
                 : Math.min(limit.max(), scrollable.size());
@@ -1404,5 +1447,39 @@ public class UserService implements IdentitySpi {
                 user.getUpdatedAt(),
                 user.getPseudonymizedAt()
         );
+    }
+
+    /**
+     * The 2026-11-05 #810 round review (Minor · Functional Correctness):
+     * the display name's own column bound (VARCHAR(200), the User
+     * entity's @Column length) validated at the boundary — every path
+     * that writes a display name (register, registerStaff, the own-profile
+     * update) answers the classified validation error, never the flush's
+     * raw database error. Null and blank stay the caller's "no name"
+     * semantics (the entity keeps whatever it carries).
+     */
+    /**
+     * The 2026-11-05 #810 round review (Minor · Functional Correctness):
+     * the registration email's OWN shape and bound, at the OWNING SERVICE
+     * boundary — the direct {@code AccountLifecycleSpi.register} leg used
+     * to bypass the transport DTO's @Email/@Size validation, so a
+     * malformed address passed every gate and a >50-character one died on
+     * the auth_users.username column with the raw database error. The
+     * fetcher's own check stays (defense in depth); THIS is the boundary
+     * every register caller shares.
+     */
+    private static void requireRegisterableEmail(String email) {
+        if (email == null || email.isBlank()
+                || email.length() > 50
+                || !email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+            throw new IllegalArgumentException(
+                    "A valid email address of at most 50 characters is required");
+        }
+    }
+
+    private static void requireDisplayNameBound(String displayName) {
+        if (displayName != null && !displayName.isBlank() && displayName.trim().length() > 200) {
+            throw new IllegalArgumentException("The display name exceeds 200 characters");
+        }
     }
 }

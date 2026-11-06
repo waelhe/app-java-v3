@@ -69,13 +69,16 @@ class VoucherWriteServiceTest {
     // ------------------------------------------------------------------
 
     @Test
-    void shortCodeAnswersTheRequiredDomainError() {
+    void shortCodeAnswersTheInvalidDomainError() {
+        // The 2026-11-05 #810 round review: a PRESENT code outside the
+        // length bound answers INVALID — the caller sent a value, the
+        // value is malformed; REQUIRED stays the ABSENT-code verdict.
         VoucherMutationResult result = service.createVoucher(create("AB", "FIXED", 500L, "SAR"));
 
         assertThat(result.success()).isFalse();
         assertThat(result.errors()).singleElement()
                 .extracting(VoucherMutationError::code, VoucherMutationError::field)
-                .containsExactly(VoucherMutationErrorCode.REQUIRED, "code");
+                .containsExactly(VoucherMutationErrorCode.INVALID, "code");
         verify(voucherRepository, never()).save(any());
     }
 
@@ -456,6 +459,12 @@ class VoucherWriteServiceTest {
                 new VoucherUpdateCommand(null, null, null, null, null, null,
                         null, null, null, false));
         assertThat(released.voucher().applyOncePerCustomer()).isFalse();
+        // The 2026-11-05 #810 round review: the STORED row carries the
+        // honest null — the projection alone used to pass even when the
+        // revision kept the stale per-user limit (2) behind the false
+        // flag. The entity's own row is the stored truth (the view's
+        // applyOncePerCustomer flattening cannot see N>1 vs unlimited).
+        assertThat(perUser.getMaxRedemptionsPerUser()).isNull();
     }
 
     // ------------------------------------------------------------------

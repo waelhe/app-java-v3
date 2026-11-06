@@ -70,6 +70,10 @@ class AccountAddressServiceTest {
     void createSavesTheValidatedRowWithoutDefaults() {
         when(userRepository.findBySubject("member@example.com"))
                 .thenReturn(Optional.of(userRow(USER_ID, "member@example.com")));
+        // The 2026-11-05 #810 round review: the first-default computation
+        // loads the account row PESSIMISTIC_WRITE before the count.
+        when(userRepository.findByIdForUpdate(USER_ID))
+                .thenReturn(Optional.of(userRow(USER_ID, "member@example.com")));
         when(addressRepository.countByUserId(USER_ID)).thenReturn(5L);
 
         service.createForCaller(consumer, fullFields(), null);

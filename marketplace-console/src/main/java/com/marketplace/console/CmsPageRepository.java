@@ -31,6 +31,23 @@ import java.util.UUID;
 public interface CmsPageRepository extends JpaRepository<CmsPage, UUID>,
         RevisionRepository<CmsPage, UUID, Integer> {
 
+    /**
+     * The 2026-11-05 #810 round review (Minor · Functional Correctness):
+     * the delete-vs-link serialization seam — BOTH write paths that touch
+     * the page-reference relationship (the page's own delete, and a menu
+     * item linking the page) load the page row PESSIMISTIC_WRITE first,
+     * so the delete's reference check and the link's insert can never
+     * interleave into a committed orphan (a live menu item pointing at a
+     * soft-deleted page). The official Spring Data JPA locking derived
+     * query (@Lock on a repository method).
+     */
+    @org.springframework.data.jpa.repository.Lock(
+            jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query(
+            "select page from CmsPage page where page.id = :id")
+    Optional<CmsPage> findByIdForUpdate(@org.springframework.data.repository.query.Param("id")
+                                        UUID id);
+
     Optional<CmsPage> findBySlug(String slug);
 
     boolean existsBySlug(String slug);

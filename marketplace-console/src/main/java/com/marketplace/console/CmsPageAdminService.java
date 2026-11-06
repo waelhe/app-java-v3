@@ -69,6 +69,7 @@ public class CmsPageAdminService implements CmsPageSpi {
         requireAdmin(caller);
         String trimmedTitle = requireTitle(title);
         UUID type = requirePageTypeExists(pageTypeId);
+        requireFieldLimits(slug, seoTitle, seoDescription);
         String resolvedSlug = requireFreeSlug(slug == null || slug.isBlank()
                 ? slugify(trimmedTitle) : slug.trim());
         CmsPage row = CmsPage.create(type, resolvedSlug, trimmedTitle);
@@ -86,6 +87,15 @@ public class CmsPageAdminService implements CmsPageSpi {
                                String seoDescription) {
         requireAdmin(caller);
         CmsPage row = requirePage(id);
+        requireFieldLimits(slug, seoTitle, seoDescription);
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): a non-empty rename longer than the VARCHAR(255)
+        // column answers the classified validation error HERE — the same
+        // bound the create path carries (null and blank stay "no
+        // information", the entity's own apply contract).
+        if (title != null && !title.isBlank() && title.trim().length() > 255) {
+            throw new IllegalArgumentException("The page title exceeds 255 characters");
+        }
         if (slug != null && !slug.isBlank()) {
             String resolved = requireSlugShape(slug.trim());
             if (!resolved.equals(row.getSlug()) && pageRepository.existsBySlug(resolved)) {
@@ -101,7 +111,14 @@ public class CmsPageAdminService implements CmsPageSpi {
     @Observed(name = "cms.page.delete")
     public PageView deletePage(Authentication caller, UUID id) {
         requireAdmin(caller);
-        CmsPage row = requirePage(id);
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the delete-vs-link race — the row loads
+        // PESSIMISTIC_WRITE so a concurrent menu-item link (which locks
+        // the same row before its insert) serializes BEHIND this delete:
+        // the reference check and the link insert can no longer interleave
+        // into a committed orphan.
+        CmsPage row = pageRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("No page " + id));
         if (menuItemRepository.existsByPageId(id)) {
             throw new ConflictException(
                     "The page is referenced by a menu item — remove the link first");
@@ -118,7 +135,9 @@ public class CmsPageAdminService implements CmsPageSpi {
         requireAdmin(caller);
         int count = 0;
         for (UUID id : ids) {
-            Optional<CmsPage> row = pageRepository.findById(id);
+            // The 2026-11-05 #810 round review: the same locked load the
+            // single delete carries (the delete-vs-link serialization).
+            Optional<CmsPage> row = pageRepository.findByIdForUpdate(id);
             if (row.isPresent() && !menuItemRepository.existsByPageId(id)) {
                 translationRepository.findAllByPageId(id).forEach(translationRepository::delete);
                 pageRepository.delete(row.get());
@@ -154,6 +173,12 @@ public class CmsPageAdminService implements CmsPageSpi {
         requireAdmin(caller);
         CmsPage page = requirePage(id);
         String language = requireLanguage(languageCode);
+        requireFieldLimits(slug, seoTitle, seoDescription);
+        // The 2026-11-05 #810 round review: the translated title carries
+        // the same 255 bound the page's own title carries.
+        if (title != null && !title.isBlank() && title.trim().length() > 255) {
+            throw new IllegalArgumentException("The page title exceeds 255 characters");
+        }
         CmsPageTranslation translation = translationRepository
                 .findByPageIdAndLanguageCode(id, language)
                 .orElseGet(() -> {
@@ -186,16 +211,26 @@ public class CmsPageAdminService implements CmsPageSpi {
     public PageWindow scrollPages(Authentication caller, String sortField, boolean ascending,
                                   KeysetScrollPosition position, Limit limit) {
         requireAdmin(caller);
+        requireForwardScroll(position, "pages");
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): an UNKNOWN sort field answers the classified
+        // validation error — never a silent fallback to the default sort
+        // the caller did not ask for (null stays the documented default).
+        // PUBLICATION_DATE rides createdAt per the registered
+        // DECISION-10 divergence (the materialized column is deferred
+        // until the real sort need exists).
         Window<CmsPage> window = switch (sortField == null ? "SLUG" : sortField) {
+            case "SLUG" -> ascending
+                    ? pageRepository.findAllByOrderBySlugAscIdAsc(position, limit)
+                    : pageRepository.findAllByOrderBySlugDescIdDesc(position, limit);
             case "TITLE" -> ascending
                     ? pageRepository.findAllByOrderByTitleAscIdAsc(position, limit)
                     : pageRepository.findAllByOrderByTitleDescIdDesc(position, limit);
             case "CREATED_AT", "PUBLICATION_DATE" -> ascending
                     ? pageRepository.findAllByOrderByCreatedAtAscIdAsc(position, limit)
                     : pageRepository.findAllByOrderByCreatedAtDescIdDesc(position, limit);
-            default -> ascending
-                    ? pageRepository.findAllByOrderBySlugAscIdAsc(position, limit)
-                    : pageRepository.findAllByOrderBySlugDescIdDesc(position, limit);
+            default -> throw new IllegalArgumentException(
+                    "Unsupported pages sort field: " + sortField);
         };
         return new PageWindow(window.map(this::toView), pageRepository.count());
     }
@@ -224,7 +259,18 @@ public class CmsPageAdminService implements CmsPageSpi {
     public PageTypeView updatePageType(Authentication caller, UUID id, String name, String slug,
                                        List<UUID> addAttributes, List<UUID> removeAttributes) {
         requireAdmin(caller);
-        CmsPageType row = requirePageType(id);
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the locked load — the update path's own assign
+        // legs ride the same serialization; and the non-empty rename
+        // carries the 255 bound the create path already carries (the
+        // classified validation error, never the flush's raw error).
+        CmsPageType row = requirePageTypeForUpdate(id);
+        if (name != null && !name.isBlank() && name.trim().length() > 255) {
+            throw new IllegalArgumentException("The page type name exceeds 255 characters");
+        }
+        if (slug != null && !slug.isBlank() && slug.trim().length() > 255) {
+            throw new IllegalArgumentException("The slug exceeds 255 characters");
+        }
         if (slug != null && !slug.isBlank()) {
             String resolved = requireSlugShape(slug.trim());
             if (!resolved.equals(row.getSlug()) && pageTypeRepository.existsBySlug(resolved)) {
@@ -282,7 +328,11 @@ public class CmsPageAdminService implements CmsPageSpi {
     public PageTypeView assignPageTypeAttributes(Authentication caller, UUID pageTypeId,
                                                  List<UUID> attributeIds) {
         requireAdmin(caller);
-        CmsPageType row = requirePageType(pageTypeId);
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the locked load — the assign leg joins the same
+        // serialization family as unassign/reorder (assignPairs re-locks
+        // idempotently inside the transaction).
+        CmsPageType row = requirePageTypeForUpdate(pageTypeId);
         requireAttributeList(attributeIds);
         assignPairs(pageTypeId, attributeIds);
         log.info("CMS page type attributes assigned: typeId={}, count={}, actor={}",
@@ -294,7 +344,10 @@ public class CmsPageAdminService implements CmsPageSpi {
     public PageTypeView unassignPageTypeAttributes(Authentication caller, UUID pageTypeId,
                                                    List<UUID> attributeIds) {
         requireAdmin(caller);
-        CmsPageType row = requirePageType(pageTypeId);
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the locked load — the unassign + resequence
+        // serializes against every other assignment-family write.
+        CmsPageType row = requirePageTypeForUpdate(pageTypeId);
         requireAttributeList(attributeIds);
         for (UUID attributeId : attributeIds) {
             CmsPageTypeAttribute pair = attributeRepository
@@ -313,7 +366,25 @@ public class CmsPageAdminService implements CmsPageSpi {
     public PageTypeView reorderPageTypeAttributes(Authentication caller, UUID pageTypeId,
                                                   List<UUID> attributeIds, List<Integer> deltas) {
         requireAdmin(caller);
-        CmsPageType row = requirePageType(pageTypeId);
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the locked load — the position read and rewrite
+        // serialize against every other assignment write on the same type
+        // (the schema does not enforce (page_type_id, position) uniqueness;
+        // two concurrent reorders could read one state and both write it).
+        CmsPageType row = pageTypeRepository.findByIdForUpdate(pageTypeId)
+                .orElseThrow(() -> new ResourceNotFoundException("No page type " + pageTypeId));
+        // The 2026-11-05 #810 round review: the lists are one-per-move by
+        // contract — a null list or a length mismatch answers the
+        // classified validation error BEFORE any database read (the old
+        // path answered the raw NullPointerException or
+        // IndexOutOfBoundsException mid-batch, and silently IGNORED
+        // surplus deltas).
+        requireAttributeList(attributeIds);
+        if (deltas == null || deltas.size() != attributeIds.size()) {
+            throw new IllegalArgumentException(
+                    "reorderPageTypeAttributes requires deltas with exactly one entry per"
+                            + " attribute");
+        }
         List<CmsPageTypeAttribute> pairs =
                 new ArrayList<>(attributeRepository.findAllByPageTypeIdOrderByPositionAscIdAsc(pageTypeId));
         // The deterministic relative-move semantics (the CodeRabbit
@@ -332,7 +403,12 @@ public class CmsPageAdminService implements CmsPageSpi {
             }
             int delta = deltas.get(i) == null ? 0 : deltas.get(i);
             CmsPageTypeAttribute pair = pairs.remove(from);
-            int to = Math.max(0, Math.min(from + delta, pairs.size()));
+            // The 2026-11-05 #810 round review (Minor · Functional
+            // Correctness): the clamp arithmetic runs in LONG — from +
+            // Integer.MAX_VALUE overflows int to a NEGATIVE value the
+            // clamp then reads as 0 (a wrong-but-accepted move); the long
+            // sum clamps to the list's own end honestly.
+            int to = (int) Math.max(0L, Math.min((long) from + delta, pairs.size()));
             pairs.add(to, pair);
         }
         parkAndWriteDense(pairs);
@@ -354,13 +430,19 @@ public class CmsPageAdminService implements CmsPageSpi {
                                           boolean ascending, KeysetScrollPosition position,
                                           Limit limit) {
         requireAdmin(caller);
+        requireForwardScroll(position, "page types");
+        // The 2026-11-05 #810 round review: an UNKNOWN sort field answers
+        // the classified validation error, never a silent fallback (null
+        // stays the documented default).
         Window<CmsPageType> window = switch (sortField == null ? "NAME" : sortField) {
+            case "NAME" -> ascending
+                    ? pageTypeRepository.findAllByOrderByNameAscIdAsc(position, limit)
+                    : pageTypeRepository.findAllByOrderByNameDescIdDesc(position, limit);
             case "SLUG" -> ascending
                     ? pageTypeRepository.findAllByOrderBySlugAscIdAsc(position, limit)
                     : pageTypeRepository.findAllByOrderBySlugDescIdDesc(position, limit);
-            default -> ascending
-                    ? pageTypeRepository.findAllByOrderByNameAscIdAsc(position, limit)
-                    : pageTypeRepository.findAllByOrderByNameDescIdDesc(position, limit);
+            default -> throw new IllegalArgumentException(
+                    "Unsupported page types sort field: " + sortField);
         };
         return new PageTypeWindow(window.map(this::toTypeView), pageTypeRepository.count());
     }
@@ -373,6 +455,13 @@ public class CmsPageAdminService implements CmsPageSpi {
         if (attributeIds == null || attributeIds.isEmpty()) {
             return;
         }
+        // The 2026-11-05 #810 round review (Minor · Functional
+        // Correctness): the assignment's position read and insert
+        // serialize on the type row's PESSIMISTIC_WRITE lock (the caller
+        // already holds it on the update path; the create path locks its
+        // own fresh row — the lock is idempotent inside the transaction).
+        pageTypeRepository.findByIdForUpdate(pageTypeId)
+                .orElseThrow(() -> new ResourceNotFoundException("No page type " + pageTypeId));
         List<CmsPageTypeAttribute> existing =
                 attributeRepository.findAllByPageTypeIdOrderByPositionAscIdAsc(pageTypeId);
         int nextPosition = existing.isEmpty() ? 0
@@ -478,8 +567,58 @@ public class CmsPageAdminService implements CmsPageSpi {
                 .orElseThrow(() -> new ResourceNotFoundException("No page " + id));
     }
 
+    /**
+     * The 2026-11-05 #810 round review (Minor · Functional Correctness):
+     * the V281/V282 column bounds validated at the boundary — a present
+     * (non-null) value longer than its column answers the classified
+     * validation error, never the flush's raw database error (the null
+     * and blank semantics belong to the entity's own apply contract).
+     */
+    private static void requireFieldLimits(String slug, String seoTitle, String seoDescription) {
+        if (slug != null && !slug.isBlank() && slug.trim().length() > 255) {
+            throw new IllegalArgumentException("The slug exceeds 255 characters");
+        }
+        if (seoTitle != null && !seoTitle.isBlank() && seoTitle.trim().length() > 255) {
+            throw new IllegalArgumentException("The SEO title exceeds 255 characters");
+        }
+        if (seoDescription != null && !seoDescription.isBlank()
+                && seoDescription.trim().length() > 512) {
+            throw new IllegalArgumentException("The SEO description exceeds 512 characters");
+        }
+    }
+
+    /**
+     * The 2026-11-05 #810 round review (Minor · Functional Correctness):
+     * the forward-only scroll contract enforced BEFORE the repository —
+     * Spring Data Commons 4.x's KeysetScrollPosition.isInitial() is
+     * keys.isEmpty() (direction-independent), so an empty BACKWARD
+     * position used to slip past an isInitial()-only guard and answer a
+     * forward page with forward cursors from the END of the window's
+     * math; the direction itself is the contract.
+     */
+    private static void requireForwardScroll(
+            org.springframework.data.domain.KeysetScrollPosition position, String surface) {
+        if (position != null && !position.scrollsForward()) {
+            throw new IllegalArgumentException(
+                    "The " + surface + " scroll supports forward-only pagination");
+        }
+    }
+
     private CmsPageType requirePageType(UUID id) {
         return pageTypeRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("No page type " + id));
+    }
+
+    /**
+     * The 2026-11-05 #810 round review (Minor · Functional Correctness):
+     * the PESSIMISTIC_WRITE load the assignment-family write paths carry —
+     * every path that reads the type's assigned positions and rewrites
+     * them (assign, unassign + resequence) serializes on the type row, so
+     * concurrent writers cannot read one last-position and both insert at
+     * it (the reservation-wall pattern the catalog assignment carries).
+     */
+    private CmsPageType requirePageTypeForUpdate(UUID id) {
+        return pageTypeRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("No page type " + id));
     }
 
