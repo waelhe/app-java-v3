@@ -147,7 +147,7 @@ class ProductTypeWriteServiceTest {
     @Test
     void unknownIdAnswersTheNotFoundDomainError() {
         UUID unknown = UUID.randomUUID();
-        when(repository.findById(unknown)).thenReturn(Optional.empty());
+        when(repository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
 
         ProductTypeMutationResult result = service.updateProductType(unknown,
                 new ProductTypeUpdateCommand("New", null));
@@ -160,7 +160,7 @@ class ProductTypeWriteServiceTest {
     @Test
     void emptyCommandAnswersTheCurrentProjectionWithoutASave() {
         ProductType existing = row("keep-type", "Kept");
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
 
         ProductTypeMutationResult result = service.updateProductType(existing.getId(),
                 new ProductTypeUpdateCommand(null, null));
@@ -174,7 +174,7 @@ class ProductTypeWriteServiceTest {
     @Test
     void providedFieldsReplaceAndNullsPreserve() {
         ProductType existing = row("keep-type", "Kept");
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         ProductTypeMutationResult result = service.updateProductType(existing.getId(),
@@ -189,7 +189,7 @@ class ProductTypeWriteServiceTest {
     @Test
     void blankNameAnswersTheInvalidDomainError() {
         ProductType existing = row("keep-type", "Kept");
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
 
         ProductTypeMutationResult result = service.updateProductType(existing.getId(),
                 new ProductTypeUpdateCommand("   ", null));
@@ -207,7 +207,7 @@ class ProductTypeWriteServiceTest {
         // the classified INVALID refusal, never a silent drop and
         // never an unauthorized move.
         ProductType existing = row("keep-type", "Kept");
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(repository.findByCode("fresh-name")).thenReturn(Optional.empty());
 
         ProductTypeMutationResult result = service.updateProductType(existing.getId(),
@@ -229,7 +229,7 @@ class ProductTypeWriteServiceTest {
         // refusal first — the code never moves, so the uniqueness
         // ladder below it is unreachable for a different code.
         ProductType existing = row("keep-type", "Kept");
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(repository.findByCode("taken")).thenReturn(Optional.of(row("taken", "Taken")));
 
         ProductTypeMutationResult result = service.updateProductType(existing.getId(),
@@ -247,7 +247,7 @@ class ProductTypeWriteServiceTest {
         // The row's own code is EXCLUDED from the duplicate check — a
         // re-send of the current slug is a no-op, not a conflict.
         ProductType existing = row("keep-type", "Kept");
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(repository.findByCode("keep-type")).thenReturn(Optional.of(existing));
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -264,7 +264,7 @@ class ProductTypeWriteServiceTest {
         // An explicitly blank slug is a change attempt (to blank) —
         // the immutable refusal answers it, never a silent drop.
         ProductType existing = row("keep-type", "Kept");
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
 
         ProductTypeMutationResult result = service.updateProductType(existing.getId(),
                 new ProductTypeUpdateCommand(null, "   "));

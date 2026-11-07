@@ -16,15 +16,18 @@ public class ProductTypeAttributeService {
     private final CatalogAttributeDefinitionRepository definitions;
     private final CatalogAttributeOptionRepository options;
     private final ProductTypeAttributeAssignmentRepository assignments;
+    private final ProductVariantRepository variantRepository;
 
     public ProductTypeAttributeService(ProductTypeRepository productTypes,
                                        CatalogAttributeDefinitionRepository definitions,
                                        CatalogAttributeOptionRepository options,
-                                       ProductTypeAttributeAssignmentRepository assignments) {
+                                       ProductTypeAttributeAssignmentRepository assignments,
+                                       ProductVariantRepository variantRepository) {
         this.productTypes = productTypes;
         this.definitions = definitions;
         this.options = options;
         this.assignments = assignments;
+        this.variantRepository = variantRepository;
     }
 
     @Transactional(readOnly = true)
@@ -38,16 +41,21 @@ public class ProductTypeAttributeService {
         // surface never needed it (its own honest 404 stays).
         productTypes.findById(productTypeId)
                 .orElseThrow(() -> new ResourceNotFoundException("ProductType", productTypeId));
-        // The 2026-11-06 #808 round review (Major · Functional
-        // Correctness): the SAME (position, scope, id) order the reorder
-        // path resolves its moves against — the read surface and the
-        // write surface share one bucket order, so a client's
-        // relative-move request addresses the neighbors it just read
-        // (the repository's scope-major order is not the position order
-        // when the two per-scope spaces overlap).
+        // The 2026-11-06 #808 round-3 review (Minor · Functional
+        // Correctness): the BUCKET-major order — PRODUCT's own bucket
+        // first, then the VARIANT family (VARIANT, VARIANT_SELECTION),
+        // with the (position, scope, id) order INSIDE each bucket. The
+        // previous position-major sort interleaved the buckets
+        // (PRODUCT@1, VARIANT@1, PRODUCT@2...), so a client's
+        // relative-move request addressed neighbors the reorder path
+        // (the repository's scope-major bucket order) never resolved —
+        // the read surface and the write surface now share ONE bucket
+        // order.
         return assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId).stream()
                 .sorted(java.util.Comparator
-                        .comparingInt(ProductTypeAttributeAssignment::getPosition)
+                        .comparingInt((ProductTypeAttributeAssignment assignment) ->
+                                assignment.getScope() == ProductTypeAttributeScope.PRODUCT ? 0 : 1)
+                        .thenComparingInt(ProductTypeAttributeAssignment::getPosition)
                         .thenComparing(assignment -> assignment.getScope().ordinal())
                         .thenComparing(ProductTypeAttributeAssignment::getId))
                 .toList();
@@ -80,6 +88,21 @@ public class ProductTypeAttributeService {
             }
             if (options.countByAttributeDefinitionId(attributeDefinitionId) < 2) {
                 throw new ConflictException("VARIANT_SELECTION requires at least two allowed options");
+            }
+            // The 2026-11-06 #808 round-3 review (Major · Data Integrity &
+            // Integration): the published-shelf guard — a product on the
+            // shelf (ACTIVE, or SUSPENDED — reactivate() returns it to
+            // ACTIVE without re-running the publication gate) carrying a
+            // TYPED variant would keep its key derived under the dead
+            // schema and its values short of the new selection, and the
+            // shelf never re-passes the gate to surface it. The variants
+            // migrate first (the attribute-delete wall's own law); DRAFT
+            // products stay eligible — the publication gate owns their
+            // coverage verdict at publish time (the
+            // assignAttributes twin's own pairing).
+            if (variantRepository.existsPublishedShelfTypedVariantForType(productTypeId)) {
+                throw new ConflictException("A variant-selection attribute cannot be assigned while a published"
+                        + " product of this type carries typed variants — migrate the variants first");
             }
         }
 

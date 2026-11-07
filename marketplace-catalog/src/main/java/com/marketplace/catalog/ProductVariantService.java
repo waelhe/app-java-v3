@@ -134,10 +134,22 @@ public class ProductVariantService {
      * commit (the updateAssignments FOR-UPDATE writer serializes against
      * it), so the schema this registration derives its combination key
      * from is the schema the move-guarded writers themselves committed.
+     *
+     * <p>The 2026-11-06 #808 round-3 review (Major · Stability &amp;
+     * Availability): a row that answers EMPTY (a soft-deleted type — a
+     * product whose schema the registry withdrew) owns NO live schema:
+     * the delete gate refuses while live assignments exist, so the
+     * assignment read below answers empty and the registration rides the
+     * legacy free-form path exactly as the unlocked read always did (the
+     * pre-share-lock behavior this path must keep answering — the
+     * ResourceNotFoundException the orElseThrow produced was a regression
+     * the finding names: registration used to accept this state). The
+     * share lock is taken only when the row is live — a dead row has no
+     * updateAssignments writer to synchronize with (its locked read
+     * answers empty too).</p>
      */
     private List<ProductTypeAttributeAssignment> readAssignmentsUnderTypeShareLock(UUID productTypeId) {
-        productTypes.findByIdForShare(productTypeId)
-                .orElseThrow(() -> new ResourceNotFoundException("ProductType", productTypeId));
+        productTypes.findByIdForShare(productTypeId);
         return assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId);
     }
 
@@ -274,7 +286,17 @@ public class ProductVariantService {
     @Transactional
     @PreAuthorize("hasRole('PROVIDER') or hasRole('ADMIN')")
     public ProductVariant setStock(UUID variantId, int quantity, Authentication authentication) {
-        ProductVariant variant = requireOwnedVariant(variantId, authentication);
+        // The 2026-11-06 #808 round-3 review (Minor · Data Integrity &amp;
+        // Integration): the LOCKED ownership read — the reservation is a
+        // native UPDATE that never touches the @Version column, so an
+        // unlocked read's restock(quantity) guard checked the reserved
+        // set AS LOADED and the save could answer the V219 CHECK's raw
+        // violation instead of the entity's own IllegalArgumentException
+        // (a reservation landing between the read and the write). The
+        // pessimistic row lock serializes this guard against the
+        // placement's UPDATE (the ownedRowForUpdate precedent the delete
+        // paths ride).
+        ProductVariant variant = requireOwnedVariantForUpdate(variantId, authentication);
         variant.restock(quantity);
         return variantRepository.save(variant);
     }
@@ -322,6 +344,24 @@ public class ProductVariantService {
     /** The variant's own ownership gate — rides the owning product's provider (the same shape). */
     private ProductVariant requireOwnedVariant(UUID variantId, Authentication authentication) {
         ProductVariant variant = variantRepository.findById(variantId)
+                .orElseThrow(() -> new ResourceNotFoundException("ProductVariant", variantId));
+        UUID caller = currentUserProvider.getCurrentUserId(authentication);
+        if (!variant.getProviderId().equals(caller) && !currentUserProvider.isAdmin(authentication)) {
+            throw new ResourceNotFoundException("ProductVariant", variantId);
+        }
+        return variant;
+    }
+
+    /**
+     * The shelf write's own ownership gate — the SAME ownership law on
+     * the LOCKED row (the 2026-11-06 #808 round-3 review, Minor · Data
+     * Integrity &amp; Integration: setStock's reservation-sensitive guard
+     * reads the row FOR UPDATE, serializing against the placement's
+     * native reservation UPDATE — the delete paths' own
+     * ownedRowForUpdate twin, the ownership verdict kept intact).
+     */
+    private ProductVariant requireOwnedVariantForUpdate(UUID variantId, Authentication authentication) {
+        ProductVariant variant = variantRepository.findByIdForUpdate(variantId)
                 .orElseThrow(() -> new ResourceNotFoundException("ProductVariant", variantId));
         UUID caller = currentUserProvider.getCurrentUserId(authentication);
         if (!variant.getProviderId().equals(caller) && !currentUserProvider.isAdmin(authentication)) {

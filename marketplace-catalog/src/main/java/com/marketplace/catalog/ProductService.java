@@ -165,7 +165,16 @@ public class ProductService {
         if (value.populatedValueCount() != 1) {
             throw new ConflictException("Exactly one typed value must be supplied for assignment " + assignment.getId());
         }
-        CatalogAttributeDefinition definition = definitions.findById(assignment.getAttributeDefinitionId())
+        // The 2026-11-06 #808 round-3 review (Major · Data Integrity &
+        // Integration): the reference-CREATING read takes the definition
+        // row FOR SHARE (the variant registration's CHOICE-leg pairing
+        // verbatim) — the attribute-delete and option-delete guards'
+        // FOR-UPDATE read of the same row serializes against THIS read,
+        // so their reference probes answer over this save's committed
+        // fact, never a zero that was about to become one (the unlocked
+        // findById let the delete's probe pass while this value was in
+        // flight, orphaning the product's value on a dead schema).
+        CatalogAttributeDefinition definition = definitions.findByIdForShare(assignment.getAttributeDefinitionId())
                 .orElseThrow(() -> new ResourceNotFoundException("CatalogAttributeDefinition", assignment.getAttributeDefinitionId()));
         boolean valid = switch (definition.getValueType()) {
             case TEXT -> value.textValue() != null && value.numberValue() == null

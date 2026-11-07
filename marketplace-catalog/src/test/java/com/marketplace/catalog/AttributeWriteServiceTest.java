@@ -59,6 +59,7 @@ class AttributeWriteServiceTest {
     private CatalogAttributeOptionRepository optionRepository;
     private ProductTypeAttributeAssignmentRepository assignmentRepository;
     private ProductVariantAttributeValueRepository variantAttributeValues;
+    private ProductAttributeValueRepository productAttributeValues;
     private AttributeWriteSpi service;
 
     @BeforeEach
@@ -73,8 +74,15 @@ class AttributeWriteServiceTest {
                 .when(variantAttributeValues.existsLiveVariantValueForAssignmentsOrOptions(
                         org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(false);
+        // The 2026-11-06 #808 round-3: the PRODUCT-scope twin answers NO
+        // references by default (each test overrides it).
+        productAttributeValues = mock(ProductAttributeValueRepository.class);
+        org.mockito.Mockito.lenient()
+                .when(productAttributeValues.existsLiveProductValueForAssignmentsOrOptions(
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(false);
         service = new AttributeWriteService(repository, optionRepository, assignmentRepository,
-                variantAttributeValues);
+                variantAttributeValues, productAttributeValues);
     }
 
     private static CatalogAttributeDefinition row(String code, String nameEn) {
@@ -321,6 +329,29 @@ class AttributeWriteServiceTest {
         CatalogAttributeDefinition existing = row("held-attr", "Held");
         when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         org.mockito.Mockito.when(variantAttributeValues.existsLiveVariantValueForAssignmentsOrOptions(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(true);
+
+        AttributeMutationResult result = service.deleteAttribute(existing.getId());
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(AttributeMutationError::code, AttributeMutationError::field)
+                .containsExactly(AttributeMutationErrorCode.INVALID, "id");
+        verify(repository, never()).delete(any(CatalogAttributeDefinition.class));
+    }
+
+    @Test
+    void deleteRefusesWhenALiveProductCarriesTheAttributesChildren() {
+        // The 2026-11-06 #808 round-3 review (Major · Data Integrity):
+        // the PRODUCT-scope population's twin of the variant refusal — a
+        // live product's own value bound to the attribute's assignments
+        // or options is the same orphan: the publish path's
+        // re-validation reads the assignments and would strand the
+        // product on a dead schema.
+        CatalogAttributeDefinition existing = row("held-product-attr", "Held");
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
+        org.mockito.Mockito.when(productAttributeValues.existsLiveProductValueForAssignmentsOrOptions(
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(true);
 

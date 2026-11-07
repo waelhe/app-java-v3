@@ -123,9 +123,18 @@ public class ProductTypeWriteService implements ProductTypeWriteSpi {
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     public ProductTypeMutationResult updateProductType(UUID id, ProductTypeUpdateCommand command) {
+        // The 2026-11-06 #808 round-3 review (Minor · Data Integrity &amp;
+        // Integration): the LOCKED read — the same findByIdForUpdate the
+        // delete path rides. The soft delete never touches the @Version
+        // column, so an unlocked read that passed BEFORE a concurrent
+        // delete's commit wrote its amendment OVER the soft-deleted row and
+        // answered success (a resurrecting write the registry never
+        // sanctioned). The pessimistic row lock serializes the update's
+        // read-then-write against the delete's locked read-then-delete:
+        // whichever wins, the loser's read answers the post-verdict state.
         Optional<ProductType> addressed = id == null
                 ? Optional.empty()
-                : productTypeRepository.findById(id);
+                : productTypeRepository.findByIdForUpdate(id);
         if (addressed.isEmpty()) {
             return ProductTypeMutationResult.failure(List.of(new ProductTypeMutationError(
                     "id", ProductTypeMutationErrorCode.NOT_FOUND, "No product type found for the id")));

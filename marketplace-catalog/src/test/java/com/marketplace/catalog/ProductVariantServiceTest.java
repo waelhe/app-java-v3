@@ -211,6 +211,32 @@ class ProductVariantServiceTest {
     }
 
     @Test
+    void registrationUnderAWithdrawnTypeRidesTheFreeFormPath() {
+        // The 2026-11-06 #808 round-3 review (Major · Stability &
+        // Availability): a soft-deleted type row owns NO live schema —
+        // the registration accepts the state exactly as the unlocked read
+        // always did (the free-form path: no assignments, no values, no
+        // combination key), never the ResourceNotFoundException the
+        // orElseThrow regression produced.
+        UUID productTypeId = UUID.randomUUID();
+        Product product = Product.register("orphaned-goods", "Orphaned goods", null, 100L, "SAR", seller,
+                productTypeId);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
+        when(variantRepository.findByProviderIdAndSku(seller, "FREE-1")).thenReturn(Optional.empty());
+        when(productTypes.findByIdForShare(productTypeId)).thenReturn(Optional.empty());
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId))
+                .thenReturn(List.of());
+        when(variantRepository.save(any(ProductVariant.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ProductVariant saved = service.register(product.getId(),
+                new ProductVariantService.RegisterVariantCommand("FREE-1", null, 100), authentication);
+
+        assertThat(saved.getSku()).isEqualTo("FREE-1");
+        assertThat(saved.getOptionCombinationKey()).isNull();
+    }
+
+    @Test
     void aStrangerCannotRegisterUnderSomeoneElsesProduct() {
         Product product = product();
         when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
@@ -307,7 +333,10 @@ class ProductVariantServiceTest {
                 .set(field(ProductVariant::getStockQuantity), 3)
                 .set(field(ProductVariant::getReservedQuantity), 2)
                 .create();
-        when(variantRepository.findById(variant.getId())).thenReturn(Optional.of(variant));
+        // The 2026-11-06 #808 round-3 review (Minor · Data Integrity):
+        // setStock reads the row FOR UPDATE — the reservation-sensitive
+        // guard serializes against the placement's native UPDATE.
+        when(variantRepository.findByIdForUpdate(variant.getId())).thenReturn(Optional.of(variant));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
 
         assertThatThrownBy(() -> service.setStock(variant.getId(), 1, authentication))

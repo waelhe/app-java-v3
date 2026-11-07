@@ -132,7 +132,7 @@ class ProductServiceTest {
         ProductTypeAttributeAssignment assignment = ProductTypeAttributeAssignment.create(
                 productTypeId, attributeId, ProductTypeAttributeScope.PRODUCT, true, 0);
         when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId)).thenReturn(List.of(assignment));
-        when(definitions.findById(attributeId)).thenReturn(Optional.of(
+        when(definitions.findByIdForShare(attributeId)).thenReturn(Optional.of(
                 CatalogAttributeDefinition.create("material", "Material", "الخامة", CatalogAttributeType.TEXT, null)));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
         when(productRepository.save(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -158,7 +158,7 @@ class ProductServiceTest {
         ProductTypeAttributeAssignment assignment = ProductTypeAttributeAssignment.create(
                 productTypeId, attributeId, ProductTypeAttributeScope.PRODUCT, false, 0);
         when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId)).thenReturn(List.of(assignment));
-        when(definitions.findById(attributeId)).thenReturn(Optional.of(
+        when(definitions.findByIdForShare(attributeId)).thenReturn(Optional.of(
                 CatalogAttributeDefinition.create("weight", "Weight", "الوزن", CatalogAttributeType.NUMBER, null)));
         CatalogAttributeValueInput wrongType = new CatalogAttributeValueInput(assignment.getId(), "heavy", null, null, null);
 

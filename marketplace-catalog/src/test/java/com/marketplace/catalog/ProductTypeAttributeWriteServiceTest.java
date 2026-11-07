@@ -799,4 +799,138 @@ class ProductTypeAttributeWriteServiceTest {
                         && saved.get(0).getOptionCombinationKey().equals(expected)
                         && !saved.get(0).getOptionCombinationKey().equals("old-shape-key")));
     }
+
+    @Test
+    void theLastSelectionMoveOutTurnsEveryTypedVariantFreeForm() {
+        // The 2026-11-06 #808 round-3 review (Major · Functional
+        // Correctness): when the post-move selection set becomes EMPTY,
+        // canonical answers null for every variant — the previous
+        // putIfAbsent treated the second null key as a COLLISION and
+        // refused the move, although the partial unique index excludes
+        // null keys by its own predicate. The move now succeeds and every
+        // typed variant recombines to the free-form null key.
+        CatalogAttributeDefinition leaving = definition("leaving-choice", CatalogAttributeType.CHOICE);
+        ProductTypeAttributeAssignment leavingAssignment = assigned(leaving,
+                ProductTypeAttributeScope.VARIANT_SELECTION, 1);
+        when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
+                .thenReturn(List.of(leavingAssignment));
+        when(assignmentRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(variantRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        Product product = Product.register("cat-code", "Affected", null, 1000L, "SAR",
+                UUID.randomUUID(), type.getId());
+        ProductVariant first = ProductVariant.register(product, "sku-one", "One", 900L, "key-one");
+        ProductVariant second = ProductVariant.register(product, "sku-two", "Two", 900L, "key-two");
+        when(productRepository.findByProductTypeId(type.getId())).thenReturn(List.of(product));
+        when(variantRepository.findByProductIdOrderBySkuAsc(product.getId()))
+                .thenReturn(List.of(first, second));
+        when(variantAttributeValues.findAllByProductVariantIdOrderByAssignmentIdAsc(first.getId()))
+                .thenReturn(List.of(ProductVariantAttributeValue.create(first.getId(),
+                        new CatalogAttributeValueInput(leavingAssignment.getId(), null, null, null,
+                                UUID.randomUUID()))));
+        when(variantAttributeValues.findAllByProductVariantIdOrderByAssignmentIdAsc(second.getId()))
+                .thenReturn(List.of(ProductVariantAttributeValue.create(second.getId(),
+                        new CatalogAttributeValueInput(leavingAssignment.getId(), null, null, null,
+                                UUID.randomUUID()))));
+
+        ProductTypeMutationResult result = service.updateAssignments(type.getId(),
+                List.of(new ProductTypeAttributeAssignmentUpdateOperation(leaving.getId(), false)));
+
+        assertThat(result.success()).as("two keyed variants must NOT answer a collision the null-excluding"
+                + " index cannot produce").isTrue();
+        verify(variantRepository).saveAll(argThat((List<ProductVariant> saved) ->
+                saved.size() == 2 && saved.stream().allMatch(row -> row.getOptionCombinationKey() == null)));
+    }
+
+    @Test
+    void aMovedOutSelectionAttributeRekeysItsVariantsBackInOnReturn() {
+        // The same round's round-trip: the move OUT turns the typed
+        // variants free-form (null keys), and the values NEVER leave the
+        // rows — the move BACK IN re-derives the very same keys (the
+        // null-key variant is no longer skipped: the coverage verdict and
+        // the re-derivation own it again).
+        CatalogAttributeDefinition choice = definition("choice-attr", CatalogAttributeType.CHOICE);
+        ProductTypeAttributeAssignment selection = assigned(choice,
+                ProductTypeAttributeScope.VARIANT_SELECTION, 1);
+        when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
+                .thenReturn(List.of(selection));
+        when(attributeDefinitionRepository.findByIdForShare(choice.getId())).thenReturn(Optional.of(choice));
+        when(attributeOptionRepository.countByAttributeDefinitionId(choice.getId())).thenReturn(2L);
+        when(assignmentRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(variantRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        Product product = Product.register("cat-code", "Affected", null, 1000L, "SAR",
+                UUID.randomUUID(), type.getId());
+        UUID option = UUID.randomUUID();
+        ProductVariant typed = ProductVariant.register(product, "sku-a", "A", 900L, "old-shape-key");
+        when(productRepository.findByProductTypeId(type.getId())).thenReturn(List.of(product));
+        when(variantRepository.findByProductIdOrderBySkuAsc(product.getId())).thenReturn(List.of(typed));
+        when(variantAttributeValues.findAllByProductVariantIdOrderByAssignmentIdAsc(typed.getId()))
+                .thenReturn(List.of(ProductVariantAttributeValue.create(typed.getId(),
+                        new CatalogAttributeValueInput(selection.getId(), null, null, null, option))));
+
+        // Leg 1 — the move OUT: the typed variant recombines to the null
+        // free-form key.
+        ProductTypeMutationResult movedOut = service.updateAssignments(type.getId(),
+                List.of(new ProductTypeAttributeAssignmentUpdateOperation(choice.getId(), false)));
+        assertThat(movedOut.success()).isTrue();
+        assertThat(typed.getOptionCombinationKey()).isNull();
+
+        // Leg 2 — the move BACK IN: the null-key variant (whose values
+        // stayed) re-derives the same combination key the registration
+        // path computes over the same schema.
+        ProductTypeMutationResult movedIn = service.updateAssignments(type.getId(),
+                List.of(new ProductTypeAttributeAssignmentUpdateOperation(choice.getId(), true)));
+        assertThat(movedIn.success()).isTrue();
+        String expected = VariantCombinationKeys.canonical(List.of(selection),
+                java.util.Map.of(selection.getId(),
+                        new CatalogAttributeValueInput(selection.getId(), null, null, null, option)));
+        assertThat(typed.getOptionCombinationKey()).isEqualTo(expected);
+    }
+
+    @Test
+    void theMoveOutOfSelectionPreservesTheRequiredValue() {
+        // The 2026-11-06 #808 round-3 review (Minor · Functional
+        // Correctness): required is the row's OWN independent contract —
+        // VARIANT_SELECTION forces true, and the move OUT PRESERVES the
+        // current value (the previous shape rewrote it to false,
+        // silently loosening a required attribute into an optional one).
+        CatalogAttributeDefinition choice = definition("choice-attr", CatalogAttributeType.CHOICE);
+        ProductTypeAttributeAssignment selection = assigned(choice,
+                ProductTypeAttributeScope.VARIANT_SELECTION, 1);
+        when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
+                .thenReturn(List.of(selection));
+        when(assignmentRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ProductTypeMutationResult result = service.updateAssignments(type.getId(),
+                List.of(new ProductTypeAttributeAssignmentUpdateOperation(choice.getId(), false)));
+
+        assertThat(result.success()).isTrue();
+        verify(assignmentRepository).saveAll(argThat((List<ProductTypeAttributeAssignment> saved) ->
+                saved.get(0).getScope() == ProductTypeAttributeScope.VARIANT
+                        && saved.get(0).isRequired()));
+    }
+
+    @Test
+    void assignAttributesIsRefusedWhileAPublishedProductCarriesTypedVariants() {
+        // The 2026-11-06 #808 round-3 review (Major · Data Integrity &
+        // Integration): a NEW selection assignment's value cannot exist on
+        // any variant yet — a published (or suspended) product carrying a
+        // typed variant would keep its key under the dead schema and the
+        // shelf never re-passes the publication gate. The variants migrate
+        // first; DRAFT products stay eligible (the publish gate owns
+        // them).
+        CatalogAttributeDefinition choice = definition("choice-attr", CatalogAttributeType.CHOICE);
+        when(attributeDefinitionRepository.findByIdForShare(choice.getId())).thenReturn(Optional.of(choice));
+        when(attributeOptionRepository.countByAttributeDefinitionId(choice.getId())).thenReturn(2L);
+        when(variantRepository.existsPublishedShelfTypedVariantForType(type.getId())).thenReturn(true);
+
+        ProductTypeMutationResult result = service.assignAttributes(type.getId(),
+                List.of(new ProductTypeAttributeAssignOperation(choice.getId(), "VARIANT", true)));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductTypeMutationError::code, ProductTypeMutationError::field)
+                .containsExactly(ProductTypeMutationErrorCode.INVALID, "id");
+        assertThat(result.errors().get(0).message()).contains("migrate the variants first");
+        verify(assignmentRepository, never()).saveAll(any());
+    }
 }

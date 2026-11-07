@@ -58,6 +58,8 @@ class ProductVariantWriteServiceTest {
     private ProductVariantRepository variantRepository;
     private ProductRepository productRepository;
     private CurrentUserProvider currentUserProvider;
+    private ProductTypeRepository productTypeRepository;
+    private ProductTypeAttributeAssignmentRepository assignmentRepository;
     private ProductVariantWriteSpi service;
     private final Authentication caller = new TestingAuthenticationToken("provider-subject", "n/a", "ROLE_PROVIDER");
 
@@ -66,7 +68,10 @@ class ProductVariantWriteServiceTest {
         variantRepository = mock(ProductVariantRepository.class);
         productRepository = mock(ProductRepository.class);
         currentUserProvider = mock(CurrentUserProvider.class);
-        service = new ProductVariantWriteService(variantRepository, productRepository, currentUserProvider);
+        productTypeRepository = mock(ProductTypeRepository.class);
+        assignmentRepository = mock(ProductTypeAttributeAssignmentRepository.class);
+        service = new ProductVariantWriteService(variantRepository, productRepository,
+                currentUserProvider, productTypeRepository, assignmentRepository);
         when(currentUserProvider.getCurrentUserId(any(Authentication.class))).thenReturn(ProviderIds.CALLER);
     }
 
@@ -86,6 +91,16 @@ class ProductVariantWriteServiceTest {
 
     private static ProductVariantCreateCommand create(UUID productId, String sku, String name, Long priceMinor) {
         return new ProductVariantCreateCommand(productId, sku, name, priceMinor);
+    }
+
+    /** A typed product — the register seam's own shape (a non-null productTypeId). */
+    private static Product typedProductOwnedBy(UUID providerId, UUID productTypeId) {
+        return Product.register("widgets", "Owned Widget", "fixture", 1000L, "SAR", providerId, productTypeId);
+    }
+
+    private static ProductTypeAttributeAssignment assignmentOf(UUID productTypeId,
+                                                                ProductTypeAttributeScope scope, boolean required) {
+        return ProductTypeAttributeAssignment.create(productTypeId, UUID.randomUUID(), scope, required, 0);
     }
 
     // ------------------------------------------------------------------
@@ -289,6 +304,109 @@ class ProductVariantWriteServiceTest {
                         && row.getProductId().equals(parent.getId())
                         && "SAR".equals(row.getCurrency())
                         && row.getStockQuantity() == 0));
+    }
+
+    // ------------------------------------------------------------------
+    // createVariant — the typed-schema eligibility gate (the 2026-11-06
+    // #808 round-3 review, Major · Data Integrity & Integration)
+    // ------------------------------------------------------------------
+
+    @Test
+    void aSelectionSchemaProductRefusesTheValuelessCreateWithTheInvalidDomainError() {
+        UUID productTypeId = UUID.randomUUID();
+        Product parent = typedProductOwnedBy(ProviderIds.CALLER, productTypeId);
+        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-1"))
+                .thenReturn(0L);
+        when(productTypeRepository.findByIdForShare(productTypeId))
+                .thenReturn(Optional.of(ProductType.create("widgets", "Widgets", null, null)));
+        when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId))
+                .thenReturn(List.of(assignmentOf(productTypeId,
+                        ProductTypeAttributeScope.VARIANT_SELECTION, true)));
+
+        ProductVariantMutationResult result = service.createVariant(
+                create(parent.getId(), "SKU-1", "Large / Red", 149900L), caller);
+
+        // The command carries NO attribute values: an ACTIVE row with a
+        // null combination key would bypass the partial unique index and
+        // strand the publication gate — the typed registration path owns
+        // those variants.
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
+                .containsExactly(ProductVariantMutationErrorCode.INVALID, "product");
+        verify(variantRepository, never()).save(any(ProductVariant.class));
+    }
+
+    @Test
+    void aRequiredVariantAssignmentRefusesTheValuelessCreateToo() {
+        UUID productTypeId = UUID.randomUUID();
+        Product parent = typedProductOwnedBy(ProviderIds.CALLER, productTypeId);
+        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-1"))
+                .thenReturn(0L);
+        when(productTypeRepository.findByIdForShare(productTypeId))
+                .thenReturn(Optional.of(ProductType.create("widgets", "Widgets", null, null)));
+        when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId))
+                .thenReturn(List.of(assignmentOf(productTypeId,
+                        ProductTypeAttributeScope.VARIANT, true)));
+
+        ProductVariantMutationResult result = service.createVariant(
+                create(parent.getId(), "SKU-1", "Large / Red", 149900L), caller);
+
+        // The registration path's own zero-values eligibility law: a
+        // required VARIANT assignment demands its value as well.
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
+                .containsExactly(ProductVariantMutationErrorCode.INVALID, "product");
+        verify(variantRepository, never()).save(any(ProductVariant.class));
+    }
+
+    @Test
+    void aTypedProductWithoutValueDemandsKeepsTheFreeFormCreatePath() {
+        UUID productTypeId = UUID.randomUUID();
+        Product parent = typedProductOwnedBy(ProviderIds.CALLER, productTypeId);
+        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-1"))
+                .thenReturn(0L);
+        when(productTypeRepository.findByIdForShare(productTypeId))
+                .thenReturn(Optional.of(ProductType.create("widgets", "Widgets", null, null)));
+        when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId))
+                .thenReturn(List.of(assignmentOf(productTypeId,
+                        ProductTypeAttributeScope.VARIANT, false)));
+        when(variantRepository.save(any(ProductVariant.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ProductVariantMutationResult result = service.createVariant(
+                create(parent.getId(), "SKU-1", "Large / Red", 149900L), caller);
+
+        // The free-form path survives for the products whose schema
+        // demands nothing (the finding's own directive).
+        assertThat(result.success()).isTrue();
+        verify(variantRepository).save(any(ProductVariant.class));
+    }
+
+    @Test
+    void aWithdrawnTypeSchemaKeepsTheFreeFormCreatePath() {
+        UUID productTypeId = UUID.randomUUID();
+        Product parent = typedProductOwnedBy(ProviderIds.CALLER, productTypeId);
+        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-1"))
+                .thenReturn(0L);
+        // A soft-deleted type row answers the share read empty — the
+        // schema is gone, the free-form path is the honest answer.
+        when(productTypeRepository.findByIdForShare(productTypeId)).thenReturn(Optional.empty());
+        when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId))
+                .thenReturn(List.of());
+        when(variantRepository.save(any(ProductVariant.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ProductVariantMutationResult result = service.createVariant(
+                create(parent.getId(), "SKU-1", "Large / Red", 149900L), caller);
+
+        assertThat(result.success()).isTrue();
+        verify(variantRepository).save(any(ProductVariant.class));
     }
 
     // ------------------------------------------------------------------
@@ -723,6 +841,33 @@ class ProductVariantWriteServiceTest {
         assertThat(outcomes.get(0).errors()).singleElement()
                 .extracting(ProductVariantMutationError::field)
                 .isEqualTo("product");
+    }
+
+    @Test
+    void bulkUpdateAnswersTheClassifiedRequiredForNullIdAndNullFields() {
+        // The 2026-11-06 #808 round-3 review (Minor · Stability &
+        // Availability): the per-item REQUIRED guards fire BEFORE any
+        // repository call — a null id never reaches Spring Data's
+        // findById (IllegalArgumentException) and a null fields command
+        // never reaches updateVariant's isEmpty() (NullPointerException).
+        Product parent = productOwnedBy(ProviderIds.CALLER);
+
+        var outcomes = service.bulkUpdateVariants(parent.getId(), List.of(
+                new ProductVariantBulkUpdateItem(null,
+                        new ProductVariantUpdateCommand("SKU-A", null, null)),
+                new ProductVariantBulkUpdateItem(UUID.randomUUID(), null)),
+                caller, "IGNORE_FAILED");
+
+        assertThat(outcomes).hasSize(2);
+        assertThat(outcomes.get(0).success()).isFalse();
+        assertThat(outcomes.get(0).errors()).singleElement()
+                .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
+                .containsExactly(ProductVariantMutationErrorCode.REQUIRED, "id");
+        assertThat(outcomes.get(1).success()).isFalse();
+        assertThat(outcomes.get(1).errors()).singleElement()
+                .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
+                .containsExactly(ProductVariantMutationErrorCode.REQUIRED, "fields");
+        verify(variantRepository, never()).findById(any());
     }
 
     @Test

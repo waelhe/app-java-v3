@@ -77,13 +77,17 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
     private final CatalogAttributeDefinitionRepository attributeDefinitionRepository;
     /** The live-variant references the option-delete guard reads (the #808 round). */
     private final ProductVariantAttributeValueRepository variantAttributeValues;
+    /** The live-PRODUCT references the option-delete guard reads (the #808 round-3). */
+    private final ProductAttributeValueRepository productAttributeValues;
 
     public AttributeValueWriteService(CatalogAttributeOptionRepository attributeOptionRepository,
                                       CatalogAttributeDefinitionRepository attributeDefinitionRepository,
-                                      ProductVariantAttributeValueRepository variantAttributeValues) {
+                                      ProductVariantAttributeValueRepository variantAttributeValues,
+                                      ProductAttributeValueRepository productAttributeValues) {
         this.attributeOptionRepository = attributeOptionRepository;
         this.attributeDefinitionRepository = attributeDefinitionRepository;
         this.variantAttributeValues = variantAttributeValues;
+        this.productAttributeValues = productAttributeValues;
     }
 
     @Override
@@ -268,6 +272,20 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
                     "id", AttributeMutationErrorCode.INVALID,
                     "An attribute value referenced by a live variant cannot be deleted")));
         }
+        // The 2026-11-06 #808 round-3 review (Major · Data Integrity &
+        // Integration): a live PRODUCT's own value referencing the option
+        // blocks the soft delete too — the PRODUCT-scope population's
+        // twin of the variant probe (the same FOR-UPDATE pairing on the
+        // definition row: the product write path reads it FOR SHARE
+        // before saving its value, so this probe's zero answer is
+        // COMMITTED-stable). Without this probe the deleted option left
+        // the published product's value pointing at a dead option and the
+        // publish path's re-validation refused the product forever.
+        if (productAttributeValues.existsLiveProductValueForOption(row.getId())) {
+            return AttributeValueMutationResult.failure(List.of(new AttributeMutationError(
+                    "id", AttributeMutationErrorCode.INVALID,
+                    "An attribute value referenced by a live product cannot be deleted")));
+        }
         attributeOptionRepository.delete(row);
         return AttributeValueMutationResult.success(parent, lastKnown);
     }
@@ -279,32 +297,54 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
         if (ids == null || ids.isEmpty()) {
             return 0;
         }
-        int deleted = 0;
+        // The 2026-11-06 #808 round-3 review (Major · Data Integrity &
+        // Integration): the definition locks come BEFORE the reference
+        // probes, in ONE deterministic pass — the previous per-id shape
+        // probed existsByOptionId FIRST and took the definition lock
+        // second, so a concurrent registration's FOR-SHARE read (held to
+        // ITS commit) let the probe answer zero while the reference was
+        // in flight, and the delete that waited on the lock never
+        // re-checked (the single-item leg's lock-first order, inverted
+        // here by accident). The two-pass shape resolves every known
+        // option, takes each DISTINCT definition row's FOR-UPDATE lock in
+        // sorted id order (two concurrent bulk deletes naming overlapping
+        // families in different orders can never deadlock), and only then
+        // probes and deletes — the probe's verdict is COMMITTED-stable
+        // for the whole batch.
+        java.util.Map<UUID, CatalogAttributeOption> addressedById = new java.util.LinkedHashMap<>();
         for (UUID id : ids) {
-            // Unknown ids are skipped — the honest affected count answers
-            // what the registry itself deleted (never a fabricated count,
-            // never an error entry for an id the registry never knew).
-            // The 2026-11-06 #808 round review (Major · Data Integrity &
-            // Integration): options referenced by live variants are
+            // Unknown or null ids are skipped — the honest affected count
+            // answers what the registry itself deleted (never a fabricated
+            // count, never an error entry for an id the registry never
+            // knew).
+            if (id == null) {
+                continue;
+            }
+            attributeOptionRepository.findById(id)
+                    .ifPresent(option -> addressedById.put(id, option));
+        }
+        if (addressedById.isEmpty()) {
+            return 0;
+        }
+        for (UUID definitionId : addressedById.values().stream()
+                .map(CatalogAttributeOption::getAttributeDefinitionId)
+                .distinct().sorted().toList()) {
+            // A soft-deleted definition answers no row — no lock is taken
+            // and none is needed: no registration (variant or product)
+            // can reference a dead family's option (the single leg's own
+            // law, carried by the batch's shared pass).
+            attributeDefinitionRepository.findByIdForUpdate(definitionId);
+        }
+        int deleted = 0;
+        for (CatalogAttributeOption option : addressedById.values()) {
+            // Options referenced by live variants OR live products are
             // skipped for the same honest-count reason — the single-item
-            // leg's own classified refusal, in bulk form.
-            Optional<CatalogAttributeOption> addressed = id == null
-                    ? Optional.empty()
-                    : attributeOptionRepository.findById(id);
-            if (addressed.isPresent()
-                    && !variantAttributeValues.existsByOptionId(addressed.get().getId())) {
-                // The 2026-11-06 #808 round review (Major · Data
-                // Integrity): the bulk leg rides the SAME definition-row
-                // FOR-UPDATE lock the single-item leg takes — the
-                // existsByOptionId probe's zero-references answer must be
-                // COMMITTED-stable against a concurrent registration's
-                // FOR-SHARE read of the same row (the single leg's own
-                // pairing, in bulk form). A soft-deleted definition
-                // answers no row — no lock is taken and none is needed:
-                // no registration can reference a dead family's option.
-                attributeDefinitionRepository.findByIdForUpdate(
-                        addressed.get().getAttributeDefinitionId());
-                attributeOptionRepository.delete(addressed.get());
+            // leg's own classified refusals, in bulk form (the 2026-11-06
+            // #808 round-3 review: the PRODUCT-scope population joins the
+            // variant probe's own verdict).
+            if (!variantAttributeValues.existsByOptionId(option.getId())
+                    && !productAttributeValues.existsLiveProductValueForOption(option.getId())) {
+                attributeOptionRepository.delete(option);
                 deleted++;
             }
         }

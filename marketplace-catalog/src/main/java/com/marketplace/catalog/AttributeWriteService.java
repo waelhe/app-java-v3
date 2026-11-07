@@ -90,15 +90,19 @@ public class AttributeWriteService implements AttributeWriteSpi {
     private final ProductTypeAttributeAssignmentRepository assignmentRepository;
     /** The live-variant reference probe the delete guards read (the 2026-11-06 #808 round). */
     private final ProductVariantAttributeValueRepository variantAttributeValues;
+    /** The live-PRODUCT references the children guard reads (the #808 round-3). */
+    private final ProductAttributeValueRepository productAttributeValues;
 
     public AttributeWriteService(CatalogAttributeDefinitionRepository attributeDefinitionRepository,
                                  CatalogAttributeOptionRepository attributeOptionRepository,
                                  ProductTypeAttributeAssignmentRepository assignmentRepository,
-                                 ProductVariantAttributeValueRepository variantAttributeValues) {
+                                 ProductVariantAttributeValueRepository variantAttributeValues,
+                                 ProductAttributeValueRepository productAttributeValues) {
         this.attributeDefinitionRepository = attributeDefinitionRepository;
         this.attributeOptionRepository = attributeOptionRepository;
         this.assignmentRepository = assignmentRepository;
         this.variantAttributeValues = variantAttributeValues;
+        this.productAttributeValues = productAttributeValues;
     }
 
     @Override
@@ -506,6 +510,16 @@ public class AttributeWriteService implements AttributeWriteSpi {
      * delete's refusal probe (the single-item leg's classified INVALID,
      * the bulk leg's honest skip; the values-and-keys migration demand
      * the finding names).
+     *
+     * <p>The 2026-11-06 #808 round-3 review (Major · Data Integrity &amp;
+     * Integration): the PRODUCT-scope population joins the probe — a
+     * live product's own value bound to the attribute's assignments or
+     * options is the same orphan the variant probe refuses (the publish
+     * path's re-validation reads the assignments and would strand the
+     * product on a dead schema). The product write path pairs with this
+     * probe through the definition row's FOR-SHARE read
+     * (ProductService.validateTypedValue), so the probe's zero answer is
+     * COMMITTED-stable against an in-flight product value save.</p>
      */
     private boolean variantAttributeValuesLiveFor(UUID attributeId) {
         List<UUID> optionIds = attributeOptionRepository
@@ -517,7 +531,9 @@ public class AttributeWriteService implements AttributeWriteSpi {
                 .map(ProductTypeAttributeAssignment::getId)
                 .toList();
         return variantAttributeValues.existsLiveVariantValueForAssignmentsOrOptions(
-                assignmentIds, optionIds);
+                assignmentIds, optionIds)
+                || productAttributeValues.existsLiveProductValueForAssignmentsOrOptions(
+                        assignmentIds, optionIds);
     }
 
     /** The bounded projection — the read service's own rendering rule. */

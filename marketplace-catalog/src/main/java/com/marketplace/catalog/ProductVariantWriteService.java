@@ -77,13 +77,19 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
     private final ProductVariantRepository variantRepository;
     private final ProductRepository productRepository;
     private final CurrentUserProvider currentUserProvider;
+    private final ProductTypeRepository productTypeRepository;
+    private final ProductTypeAttributeAssignmentRepository assignmentRepository;
 
     public ProductVariantWriteService(ProductVariantRepository variantRepository,
                                       ProductRepository productRepository,
-                                      CurrentUserProvider currentUserProvider) {
+                                      CurrentUserProvider currentUserProvider,
+                                      ProductTypeRepository productTypeRepository,
+                                      ProductTypeAttributeAssignmentRepository assignmentRepository) {
         this.variantRepository = variantRepository;
         this.productRepository = productRepository;
         this.currentUserProvider = currentUserProvider;
+        this.productTypeRepository = productTypeRepository;
+        this.assignmentRepository = assignmentRepository;
     }
 
     @Override
@@ -156,6 +162,38 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
         }
         if (!errors.isEmpty()) {
             return ProductVariantMutationResult.failure(errors);
+        }
+        // The 2026-11-06 #808 round-3 review (Major · Data Integrity &amp;
+        // Integration): the typed-schema eligibility gate — this root's
+        // command carries NO attribute values (the bounded field set the
+        // record documents), so a product whose type schema DEMANDS values
+        // (a VARIANT_SELECTION assignment — always required — or a
+        // required VARIANT assignment; the registration path's own
+        // zero-values eligibility law) cannot take its variant here: the
+        // insert would land an ACTIVE row with a null combination key the
+        // partial unique index ignores (no combination uniqueness),
+        // verifySelectionConsistency skips, and the publication gate then
+        // blocks the whole product while that variant stays active. The
+        // typed path (ProductVariantService.register — the command that
+        // carries the values and derives the key) owns those variants.
+        // The share-lock discipline is the register path's own: the type
+        // row is read FOR SHARE (held to commit — an updateAssignments
+        // move serializes against this read), and a row that answers
+        // empty (a withdrawn schema) owns no live assignments — the free
+        // form stays eligible exactly as register answers it.
+        if (parent.get().getProductTypeId() != null) {
+            productTypeRepository.findByIdForShare(parent.get().getProductTypeId());
+            boolean schemaDemandsValues = assignmentRepository
+                    .findAllByProductTypeIdOrderByScopeAscPositionAsc(parent.get().getProductTypeId())
+                    .stream()
+                    .anyMatch(assignment -> assignment.getScope() == ProductTypeAttributeScope.VARIANT_SELECTION
+                            || assignment.isRequired());
+            if (schemaDemandsValues) {
+                return ProductVariantMutationResult.failure(List.of(new ProductVariantMutationError(
+                        "product", ProductVariantMutationErrorCode.INVALID,
+                        "The product's type demands typed attribute values for every variant — register the"
+                                + " variant with its attribute values through the typed registration path")));
+            }
         }
         ProductVariant created = variantRepository.save(ProductVariant.register(
                 parent.get(), sku, name, command.priceMinor()));
@@ -367,6 +405,26 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
             return outcomes;
         }
         for (ProductVariantBulkUpdateItem item : items) {
+            // The 2026-11-06 #808 round-3 review (Minor · Stability &amp;
+            // Availability): the per-item REQUIRED guards come BEFORE any
+            // repository call — a null id reached Spring Data's findById
+            // as IllegalArgumentException and a null fields command
+            // reached updateVariant's command.isEmpty() as a
+            // NullPointerException (the single path's own null-id guard
+            // lives in ownedRowForUpdate; the bulk path walks its own
+            // ladder and answers the classified REQUIRED entry instead).
+            if (item == null || item.id() == null) {
+                outcomes.add(new ProductVariantBulkOutcome(null, List.of(
+                        new ProductVariantMutationError("id", ProductVariantMutationErrorCode.REQUIRED,
+                                "A bulk update item requires the variant's id"))));
+                continue;
+            }
+            if (item.fields() == null) {
+                outcomes.add(new ProductVariantBulkOutcome(null, List.of(
+                        new ProductVariantMutationError("fields", ProductVariantMutationErrorCode.REQUIRED,
+                                "A bulk update item requires its fields command"))));
+                continue;
+            }
             // The shard review (2026-11-01, Minor · Data Integrity): the
             // Saleor product argument is a BINDING ownership claim — an
             // item whose row belongs to another product answers the

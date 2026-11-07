@@ -18,6 +18,7 @@ class ProductTypeAttributeServiceTest {
     private CatalogAttributeDefinitionRepository definitions;
     private CatalogAttributeOptionRepository options;
     private ProductTypeAttributeAssignmentRepository assignments;
+    private ProductVariantRepository variantRepository;
     private ProductTypeAttributeService service;
     private final UUID typeId = UUID.randomUUID();
     private final UUID attributeId = UUID.randomUUID();
@@ -27,7 +28,12 @@ class ProductTypeAttributeServiceTest {
         definitions = mock(CatalogAttributeDefinitionRepository.class);
         options = mock(CatalogAttributeOptionRepository.class);
         assignments = mock(ProductTypeAttributeAssignmentRepository.class);
-        service = new ProductTypeAttributeService(productTypes, definitions, options, assignments);
+        // The 2026-11-06 #808 round-3 (#13): the published-shelf guard's
+        // probe answers NO typed variants by default (each test overrides).
+        variantRepository = mock(ProductVariantRepository.class);
+        when(variantRepository.existsPublishedShelfTypedVariantForType(any())).thenReturn(false);
+        service = new ProductTypeAttributeService(productTypes, definitions, options, assignments,
+                variantRepository);
         // The 2026-11-06 #808 round (#10): the reference-creating assign
         // path reads the type FOR SHARE (the deleteProductType FOR-UPDATE
         // wall's own pairing) — the stub rides the locked read. The round's
@@ -150,5 +156,51 @@ class ProductTypeAttributeServiceTest {
         java.util.List<ProductTypeAttributeAssignment> relisted = service.list(typeId);
 
         assertThat(relisted).containsExactly(product, selectionLow, variantHigh);
+    }
+
+    @Test void listBucketsTheProductScopeAheadOfTheVariantFamily() {
+        // The 2026-11-06 #808 round-3 review (Minor · Functional
+        // Correctness): the bucket-major order — MORE THAN ONE PRODUCT
+        // assignment plus an interleaved VARIANT family: the previous
+        // position-major sort interleaved the buckets (PRODUCT@1,
+        // VARIANT@1, PRODUCT@2...), so the read surface addressed
+        // neighbors the reorder path (the bucket-major resolution)
+        // never resolved.
+        ProductTypeAttributeAssignment productOne =
+                ProductTypeAttributeAssignment.create(typeId, UUID.randomUUID(), ProductTypeAttributeScope.PRODUCT, true, 1);
+        ProductTypeAttributeAssignment productTwo =
+                ProductTypeAttributeAssignment.create(typeId, UUID.randomUUID(), ProductTypeAttributeScope.PRODUCT, false, 2);
+        ProductTypeAttributeAssignment variantOne =
+                ProductTypeAttributeAssignment.create(typeId, UUID.randomUUID(), ProductTypeAttributeScope.VARIANT, false, 1);
+        // The repository's scope-at-a-time order (what the stored state
+        // answers): PRODUCT bucket, then the VARIANT family.
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(typeId))
+                .thenReturn(java.util.List.of(productOne, productTwo, variantOne));
+
+        java.util.List<ProductTypeAttributeAssignment> listed = service.list(typeId);
+
+        // The PRODUCT bucket keeps its OWN (position, ...) order ahead of
+        // the VARIANT family — never the interleaved PRODUCT@1, VARIANT@1,
+        // PRODUCT@2 the position-major sort answered.
+        assertThat(listed).containsExactly(productOne, productTwo, variantOne);
+    }
+
+    @Test void variantSelectionIsRefusedWhileAPublishedProductCarriesTypedVariants() {
+        // The 2026-11-06 #808 round-3 review (Major · Data Integrity &
+        // Integration): a published (or suspended — reactivate() returns
+        // it to ACTIVE without re-running the publication gate) product
+        // with a TYPED variant keeps its key derived under the dead
+        // schema and its values short of the new selection; the variants
+        // migrate first.
+        when(definitions.findByIdForShare(attributeId)).thenReturn(Optional.of(
+                CatalogAttributeDefinition.create("color", "Color", "اللون", CatalogAttributeType.CHOICE, null)));
+        when(options.countByAttributeDefinitionId(attributeId)).thenReturn(2L);
+        when(variantRepository.existsPublishedShelfTypedVariantForType(typeId)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.assign(typeId, attributeId,
+                ProductTypeAttributeScope.VARIANT_SELECTION, true, 0))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("migrate the variants first");
+        verify(assignments, never()).save(any());
     }
 }
