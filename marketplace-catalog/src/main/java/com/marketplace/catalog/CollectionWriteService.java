@@ -149,6 +149,17 @@ public class CollectionWriteService implements CollectionWriteSpi {
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     public CollectionMutationResult updateCollection(UUID id, CollectionUpdateCommand command) {
+        // The 2026-11-07 #808 round-17 review (Minor · Data Integrity &
+        // Integration): the update serializes with the delete through the
+        // SAME advisory lock every other collection writer carries — an
+        // unlocked findById could read the row BEFORE a concurrent
+        // deleteCollection's commit, and the subsequent managed-row save
+        // would overwrite the soft-deleted row and answer success (the
+        // soft delete never bumps the row version, and Hibernate's plain
+        // UPDATE carries no is_deleted=false guard).
+        if (id != null) {
+            collectionProductRepository.lockCollectionPositionAllocation(id.toString());
+        }
         Optional<Collection> addressed = id == null ? Optional.empty() : collectionRepository.findById(id);
         if (addressed.isEmpty()) {
             return CollectionMutationResult.failure(List.of(new CollectionMutationError(

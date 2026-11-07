@@ -54,7 +54,9 @@ public interface AttributeWriteSpi {
      * answers in the payload (Saleor's own delete-payload semantics).
      *
      * @param id the native UUID (decoded by the boundary's codec)
-     * @return the last-known projection, or the NOT_FOUND error entry
+     * @return the last-known projection, a NOT_FOUND error entry, or an
+     *         INVALID error entry if a live product or variant value
+     *         references an assignment or option of the attribute
      */
     AttributeMutationResult deleteAttribute(UUID id);
 

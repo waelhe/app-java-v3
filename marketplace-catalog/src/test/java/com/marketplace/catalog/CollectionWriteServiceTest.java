@@ -212,6 +212,25 @@ class CollectionWriteServiceTest {
     }
 
     @Test
+    void updateTakesTheDeleteSerializationLockBeforeReadingTheCollection() {
+        // The 2026-11-07 #808 round-17 review (Minor · Data Integrity &
+        // Integration): the update rides the SAME advisory lock every
+        // other collection writer carries, BEFORE the read — an unlocked
+        // findById could read the row before a concurrent delete's
+        // commit and the managed-row save would overwrite the
+        // soft-deleted row and answer success.
+        UUID id = UUID.randomUUID();
+        when(collectionRepository.findById(id)).thenReturn(Optional.of(row("slug", "Old", true)));
+        when(collectionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.updateCollection(id, new CollectionUpdateCommand("Fresh", null, null));
+
+        org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(membershipRepository, collectionRepository);
+        inOrder.verify(membershipRepository).lockCollectionPositionAllocation(id.toString());
+        inOrder.verify(collectionRepository).findById(id);
+    }
+
+    @Test
     void blankNameAnswersTheInvalidDomainError() {
         UUID id = UUID.randomUUID();
         when(collectionRepository.findById(id)).thenReturn(Optional.of(row("slug", "Old", true)));
