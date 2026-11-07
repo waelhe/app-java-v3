@@ -408,6 +408,30 @@ class ProductTypeWriteServiceTest {
         verify(repository, never()).delete(any(ProductType.class));
     }
 
+    @Test
+    void bulkDeleteLocksTheRowsInSortedOrder() {
+        // The 2026-11-07 #808 round-6 review (Minor · Stability): the row
+        // locks come in ONE sorted pass — two concurrent bulk deletes
+        // naming overlapping ids in OPPOSITE orders can never deadlock
+        // (the locks stay held to the commit).
+        ProductType first = row("first-type", "First");
+        ProductType second = row("second-type", "Second");
+        when(repository.findByIdForUpdate(first.getId())).thenReturn(Optional.of(first));
+        when(repository.findByIdForUpdate(second.getId())).thenReturn(Optional.of(second));
+
+        // The caller names the two types in the OPPOSITE of the sorted
+        // order — the locks still come sorted.
+        service.deleteProductTypes(java.util.Arrays.asList(second.getId(), first.getId()));
+
+        java.util.List<UUID> sorted = java.util.stream.Stream.of(first.getId(), second.getId())
+                .sorted().toList();
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(repository);
+        order.verify(repository).findByIdForUpdate(sorted.get(0));
+        order.verify(repository).findByIdForUpdate(sorted.get(1));
+        verify(repository).delete(first);
+        verify(repository).delete(second);
+    }
+
     // ------------------------------------------------------------------
     // the rendered projection
     // ------------------------------------------------------------------
