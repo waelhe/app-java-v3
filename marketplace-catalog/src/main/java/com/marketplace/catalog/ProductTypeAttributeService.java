@@ -170,8 +170,32 @@ public class ProductTypeAttributeService {
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
     public void remove(UUID assignmentId) {
+        // The 2026-11-07 #808 round-12 review (Major · Data Integrity &
+        // Integration): the REST remove rides the SAME law the GraphQL
+        // unassign path owns — the type write lock plus the live-values
+        // wall. The bare find-and-delete let a used VARIANT_SELECTION
+        // assignment go soft-deleted with the variant values still
+        // bound to it (the stale combination keys then admitted a
+        // duplicate registration under the shrunk schema — the
+        // updateAssignments scope-move guard's own law, applied to the
+        // remove shape), and a used PRODUCT assignment strand the
+        // product (prepareProductAttributeValues' re-validation refuses
+        // the dead assignment's values forever — the owner's only
+        // escape hatch is releasing the values first, which is exactly
+        // what the refusal message names).
         ProductTypeAttributeAssignment assignment = assignments.findById(assignmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("ProductTypeAttributeAssignment", assignmentId));
+        requireProductType(assignment.getProductTypeId());
+        if (variantAttributeValues.existsLiveVariantValueForAssignmentsOrOptions(
+                List.of(assignment.getId()), List.of())) {
+            throw new ConflictException("An assignment referenced by a live variant cannot be removed"
+                    + " — migrate the variants first");
+        }
+        if (productAttributeValues.existsLiveProductValueForAssignmentsOrOptions(
+                List.of(assignment.getId()), List.of())) {
+            throw new ConflictException("An assignment referenced by a live product cannot be removed"
+                    + " — the owners release its values first");
+        }
         assignments.delete(assignment);
     }
 
