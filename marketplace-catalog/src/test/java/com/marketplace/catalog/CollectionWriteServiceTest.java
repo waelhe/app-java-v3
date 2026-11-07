@@ -193,6 +193,23 @@ class CollectionWriteServiceTest {
         assertThat(result.collection().slug()).isEqualTo("mixed-case");
     }
 
+    @Test
+    void createTakesTheSlugLockBeforeTheUniquenessRead() {
+        // The 2026-11-07 #808 round-18 review (Minor · Data Integrity &
+        // Integration): the slug's own advisory lock BEFORE the
+        // findBySlug read — two concurrent creates over the same slug
+        // serialize at the check point and the partial unique index
+        // stays a backstop, never an unclassified 500 at commit.
+        when(collectionRepository.findBySlug("raced")).thenReturn(Optional.empty());
+        when(collectionRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.createCollection(new CollectionCreateCommand("Raced", "raced", null, null));
+
+        org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(collectionRepository);
+        inOrder.verify(collectionRepository).lockSlugAllocation("raced");
+        inOrder.verify(collectionRepository).findBySlug("raced");
+    }
+
     // ------------------------------------------------------------------
     // updateCollection — the partial-preserve semantics
     // ------------------------------------------------------------------
@@ -228,6 +245,24 @@ class CollectionWriteServiceTest {
         org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(membershipRepository, collectionRepository);
         inOrder.verify(membershipRepository).lockCollectionPositionAllocation(id.toString());
         inOrder.verify(collectionRepository).findById(id);
+    }
+
+    @Test
+    void updateTakesTheSlugLockBeforeTheUniquenessRead() {
+        // The 2026-11-07 #808 round-18 review: the update's slug
+        // re-check rides the slug's own advisory lock too — the update
+        // and a concurrent create over the same slug see each other's
+        // commit (never the partial unique index's raw 500).
+        UUID id = UUID.randomUUID();
+        when(collectionRepository.findById(id)).thenReturn(Optional.of(row("slug", "Old", true)));
+        when(collectionRepository.findBySlug("fresh-slug")).thenReturn(Optional.empty());
+        when(collectionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.updateCollection(id, new CollectionUpdateCommand("Fresh", "fresh-slug", null));
+
+        org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(collectionRepository);
+        inOrder.verify(collectionRepository).lockSlugAllocation("fresh-slug");
+        inOrder.verify(collectionRepository).findBySlug("fresh-slug");
     }
 
     @Test

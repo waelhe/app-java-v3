@@ -60,14 +60,19 @@ public interface AttributeValueWriteSpi {
      * payload.
      *
      * @param id the option's native UUID (decoded by the boundary's codec)
-     * @return the last-known projections, or the NOT_FOUND error entry
+     * @return the last-known projections, a NOT_FOUND error entry (the
+     *         option or its owning attribute is gone), or an INVALID
+     *         error entry when a live product or variant value still
+     *         references the option
      */
     AttributeValueMutationResult deleteAttributeValue(UUID id);
 
     /**
      * Soft-deletes a batch of option values. Unknown-but-well-formed ids
-     * are the owner's own honest skip; the count answers only what the
-     * registry itself deleted.
+     * are the owner's own honest skip — and so are options a live product
+     * or variant value still references (the single-delete INVALID
+     * refusal's own skip shape): the count answers only what the registry
+     * itself deleted, which may be fewer than the well-formed ids.
      *
      * @param ids the options' native UUIDs (decoded by the boundary's codec)
      * @return the number of rows the registry itself deleted

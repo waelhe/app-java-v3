@@ -116,9 +116,16 @@ public class CollectionWriteService implements CollectionWriteSpi {
             errors.add(new CollectionMutationError("slug", CollectionMutationErrorCode.INVALID,
                     "A collection slug is lowercase latin letters, digits and dashes (at most "
                             + SLUG_MAX_LENGTH + " characters)"));
-        } else if (collectionRepository.findBySlug(slug).isPresent()) {
-            errors.add(new CollectionMutationError("slug", CollectionMutationErrorCode.UNIQUE,
-                    "A collection with the slug already exists"));
+        } else {
+            // The 2026-11-07 #808 round-18 review: the slug's own advisory
+            // lock BEFORE the uniqueness read — two concurrent creates over
+            // the same slug serialize at the check point and the partial
+            // unique index stays a backstop, never an unclassified 500.
+            collectionRepository.lockSlugAllocation(slug);
+            if (collectionRepository.findBySlug(slug).isPresent()) {
+                errors.add(new CollectionMutationError("slug", CollectionMutationErrorCode.UNIQUE,
+                        "A collection with the slug already exists"));
+            }
         }
         // The optional initial membership: every product must exist, and no
         // duplicate id may ride the request (the pinned DUPLICATED_INPUT_ITEM
@@ -183,6 +190,11 @@ public class CollectionWriteService implements CollectionWriteSpi {
                         "A collection slug is lowercase latin letters, digits and dashes (at most "
                                 + SLUG_MAX_LENGTH + " characters)"));
             } else {
+                // The 2026-11-07 #808 round-18 review: the slug's own
+                // advisory lock BEFORE the uniqueness read — the same
+                // create-path serialization (the update and a concurrent
+                // create over the same slug see each other's commit).
+                collectionRepository.lockSlugAllocation(slug);
                 collectionRepository.findBySlug(slug)
                         .filter(existing -> !existing.getId().equals(id))
                         .ifPresent(existing -> errors.add(new CollectionMutationError(
