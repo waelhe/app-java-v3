@@ -19,6 +19,7 @@ class ProductTypeAttributeServiceTest {
     private CatalogAttributeOptionRepository options;
     private ProductTypeAttributeAssignmentRepository assignments;
     private ProductVariantRepository variantRepository;
+    private ProductAttributeValueRepository productAttributeValues;
     private ProductTypeAttributeService service;
     private final UUID typeId = UUID.randomUUID();
     private final UUID attributeId = UUID.randomUUID();
@@ -28,12 +29,16 @@ class ProductTypeAttributeServiceTest {
         definitions = mock(CatalogAttributeDefinitionRepository.class);
         options = mock(CatalogAttributeOptionRepository.class);
         assignments = mock(ProductTypeAttributeAssignmentRepository.class);
-        // The 2026-11-06 #808 round-3 (#13): the published-shelf guard's
-        // probe answers NO typed variants by default (each test overrides).
+        // The 2026-11-06 #808 round-3: the published-shelf variant guard
+        // answers NO variants by default (each test overrides).
         variantRepository = mock(ProductVariantRepository.class);
         when(variantRepository.existsPublishedShelfVariantForType(any())).thenReturn(false);
+        // The 2026-11-07 #808 round-7: the required-PRODUCT guard answers
+        // NO missing-value products by default (each test overrides).
+        productAttributeValues = mock(ProductAttributeValueRepository.class);
+        when(productAttributeValues.existsPublishedShelfProductMissingValueFor(any(), any())).thenReturn(false);
         service = new ProductTypeAttributeService(productTypes, definitions, options, assignments,
-                variantRepository);
+                variantRepository, productAttributeValues);
         // The 2026-11-06 #808 round (#10): the reference-creating assign
         // path rides the LOCKED type read (the deleteProductType
         // FOR-UPDATE wall's own pairing; the 2026-11-07 round-4 review
@@ -226,6 +231,25 @@ class ProductTypeAttributeServiceTest {
                 ProductTypeAttributeScope.VARIANT_SELECTION, true, 0))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("migrate the variants first");
+        verify(assignments, never()).save(any());
+    }
+
+    @Test void requiredProductAssignmentIsRefusedWhileAPublishedProductLacksTheValue() {
+        // The 2026-11-07 #808 round-7 review: a required PRODUCT-scope
+        // assignment lands on a published (or suspended) product without
+        // its value as a conformance hole the shelf never re-passes the
+        // publication gate to surface — the products migrate first (the
+        // probe walks the definition's own live assignments, never the
+        // variant probe).
+        when(definitions.findByIdForShare(attributeId)).thenReturn(Optional.of(
+                CatalogAttributeDefinition.create("material", "Material", "الخامة", CatalogAttributeType.TEXT, null)));
+        when(productAttributeValues.existsPublishedShelfProductMissingValueFor(typeId, attributeId))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> service.assign(typeId, attributeId,
+                ProductTypeAttributeScope.PRODUCT, true, 0))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("migrate the products first");
         verify(assignments, never()).save(any());
     }
 }

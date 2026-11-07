@@ -47,4 +47,34 @@ public interface ProductAttributeValueRepository extends JpaRepository<ProductAt
     boolean existsLiveProductValueForAssignmentsOrOptions(
             @Param("assignmentIds") Collection<UUID> assignmentIds,
             @Param("optionIds") Collection<UUID> optionIds);
+
+    /**
+     * The 2026-11-07 #808 round-7 review: the required-PRODUCT-assignment
+     * guard's probe — whether a product on the published shelf (ACTIVE, or
+     * SUSPENDED — the state {@code reactivate()} returns to ACTIVE without
+     * re-running the publication gate) of this type carries NO live value
+     * bound to any live assignment of the given attribute definition. A
+     * required PRODUCT-scope assignment lands on such a product as a
+     * conformance hole the shelf never re-passes the publication gate to
+     * surface (the products migrate first — the same fail-closed law the
+     * variant-selection guard carries; the NOT-EXISTS subquery joins the
+     * definition's OWN live assignments on this type so a value bound to
+     * a dead assignment never satisfies the coverage).
+     */
+    @Query("""
+            select (count(p) > 0) from Product p
+             where p.productTypeId = :productTypeId
+               and p.status in (com.marketplace.catalog.StoreProductStatus.ACTIVE,
+                                com.marketplace.catalog.StoreProductStatus.SUSPENDED)
+               and not exists (
+                   select v from ProductAttributeValue v
+                    where v.productId = p.id
+                      and v.assignmentId in (
+                          select a.id from ProductTypeAttributeAssignment a
+                           where a.productTypeId = :productTypeId
+                             and a.attributeDefinitionId = :attributeDefinitionId))
+            """)
+    boolean existsPublishedShelfProductMissingValueFor(
+            @Param("productTypeId") UUID productTypeId,
+            @Param("attributeDefinitionId") UUID attributeDefinitionId);
 }
