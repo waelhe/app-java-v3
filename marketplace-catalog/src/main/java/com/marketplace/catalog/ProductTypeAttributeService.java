@@ -17,17 +17,21 @@ public class ProductTypeAttributeService {
     private final CatalogAttributeOptionRepository options;
     private final ProductTypeAttributeAssignmentRepository assignments;
     private final ProductVariantRepository variantRepository;
+    /** The required-PRODUCT guard's published-shelf probe (the #808 round-7). */
+    private final ProductAttributeValueRepository productAttributeValues;
 
     public ProductTypeAttributeService(ProductTypeRepository productTypes,
                                        CatalogAttributeDefinitionRepository definitions,
                                        CatalogAttributeOptionRepository options,
                                        ProductTypeAttributeAssignmentRepository assignments,
-                                       ProductVariantRepository variantRepository) {
+                                       ProductVariantRepository variantRepository,
+                                       ProductAttributeValueRepository productAttributeValues) {
         this.productTypes = productTypes;
         this.definitions = definitions;
         this.options = options;
         this.assignments = assignments;
         this.variantRepository = variantRepository;
+        this.productAttributeValues = productAttributeValues;
     }
 
     @Transactional(readOnly = true)
@@ -89,22 +93,32 @@ public class ProductTypeAttributeService {
             if (options.countByAttributeDefinitionId(attributeDefinitionId) < 2) {
                 throw new ConflictException("VARIANT_SELECTION requires at least two allowed options");
             }
-            // The 2026-11-06 #808 round-3 review (Major · Data Integrity &
-            // Integration), widened by the round-5 review (Major · Data
-            // Integrity & Integration): the published-shelf guard — a
-            // product on the shelf (ACTIVE, or SUSPENDED — reactivate()
-            // returns it to ACTIVE without re-running the publication
-            // gate) carrying ANY live variant (TYPED or the round-5
-            // widening's free-form NULL-KEY row: a selection-free type
-            // publishes with a free-form active variant, and the assign
-            // would leave it short of the new selection's required value
-            // with no gate to surface it) refuses the assign — the
-            // variants migrate first (the attribute-delete wall's own
-            // law); DRAFT products stay eligible (the publication gate
-            // owns their coverage verdict at publish time).
+            // The 2026-11-06 #808 round-3 review, widened by the round-5
+            // review (Major · Data Integrity & Integration): the
+            // published-shelf guard (any live variant of a published
+            // product — typed or free-form) refuses the assign; the
+            // variants migrate first.
             if (variantRepository.existsPublishedShelfVariantForType(productTypeId)) {
                 throw new ConflictException("A variant-selection attribute cannot be assigned while a published"
                         + " product of this type carries live variants — migrate the variants first");
+            }
+        }
+        if (scope == ProductTypeAttributeScope.PRODUCT && required) {
+            // The 2026-11-07 #808 round-7 review: the required-PRODUCT
+            // assignment's own published-shelf guard — a product on the
+            // shelf without a value for this attribute would carry the
+            // new requirement as a conformance hole the shelf never
+            // re-passes the publication gate to surface (a published
+            // product's only self-heal is replaceOwnedAttributeValues'
+            // enforced re-validation, which the owner may never call).
+            // The behavior decision the finding demands: the SAME
+            // fail-closed law the selection guard carries — the products
+            // migrate first (the probe walks the definition's OWN live
+            // assignments on this type, never the variant probe).
+            if (productAttributeValues.existsPublishedShelfProductMissingValueFor(
+                    productTypeId, attributeDefinitionId)) {
+                throw new ConflictException("A required product attribute cannot be assigned while a published"
+                        + " product of this type lacks its value — migrate the products first");
             }
         }
 

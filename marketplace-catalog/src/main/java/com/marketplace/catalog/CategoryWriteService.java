@@ -102,13 +102,17 @@ public class CategoryWriteService implements CategoryWriteSpi {
     // insert, so N concurrent creates held N connections while each
     // waited for a second one — the pool-exhaustion deadlock the finding
     // proved. Non-transactional here, the reserved-code precheck
-    // (countByCodeIncludingDeleted) runs in the repository method's own
-    // short transaction and RELEASES its connection before the insert;
-    // the insert rides the executor's own transaction alone; the DIVE
-    // catch below classifies the loser's cleanly-rolled-back violation
-    // exactly as before (nothing between the precheck and the insert
-    // needs one atomic unit — the precheck is honest-but-not-atomic by
-    // its own documented law, the V70 index is the backstop).
+    // (countByCodeIncludingDeleted) is a plain derived-query read: it
+    // borrows a connection, answers the count auto-commit, and RETURNS
+    // the connection to the pool BEFORE the executor's insert asks for
+    // its own (the 2026-11-07 #808 round-7 review's correction: the read
+    // opens no transaction of its own — a derived count rides no
+    // @Transactional boundary); the insert rides the executor's own
+    // transaction alone; the DIVE catch below classifies the loser's
+    // cleanly-rolled-back violation exactly as before (nothing between
+    // the precheck and the insert needs one atomic unit — the precheck is
+    // honest-but-not-atomic by its own documented law, the V70 index is
+    // the backstop).
     public CategoryMutationResult createCategory(CategoryCreateCommand command) {
         List<CategoryMutationError> errors = new ArrayList<>();
         String name = command.name() == null ? null : command.name().strip();
