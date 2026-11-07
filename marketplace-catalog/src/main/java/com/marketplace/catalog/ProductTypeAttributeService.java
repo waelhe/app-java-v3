@@ -183,9 +183,22 @@ public class ProductTypeAttributeService {
         // the dead assignment's values forever — the owner's only
         // escape hatch is releasing the values first, which is exactly
         // what the refusal message names).
-        ProductTypeAttributeAssignment assignment = assignments.findById(assignmentId)
+        // The 2026-11-07 #808 round-13 review (Minor · Stability &
+        // Availability): the setRequired round-11 ordering applies here
+        // too — the projection resolves the owning type FIRST (no
+        // entity enters the persistence context), the type write lock
+        // is taken, and ONLY THEN the assignment loads. The load-before-
+        // lock let a concurrent updateAssignments scope move commit
+        // while this path waited on the lock, and the delete then
+        // rewrote the STALE pre-move entity — with @Version the raw
+        // OptimisticLockException reached the client as an unclassified
+        // 500.
+        UUID productTypeId = assignments.findProductTypeIdById(assignmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("ProductTypeAttributeAssignment", assignmentId));
-        requireProductType(assignment.getProductTypeId());
+        requireProductType(productTypeId);
+        ProductTypeAttributeAssignment assignment = assignments.findById(assignmentId)
+                .filter(row -> row.getProductTypeId().equals(productTypeId))
+                .orElseThrow(() -> new ResourceNotFoundException("ProductTypeAttributeAssignment", assignmentId));
         if (variantAttributeValues.existsLiveVariantValueForAssignmentsOrOptions(
                 List.of(assignment.getId()), List.of())) {
             throw new ConflictException("An assignment referenced by a live variant cannot be removed"
