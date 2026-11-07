@@ -82,6 +82,17 @@ Canonical product/UX authority: [Platform Administration Operating System Produc
 
 ---
 
+
+### حماية فك تسلسل Java في صورة الإنتاج (2026-11-07)
+
+- يثبت `Dockerfile` في مرحلة runtime فقط الخاصية `jdk.serialFilter` عبر `JDK_JAVA_OPTIONS`، ويستخدم نمط JEP 290 `!graphql.com.google.common.collect.**;*`. صيغة Oracle JDK 25 تعني رفض كل فئات هذه الحزمة وفروعها، ثم السماح بباقي الفئات.
+- السبب المقاس: `graphql-java` يعيد تموضع `com.google.common` إلى `graphql.com.google.common` في بناء upstream، ويشمل `collect.*`. أكد مشرف GraphQL Java بقاء `MapMakerInternalMap` في الـJAR ضمن التصحيح على PR #4498.
+- وثائق Spring Data Redis تقرر أن `RedisCache` و`RedisTemplate` يستخدمان Java native serialization افتراضياً وتحذر من مدخلات التسلسل غير الموثوقة؛ لذلك لا نعتمد على فرضية أن التطبيق لا يفك تسلسل Java.
+- `JavaSerializationFilterTest` يثبت رفض الفئة المعاد تسميتها الفعلية، وقبول `String`، وتطابق إعدادات Docker runtime مع JVMs الاختبار في Surefire/Failsafe.
+- هذا **حاجز محدد لهذه الفئات** وليس إعلاناً بأن Java native serialization آمن عموماً أو أنه أُلغي. صيغة Redis الحالية لم تتغير؛ الانتقال إلى JSON بأنواع محددة ومسارات قراءة مكتوبة يبقى تغييراً مستقلاً يتطلب جرد القيم والمستهلكين وخطة انتقال للمخابئ.
+
+المراجع التنفيذية: Oracle JDK 25 — [Creating Pattern-Based Filters](https://docs.oracle.com/en/java/javase/25/core/creating-pattern-based-filters.html)؛ Spring Data Redis — [Working with Objects through RedisTemplate](https://docs.spring.io/spring-data/redis/reference/redis/template.html)؛ GraphQL Java — [build.gradle relocation](https://github.com/graphql-java/graphql-java/blob/master/build.gradle) و[PR #4498](https://github.com/graphql-java/graphql-java/pull/4498).
+
 ## 5. البنية النمطية — 24 وحدة نطاقية تحت Modulith
 
 **القسمة (من `pom.xml:21-50`):** وحدة تجميع `marketplace-app` (جذر التركيب: ymls، الترحيلات، `main()`) + بنية تحتية مشتركة `marketplace-platform-infra` (ثماني حزم: `cache/config/email/jpa/observability/resilience/security/web`) + `marketplace-shared` (واجهات SPI + الأحداث المشتركة + الاستثناءات) + **23 وحدة نطاق**: identity, catalog, booking, payments, pricing, reviews, messaging, search, provider, availability, notifications, ledger, disputes, media, geo, realestate, community, ai, jobs, knowledge, console, institutions, discovery, orders.
