@@ -254,7 +254,8 @@ class ProductTypeAttributeServiceTest {
         assertThatThrownBy(() -> service.assign(typeId, attributeId,
                 ProductTypeAttributeScope.PRODUCT, true, 0))
                 .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("migrate the products first");
+                .hasMessageContaining("assign it as optional")
+                .hasMessageContaining("promote it to required");
         verify(assignments, never()).save(any());
     }
 
@@ -272,7 +273,97 @@ class ProductTypeAttributeServiceTest {
         assertThatThrownBy(() -> service.assign(typeId, attributeId,
                 ProductTypeAttributeScope.VARIANT, true, 0))
                 .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("migrate the variants first");
+                .hasMessageContaining("assign it as optional")
+                .hasMessageContaining("promote it to required");
+        verify(assignments, never()).save(any());
+    }
+
+    @Test void setRequiredPromotesAnOptionalProductAssignmentOnceTheShelfIsCovered() {
+        // The 2026-11-07 #808 round-10 review: the migration path's
+        // executable half — the assignment lands OPTIONAL (the assign
+        // guard's own refusal names this route), the owners store the
+        // values, and the promotion passes the SAME fail-closed probe
+        // over the EXISTING live assignment's coverage.
+        ProductTypeAttributeAssignment optional = ProductTypeAttributeAssignment.create(
+                typeId, attributeId, ProductTypeAttributeScope.PRODUCT, false, 0);
+        when(assignments.findById(optional.getId())).thenReturn(Optional.of(optional));
+        when(assignments.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        ProductTypeAttributeAssignment promoted = service.setRequired(optional.getId(), true);
+
+        assertThat(promoted.isRequired()).isTrue();
+        verify(assignments).save(promoted);
+        verify(productTypes).findByIdForUpdate(typeId);
+    }
+
+    @Test void setRequiredRefusesTheProductPromotionWhileAPublishedProductStillLacksTheValue() {
+        // The round-10 law: the promotion is the assign guard's own
+        // fail-closed verdict — a published-shelf product still missing
+        // the value refuses the promotion (never a conformance hole).
+        ProductTypeAttributeAssignment optional = ProductTypeAttributeAssignment.create(
+                typeId, attributeId, ProductTypeAttributeScope.PRODUCT, false, 0);
+        when(assignments.findById(optional.getId())).thenReturn(Optional.of(optional));
+        when(productAttributeValues.existsPublishedShelfProductMissingValueFor(typeId, attributeId))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> service.setRequired(optional.getId(), true))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("the owners store the values first")
+                .hasMessageContaining("then the promotion passes");
+        verify(assignments, never()).save(any());
+    }
+
+    @Test void setRequiredRefusesTheVariantPromotionWhileALiveVariantStillLacksTheValue() {
+        // The round-9 mirror's promotion shape: a live variant of a
+        // published product still missing the value refuses the promotion
+        // — the variants re-register with the values first.
+        ProductTypeAttributeAssignment optional = ProductTypeAttributeAssignment.create(
+                typeId, attributeId, ProductTypeAttributeScope.VARIANT, false, 0);
+        when(assignments.findById(optional.getId())).thenReturn(Optional.of(optional));
+        when(variantAttributeValues.existsPublishedShelfVariantMissingValueFor(typeId, attributeId))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> service.setRequired(optional.getId(), true))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("re-register with the values first");
+        verify(assignments, never()).save(any());
+    }
+
+    @Test void setRequiredKeepsTheVariantSelectionEveryVariantLaw() {
+        // The assign path's own law (VARIANT_SELECTION must be required)
+        // holds on the promotion route: the flag is not demotable.
+        ProductTypeAttributeAssignment selection = ProductTypeAttributeAssignment.create(
+                typeId, attributeId, ProductTypeAttributeScope.VARIANT_SELECTION, true, 0);
+        when(assignments.findById(selection.getId())).thenReturn(Optional.of(selection));
+
+        assertThatThrownBy(() -> service.setRequired(selection.getId(), false))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("must be required for every variant");
+        verify(assignments, never()).save(any());
+    }
+
+    @Test void setRequiredDemotesWithoutTheCoverageProbe() {
+        // The demotion is a relaxation that carries no conformance hole
+        // (the values stay; the publication gate simply stops demanding
+        // them) — no probe runs, the flag just loosens.
+        ProductTypeAttributeAssignment required = ProductTypeAttributeAssignment.create(
+                typeId, attributeId, ProductTypeAttributeScope.PRODUCT, true, 0);
+        when(assignments.findById(required.getId())).thenReturn(Optional.of(required));
+        when(assignments.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        ProductTypeAttributeAssignment demoted = service.setRequired(required.getId(), false);
+
+        assertThat(demoted.isRequired()).isFalse();
+        verify(productAttributeValues, never()).existsPublishedShelfProductMissingValueFor(any(), any());
+        verify(variantAttributeValues, never()).existsPublishedShelfVariantMissingValueFor(any(), any());
+    }
+
+    @Test void setRequiredAnswersTheHonest404ForAnUnknownAssignment() {
+        UUID unknown = UUID.randomUUID();
+        when(assignments.findById(unknown)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.setRequired(unknown, true))
+                .isInstanceOf(com.marketplace.shared.api.ResourceNotFoundException.class);
         verify(assignments, never()).save(any());
     }
 }

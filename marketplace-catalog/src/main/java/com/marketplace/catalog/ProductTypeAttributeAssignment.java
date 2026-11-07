@@ -83,6 +83,20 @@ public class ProductTypeAttributeAssignment extends BaseEntity {
         this.position = newPosition;
     }
 
+    /**
+     * The assignment's required-flag seam — the ADMIN promotion use case's
+     * own seam (the 2026-11-07 #808 round-10 review: the required-attribute
+     * migration path's executable half). {@code required} is the row's OWN
+     * independent contract (the {@code moveToScope} law above): the
+     * promotion (optional → required) is the SERVICE's own fail-closed
+     * guarded verdict — the published-shelf coverage probes must pass
+     * BEFORE this seam mutates the row; the demotion (required → optional)
+     * is a relaxation that carries no conformance hole and needs no probe.
+     */
+    void reviseRequired(boolean newRequired) {
+        this.required = newRequired;
+    }
+
     @Override public UUID getId() { return id; }
     public UUID getProductTypeId() { return productTypeId; }
     public UUID getAttributeDefinitionId() { return attributeDefinitionId; }

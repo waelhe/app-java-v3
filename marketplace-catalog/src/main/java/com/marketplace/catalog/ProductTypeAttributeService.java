@@ -121,8 +121,15 @@ public class ProductTypeAttributeService {
             // assignments on this type, never the variant probe).
             if (productAttributeValues.existsPublishedShelfProductMissingValueFor(
                     productTypeId, attributeDefinitionId)) {
+                // The 2026-11-07 #808 round-10 review: the refusal names
+                // the EXECUTABLE migration — the optional assign, the
+                // owners' value stores (replaceOwnedAttributeValues),
+                // then the guarded promotion (setRequired) — never a
+                // dead-end "migrate first" the duplicate-assign refusal
+                // would strand.
                 throw new ConflictException("A required product attribute cannot be assigned while a published"
-                        + " product of this type lacks its value — migrate the products first");
+                        + " product of this type lacks its value — assign it as optional, let the owners"
+                        + " store the values, then promote it to required");
             }
         }
         if (scope == ProductTypeAttributeScope.VARIANT && required) {
@@ -138,8 +145,14 @@ public class ProductTypeAttributeService {
             // variants migrate first.
             if (variantAttributeValues.existsPublishedShelfVariantMissingValueFor(
                     productTypeId, attributeDefinitionId)) {
+                // The 2026-11-07 #808 round-10 review: the same executable
+                // migration naming — a live variant's values are written at
+                // registration only (the pinned update contract's own
+                // law), so the migration re-registers the variants with
+                // the values before the guarded promotion (setRequired).
                 throw new ConflictException("A required variant attribute cannot be assigned while a published"
-                        + " product's live variant lacks its value — migrate the variants first");
+                        + " product's live variant lacks its value — assign it as optional, migrate the"
+                        + " variants' values, then promote it to required");
             }
         }
 
@@ -160,6 +173,57 @@ public class ProductTypeAttributeService {
         ProductTypeAttributeAssignment assignment = assignments.findById(assignmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("ProductTypeAttributeAssignment", assignmentId));
         assignments.delete(assignment);
+    }
+
+    /**
+     * The 2026-11-07 #808 round-10 review (Major · Functional
+     * Correctness): the required-attribute migration path's EXECUTABLE
+     * half — the behavior the review demanded be chosen and documented.
+     * The assign path's own guards (the round-7 PRODUCT and round-9
+     * VARIANT probes) refuse a NEW required assignment while the
+     * published shelf lacks its values, and the duplicate-assign refusal
+     * strands the "fill the values, then re-assign" migration — so the
+     * assignment lands OPTIONAL first and THIS path promotes it to
+     * required under the SAME fail-closed law: the coverage probe of the
+     * EXISTING live assignment (whose values the owners may now have
+     * stored) refuses the promotion until every published-shelf row
+     * carries the value. The demotion (required → optional) is a
+     * relaxation that carries no conformance hole — the values stay, the
+     * publication gate simply stops demanding them — so it passes without
+     * a probe; the VARIANT_SELECTION scope keeps the assign path's own
+     * every-variant law (its required flag is not demotable). The verdict
+     * rides the SAME type write lock the assign path carries
+     * (requireProductType) so the probe's shelf state serializes against
+     * the publication and registration writers.
+     */
+    @Observed(name = "catalog.product-type-attribute.set-required")
+    @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
+    public ProductTypeAttributeAssignment setRequired(UUID assignmentId, boolean required) {
+        ProductTypeAttributeAssignment assignment = assignments.findById(assignmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("ProductTypeAttributeAssignment", assignmentId));
+        requireProductType(assignment.getProductTypeId());
+        if (assignment.getScope() == ProductTypeAttributeScope.VARIANT_SELECTION && !required) {
+            throw new ConflictException("VARIANT_SELECTION attributes must be required for every variant");
+        }
+        if (required && !assignment.isRequired()) {
+            if (assignment.getScope() == ProductTypeAttributeScope.PRODUCT
+                    && productAttributeValues.existsPublishedShelfProductMissingValueFor(
+                            assignment.getProductTypeId(), assignment.getAttributeDefinitionId())) {
+                throw new ConflictException("A required product attribute cannot land while a published product"
+                        + " of this type still lacks its value — the owners store the values first,"
+                        + " then the promotion passes");
+            }
+            if (assignment.getScope() == ProductTypeAttributeScope.VARIANT
+                    && variantAttributeValues.existsPublishedShelfVariantMissingValueFor(
+                            assignment.getProductTypeId(), assignment.getAttributeDefinitionId())) {
+                throw new ConflictException("A required variant attribute cannot land while a published product's"
+                        + " live variant still lacks its value — the variants re-register with the values"
+                        + " first, then the promotion passes");
+            }
+        }
+        assignment.reviseRequired(required);
+        return assignments.save(assignment);
     }
 
     private void requireProductType(UUID id) {
