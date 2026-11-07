@@ -5,6 +5,7 @@ import org.springframework.data.domain.ScrollPosition;
 import org.springframework.graphql.data.pagination.EncodingCursorStrategy;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -32,8 +33,36 @@ import java.util.function.Function;
  * {@link IllegalArgumentException} the name check always threw, so the
  * exception resolver maps them to the identical VAL-001 error code the
  * cursor taxonomy asserts.</p>
+ *
+ * <p><b>B18 (CAT-06 — the 2026-11-03 adversarial review, review-pr-808):
+ * the cursor's own fingerprint.</b> Key names, value types, and forward
+ * direction do not bind a cursor to the scroll that emitted it: a cursor
+ * from the categories scroll (sorted {@code name} ASC) passed the
+ * collections gate verbatim whenever the key sets coincided, and a cursor
+ * from an ASC query passed the same scroll's DESC query — the client then
+ * silently received a wrong-page answer instead of the classified
+ * validation error every other malformed cursor answers. The gate now
+ * stamps every EMITTED cursor with the scroll's fingerprint — the scroll
+ * identity, the executed sort property, and the executed sort direction —
+ * under the reserved {@code __scroll} key (the double-underscore prefix
+ * can never collide with the camelCase entity properties the keyset
+ * predicate binds), via {@link #stamped(ScrollPosition, String, String,
+ * boolean)} at the connection's edge construction, and REFUSES any
+ * {@code after} cursor whose fingerprint is missing or foreign — the
+ * categories cursor on the collections scroll, and the ASC cursor on the
+ * DESC query, answer the same VAL-001 taxonomy as every other malformed
+ * cursor. The rebuilt position handed to Spring Data carries the clean
+ * keyset keys only: the fingerprint never reaches the JPA keyset
+ * predicate.</p>
  */
 final class KeysetCursorGate {
+
+    /**
+     * The cursor payload's reserved fingerprint slot — the double-underscore
+     * prefix can never collide with the camelCase entity properties the
+     * keyset predicate binds (B18/CAT-06).
+     */
+    private static final String SCROLL_KEY = "__scroll";
 
     private KeysetCursorGate() {
     }
@@ -60,40 +89,92 @@ final class KeysetCursorGate {
 
     /**
      * The single-sort form: a forward keyset over exactly
-     * {@code (createdAt: Instant, id: UUID)}.
+     * {@code (createdAt: Instant, id: UUID)} — the scroll's fixed sort.
      */
     static KeysetScrollPosition forwardKeyset(EncodingCursorStrategy<ScrollPosition> cursorStrategy,
-                                              String after, String owner) {
-        return forwardKeyset(cursorStrategy, after, "createdAt", KeysetCursorGate::instantValue, owner);
+                                              String after, String scrollId, boolean ascending) {
+        return forwardKeyset(cursorStrategy, after, "createdAt", KeysetCursorGate::instantValue,
+                scrollId, ascending);
+    }
+
+    /**
+     * The emission side of the fingerprint contract (B18/CAT-06): the
+     * window position a connection edge would encode, carrying the scroll's
+     * fingerprint under the reserved {@code __scroll} key so the gate can
+     * refuse it on any other scroll (or any other sort/direction) — the
+     * stamped cursor stays opaque to clients, the same strategy encodes
+     * it, and the gate strips the fingerprint before Spring Data sees the
+     * position.
+     */
+    static ScrollPosition stamped(ScrollPosition position, String scrollId, String sortProperty,
+                                  boolean ascending) {
+        if (!(position instanceof KeysetScrollPosition keyset) || !keyset.scrollsForward()) {
+            throw new IllegalArgumentException(
+                    "the connection edge position must be a forward keyset position to carry "
+                            + scrollId + "'s cursor fingerprint");
+        }
+        Map<String, Object> keys = new LinkedHashMap<>(keyset.getKeys());
+        keys.put(SCROLL_KEY, fingerprint(scrollId, sortProperty, ascending));
+        return ScrollPosition.forward(keys);
     }
 
     /**
      * The sort-aware form: a forward keyset over exactly
      * {@code (sortProperty: its declared type, id: UUID)} — the caller owns
-     * the property-to-normalizer mapping of its own sort vocabulary.
+     * the property-to-normalizer mapping of its own sort vocabulary — that
+     * also carries the scroll's own fingerprint ({@code __scroll}: the
+     * scroll identity, the executed sort property, and the executed sort
+     * direction), so a cursor emitted by any OTHER scroll, any OTHER sort,
+     * or the OPPOSITE direction answers the same classified refusal
+     * (B18/CAT-06). The unique-key sort (sortProperty "id" itself — the
+     * variant scroll's own ID sort) carries the SINGLE-key vocabulary
+     * {id}: the expected key set and the rebuilt position both collapse to
+     * the one key (the naive Set.of("id", "id") would throw its own
+     * duplicate-element error instead of the classified taxonomy — the gap
+     * the variant ID-sort leg measured).
      */
     static KeysetScrollPosition forwardKeyset(EncodingCursorStrategy<ScrollPosition> cursorStrategy,
                                               String after, String sortProperty,
-                                              Function<Object, Object> sortValue, String owner) {
+                                              Function<Object, Object> sortValue, String scrollId,
+                                              boolean ascending) {
         if (after == null) {
             return ScrollPosition.keyset();
         }
+        boolean uniqueKeySort = "id".equals(sortProperty);
+        Set<String> expectedKeys = uniqueKeySort
+                ? Set.of("id", SCROLL_KEY)
+                : Set.of(sortProperty, "id", SCROLL_KEY);
         ScrollPosition decoded = cursorStrategy.fromCursor(after);
         if (!(decoded instanceof KeysetScrollPosition keyset)
                 || !keyset.scrollsForward()
-                || !keyset.getKeys().keySet().equals(Set.of(sortProperty, "id"))) {
+                || !keyset.getKeys().keySet().equals(expectedKeys)) {
             throw new IllegalArgumentException(
-                    "after must be a forward keyset cursor emitted by " + owner);
+                    "after must be a forward keyset cursor emitted by " + scrollId);
+        }
+        if (!fingerprint(scrollId, sortProperty, ascending)
+                .equals(String.valueOf(keyset.getKeys().get(SCROLL_KEY)))) {
+            throw new IllegalArgumentException(
+                    "after must be a forward keyset cursor emitted by " + scrollId
+                            + " with the same sort and direction");
         }
         try {
-            Object sortRaw = keyset.getKeys().get(sortProperty);
             Object idRaw = keyset.getKeys().get("id");
+            if (uniqueKeySort) {
+                return ScrollPosition.forward(Map.of(
+                        "id", uuidValue(idRaw)));
+            }
+            Object sortRaw = keyset.getKeys().get(sortProperty);
             return ScrollPosition.forward(Map.of(
                     sortProperty, sortValue.apply(sortRaw),
                     "id", uuidValue(idRaw)));
         } catch (RuntimeException exception) {
             throw new IllegalArgumentException(
-                    "after must be a forward keyset cursor emitted by " + owner, exception);
+                    "after must be a forward keyset cursor emitted by " + scrollId, exception);
         }
+    }
+
+    /** The scroll's fingerprint: identity, executed sort, executed direction. */
+    private static String fingerprint(String scrollId, String sortProperty, boolean ascending) {
+        return scrollId + "|" + sortProperty + "|" + (ascending ? "ASC" : "DESC");
     }
 }
