@@ -52,7 +52,8 @@ public interface CategoryWriteSpi {
      * @param command the validated-again create command (name, slug)
      * @return the result with the created row's projection, or the
      *         domain validation errors (REQUIRED name, INVALID slug
-     *         shape, ALREADY_EXISTS active code)
+     *         shape, ALREADY_EXISTS — the code is reserved by a live OR
+     *         soft-deleted row)
      */
     CategoryMutationResult createCategory(CategoryCreateCommand command);
 

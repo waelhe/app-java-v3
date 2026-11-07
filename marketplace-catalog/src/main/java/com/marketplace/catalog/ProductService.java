@@ -340,20 +340,34 @@ public class ProductService {
                 .map(ProductAttributeValue::toInput).toList();
         prepareProductAttributeValues(product, values, true);
         if (product.getProductTypeId() != null) {
-            boolean selectionsDefinePurchasableVariants = assignments
-                    .findAllByProductTypeIdOrderByScopeAscPositionAsc(product.getProductTypeId()).stream()
+            List<ProductTypeAttributeAssignment> schema = assignments
+                    .findAllByProductTypeIdOrderByScopeAscPositionAsc(product.getProductTypeId());
+            boolean selectionsDefinePurchasableVariants = schema.stream()
                     .anyMatch(assignment -> assignment.getScope() == ProductTypeAttributeScope.VARIANT_SELECTION);
-            if (selectionsDefinePurchasableVariants) {
+            // The 2026-11-07 #808 round-11 review (Major · Data Integrity
+            // & Integration): the coverage set includes the REQUIRED
+            // VARIANT assignments too — the promotion path (setRequired)
+            // and the assign guards refuse on the PUBLISHED shelf only
+            // (ACTIVE/SUSPENDED — the rows that never re-pass this gate),
+            // so a DRAFT product's live variants are exactly the rows
+            // THIS gate must adjudicate; checking the selection scope
+            // alone let a promoted-to-required VARIANT attribute publish
+            // a draft whose active variant never carried the value. The
+            // check also runs for selection-free types (a type with only
+            // a required VARIANT assignment still owes the coverage).
+            Set<UUID> requiredVariantAssignments = schema.stream()
+                    .filter(assignment -> assignment.getScope() == ProductTypeAttributeScope.VARIANT_SELECTION
+                            || (assignment.getScope() == ProductTypeAttributeScope.VARIANT
+                                    && assignment.isRequired()))
+                    .map(ProductTypeAttributeAssignment::getId)
+                    .collect(java.util.stream.Collectors.toSet());
+            if (!requiredVariantAssignments.isEmpty()) {
                 // The publication gate revalidates EVERY active variant against
-                // the CURRENT selection schema (the C1 review's Major finding):
-                // an assignment the admin added after the variant's creation
-                // must surface HERE, never after publication — a non-null
-                // combination key proves nothing about schema currency.
-                Set<UUID> requiredSelections = assignments
-                        .findAllByProductTypeIdOrderByScopeAscPositionAsc(product.getProductTypeId()).stream()
-                        .filter(assignment -> assignment.getScope() == ProductTypeAttributeScope.VARIANT_SELECTION)
-                        .map(ProductTypeAttributeAssignment::getId)
-                        .collect(java.util.stream.Collectors.toSet());
+                // the CURRENT required variant-attribute schema (the C1
+                // review's Major finding): an assignment the admin added or
+                // promoted after the variant's creation must surface HERE,
+                // never after publication — a non-null combination key proves
+                // nothing about schema currency.
                 boolean hasSelectableVariant = false;
                 for (ProductVariant variant : productVariantRepository.findByProductIdOrderBySkuAsc(productId)) {
                     if (variant.getStatus() != ProductStatus.ACTIVE) {
@@ -363,16 +377,16 @@ public class ProductService {
                             .findAllByProductVariantIdOrderByAssignmentIdAsc(variant.getId()).stream()
                             .map(ProductVariantAttributeValue::getAssignmentId)
                             .collect(java.util.stream.Collectors.toSet());
-                    if (!covered.containsAll(requiredSelections)) {
+                    if (!covered.containsAll(requiredVariantAssignments)) {
                         throw new ConflictException("Variant '" + variant.getSku()
-                                + "' does not satisfy the product type's current variant-selection schema"
+                                + "' does not satisfy the product type's current required variant-attribute schema"
                                 + " — update it before publication");
                     }
                     if (variant.getOptionCombinationKey() != null) {
                         hasSelectableVariant = true;
                     }
                 }
-                if (!hasSelectableVariant) {
+                if (selectionsDefinePurchasableVariants && !hasSelectableVariant) {
                     throw new ConflictException(
                             "A ProductType with variant-selection attributes requires at least one active typed variant before publication");
                 }
