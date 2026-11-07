@@ -126,16 +126,33 @@ public class ProductTypeAttributeService {
     }
 
     private void requireProductType(UUID id) {
-        // The 2026-11-06 #808 round review (Minor · Data Integrity &
-        // Integration): the FOR-SHARE read (PESSIMISTIC_READ, the
-        // deleteProductType B21 comment's own intended pairing) — an
-        // unlocked findById could read the type BEFORE the deleter's
-        // FOR-UPDATE lock, letting the delete's live-references count see
-        // zero and soft-delete the type, and the unlocked writer then
-        // committing an assignment that references a soft-deleted type
-        // (the FK accepts the physical row). The share lock serializes
-        // the create against the delete's committed verdict.
-        productTypes.findByIdForShare(id)
+        // The 2026-11-05 #808 round review (Minor · Data Integrity &
+        // Integration): the locked read (the deleteProductType B21
+        // comment's own intended pairing) — an unlocked findById could
+        // read the type BEFORE the deleter's FOR-UPDATE lock, letting the
+        // delete's live-references count see zero and soft-delete the
+        // type, and the unlocked writer then committing an assignment
+        // that references a soft-deleted type (the FK accepts the physical
+        // row). The lock serializes the create against the delete's
+        // committed verdict.
+        //
+        // The 2026-11-07 #808 round-4 review (Major · Data Integrity &
+        // Integration): the lock is the WRITE lock (FOR-UPDATE) — the
+        // assignAttributes twin's own discipline. The published-shelf
+        // guard this path carries (existsPublishedShelfTypedVariantForType)
+        // races the PUBLISH path's unlocked assignment read: the
+        // publication validated the draft's variants against the OLD
+        // schema while this guard saw the product still DRAFT, and both
+        // committed — an ACTIVE product short of the new selection. The
+        // write lock pairs with publishOwnedProduct's FOR-SHARE read of
+        // the SAME row (taken BEFORE its assignment reads): either this
+        // assign commits first and the publication re-reads the NEW
+        // schema (its coverage verdict refuses), or the publication
+        // committed first and this guard's probe sees the ACTIVE product
+        // (the classified refusal). The write lock also serializes the
+        // in-flight variant registrations (register's FOR-SHARE read of
+        // the type waits for this writer's verdict).
+        productTypes.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("ProductType", id));
     }
 }

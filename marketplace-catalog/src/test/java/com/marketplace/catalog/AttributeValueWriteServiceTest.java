@@ -430,6 +430,31 @@ class AttributeValueWriteServiceTest {
         verify(options, never()).delete(any());
     }
 
+    /**
+     * The 2026-11-07 #808 round-4 review (Minor · Functional Correctness):
+     * the ORPHANED option (its family died mid-race) still gets its cleanup
+     * (the row goes with the call) but the payload answers the family's own
+     * honest NOT_FOUND — never a partial success with a null attribute
+     * projection (the result contract carries the parent on success).
+     */
+    @Test
+    void deleteAttributeValueCleansUpAnOrphanedOptionWithTheHonestNotFound() {
+        CatalogAttributeDefinition parent = choiceParent();
+        CatalogAttributeOption orphaned = CatalogAttributeOption.create(
+                parent.getId(), "orphaned", "Orphaned", null, 1);
+        when(options.findById(orphaned.getId())).thenReturn(Optional.of(orphaned));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.empty());
+
+        AttributeValueMutationResult result = service.deleteAttributeValue(orphaned.getId());
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(AttributeMutationError::code, AttributeMutationError::field)
+                .containsExactly(AttributeMutationErrorCode.NOT_FOUND, "attribute");
+        // The cleanup still happens — the row never outlives the call.
+        verify(options).delete(orphaned);
+    }
+
     /** The same round: the bulk leg skips the referenced options — the honest count. */
     @Test
     void deleteAttributeValuesSkipsReferencedOptions() {

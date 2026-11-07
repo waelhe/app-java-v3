@@ -35,14 +35,17 @@ class ProductTypeAttributeServiceTest {
         service = new ProductTypeAttributeService(productTypes, definitions, options, assignments,
                 variantRepository);
         // The 2026-11-06 #808 round (#10): the reference-creating assign
-        // path reads the type FOR SHARE (the deleteProductType FOR-UPDATE
-        // wall's own pairing) — the stub rides the locked read. The round's
-        // follow-up (Major · Stability): the READ-ONLY list path keeps the
-        // PLAIN findById — PostgreSQL rejects FOR SHARE inside a read-only
-        // transaction, so the list would answer a raw 500.
+        // path rides the LOCKED type read (the deleteProductType
+        // FOR-UPDATE wall's own pairing; the 2026-11-07 round-4 review
+        // widened it to the WRITE lock — the assignAttributes twin's own
+        // discipline, pairing with publishOwnedProduct's FOR-SHARE read)
+        // — the stub rides the locked read. The round's follow-up (Major
+        // · Stability): the READ-ONLY list path keeps the PLAIN findById
+        // — PostgreSQL rejects FOR SHARE inside a read-only transaction,
+        // so the list would answer a raw 500.
         when(productTypes.findById(typeId)).thenReturn(Optional.of(
                 ProductType.create("apparel", "Apparel", "ملابس", null)));
-        when(productTypes.findByIdForShare(typeId)).thenReturn(Optional.of(
+        when(productTypes.findByIdForUpdate(typeId)).thenReturn(Optional.of(
                 ProductType.create("apparel", "Apparel", "ملابس", null)));
     }
 
@@ -56,6 +59,25 @@ class ProductTypeAttributeServiceTest {
         verify(productTypes).findById(typeId);
         verify(productTypes, never()).findByIdForShare(any());
         verify(productTypes, never()).findByIdForUpdate(any());
+    }
+
+    @Test void assignTakesTheTypeWriteLockBeforeTheGuards() {
+        // The 2026-11-07 #808 round-4 review (Major · Data Integrity &
+        // Integration): the assign path rides the WRITE lock on the type
+        // row — pairing with publishOwnedProduct's FOR-SHARE read of the
+        // same row (the publication's assignment reads and the assign's
+        // published-shelf guard serialize; the registration's FOR-SHARE
+        // read waits for this writer too).
+        when(definitions.findByIdForShare(attributeId)).thenReturn(Optional.of(
+                CatalogAttributeDefinition.create("material", "Material", "الخامة", CatalogAttributeType.TEXT, null)));
+        when(assignments.existsByProductTypeIdAndAttributeDefinitionId(typeId, attributeId)).thenReturn(false);
+        when(assignments.existsByProductTypeIdAndScopeAndPosition(typeId, ProductTypeAttributeScope.PRODUCT, 0)).thenReturn(false);
+        when(assignments.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.assign(typeId, attributeId, ProductTypeAttributeScope.PRODUCT, false, 0);
+
+        verify(productTypes).findByIdForUpdate(typeId);
+        verify(productTypes, never()).findByIdForShare(any());
     }
 
     @Test void variantSelectionRequiresChoiceAndAtLeastTwoOptions() {

@@ -258,24 +258,34 @@ public class AttributeWriteService implements AttributeWriteSpi {
         if (ids == null || ids.isEmpty()) {
             return 0;
         }
+        // The 2026-11-07 #808 round-4 review (Minor · Stability &amp;
+        // Availability): the definition locks come in ONE sorted pass —
+        // the previous per-id loop took them in the CALLER'S list order,
+        // so two concurrent bulk deletes naming two definitions in
+        // OPPOSITE orders could deadlock (each holding one row and
+        // waiting for the other). The same UUID order the bulk OPTION
+        // delete (deleteAttributeValues) established: every id is locked
+        // FOR-UPDATE in SORTED order, the unknown ones answer empty and
+        // are skipped, and the guards and deletes walk the locked rows.
+        java.util.Map<UUID, CatalogAttributeDefinition> addressedById = new java.util.LinkedHashMap<>();
+        // Unknown or null ids are skipped — the honest affected count
+        // answers what the registry itself deleted (never a fabricated
+        // count, never an error entry for an id the registry never knew).
+        for (UUID id : ids.stream().filter(java.util.Objects::nonNull).sorted().toList()) {
+            attributeDefinitionRepository.findByIdForUpdate(id)
+                    .ifPresent(row -> addressedById.put(id, row));
+        }
         int deleted = 0;
-        for (UUID id : ids) {
-            // Unknown ids are skipped — the honest affected count answers
-            // what the registry itself deleted (never a fabricated count,
-            // never an error entry for an id the registry never knew).
-            Optional<CatalogAttributeDefinition> addressed = id == null
-                    ? Optional.empty()
-                    // The 2026-11-06 #808 round review (Major · Data
-                    // Integrity): the bulk leg rides the SAME FOR-UPDATE
-                    // load and the SAME live-variant-values guard — the
-                    // single-item leg's own refusal, in the bulk's
-                    // honest-skip form.
-                    : attributeDefinitionRepository.findByIdForUpdate(id);
-            if (addressed.isPresent() && !variantAttributeValuesLiveFor(id)) {
+        for (CatalogAttributeDefinition row : addressedById.values()) {
+            // The 2026-11-06 #808 round review (Major · Data Integrity):
+            // the bulk leg rides the SAME FOR-UPDATE load and the SAME
+            // live-variant-values guard — the single-item leg's own
+            // refusal, in the bulk's honest-skip form.
+            if (!variantAttributeValuesLiveFor(row.getId())) {
                 // The single delete's cascade (the same wave-19 law): the
                 // children go with every deleted attribute row.
-                deleteAttributeChildren(id);
-                attributeDefinitionRepository.delete(addressed.get());
+                deleteAttributeChildren(row.getId());
+                attributeDefinitionRepository.delete(row);
                 deleted++;
             }
         }
