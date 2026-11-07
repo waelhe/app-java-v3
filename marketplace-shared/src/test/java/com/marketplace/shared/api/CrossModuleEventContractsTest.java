@@ -125,4 +125,70 @@ class CrossModuleEventContractsTest {
         // ONE refund contract: the lending cancellation chain carries it).
         assertThat(loanResolved.refundedAmountCents()).isNull();
     }
+
+    /**
+     * Agent 1 (the Saleor 458-root campaign, PR #696 — the post-merge
+     * integration round): the account self-deletion journey's mail-leg
+     * event answers for its value semantics here — the one-time erasure
+     * credential is the mail's content (the payload-exception
+     * convention), so the pin that matters is the exact four-field shape
+     * the notifications renderer will consume when its listener lands
+     * (the packet's recorded follow-up).
+     */
+    @Test
+    void accountDeletionRequestedEvent_carriesTheOneTimeErasureRight() {
+        UUID userId = UUID.randomUUID();
+        Instant expiresAt = Instant.parse("2026-10-22T12:00:00Z");
+        AccountDeletionRequestedEvent event = new AccountDeletionRequestedEvent(
+                userId, "maged@example.com", "one-time-erasure-token", expiresAt);
+        assertThat(event.userId()).isEqualTo(userId);
+        assertThat(event.email()).isEqualTo("maged@example.com");
+        assertThat(event.deletionToken()).isEqualTo("one-time-erasure-token");
+        assertThat(event.expiresAt()).isEqualTo(expiresAt);
+        assertThat(event).isEqualTo(new AccountDeletionRequestedEvent(
+                userId, "maged@example.com", "one-time-erasure-token", expiresAt));
+        // The 2026-11-06 session-9 #811 final review (Major · Security &
+        // Privacy): the diagnostic redaction landed — the one-time
+        // erasure credential (and the address) never reach a log line or
+        // an exception message through toString(); the deferral this
+        // comment used to record is closed.
+        assertThat(event.toString())
+                .doesNotContain("one-time-erasure-token")
+                .doesNotContain("maged@example.com")
+                .contains("deletionToken=[REDACTED]")
+                .contains(userId.toString());
+    }
+
+    /**
+     * Agent 1 (the Saleor 458-root campaign, PR #696 — the post-merge
+     * integration round): the email-change journey's mail-leg event —
+     * the same payload-exception convention pin: the frozen field shape
+     * (old/new address pair + the one-time change token + TTL) is what
+     * the notifications renderer reads; the contract is frozen here so
+     * the renderer lands without re-negotiating it.
+     */
+    @Test
+    void emailChangeRequestedEvent_carriesTheFrozenRedemptionShape() {
+        UUID userId = UUID.randomUUID();
+        Instant expiresAt = Instant.parse("2026-10-22T12:00:00Z");
+        EmailChangeRequestedEvent event = new EmailChangeRequestedEvent(
+                userId, "old@example.com", "new@example.com", "one-time-change-token", expiresAt);
+        assertThat(event.userId()).isEqualTo(userId);
+        assertThat(event.oldEmail()).isEqualTo("old@example.com");
+        assertThat(event.newEmail()).isEqualTo("new@example.com");
+        assertThat(event.changeToken()).isEqualTo("one-time-change-token");
+        assertThat(event.expiresAt()).isEqualTo(expiresAt);
+        assertThat(event).isEqualTo(new EmailChangeRequestedEvent(
+                userId, "old@example.com", "new@example.com", "one-time-change-token", expiresAt));
+        // The 2026-11-06 session-9 #811 final review (Major · Security &
+        // Privacy): the diagnostic redaction — the one-time change
+        // credential AND both addresses (PII) never reach a log line or an
+        // exception message through toString().
+        assertThat(event.toString())
+                .doesNotContain("one-time-change-token")
+                .doesNotContain("old@example.com")
+                .doesNotContain("new@example.com")
+                .contains("changeToken=[REDACTED]")
+                .contains(userId.toString());
+    }
 }
