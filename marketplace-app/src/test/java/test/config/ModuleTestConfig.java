@@ -1,5 +1,8 @@
 package test.config;
 
+import com.marketplace.app.graphql.PositiveDecimalScalar;
+import com.marketplace.app.graphql.UuidScalar;
+import graphql.schema.GraphQLScalarType;
 import com.marketplace.shared.config.MarketplaceProperties;
 import com.marketplace.shared.jpa.JpaConfig;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -8,6 +11,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.domain.AuditorAware;
+import org.springframework.graphql.execution.RuntimeWiringConfigurer;
 import org.springframework.web.servlet.config.annotation.ApiVersionConfigurer;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -42,6 +46,51 @@ import java.util.Optional;
 @Configuration
 @Import(JpaConfig.class)
 public class ModuleTestConfig {
+
+    /**
+     * ApplicationModuleTest narrows component scanning to the owning module,
+     * while Spring GraphQL still assembles the repository's shared SDL, which
+     * now declares the central {@code scalar UUID} (D-UUID-001). Spring
+     * Boot's GraphQlAutoConfiguration collects every
+     * {@link RuntimeWiringConfigurer} bean in the context and applies it to
+     * the GraphQlSource builder (its documented custom-scalar path:
+     * {@code wiringConfigurers.orderedStream().forEach(builder::configureRuntimeWiring)}),
+     * so this configurer provides the central UUID scalar in module test
+     * slices. A bare {@code UuidScalar} {@code @Bean} is NOT enough in a
+     * slice: it is a {@code Coercing}, and the DGS registrar that translates
+     * {@code @DgsScalar} beans into scalar registrations is not part of the
+     * narrowed module slice — the measured CI failure
+     * "There is no scalar implementation for the named 'UUID' scalar type".
+     * Full application contexts register the scalar through the production
+     * {@code @DgsScalar} wiring and never load this test configuration, so
+     * the registration stays single-path in each context.
+     */
+    @Bean
+    RuntimeWiringConfigurer uuidScalarWiringConfigurer() {
+        return wiringBuilder -> wiringBuilder.scalar(GraphQLScalarType.newScalar()
+                .name("UUID")
+                .coercing(new UuidScalar())
+                .build());
+    }
+
+    /**
+     * Same measured failure, same documented path, second scalar: the W1-B1
+     * voucher money contract added {@code scalar PositiveDecimal} to the
+     * shared SDL (agent-2-catalog-pricing.graphqls), so every module slice
+     * that assembles the repository SDL now needs its wiring too — the CI
+     * failure "There is no scalar implementation for the named
+     * 'PositiveDecimal' scalar type" across the app shards. Full
+     * application contexts register the production {@code @DgsScalar}
+     * wiring and never load this test configuration, so the registration
+     * stays single-path in each context (the UUID contract above).
+     */
+    @Bean
+    RuntimeWiringConfigurer positiveDecimalScalarWiringConfigurer() {
+        return wiringBuilder -> wiringBuilder.scalar(GraphQLScalarType.newScalar()
+                .name("PositiveDecimal")
+                .coercing(new PositiveDecimalScalar())
+                .build());
+    }
 
     @Bean
     WebMvcConfigurer apiVersioningConfigurer() {

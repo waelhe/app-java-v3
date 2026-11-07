@@ -21,4 +21,9 @@ public interface VoucherRepository extends JpaRepository<Voucher, UUID> {
     @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @Query("select v from Voucher v where v.code = :code")
     Optional<Voucher> findByCodeForUpdate(@Param("code") String code);
+
+    /** The update-path locked read (the settle-time pattern's own twin). */
+    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select v from Voucher v where v.id = :id")
+    Optional<Voucher> findByIdForUpdate(@Param("id") UUID id);
 }

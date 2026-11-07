@@ -65,6 +65,22 @@ public record MediaProperties(
              * {@code MEDIA_LIMITS_MAX_ASSETS_PER_REVIEW}.
              */
             @DefaultValue("10") int maxAssetsPerReview,
+            /**
+             * B19 (CAT-07 — the 2026-11-03 adversarial review, review-pr-809):
+             * the maximum number of media assets one PRODUCT may carry —
+             * PENDING uploads included, the {@code maxAssetsPerReview}
+             * posture verbatim (an abandoned upload occupies its slot until
+             * cleaned). The value matches the GraphQL bulk-list bound
+             * ({@code marketplace.graphql.bulk.max-list-items}, default 200):
+             * {@code productMediaReorder}'s absolute-order semantics require
+             * the WHOLE displayable set in one list, so a product above the
+             * bulk bound could never be reordered again — the cap closes
+             * that permanent-lock path at its root, the allocation. Checked
+             * while the product's advisory allocation lock is held, so the
+             * limit holds under concurrent requests too.
+             * Override: {@code MEDIA_LIMITS_MAX_ASSETS_PER_PRODUCT}.
+             */
+            @DefaultValue("200") int maxAssetsPerProduct,
             /** Server-side allowlist — anything else is rejected before any URL is signed. */
             @DefaultValue({"image/jpeg", "image/png", "image/webp", "image/gif"}) Set<String> allowedContentTypes,
             /**

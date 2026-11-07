@@ -1,7 +1,9 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.shared.api.ApiErrorTaxonomy;
+import com.marketplace.shared.api.GlobalExceptionHandler;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.ServiceUnavailableException;
 import com.marketplace.shared.security.CorrelationIdFilter;
 import graphql.GraphQLError;
 import graphql.GraphqlErrorBuilder;
@@ -9,9 +11,12 @@ import graphql.schema.DataFetchingEnvironment;
 import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.MDC;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.graphql.execution.DataFetcherExceptionResolverAdapter;
 import org.springframework.graphql.execution.ErrorType;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.AuthenticationServiceException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -44,6 +49,8 @@ public class GraphQlExceptionResolver extends DataFetcherExceptionResolverAdapte
 
     private static final String GENERIC_INTERNAL_MESSAGE = "An unexpected error occurred";
     private static final String RATE_LIMIT_MESSAGE = "Rate limit exceeded. Please try again later.";
+    private static final String AUTHENTICATION_REQUIRED_MESSAGE = "Authentication required";
+    private static final String CONFLICT_MESSAGE = "The request conflicts with the current state of the resource";
 
     private final boolean includeTraceId;
 
@@ -63,7 +70,10 @@ public class GraphQlExceptionResolver extends DataFetcherExceptionResolverAdapte
      * Maps one data-fetcher exception onto the canonical taxonomy pair
      * ({@code errorCode} + {@code category} from {@link ApiErrorTaxonomy}):
      * not-found, validation (argument binding and Bean Validation), domain
-     * conflict, authorization, rate limit, and the masked internal default.
+     * conflict (including the concurrent-write uniqueness races the shared
+     * backstop indexes raise), authentication, authorization, rate limit,
+     * service unavailability (the classified 503 family), and the masked
+     * internal default.
      * Only the designated-safe domain messages pass through; every unknown
      * failure carries the generic internal sentence — never a stack trace,
      * SQL, or provider detail.
@@ -72,6 +82,23 @@ public class GraphQlExceptionResolver extends DataFetcherExceptionResolverAdapte
     protected GraphQLError resolveToSingleError(Throwable ex, DataFetchingEnvironment env) {
         if (ex instanceof ResourceNotFoundException) {
             return buildError(env, ErrorType.NOT_FOUND, ApiErrorTaxonomy.NOT_FOUND, ex.getMessage());
+        }
+        // The 2026-11-06 #806 round (Minor · Functional Correctness): the
+        // house's own CLASSIFIED 409 domain exception — thrown by the
+        // owning services' friendly-conflict paths (ProductVariantService's
+        // SKU collision, the follow-service's duplicate) — used to fall
+        // through to the masked INTERNAL-001 envelope here, while the REST
+        // advice maps the SAME exception to 409 CONFLICT through the
+        // ApiProblemDetailException branch. The GraphQL surface answers
+        // the SAME classified conflict (the taxonomy pair the exception
+        // itself carries) with the domain message preserved — the same
+        // designated-safe passthrough REST applies, never a second copy
+        // that drifts. ErrorType stays BAD_REQUEST for the same reason
+        // the uniqueness-race branch uses it: GraphQL's fixed five-value
+        // vocabulary has no conflict value and the authoritative machine
+        // contract is the extensions pair.
+        if (ex instanceof com.marketplace.shared.api.ConflictException conflict) {
+            return buildError(env, ErrorType.BAD_REQUEST, ApiErrorTaxonomy.CONFLICT, conflict.getMessage());
         }
         if (ex instanceof IllegalArgumentException) {
             return buildError(env, ErrorType.BAD_REQUEST, ApiErrorTaxonomy.VALIDATION, ex.getMessage());
@@ -87,11 +114,52 @@ public class GraphQlExceptionResolver extends DataFetcherExceptionResolverAdapte
         if (ex instanceof IllegalStateException) {
             return buildError(env, ErrorType.BAD_REQUEST, ApiErrorTaxonomy.CONFLICT, ex.getMessage());
         }
+        // CAT-02 (the 2026-11-03 adversarial scan, P2): a lost uniqueness
+        // race — the second INSERT of a concurrent pair hits the unique
+        // index the precheck could not see — used to surface as the
+        // masked INTERNAL-001 envelope. The repository's own REST advice
+        // classifies the SAME exception by the same split
+        // (GlobalExceptionHandler: SQLSTATE 23505 → 409 CONFLICT, every
+        // OTHER integrity violation stays the masked INTERNAL), and the
+        // owning services' javadocs name the unique partial indexes "the
+        // concurrent-write backstop": the GraphQL surface answers the
+        // SAME classified conflict through the SAME one classifier
+        // (never a second copy that drifts), with the same fixed
+        // sentence — Spring's own message carries constraint and SQL
+        // detail that never crosses the wire.
+        if (ex instanceof DataIntegrityViolationException violation) {
+            if (GlobalExceptionHandler.isUniqueViolation(violation)) {
+                return buildError(env, ErrorType.BAD_REQUEST, ApiErrorTaxonomy.CONFLICT,
+                        CONFLICT_MESSAGE);
+            }
+            return buildError(env, ErrorType.INTERNAL_ERROR, ApiErrorTaxonomy.INTERNAL,
+                    GENERIC_INTERNAL_MESSAGE);
+        }
         if (ex instanceof AccessDeniedException) {
             // A4: distinguish an authorization failure from an internal error so
             // GraphQL clients can tell a denied request from a broken server —
             // the same AUTHZ taxonomy the REST layer returns for 403.
             return buildError(env, ErrorType.FORBIDDEN, ApiErrorTaxonomy.AUTHZ, ex.getMessage());
+        }
+        // AUTH-01 (the 2026-11-03 adversarial scan, P1): an authentication
+        // failure reaching the resolver from any OTHER path classifies as
+        // AUTHN — the same taxonomy and the same fixed safe sentence the
+        // REST advice returns for AuthenticationException — never the
+        // masked INTERNAL-001. (The token surface's own Saleor payload
+        // contract — INVALID_CREDENTIALS in the CreateToken/RefreshToken
+        // payload — is answered inside TokenDataFetcher and never reaches
+        // this branch; Spring Security's own exception messages stay
+        // server-side.)
+        // The 2026-11-04 adversarial delta review: the INFRA family —
+        // AuthenticationServiceException and its InternalAuthenticationServiceException
+        // subclass (a DB outage inside the provider's load leg) — is guarded
+        // OUT of this classification: it is a broken server, not a caller who
+        // must authenticate, so it skips to the masked INTERNAL branch below
+        // (never classified as "Authentication required").
+        if (ex instanceof AuthenticationException authentication
+                && !(authentication instanceof AuthenticationServiceException)) {
+            return buildError(env, ErrorType.UNAUTHORIZED, ApiErrorTaxonomy.AUTHN,
+                    AUTHENTICATION_REQUIRED_MESSAGE);
         }
         if (ex instanceof RequestNotPermitted) {
             // The house fail-fast rate-limit model (resilience4j named
@@ -99,6 +167,23 @@ public class GraphQlExceptionResolver extends DataFetcherExceptionResolverAdapte
             // the REST advice — the RL-001 taxonomy with the identical fixed
             // sentence, never the limiter's internal instance state.
             return buildError(env, ErrorType.BAD_REQUEST, ApiErrorTaxonomy.RATE_LIMIT, RATE_LIMIT_MESSAGE);
+        }
+        // ORD-02's residual (the 2026-11-04 scan) — and with it the
+        // pseudonymization-HMAC OFF case (SubjectPseudonymizer.derive): the
+        // house's CLASSIFIED 503 family used to fall through to the masked
+        // INTERNAL envelope here even though the REST advice maps the same
+        // exception to 503 SU-001 through the ApiProblemDetailException
+        // branch (GlobalExceptionHandler.handleApiProblemDetail). The
+        // GraphQL-spec ErrorType vocabulary has no 503 value — INTERNAL_ERROR
+        // is the closest of its fixed five (a server-side condition, never
+        // the client's request) — while the authoritative machine contract
+        // carries the SU-001/availability pair, the same errorCode/category
+        // the REST ProblemDetail body emits. The exception's own message is
+        // a house-authored configuration/status sentence (the same detail
+        // REST passes through), so it stays in the designated-safe set.
+        if (ex instanceof ServiceUnavailableException) {
+            return buildError(env, ErrorType.INTERNAL_ERROR, ApiErrorTaxonomy.SERVICE_UNAVAILABLE,
+                    ex.getMessage());
         }
 
         return buildError(env, ErrorType.INTERNAL_ERROR, ApiErrorTaxonomy.INTERNAL, GENERIC_INTERNAL_MESSAGE);

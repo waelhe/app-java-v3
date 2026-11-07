@@ -1,5 +1,6 @@
 package com.marketplace.catalog;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.domain.KeysetScrollPosition;
@@ -7,6 +8,7 @@ import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Window;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -29,6 +31,17 @@ public interface ProductRepository extends JpaRepository<Product, UUID>, JpaSpec
     /** Owner-scoped roster for the legacy REST list. */
     java.util.List<Product> findByProviderId(UUID providerId);
 
+    /**
+     * The type's live products (the {@code @SoftDelete} filter rides the
+     * derived query automatically) — the 2026-11-06 #808 round review's
+     * assignment-scope move guard (Major · Data Integrity &amp;
+     * Integration): the variant-consistency verdict walks every product
+     * whose variants the scope move can re-key, so the move's refusal or
+     * completion is decided over the AFFECTED population itself, never a
+     * sample.
+     */
+    java.util.List<Product> findByProductTypeId(UUID productTypeId);
+
     /** Bounded owner-scoped roster for the existing offset/page contract. */
     org.springframework.data.domain.Page<Product> findByProviderId(
             UUID providerId, org.springframework.data.domain.Pageable pageable);
@@ -40,6 +53,59 @@ public interface ProductRepository extends JpaRepository<Product, UUID>, JpaSpec
      */
     Window<Product> findByProviderIdOrderByCreatedAtDescIdDesc(
             UUID providerId, KeysetScrollPosition position, Limit limit);
+
+    // ------------------------------------------------------------------
+    // Campaign packet campaign-b4-c (the Saleor products read roots): the
+    // store-wide SQL keyset scrolls — the scrollStaffUsers derived-method
+    // precedent (Window-returning, KeysetScrollPosition/Limit-taking, the
+    // static ordering baked into the method name with the id tiebreaker).
+    // The products table is populated commerce data, never bounded
+    // reference data: the continuation queries execute as real keyset SQL.
+    // ------------------------------------------------------------------
+
+    /** The include-unpublished (ADMIN) population's NAME-ascending keyset scroll. */
+    Window<Product> findByOrderByTitleAscIdAsc(KeysetScrollPosition position, Limit limit);
+
+    /** The include-unpublished (ADMIN) population's NAME-descending keyset scroll. */
+    Window<Product> findByOrderByTitleDescIdDesc(KeysetScrollPosition position, Limit limit);
+
+    /** The public ACTIVE population's NAME-ascending keyset scroll (the storefront slice). */
+    Window<Product> findByStatusOrderByTitleAscIdAsc(
+            StoreProductStatus status, KeysetScrollPosition position, Limit limit);
+
+    /** The public ACTIVE population's NAME-descending keyset scroll (the storefront slice). */
+    Window<Product> findByStatusOrderByTitleDescIdDesc(
+            StoreProductStatus status, KeysetScrollPosition position, Limit limit);
+
+    /** The public ACTIVE population's own count (the honest caller-scoped totalCount). */
+    long countByStatus(StoreProductStatus status);
+
+    /**
+     * The goods-schema's live-product probe — the product-type delete
+     * gate's own read (the wave-19 #808 review: a schema with products
+     * answers the classified INVALID, never an orphaning delete).
+     */
+    boolean existsByProductTypeId(UUID productTypeId);
+
+    /**
+     * B7's TOCTOU residual (CAT-04 — the 2026-11-04 follow-on): the
+     * delete-path locked read, the money path's own
+     * {@code VoucherRepository.findByCodeForUpdate} pattern verbatim. The
+     * reservation machinery's bulk UPDATE ({@link #reserve}) writes THIS
+     * row but never touches the {@code @Version} column, so a guard on an
+     * unlocked {@code findById} is check-then-act: a delete that passed on
+     * reserved=0 could soft-delete the row while a concurrent placement's
+     * reservation commits — the exact stranded U1 state the B7 wall was
+     * built to prevent. The pessimistic write lock serializes the delete's
+     * guard+soft-delete against that UPDATE: either the delete holds the
+     * row first and the reservation's soft-delete-filtered UPDATE matches
+     * ZERO rows (the placement's own honest 409, rolled back whole), or
+     * the reservation committed first and the locked read sees the
+     * reserved counter and the delete refuses.
+     */
+    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Product p where p.id = :id")
+    Optional<Product> findByIdForUpdate(@Param("id") UUID id);
 
     /**
      * Reserves {@code qty} units of an ACTIVE product whose free stock

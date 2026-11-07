@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <title>Confirm Your Email Change</title>
+</head>
+<body style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto;">
+<h1 style="color: #2d6a4f;">Confirm Your Email Change</h1>
+<p>We received a request to change your account's email address
+    from <strong th:text="${oldEmail}">old@example.com</strong> to
+    <strong th:text="${newEmail}">new@example.com</strong>. Use the one-time
+    confirmation token below to complete the change:</p>
+<p style="margin: 20px 0; padding: 12px 24px; background-color: #f4f4f4;
+          border-radius: 4px; font-family: monospace; font-size: 18px; word-break: break-all;"
+   th:text="${changeToken}">change-token</p>
+<p style="font-size: 14px; color: #666;">This token will expire in
+    <span th:text="${expirationMinutes}">30</span> minutes.</p>
+<hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
+<p style="font-size: 12px; color: #999;">If you did not request this change, please ignore this email —
+    your account's email address will remain unchanged.</p>
+</body>
+</html>

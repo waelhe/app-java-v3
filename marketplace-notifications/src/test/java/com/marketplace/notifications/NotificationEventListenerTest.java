@@ -543,4 +543,50 @@ class NotificationEventListenerTest {
         ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
         assertNotNull(ann);
     }
+    // ------------------------------------------------------------------
+    // B11 (ORD-03) — the account-lifecycle mail legs' delegation
+    // ------------------------------------------------------------------
+
+    @Test
+    void onAccountDeletionRequested_delegatesTheFrozenPayload() {
+        UUID userId = UUID.randomUUID();
+        java.time.Instant expiresAt = java.time.Instant.now().plusSeconds(1800);
+        listener.onAccountDeletionRequested(
+                new com.marketplace.shared.api.AccountDeletionRequestedEvent(
+                        userId, "member@example.com", "deletion-token", expiresAt));
+
+        // The 2026-11-05 #810 round review: the event's pinned EMAIL
+        // travels with the delegation (the right mails the requesting
+        // mailbox, never the account's moved CURRENT address).
+        verify(notificationService).onAccountDeletionRequested(
+                userId, "member@example.com", "deletion-token", expiresAt);
+    }
+
+    @Test
+    void onAccountDeletionRequested_usesApplicationModuleListenerAnnotation() throws NoSuchMethodException {
+        var method = NotificationEventListener.class.getMethod(
+                "onAccountDeletionRequested", com.marketplace.shared.api.AccountDeletionRequestedEvent.class);
+        ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
+        assertNotNull(ann);
+    }
+
+    @Test
+    void onEmailChangeRequested_delegatesTheFrozenPayload() {
+        UUID userId = UUID.randomUUID();
+        java.time.Instant expiresAt = java.time.Instant.now().plusSeconds(1800);
+        listener.onEmailChangeRequested(
+                new com.marketplace.shared.api.EmailChangeRequestedEvent(
+                        userId, "old@example.com", "new@example.com", "change-token", expiresAt));
+
+        verify(notificationService).onEmailChangeRequested(
+                userId, "old@example.com", "new@example.com", "change-token", expiresAt);
+    }
+
+    @Test
+    void onEmailChangeRequested_usesApplicationModuleListenerAnnotation() throws NoSuchMethodException {
+        var method = NotificationEventListener.class.getMethod(
+                "onEmailChangeRequested", com.marketplace.shared.api.EmailChangeRequestedEvent.class);
+        ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
+        assertNotNull(ann);
+    }
 }

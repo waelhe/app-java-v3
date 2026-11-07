@@ -94,7 +94,13 @@ public class ProductService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "StoreCategory", command.storeCategoryCode()));
         if (command.productTypeId() != null) {
-            productTypeRepository.findById(command.productTypeId())
+            // The 2026-11-06 #808 round review (Minor · Data Integrity &
+            // Integration): the FOR-SHARE read (the ProductWriteService
+            // register path's own precedent) — the unlocked findById let a
+            // concurrent deleteProductType's live-references count miss
+            // this in-flight product and soft-delete the type before this
+            // commit landed a live reference to it.
+            productTypeRepository.findByIdForShare(command.productTypeId())
                     .orElseThrow(() -> new ResourceNotFoundException("ProductType", command.productTypeId()));
         }
         UUID providerId = currentUserProvider.getCurrentUserId(authentication);
@@ -159,7 +165,16 @@ public class ProductService {
         if (value.populatedValueCount() != 1) {
             throw new ConflictException("Exactly one typed value must be supplied for assignment " + assignment.getId());
         }
-        CatalogAttributeDefinition definition = definitions.findById(assignment.getAttributeDefinitionId())
+        // The 2026-11-06 #808 round-3 review (Major · Data Integrity &
+        // Integration): the reference-CREATING read takes the definition
+        // row FOR SHARE (the variant registration's CHOICE-leg pairing
+        // verbatim) — the attribute-delete and option-delete guards'
+        // FOR-UPDATE read of the same row serializes against THIS read,
+        // so their reference probes answer over this save's committed
+        // fact, never a zero that was about to become one (the unlocked
+        // findById let the delete's probe pass while this value was in
+        // flight, orphaning the product's value on a dead schema).
+        CatalogAttributeDefinition definition = definitions.findByIdForShare(assignment.getAttributeDefinitionId())
                 .orElseThrow(() -> new ResourceNotFoundException("CatalogAttributeDefinition", assignment.getAttributeDefinitionId()));
         boolean valid = switch (definition.getValueType()) {
             case TEXT -> value.textValue() != null && value.numberValue() == null
@@ -300,6 +315,24 @@ public class ProductService {
     @PreAuthorize("hasRole('PROVIDER')")
     public Product publishOwnedProduct(UUID productId, Authentication authentication) {
         Product product = getOwnedProduct(productId, authentication);
+        // The 2026-11-07 #808 round-4 review (Major · Data Integrity &
+        // Integration): the type row's FOR-SHARE read comes BEFORE every
+        // assignment read this publication makes, and it is HELD to the
+        // commit — the new-selection assign paths
+        // (ProductTypeAttributeService.assign / assignAttributes) hold the
+        // SAME row FOR UPDATE while their published-shelf guard probes, so
+        // the publication and the schema change serialize: either the
+        // assign committed first and this publication re-validates against
+        // the NEW schema (its coverage verdict refuses honestly), or this
+        // publication committed first and the assign's probe sees the
+        // ACTIVE product (the classified migrate-first refusal). Without
+        // the pairing, the publication validated the draft's variants
+        // against the OLD schema while the guard saw the product still
+        // DRAFT, and both committed — an ACTIVE product short of the new
+        // selection, the exact hole the guard exists to close.
+        if (product.getProductTypeId() != null) {
+            productTypeRepository.findByIdForShare(product.getProductTypeId());
+        }
         // ProductType definitions can evolve after draft creation; publication
         // must revalidate current required PRODUCT assignments and choice ownership.
         List<CatalogAttributeValueInput> values = attributeValues
@@ -307,20 +340,34 @@ public class ProductService {
                 .map(ProductAttributeValue::toInput).toList();
         prepareProductAttributeValues(product, values, true);
         if (product.getProductTypeId() != null) {
-            boolean selectionsDefinePurchasableVariants = assignments
-                    .findAllByProductTypeIdOrderByScopeAscPositionAsc(product.getProductTypeId()).stream()
+            List<ProductTypeAttributeAssignment> schema = assignments
+                    .findAllByProductTypeIdOrderByScopeAscPositionAsc(product.getProductTypeId());
+            boolean selectionsDefinePurchasableVariants = schema.stream()
                     .anyMatch(assignment -> assignment.getScope() == ProductTypeAttributeScope.VARIANT_SELECTION);
-            if (selectionsDefinePurchasableVariants) {
+            // The 2026-11-07 #808 round-11 review (Major · Data Integrity
+            // & Integration): the coverage set includes the REQUIRED
+            // VARIANT assignments too — the promotion path (setRequired)
+            // and the assign guards refuse on the PUBLISHED shelf only
+            // (ACTIVE/SUSPENDED — the rows that never re-pass this gate),
+            // so a DRAFT product's live variants are exactly the rows
+            // THIS gate must adjudicate; checking the selection scope
+            // alone let a promoted-to-required VARIANT attribute publish
+            // a draft whose active variant never carried the value. The
+            // check also runs for selection-free types (a type with only
+            // a required VARIANT assignment still owes the coverage).
+            Set<UUID> requiredVariantAssignments = schema.stream()
+                    .filter(assignment -> assignment.getScope() == ProductTypeAttributeScope.VARIANT_SELECTION
+                            || (assignment.getScope() == ProductTypeAttributeScope.VARIANT
+                                    && assignment.isRequired()))
+                    .map(ProductTypeAttributeAssignment::getId)
+                    .collect(java.util.stream.Collectors.toSet());
+            if (!requiredVariantAssignments.isEmpty()) {
                 // The publication gate revalidates EVERY active variant against
-                // the CURRENT selection schema (the C1 review's Major finding):
-                // an assignment the admin added after the variant's creation
-                // must surface HERE, never after publication — a non-null
-                // combination key proves nothing about schema currency.
-                Set<UUID> requiredSelections = assignments
-                        .findAllByProductTypeIdOrderByScopeAscPositionAsc(product.getProductTypeId()).stream()
-                        .filter(assignment -> assignment.getScope() == ProductTypeAttributeScope.VARIANT_SELECTION)
-                        .map(ProductTypeAttributeAssignment::getId)
-                        .collect(java.util.stream.Collectors.toSet());
+                // the CURRENT required variant-attribute schema (the C1
+                // review's Major finding): an assignment the admin added or
+                // promoted after the variant's creation must surface HERE,
+                // never after publication — a non-null combination key proves
+                // nothing about schema currency.
                 boolean hasSelectableVariant = false;
                 for (ProductVariant variant : productVariantRepository.findByProductIdOrderBySkuAsc(productId)) {
                     if (variant.getStatus() != ProductStatus.ACTIVE) {
@@ -330,16 +377,16 @@ public class ProductService {
                             .findAllByProductVariantIdOrderByAssignmentIdAsc(variant.getId()).stream()
                             .map(ProductVariantAttributeValue::getAssignmentId)
                             .collect(java.util.stream.Collectors.toSet());
-                    if (!covered.containsAll(requiredSelections)) {
+                    if (!covered.containsAll(requiredVariantAssignments)) {
                         throw new ConflictException("Variant '" + variant.getSku()
-                                + "' does not satisfy the product type's current variant-selection schema"
+                                + "' does not satisfy the product type's current required variant-attribute schema"
                                 + " — update it before publication");
                     }
                     if (variant.getOptionCombinationKey() != null) {
                         hasSelectableVariant = true;
                     }
                 }
-                if (!hasSelectableVariant) {
+                if (selectionsDefinePurchasableVariants && !hasSelectableVariant) {
                     throw new ConflictException(
                             "A ProductType with variant-selection attributes requires at least one active typed variant before publication");
                 }

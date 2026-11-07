@@ -221,7 +221,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           mkdir -p target/openrewrite
-          mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress \
+          ./mvnw --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress \
             -f .ci/openrewrite-bom-audit/pom.xml \
             -Dopenrewrite.recipe-bom.version="${OPENREWRITE_RECIPE_BOM_VERSION}" \
             org.apache.maven.plugins:maven-help-plugin:3.5.1:effective-pom \
@@ -237,7 +237,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p target/openrewrite
-          mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress -Popenrewrite \
+          ./mvnw --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress -Popenrewrite \
             org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:discover \
             -Ddetail=true 2>&1 | tee target/openrewrite/recipe-discovery.txt
           if ! grep -Fq 'org.openrewrite.java.dependencies.UpgradeDependencyVersion' target/openrewrite/recipe-discovery.txt; then
@@ -253,7 +253,7 @@ jobs:
           # Install, not merely package: downstream reactor modules resolve sibling SNAPSHOT
           # dependencies from the local Maven repository when dryRunNoFork runs.
           # The ordinary CI workflows remain responsible for executing the test suites.
-          mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress \
+          ./mvnw --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress \
             -DskipTests -Popenrewrite install 2>&1 | tee target/openrewrite/reactor-install.log
 
       - name: Capture dry-run report
@@ -261,7 +261,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress \
+          ./mvnw --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress \
             -Popenrewrite org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:dryRunNoFork \
             -Dopenrewrite.dry-run.fail-on-results=false \
             -Drewrite.exportDatatables=true 2>&1 | tee target/openrewrite/dry-run.log
@@ -380,7 +380,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p target/openrewrite
-          mvn --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress -Popenrewrite,openrewrite-spring-source \
+          ./mvnw --settings "${RUNNER_TEMP}/openrewrite-settings.xml" --batch-mode --no-transfer-progress -Popenrewrite,openrewrite-spring-source \
             -Dopenrewrite.spring-recipes.version="${spring_recipes_built_version}" \
             org.openrewrite.maven:rewrite-maven-plugin:${OPENREWRITE_MAVEN_PLUGIN_VERSION}:discover -Ddetail=true \
             2>&1 | tee target/openrewrite/spring-source-discovery.log

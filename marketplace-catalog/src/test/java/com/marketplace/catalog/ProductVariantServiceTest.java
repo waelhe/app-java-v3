@@ -16,6 +16,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.instancio.Select.field;
 import static org.mockito.ArgumentMatchers.any;
@@ -58,6 +59,7 @@ class ProductVariantServiceTest {
     private CatalogAttributeOptionRepository options;
     @Mock
     private ProductVariantAttributeValueRepository attributeValues;
+    private ProductTypeRepository productTypes;
     @Mock
     private Authentication authentication;
 
@@ -68,8 +70,16 @@ class ProductVariantServiceTest {
 
     @BeforeEach
     void setUp() {
+        productTypes = mock(ProductTypeRepository.class);
+        // The 2026-11-06 #808 round (Major · Data Integrity): register
+        // reads the product TYPE for share before the assignments — the
+        // lenient default answers the type for any typed registration
+        // (tests override the rare negative cases).
+        org.mockito.Mockito.lenient().when(productTypes.findByIdForShare(org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(invocation -> Optional.of(
+                        ProductType.create("typed", "Typed", "مصنف", null)));
         service = new ProductVariantService(variantRepository, productRepository, currentUserProvider,
-                assignments, definitions, options, attributeValues);
+                assignments, definitions, options, attributeValues, productTypes);
     }
 
     /** The owning product — the seller's own live shelf, the register-honest fresh shape. */
@@ -136,7 +146,10 @@ class ProductVariantServiceTest {
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         when(variantRepository.findByProviderIdAndSku(seller, "TYPED-RED")).thenReturn(Optional.empty());
         when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId)).thenReturn(List.of(selection));
-        when(definitions.findById(definitionId)).thenReturn(Optional.of(definition));
+        // The 2026-11-07 #808 round-8: the definition LOAD itself reads FOR
+        // SHARE (every value load serializes against the delete wall; the
+        // CHOICE leg's own duplicate share read is gone).
+        when(definitions.findByIdForShare(definitionId)).thenReturn(Optional.of(definition));
         when(options.findById(option.getId())).thenReturn(Optional.of(option));
         when(variantRepository.existsByProductIdAndOptionCombinationKey(
                 org.mockito.ArgumentMatchers.eq(product.getId()), org.mockito.ArgumentMatchers.anyString())).thenReturn(false);
@@ -166,7 +179,10 @@ class ProductVariantServiceTest {
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         when(variantRepository.findByProviderIdAndSku(seller, "DUP-RED")).thenReturn(Optional.empty());
         when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId)).thenReturn(List.of(selection));
-        when(definitions.findById(definitionId)).thenReturn(Optional.of(definition));
+        // The 2026-11-07 #808 round-8: the definition LOAD itself reads FOR
+        // SHARE (every value load serializes against the delete wall; the
+        // CHOICE leg's own duplicate share read is gone).
+        when(definitions.findByIdForShare(definitionId)).thenReturn(Optional.of(definition));
         when(options.findById(option.getId())).thenReturn(Optional.of(option));
         when(variantRepository.existsByProductIdAndOptionCombinationKey(
                 org.mockito.ArgumentMatchers.eq(product.getId()), org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
@@ -188,6 +204,32 @@ class ProductVariantServiceTest {
                 new ProductVariantService.RegisterVariantCommand("SKU-1", null, 100), authentication))
                 .isInstanceOf(ResourceNotFoundException.class);
         verify(variantRepository, never()).save(any());
+    }
+
+    @Test
+    void registrationUnderAWithdrawnTypeRidesTheFreeFormPath() {
+        // The 2026-11-06 #808 round-3 review (Major · Stability &
+        // Availability): a soft-deleted type row owns NO live schema —
+        // the registration accepts the state exactly as the unlocked read
+        // always did (the free-form path: no assignments, no values, no
+        // combination key), never the ResourceNotFoundException the
+        // orElseThrow regression produced.
+        UUID productTypeId = UUID.randomUUID();
+        Product product = Product.register("orphaned-goods", "Orphaned goods", null, 100L, "SAR", seller,
+                productTypeId);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
+        when(variantRepository.findByProviderIdAndSku(seller, "FREE-1")).thenReturn(Optional.empty());
+        when(productTypes.findByIdForShare(productTypeId)).thenReturn(Optional.empty());
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId))
+                .thenReturn(List.of());
+        when(variantRepository.save(any(ProductVariant.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ProductVariant saved = service.register(product.getId(),
+                new ProductVariantService.RegisterVariantCommand("FREE-1", null, 100), authentication);
+
+        assertThat(saved.getSku()).isEqualTo("FREE-1");
+        assertThat(saved.getOptionCombinationKey()).isNull();
     }
 
     @Test
@@ -240,6 +282,30 @@ class ProductVariantServiceTest {
     }
 
     @Test
+    void aSoftDeletedRowsSkuStaysReservedAnswersTheSame409() {
+        // The 2026-11-06 #808 round (Minor · Data Integrity), this
+        // register surface: V219's unique index is GLOBAL — a
+        // soft-deleted variant keeps its SKU reserved while the derived
+        // probe (filtered to live rows) sees nothing; the raw-table
+        // count answers the same friendly 409 BEFORE the save dies on
+        // the constraint.
+        Product product = product();
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
+        when(variantRepository.findByProviderIdAndSku(seller, "RED-XL"))
+                .thenReturn(Optional.empty());
+        when(variantRepository.countSkuReservationsIncludingDeleted(seller, "RED-XL"))
+                .thenReturn(1L);
+
+        assertThatThrownBy(() -> service.register(product.getId(),
+                new ProductVariantService.RegisterVariantCommand("RED-XL", null, 100),
+                authentication))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("RED-XL");
+        verify(variantRepository, never()).save(any());
+    }
+
+    @Test
     void theSameSkuIsFreeInAnotherSellersNamespace() {
         Product product = product();
         when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
@@ -263,7 +329,10 @@ class ProductVariantServiceTest {
                 .set(field(ProductVariant::getStockQuantity), 3)
                 .set(field(ProductVariant::getReservedQuantity), 2)
                 .create();
-        when(variantRepository.findById(variant.getId())).thenReturn(Optional.of(variant));
+        // The 2026-11-06 #808 round-3 review (Minor · Data Integrity):
+        // setStock reads the row FOR UPDATE — the reservation-sensitive
+        // guard serializes against the placement's native UPDATE.
+        when(variantRepository.findByIdForUpdate(variant.getId())).thenReturn(Optional.of(variant));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
 
         assertThatThrownBy(() -> service.setStock(variant.getId(), 1, authentication))
