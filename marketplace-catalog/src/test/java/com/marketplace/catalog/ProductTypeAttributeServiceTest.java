@@ -403,6 +403,7 @@ class ProductTypeAttributeServiceTest {
         // goes through.
         ProductTypeAttributeAssignment assignment = ProductTypeAttributeAssignment.create(
                 typeId, attributeId, ProductTypeAttributeScope.PRODUCT, false, 0);
+        when(assignments.findProductTypeIdById(assignment.getId())).thenReturn(Optional.of(typeId));
         when(assignments.findById(assignment.getId())).thenReturn(Optional.of(assignment));
 
         service.remove(assignment.getId());
@@ -417,6 +418,7 @@ class ProductTypeAttributeServiceTest {
         // (never stale combination keys over a dead schema).
         ProductTypeAttributeAssignment selection = ProductTypeAttributeAssignment.create(
                 typeId, attributeId, ProductTypeAttributeScope.VARIANT_SELECTION, true, 0);
+        when(assignments.findProductTypeIdById(selection.getId())).thenReturn(Optional.of(typeId));
         when(assignments.findById(selection.getId())).thenReturn(Optional.of(selection));
         when(variantAttributeValues.existsLiveVariantValueForAssignmentsOrOptions(
                 java.util.List.of(selection.getId()), java.util.List.of())).thenReturn(true);
@@ -434,6 +436,7 @@ class ProductTypeAttributeServiceTest {
         // re-validation refusal).
         ProductTypeAttributeAssignment required = ProductTypeAttributeAssignment.create(
                 typeId, attributeId, ProductTypeAttributeScope.PRODUCT, true, 0);
+        when(assignments.findProductTypeIdById(required.getId())).thenReturn(Optional.of(typeId));
         when(assignments.findById(required.getId())).thenReturn(Optional.of(required));
         when(productAttributeValues.existsLiveProductValueForAssignmentsOrOptions(
                 java.util.List.of(required.getId()), java.util.List.of())).thenReturn(true);
