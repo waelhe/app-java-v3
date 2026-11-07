@@ -90,19 +90,21 @@ public class ProductTypeAttributeService {
                 throw new ConflictException("VARIANT_SELECTION requires at least two allowed options");
             }
             // The 2026-11-06 #808 round-3 review (Major · Data Integrity &
-            // Integration): the published-shelf guard — a product on the
-            // shelf (ACTIVE, or SUSPENDED — reactivate() returns it to
-            // ACTIVE without re-running the publication gate) carrying a
-            // TYPED variant would keep its key derived under the dead
-            // schema and its values short of the new selection, and the
-            // shelf never re-passes the gate to surface it. The variants
-            // migrate first (the attribute-delete wall's own law); DRAFT
-            // products stay eligible — the publication gate owns their
-            // coverage verdict at publish time (the
-            // assignAttributes twin's own pairing).
-            if (variantRepository.existsPublishedShelfTypedVariantForType(productTypeId)) {
+            // Integration), widened by the round-5 review (Major · Data
+            // Integrity & Integration): the published-shelf guard — a
+            // product on the shelf (ACTIVE, or SUSPENDED — reactivate()
+            // returns it to ACTIVE without re-running the publication
+            // gate) carrying ANY live variant (TYPED or the round-5
+            // widening's free-form NULL-KEY row: a selection-free type
+            // publishes with a free-form active variant, and the assign
+            // would leave it short of the new selection's required value
+            // with no gate to surface it) refuses the assign — the
+            // variants migrate first (the attribute-delete wall's own
+            // law); DRAFT products stay eligible (the publication gate
+            // owns their coverage verdict at publish time).
+            if (variantRepository.existsPublishedShelfVariantForType(productTypeId)) {
                 throw new ConflictException("A variant-selection attribute cannot be assigned while a published"
-                        + " product of this type carries typed variants — migrate the variants first");
+                        + " product of this type carries live variants — migrate the variants first");
             }
         }
 

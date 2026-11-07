@@ -163,24 +163,25 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
                     continue;
                 }
                 // The 2026-11-06 #808 round-3 review (Major · Data
-                // Integrity & Integration): the published-shelf guard —
-                // the new selection's value cannot exist on any variant
-                // yet (the attribute is NEW to this type), so a product on
-                // the shelf (ACTIVE, or SUSPENDED — reactivate() returns
-                // it to ACTIVE without re-running the publication gate)
-                // carrying a TYPED variant would keep its key derived
-                // under the dead schema and its values short of the new
-                // selection, and the shelf never re-passes the gate to
-                // surface it (fresh registrations derive new-shape keys,
-                // so the key comparison never surfaces the old variants
-                // either). The variants migrate first; DRAFT products stay
-                // eligible — the publication gate owns their coverage
-                // verdict at publish time (the
+                // Integrity & Integration), widened by the round-5 review
+                // (Major · Data Integrity & Integration): the
+                // published-shelf guard — the new selection's value
+                // cannot exist on any variant yet (the attribute is NEW to
+                // this type), so a product on the shelf (ACTIVE, or
+                // SUSPENDED — reactivate() returns it to ACTIVE without
+                // re-running the publication gate) carrying ANY live
+                // variant (TYPED or free-form NULL-KEY — the round-5
+                // widening: a selection-free type publishes with a
+                // free-form active variant) would keep its variants short
+                // of the new selection and the shelf never re-passes the
+                // gate to surface it. The variants migrate first; DRAFT
+                // products stay eligible — the publication gate owns their
+                // coverage verdict at publish time (the
                 // ProductTypeAttributeService.assign twin's own pairing).
-                if (variantRepository.existsPublishedShelfTypedVariantForType(productTypeId)) {
+                if (variantRepository.existsPublishedShelfVariantForType(productTypeId)) {
                     errors.add(new ProductTypeMutationError("id", ProductTypeMutationErrorCode.INVALID,
                             "A variant-selection attribute cannot be assigned while a published product of"
-                                    + " this type carries typed variants — migrate the variants first"));
+                                    + " this type carries live variants — migrate the variants first"));
                     continue;
                 }
             }
