@@ -284,7 +284,40 @@ class ProductServiceTest {
 
         assertThatThrownBy(() -> service.publishOwnedProduct(productId, authentication))
                 .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
-                .hasMessageContaining("does not satisfy the product type's current variant-selection schema");
+                .hasMessageContaining("does not satisfy the product type's current required variant-attribute schema");
+        verify(productRepository, never()).save(any(Product.class));
+    }
+
+    @Test
+    void typedDraftCannotPublishWhenAnActiveVariantMissesAPromotedRequiredVariantAssignment() {
+        // The 2026-11-07 #808 round-11 review (Major · Data Integrity &
+        // Integration): the promotion path (setRequired) and the assign
+        // guards refuse on the PUBLISHED shelf only (ACTIVE/SUSPENDED —
+        // the rows that never re-pass this gate), so a DRAFT product's
+        // live variant is exactly the row THIS gate must adjudicate. The
+        // type carries a required VARIANT assignment (selection-free —
+        // the old gate skipped the whole check), and the active variant
+        // never carried its value — the publication refuses.
+        UUID productTypeId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID attributeId = UUID.randomUUID();
+        Product draft = Product.register("home-appliances", "Typed draft", null, 100L, "SAR", caller, productTypeId);
+        ProductTypeAttributeAssignment promotedRequiredVariant = ProductTypeAttributeAssignment.create(
+                productTypeId, attributeId, ProductTypeAttributeScope.VARIANT, true, 0);
+        ProductVariant bareVariant = ProductVariant.register(draft, "SKU-BARE", "No value", 100L, null);
+        when(productRepository.findById(productId)).thenReturn(Optional.of(draft));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+        when(attributeValues.findAllByProductIdOrderByAssignmentIdAsc(productId)).thenReturn(List.of());
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId))
+                .thenReturn(List.of(promotedRequiredVariant));
+        when(productVariantRepository.findByProductIdOrderBySkuAsc(productId))
+                .thenReturn(List.of(bareVariant));
+        when(variantAttributeValues.findAllByProductVariantIdOrderByAssignmentIdAsc(bareVariant.getId()))
+                .thenReturn(List.of()); // nothing covers the promoted assignment
+
+        assertThatThrownBy(() -> service.publishOwnedProduct(productId, authentication))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("does not satisfy the product type's current required variant-attribute schema");
         verify(productRepository, never()).save(any(Product.class));
     }
 
