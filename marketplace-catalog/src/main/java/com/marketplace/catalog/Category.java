@@ -25,10 +25,11 @@ import java.util.UUID;
  * D-E11 precedent).
  *
  * <p>{@code code} is the stable API-facing key (what create/update carry —
- * the {@code uq_categories_code_active} partial unique index keeps ACTIVE
- * rows unique while a soft-deleted row releases its code for reuse, the V47
- * slug precedent); the DB CHECK pins its shape (lowercase latin/digits/
- * dashes — no casing drift can ever reach the column).
+ * the {@code uq_categories_code} GLOBAL unique index of V70 keeps every
+ * row's code unique across the RAW table, live and soft-deleted alike,
+ * so a soft-deleted row's code stays reserved — the reserved-code
+ * precheck spans the RAW table for the same law); the DB CHECK pins its
+ * shape (lowercase latin/digits/dashes — no casing drift can ever reach the column).
  */
 @Entity
 @Table(name = "categories")
@@ -73,6 +74,40 @@ public class Category extends BaseEntity {
     @Override
     public UUID getId() {
         return id;
+    }
+
+    /**
+     * The registry row's amendment shape — the ADMIN write use case's own
+     * seam (the Saleor {@code categoryUpdate} root mapped onto the
+     * registry's bilingual columns). Each argument is the ALREADY-VALIDATED
+     * replacement value (the use case owns validation and the code
+     * uniqueness precheck — the {@code uq_categories_code} global unique
+     * index's own no-TOCTOU window); {@code null} preserves the
+     * column (partial update, the Saleor input's omit-to-preserve
+     * semantics).
+     */
+    void revise(String code, String nameEn) {
+        if (code != null) {
+            this.code = code;
+        }
+        if (nameEn != null) {
+            this.nameEn = nameEn;
+        }
+    }
+
+    /**
+     * The registry row's bilingual translation seam — the ADMIN
+     * translate use case's own seam (the Saleor {@code categoryTranslate}
+     * root mapped onto the registry's bilingual columns; the option
+     * registry's own {@code revise} precedent). The arguments are the
+     * ALREADY-VALIDATED replacement values for the whole bilingual pair
+     * (the use case owns validation and computes the merged pair — the
+     * at-least-one-name law over the result, the 100-character column
+     * ceilings).
+     */
+    void translate(String newNameEn, String newNameAr) {
+        this.nameEn = newNameEn;
+        this.nameAr = newNameAr;
     }
 
     public String getCode() {
