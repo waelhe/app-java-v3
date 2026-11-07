@@ -172,7 +172,7 @@ class UserGraphQlIntegrationTest {
                 .path("me.dateJoined").entity(String.class)
                 .satisfies(joined -> assertThat(joined).isNotBlank())
                 .path("me.userPermissions[*].code").entityList(String.class)
-                .containsExactly("MANAGE_USERS", "MANAGE_STAFF", "MANAGE_ORDERS");
+                .containsExactly("MANAGE_USERS", "MANAGE_STAFF", "MANAGE_DISCOUNTS", "MANAGE_ORDERS");
     }
 
     @Test
@@ -509,6 +509,24 @@ class UserGraphQlIntegrationTest {
     void providerCallerIsDeniedTheStaffListByTheOwningUseCase() {
         HttpGraphQlTester providerTester = testerFor(PROVIDER_SUBJECT, "PROVIDER");
         providerTester.document("query { staffUsers(first: 1) { totalCount } }")
+                .execute()
+                .errors()
+                .satisfy(errors -> {
+                    var error = errors.getFirst();
+                    assertThat(error.getExtensions()).containsEntry("errorCode", "AUTHZ-001");
+                })
+                .path("staffUsers").valueIsNull();
+    }
+
+    @Test
+    void providerCallerIsDeniedTheDegenerateEmptyPageToo() {
+        // The 2026-11-06 #806 round review (Minor · Security & Privacy):
+        // the ADMIN verdict precedes the degenerate page — a NON-admin
+        // issuing first: 0 used to read a success-shaped empty connection
+        // (the branch returned before the ADMIN-walled scroll ran). The
+        // same AUTHZ-001 denial answers the empty-page shape now.
+        HttpGraphQlTester providerTester = testerFor(PROVIDER_SUBJECT, "PROVIDER");
+        providerTester.document("query { staffUsers(first: 0) { edges { node { id } } } }")
                 .execute()
                 .errors()
                 .satisfy(errors -> {
