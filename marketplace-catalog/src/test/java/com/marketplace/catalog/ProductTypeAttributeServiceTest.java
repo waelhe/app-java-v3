@@ -31,7 +31,7 @@ class ProductTypeAttributeServiceTest {
         // The 2026-11-06 #808 round-3 (#13): the published-shelf guard's
         // probe answers NO typed variants by default (each test overrides).
         variantRepository = mock(ProductVariantRepository.class);
-        when(variantRepository.existsPublishedShelfTypedVariantForType(any())).thenReturn(false);
+        when(variantRepository.existsPublishedShelfVariantForType(any())).thenReturn(false);
         service = new ProductTypeAttributeService(productTypes, definitions, options, assignments,
                 variantRepository);
         // The 2026-11-06 #808 round (#10): the reference-creating assign
@@ -207,17 +207,20 @@ class ProductTypeAttributeServiceTest {
         assertThat(listed).containsExactly(productOne, productTwo, variantOne);
     }
 
-    @Test void variantSelectionIsRefusedWhileAPublishedProductCarriesTypedVariants() {
+    @Test void variantSelectionIsRefusedWhileAPublishedProductCarriesAnyLiveVariant() {
         // The 2026-11-06 #808 round-3 review (Major · Data Integrity &
-        // Integration): a published (or suspended — reactivate() returns
-        // it to ACTIVE without re-running the publication gate) product
-        // with a TYPED variant keeps its key derived under the dead
-        // schema and its values short of the new selection; the variants
+        // Integration), widened by the round-5 review: a published (or
+        // suspended — reactivate() returns it to ACTIVE without re-running
+        // the publication gate) product with ANY live variant — the TYPED
+        // row of round-3, and the round-5 scenario's FREE-FORM NULL-KEY
+        // row (a selection-free type publishes with one, and the assign
+        // would leave it short of the new selection's required value with
+        // no gate to surface it) — refuses the assign; the variants
         // migrate first.
         when(definitions.findByIdForShare(attributeId)).thenReturn(Optional.of(
                 CatalogAttributeDefinition.create("color", "Color", "اللون", CatalogAttributeType.CHOICE, null)));
         when(options.countByAttributeDefinitionId(attributeId)).thenReturn(2L);
-        when(variantRepository.existsPublishedShelfTypedVariantForType(typeId)).thenReturn(true);
+        when(variantRepository.existsPublishedShelfVariantForType(typeId)).thenReturn(true);
 
         assertThatThrownBy(() -> service.assign(typeId, attributeId,
                 ProductTypeAttributeScope.VARIANT_SELECTION, true, 0))
