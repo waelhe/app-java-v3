@@ -312,15 +312,21 @@ public class CollectionWriteService implements CollectionWriteSpi {
         // lock for N sequential queries, stretching every membership
         // write's critical section with the request's size).
         List<UUID> distinctIds = distinct(productIds);
-        Set<UUID> alreadyMember = collectionProductRepository
+        // The 2026-11-07 #808 round-8 review: the offending ids ride the
+        // REQUEST'S OWN first-occurrence order (distinctIds' order) — the
+        // membership set is a lookup index, never the error list's order.
+        Set<UUID> existingMembers = collectionProductRepository
                 .findByCollectionIdAndProductIdIn(collectionId, distinctIds).stream()
                 .map(CollectionProduct::getProductId)
                 .collect(java.util.stream.Collectors.toSet());
+        List<UUID> alreadyMember = distinctIds.stream()
+                .filter(existingMembers::contains)
+                .toList();
         if (!alreadyMember.isEmpty()) {
             errors.add(new CollectionMutationError("products",
                     CollectionMutationErrorCode.DUPLICATED_INPUT_ITEM,
                     "The products are already members of the collection",
-                    new ArrayList<>(alreadyMember)));
+                    alreadyMember));
         }
         if (!errors.isEmpty()) {
             return CollectionMutationResult.failure(errors);

@@ -185,7 +185,15 @@ public class ProductVariantService {
             if (value.populatedValueCount() != 1) {
                 throw new ConflictException("Exactly one typed value must be supplied for assignment " + assignment.getId());
             }
-            CatalogAttributeDefinition definition = definitions.findById(assignment.getAttributeDefinitionId())
+            // The 2026-11-07 #808 round-8 review: the definition load itself
+            // takes the row FOR SHARE — EVERY value load serializes against
+            // the attribute-delete wall's FOR-UPDATE read (the previous
+            // shape loaded unlocked and re-locked only the CHOICE branch,
+            // leaving the TEXT/NUMBER/BOOLEAN legs' shape checks racing
+            // the delete's children cascade; the CHOICE branch's own
+            // duplicate share read is gone — this ONE read covers it).
+            CatalogAttributeDefinition definition = definitions
+                    .findByIdForShare(assignment.getAttributeDefinitionId())
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "CatalogAttributeDefinition", assignment.getAttributeDefinitionId()));
             boolean valid = switch (definition.getValueType()) {
@@ -207,20 +215,12 @@ public class ProductVariantService {
             }
             if (definition.getValueType() == CatalogAttributeType.CHOICE) {
                 // The 2026-11-06 #808 round review (Major · Data Integrity
-                // & Integration): the option reference this registration is
-                // about to create takes the definition row FOR SHARE (the
-                // ProductTypeRepository.findByIdForShare precedent) — the
-                // option-delete guard's FOR-UPDATE read of the same row
-                // serializes against THIS read, so the guard's
-                // existsByOptionId probe can no longer answer zero while a
-                // reference is in flight (the probe's verdict is
-                // COMMITTED-stable). Without the share lock the guard's
-                // refusal was a TOCTOU: probe-at-t0, reference-committed-at-t1,
-                // delete-committed-at-t2 — the read path then rendered a
-                // soft-deleted option's id forever.
-                definitions.findByIdForShare(definition.getId())
-                        .orElseThrow(() -> new ResourceNotFoundException(
-                                "CatalogAttributeDefinition", definition.getId()));
+                // & Integration) + the round-8 consolidation: the share
+                // read above ALREADY serializes this reference-creating
+                // load against the option-delete guard's FOR-UPDATE read
+                // of the same row (the probe's verdict is
+                // COMMITTED-stable) — the CHOICE leg keeps only its own
+                // option-validation reads.
                 CatalogAttributeOption option = options.findById(value.optionId())
                         .orElseThrow(() -> new ResourceNotFoundException("CatalogAttributeOption", value.optionId()));
                 if (!option.getAttributeDefinitionId().equals(definition.getId())) {

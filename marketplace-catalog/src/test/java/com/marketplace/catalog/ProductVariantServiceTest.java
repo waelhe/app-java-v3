@@ -146,11 +146,9 @@ class ProductVariantServiceTest {
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         when(variantRepository.findByProviderIdAndSku(seller, "TYPED-RED")).thenReturn(Optional.empty());
         when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId)).thenReturn(List.of(selection));
-        when(definitions.findById(definitionId)).thenReturn(Optional.of(definition));
-        // The 2026-11-06 #808 round (Major · Data Integrity): the CHOICE
-        // leg now reads the definition FOR SHARE before the option lookup
-        // — the option-delete guard's FOR-UPDATE read of the same row
-        // serializes against it (the probe's verdict stays stable).
+        // The 2026-11-07 #808 round-8: the definition LOAD itself reads FOR
+        // SHARE (every value load serializes against the delete wall; the
+        // CHOICE leg's own duplicate share read is gone).
         when(definitions.findByIdForShare(definitionId)).thenReturn(Optional.of(definition));
         when(options.findById(option.getId())).thenReturn(Optional.of(option));
         when(variantRepository.existsByProductIdAndOptionCombinationKey(
@@ -181,11 +179,9 @@ class ProductVariantServiceTest {
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         when(variantRepository.findByProviderIdAndSku(seller, "DUP-RED")).thenReturn(Optional.empty());
         when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId)).thenReturn(List.of(selection));
-        when(definitions.findById(definitionId)).thenReturn(Optional.of(definition));
-        // The 2026-11-06 #808 round (Major · Data Integrity): the CHOICE
-        // leg now reads the definition FOR SHARE before the option lookup
-        // — the option-delete guard's FOR-UPDATE read of the same row
-        // serializes against it (the probe's verdict stays stable).
+        // The 2026-11-07 #808 round-8: the definition LOAD itself reads FOR
+        // SHARE (every value load serializes against the delete wall; the
+        // CHOICE leg's own duplicate share read is gone).
         when(definitions.findByIdForShare(definitionId)).thenReturn(Optional.of(definition));
         when(options.findById(option.getId())).thenReturn(Optional.of(option));
         when(variantRepository.existsByProductIdAndOptionCombinationKey(

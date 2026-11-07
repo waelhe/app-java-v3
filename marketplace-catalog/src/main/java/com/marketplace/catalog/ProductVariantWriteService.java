@@ -330,7 +330,16 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
             return 0;
         }
         int deleted = 0;
-        for (UUID id : ids) {
+        // The 2026-11-07 #808 round-8 review (Minor · Stability): the row
+        // locks come in ONE sorted, deduplicated, null-free pass (two
+        // concurrent bulk deletes naming overlapping ids in opposite
+        // orders can never deadlock — the same UUID order every bulk
+        // delete in this module established), and the caller's identity
+        // is resolved ONCE for the whole batch (the per-row ownership
+        // filter reuses it — the ProductWriteService.deleteProducts
+        // precedent).
+        UUID caller = currentUserProvider.getCurrentUserId(authentication);
+        for (UUID id : ids.stream().filter(java.util.Objects::nonNull).distinct().sorted().toList()) {
             // Unknown or stranger ids are skipped — the honest affected
             // count answers only what the caller owns and the registry
             // itself deleted (never a fabricated count, never an
@@ -341,7 +350,7 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
             // bulk shape of the wall above; the count-plus-errors law
             // stays honest: the blocked row is neither deleted nor
             // counted).
-            Optional<ProductVariant> addressed = ownedRowForUpdate(id, authentication);
+            Optional<ProductVariant> addressed = ownedRowForUpdate(id, caller);
             if (addressed.isPresent() && addressed.get().getReservedQuantity() == 0) {
                 variantRepository.delete(addressed.get());
                 deleted++;
@@ -498,12 +507,16 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
      * own {@code ownedRowForUpdate} twin).
      */
     private Optional<ProductVariant> ownedRowForUpdate(UUID id, Authentication authentication) {
+        return ownedRowForUpdate(id, currentUserProvider.getCurrentUserId(authentication));
+    }
+
+    /** The batch's own shape — the caller's identity resolved once, reused per row. */
+    private Optional<ProductVariant> ownedRowForUpdate(UUID id, UUID caller) {
         if (id == null) {
             return Optional.empty();
         }
         return variantRepository.findByIdForUpdate(id)
-                .filter(row -> row.getProviderId()
-                        .equals(currentUserProvider.getCurrentUserId(authentication)));
+                .filter(row -> row.getProviderId().equals(caller));
     }
 
     /**
