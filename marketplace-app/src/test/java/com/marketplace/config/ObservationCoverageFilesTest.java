@@ -144,6 +144,12 @@ class ObservationCoverageFilesTest {
      * account/staff lifecycle commands of the identity and console
      * owning use cases, the token lifecycle's three commands, and every
      * previously pinned wave).
+     *
+     * <p>The 2026-11-07 #808 round-10 wave re-pinned deliberately: the
+     * required-attribute migration path's promotion command
+     * ({@code catalog.product-type-attribute.set-required}) rides the
+     * registry's owning surface — a deliberate ADMIN business command,
+     * not a read.
      */
     private static final Map<String, List<String>> EXPECTED = Map.ofEntries(
             Map.entry("marketplace-app", List.of(
@@ -170,6 +176,7 @@ class ObservationCoverageFilesTest {
                     "catalog.favorites.unsave",
                     "catalog.product-type-attribute.assign",
                     "catalog.product-type-attribute.remove",
+                    "catalog.product-type-attribute.set-required",
                     "catalog.product-type.register",
                     "catalog.product-type.remove",
                     "catalog.product-type.update",
