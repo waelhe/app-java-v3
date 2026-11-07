@@ -232,16 +232,22 @@ public class ProductTypeWriteService implements ProductTypeWriteSpi {
             return 0;
         }
         int deleted = 0;
-        for (UUID id : ids) {
+        // The 2026-11-07 #808 round-6 review (Minor · Stability &amp;
+        // Availability): the row locks come in ONE sorted pass — the
+        // previous caller-order loop let two concurrent bulk deletes
+        // naming overlapping ids in OPPOSITE orders deadlock (each holding
+        // one row and waiting for the other, the database aborting one
+        // whole transaction). The same UUID order the bulk attribute and
+        // option deletes established; the locks stay held to the commit
+        // (@Transactional), so their order is the only deadlock lever.
+        for (UUID id : ids.stream().filter(java.util.Objects::nonNull).sorted().toList()) {
             // Unknown ids are skipped — the honest affected count answers
             // what the registry itself deleted (never a fabricated count,
             // never an error entry for an id the registry never knew).
             // B21 (CAT-09): the same write lock as the single delete — the
             // guard runs under the row lock, serialized against the
             // concurrent create.
-            Optional<ProductType> addressed = id == null
-                    ? Optional.empty()
-                    : productTypeRepository.findByIdForUpdate(id);
+            Optional<ProductType> addressed = productTypeRepository.findByIdForUpdate(id);
             if (addressed.isPresent() && !hasLiveReferences(id)) {
                 // The single delete's refusal law (the wave-19 #808
                 // review): a referenced product type is NOT deleted and

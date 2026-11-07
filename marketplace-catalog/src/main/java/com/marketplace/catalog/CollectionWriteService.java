@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -303,17 +304,23 @@ public class CollectionWriteService implements CollectionWriteSpi {
         // The already-member pairs answer the same DUPLICATED_INPUT_ITEM
         // law with the offending ids (the live-pair precheck — the partial
         // unique index remains the concurrent-write backstop).
-        List<UUID> alreadyMember = new ArrayList<>();
-        for (UUID productId : distinct(productIds)) {
-            if (collectionProductRepository
-                    .findByCollectionIdAndProductId(collectionId, productId).isPresent()) {
-                alreadyMember.add(productId);
-            }
-        }
+        //
+        // The 2026-11-07 #808 round-6 review (Minor · Performance &amp;
+        // Scalability): the membership precheck rides ONE batch query —
+        // the repository's own findByCollectionIdAndProductIdIn (the
+        // per-id findByCollectionIdAndProductId loop held the advisory
+        // lock for N sequential queries, stretching every membership
+        // write's critical section with the request's size).
+        List<UUID> distinctIds = distinct(productIds);
+        Set<UUID> alreadyMember = collectionProductRepository
+                .findByCollectionIdAndProductIdIn(collectionId, distinctIds).stream()
+                .map(CollectionProduct::getProductId)
+                .collect(java.util.stream.Collectors.toSet());
         if (!alreadyMember.isEmpty()) {
             errors.add(new CollectionMutationError("products",
                     CollectionMutationErrorCode.DUPLICATED_INPUT_ITEM,
-                    "The products are already members of the collection", alreadyMember));
+                    "The products are already members of the collection",
+                    new ArrayList<>(alreadyMember)));
         }
         if (!errors.isEmpty()) {
             return CollectionMutationResult.failure(errors);
@@ -347,10 +354,17 @@ public class CollectionWriteService implements CollectionWriteSpi {
         }
         // A non-member product is the honest no-op skip (the remove's own
         // idempotent law — never an error, never a fabricated absence).
-        for (UUID productId : distinct(productIds)) {
-            collectionProductRepository
-                    .findByCollectionIdAndProductId(collectionId, productId)
-                    .ifPresent(collectionProductRepository::delete);
+        // The 2026-11-07 #808 round-6 review (Minor · Performance &amp;
+        // Scalability): the membership resolution rides ONE batch query
+        // (the same findByCollectionIdAndProductIdIn the append's precheck
+        // rides — the per-id loop stretched the advisory lock's critical
+        // section with the request's size).
+        List<UUID> distinctIds = distinct(productIds);
+        if (!distinctIds.isEmpty()) {
+            for (CollectionProduct member : collectionProductRepository
+                    .findByCollectionIdAndProductIdIn(collectionId, distinctIds)) {
+                collectionProductRepository.delete(member);
+            }
         }
         return CollectionMutationResult.success(toView(addressed.get()));
     }

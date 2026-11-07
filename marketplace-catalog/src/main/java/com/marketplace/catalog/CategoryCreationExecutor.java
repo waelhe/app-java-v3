@@ -27,11 +27,21 @@ class CategoryCreationExecutor {
 
     /**
      * The insert plus its own append-position derivation, in ONE
-     * transaction — the position read and the INSERT serialize with every
-     * other writer the same way the in-service version did. REQUIRES_NEW
-     * (the {@code AdBillingBatchExecutor.settleOneCampaign} door verbatim):
-     * the caller's own transaction — if one is open — never shares the
+     * transaction. REQUIRES_NEW (the {@code
+     * AdBillingBatchExecutor.settleOneCampaign} door verbatim): the
+     * caller's own transaction — if one is open — never shares the
      * insert's rollback verdict.
+     *
+     * <p>The 2026-11-07 #808 round-6 review (Minor · Data Integrity &amp;
+     * Integration): the position derivation does NOT serialize — under
+     * PostgreSQL's default READ COMMITTED, two concurrent creates may both
+     * read the same max and derive the same append position. That tie is
+     * the repository's own accepted law (CategoryRepository's
+     * position-non-unique stance with the id tiebreaker keeping the read
+     * order deterministic); the code's uniqueness — the only serialization
+     * this path needs — rides V70's {@code uq_categories_code} index (the
+     * loser's insert rolls this transaction back whole and the caller's
+     * catch answers the classified ALREADY_EXISTS).</p>
      */
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     Category insert(String code, String name) {

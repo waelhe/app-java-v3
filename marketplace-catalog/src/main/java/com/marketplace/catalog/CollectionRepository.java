@@ -17,7 +17,4 @@ public interface CollectionRepository extends JpaRepository<Collection, UUID> {
 
     /** The write gate's precheck — a LIVE registry row for the slug or empty. */
     Optional<Collection> findBySlug(String slug);
-
-    /** The whole registry, in creation's own stable order (the in-memory scroll's source). */
-    List<Collection> findAllByOrderByIdAsc();
 }
