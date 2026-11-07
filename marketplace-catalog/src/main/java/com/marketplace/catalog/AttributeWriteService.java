@@ -10,6 +10,7 @@ import com.marketplace.catalog.spi.AttributeReorderMove;
 import com.marketplace.catalog.spi.AttributeUpdateCommand;
 import com.marketplace.catalog.spi.AttributeView;
 import com.marketplace.catalog.spi.AttributeWriteSpi;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -92,23 +93,60 @@ public class AttributeWriteService implements AttributeWriteSpi {
     private final ProductVariantAttributeValueRepository variantAttributeValues;
     /** The live-PRODUCT references the children guard reads (the #808 round-3). */
     private final ProductAttributeValueRepository productAttributeValues;
+    /** The insert's own transaction door (the 2026-11-07 #808 round-19). */
+    private final AttributeCreationExecutor creationExecutor;
 
     public AttributeWriteService(CatalogAttributeDefinitionRepository attributeDefinitionRepository,
                                  CatalogAttributeOptionRepository attributeOptionRepository,
                                  ProductTypeAttributeAssignmentRepository assignmentRepository,
                                  ProductVariantAttributeValueRepository variantAttributeValues,
-                                 ProductAttributeValueRepository productAttributeValues) {
+                                 ProductAttributeValueRepository productAttributeValues,
+                                 AttributeCreationExecutor creationExecutor) {
         this.attributeDefinitionRepository = attributeDefinitionRepository;
         this.attributeOptionRepository = attributeOptionRepository;
         this.assignmentRepository = assignmentRepository;
         this.variantAttributeValues = variantAttributeValues;
         this.productAttributeValues = productAttributeValues;
+        this.creationExecutor = creationExecutor;
     }
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
-    @Transactional
     public AttributeMutationResult createAttribute(AttributeCreateCommand command) {
+        NewAttribute candidate = validateNewAttribute(command);
+        if (!candidate.valid()) {
+            return AttributeMutationResult.failure(candidate.errors());
+        }
+        // The 2026-11-07 #808 round-19 review (Minor · Data Integrity &
+        // Integration): the insert crossed the executor's REQUIRES_NEW
+        // boundary — the reserved-code precheck is honest but not atomic,
+        // and a catch INSIDE the flushing transaction returns into a
+        // commit that throws UnexpectedRollbackException instead of the
+        // classified ALREADY_EXISTS result (the CategoryCreationExecutor
+        // precedent verbatim — the loser arrives fully rolled back, the
+        // catch below answers the payload error).
+        CatalogAttributeDefinition created;
+        try {
+            created = creationExecutor.insert(candidate.code(), candidate.name(), candidate.valueType());
+        } catch (DataIntegrityViolationException violation) {
+            if (isAttributeCodeConflict(violation)) {
+                return AttributeMutationResult.failure(List.of(new AttributeMutationError(
+                        "slug", AttributeMutationErrorCode.ALREADY_EXISTS,
+                        "An attribute with the slug already exists")));
+            }
+            throw violation;
+        }
+        return AttributeMutationResult.success(toView(created));
+    }
+
+    /** The create's own validated payload (empty errors = valid). */
+    private record NewAttribute(String code, String name, CatalogAttributeType valueType,
+                                List<AttributeMutationError> errors) {
+        boolean valid() { return errors.isEmpty(); }
+    }
+
+    /** The create's shared validation ladder — the single and bulk paths own the same law. */
+    private NewAttribute validateNewAttribute(AttributeCreateCommand command) {
         List<AttributeMutationError> errors = new ArrayList<>();
         String name = command.name() == null ? null : command.name().strip();
         String code = command.slug() == null ? null : command.slug().strip().toLowerCase(Locale.ROOT);
@@ -134,12 +172,18 @@ public class AttributeWriteService implements AttributeWriteSpi {
             errors.add(new AttributeMutationError("inputType", AttributeMutationErrorCode.REQUIRED,
                     "An attribute input type is required"));
         }
-        if (!errors.isEmpty()) {
-            return AttributeMutationResult.failure(errors);
-        }
-        CatalogAttributeDefinition created = attributeDefinitionRepository.save(
-                CatalogAttributeDefinition.create(code, name, null, command.valueType(), null));
-        return AttributeMutationResult.success(toView(created));
+        return new NewAttribute(code, name, command.valueType(), errors);
+    }
+
+    /**
+     * The concurrent-create backstop's own discrimination (the
+     * CategoryWriteService {@code uq_categories_code} precedent): only
+     * the violation naming THIS index answers the payload error — a
+     * DIVE carrying more than the code collision rethrows untouched.
+     */
+    private static boolean isAttributeCodeConflict(DataIntegrityViolationException violation) {
+        String message = violation.getMessage();
+        return message != null && message.contains("uq_catalog_attribute_definitions_code_live");
     }
 
     @Override
@@ -364,9 +408,23 @@ public class AttributeWriteService implements AttributeWriteSpi {
         // throws mid-rewrite. Parking at max(maxPosition, size) + 1
         // keeps the final dense range strictly below the parked range,
         // so no phase-2 write can collide with a not-yet-vacated seat.
-        int park = Math.max(
-                ordered.stream().mapToInt(CatalogAttributeOption::getPosition).max().orElse(0),
-                ordered.size()) + 1;
+        // The 2026-11-07 #808 round-19 review (Minor · Functional
+        // Correctness, the overflow family): the park base rides the
+        // shared PositionSequences law — a stored Integer.MAX_VALUE
+        // position (the REST registerOption surface accepts one) wraps
+        // the previous max+1 arithmetic to a negative base, and the DB's
+        // own CHECK answered an unclassified failure. The shared law
+        // parks above the stored maximum when the range fits, else in
+        // the lowest free window at or above the dense range's own top
+        // — the reorder IS the compaction path, it must succeed WITH a
+        // ceiling-high position present.
+        int park = PositionSequences.parkBase(
+                ordered.stream().map(CatalogAttributeOption::getPosition).toList(), ordered.size());
+        if (park < 0) {
+            return AttributeMutationResult.failure(List.of(new AttributeMutationError(
+                    "attributeId", AttributeMutationErrorCode.INVALID,
+                    "The attribute's option positions leave no legal parking range for the rewrite")));
+        }
         for (CatalogAttributeOption option : ordered) {
             option.reposition(park++);
         }
@@ -411,11 +469,52 @@ public class AttributeWriteService implements AttributeWriteSpi {
             return outcomes;
         }
         for (AttributeCreateCommand command : commands) {
-            // Self-invocation joins THIS transaction (the bulk boundary
-            // owns the authorization and the policy); the single-item
-            // ladder's own validation answers per item.
-            AttributeMutationResult result = createAttribute(command);
-            outcomes.add(new AttributeBulkOutcome(result.attribute(), result.errors()));
+            // The 2026-11-07 #808 round-19 review (Minor · Data Integrity &
+            // Integration): the batch stays in ONE transaction — the item
+            // ladder is the SHARED validation (the single path's own law)
+            // and the save rides THIS batch's own transaction (never the
+            // single path's executor, whose REQUIRES_NEW would escape the
+            // batch's own atomicity).
+            NewAttribute candidate = validateNewAttribute(command);
+            if (!candidate.valid()) {
+                outcomes.add(new AttributeBulkOutcome(null, candidate.errors()));
+                continue;
+            }
+            CatalogAttributeDefinition created = attributeDefinitionRepository.save(
+                    CatalogAttributeDefinition.create(candidate.code(), candidate.name(), null,
+                            candidate.valueType(), null));
+            outcomes.add(new AttributeBulkOutcome(toView(created), List.of()));
+        }
+        try {
+            // The flush lands the pending inserts INSIDE the boundary — a
+            // concurrent rival's committed code surfaces its violation
+            // HERE (never at the interceptor's commit, past the catch).
+            attributeDefinitionRepository.flush();
+        } catch (DataIntegrityViolationException violation) {
+            // The 2026-11-07 #808 round-19 review (Minor · Data Integrity
+            // & Integration): the concurrent-collision backstop — the
+            // precheck is honest but not atomic, and PostgreSQL aborts
+            // the whole transaction on the statement error (per-item
+            // isolation inside one transaction is the engine's own law,
+            // not a design choice): every outcome answers the collision
+            // honestly, the batch rolls back whole (the same
+            // setRollbackOnly + rewrite discipline the atomic policy
+            // owns).
+            if (!isAttributeCodeConflict(violation)) {
+                throw violation;
+            }
+            org.springframework.transaction.interceptor.TransactionAspectSupport
+                    .currentTransactionStatus().setRollbackOnly();
+            AttributeMutationError collision = new AttributeMutationError(
+                    "slug", AttributeMutationErrorCode.ALREADY_EXISTS,
+                    "An attribute with the slug was committed concurrently — the batch rolled back whole");
+            List<AttributeBulkOutcome> rewritten = new ArrayList<>(outcomes.size());
+            for (AttributeBulkOutcome outcome : outcomes) {
+                rewritten.add(outcome.success()
+                        ? new AttributeBulkOutcome(null, List.of(collision))
+                        : new AttributeBulkOutcome(null, appendError(outcome.errors(), collision)));
+            }
+            return rewritten;
         }
         if (atomic(errorPolicy) && outcomes.stream().anyMatch(outcome -> !outcome.success())) {
             // The pinned default policy: one refused item refuses the
@@ -496,6 +595,14 @@ public class AttributeWriteService implements AttributeWriteSpi {
             }
         }
         return rewritten;
+    }
+
+    /** The collision rewrite's own append — the already-refused item keeps its own verdict plus the batch's. */
+    private static List<AttributeMutationError> appendError(List<AttributeMutationError> errors,
+                                                            AttributeMutationError collision) {
+        List<AttributeMutationError> combined = new ArrayList<>(errors);
+        combined.add(collision);
+        return List.copyOf(combined);
     }
 
     /**

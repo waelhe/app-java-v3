@@ -20,6 +20,16 @@ public interface CollectionProductRepository extends JpaRepository<CollectionPro
     /** The membership's own ordering read — one collection's live rows in (position, id). */
     List<CollectionProduct> findByCollectionIdOrderByPositionAscIdAsc(UUID collectionId);
 
+    /**
+     * The 2026-11-07 #808 round-19 review (Minor · Data Integrity &amp;
+     * Integration): the product delete's membership cascade — the
+     * member rows of ONE product across every collection (the variants'
+     * cascade twin: the membership's shelf IS the product's, the read
+     * join hides a deleted product's rows and the reorder must never
+     * walk them).
+     */
+    List<CollectionProduct> findByProductIdOrderByPositionAsc(UUID productId);
+
     /** The duplicate-add precheck — the live pair or empty. */
     Optional<CollectionProduct> findByCollectionIdAndProductId(UUID collectionId, UUID productId);
 

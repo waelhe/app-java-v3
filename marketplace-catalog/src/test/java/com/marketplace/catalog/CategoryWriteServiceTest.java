@@ -374,4 +374,63 @@ class CategoryWriteServiceTest {
         assertThat(service.deleteCategories(null)).isZero();
         verify(repository, never()).delete(any());
     }
+
+    @Test
+    void updateAcceptsTheIdempotentReSendOfALegacyStoredCode() {
+        // The 2026-11-07 #808 round-19 review (Minor · Functional
+        // Correctness): a slug EQUAL to the stored code is the
+        // idempotent re-send even when the stored code predates the
+        // shape rule — the shape law applies to NEW or CHANGED codes
+        // only (a legacy row's re-send never re-validates its own
+        // stored identity).
+        Category legacy = row("legacy.code", "Legacy", 0);
+        when(repository.findById(legacy.getId())).thenReturn(Optional.of(legacy));
+        when(repository.save(any(Category.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CategoryMutationResult result = service.updateCategory(legacy.getId(),
+                new CategoryUpdateCommand("Renamed", "legacy.code"));
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.category().name()).isEqualTo("Renamed");
+        assertThat(result.category().slug()).isEqualTo("legacy.code");
+    }
+
+    @Test
+    void updateAnswersBothVerdictsForADifferentBadlyShapedCode() {
+        // A DIFFERENT code answers the shape INVALID and the immutable
+        // INVALID together — the shape law rides the same branch, and
+        // the stored code never moves.
+        Category legacy = row("legacy.code", "Legacy", 0);
+        when(repository.findById(legacy.getId())).thenReturn(Optional.of(legacy));
+
+        CategoryMutationResult result = service.updateCategory(legacy.getId(),
+                new CategoryUpdateCommand(null, "other.code"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).hasSize(2);
+        assertThat(result.errors()).allSatisfy(error ->
+                assertThat(error.code()).isEqualTo(CategoryMutationErrorCode.INVALID));
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void createAnswersTheClassifiedExhaustionWhenThePositionsAreSpent() {
+        // The 2026-11-07 #808 round-19 review (the overflow family): the
+        // category positions are always the derivation's own output, so
+        // the ceiling is a structural safeguard — the classified INVALID
+        // result (never the negative wrap the DB CHECK would answer).
+        when(repository.countByCodeIncludingDeleted("fresh-code")).thenReturn(0L);
+        when(repository.findAllByOrderByPositionAscIdAsc())
+                .thenReturn(List.of(row("ceiling", "Ceiling", Integer.MAX_VALUE)));
+
+        CategoryMutationResult result = service.createCategory(
+                new CategoryCreateCommand("Fresh", "fresh-code"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(CategoryMutationError::code, CategoryMutationError::field)
+                .containsExactly(CategoryMutationErrorCode.INVALID, "position");
+        verify(repository, never()).save(any());
+    }
+
 }

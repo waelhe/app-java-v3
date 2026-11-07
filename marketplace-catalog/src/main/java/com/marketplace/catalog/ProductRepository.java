@@ -108,6 +108,22 @@ public interface ProductRepository extends JpaRepository<Product, UUID>, JpaSpec
     Optional<Product> findByIdForUpdate(@Param("id") UUID id);
 
     /**
+     * The 2026-11-07 #808 round-19 review (Minor · Data Integrity &amp;
+     * Integration): the reference-CREATING read's FOR-SHARE twin (the
+     * {@code ProductTypeRepository.findByIdForShare} precedent verbatim)
+     * — the collection membership insert and every other reference
+     * creator holds the product row for ITS transaction's lifetime, so
+     * the delete's FOR-UPDATE row lock plus its membership cascade
+     * serialize against the insert: either the delete committed first
+     * (this read answers the soft-deleted row's absence) or the insert
+     * commits its reference first and the delete's cascade carries it
+     * away with the product.
+     */
+    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_READ)
+    @Query("select p from Product p where p.id = :id")
+    Optional<Product> findByIdForShare(@Param("id") UUID id);
+
+    /**
      * Reserves {@code qty} units of an ACTIVE product whose free stock
      * covers it — the placement's write.
      *

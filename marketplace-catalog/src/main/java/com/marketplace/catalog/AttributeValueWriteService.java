@@ -146,12 +146,27 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
         // compaction are 1-based (i + 1), so the previous 0-based first
         // position made every fresh single-option attribute look
         // "changed" and forced a renumbering write on a true no-op.
-        int appendPosition = attributeOptionRepository
-                .findFirstByAttributeDefinitionIdOrderByPositionDesc(attributeId)
-                .map(last -> last.getPosition() + 1)
-                .orElse(1);
+        // The 2026-11-07 #808 round-19 review (Minor · Functional
+        // Correctness, the overflow family): the REST registerOption
+        // surface accepts a client-supplied position with only a
+        // @Min(0) guard — a stored Integer.MAX_VALUE wraps the max+1
+        // derivation to a negative number and the DB's own CHECK
+        // answered an unclassified failure. The shared law answers the
+        // classified refusal naming the compaction path (the reorder's
+        // dense rewrite), never the raw constraint throw.
+        java.util.OptionalInt appendPosition = PositionSequences.appendPosition(
+                attributeOptionRepository
+                        .findFirstByAttributeDefinitionIdOrderByPositionDesc(attributeId)
+                        .map(CatalogAttributeOption::getPosition)
+                        .orElse(0));
+        if (appendPosition.isEmpty()) {
+            return AttributeValueMutationResult.failure(List.of(new AttributeMutationError(
+                    "position", AttributeMutationErrorCode.INVALID,
+                    "The attribute's option positions are exhausted — reorder its values to compact"
+                            + " the positions, then retry the append")));
+        }
         CatalogAttributeOption created = attributeOptionRepository.save(
-                CatalogAttributeOption.create(attributeId, code, name, null, appendPosition));
+                CatalogAttributeOption.create(attributeId, code, name, null, appendPosition.getAsInt()));
         return AttributeValueMutationResult.success(toAttributeView(parent.get()), toValueView(created));
     }
 
@@ -272,6 +287,20 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
                     "attribute", AttributeMutationErrorCode.NOT_FOUND,
                     "The option's owning attribute no longer exists")));
         }
+        // The 2026-11-07 #808 round-19 review (Minor · Functional
+        // Correctness): the option row re-reads AFTER the definition
+        // lock — a concurrent delete of the SAME option committed
+        // between the pre-lock load and this lock would otherwise ride
+        // the stale managed entity to a fabricated SUCCESS (the
+        // soft-delete UPDATE matches zero rows silently). The re-read
+        // answers the honest absence — the drop-id/lock/load order the
+        // round-13 remove fix established, applied to this delete's
+        // own shape.
+        if (!attributeOptionRepository.existsById(row.getId())) {
+            return AttributeValueMutationResult.failure(List.of(new AttributeMutationError(
+                    "id", AttributeMutationErrorCode.NOT_FOUND,
+                    "No attribute value found for the id")));
+        }
         AttributeView parent = toAttributeView(parentRow.get());
         // The 2026-11-06 #808 round review (Major · Data Integrity &
         // Integration): a variant value referencing the option blocks the
@@ -351,6 +380,15 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
         }
         int deleted = 0;
         for (CatalogAttributeOption option : addressedById.values()) {
+            // The 2026-11-07 #808 round-19 review (Minor · Functional
+            // Correctness): the same post-lock re-read in bulk form — a
+            // concurrent delete that committed while THIS batch waited
+            // on the definition locks leaves the pre-lock resolved row
+            // stale; the honest count skips it (never a fabricated
+            // delete of an already-absent row).
+            if (!attributeOptionRepository.existsById(option.getId())) {
+                continue;
+            }
             // Options referenced by live variants OR live products are
             // skipped for the same honest-count reason — the single-item
             // leg's own classified refusals, in bulk form (the 2026-11-06

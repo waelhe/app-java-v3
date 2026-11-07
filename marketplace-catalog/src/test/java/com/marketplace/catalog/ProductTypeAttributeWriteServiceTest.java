@@ -968,4 +968,76 @@ class ProductTypeAttributeWriteServiceTest {
         assertThat(result.errors().get(0).message()).contains("migrate the variants first");
         verify(assignmentRepository, never()).saveAll(any());
     }
+
+    @Test
+    void assignAttributesAnswersTheClassifiedExhaustionWhenTheBucketSitsAtTheCeiling() {
+        // The 2026-11-07 #808 round-19 review (the overflow family): the
+        // REST assign surface accepts a client-supplied position with
+        // only a @Min(0) guard — a stored Integer.MAX_VALUE in the
+        // bucket makes the derived max+1 wrap negative. The sentinel
+        // answers the classified INVALID error naming the compaction
+        // path (the bucket's reorder), never the entity's raw
+        // negative-position throw.
+        CatalogAttributeDefinition text = definition("text-attr", CatalogAttributeType.TEXT);
+        CatalogAttributeDefinition fresh = definition("fresh-attr", CatalogAttributeType.TEXT);
+        ProductTypeAttributeAssignment ceiling = assigned(text, ProductTypeAttributeScope.VARIANT,
+                Integer.MAX_VALUE);
+        when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
+                .thenReturn(List.of(ceiling));
+        when(attributeDefinitionRepository.findByIdForShare(text.getId())).thenReturn(Optional.of(text));
+        when(attributeDefinitionRepository.findByIdForShare(fresh.getId())).thenReturn(Optional.of(fresh));
+
+        ProductTypeMutationResult result = service.assignAttributes(type.getId(),
+                List.of(new ProductTypeAttributeAssignOperation(fresh.getId(), "VARIANT", false)));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductTypeMutationError::code, ProductTypeMutationError::field)
+                .containsExactly(ProductTypeMutationErrorCode.INVALID, "position");
+        assertThat(result.errors().get(0).message()).contains("reorder");
+        verify(assignmentRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void theSelectionMoveStagesANullKeyForAnUncoveredArchivedVariant() {
+        // The 2026-11-07 #808 round-19 review (Minor · Functional
+        // Correctness): the ARCHIVED row is terminal (the pinned update
+        // contract refuses it), so the migrate-first refusal is a DEAD
+        // END for it — an uncovered ARCHIVED row leaves the combination
+        // space instead (the null-key recombine, the free-form
+        // population the partial unique index permits), never a refusal
+        // that blocks the shelf-eligible migration.
+        CatalogAttributeDefinition choice = definition("choice-attr", CatalogAttributeType.CHOICE);
+        ProductTypeAttributeAssignment moved = assigned(choice, ProductTypeAttributeScope.VARIANT, 1);
+        ProductTypeAttributeAssignment existing = assigned(
+                definition("existing-choice", CatalogAttributeType.CHOICE),
+                ProductTypeAttributeScope.VARIANT_SELECTION, 1);
+        when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
+                .thenReturn(List.of(moved, existing));
+        when(attributeDefinitionRepository.findByIdForShare(choice.getId())).thenReturn(Optional.of(choice));
+        when(attributeOptionRepository.countByAttributeDefinitionId(choice.getId())).thenReturn(2L);
+        Product product = Product.register("cat-code", "Affected", null, 1000L, "SAR",
+                UUID.randomUUID(), type.getId());
+        ProductVariant archived = ProductVariant.register(product, "sku-archived", "Archived", 900L, "old-key");
+        archived.archive();
+        // The archived variant covers ONLY the existing selection
+        // assignment — the moved assignment has no value at all.
+        when(productRepository.findByProductTypeId(type.getId())).thenReturn(List.of(product));
+        when(variantRepository.findByProductIdOrderBySkuAsc(product.getId())).thenReturn(List.of(archived));
+        when(variantAttributeValues.findAllByProductVariantIdOrderByAssignmentIdAsc(archived.getId()))
+                .thenReturn(List.of(ProductVariantAttributeValue.create(archived.getId(),
+                        new CatalogAttributeValueInput(existing.getId(), null, null, null, UUID.randomUUID()))));
+
+        ProductTypeMutationResult result = service.updateAssignments(type.getId(),
+                List.of(new ProductTypeAttributeAssignmentUpdateOperation(choice.getId(), true)));
+
+        assertThat(result.success()).isTrue();
+        // The archived row left the combination space: the null-key
+        // recombine (never the migrate-first refusal).
+        verify(variantRepository).saveAll(org.mockito.ArgumentMatchers.argThat(
+                (java.util.List<ProductVariant> rows) -> rows.size() == 1
+                        && rows.get(0).getId().equals(archived.getId())
+                        && rows.get(0).getOptionCombinationKey() == null));
+    }
+
 }

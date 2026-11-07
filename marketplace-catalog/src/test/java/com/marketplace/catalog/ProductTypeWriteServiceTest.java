@@ -15,6 +15,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -55,7 +56,11 @@ class ProductTypeWriteServiceTest {
         repository = mock(ProductTypeRepository.class);
         productRepository = mock(ProductRepository.class);
         assignmentRepository = mock(ProductTypeAttributeAssignmentRepository.class);
-        service = new ProductTypeWriteService(repository, productRepository, assignmentRepository);
+        service = new ProductTypeWriteService(repository, productRepository, assignmentRepository,
+                // The 2026-11-07 #808 round-19: the REAL executor over the
+                // same mocked repository (the AttributeCreationExecutor
+                // test precedent).
+                new ProductTypeCreationExecutor(repository));
     }
 
     private static ProductType row(String code, String nameEn) {
@@ -129,6 +134,9 @@ class ProductTypeWriteServiceTest {
     void happyCreateSavesTheRowAndAnswersTheProjection() {
         when(repository.findByCode("fresh-type")).thenReturn(Optional.empty());
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        // The 2026-11-07 #808 round-19: the single create rides the
+        // executor's saveAndFlush door.
+        lenient().when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         ProductTypeMutationResult result = service.createProductType(
                 new ProductTypeCreateCommand("Fresh Widget", "fresh-type"));
@@ -137,7 +145,7 @@ class ProductTypeWriteServiceTest {
         assertThat(result.productType().name()).isEqualTo("Fresh Widget");
         assertThat(result.productType().slug()).isEqualTo("fresh-type");
         assertThat(result.productType().id()).isNotNull();
-        verify(repository).save(any(ProductType.class));
+        verify(repository).saveAndFlush(any(ProductType.class)); // the 2026-11-07 round-19 executor door
     }
 
     // ------------------------------------------------------------------
@@ -176,6 +184,9 @@ class ProductTypeWriteServiceTest {
         ProductType existing = row("keep-type", "Kept");
         when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        // The 2026-11-07 #808 round-19: the single create rides the
+        // executor's saveAndFlush door.
+        lenient().when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         ProductTypeMutationResult result = service.updateProductType(existing.getId(),
                 new ProductTypeUpdateCommand("Refreshed", null));
@@ -250,6 +261,9 @@ class ProductTypeWriteServiceTest {
         when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(repository.findByCode("keep-type")).thenReturn(Optional.of(existing));
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        // The 2026-11-07 #808 round-19: the single create rides the
+        // executor's saveAndFlush door.
+        lenient().when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         ProductTypeMutationResult result = service.updateProductType(existing.getId(),
                 new ProductTypeUpdateCommand("Refreshed", "keep-type"));
@@ -449,4 +463,29 @@ class ProductTypeWriteServiceTest {
         assertThat(result.productType().name()).isEqualTo("الاسم العربي فقط");
         assertThat(result.productType().slug()).isEqualTo("ar-type");
     }
+
+    @Test
+    void createAnswersTheClassifiedAlreadyExistsWhenTheConcurrentRivalCommitsFirst() {
+        // The 2026-11-07 #808 round-19 review (Minor · Data Integrity &
+        // Integration): the precheck is honest but not atomic — the
+        // executor's REQUIRES_NEW boundary delivers the loser fully
+        // rolled back, and the discriminating catch answers the SAME
+        // classified ALREADY_EXISTS (the AttributeCreationExecutor /
+        // CategoryCreationExecutor precedent verbatim).
+        when(repository.findByCode("rival")).thenReturn(Optional.empty());
+        when(repository.saveAndFlush(any(ProductType.class))).thenThrow(
+                new org.springframework.dao.DataIntegrityViolationException(
+                        "could not execute statement; SQL: insert ... constraint [uq_product_types_code_live]"));
+
+        var result = service.createProductType(
+                new com.marketplace.catalog.spi.ProductTypeCreateCommand("Rival", "rival"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(com.marketplace.catalog.spi.ProductTypeMutationError::code,
+                        com.marketplace.catalog.spi.ProductTypeMutationError::field)
+                .containsExactly(com.marketplace.catalog.spi.ProductTypeMutationErrorCode.ALREADY_EXISTS,
+                        "slug");
+    }
+
 }

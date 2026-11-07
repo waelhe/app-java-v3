@@ -375,6 +375,17 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
             return outcomes;
         }
         for (ProductVariantCreateCommand command : commands) {
+            // The 2026-11-07 #808 round-19 review (Minor · Functional
+            // Correctness): a null element answers the per-item REQUIRED
+            // error (the bulk-update path's own law) — never a
+            // NullPointerException that aborts the whole batch.
+            if (command == null) {
+                outcomes.add(new ProductVariantBulkOutcome(null, List.of(
+                        new ProductVariantMutationError("command",
+                                ProductVariantMutationErrorCode.REQUIRED,
+                                "A bulk create item requires its variant command"))));
+                continue;
+            }
             // Self-invocation joins THIS transaction (the bulk boundary
             // owns the authorization and the policy); the single-item
             // ladder's own validation answers per item.
@@ -439,12 +450,28 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
             // item whose row belongs to another product answers the
             // per-row NOT_FOUND (the safe absence, the same vocabulary
             // ownedRow uses), never a cross-product amendment.
-            if (productId == null || variantRepository.findById(item.id())
-                    .map(row -> !productId.equals(row.getProductId())).orElse(true)) {
+            //
+            // The 2026-11-07 #808 round-19 review (Minor · Data Integrity
+            // & Integration, both halves): (1) the probe is a PROJECTION
+            // (never the entity) — the previous unlocked findById loaded
+            // the row into the persistence context BEFORE the single
+            // path's findByIdForUpdate took the row lock, and a locking
+            // query on an already-managed entity returns the CACHED
+            // pre-lock state (the round-11 drop-id/lock/load discipline,
+            // applied to the bulk shape); (2) the refusal rides the
+            // SINGLE path's own ('id', NOT_FOUND, "No product variant
+            // found for the id") vocabulary — the previous ('product',
+            // NOT_FOUND) shape distinguished a foreign-owned variant
+            // under a valid product ('id' refusal from ownedRow) from an
+            // unknown or differently-parented pair ('product' refusal)
+            // — an association/existence oracle the documented
+            // safe-absence law forbids.
+            if (productId == null
+                    || !variantRepository.existsByIdAndProductId(item.id(), productId)) {
                 outcomes.add(new ProductVariantBulkOutcome(null, List.of(
-                        new ProductVariantMutationError("product",
+                        new ProductVariantMutationError("id",
                                 ProductVariantMutationErrorCode.NOT_FOUND,
-                                "The variant does not belong to the addressed product"))));
+                                "No product variant found for the id"))));
                 continue;
             }
             ProductVariantMutationResult result = updateVariant(item.id(), item.fields(), authentication);

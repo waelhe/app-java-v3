@@ -793,9 +793,12 @@ class ProductVariantWriteServiceTest {
         ProductVariant row = variantUnder(parent, "SKU-1");
         // The bulk loop's routing pre-check reads the plain findById (a
         // cheap ownership filter); the authoritative re-read inside
-        // updateVariant rides the locked findByIdForUpdate — both stubs
-        // serve the two hops (the 2026-11-05 #808 round's locked update).
-        when(variantRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        // updateVariant rides the locked findByIdForUpdate — the
+        // membership probe is the round-19 PROJECTION (never the entity:
+        // the cached pre-lock state defect), and the locked re-read
+        // serves the update itself (the 2026-11-05 #808 round's locked
+        // update).
+        when(variantRepository.existsByIdAndProductId(row.getId(), parent.getId())).thenReturn(true);
         when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
         when(variantRepository.countSkuReservationsIncludingDeletedExcluding(
                 ProviderIds.CALLER, "SKU-2", row.getId())).thenReturn(0L);
@@ -826,8 +829,6 @@ class ProductVariantWriteServiceTest {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         Product otherParent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant strangerRow = variantUnder(otherParent, "SKU-OTHER");
-        when(variantRepository.findByIdForUpdate(strangerRow.getId()))
-                .thenReturn(Optional.of(strangerRow));
 
         var outcomes = service.bulkUpdateVariants(parent.getId(), List.of(
                 new ProductVariantBulkUpdateItem(strangerRow.getId(),
@@ -838,9 +839,19 @@ class ProductVariantWriteServiceTest {
         assertThat(outcomes.get(0).errors()).singleElement()
                 .extracting(ProductVariantMutationError::code)
                 .isEqualTo(ProductVariantMutationErrorCode.NOT_FOUND);
+        // The 2026-11-07 #808 round-19 review: the refusal rides the
+        // SINGLE path's own vocabulary — ('id', NOT_FOUND, "No product
+        // variant found for the id") — the previous ('product',
+        // NOT_FOUND) shape distinguished a foreign-owned variant under a
+        // valid product from an unknown pair (an association/existence
+        // oracle the safe-absence law forbids).
         assertThat(outcomes.get(0).errors()).singleElement()
                 .extracting(ProductVariantMutationError::field)
-                .isEqualTo("product");
+                .isEqualTo("id");
+        assertThat(outcomes.get(0).errors()).singleElement()
+                .extracting(ProductVariantMutationError::message)
+                .isEqualTo("No product variant found for the id");
+        verify(variantRepository, never()).findById(any());
     }
 
     @Test
@@ -923,4 +934,53 @@ class ProductVariantWriteServiceTest {
                     .isEqualTo(ProductVariantMutationErrorCode.ALREADY_EXISTS);
         }
     }
+
+    @Test
+    void bulkUpdateProbesTheMembershipWithTheProjectionNeverTheEntity() {
+        // The 2026-11-07 #808 round-19 review (Minor · Data Integrity &
+        // Integration): the membership probe never LOADS the entity — the
+        // previous unlocked findById put the row into the persistence
+        // context BEFORE the single path's findByIdForUpdate, and the
+        // locking query on an already-managed entity returns the CACHED
+        // pre-lock state. The projection probe + the locked re-read keep
+        // the drop-id/lock/load discipline.
+        Product parent = productOwnedBy(ProviderIds.CALLER);
+        ProductVariant row = variantUnder(parent, "SKU-1");
+        when(variantRepository.existsByIdAndProductId(row.getId(), parent.getId())).thenReturn(true);
+        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.countSkuReservationsIncludingDeletedExcluding(
+                ProviderIds.CALLER, "SKU-2", row.getId())).thenReturn(0L);
+        when(variantRepository.save(any(ProductVariant.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+
+        var outcomes = service.bulkUpdateVariants(parent.getId(), List.of(
+                new ProductVariantBulkUpdateItem(row.getId(),
+                        new ProductVariantUpdateCommand("SKU-2", null, null))),
+                caller, "IGNORE_FAILED");
+
+        assertThat(outcomes.get(0).success()).isTrue();
+        verify(variantRepository, never()).findById(any());
+    }
+
+    @Test
+    void bulkCreateAnswersTheClassifiedRequiredForANullElement() {
+        // The 2026-11-07 #808 round-19 review (Minor · Functional
+        // Correctness): a null element answers the per-item REQUIRED
+        // error (the bulk-update path's own law) — never the
+        // NullPointerException that aborts the whole batch.
+        Product parent = productOwnedBy(ProviderIds.CALLER);
+
+        var outcomes = service.bulkCreateVariants(parent.getId(),
+                java.util.Arrays.asList((ProductVariantCreateCommand) null),
+                caller, "IGNORE_FAILED");
+
+        assertThat(outcomes).hasSize(1);
+        assertThat(outcomes.get(0).success()).isFalse();
+        assertThat(outcomes.get(0).errors()).singleElement()
+                .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
+                .containsExactly(ProductVariantMutationErrorCode.REQUIRED, "command");
+        verify(variantRepository, never()).save(any(ProductVariant.class));
+    }
+
 }

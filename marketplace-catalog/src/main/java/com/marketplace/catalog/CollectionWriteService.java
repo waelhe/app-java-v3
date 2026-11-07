@@ -510,8 +510,20 @@ public class CollectionWriteService implements CollectionWriteSpi {
         // the whole parking range strictly above every position any phase
         // of this rewrite can hold — the invariant becomes structural,
         // never flush-order dependent.
-        int park = Math.max(reordered.stream().mapToInt(CollectionProduct::getPosition).max().orElse(0),
-                reordered.size()) + 1;
+        //
+        // The 2026-11-07 #808 round-19 review (Minor · Functional
+        // Correctness, the overflow family): the park base rides the
+        // shared PositionSequences law — the membership positions are
+        // always the append's own max+1 derivation (never
+        // client-supplied), so the ceiling guard is a structural
+        // safeguard answered classified, never the negative-base wrap.
+        int park = PositionSequences.parkBase(
+                reordered.stream().map(CollectionProduct::getPosition).toList(), reordered.size());
+        if (park < 0) {
+            return CollectionMutationResult.failure(List.of(new CollectionMutationError(
+                    "id", CollectionMutationErrorCode.INVALID,
+                    "The collection's membership positions leave no legal parking range for the rewrite")));
+        }
         for (CollectionProduct member : reordered) {
             member.reposition(park++);
         }
@@ -551,11 +563,39 @@ public class CollectionWriteService implements CollectionWriteSpi {
      * backstop, never the user-visible answer.</p>
      */
     private void appendMembership(UUID collectionId, List<UUID> productIds) {
+        // The 2026-11-07 #808 round-19 review (Minor · Data Integrity &
+        // Integration): the membership-CREATING read takes the product
+        // rows FOR SHARE (the reference-creating discipline the
+        // registration paths own) — the product delete's FOR-UPDATE row
+        // lock plus its membership cascade serialize against this
+        // insert: either the delete committed first (the share read
+        // answers the soft-deleted row's absence and the honest
+        // NOT_FOUND verdict below) or THIS insert commits its membership
+        // first and the delete's cascade carries it away with the
+        // product. The previous unlocked existence probe let the delete
+        // slip between the probe and the insert, stranding a live
+        // membership on a deleted product (the read join hid it, the
+        // reorder still walked it).
+        for (UUID productId : distinct(productIds)) {
+            if (productRepository.findByIdForShare(productId).isEmpty()) {
+                throw new com.marketplace.shared.api.ResourceNotFoundException("Product", productId);
+            }
+        }
         collectionProductRepository.lockCollectionPositionAllocation(collectionId.toString());
-        int next = collectionProductRepository
-                .findByCollectionIdOrderByPositionAscIdAsc(collectionId).stream()
-                .mapToInt(CollectionProduct::getPosition)
-                .max().orElse(0) + 1;
+        // The 2026-11-07 #808 round-19 review (the overflow family): the
+        // append's own derivation rides the shared law too — the ceiling
+        // answers the classified refusal, never the negative wrap.
+        java.util.OptionalInt nextPosition = PositionSequences.appendPosition(
+                collectionProductRepository
+                        .findByCollectionIdOrderByPositionAscIdAsc(collectionId).stream()
+                        .mapToInt(CollectionProduct::getPosition)
+                        .max().orElse(0));
+        if (nextPosition.isEmpty()) {
+            throw new com.marketplace.shared.api.ConflictException(
+                    "The collection's membership positions are exhausted — reorder the members to compact"
+                            + " the positions, then retry the add");
+        }
+        int next = nextPosition.getAsInt();
         for (UUID productId : distinct(productIds)) {
             collectionProductRepository.save(CollectionProduct.create(collectionId, productId, next++));
         }

@@ -68,17 +68,21 @@ public class ProductWriteService implements ProductWriteSpi {
     private final ProductTypeRepository productTypeRepository;
     private final ProductVariantRepository variantRepository;
     private final CurrentUserProvider currentUserProvider;
+    /** The product delete's membership cascade (the 2026-11-07 #808 round-19). */
+    private final CollectionProductRepository collectionProducts;
 
     public ProductWriteService(ProductRepository productRepository,
                                StoreCategoryRepository storeCategoryRepository,
                                ProductTypeRepository productTypeRepository,
                                ProductVariantRepository variantRepository,
-                               CurrentUserProvider currentUserProvider) {
+                               CurrentUserProvider currentUserProvider,
+                               CollectionProductRepository collectionProducts) {
         this.productRepository = productRepository;
         this.storeCategoryRepository = storeCategoryRepository;
         this.productTypeRepository = productTypeRepository;
         this.variantRepository = variantRepository;
         this.currentUserProvider = currentUserProvider;
+        this.collectionProducts = collectionProducts;
     }
 
     @Override
@@ -272,6 +276,17 @@ public class ProductWriteService implements ProductWriteSpi {
         // the read side answers the safe absence while the write side
         // still owned them). Inside the same transaction, all-or-nothing.
         deleteVariantsOf(row.getId());
+        // The 2026-11-07 #808 round-19 review (Minor · Data Integrity &
+        // Integration): the collection memberships are the product's own
+        // shelf too — the variants' cascade twin. Without the cascade a
+        // soft-deleted product left LIVE membership rows the read join
+        // hid (the member never rendered) while the reorder still walked
+        // them and the membership count kept them — the invisible member
+        // the round-19 finding proved. The membership add's FOR-SHARE
+        // read (CollectionWriteService.appendMembership) serializes
+        // against THIS delete's row lock, so the pair never strands a
+        // new membership behind the cascade either.
+        deleteMembershipsOf(row.getId());
         return ProductMutationResult.success(lastKnown);
     }
 
@@ -317,6 +332,8 @@ public class ProductWriteService implements ProductWriteSpi {
                 productRepository.delete(addressed.get());
                 // The single delete's cascade (the same wave-19 law).
                 deleteVariantsOf(id);
+                // The single delete's membership cascade (the round-19 law).
+                deleteMembershipsOf(id);
                 deleted++;
             }
         }
@@ -361,6 +378,16 @@ public class ProductWriteService implements ProductWriteSpi {
         }
     }
 
+    /**
+     * The 2026-11-07 #808 round-19 review: the membership cascade — the
+     * variants' cascade twin (the membership's shelf IS the product's).
+     */
+    private void deleteMembershipsOf(UUID productId) {
+        for (CollectionProduct member : collectionProducts.findByProductIdOrderByPositionAsc(productId)) {
+            collectionProducts.delete(member);
+        }
+    }
+
     @Override
     @PreAuthorize("hasRole('PROVIDER')")
     @Transactional
@@ -378,6 +405,16 @@ public class ProductWriteService implements ProductWriteSpi {
             return outcomes;
         }
         for (ProductCreateCommand command : commands) {
+            // The 2026-11-07 #808 round-19 review (Minor · Functional
+            // Correctness): a null element answers the per-item REQUIRED
+            // error (the bulk-update path's own law) — never a
+            // NullPointerException that aborts the whole batch.
+            if (command == null) {
+                outcomes.add(new ProductBulkOutcome(null, List.of(new ProductMutationError(
+                        "command", ProductMutationErrorCode.REQUIRED,
+                        "A bulk create item requires its product command"))));
+                continue;
+            }
             // Self-invocation joins THIS transaction (the bulk boundary
             // owns the authorization and the policy); the single-item
             // ladder's own validation answers per item with the caller

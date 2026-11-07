@@ -18,11 +18,19 @@ import static org.mockito.Mockito.when;
 
 class ProductTypeServiceTest {
     private ProductTypeRepository repository;
+    private ProductRepository productRepository;
+    private ProductTypeAttributeAssignmentRepository assignmentRepository;
     private ProductTypeService service;
 
     @BeforeEach void setUp() {
         repository = mock(ProductTypeRepository.class);
-        service = new ProductTypeService(repository);
+        productRepository = mock(ProductRepository.class);
+        assignmentRepository = mock(ProductTypeAttributeAssignmentRepository.class);
+        // The 2026-11-07 #808 round-19: the live-references guard's own
+        // probes (the remove law's twin repositories).
+        when(productRepository.existsByProductTypeId(any())).thenReturn(false);
+        when(assignmentRepository.existsByProductTypeId(any())).thenReturn(false);
+        service = new ProductTypeService(repository, productRepository, assignmentRepository);
     }
 
     @Test void registerPersistsStableCodeAndLocalizedLabels() {
@@ -80,4 +88,58 @@ class ProductTypeServiceTest {
         when(repository.findAllByOrderByCodeAsc()).thenReturn(types);
         assertThat(service.listForConfiguration()).containsExactlyElementsOf(types);
     }
+
+    @org.junit.jupiter.api.Test
+    void removeRefusesWhileLiveReferencesHoldTheType() {
+        // The 2026-11-07 #808 round-19 review (Minor · Data Integrity &
+        // Integration): the REST delete owns the GraphQL surface's
+        // deleteProductType law — the write lock BEFORE the
+        // live-references guard, the classified conflict, no cascade.
+        ProductType type = ProductType.create("used", "Used", null, null);
+        when(repository.findByIdForUpdate(type.getId())).thenReturn(Optional.of(type));
+        when(productRepository.existsByProductTypeId(type.getId())).thenReturn(true);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.remove(type.getId()))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("live product or attribute-assignment references");
+        org.mockito.Mockito.verify(repository, org.mockito.Mockito.never()).delete(any());
+    }
+
+    @org.junit.jupiter.api.Test
+    void removeRefusesWhileAnAssignmentStillHoldsTheType() {
+        ProductType type = ProductType.create("used", "Used", null, null);
+        when(repository.findByIdForUpdate(type.getId())).thenReturn(Optional.of(type));
+        when(assignmentRepository.existsByProductTypeId(type.getId())).thenReturn(true);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.remove(type.getId()))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class);
+        org.mockito.Mockito.verify(repository, org.mockito.Mockito.never()).delete(any());
+    }
+
+    @org.junit.jupiter.api.Test
+    void removeTakesTheWriteLockBeforeTheReferenceProbeThenDeletes() {
+        // The lock order (the B21 discipline): FOR UPDATE first, then
+        // the probes, then the delete — InOrder pins it.
+        ProductType type = ProductType.create("unused", "Unused", null, null);
+        when(repository.findByIdForUpdate(type.getId())).thenReturn(Optional.of(type));
+
+        service.remove(type.getId());
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(repository, productRepository,
+                assignmentRepository);
+        order.verify(repository).findByIdForUpdate(type.getId());
+        order.verify(productRepository).existsByProductTypeId(type.getId());
+        order.verify(assignmentRepository).existsByProductTypeId(type.getId());
+        order.verify(repository).delete(type);
+    }
+
+    @org.junit.jupiter.api.Test
+    void removeAnswersTheNotFoundForTheUnknownId() {
+        UUID unknown = UUID.randomUUID();
+        when(repository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.remove(unknown))
+                .isInstanceOf(com.marketplace.shared.api.ResourceNotFoundException.class);
+    }
+
 }

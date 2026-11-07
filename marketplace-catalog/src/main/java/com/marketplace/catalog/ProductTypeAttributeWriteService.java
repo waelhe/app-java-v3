@@ -198,7 +198,21 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
             }
             int position = pendingNextPosition.computeIfAbsent(scope,
                     candidate -> nextPosition(productTypeId, candidate));
-            pendingNextPosition.put(scope, position + 1);
+            // The 2026-11-07 #808 round-19 review (Minor · Functional
+            // Correctness, the overflow family): the REST assign surface
+            // accepts a client-supplied position with only a @Min(0)
+            // guard — a stored Integer.MAX_VALUE makes the derived max+1
+            // wrap negative (and the staged position+1 for the NEXT item
+            // wraps with it). The sentinel answers the classified INVALID
+            // error naming the compaction path (the bucket's reorder),
+            // never the entity's raw negative-position throw.
+            if (position < 0) {
+                errors.add(new ProductTypeMutationError("position", ProductTypeMutationErrorCode.INVALID,
+                        "The scope's assignment positions are exhausted — reorder the bucket to compact"
+                                + " the positions, then retry"));
+                continue;
+            }
+            pendingNextPosition.put(scope, position == Integer.MAX_VALUE ? -1 : position + 1);
             pendingAttributeIds.add(operation.attributeId());
             toSave.add(ProductTypeAttributeAssignment.create(productTypeId, operation.attributeId(),
                     scope, scope == ProductTypeAttributeScope.VARIANT_SELECTION,
@@ -370,8 +384,12 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
      * The scope-consistency verdict (the 2026-11-06 #808 round review,
      * Major · Data Integrity &amp; Integration) — PURE verification, zero
      * mutation: walks the type's live products' typed variants (a null
-     * combination key is the legacy free-form population — the
-     * publication gate owns its refusal, never this move), checks each
+     * combination key is the legacy free-form population — the walk
+     * INCLUDES those rows in its coverage verdict: a selection-attribute
+     * move refuses while any NON-ARCHIVED variant — free-form key or
+     * not — lacks an option-bearing value for a post-move selection
+     * attribute; an uncovered ARCHIVED row stages the null-key
+     * recombine instead, the 2026-11-07 round-19 law), checks each
      * variant COVERS the post-move selection set with an option-bearing
      * value per selection assignment, re-derives the variant's key over
      * that set, and detects the per-product collision the re-derivation
@@ -426,14 +444,34 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
                 // without an option-bearing value refuses the move (the
                 // migrate-first verdict) — free-form rows that never
                 // carried the value are exactly that population.
+                //
+                // The 2026-11-07 #808 round-19 review (Minor · Functional
+                // Correctness): the ARCHIVED row is terminal — the pinned
+                // update contract refuses it ("Archived product variants
+                // are terminal and cannot be edited"), so the
+                // migrate-first refusal is a DEAD END for it (the AA
+                // batch's own promotion-probe precedent). An uncovered
+                // ARCHIVED row leaves the combination space instead: the
+                // null-key staging below (the free-form population the
+                // partial unique index permits), never a refusal that
+                // blocks the shelf-eligible migration.
+                boolean uncovered = false;
                 for (ProductTypeAttributeAssignment selection : postMoveSelection) {
                     CatalogAttributeValueInput covered = valuesByAssignment.get(selection.getId());
                     if (covered == null || covered.optionId() == null) {
-                        return new ProductTypeMutationError("id", ProductTypeMutationErrorCode.INVALID,
-                                "The variant-selection move leaves variant '" + variant.getSku()
-                                        + "' without an option for a selection attribute — "
-                                        + "migrate the variant before the move");
+                        uncovered = true;
+                        break;
                     }
+                }
+                if (uncovered) {
+                    if (variant.getStatus() == ProductStatus.ARCHIVED) {
+                        planned.add(new PendingRecombine(variant, null));
+                        continue;
+                    }
+                    return new ProductTypeMutationError("id", ProductTypeMutationErrorCode.INVALID,
+                            "The variant-selection move leaves variant '" + variant.getSku()
+                                    + "' without an option for a selection attribute — "
+                                    + "migrate the variant before the move");
                 }
                 String rederived = VariantCombinationKeys.canonical(postMoveSelection, valuesByAssignment);
                 if (rederived == null) {
@@ -646,9 +684,23 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
         // could transiently duplicate a (product_type_id, scope, position)
         // row against the live unique index. The park starts beyond BOTH
         // the current maximum AND the final range's own end.
-        int park = Math.max(
-                ordered.stream().mapToInt(ProductTypeAttributeAssignment::getPosition).max().orElse(0),
-                ordered.size()) + 1;
+        //
+        // The 2026-11-07 #808 round-19 review (Minor · Functional
+        // Correctness, the overflow family): the base rides the shared
+        // PositionSequences law — a stored Integer.MAX_VALUE position
+        // (the REST assign surface accepts one) wraps the max+1
+        // arithmetic negative; the shared law parks in the lowest free
+        // window at or above the dense range's top when the natural base
+        // overflows, so the reorder (the compaction path) succeeds WITH
+        // a ceiling-high position present.
+        int park = PositionSequences.parkBase(
+                ordered.stream().map(ProductTypeAttributeAssignment::getPosition).toList(),
+                ordered.size());
+        if (park < 0) {
+            return ProductTypeMutationResult.failure(List.of(new ProductTypeMutationError(
+                    "id", ProductTypeMutationErrorCode.INVALID,
+                    "The bucket's assignment positions leave no legal parking range for the rewrite")));
+        }
         for (ProductTypeAttributeAssignment assignment : ordered) {
             assignment.reposition(park++);
         }
@@ -686,13 +738,17 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
     /**
      * The append position — the owner's own max+1 derivation within
      * the (product type, scope) bucket (the attribute-value slice's
-     * own append law; never a client-supplied fact).
+     * own append law; never a client-supplied fact). The 2026-11-07
+     * #808 round-19 review (the overflow family): -1 answers the
+     * exhausted bucket (the caller's own classified refusal names the
+     * reorder's compaction path).
      */
     private int nextPosition(UUID productTypeId, ProductTypeAttributeScope scope) {
-        return assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId).stream()
+        int max = assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId).stream()
                 .filter(assignment -> assignment.getScope() == scope)
                 .mapToInt(ProductTypeAttributeAssignment::getPosition)
-                .max().orElse(0) + 1;
+                .max().orElse(0);
+        return max == Integer.MAX_VALUE ? -1 : max + 1;
     }
 
     /** The bounded projection — the product-type write family's own rendering rule. */

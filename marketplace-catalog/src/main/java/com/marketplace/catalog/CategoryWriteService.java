@@ -155,6 +155,18 @@ public class CategoryWriteService implements CategoryWriteSpi {
             // and the classification below answers it honestly (the
             // AdBillingBatchExecutor precedent verbatim).
             created = creationExecutor.insert(code, name);
+        } catch (com.marketplace.shared.api.ConflictException exhaustion) {
+            // The 2026-11-07 #808 round-19 review (Minor · Functional
+            // Correctness, the overflow family): the position-exhaustion
+            // guard rides the executor's own boundary — the classified
+            // INVALID result (never the raw DB failure the wrapped
+            // max+1 would answer).
+            if (exhaustion.getMessage() != null && exhaustion.getMessage().contains("positions are exhausted")) {
+                return CategoryMutationResult.failure(List.of(new CategoryMutationError(
+                        "position", CategoryMutationErrorCode.INVALID,
+                        "The category positions are exhausted — remove categories to free the sequence")));
+            }
+            throw exhaustion;
         } catch (DataIntegrityViolationException violation) {
             // The 2026-11-06 #808 round (Minor · Stability &
             // Availability): the reserved-code precheck is honest but
@@ -212,13 +224,10 @@ public class CategoryWriteService implements CategoryWriteSpi {
                         "A category name is at most " + NAME_MAX_LENGTH + " characters"));
             }
         }
-        if (code != null) {
-            if (!CODE_SHAPE.matcher(code).matches() || code.length() > CODE_MAX_LENGTH) {
-                errors.add(new CategoryMutationError("slug", CategoryMutationErrorCode.INVALID,
-                        "A category slug is lowercase latin letters, digits and dashes (at most "
-                                + CODE_MAX_LENGTH + " characters)"));
-            }
-        }
+        // The 2026-11-07 #808 round-19 review: the slug's own shape law
+        // moved BELOW the row load — it adjudicates NEW or CHANGED codes
+        // only (the different-code branch); the equal-code idempotent
+        // re-send never re-validates the stored identity here.
         if (!errors.isEmpty()) {
             return CategoryMutationResult.failure(errors);
         }
@@ -230,7 +239,21 @@ public class CategoryWriteService implements CategoryWriteSpi {
         // column); any DIFFERENT slug answers the classified INVALID
         // domain error — never a silent code move that strands the
         // standing references.
+        //
+        // The 2026-11-07 #808 round-19 review (Minor · Functional
+        // Correctness): the shape law rides the SAME branch — a slug
+        // EQUAL to the stored code is the idempotent re-send even when
+        // the stored code predates the shape rule (a legacy row's
+        // re-send never re-validates its own stored identity); the
+        // shape check applies to NEW or CHANGED codes only (and a
+        // changed code refuses as immutable below, both errors riding
+        // the same verdict).
         if (code != null && !code.equals(row.getCode())) {
+            if (!CODE_SHAPE.matcher(code).matches() || code.length() > CODE_MAX_LENGTH) {
+                errors.add(new CategoryMutationError("slug", CategoryMutationErrorCode.INVALID,
+                        "A category slug is lowercase latin letters, digits and dashes (at most "
+                                + CODE_MAX_LENGTH + " characters)"));
+            }
             errors.add(new CategoryMutationError("slug", CategoryMutationErrorCode.INVALID,
                     "A category slug is immutable; it cannot change after creation"));
         }

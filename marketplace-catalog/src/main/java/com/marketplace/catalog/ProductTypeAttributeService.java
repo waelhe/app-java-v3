@@ -255,6 +255,25 @@ public class ProductTypeAttributeService {
         ProductTypeAttributeAssignment assignment = assignments.findById(assignmentId)
                 .filter(row -> row.getProductTypeId().equals(productTypeId))
                 .orElseThrow(() -> new ResourceNotFoundException("ProductTypeAttributeAssignment", assignmentId));
+        // The 2026-11-07 #808 round-19 review (Minor · Data Integrity &
+        // Integration): the promotion serializes with the
+        // attribute-definition deletion TOO — deleteAttribute holds the
+        // DEFINITION row FOR UPDATE while its children cascade
+        // soft-deletes THIS assignment, and the type lock this path owns
+        // never serialized the pair (two different rows): a delete that
+        // committed between this load and the save answered the raw
+        // OptimisticLockException on a dead row. The definition's own
+        // FOR-UPDATE lock plus the fresh assignment re-read answer the
+        // honest not-found when the delete committed first (the round-11
+        // drop-id/lock/load discipline, widened to the definition's
+        // lifecycle); a delete that has not started waits on THIS lock
+        // and re-runs its own guards after the promotion commits.
+        definitions.findByIdForUpdate(assignment.getAttributeDefinitionId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "ProductTypeAttributeAssignment", assignmentId));
+        if (!assignments.existsById(assignmentId)) {
+            throw new ResourceNotFoundException("ProductTypeAttributeAssignment", assignmentId);
+        }
         if (assignment.getScope() == ProductTypeAttributeScope.VARIANT_SELECTION && !required) {
             throw new ConflictException("VARIANT_SELECTION attributes must be required for every variant");
         }

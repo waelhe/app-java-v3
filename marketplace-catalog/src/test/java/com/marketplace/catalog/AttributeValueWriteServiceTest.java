@@ -64,6 +64,10 @@ class AttributeValueWriteServiceTest {
         // The 2026-11-06 #808 round-3: the PRODUCT-scope twin answers NO
         // references by default (each test overrides it).
         lenient().when(productValues.existsLiveProductValueForOption(any())).thenReturn(false);
+        // The 2026-11-07 #808 round-19: the post-lock re-read answers
+        // ALIVE by default (the existing delete ladder keeps its
+        // verdicts; the dead-row tests override their own absence).
+        lenient().when(options.existsById(any())).thenReturn(true);
         service = new AttributeValueWriteService(options, definitions, variantValues, productValues);
     }
 
@@ -596,4 +600,71 @@ class AttributeValueWriteServiceTest {
         assertThat(result.success()).isFalse();
         assertThat(result.errors().get(0).code()).isEqualTo(AttributeMutationErrorCode.NOT_FOUND);
     }
+
+    @Test
+    void appendAnswersTheClassifiedExhaustionWhenTheCeilingPositionIsStored() {
+        // The 2026-11-07 #808 round-19 review (the overflow family): the
+        // REST registerOption surface accepts a client-supplied position
+        // with only a @Min(0) guard — a stored Integer.MAX_VALUE wraps
+        // the max+1 derivation negative and the DB CHECK answered an
+        // unclassified failure. The shared law answers the classified
+        // INVALID error naming the compaction path (the reorder).
+        CatalogAttributeDefinition parent = choiceParent();
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        CatalogAttributeOption ceiling = CatalogAttributeOption.create(parent.getId(),
+                "ceiling", "Ceiling", null, Integer.MAX_VALUE);
+        when(options.findFirstByAttributeDefinitionIdOrderByPositionDesc(parent.getId()))
+                .thenReturn(Optional.of(ceiling));
+
+        AttributeValueMutationResult result = service.createAttributeValue(parent.getId(),
+                new AttributeValueCreateCommand("Fresh", "fresh"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(AttributeMutationError::code, AttributeMutationError::field)
+                .containsExactly(AttributeMutationErrorCode.INVALID, "position");
+        assertThat(result.errors().get(0).message()).contains("reorder");
+        verify(options, never()).save(any());
+    }
+
+    @Test
+    void deleteAnswersTheHonestNotFoundWhenTheOptionDiedUnderTheLock() {
+        // The 2026-11-07 #808 round-19 review (Minor · Functional
+        // Correctness): the option row re-reads AFTER the definition
+        // lock — a concurrent delete of the SAME option that committed
+        // between the pre-lock load and the lock would otherwise ride
+        // the stale managed entity to a fabricated SUCCESS.
+        CatalogAttributeDefinition parent = choiceParent();
+        CatalogAttributeOption victim = CatalogAttributeOption.create(parent.getId(),
+                "victim", "Victim", null, 1);
+        when(options.findById(victim.getId())).thenReturn(Optional.of(victim));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        when(options.existsById(victim.getId())).thenReturn(false);
+
+        AttributeValueMutationResult result = service.deleteAttributeValue(victim.getId());
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(AttributeMutationError::code, AttributeMutationError::field)
+                .containsExactly(AttributeMutationErrorCode.NOT_FOUND, "id");
+        verify(options, never()).delete(any());
+    }
+
+    @Test
+    void bulkDeleteSkipsTheRowsThatDiedUnderTheLocks() {
+        // The same re-read in bulk form — the honest count skips the
+        // concurrently deleted row, never a fabricated delete count.
+        CatalogAttributeDefinition parent = choiceParent();
+        CatalogAttributeOption victim = CatalogAttributeOption.create(parent.getId(),
+                "victim", "Victim", null, 1);
+        when(options.findById(victim.getId())).thenReturn(Optional.of(victim));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        when(options.existsById(victim.getId())).thenReturn(false);
+
+        int deleted = service.deleteAttributeValues(java.util.List.of(victim.getId()));
+
+        assertThat(deleted).isZero();
+        verify(options, never()).delete(any());
+    }
+
 }

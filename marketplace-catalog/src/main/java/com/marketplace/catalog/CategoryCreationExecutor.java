@@ -45,9 +45,22 @@ class CategoryCreationExecutor {
      */
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     Category insert(String code, String name) {
-        return categoryRepository.saveAndFlush(Category.create(code, name, null,
-                categoryRepository.findAllByOrderByPositionAscIdAsc().stream()
-                        .mapToInt(Category::getPosition)
-                        .max().orElse(0) + 1));
+        // The 2026-11-07 #808 round-19 review (Minor · Functional
+        // Correctness, the overflow family): the exhaustion guard BEFORE
+        // the increment — a stored Integer.MAX_VALUE maximum (the
+        // registry's positions are always this derivation's own output,
+        // so the ceiling is a structural safeguard) wraps max+1 to a
+        // negative number and the insert answers the DB's own failure.
+        // The classified refusal crosses the executor's own boundary to
+        // the caller's catch (the same door the code-collision violation
+        // rides).
+        int storedMax = categoryRepository.findAllByOrderByPositionAscIdAsc().stream()
+                .mapToInt(Category::getPosition)
+                .max().orElse(0);
+        if (storedMax == Integer.MAX_VALUE) {
+            throw new com.marketplace.shared.api.ConflictException(
+                    "The category positions are exhausted — remove categories to free the sequence");
+        }
+        return categoryRepository.saveAndFlush(Category.create(code, name, null, storedMax + 1));
     }
 }

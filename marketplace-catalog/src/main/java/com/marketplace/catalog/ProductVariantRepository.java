@@ -147,6 +147,20 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
     @Query("select v from ProductVariant v where v.id = :id")
     Optional<ProductVariant> findByIdForUpdate(@Param("id") UUID id);
 
+    /**
+     * The 2026-11-07 #808 round-19 review (Minor · Data Integrity &amp;
+     * Integration): the bulk-update path's membership probe — a PROJECTION
+     * (never the entity): the previous unlocked {@code findById} loaded
+     * the row into the persistence context BEFORE the single path's
+     * {@code findByIdForUpdate} took the row lock, and a locking query on
+     * an already-managed entity returns the CACHED pre-lock state (the
+     * round-11 drop-id/lock/load discipline, applied to the bulk shape).
+     * The derived boolean also keeps the safe-absence vocabulary
+     * uniform: a missing row and a foreign-parented row answer the same
+     * verdict the single path's ownedRow owns.
+     */
+    boolean existsByIdAndProductId(UUID id, UUID productId);
+
     /** Friendly precheck for the database-unique canonical typed option combination. */
     boolean existsByProductIdAndOptionCombinationKey(UUID productId, String optionCombinationKey);
 

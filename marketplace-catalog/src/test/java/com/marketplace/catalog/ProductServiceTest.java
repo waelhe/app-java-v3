@@ -16,6 +16,7 @@ import org.springframework.security.core.Authentication;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
@@ -62,6 +63,12 @@ class ProductServiceTest {
         service = new ProductService(productRepository, productVariantRepository, storeCategoryRepository,
                 productTypeRepository, assignments, definitions, options, attributeValues,
                 variantAttributeValues, currentUserProvider);
+        // The 2026-11-07 #808 round-19: the publish/replace pair's locked
+        // owned read — every test's findById stub answers the FOR-UPDATE
+        // twin too (the lock discipline is the production change; the
+        // ownership filter is the same value).
+        lenient().when(productRepository.findByIdForUpdate(any(UUID.class)))
+                .thenAnswer(invocation -> productRepository.findById(invocation.getArgument(0)));
     }
 
     private ProductService.RegisterProductCommand command(String categoryCode) {
@@ -445,4 +452,31 @@ class ProductServiceTest {
         assertThat(read.get(0).assignmentId()).isEqualTo(assignmentId);
         assertThat(read.get(0).textValue()).isEqualTo("red");
     }
+
+    @Test
+    void publishAndReplaceLoadTheProductRowForUpdate() {
+        // The 2026-11-07 #808 round-19 review (Minor · Data Integrity &
+        // Integration): the publication and the value replace serialize on
+        // the PRODUCT row's own FOR-UPDATE lock (the type FOR-SHARE both
+        // carry is mutually compatible and never serialized the pair) —
+        // the locked owned read replaces the unlocked findById on both
+        // paths, BEFORE the status read that drives enforceRequired.
+        // A typed draft with one covering variant — the publish's own
+        // happy path (the existing test's stub set) answers the save, and
+        // the verification below pins the LOCKED read itself.
+        UUID productTypeId = UUID.randomUUID();
+        Product draft = Product.register("home-appliances", "Typed draft", null, 100L, "SAR", caller, productTypeId);
+        when(productRepository.findById(draft.getId())).thenReturn(Optional.of(draft));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+        when(attributeValues.findAllByProductIdOrderByAssignmentIdAsc(draft.getId())).thenReturn(List.of());
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId))
+                .thenReturn(List.of());
+        when(productRepository.save(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        UUID productId = draft.getId();
+
+        service.publishOwnedProduct(productId, authentication);
+
+        verify(productRepository).findByIdForUpdate(productId);
+    }
+
 }

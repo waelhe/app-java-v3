@@ -314,7 +314,18 @@ public class ProductService {
     @Transactional
     @PreAuthorize("hasRole('PROVIDER')")
     public Product publishOwnedProduct(UUID productId, Authentication authentication) {
-        Product product = getOwnedProduct(productId, authentication);
+        // The 2026-11-07 #808 round-19 review (Minor · Data Integrity &
+        // Integration): the publication's product row loads FOR UPDATE —
+        // the value replace (replaceOwnedAttributeValues) rides the SAME
+        // lock, so the pair serializes on the product row itself. The
+        // type FOR-SHARE both paths carry is MUTUALLY COMPATIBLE (two
+        // share-holders never block each other) and the unlocked
+        // findById never waits: a replace that dropped a required value
+        // between this publication's value read and its commit published
+        // a product the gate never re-validated. The locked load closes
+        // both interleavings (the delete path's ownedRowForUpdate
+        // precedent, the ownership filter unchanged).
+        Product product = getOwnedProductForUpdate(productId, authentication);
         // The 2026-11-07 #808 round-4 review (Major · Data Integrity &
         // Integration): the type row's FOR-SHARE read comes BEFORE every
         // assignment read this publication makes, and it is HELD to the
@@ -417,7 +428,18 @@ public class ProductService {
     @PreAuthorize("hasRole('PROVIDER')")
     public List<CatalogAttributeValueInput> replaceOwnedAttributeValues(UUID productId,
             List<CatalogAttributeValueInput> newValues, Authentication authentication) {
-        Product product = getOwnedProduct(productId, authentication);
+        // The 2026-11-07 #808 round-19 review (Minor · Data Integrity &
+        // Integration): the replace's product row loads FOR UPDATE BEFORE
+        // the status read that drives enforceRequired — the publication's
+        // twin lock. A publication committing DRAFT→ACTIVE between an
+        // unlocked status read and this replace's write let a DRAFT-shaped
+        // drop (no enforceRequired) land on an ACTIVE product; the locked
+        // load serializes the pair on the product row (either the publish
+        // committed first and THIS read sees ACTIVE — the drop
+        // re-validates against the required schema — or the replace
+        // commits first and the publication's gate re-validates the
+        // post-replace values).
+        Product product = getOwnedProductForUpdate(productId, authentication);
         // The 2026-11-07 #808 round-14 review (Major · Data Integrity &
         // Integration, the concurrency half): the value write rides the
         // SAME type FOR-SHARE pairing the publication gate carries — the
@@ -478,6 +500,19 @@ public class ProductService {
             throw new ResourceNotFoundException("Product", productId);
         }
         return product;
+    }
+
+    /**
+     * The 2026-11-07 #808 round-19 review: the locked owned read — the
+     * publish/replace pair's serialization seam (the delete path's
+     * ownedRowForUpdate precedent; the stranger's row and the missing
+     * row answer the same safe absence).
+     */
+    private Product getOwnedProductForUpdate(UUID productId, Authentication authentication) {
+        UUID caller = currentUserProvider.getCurrentUserId(authentication);
+        return productRepository.findByIdForUpdate(productId)
+                .filter(row -> row.getProviderId().equals(caller))
+                .orElseThrow(() -> new ResourceNotFoundException("Product", productId));
     }
 
     /**

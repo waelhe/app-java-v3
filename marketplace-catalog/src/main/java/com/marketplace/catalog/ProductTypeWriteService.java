@@ -7,6 +7,7 @@ import com.marketplace.catalog.spi.ProductTypeMutationResult;
 import com.marketplace.catalog.spi.ProductTypeUpdateCommand;
 import com.marketplace.catalog.spi.ProductTypeView;
 import com.marketplace.catalog.spi.ProductTypeWriteSpi;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -77,18 +78,21 @@ public class ProductTypeWriteService implements ProductTypeWriteSpi {
     private final ProductTypeRepository productTypeRepository;
     private final ProductRepository productRepository;
     private final ProductTypeAttributeAssignmentRepository assignmentRepository;
+    /** The insert's own transaction door (the 2026-11-07 #808 round-19). */
+    private final ProductTypeCreationExecutor creationExecutor;
 
     public ProductTypeWriteService(ProductTypeRepository productTypeRepository,
                                    ProductRepository productRepository,
-                                   ProductTypeAttributeAssignmentRepository assignmentRepository) {
+                                   ProductTypeAttributeAssignmentRepository assignmentRepository,
+                                   ProductTypeCreationExecutor creationExecutor) {
         this.productTypeRepository = productTypeRepository;
         this.productRepository = productRepository;
         this.assignmentRepository = assignmentRepository;
+        this.creationExecutor = creationExecutor;
     }
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
-    @Transactional
     public ProductTypeMutationResult createProductType(ProductTypeCreateCommand command) {
         List<ProductTypeMutationError> errors = new ArrayList<>();
         String name = command.name() == null ? null : command.name().strip();
@@ -114,8 +118,29 @@ public class ProductTypeWriteService implements ProductTypeWriteSpi {
         if (!errors.isEmpty()) {
             return ProductTypeMutationResult.failure(errors);
         }
-        ProductType created = productTypeRepository.save(
-                ProductType.create(code, name, null, null));
+        // The 2026-11-07 #808 round-19 review (Minor · Data Integrity &
+        // Integration): the insert crossed the executor's REQUIRES_NEW
+        // boundary — the reserved-code precheck is honest but not atomic,
+        // and a catch INSIDE the flushing transaction returns into a
+        // commit that throws UnexpectedRollbackException instead of the
+        // classified ALREADY_EXISTS result (the AttributeCreationExecutor
+        // / CategoryCreationExecutor precedent verbatim).
+        ProductType created;
+        try {
+            created = creationExecutor.insert(code, name, null, null);
+        } catch (DataIntegrityViolationException violation) {
+            // The discrimination law (the CategoryWriteService
+            // uq_categories_code precedent): only the violation naming
+            // THIS index answers the payload error — everything else
+            // keeps its own propagation.
+            String message = violation.getMessage();
+            if (message != null && message.contains("uq_product_types_code_live")) {
+                return ProductTypeMutationResult.failure(List.of(new ProductTypeMutationError(
+                        "slug", ProductTypeMutationErrorCode.ALREADY_EXISTS,
+                        "A product type with the slug already exists")));
+            }
+            throw violation;
+        }
         return ProductTypeMutationResult.success(toView(created));
     }
 

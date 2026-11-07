@@ -58,6 +58,8 @@ class ProductWriteServiceTest {
     private ProductTypeRepository productTypeRepository;
     private ProductVariantRepository variantRepository;
     private CurrentUserProvider currentUserProvider;
+    /** The 2026-11-07 #808 round-19: the delete's membership cascade probe. */
+    private CollectionProductRepository collectionProducts;
     private ProductWriteSpi service;
     private final Authentication caller = new TestingAuthenticationToken("provider-subject", "n/a", "ROLE_PROVIDER");
 
@@ -68,8 +70,13 @@ class ProductWriteServiceTest {
         productTypeRepository = mock(ProductTypeRepository.class);
         variantRepository = mock(ProductVariantRepository.class);
         currentUserProvider = mock(CurrentUserProvider.class);
+        // The 2026-11-07 #808 round-19: the delete's membership cascade
+        // (the variants' cascade twin) — empty by default so every
+        // existing ladder test stays intact.
+        collectionProducts = mock(CollectionProductRepository.class);
+        when(collectionProducts.findByProductIdOrderByPositionAsc(any())).thenReturn(List.of());
         service = new ProductWriteService(productRepository, storeCategoryRepository,
-                productTypeRepository, variantRepository, currentUserProvider);
+                productTypeRepository, variantRepository, currentUserProvider, collectionProducts);
         when(currentUserProvider.getCurrentUserId(any(Authentication.class))).thenReturn(ProviderIds.CALLER);
         // The reference dictionary row is present by default so each
         // ladder test isolates ITS own field's error (the unknown-code
@@ -628,4 +635,42 @@ class ProductWriteServiceTest {
                     .isEqualTo(ProductMutationErrorCode.NOT_FOUND);
         }
     }
+
+    @Test
+    void deleteCascadesTheCollectionMembershipsWithTheProduct() {
+        // The 2026-11-07 #808 round-19 review (Minor · Data Integrity &
+        // Integration): the membership's shelf IS the product's — the
+        // variants' cascade twin. Without the cascade a soft-deleted
+        // product left LIVE membership rows the read join hid while the
+        // reorder still walked them.
+        Product owned = rowOwnedBy(ProviderIds.CALLER);
+        CollectionProduct member = CollectionProduct.create(
+                UUID.randomUUID(), owned.getId(), 1);
+        when(productRepository.findByIdForUpdate(owned.getId())).thenReturn(Optional.of(owned));
+        when(collectionProducts.findByProductIdOrderByPositionAsc(owned.getId()))
+                .thenReturn(List.of(member));
+
+        ProductMutationResult result = service.deleteProduct(owned.getId(), caller);
+
+        assertThat(result.success()).isTrue();
+        verify(collectionProducts).delete(member);
+    }
+
+    @Test
+    void bulkCreateAnswersTheClassifiedRequiredForANullElement() {
+        // The 2026-11-07 #808 round-19 review (Minor · Functional
+        // Correctness): a null element answers the per-item REQUIRED
+        // error (the bulk-update path's own law) — never the
+        // NullPointerException that aborts the whole batch.
+        var outcomes = service.bulkCreateProducts(
+                java.util.Arrays.asList((ProductCreateCommand) null), caller, "IGNORE_FAILED");
+
+        assertThat(outcomes).hasSize(1);
+        assertThat(outcomes.get(0).success()).isFalse();
+        assertThat(outcomes.get(0).errors()).singleElement()
+                .extracting(ProductMutationError::code, ProductMutationError::field)
+                .containsExactly(ProductMutationErrorCode.REQUIRED, "command");
+        verify(productRepository, never()).save(any(Product.class));
+    }
+
 }

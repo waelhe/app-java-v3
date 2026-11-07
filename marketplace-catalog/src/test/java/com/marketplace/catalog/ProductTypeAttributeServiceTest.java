@@ -1,13 +1,17 @@
 package com.marketplace.catalog;
 
 import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.ResourceNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import java.util.Optional;
 import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -42,6 +46,15 @@ class ProductTypeAttributeServiceTest {
         // NO missing-value variants by default (each test overrides).
         variantAttributeValues = mock(ProductVariantAttributeValueRepository.class);
         when(variantAttributeValues.existsPublishedShelfVariantMissingValueFor(any(), any())).thenReturn(false);
+        // The 2026-11-07 #808 round-19: the promotion serializes with the
+        // attribute-definition deletion too — the definition's FOR-UPDATE
+        // read and the fresh assignment re-read answer by default (the
+        // round-11 law widened to the definition's lifecycle).
+        lenient().when(definitions.findByIdForUpdate(any(UUID.class)))
+                .thenAnswer(invocation -> java.util.Optional.of(
+                        CatalogAttributeDefinition.create("locked", "Locked", null,
+                                CatalogAttributeType.TEXT, null)));
+        lenient().when(assignments.existsById(any(UUID.class))).thenReturn(true);
         service = new ProductTypeAttributeService(productTypes, definitions, options, assignments,
                 variantRepository, productAttributeValues, variantAttributeValues);
         // The 2026-11-06 #808 round (#10): the reference-creating assign
@@ -446,4 +459,65 @@ class ProductTypeAttributeServiceTest {
                 .hasMessageContaining("the owners release its values first");
         verify(assignments, never()).delete(any());
     }
+
+    @Test
+    void setRequiredTakesTheDefinitionLockAndReVerifiesTheAssignment() {
+        // The 2026-11-07 #808 round-19 review (Minor · Data Integrity &
+        // Integration): the promotion serializes with the
+        // attribute-definition deletion — deleteAttribute holds the
+        // DEFINITION row FOR UPDATE while its children cascade
+        // soft-deletes THIS assignment (the type lock never serialized
+        // the pair). The definition lock comes AFTER the assignment load,
+        // and the assignment re-reads fresh under it (the drop-id/lock/
+        // load discipline widened); a dead assignment answers the honest
+        // not-found, never the raw OptimisticLockException on the save.
+        ProductTypeAttributeAssignment optional = ProductTypeAttributeAssignment.create(
+                UUID.randomUUID(), UUID.randomUUID(), ProductTypeAttributeScope.PRODUCT, false, 0);
+        when(assignments.findProductTypeIdById(optional.getId()))
+                .thenReturn(Optional.of(optional.getProductTypeId()));
+        when(productTypes.findByIdForUpdate(optional.getProductTypeId()))
+                .thenReturn(Optional.of(ProductType.create(
+                        "home-appliances", "Home appliances", "الأجهزة", null)));
+        when(assignments.findById(optional.getId())).thenReturn(Optional.of(optional));
+        when(definitions.findByIdForUpdate(optional.getAttributeDefinitionId()))
+                .thenReturn(Optional.of(CatalogAttributeDefinition.create(
+                        "material", "Material", "الخامة", CatalogAttributeType.TEXT, null)));
+        // The assignment died under the definition lock — the honest
+        // not-found verdict.
+        when(assignments.existsById(optional.getId())).thenReturn(false);
+
+        assertThatThrownBy(() -> service.setRequired(optional.getId(), true))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("ProductTypeAttributeAssignment");
+        verify(assignments, never()).save(any(ProductTypeAttributeAssignment.class));
+        // The lock order: the assignment load, THEN the definition lock,
+        // THEN the fresh re-read (InOrder — the round-19 discipline).
+        InOrder locks = inOrder(assignments, definitions);
+        locks.verify(assignments).findById(optional.getId());
+        locks.verify(definitions).findByIdForUpdate(optional.getAttributeDefinitionId());
+        locks.verify(assignments).existsById(optional.getId());
+    }
+
+    @Test
+    void setRequiredAnswersNotFoundWhenTheDefinitionDiedFirst() {
+        // The delete committed first: the definition's locked read answers
+        // the soft-deleted row's absence — the cascade already took the
+        // assignment with it (the honest not-found, the current
+        // vocabulary).
+        ProductTypeAttributeAssignment optional = ProductTypeAttributeAssignment.create(
+                UUID.randomUUID(), UUID.randomUUID(), ProductTypeAttributeScope.PRODUCT, false, 0);
+        when(assignments.findProductTypeIdById(optional.getId()))
+                .thenReturn(Optional.of(optional.getProductTypeId()));
+        when(productTypes.findByIdForUpdate(optional.getProductTypeId()))
+                .thenReturn(Optional.of(ProductType.create(
+                        "home-appliances", "Home appliances", "الأجهزة", null)));
+        when(assignments.findById(optional.getId())).thenReturn(Optional.of(optional));
+        when(definitions.findByIdForUpdate(optional.getAttributeDefinitionId()))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.setRequired(optional.getId(), true))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(assignments, never()).save(any(ProductTypeAttributeAssignment.class));
+    }
+
 }

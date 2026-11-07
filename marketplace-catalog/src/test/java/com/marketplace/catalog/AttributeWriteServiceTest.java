@@ -22,6 +22,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -82,7 +83,13 @@ class AttributeWriteServiceTest {
                         org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(false);
         service = new AttributeWriteService(repository, optionRepository, assignmentRepository,
-                variantAttributeValues, productAttributeValues);
+                variantAttributeValues, productAttributeValues,
+                // The 2026-11-07 #808 round-19: the REAL executor over the
+                // same mocked repository — the executor is a thin
+                // REQUIRES_NEW door (a Spring concern), and the direct
+                // construction keeps every existing ladder test intact
+                // while the collision tests stub the repository's throw.
+                new AttributeCreationExecutor(repository));
     }
 
     private static CatalogAttributeDefinition row(String code, String nameEn) {
@@ -168,6 +175,9 @@ class AttributeWriteServiceTest {
     void happyCreateSavesTheRowAndAnswersTheProjection() {
         when(repository.findByCode("fresh-attr")).thenReturn(Optional.empty());
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        // The 2026-11-07 #808 round-19: the single create rides the
+        // executor's saveAndFlush door.
+        lenient().when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         AttributeMutationResult result = service.createAttribute(
                 new AttributeCreateCommand("Material", "fresh-attr", CatalogAttributeType.CHOICE));
@@ -177,7 +187,7 @@ class AttributeWriteServiceTest {
         assertThat(result.attribute().slug()).isEqualTo("fresh-attr");
         assertThat(result.attribute().valueType()).isEqualTo(CatalogAttributeType.CHOICE);
         assertThat(result.attribute().id()).isNotNull();
-        verify(repository).save(any(CatalogAttributeDefinition.class));
+        verify(repository).saveAndFlush(any(CatalogAttributeDefinition.class)); // the 2026-11-07 round-19 executor door
     }
 
     // ------------------------------------------------------------------
@@ -216,6 +226,9 @@ class AttributeWriteServiceTest {
         CatalogAttributeDefinition existing = row("keep-attr", "Kept");
         when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        // The 2026-11-07 #808 round-19: the single create rides the
+        // executor's saveAndFlush door.
+        lenient().when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         AttributeMutationResult result = service.updateAttribute(existing.getId(),
                 new AttributeUpdateCommand("Refreshed", null));
@@ -292,6 +305,9 @@ class AttributeWriteServiceTest {
         when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
         when(repository.findByCode("keep-attr")).thenReturn(Optional.of(existing));
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        // The 2026-11-07 #808 round-19: the single create rides the
+        // executor's saveAndFlush door.
+        lenient().when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         AttributeMutationResult result = service.updateAttribute(existing.getId(),
                 new AttributeUpdateCommand("Refreshed", "keep-attr"));
@@ -800,4 +816,79 @@ class AttributeWriteServiceTest {
         assertThat(savedPositions.get(0)).containsExactly(3, 4);
         assertThat(savedPositions.get(1)).containsExactly(1, 2);
     }
+
+    @Test
+    void createAnswersTheClassifiedAlreadyExistsWhenTheConcurrentRivalCommitsFirst() {
+        // The 2026-11-07 #808 round-19 review (Minor · Data Integrity &
+        // Integration): the reserved-code precheck is honest but not
+        // atomic — the rival's insert commits between the precheck and
+        // this one, and the live-code partial unique index answers the
+        // loser with the violation. The executor's REQUIRES_NEW boundary
+        // delivers the loser fully rolled back, and the discriminating
+        // catch answers the SAME classified ALREADY_EXISTS (the
+        // CategoryCreationExecutor precedent verbatim) — never the raw
+        // DataIntegrityViolationException.
+        when(repository.findByCode("rival")).thenReturn(Optional.empty());
+        when(repository.saveAndFlush(any(CatalogAttributeDefinition.class))).thenThrow(
+                new org.springframework.dao.DataIntegrityViolationException(
+                        "could not execute statement; SQL: insert ... constraint [uq_catalog_attribute_definitions_code_live]"));
+
+        AttributeMutationResult result = service.createAttribute(
+                new AttributeCreateCommand("Rival", "rival", CatalogAttributeType.TEXT));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(AttributeMutationError::code, AttributeMutationError::field)
+                .containsExactly(AttributeMutationErrorCode.ALREADY_EXISTS, "slug");
+    }
+
+    @Test
+    void createRethrowsAViolationThatNamesAnotherConstraint() {
+        // The discrimination law: a DIVE carrying more than the code
+        // collision keeps its own propagation (never a blanket catch).
+        when(repository.findByCode("rival")).thenReturn(Optional.empty());
+        when(repository.saveAndFlush(any(CatalogAttributeDefinition.class))).thenThrow(
+                new org.springframework.dao.DataIntegrityViolationException(
+                        "constraint [some_other_constraint]"));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.createAttribute(
+                        new AttributeCreateCommand("Rival", "rival", CatalogAttributeType.TEXT)))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void reorderCompactsThroughTheFreeWindowWhenTheCeilingPositionIsStored() {
+        // The 2026-11-07 #808 round-19 review (the overflow family): a
+        // stored Integer.MAX_VALUE option position (the REST
+        // registerOption surface accepts one) wraps the natural
+        // max+1 park base negative — the shared law parks in the LOWEST
+        // FREE WINDOW at or above the dense range's top, so the reorder
+        // (the compaction path) SUCCEEDS with the ceiling position
+        // present. Positions [1, 3, MAX]: the free window is [4, 6],
+        // then the dense finals [1, 2, 3].
+        CatalogAttributeDefinition parent = row("choice-attr", "Choice Attr");
+        CatalogAttributeOption one = CatalogAttributeOption.create(parent.getId(), "one", "One", null, 1);
+        CatalogAttributeOption two = CatalogAttributeOption.create(parent.getId(), "two", "Two", null, 3);
+        CatalogAttributeOption ceiling = CatalogAttributeOption.create(parent.getId(), "ceiling",
+                "Ceiling", null, Integer.MAX_VALUE);
+        when(repository.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        when(optionRepository.findAllByAttributeDefinitionIdOrderByPositionAsc(parent.getId()))
+                .thenReturn(List.of(one, two, ceiling));
+        List<List<Integer>> savedPositions = new ArrayList<>();
+        when(optionRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<CatalogAttributeOption> saved = invocation.getArgument(0);
+            savedPositions.add(saved.stream().map(CatalogAttributeOption::getPosition).toList());
+            return saved;
+        });
+
+        AttributeMutationResult result = service.reorderValues(parent.getId(),
+                List.of(new AttributeReorderMove(ceiling.getId(), -2)));
+
+        assertThat(result.success()).isTrue();
+        // The parked window [4, 6] avoids every held position {1, 3, MAX}
+        // and sits at or above the dense range's top — the finals are the
+        // dense [1, 2, 3] the compaction exists to write.
+        assertThat(savedPositions).containsExactly(List.of(4, 5, 6), List.of(1, 2, 3));
+    }
+
 }

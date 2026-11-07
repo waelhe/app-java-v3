@@ -13,7 +13,17 @@ import java.util.UUID;
 @Service
 public class ProductTypeService {
     private final ProductTypeRepository repository;
-    public ProductTypeService(ProductTypeRepository repository) { this.repository = repository; }
+    /** The live-references guard's own probes (the 2026-11-07 #808 round-19). */
+    private final ProductRepository products;
+    private final ProductTypeAttributeAssignmentRepository assignments;
+
+    public ProductTypeService(ProductTypeRepository repository,
+                              ProductRepository products,
+                              ProductTypeAttributeAssignmentRepository assignments) {
+        this.repository = repository;
+        this.products = products;
+        this.assignments = assignments;
+    }
 
     @Transactional(readOnly = true)
     @PreAuthorize("hasRole('PROVIDER') or hasRole('ADMIN')")
@@ -49,7 +59,24 @@ public class ProductTypeService {
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
     public void remove(UUID id) {
-        ProductType type = repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("ProductType", id));
+        // The 2026-11-07 #808 round-19 review (Minor · Data Integrity &
+        // Integration): the REST delete's own law — the bare
+        // find-and-delete let a used type go soft-deleted while live
+        // products still referenced its schema (the GraphQL surface's
+        // deleteProductType owns the full B21 discipline: the write lock
+        // BEFORE the live-references guard, the classified refusal, no
+        // cascade — the references own their own lifecycle). The locked
+        // read serializes against the concurrent create's FOR-SHARE
+        // (the same pairing), and the guard answers the same classified
+        // conflict vocabulary this service's own REST shape owns.
+        ProductType type = id == null ? null : repository.findByIdForUpdate(id).orElse(null);
+        if (type == null) {
+            throw new ResourceNotFoundException("ProductType", id);
+        }
+        if (products.existsByProductTypeId(id) || assignments.existsByProductTypeId(id)) {
+            throw new ConflictException(
+                    "A product type with live product or attribute-assignment references cannot be deleted");
+        }
         repository.delete(type);
     }
 }

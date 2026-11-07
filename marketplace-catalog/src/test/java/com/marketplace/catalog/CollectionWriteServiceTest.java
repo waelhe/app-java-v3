@@ -16,6 +16,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -58,6 +59,12 @@ class CollectionWriteServiceTest {
         collectionRepository = mock(CollectionRepository.class);
         membershipRepository = mock(CollectionProductRepository.class);
         productRepository = mock(ProductRepository.class);
+        // The 2026-11-07 #808 round-19: the membership-CREATING read takes
+        // the product rows FOR SHARE — every add test's validated products
+        // answer the share read by default (the delete-pairing test below
+        // overrides its own absence).
+        lenient().when(productRepository.findByIdForShare(any(UUID.class)))
+                .thenAnswer(invocation -> java.util.Optional.of(product()));
         service = new CollectionWriteService(
                 collectionRepository, membershipRepository, productRepository);
     }
@@ -747,4 +754,25 @@ class CollectionWriteServiceTest {
         assertThat(bilingual.getNameAr()).isEqualTo("عربي");
         assertThat(bilingual.isPublished()).isTrue();
     }
+
+    @Test
+    void theMembershipAppendReadsTheProductRowsForShare() {
+        // The 2026-11-07 #808 round-19 review (Minor · Data Integrity &
+        // Integration): the membership-CREATING read takes the product row
+        // FOR SHARE — the product delete's FOR-UPDATE lock plus its
+        // membership cascade serialize against the insert (never a live
+        // membership stranded on a deleted product).
+        Collection created = row("share-lock", "Share Lock", true);
+        when(collectionRepository.save(any(Collection.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        Product member = product();
+        when(productRepository.findById(member.getId())).thenReturn(Optional.of(member));
+
+        CollectionMutationResult result = service.createCollection(
+                new CollectionCreateCommand("Share Lock", "share-lock", true, List.of(member.getId())));
+
+        assertThat(result.success()).isTrue();
+        verify(productRepository).findByIdForShare(member.getId());
+    }
+
 }
