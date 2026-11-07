@@ -393,6 +393,33 @@ class AttributeWriteServiceTest {
         verify(repository, never()).delete(held);
     }
 
+    /**
+     * The 2026-11-07 #808 round-4 review (Minor · Stability &amp;
+     * Availability): the bulk attribute delete takes its definition locks
+     * in SORTED id order — two concurrent bulk deletes naming two
+     * definitions in OPPOSITE orders can never deadlock (each would hold
+     * one row while waiting for the other under the caller-order shape).
+     */
+    @Test
+    void bulkDeleteLocksTheDefinitionsInSortedOrder() {
+        CatalogAttributeDefinition first = row("first-attr", "First");
+        CatalogAttributeDefinition second = row("second-attr", "Second");
+        when(repository.findByIdForUpdate(first.getId())).thenReturn(Optional.of(first));
+        when(repository.findByIdForUpdate(second.getId())).thenReturn(Optional.of(second));
+
+        // The caller names the two attributes in the OPPOSITE of the sorted
+        // order — the locks still come sorted.
+        service.deleteAttributes(java.util.Arrays.asList(second.getId(), first.getId()));
+
+        java.util.List<UUID> sorted = java.util.stream.Stream.of(first.getId(), second.getId())
+                .sorted().toList();
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(repository);
+        order.verify(repository).findByIdForUpdate(sorted.get(0));
+        order.verify(repository).findByIdForUpdate(sorted.get(1));
+        verify(repository).delete(first);
+        verify(repository).delete(second);
+    }
+
     // ------------------------------------------------------------------
     // deleteAttribute / deleteAttributes
     // ------------------------------------------------------------------

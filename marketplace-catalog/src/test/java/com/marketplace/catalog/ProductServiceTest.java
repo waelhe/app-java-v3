@@ -222,6 +222,42 @@ class ProductServiceTest {
     }
 
     @Test
+    void publicationTakesTheTypeShareLockBeforeItsAssignmentReads() {
+        // The 2026-11-07 #808 round-4 review (Major · Data Integrity &
+        // Integration): the publication reads the type row FOR SHARE BEFORE
+        // every assignment read it makes and holds it to the commit — the
+        // new-selection assign paths hold the SAME row FOR UPDATE while
+        // their published-shelf guard probes, so the schema change and the
+        // publication serialize (never an ACTIVE product short of the new
+        // selection both transactions raced past).
+        UUID productTypeId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID attributeId = UUID.randomUUID();
+        Product draft = Product.register("home-appliances", "Typed draft", null, 100L, "SAR", caller, productTypeId);
+        ProductTypeAttributeAssignment selection = ProductTypeAttributeAssignment.create(
+                productTypeId, attributeId, ProductTypeAttributeScope.VARIANT_SELECTION, true, 0);
+        when(productRepository.findById(productId)).thenReturn(Optional.of(draft));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+        when(attributeValues.findAllByProductIdOrderByAssignmentIdAsc(productId)).thenReturn(List.of());
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId))
+                .thenReturn(List.of(selection));
+        when(productVariantRepository.findByProductIdOrderBySkuAsc(productId)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.publishOwnedProduct(productId, authentication))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class);
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(productTypeRepository, assignments);
+        order.verify(productTypeRepository).findByIdForShare(productTypeId);
+        // The publication reads the assignments THREE times over its gate
+        // (the value preparation, the selection detection, the coverage
+        // walk) — the FIRST of them must sit inside the share-locked
+        // window.
+        order.verify(assignments, org.mockito.Mockito.atLeastOnce())
+                .findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId);
+        verify(productRepository, never()).save(any(Product.class));
+    }
+
+    @Test
     void typedDraftCannotPublishWhenAnActiveVariantMissesTheCurrentSelectionSchema() {
         // The C1 review's Major finding, closed at the gate: the admin adds a
         // required VARIANT_SELECTION assignment AFTER the variant's creation —
