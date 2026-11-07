@@ -910,18 +910,20 @@ class ProductTypeAttributeWriteServiceTest {
     }
 
     @Test
-    void assignAttributesIsRefusedWhileAPublishedProductCarriesTypedVariants() {
+    void assignAttributesIsRefusedWhileAPublishedProductCarriesAnyLiveVariant() {
         // The 2026-11-06 #808 round-3 review (Major · Data Integrity &
-        // Integration): a NEW selection assignment's value cannot exist on
-        // any variant yet — a published (or suspended) product carrying a
-        // typed variant would keep its key under the dead schema and the
-        // shelf never re-passes the publication gate. The variants migrate
-        // first; DRAFT products stay eligible (the publish gate owns
-        // them).
+        // Integration), widened by the round-5 review: a NEW selection
+        // assignment's value cannot exist on any variant yet — a published
+        // (or suspended) product carrying ANY live variant (the round-5
+        // scenario's FREE-FORM NULL-KEY row included: a selection-free
+        // type publishes with one) would keep its variants short of the
+        // new selection and the shelf never re-passes the publication
+        // gate. The variants migrate first; DRAFT products stay eligible
+        // (the publish gate owns them).
         CatalogAttributeDefinition choice = definition("choice-attr", CatalogAttributeType.CHOICE);
         when(attributeDefinitionRepository.findByIdForShare(choice.getId())).thenReturn(Optional.of(choice));
         when(attributeOptionRepository.countByAttributeDefinitionId(choice.getId())).thenReturn(2L);
-        when(variantRepository.existsPublishedShelfTypedVariantForType(type.getId())).thenReturn(true);
+        when(variantRepository.existsPublishedShelfVariantForType(type.getId())).thenReturn(true);
 
         ProductTypeMutationResult result = service.assignAttributes(type.getId(),
                 List.of(new ProductTypeAttributeAssignOperation(choice.getId(), "VARIANT", true)));
