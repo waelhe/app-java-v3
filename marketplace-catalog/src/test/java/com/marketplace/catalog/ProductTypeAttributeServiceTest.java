@@ -394,4 +394,53 @@ class ProductTypeAttributeServiceTest {
         inOrder.verify(assignments).findById(optional.getId());
         inOrder.verify(assignments).save(optional);
     }
+
+    @Test void removeRidesTheTypeLockAndTheLiveValuesWall() {
+        // The 2026-11-07 #808 round-12 review (Major · Data Integrity &
+        // Integration): the REST remove mirrors the GraphQL unassign
+        // path's own law — the type write lock, then the live-values
+        // wall; an unaddressed assignment (no live values anywhere)
+        // goes through.
+        ProductTypeAttributeAssignment assignment = ProductTypeAttributeAssignment.create(
+                typeId, attributeId, ProductTypeAttributeScope.PRODUCT, false, 0);
+        when(assignments.findById(assignment.getId())).thenReturn(Optional.of(assignment));
+
+        service.remove(assignment.getId());
+
+        verify(productTypes).findByIdForUpdate(typeId);
+        verify(assignments).delete(assignment);
+    }
+
+    @Test void removeIsRefusedWhileALiveVariantCarriesTheAssignment() {
+        // The unassign path's own wall: a live variant value bound to the
+        // assignment refuses the remove — the variants migrate first
+        // (never stale combination keys over a dead schema).
+        ProductTypeAttributeAssignment selection = ProductTypeAttributeAssignment.create(
+                typeId, attributeId, ProductTypeAttributeScope.VARIANT_SELECTION, true, 0);
+        when(assignments.findById(selection.getId())).thenReturn(Optional.of(selection));
+        when(variantAttributeValues.existsLiveVariantValueForAssignmentsOrOptions(
+                java.util.List.of(selection.getId()), java.util.List.of())).thenReturn(true);
+
+        assertThatThrownBy(() -> service.remove(selection.getId()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("migrate the variants first");
+        verify(assignments, never()).delete(any());
+    }
+
+    @Test void removeIsRefusedWhileALiveProductCarriesTheAssignment() {
+        // The PRODUCT-scope wall: a live product value bound to the
+        // assignment refuses the remove — the owners release the values
+        // first (never a product stranded on a dead assignment's
+        // re-validation refusal).
+        ProductTypeAttributeAssignment required = ProductTypeAttributeAssignment.create(
+                typeId, attributeId, ProductTypeAttributeScope.PRODUCT, true, 0);
+        when(assignments.findById(required.getId())).thenReturn(Optional.of(required));
+        when(productAttributeValues.existsLiveProductValueForAssignmentsOrOptions(
+                java.util.List.of(required.getId()), java.util.List.of())).thenReturn(true);
+
+        assertThatThrownBy(() -> service.remove(required.getId()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("the owners release its values first");
+        verify(assignments, never()).delete(any());
+    }
 }

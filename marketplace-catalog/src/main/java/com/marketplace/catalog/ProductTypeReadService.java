@@ -188,9 +188,21 @@ public class ProductTypeReadService implements ProductTypeReadSpi {
                         "The product-type scroll position must be a forward keyset over (name, id)");
             }
             String cursorName = String.valueOf(keyset.getKeys().get("name"));
-            UUID cursorId = keyset.getKeys().get("id") instanceof UUID uuid
-                    ? uuid
-                    : UUID.fromString(String.valueOf(keyset.getKeys().get("id")));
+            // The 2026-11-07 #808 round-12 review (Minor · Functional
+            // Correctness): a malformed cursor id answers the SAME
+            // classified "forward keyset" refusal as the sibling read
+            // services (the AttributeReadService round's own fix shape,
+            // the CollectionReadService.parseCursorId discipline) —
+            // never the JDK's raw IllegalArgumentException message.
+            UUID cursorId;
+            try {
+                cursorId = keyset.getKeys().get("id") instanceof UUID uuid
+                        ? uuid
+                        : UUID.fromString(String.valueOf(keyset.getKeys().get("id")));
+            } catch (IllegalArgumentException malformed) {
+                throw new IllegalArgumentException(
+                        "The product-type scroll position must be a forward keyset over (name, id)", malformed);
+            }
             scrollable = types.stream()
                     .filter(type -> {
                         int byName = nameOrder.compare(type.name(), cursorName);

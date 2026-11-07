@@ -328,13 +328,18 @@ class ProductTypeReadServiceTest {
 
     @Test
     void malformedCursorIdValueAnswersTheValidationTaxonomy() {
+        // The 2026-11-07 #808 round-12 review: the malformed cursor id
+        // answers the SAME classified "forward keyset" refusal as the
+        // sibling read services — never the JDK's raw
+        // UUID.fromString message (the pin this round added).
         when(repository.findAll()).thenReturn(List.of());
 
         assertThatThrownBy(() -> service.scrollProductTypes(authentication,
                         ProductTypeSort.of(ProductTypeSort.Field.NAME, true),
                         ScrollPosition.forward(Map.of("name", "Alpha", "id", "not-a-uuid")),
                         null))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("forward keyset over (name, id)");
     }
 
     // ------------------------------------------------------------------
