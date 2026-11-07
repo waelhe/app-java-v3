@@ -200,9 +200,24 @@ public class ProductTypeAttributeService {
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
     public ProductTypeAttributeAssignment setRequired(UUID assignmentId, boolean required) {
-        ProductTypeAttributeAssignment assignment = assignments.findById(assignmentId)
+        // The 2026-11-07 #808 round-11 review (Minor · Data Integrity &
+        // Integration): the assignment's owning type resolves FIRST (a
+        // projection — no entity enters the persistence context), the
+        // type write lock is taken, and ONLY THEN the assignment loads —
+        // the assign path's own discipline. Loading the entity before
+        // the lock let a concurrent updateAssignments scope move
+        // (VARIANT → VARIANT_SELECTION, committed while this path waited
+        // on the lock) leave the stale pre-move scope in the persistence
+        // context: the every-variant law's check read the OLD scope (a
+        // demotion adjudicated as VARIANT), and the save either answered
+        // the raw OptimisticLockException or rewrote the old scope over
+        // the committed move.
+        UUID productTypeId = assignments.findProductTypeIdById(assignmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("ProductTypeAttributeAssignment", assignmentId));
-        requireProductType(assignment.getProductTypeId());
+        requireProductType(productTypeId);
+        ProductTypeAttributeAssignment assignment = assignments.findById(assignmentId)
+                .filter(row -> row.getProductTypeId().equals(productTypeId))
+                .orElseThrow(() -> new ResourceNotFoundException("ProductTypeAttributeAssignment", assignmentId));
         if (assignment.getScope() == ProductTypeAttributeScope.VARIANT_SELECTION && !required) {
             throw new ConflictException("VARIANT_SELECTION attributes must be required for every variant");
         }

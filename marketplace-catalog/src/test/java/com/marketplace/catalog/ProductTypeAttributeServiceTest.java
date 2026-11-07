@@ -286,6 +286,7 @@ class ProductTypeAttributeServiceTest {
         // over the EXISTING live assignment's coverage.
         ProductTypeAttributeAssignment optional = ProductTypeAttributeAssignment.create(
                 typeId, attributeId, ProductTypeAttributeScope.PRODUCT, false, 0);
+        when(assignments.findProductTypeIdById(optional.getId())).thenReturn(Optional.of(typeId));
         when(assignments.findById(optional.getId())).thenReturn(Optional.of(optional));
         when(assignments.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -302,6 +303,7 @@ class ProductTypeAttributeServiceTest {
         // the value refuses the promotion (never a conformance hole).
         ProductTypeAttributeAssignment optional = ProductTypeAttributeAssignment.create(
                 typeId, attributeId, ProductTypeAttributeScope.PRODUCT, false, 0);
+        when(assignments.findProductTypeIdById(optional.getId())).thenReturn(Optional.of(typeId));
         when(assignments.findById(optional.getId())).thenReturn(Optional.of(optional));
         when(productAttributeValues.existsPublishedShelfProductMissingValueFor(typeId, attributeId))
                 .thenReturn(true);
@@ -319,6 +321,7 @@ class ProductTypeAttributeServiceTest {
         // — the variants re-register with the values first.
         ProductTypeAttributeAssignment optional = ProductTypeAttributeAssignment.create(
                 typeId, attributeId, ProductTypeAttributeScope.VARIANT, false, 0);
+        when(assignments.findProductTypeIdById(optional.getId())).thenReturn(Optional.of(typeId));
         when(assignments.findById(optional.getId())).thenReturn(Optional.of(optional));
         when(variantAttributeValues.existsPublishedShelfVariantMissingValueFor(typeId, attributeId))
                 .thenReturn(true);
@@ -334,6 +337,7 @@ class ProductTypeAttributeServiceTest {
         // holds on the promotion route: the flag is not demotable.
         ProductTypeAttributeAssignment selection = ProductTypeAttributeAssignment.create(
                 typeId, attributeId, ProductTypeAttributeScope.VARIANT_SELECTION, true, 0);
+        when(assignments.findProductTypeIdById(selection.getId())).thenReturn(Optional.of(typeId));
         when(assignments.findById(selection.getId())).thenReturn(Optional.of(selection));
 
         assertThatThrownBy(() -> service.setRequired(selection.getId(), false))
@@ -348,6 +352,7 @@ class ProductTypeAttributeServiceTest {
         // them) — no probe runs, the flag just loosens.
         ProductTypeAttributeAssignment required = ProductTypeAttributeAssignment.create(
                 typeId, attributeId, ProductTypeAttributeScope.PRODUCT, true, 0);
+        when(assignments.findProductTypeIdById(required.getId())).thenReturn(Optional.of(typeId));
         when(assignments.findById(required.getId())).thenReturn(Optional.of(required));
         when(assignments.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -360,10 +365,33 @@ class ProductTypeAttributeServiceTest {
 
     @Test void setRequiredAnswersTheHonest404ForAnUnknownAssignment() {
         UUID unknown = UUID.randomUUID();
-        when(assignments.findById(unknown)).thenReturn(Optional.empty());
+        when(assignments.findProductTypeIdById(unknown)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.setRequired(unknown, true))
                 .isInstanceOf(com.marketplace.shared.api.ResourceNotFoundException.class);
         verify(assignments, never()).save(any());
+    }
+
+    @Test void setRequiredLocksTheTypeBeforeLoadingTheAssignment() {
+        // The 2026-11-07 #808 round-11 review (Minor · Data Integrity &
+        // Integration): the owning type resolves FIRST (the projection
+        // loads no entity), the type write lock is taken, and ONLY THEN
+        // the assignment loads — a concurrent updateAssignments scope
+        // move that committed under the lock is what the post-lock read
+        // sees, never a stale pre-lock scope from the persistence
+        // context.
+        ProductTypeAttributeAssignment optional = ProductTypeAttributeAssignment.create(
+                typeId, attributeId, ProductTypeAttributeScope.PRODUCT, false, 0);
+        when(assignments.findProductTypeIdById(optional.getId())).thenReturn(Optional.of(typeId));
+        when(assignments.findById(optional.getId())).thenReturn(Optional.of(optional));
+        when(assignments.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.setRequired(optional.getId(), true);
+
+        org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(assignments, productTypes);
+        inOrder.verify(assignments).findProductTypeIdById(optional.getId());
+        inOrder.verify(productTypes).findByIdForUpdate(typeId);
+        inOrder.verify(assignments).findById(optional.getId());
+        inOrder.verify(assignments).save(optional);
     }
 }
