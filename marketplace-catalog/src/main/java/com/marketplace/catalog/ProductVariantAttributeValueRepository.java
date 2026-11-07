@@ -1,6 +1,8 @@
 package com.marketplace.catalog;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import java.util.List;
 import java.util.UUID;
 
@@ -42,4 +44,35 @@ public interface ProductVariantAttributeValueRepository extends JpaRepository<Pr
     boolean existsLiveVariantValueForAssignmentsOrOptions(
             @org.springframework.data.repository.query.Param("assignmentIds") java.util.Collection<UUID> assignmentIds,
             @org.springframework.data.repository.query.Param("optionIds") java.util.Collection<UUID> optionIds);
+
+    /**
+     * The 2026-11-07 #808 round-9 review: the required-VARIANT-assignment
+     * guard's probe — whether a LIVE variant of a published-shelf (ACTIVE,
+     * or SUSPENDED — the state {@code reactivate()} returns to ACTIVE
+     * without re-running the publication gate) product of the type carries
+     * NO live value bound to any live assignment of the given attribute
+     * definition. A required VARIANT-scope assignment lands on such a
+     * variant as a conformance hole the shelf never re-passes the
+     * publication gate to surface — the VALUE-ABSENCE shape the finding
+     * demands (never the bare published-variant probe; the NOT-EXISTS
+     * subquery joins the definition's OWN live assignments on this type so
+     * a value bound to a dead assignment never satisfies the coverage).
+     */
+    @Query("""
+            select (count(v) > 0) from ProductVariant v
+              join Product p on p.id = v.productId
+             where p.productTypeId = :productTypeId
+               and p.status in (com.marketplace.catalog.StoreProductStatus.ACTIVE,
+                                com.marketplace.catalog.StoreProductStatus.SUSPENDED)
+               and not exists (
+                   select vav from ProductVariantAttributeValue vav
+                    where vav.productVariantId = v.id
+                      and vav.assignmentId in (
+                          select a.id from ProductTypeAttributeAssignment a
+                           where a.productTypeId = :productTypeId
+                             and a.attributeDefinitionId = :attributeDefinitionId))
+            """)
+    boolean existsPublishedShelfVariantMissingValueFor(
+            @Param("productTypeId") UUID productTypeId,
+            @Param("attributeDefinitionId") UUID attributeDefinitionId);
 }

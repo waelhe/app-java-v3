@@ -19,19 +19,23 @@ public class ProductTypeAttributeService {
     private final ProductVariantRepository variantRepository;
     /** The required-PRODUCT guard's published-shelf probe (the #808 round-7). */
     private final ProductAttributeValueRepository productAttributeValues;
+    /** The required-VARIANT guard's value-absence probe (the #808 round-9). */
+    private final ProductVariantAttributeValueRepository variantAttributeValues;
 
     public ProductTypeAttributeService(ProductTypeRepository productTypes,
                                        CatalogAttributeDefinitionRepository definitions,
                                        CatalogAttributeOptionRepository options,
                                        ProductTypeAttributeAssignmentRepository assignments,
                                        ProductVariantRepository variantRepository,
-                                       ProductAttributeValueRepository productAttributeValues) {
+                                       ProductAttributeValueRepository productAttributeValues,
+                                       ProductVariantAttributeValueRepository variantAttributeValues) {
         this.productTypes = productTypes;
         this.definitions = definitions;
         this.options = options;
         this.assignments = assignments;
         this.variantRepository = variantRepository;
         this.productAttributeValues = productAttributeValues;
+        this.variantAttributeValues = variantAttributeValues;
     }
 
     @Transactional(readOnly = true)
@@ -119,6 +123,23 @@ public class ProductTypeAttributeService {
                     productTypeId, attributeDefinitionId)) {
                 throw new ConflictException("A required product attribute cannot be assigned while a published"
                         + " product of this type lacks its value — migrate the products first");
+            }
+        }
+        if (scope == ProductTypeAttributeScope.VARIANT && required) {
+            // The 2026-11-07 #808 round-9 review: the required-VARIANT
+            // assignment's own mirror of the same law — a LIVE variant of
+            // a published (or suspended — reactivate() returns it to
+            // ACTIVE without re-running the publication gate) product
+            // WITHOUT a value for this attribute would carry the new
+            // requirement as the same conformance hole. The probe is the
+            // VALUE-ABSENCE shape the finding demands (never the bare
+            // published-variant probe — the NOT-EXISTS joins the
+            // definition's OWN live assignments on this type); the
+            // variants migrate first.
+            if (variantAttributeValues.existsPublishedShelfVariantMissingValueFor(
+                    productTypeId, attributeDefinitionId)) {
+                throw new ConflictException("A required variant attribute cannot be assigned while a published"
+                        + " product's live variant lacks its value — migrate the variants first");
             }
         }
 
