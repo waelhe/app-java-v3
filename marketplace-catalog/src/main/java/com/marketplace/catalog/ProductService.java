@@ -315,6 +315,24 @@ public class ProductService {
     @PreAuthorize("hasRole('PROVIDER')")
     public Product publishOwnedProduct(UUID productId, Authentication authentication) {
         Product product = getOwnedProduct(productId, authentication);
+        // The 2026-11-07 #808 round-4 review (Major · Data Integrity &
+        // Integration): the type row's FOR-SHARE read comes BEFORE every
+        // assignment read this publication makes, and it is HELD to the
+        // commit — the new-selection assign paths
+        // (ProductTypeAttributeService.assign / assignAttributes) hold the
+        // SAME row FOR UPDATE while their published-shelf guard probes, so
+        // the publication and the schema change serialize: either the
+        // assign committed first and this publication re-validates against
+        // the NEW schema (its coverage verdict refuses honestly), or this
+        // publication committed first and the assign's probe sees the
+        // ACTIVE product (the classified migrate-first refusal). Without
+        // the pairing, the publication validated the draft's variants
+        // against the OLD schema while the guard saw the product still
+        // DRAFT, and both committed — an ACTIVE product short of the new
+        // selection, the exact hole the guard exists to close.
+        if (product.getProductTypeId() != null) {
+            productTypeRepository.findByIdForShare(product.getProductTypeId());
+        }
         // ProductType definitions can evolve after draft creation; publication
         // must revalidate current required PRODUCT assignments and choice ownership.
         List<CatalogAttributeValueInput> values = attributeValues

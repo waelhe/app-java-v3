@@ -253,12 +253,26 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
         // (the ProductVariantService CHOICE leg) serialize on this row,
         // so the probe's zero-references answer is COMMITTED-stable,
         // never a TOCTOU window the registration lands a reference
-        // through. A concurrently soft-deleted parent answers its own
-        // null view — the family's registrations are already impossible
-        // against a dead definition, so the probe stays honest.
-        AttributeView parent = attributeDefinitionRepository.findByIdForUpdate(row.getAttributeDefinitionId())
-                .map(AttributeValueWriteService::toAttributeView)
-                .orElse(null);
+        // through.
+        //
+        // The 2026-11-07 #808 round-4 review (Minor · Functional
+        // Correctness): a row that answers the locked read EMPTY is the
+        // ORPHANED option (its family died mid-race — the attribute
+        // delete's children cascade missed this in-flight option). The
+        // cleanup still happens (the row goes with this call), but the
+        // payload answers the family's own honest absence — the update
+        // path's parent-absent precedent — NEVER a partial success with a
+        // null attribute projection (the result contract carries the
+        // owning attribute's projection on success).
+        Optional<CatalogAttributeDefinition> parentRow =
+                attributeDefinitionRepository.findByIdForUpdate(row.getAttributeDefinitionId());
+        if (parentRow.isEmpty()) {
+            attributeOptionRepository.delete(row);
+            return AttributeValueMutationResult.failure(List.of(new AttributeMutationError(
+                    "attribute", AttributeMutationErrorCode.NOT_FOUND,
+                    "The option's owning attribute no longer exists")));
+        }
+        AttributeView parent = toAttributeView(parentRow.get());
         // The 2026-11-06 #808 round review (Major · Data Integrity &
         // Integration): a variant value referencing the option blocks the
         // soft delete — the read path would keep rendering the option's
