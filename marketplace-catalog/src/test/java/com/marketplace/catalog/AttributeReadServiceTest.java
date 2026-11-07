@@ -353,15 +353,19 @@ class AttributeReadServiceTest {
     @Test
     void malformedCursorIdValueAnswersTheValidationTaxonomy() {
         // The id key parses through UUID.fromString: a well-named but
-        // unparseable value answers IllegalArgumentException — the same
-        // VAL-001 taxonomy the boundary resolver maps.
+        // unparseable value answers the SAME classified validation family
+        // the guards above answer (the 2026-11-07 #808 round-6 review —
+        // the CategoryReadService/CollectionReadService discipline), with
+        // the raw parse error as the cause, never the raw message.
         when(repository.findAll()).thenReturn(List.of());
 
         assertThatThrownBy(() -> service.scrollAttributes(authentication,
                         AttributeSort.of(AttributeSort.Field.NAME, true),
                         ScrollPosition.forward(Map.of("name", "Alpha", "id", "not-a-uuid")),
                         null))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("forward keyset over (name, id)")
+                .hasCauseInstanceOf(IllegalArgumentException.class);
     }
 
     // ------------------------------------------------------------------

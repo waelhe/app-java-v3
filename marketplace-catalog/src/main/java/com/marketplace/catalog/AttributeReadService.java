@@ -154,9 +154,23 @@ public class AttributeReadService implements AttributeReadSpi {
                         "The attribute scroll position must be a forward keyset over (" + sortProperty + ", id)");
             }
             String cursorField = String.valueOf(keyset.getKeys().get(sortProperty));
-            UUID cursorId = keyset.getKeys().get("id") instanceof UUID uuid
-                    ? uuid
-                    : UUID.fromString(String.valueOf(keyset.getKeys().get("id")));
+            UUID cursorId;
+            try {
+                cursorId = keyset.getKeys().get("id") instanceof UUID uuid
+                        ? uuid
+                        : UUID.fromString(String.valueOf(keyset.getKeys().get("id")));
+            } catch (IllegalArgumentException malformed) {
+                // The 2026-11-07 #808 round-6 review (Minor · Functional
+                // Correctness): an unparseable cursor value answers the
+                // SAME classified validation family the guards above
+                // answer — never the raw parse error (the
+                // CategoryReadService.scrollCategories and
+                // CollectionReadService.parseCursorId discipline, the
+                // OrderReadService.rebindStatusKey shape).
+                throw new IllegalArgumentException(
+                        "The attribute scroll position must be a forward keyset over (" + sortProperty + ", id)",
+                        malformed);
+            }
             scrollable = attributes.stream()
                     .filter(attribute -> {
                         int byField = fieldOrder.compare(fieldExtractor.apply(attribute), cursorField);

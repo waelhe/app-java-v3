@@ -353,8 +353,11 @@ class CollectionWriteServiceTest {
                 .thenReturn(Optional.of(row("slug", "Old", true)));
         Product member = product();
         when(productRepository.findById(productId)).thenReturn(Optional.of(member));
-        when(membershipRepository.findByCollectionIdAndProductId(collectionId, productId))
-                .thenReturn(Optional.of(CollectionProduct.create(collectionId, productId, 1)));
+        // The 2026-11-07 #808 round-6 review: the membership precheck rides
+        // the ONE batch query (the per-id loop's N queries inside the
+        // advisory lock are gone).
+        when(membershipRepository.findByCollectionIdAndProductIdIn(collectionId, List.of(productId)))
+                .thenReturn(List.of(CollectionProduct.create(collectionId, productId, 1)));
 
         CollectionMutationResult result = service.addProducts(collectionId, List.of(productId));
 
@@ -390,8 +393,8 @@ class CollectionWriteServiceTest {
                 .thenReturn(Optional.of(row("slug", "Old", true)));
         Product member = product();
         when(productRepository.findById(newProductId)).thenReturn(Optional.of(member));
-        when(membershipRepository.findByCollectionIdAndProductId(collectionId, newProductId))
-                .thenReturn(Optional.empty());
+        when(membershipRepository.findByCollectionIdAndProductIdIn(collectionId, List.of(newProductId)))
+                .thenReturn(List.of());
         when(membershipRepository.findByCollectionIdOrderByPositionAscIdAsc(collectionId))
                 .thenReturn(List.of(CollectionProduct.create(collectionId, existingProductId, 1)));
 
@@ -411,8 +414,8 @@ class CollectionWriteServiceTest {
                 .thenReturn(Optional.of(row("slug", "Old", true)));
         Product member = product();
         when(productRepository.findById(newProductId)).thenReturn(Optional.of(member));
-        when(membershipRepository.findByCollectionIdAndProductId(collectionId, newProductId))
-                .thenReturn(Optional.empty());
+        when(membershipRepository.findByCollectionIdAndProductIdIn(collectionId, List.of(newProductId)))
+                .thenReturn(List.of());
         // The registry's own live tail after collectionRemoveProducts
         // deleted the middle member WITHOUT renumbering: positions 1,3,4.
         // A size+1 derivation would mint 4 again (the duplicate-position
@@ -437,8 +440,8 @@ class CollectionWriteServiceTest {
         UUID productId = UUID.randomUUID();
         when(collectionRepository.findById(collectionId))
                 .thenReturn(Optional.of(row("slug", "Old", true)));
-        when(membershipRepository.findByCollectionIdAndProductId(collectionId, productId))
-                .thenReturn(Optional.empty());
+        when(membershipRepository.findByCollectionIdAndProductIdIn(collectionId, List.of(productId)))
+                .thenReturn(List.of());
 
         CollectionMutationResult result = service.removeProducts(collectionId, List.of(productId));
 
@@ -453,8 +456,8 @@ class CollectionWriteServiceTest {
         when(collectionRepository.findById(collectionId))
                 .thenReturn(Optional.of(row("slug", "Old", true)));
         CollectionProduct member = CollectionProduct.create(collectionId, productId, 1);
-        when(membershipRepository.findByCollectionIdAndProductId(collectionId, productId))
-                .thenReturn(Optional.of(member));
+        when(membershipRepository.findByCollectionIdAndProductIdIn(collectionId, List.of(productId)))
+                .thenReturn(List.of(member));
 
         CollectionMutationResult result = service.removeProducts(collectionId, List.of(productId));
 
