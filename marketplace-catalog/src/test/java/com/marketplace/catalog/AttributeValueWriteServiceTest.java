@@ -49,6 +49,7 @@ class AttributeValueWriteServiceTest {
     private CatalogAttributeOptionRepository options;
     private CatalogAttributeDefinitionRepository definitions;
     private ProductVariantAttributeValueRepository variantValues;
+    private ProductAttributeValueRepository productValues;
     private AttributeValueWriteSpi service;
 
     @BeforeEach
@@ -56,10 +57,14 @@ class AttributeValueWriteServiceTest {
         options = mock(CatalogAttributeOptionRepository.class);
         definitions = mock(CatalogAttributeDefinitionRepository.class);
         variantValues = mock(ProductVariantAttributeValueRepository.class);
+        productValues = mock(ProductAttributeValueRepository.class);
         // The 2026-11-06 #808 round: the option-delete guard's live-reference
         // probe answers NO references by default (each test overrides it).
         lenient().when(variantValues.existsByOptionId(any())).thenReturn(false);
-        service = new AttributeValueWriteService(options, definitions, variantValues);
+        // The 2026-11-06 #808 round-3: the PRODUCT-scope twin answers NO
+        // references by default (each test overrides it).
+        lenient().when(productValues.existsLiveProductValueForOption(any())).thenReturn(false);
+        service = new AttributeValueWriteService(options, definitions, variantValues, productValues);
     }
 
     private static CatalogAttributeDefinition choiceParent() {
@@ -448,6 +453,107 @@ class AttributeValueWriteServiceTest {
         // is COMMITTED-stable against a concurrent registration's
         // FOR-SHARE read of the row.
         verify(definitions).findByIdForUpdate(parent.getId());
+    }
+
+    /**
+     * The 2026-11-06 #808 round-3 review (Major · Data Integrity &amp;
+     * Integration): the definition locks come BEFORE the reference probes —
+     * the single-item leg's own lock-first order, which the previous
+     * per-id bulk shape inverted (probe at the top, lock at the bottom —
+     * a TOCTOU the concurrent registration's FOR-SHARE read walked
+     * through).
+     */
+    @Test
+    void bulkDeleteTakesTheDefinitionLocksBeforeTheReferenceProbes() {
+        CatalogAttributeDefinition parent = choiceParent();
+        CatalogAttributeOption first = CatalogAttributeOption.create(
+                parent.getId(), "first", "First", null, 0);
+        CatalogAttributeOption second = CatalogAttributeOption.create(
+                parent.getId(), "second", "Second", null, 1);
+        when(options.findById(first.getId())).thenReturn(Optional.of(first));
+        when(options.findById(second.getId())).thenReturn(Optional.of(second));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+
+        service.deleteAttributeValues(List.of(first.getId(), second.getId()));
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(definitions, variantValues, productValues);
+        // The shared lock pass precedes EVERY probe...
+        order.verify(definitions).findByIdForUpdate(parent.getId());
+        // ...and the per-option probe pairs answer only inside the locked
+        // window (the delete loop's own interleave).
+        order.verify(variantValues).existsByOptionId(first.getId());
+        order.verify(productValues).existsLiveProductValueForOption(first.getId());
+        order.verify(variantValues).existsByOptionId(second.getId());
+        order.verify(productValues).existsLiveProductValueForOption(second.getId());
+    }
+
+    /**
+     * The same round: two families lock in the SORTED definition-id order —
+     * two concurrent bulk deletes naming overlapping families in different
+     * orders can never deadlock.
+     */
+    @Test
+    void bulkDeleteLocksDistinctFamiliesInSortedDefinitionOrder() {
+        CatalogAttributeDefinition parentA = choiceParent();
+        CatalogAttributeDefinition parentB = CatalogAttributeDefinition.create(
+                "parent-b", "Parent B", null, CatalogAttributeType.CHOICE, null);
+        CatalogAttributeOption underB = CatalogAttributeOption.create(
+                parentB.getId(), "under-b", "Under B", null, 0);
+        CatalogAttributeOption underA = CatalogAttributeOption.create(
+                parentA.getId(), "under-a", "Under A", null, 0);
+        // The caller names B's option FIRST — the lock order stays sorted.
+        when(options.findById(underB.getId())).thenReturn(Optional.of(underB));
+        when(options.findById(underA.getId())).thenReturn(Optional.of(underA));
+
+        service.deleteAttributeValues(java.util.Arrays.asList(underB.getId(), underA.getId()));
+
+        java.util.List<UUID> sorted = java.util.stream.Stream.of(parentA.getId(), parentB.getId())
+                .sorted().toList();
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(definitions);
+        order.verify(definitions).findByIdForUpdate(sorted.get(0));
+        order.verify(definitions).findByIdForUpdate(sorted.get(1));
+    }
+
+    /**
+     * The same round: a live PRODUCT's own value referencing the option
+     * answers the classified INVALID refusal — the PRODUCT-scope twin of
+     * the live-variant probe (the publish path's re-validation would
+     * strand the product on a dead schema).
+     */
+    @Test
+    void deleteAttributeValueRefusesAnOptionReferencedByALiveProduct() {
+        CatalogAttributeDefinition parent = choiceParent();
+        CatalogAttributeOption existing = CatalogAttributeOption.create(
+                parent.getId(), "existing", "Existing", null, 1);
+        when(options.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        when(productValues.existsLiveProductValueForOption(existing.getId())).thenReturn(true);
+
+        AttributeValueMutationResult result = service.deleteAttributeValue(existing.getId());
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).hasSize(1);
+        assertThat(result.errors().get(0).code()).isEqualTo(AttributeMutationErrorCode.INVALID);
+        verify(options, never()).delete(any());
+    }
+
+    /** The same round: the bulk leg's honest-skip form of the product-value refusal. */
+    @Test
+    void deleteAttributeValuesSkipsOptionsReferencedByLiveProducts() {
+        CatalogAttributeDefinition parent = choiceParent();
+        CatalogAttributeOption free = CatalogAttributeOption.create(
+                parent.getId(), "free", "Free", null, 1);
+        CatalogAttributeOption held = CatalogAttributeOption.create(
+                parent.getId(), "held-product", "Held by product", null, 2);
+        when(options.findById(free.getId())).thenReturn(Optional.of(free));
+        when(options.findById(held.getId())).thenReturn(Optional.of(held));
+        when(productValues.existsLiveProductValueForOption(held.getId())).thenReturn(true);
+
+        int count = service.deleteAttributeValues(java.util.Arrays.asList(free.getId(), held.getId()));
+
+        assertThat(count).isEqualTo(1);
+        verify(options).delete(free);
+        verify(options, never()).delete(held);
     }
 
     /** The same round: a concurrently-deleted parent answers the classified NOT_FOUND. */
