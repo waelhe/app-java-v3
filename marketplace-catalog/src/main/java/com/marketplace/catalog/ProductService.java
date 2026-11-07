@@ -370,7 +370,15 @@ public class ProductService {
                 // nothing about schema currency.
                 boolean hasSelectableVariant = false;
                 for (ProductVariant variant : productVariantRepository.findByProductIdOrderBySkuAsc(productId)) {
-                    if (variant.getStatus() != ProductStatus.ACTIVE) {
+                    // The 2026-11-07 #808 round-15 review (Major · Data
+                    // Integrity & Integration): the coverage verdict walks
+                    // every NON-ARCHIVED variant — SUSPENDED stays in (the
+                    // probe's own law: reactivate() returns it to ACTIVE
+                    // without re-running this gate, so a suspended variant
+                    // missing a required value must refuse the publication
+                    // NOW, never after its reactivation); ARCHIVED stays
+                    // out (the terminal state never re-enters the shelf).
+                    if (variant.getStatus() == ProductStatus.ARCHIVED) {
                         continue;
                     }
                     Set<UUID> covered = variantAttributeValues
@@ -382,7 +390,8 @@ public class ProductService {
                                 + "' does not satisfy the product type's current required variant-attribute schema"
                                 + " — update it before publication");
                     }
-                    if (variant.getOptionCombinationKey() != null) {
+                    if (variant.getStatus() == ProductStatus.ACTIVE
+                            && variant.getOptionCombinationKey() != null) {
                         hasSelectableVariant = true;
                     }
                 }

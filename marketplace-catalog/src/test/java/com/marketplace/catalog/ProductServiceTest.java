@@ -322,6 +322,42 @@ class ProductServiceTest {
     }
 
     @Test
+    void typedDraftCannotPublishWhenASuspendedVariantMissesARequiredVariantAssignment() {
+        // The 2026-11-07 #808 round-15 review (Major · Data Integrity &
+        // Integration): the coverage verdict walks every NON-ARCHIVED
+        // variant — SUSPENDED stays in (the probe's own law:
+        // reactivate() returns it to ACTIVE without re-running this
+        // gate, so a suspended variant missing a required value must
+        // refuse the publication NOW, never after its reactivation).
+        // The type is selection-free (only a required VARIANT
+        // assignment), the draft's suspended variant never carried the
+        // value — the publication refuses.
+        UUID productTypeId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID attributeId = UUID.randomUUID();
+        Product draft = Product.register("home-appliances", "Typed draft", null, 100L, "SAR", caller, productTypeId);
+        ProductTypeAttributeAssignment promotedRequiredVariant = ProductTypeAttributeAssignment.create(
+                productTypeId, attributeId, ProductTypeAttributeScope.VARIANT, true, 0);
+        ProductVariant suspendedVariant = ProductVariant.register(draft, "SKU-SUSPENDED", "Suspended shape",
+                100L, null);
+        suspendedVariant.suspend();
+        when(productRepository.findById(productId)).thenReturn(Optional.of(draft));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+        when(attributeValues.findAllByProductIdOrderByAssignmentIdAsc(productId)).thenReturn(List.of());
+        when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId))
+                .thenReturn(List.of(promotedRequiredVariant));
+        when(productVariantRepository.findByProductIdOrderBySkuAsc(productId))
+                .thenReturn(List.of(suspendedVariant));
+        when(variantAttributeValues.findAllByProductVariantIdOrderByAssignmentIdAsc(suspendedVariant.getId()))
+                .thenReturn(List.of()); // nothing covers the promoted assignment
+
+        assertThatThrownBy(() -> service.publishOwnedProduct(productId, authentication))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("does not satisfy the product type's current required variant-attribute schema");
+        verify(productRepository, never()).save(any(Product.class));
+    }
+
+    @Test
     void typedDraftPublishesWhenEveryActiveVariantCoversTheCurrentSelectionSchema() {
         UUID productTypeId = UUID.randomUUID();
         UUID productId = UUID.randomUUID();
