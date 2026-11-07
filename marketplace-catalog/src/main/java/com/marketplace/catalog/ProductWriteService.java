@@ -283,22 +283,27 @@ public class ProductWriteService implements ProductWriteSpi {
             return 0;
         }
         int deleted = 0;
+        // The 2026-11-06 #808 round-3 review (Minor · Stability &amp;
+        // Availability): the caller's identity is resolved ONCE for the
+        // whole batch — the per-row ownership filter is the same value
+        // every candidate reuses (getCurrentUserId hits the user source
+        // per call; a 500-row delete paid it 500 times).
+        UUID caller = currentUserProvider.getCurrentUserId(authentication);
         for (UUID id : ids) {
             // Unknown or stranger ids are skipped — the honest affected
             // count answers only what the caller owns and the registry
             // itself deleted (never a fabricated count, never an
             // existence disclosure for another provider's row).
             // B7's TOCTOU residual (CAT-04): each candidate rides the SAME
-            // locked read the single delete owns (ownedRowForUpdate) — the
-            // per-row guard below checks the LOCKED counters, so a
-            // reservation that lands between any two candidates is seen,
-            // not raced. The locks are taken in the caller's list order;
-            // two concurrent bulk deletes naming the same rows in
-            // opposite orders are untangled by the database's own deadlock
-            // detector (one whole delete rolls back — never a stranded
-            // reservation, which is the state this wall exists to
-            // prevent).
-            Optional<Product> addressed = ownedRowForUpdate(id, authentication);
+            // locked read the single delete owns — the per-row guard below
+            // checks the LOCKED counters, so a reservation that lands
+            // between any two candidates is seen, not raced. The locks are
+            // taken in the caller's list order; two concurrent bulk
+            // deletes naming the same rows in opposite orders are untangled
+            // by the database's own deadlock detector (one whole delete
+            // rolls back — never a stranded reservation, which is the
+            // state this wall exists to prevent).
+            Optional<Product> addressed = ownedRowForUpdate(id, caller);
             if (addressed.isPresent()) {
                 // B7 (CAT-04): the single delete's open-reservation wall,
                 // the bulk shape — a blocked row is skipped and NOT
@@ -436,11 +441,16 @@ public class ProductWriteService implements ProductWriteSpi {
      * could pass on reserved=0 while a reservation committed under it).
      */
     private Optional<Product> ownedRowForUpdate(UUID id, Authentication authentication) {
+        return ownedRowForUpdate(id, currentUserProvider.getCurrentUserId(authentication));
+    }
+
+    /** The batch's own shape — the caller's identity resolved once, reused per row. */
+    private Optional<Product> ownedRowForUpdate(UUID id, UUID caller) {
         if (id == null) {
             return Optional.empty();
         }
         return productRepository.findByIdForUpdate(id)
-                .filter(row -> row.getProviderId().equals(currentUserProvider.getCurrentUserId(authentication)));
+                .filter(row -> row.getProviderId().equals(caller));
     }
 
     /** The bounded projection — the read service's own rendering rule. */

@@ -51,15 +51,24 @@ public class ProductTypeAttributeAssignment extends BaseEntity {
      * variant-selection flag moves the assignment between the VARIANT and
      * VARIANT_SELECTION scopes). The VARIANT_SELECTION invariants (the
      * CHOICE value shape, the two-option floor, the required-every-
-     * variant law) are the SERVICE's own re-checks before this seam —
-     * {@code required} rides the scope's own law here (a VARIANT_SELECTION
-     * assignment is required for every variant, the platform's own
-     * invariant).
+     * variant law) are the SERVICE's own re-checks before this seam.
+     *
+     * <p>The 2026-11-06 #808 round-3 review (Minor · Functional
+     * Correctness): {@code required} is the row's OWN independent contract
+     * (the registration path's value-completeness verdict reads it), not a
+     * scope's derivable fact — the move law keeps the two scopes honest
+     * each in its own direction: VARIANT_SELECTION FORCES true (the
+     * platform's own every-variant law), and VARIANT PRESERVES the current
+     * value (the move out of selection never silently loosens a required
+     * attribute into an optional one — the value's contract survives the
+     * scope move; the previous shape rewrote it to false unconditionally).
      */
     void moveToScope(ProductTypeAttributeScope target) {
         if (target == null) throw new IllegalArgumentException("target scope is required");
         this.scope = target;
-        this.required = target == ProductTypeAttributeScope.VARIANT_SELECTION;
+        if (target == ProductTypeAttributeScope.VARIANT_SELECTION) {
+            this.required = true;
+        }
     }
 
     /**

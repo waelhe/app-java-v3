@@ -150,6 +150,30 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
     /** Friendly precheck for the database-unique canonical typed option combination. */
     boolean existsByProductIdAndOptionCombinationKey(UUID productId, String optionCombinationKey);
 
+    /**
+     * The 2026-11-06 #808 round-3 review (Major · Data Integrity &amp;
+     * Integration): the new-selection-assignment guard's probe — whether a
+     * product on the published shelf (ACTIVE, or SUSPENDED — the state
+     * {@code reactivate()} returns to ACTIVE without re-running the
+     * publication gate) carries a TYPED variant (a non-null combination
+     * key). Adding a VARIANT_SELECTION assignment to such a type leaves
+     * those variants' keys derived under the dead schema and their values
+     * short of the new selection, and the shelf never re-passes the
+     * publication gate to surface it — the assignment is refused until the
+     * variants migrate (the attribute-delete wall's own law: the variants
+     * migrate first). DRAFT products stay eligible: the publication gate
+     * owns their coverage verdict at publish time.
+     */
+    @Query("""
+            select (count(v) > 0) from ProductVariant v
+              join Product p on p.id = v.productId
+             where p.productTypeId = :productTypeId
+               and p.status in (com.marketplace.catalog.StoreProductStatus.ACTIVE,
+                                com.marketplace.catalog.StoreProductStatus.SUSPENDED)
+               and v.optionCombinationKey is not null
+            """)
+    boolean existsPublishedShelfTypedVariantForType(@Param("productTypeId") UUID productTypeId);
+
     // ------------------------------------------------------------------
     // Campaign packet campaign-b5-a: the ADMIN population's native
     // keyset scrolls — the parent-live EXISTS gate (the 2026-11-06 #808

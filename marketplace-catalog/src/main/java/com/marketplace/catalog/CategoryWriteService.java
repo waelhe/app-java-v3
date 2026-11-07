@@ -94,7 +94,21 @@ public class CategoryWriteService implements CategoryWriteSpi {
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
-    @Transactional
+    // The 2026-11-06 #808 round-3 review (Major · Stability &amp;
+    // Availability): NO outer transaction — the AdBillingJob precedent
+    // verbatim (settleWindowsThrough holds no @Transactional while it
+    // loops the executor's REQUIRES_NEW doors). A transactional outer
+    // method held its pooled connection ACROSS the executor's REQUIRES_NEW
+    // insert, so N concurrent creates held N connections while each
+    // waited for a second one — the pool-exhaustion deadlock the finding
+    // proved. Non-transactional here, the reserved-code precheck
+    // (countByCodeIncludingDeleted) runs in the repository method's own
+    // short transaction and RELEASES its connection before the insert;
+    // the insert rides the executor's own transaction alone; the DIVE
+    // catch below classifies the loser's cleanly-rolled-back violation
+    // exactly as before (nothing between the precheck and the insert
+    // needs one atomic unit — the precheck is honest-but-not-atomic by
+    // its own documented law, the V70 index is the backstop).
     public CategoryMutationResult createCategory(CategoryCreateCommand command) {
         List<CategoryMutationError> errors = new ArrayList<>();
         String name = command.name() == null ? null : command.name().strip();

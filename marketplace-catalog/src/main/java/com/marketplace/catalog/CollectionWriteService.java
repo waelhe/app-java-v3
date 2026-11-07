@@ -191,6 +191,17 @@ public class CollectionWriteService implements CollectionWriteSpi {
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     public CollectionMutationResult deleteCollection(UUID id) {
+        // The 2026-11-06 #808 round-3 review (Minor · Stability &amp;
+        // Availability): the advisory lock comes BEFORE the collection
+        // read — two concurrent deletes both read the row PRESENT, then
+        // serialized on the lock, and the loser's stale-row soft delete
+        // answered the optimistic-lock failure (never the classified
+        // NOT_FOUND) or wrote over an already-deleted row. Locked-first,
+        // the loser's re-read inside its own lock window answers the
+        // honest NOT_FOUND (the soft-delete filter rides the fresh read).
+        if (id != null) {
+            collectionProductRepository.lockCollectionPositionAllocation(id.toString());
+        }
         Optional<Collection> addressed = id == null ? Optional.empty() : collectionRepository.findById(id);
         if (addressed.isEmpty()) {
             return CollectionMutationResult.failure(List.of(new CollectionMutationError(
@@ -205,8 +216,7 @@ public class CollectionWriteService implements CollectionWriteSpi {
         // review (Minor · Stability & Availability): the collection's
         // advisory lock serializes the membership drain against a
         // concurrent append — the pair index never sees an insert race a
-        // deleting drain.
-        collectionProductRepository.lockCollectionPositionAllocation(row.getId().toString());
+        // deleting drain (the lock was taken before the read above).
         for (CollectionProduct member : collectionProductRepository
                 .findByCollectionIdOrderByPositionAscIdAsc(row.getId())) {
             collectionProductRepository.delete(member);
@@ -223,19 +233,21 @@ public class CollectionWriteService implements CollectionWriteSpi {
             return 0;
         }
         int deleted = 0;
-        // The 2026-11-06 #808 round review (Minor · Stability &
+        // The 2026-11-06 #808 round-3 review (Minor · Stability &amp;
         // Availability): the bulk drain takes each collection's advisory
         // lock in a FIXED id order — two overlapping bulk deletes can
         // never deadlock against each other or against a concurrent
         // append (the single delete's own law, in the bulk's
-        // deterministic form).
+        // deterministic form) — and each id's lock comes BEFORE that id's
+        // read (the single delete's locked-first law, per member of the
+        // same fixed order).
         for (UUID id : ids.stream().filter(java.util.Objects::nonNull).sorted().toList()) {
             // Unknown ids are skipped — the honest affected count answers
             // what the registry itself deleted (never a fabricated count,
             // never an error entry for an id the registry never knew).
+            collectionProductRepository.lockCollectionPositionAllocation(id.toString());
             Optional<Collection> addressed = collectionRepository.findById(id);
             if (addressed.isPresent()) {
-                collectionProductRepository.lockCollectionPositionAllocation(id.toString());
                 for (CollectionProduct member : collectionProductRepository
                         .findByCollectionIdOrderByPositionAscIdAsc(id)) {
                     collectionProductRepository.delete(member);
@@ -251,24 +263,31 @@ public class CollectionWriteService implements CollectionWriteSpi {
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     public CollectionMutationResult addProducts(UUID collectionId, List<UUID> productIds) {
+        // The 2026-11-06 #808 round-3 review (Minor · Stability &amp;
+        // Availability): the lock comes BEFORE the collection read (the
+        // delete paths' own locked-first law, applied to the append — the
+        // whole membership-write family shares one discipline). The
+        // 2026-11-06 #808 round review (Minor · Stability & Availability):
+        // the collection's position-allocation advisory lock serializes
+        // the append's prechecks against every concurrent membership
+        // writer — two concurrent addProducts for the same pair both
+        // passed the precheck and the loser died on the partial unique
+        // index's raw error instead of the classified
+        // DUPLICATED_INPUT_ITEM (the reorder's own B6 law, hoisted to the
+        // whole write). The delete paths take the SAME lock, so a
+        // concurrent collection delete serializes against this append
+        // (never a live membership left behind a soft-deleted collection —
+        // the append's existence read happens INSIDE its lock window, so
+        // the drained-and-deleted state answers the honest NOT_FOUND).
+        if (collectionId != null) {
+            collectionProductRepository.lockCollectionPositionAllocation(collectionId.toString());
+        }
         Optional<Collection> addressed = collectionId == null
                 ? Optional.empty() : collectionRepository.findById(collectionId);
         if (addressed.isEmpty()) {
             return CollectionMutationResult.failure(List.of(new CollectionMutationError(
                     "id", CollectionMutationErrorCode.NOT_FOUND, "No collection found for the id")));
         }
-        // The 2026-11-06 #808 round review (Minor · Stability &
-        // Availability): the collection's position-allocation advisory
-        // lock is taken BEFORE the membership prechecks — the append's
-        // own lock used to sit AFTER them, so two concurrent addProducts
-        // for the same pair both passed the precheck and the loser died
-        // on the partial unique index's raw error instead of the
-        // classified DUPLICATED_INPUT_ITEM (the reorder's own B6 law,
-        // hoisted to the whole write). The delete paths take the SAME
-        // lock, so a concurrent collection delete serializes against
-        // this append (never a live membership left behind a
-        // soft-deleted collection).
-        collectionProductRepository.lockCollectionPositionAllocation(collectionId.toString());
         List<CollectionMutationError> errors = new ArrayList<>();
         List<UUID> duplicated = duplicatedIds(productIds);
         if (!duplicated.isEmpty()) {
@@ -307,6 +326,19 @@ public class CollectionWriteService implements CollectionWriteSpi {
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     public CollectionMutationResult removeProducts(UUID collectionId, List<UUID> productIds) {
+        // The 2026-11-06 #808 round-3 review (Minor · Stability &amp;
+        // Availability): the remove takes the SAME advisory lock the
+        // append, the reorder and the deletes take, BEFORE any read (the
+        // membership-write family's one discipline) — an unlocked remove
+        // read a member row, a concurrent reorder saved it (position plus
+        // version), and the remove's stale-row delete answered the raw
+        // optimistic-lock failure instead of the serialized verdict; the
+        // locked-first read also keeps the existence verdict honest
+        // against a concurrent delete (the drained state answers the
+        // classified NOT_FOUND inside this lock window).
+        if (collectionId != null) {
+            collectionProductRepository.lockCollectionPositionAllocation(collectionId.toString());
+        }
         Optional<Collection> addressed = collectionId == null
                 ? Optional.empty() : collectionRepository.findById(collectionId);
         if (addressed.isEmpty()) {
@@ -328,18 +360,23 @@ public class CollectionWriteService implements CollectionWriteSpi {
     @Transactional
     public CollectionMutationResult reorderProducts(UUID collectionId,
                                                     List<CollectionProductMove> moves) {
+        // B6 (CAT-01): serialize the reorder against every concurrent
+        // position writer (the append's own lock — the media registry's
+        // advisory discipline) BEFORE the collection and the live
+        // membership are read (the membership-write family's locked-first
+        // law, the 2026-11-06 #808 round-3 review's single discipline),
+        // then keep every intermediate state unique through the
+        // two-phase rewrite below — the V298 partial unique index is the
+        // backstop.
+        if (collectionId != null) {
+            collectionProductRepository.lockCollectionPositionAllocation(collectionId.toString());
+        }
         Optional<Collection> addressed = collectionId == null
                 ? Optional.empty() : collectionRepository.findById(collectionId);
         if (addressed.isEmpty()) {
             return CollectionMutationResult.failure(List.of(new CollectionMutationError(
                     "id", CollectionMutationErrorCode.NOT_FOUND, "No collection found for the id")));
         }
-        // B6 (CAT-01): serialize the reorder against every concurrent
-        // position writer (the append's own lock — the media registry's
-        // advisory discipline) BEFORE the live membership is read, then
-        // keep every intermediate state unique through the two-phase
-        // rewrite below — the V298 partial unique index is the backstop.
-        collectionProductRepository.lockCollectionPositionAllocation(collectionId.toString());
         List<CollectionProduct> membership = collectionProductRepository
                 .findByCollectionIdOrderByPositionAscIdAsc(collectionId);
         // A move addressing a non-member product answers NOT_FOUND with

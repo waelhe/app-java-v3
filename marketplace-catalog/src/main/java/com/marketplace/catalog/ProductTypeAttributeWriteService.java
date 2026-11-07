@@ -162,6 +162,27 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
                             "A variant-selection attribute requires at least two allowed options"));
                     continue;
                 }
+                // The 2026-11-06 #808 round-3 review (Major · Data
+                // Integrity & Integration): the published-shelf guard —
+                // the new selection's value cannot exist on any variant
+                // yet (the attribute is NEW to this type), so a product on
+                // the shelf (ACTIVE, or SUSPENDED — reactivate() returns
+                // it to ACTIVE without re-running the publication gate)
+                // carrying a TYPED variant would keep its key derived
+                // under the dead schema and its values short of the new
+                // selection, and the shelf never re-passes the gate to
+                // surface it (fresh registrations derive new-shape keys,
+                // so the key comparison never surfaces the old variants
+                // either). The variants migrate first; DRAFT products stay
+                // eligible — the publication gate owns their coverage
+                // verdict at publish time (the
+                // ProductTypeAttributeService.assign twin's own pairing).
+                if (variantRepository.existsPublishedShelfTypedVariantForType(productTypeId)) {
+                    errors.add(new ProductTypeMutationError("id", ProductTypeMutationErrorCode.INVALID,
+                            "A variant-selection attribute cannot be assigned while a published product of"
+                                    + " this type carries typed variants — migrate the variants first"));
+                    continue;
+                }
             }
             if (assignmentRepository.existsByProductTypeIdAndAttributeDefinitionId(
                     productTypeId, operation.attributeId())
@@ -365,7 +386,11 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
         }
         // The post-move selection set, derived IN MEMORY (the managed
         // assignment rows are still pre-move — the deferred discipline
-        // holds until the verdict).
+        // holds until the verdict). An EMPTY post-move set (the last
+        // selection attribute moving out) is a legal verdict the walk
+        // below answers: every walked variant recombines to the null
+        // free-form key (the 2026-11-06 #808 round-3 review — null keys
+        // never collide, the index excludes them).
         java.util.Map<UUID, ProductTypeAttributeScope> targetById = new java.util.HashMap<>();
         for (DeferredMove move : deferredMoves) {
             targetById.put(move.assignment().getId(), move.target());
@@ -379,18 +404,23 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
         for (Product product : productRepository.findByProductTypeId(productTypeId)) {
             java.util.Map<String, ProductVariant> newKeyOwners = new java.util.HashMap<>();
             for (ProductVariant variant : variantRepository.findByProductIdOrderBySkuAsc(product.getId())) {
-                if (variant.getOptionCombinationKey() == null) {
-                    // The legacy free-form population: no typed values, no
-                    // key — the publication gate's own ConflictException
-                    // owns its migration, and a null key never collides
-                    // with a derived one (the partial index ignores it).
-                    continue;
-                }
                 java.util.Map<UUID, CatalogAttributeValueInput> valuesByAssignment = new java.util.HashMap<>();
                 for (ProductVariantAttributeValue value : variantAttributeValues
                         .findAllByProductVariantIdOrderByAssignmentIdAsc(variant.getId())) {
                     valuesByAssignment.put(value.getAssignmentId(), value.toInput());
                 }
+                // The 2026-11-06 #808 round-3 review (Major · Data Integrity
+                // & Integration): the null-key variant is NO LONGER
+                // skipped — the move OUT of the last selection attribute
+                // turns every typed variant free-form (canonical answers
+                // null for the empty selection set), and a later move BACK
+                // IN must re-derive those keys (the values never left the
+                // rows), never strand them outside the schema. The
+                // coverage law is the same one the typed population
+                // answers: a variant the post-move selection set leaves
+                // without an option-bearing value refuses the move (the
+                // migrate-first verdict) — free-form rows that never
+                // carried the value are exactly that population.
                 for (ProductTypeAttributeAssignment selection : postMoveSelection) {
                     CatalogAttributeValueInput covered = valuesByAssignment.get(selection.getId());
                     if (covered == null || covered.optionId() == null) {
@@ -401,6 +431,19 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
                     }
                 }
                 String rederived = VariantCombinationKeys.canonical(postMoveSelection, valuesByAssignment);
+                if (rederived == null) {
+                    // The post-move schema carries NO selection attribute:
+                    // every walked variant becomes a free-form row. The
+                    // null key never collides (the partial unique index
+                    // excludes it by its own predicate) — the previous
+                    // putIfAbsent refusal on the second null answered a
+                    // collision the index itself cannot produce. The
+                    // recombine still stages the null key: the row's key
+                    // must match the schema that no longer derives one
+                    // (the re-derivation symmetry the finding demands).
+                    planned.add(new PendingRecombine(variant, null));
+                    continue;
+                }
                 ProductVariant clash = newKeyOwners.putIfAbsent(rederived, variant);
                 if (clash != null) {
                     return new ProductTypeMutationError("id", ProductTypeMutationErrorCode.INVALID,
