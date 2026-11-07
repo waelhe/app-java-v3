@@ -70,6 +70,8 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
     private final ProductRepository productRepository;
     private final ProductVariantRepository variantRepository;
     private final ProductVariantAttributeValueRepository variantAttributeValues;
+    /** The 2026-11-07 #808 round-16 review: the unassignment's product-value wall (the REST remove's own twin). */
+    private final ProductAttributeValueRepository productAttributeValues;
 
     public ProductTypeAttributeWriteService(ProductTypeRepository productTypeRepository,
                                             CatalogAttributeDefinitionRepository attributeDefinitionRepository,
@@ -77,7 +79,8 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
                                             ProductTypeAttributeAssignmentRepository assignmentRepository,
                                             ProductRepository productRepository,
                                             ProductVariantRepository variantRepository,
-                                            ProductVariantAttributeValueRepository variantAttributeValues) {
+                                            ProductVariantAttributeValueRepository variantAttributeValues,
+                                            ProductAttributeValueRepository productAttributeValues) {
         this.productTypeRepository = productTypeRepository;
         this.attributeDefinitionRepository = attributeDefinitionRepository;
         this.attributeOptionRepository = attributeOptionRepository;
@@ -85,6 +88,7 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
         this.productRepository = productRepository;
         this.variantRepository = variantRepository;
         this.variantAttributeValues = variantAttributeValues;
+        this.productAttributeValues = productAttributeValues;
     }
 
     @Override
@@ -503,15 +507,32 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
             findAssignment(productTypeId, attributeId)
                     .ifPresent(addressedAssignments::add);
         }
-        if (!addressedAssignments.isEmpty()
-                && variantAttributeValues.existsLiveVariantValueForAssignmentsOrOptions(
-                        addressedAssignments.stream()
-                                .map(ProductTypeAttributeAssignment::getId).toList(),
-                        List.of())) {
+        List<UUID> addressedIds = addressedAssignments.stream()
+                .map(ProductTypeAttributeAssignment::getId).toList();
+        if (!addressedIds.isEmpty()
+                && variantAttributeValues.existsLiveVariantValueForAssignmentsOrOptions(addressedIds, List.of())) {
             return ProductTypeMutationResult.failure(List.of(new ProductTypeMutationError(
                     "id", ProductTypeMutationErrorCode.INVALID,
                     "An assignment referenced by a live variant cannot be unassigned — "
                             + "migrate the variants first")));
+        }
+        // The 2026-11-07 #808 round-16 review (Major · Data Integrity &
+        // Integration): the PRODUCT-scope twin of the same wall — the
+        // REST remove path (ProductTypeAttributeService.remove) guards
+        // BOTH value populations, and this GraphQL path checked the
+        // variant values alone: unassigning a PRODUCT assignment a
+        // published product still carries a value for soft-deleted the
+        // assignment and stranded the product (prepareProductAttributeValues'
+        // re-validation refuses the dead assignment's values forever).
+        // The classified INVALID refusal answers the whole request
+        // BEFORE any assignment is deleted — the owners release the
+        // values first, exactly what the message names.
+        if (!addressedIds.isEmpty()
+                && productAttributeValues.existsLiveProductValueForAssignmentsOrOptions(addressedIds, List.of())) {
+            return ProductTypeMutationResult.failure(List.of(new ProductTypeMutationError(
+                    "id", ProductTypeMutationErrorCode.INVALID,
+                    "An assignment referenced by a live product cannot be unassigned — "
+                            + "the owners release its values first")));
         }
         for (ProductTypeAttributeAssignment assignment : addressedAssignments) {
             assignmentRepository.delete(assignment);

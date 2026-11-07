@@ -63,6 +63,7 @@ class ProductTypeAttributeWriteServiceTest {
     private ProductRepository productRepository;
     private ProductVariantRepository variantRepository;
     private ProductVariantAttributeValueRepository variantAttributeValues;
+    private ProductAttributeValueRepository productAttributeValues;
     private ProductTypeAttributeWriteSpi service;
     private final Authentication caller = new TestingAuthenticationToken("admin-subject", "n/a", "ROLE_ADMIN");
 
@@ -83,9 +84,13 @@ class ProductTypeAttributeWriteServiceTest {
         productRepository = mock(ProductRepository.class);
         variantRepository = mock(ProductVariantRepository.class);
         variantAttributeValues = mock(ProductVariantAttributeValueRepository.class);
+        // The 2026-11-07 #808 round-16 review: the unassignment's
+        // product-value wall — the mock answers the EMPTY population by
+        // default (every pre-existing test rides the trivial pass).
+        productAttributeValues = mock(ProductAttributeValueRepository.class);
         service = new ProductTypeAttributeWriteService(productTypeRepository,
                 attributeDefinitionRepository, attributeOptionRepository, assignmentRepository,
-                productRepository, variantRepository, variantAttributeValues);
+                productRepository, variantRepository, variantAttributeValues, productAttributeValues);
         type = ProductType.create("widgets", "Widget Schema", null, null);
         // Every write leg rides the locked read now (the 2026-11-05 #808
         // round locked assignAttributes; the 2026-11-06 round locked its
@@ -618,6 +623,34 @@ class ProductTypeAttributeWriteServiceTest {
 
         ProductTypeMutationResult result = service.unassignAttributes(type.getId(),
                 List.of(choice.getId(), free.getId()));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductTypeMutationError::code, ProductTypeMutationError::field)
+                .containsExactly(ProductTypeMutationErrorCode.INVALID, "id");
+        verify(assignmentRepository, never()).delete(any(ProductTypeAttributeAssignment.class));
+    }
+
+    @Test
+    void theUnassignRefusesWhenALiveProductCarriesTheAssignment() {
+        // The 2026-11-07 #808 round-16 review (Major · Data Integrity &
+        // Integration): the PRODUCT-scope twin of the same wall — the
+        // variant population is clean, but a live product value bound to
+        // the addressed assignment answers the classified INVALID refusal
+        // and NOTHING is deleted (unassigning it would soft-delete the
+        // assignment and strand the product on the dead assignment's
+        // re-validation refusal — the REST remove path's own law).
+        CatalogAttributeDefinition material = definition("material", CatalogAttributeType.CHOICE);
+        ProductTypeAttributeAssignment held = assigned(material,
+                ProductTypeAttributeScope.PRODUCT, 1);
+        when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
+                .thenReturn(List.of(held));
+        when(productAttributeValues.existsLiveProductValueForAssignmentsOrOptions(
+                org.mockito.ArgumentMatchers.anyCollection(), org.mockito.ArgumentMatchers.anyCollection()))
+                .thenReturn(true);
+
+        ProductTypeMutationResult result = service.unassignAttributes(type.getId(),
+                List.of(material.getId()));
 
         assertThat(result.success()).isFalse();
         assertThat(result.errors()).singleElement()
