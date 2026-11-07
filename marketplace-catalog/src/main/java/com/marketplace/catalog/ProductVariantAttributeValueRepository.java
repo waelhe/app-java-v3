@@ -57,6 +57,15 @@ public interface ProductVariantAttributeValueRepository extends JpaRepository<Pr
      * demands (never the bare published-variant probe; the NOT-EXISTS
      * subquery joins the definition's OWN live assignments on this type so
      * a value bound to a dead assignment never satisfies the coverage).
+     *
+     * <p>The 2026-11-07 #808 round-14 review (Minor · Functional
+     * Correctness): ARCHIVED variants are EXCLUDED — the state is terminal
+     * ({@code updateVariant} refuses it, {@code reactivate()} never returns
+     * it to the shelf), and the publication gate checks ACTIVE variants
+     * only, so an archived row must never block the promotion with a
+     * re-register demand for a row that cannot re-enter the shelf.
+     * SUSPENDED stays IN the probe: {@code reactivate()} returns it to
+     * ACTIVE without re-running the gate.
      */
     @Query("""
             select (count(v) > 0) from ProductVariant v
@@ -64,6 +73,7 @@ public interface ProductVariantAttributeValueRepository extends JpaRepository<Pr
              where p.productTypeId = :productTypeId
                and p.status in (com.marketplace.catalog.StoreProductStatus.ACTIVE,
                                 com.marketplace.catalog.StoreProductStatus.SUSPENDED)
+               and v.status <> com.marketplace.catalog.ProductStatus.ARCHIVED
                and not exists (
                    select vav from ProductVariantAttributeValue vav
                     where vav.productVariantId = v.id

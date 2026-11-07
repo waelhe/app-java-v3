@@ -409,6 +409,22 @@ public class ProductService {
     public List<CatalogAttributeValueInput> replaceOwnedAttributeValues(UUID productId,
             List<CatalogAttributeValueInput> newValues, Authentication authentication) {
         Product product = getOwnedProduct(productId, authentication);
+        // The 2026-11-07 #808 round-14 review (Major · Data Integrity &
+        // Integration, the concurrency half): the value write rides the
+        // SAME type FOR-SHARE pairing the publication gate carries — the
+        // promotion path (setRequired) holds the type row FOR UPDATE
+        // while its coverage probe runs, but the value write took NO
+        // lock, so the owner's replace (validated against the OLD
+        // optional schema) could commit its value DROP between the
+        // probe's pass and the promotion's commit — a published product
+        // left without the freshly-required value. The FOR-SHARE read
+        // serializes the pair: either the drop commits first and the
+        // probe refuses the promotion, or the promotion commits first
+        // and the drop's re-validation refuses against the NEW required
+        // schema.
+        if (product.getProductTypeId() != null) {
+            productTypeRepository.findByIdForShare(product.getProductTypeId());
+        }
         List<ProductAttributeValue> prepared = prepareProductAttributeValues(product,
                 newValues == null ? List.of() : newValues,
                 product.getStatus() != StoreProductStatus.DRAFT);

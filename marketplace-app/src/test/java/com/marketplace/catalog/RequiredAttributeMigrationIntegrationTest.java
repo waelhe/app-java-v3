@@ -9,6 +9,8 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.TestingAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -17,7 +19,15 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
@@ -67,6 +77,12 @@ class RequiredAttributeMigrationIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private ProductTypeAttributeService attributeService;
+
+    @Autowired
+    private ProductService productService;
 
     @MockitoBean
     private com.marketplace.shared.security.CurrentUserProvider currentUserProvider;
@@ -186,6 +202,125 @@ class RequiredAttributeMigrationIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.required").value(true));
         assertThatAssignmentRequired(careAssignmentId, true);
+    }
+
+    /**
+     * The 2026-11-07 #808 round-14 review (Major · Data Integrity &
+     * Integration, the concurrency half): the promotion (setRequired) and
+     * the owner's value write (replaceOwnedAttributeValues) race on the
+     * same type over REAL threads and REAL transactions — the value write
+     * rides the SAME type FOR-SHARE pairing the publication gate carries,
+     * so whatever the interleaving, a published product is never left
+     * without a freshly-required value: either the drop commits first and
+     * the promotion's probe refuses, or the promotion commits first and
+     * the drop's re-validation refuses against the new required schema.
+     */
+    @Test
+    void thePromotionAndTheValueWriteSerializeOnTheTypeLock() throws Exception {
+        when(currentUserProvider.getCurrentUserId(any())).thenReturn(PROVIDER_USER_ID);
+        seedStoreCategory();
+        TypedSchema schema = seedSchema(false);
+        UUID product = createAndPublishProduct(schema, "R");
+        UUID originAssignmentId = createAdminAssignment(schema.typeId(),
+                schema.originDefinitionId(), "PRODUCT", false, 1);
+        org.springframework.security.core.Authentication providerAuth = asProvider();
+        CatalogAttributeValueInput materialValue = new CatalogAttributeValueInput(
+                schema.materialAssignmentId(), null, null, null, schema.cottonOptionId());
+        CatalogAttributeValueInput originValue = new CatalogAttributeValueInput(
+                originAssignmentId, null, null, null, schema.importedOptionId());
+
+        for (int round = 1; round <= 6; round++) {
+            // Re-establish the raceable state: optional + the value present.
+            asAdmin();
+            attributeService.setRequired(originAssignmentId, false);
+            asProvider();
+            productService.replaceOwnedAttributeValues(product,
+                    List.of(materialValue, originValue), providerAuth);
+
+            // The race: the promotion vs the value drop, barrier-started.
+            // Each pool thread carries its OWN security context (the
+            // method gates read the calling thread — the race test's own
+            // gated() law).
+            List<String> results = runConcurrently(
+                    () -> tryCall(() -> {
+                        asAdmin();
+                        attributeService.setRequired(originAssignmentId, true);
+                        return "promoted";
+                    }),
+                    () -> tryCall(() -> {
+                        org.springframework.security.core.Authentication auth = asProvider();
+                        productService.replaceOwnedAttributeValues(product,
+                                List.of(materialValue), auth);
+                        return "dropped";
+                    }));
+
+            // THE invariant: never a required assignment whose value the
+            // published shelf just lost (either the drop won and the
+            // promotion refused, or the promotion won and the drop
+            // refused — a third outcome does not exist).
+            boolean required = jdbcTemplate.queryForObject(
+                    "SELECT is_required FROM product_type_attribute_assignments WHERE id = ?",
+                    Boolean.class, originAssignmentId);
+            Integer liveValues = jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM product_attribute_values WHERE product_id = ?"
+                            + " AND assignment_id = ? AND is_deleted = FALSE",
+                    Integer.class, product, originAssignmentId);
+            assertThatRoundKeepsTheShelfHonest(round, required, liveValues, results);
+        }
+        SecurityContextHolder.clearContext();
+    }
+
+    private void assertThatRoundKeepsTheShelfHonest(int round, boolean required, Integer liveValues, List<String> results) {
+        org.assertj.core.api.Assertions.assertThat(required && liveValues == 0)
+                .as("round %d: a published product must never lack a freshly-required value"
+                        + " (promotion=%s, drop=%s)", round, results.get(0), results.get(1))
+                .isFalse();
+    }
+
+    /** Each pool thread carries its own security context (method gates read the calling thread). */
+    private <T> List<T> runConcurrently(Callable<T> first, Callable<T> second) throws Exception {
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CyclicBarrier startTogether = new CyclicBarrier(2);
+        try {
+            Future<T> one = pool.submit(gated(startTogether, first));
+            Future<T> two = pool.submit(gated(startTogether, second));
+            List<T> results = new ArrayList<>();
+            results.add(one.get(60, TimeUnit.SECONDS));
+            results.add(two.get(60, TimeUnit.SECONDS));
+            return results;
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    private <T> Callable<T> gated(CyclicBarrier barrier, Callable<T> call) {
+        return () -> {
+            barrier.await(30, TimeUnit.SECONDS);
+            return call.call();
+        };
+    }
+
+    /** The conflict refusals are the race's honest outcomes — caught, never propagated. */
+    private String tryCall(Callable<String> call) {
+        try {
+            return call.call();
+        } catch (com.marketplace.shared.api.ConflictException refused) {
+            return "refused";
+        } catch (Exception unexpected) {
+            throw new IllegalStateException(unexpected);
+        }
+    }
+
+    private org.springframework.security.core.Authentication asProvider() {
+        TestingAuthenticationToken token = new TestingAuthenticationToken(
+                PROVIDER_USER_ID.toString(), "n/a", "ROLE_PROVIDER");
+        SecurityContextHolder.getContext().setAuthentication(token);
+        return token;
+    }
+
+    private void asAdmin() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new TestingAuthenticationToken("migration-race-admin", "n/a", "ROLE_ADMIN"));
     }
 
     // ------------------------------------------------------------------
