@@ -16,6 +16,20 @@ public interface CmsMenuRepository extends JpaRepository<CmsMenu, UUID>,
     Optional<CmsMenu> findBySlug(String slug);
 
     /**
+     * The 2026-11-08 #810 round-5 review (Minor · Data Integrity): the
+     * menu row's locked load — the slot assignment (assignNavigation),
+     * the menu's own delete, and createMenuItem's menu-existence leg all
+     * serialize on this lock, so a menu cannot die between one path's
+     * existence check and another's write (a slot pinned to a dead menu,
+     * an item inserted for a deleted menu). The official Spring Data JPA
+     * @Lock derived-query contract — the house findByIdForUpdate family.
+     */
+    @org.springframework.data.jpa.repository.Lock(
+            jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select m from CmsMenu m where m.id = :id")
+    Optional<CmsMenu> findByIdForUpdate(@org.springframework.data.repository.query.Param("id") UUID id);
+
+    /**
      * The 2026-11-05 #810 round review (Minor · Functional Correctness):
      * two menus MAY share a name when their slugs differ (the uniqueness
      * law is the slug's) — the lookup answers ONE row by the deterministic

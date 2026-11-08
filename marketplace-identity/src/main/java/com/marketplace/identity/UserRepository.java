@@ -25,6 +25,27 @@ public interface UserRepository extends JpaRepository<User, UUID>, RevisionRepos
     @org.springframework.data.jpa.repository.Query("select user from User user where user.id = :id")
     Optional<User> findByIdForUpdate(@org.springframework.data.repository.query.Param("id") UUID id);
 
+    /**
+     * The 2026-11-08 #810 round-5 review (Major · Security & Privacy): the
+     * account's AUTH-state serialization point — the shared advisory lock
+     * both auth_users writers take BEFORE reading the login state. The
+     * email move (UserAccountAdminService.moveEmail) copies the loaded
+     * login row's flags onto the NEW row it inserts, and the disable
+     * (UserService.updateUserStatus) flips the OLD row by username — a
+     * disable landing between the move's read and its insert left the new
+     * login born ENABLED for a disabled account (and the flip's UPDATE
+     * matched zero rows once the old row died). The key is the STABLE
+     * user id (the subject moves with the email — an email-keyed lock
+     * would serialize nothing). The lockSlugAllocation pattern verbatim:
+     * {@code pg_advisory_xact_lock(hashtextextended('marketplace.user-auth:'
+     * || :userId, 0))} — namespaced away from the slug and collection-id
+     * keys, transaction-scoped (released at COMMIT/ROLLBACK).
+     */
+    @org.springframework.data.jpa.repository.Query(
+            value = "SELECT pg_advisory_xact_lock(hashtextextended('marketplace.user-auth:' || :userId, 0))",
+            nativeQuery = true)
+    void lockUserAuth(@org.springframework.data.repository.query.Param("userId") String userId);
+
     Optional<User> findBySubject(String subject);
 
     Optional<User> findByEmail(String email);
@@ -51,10 +72,6 @@ public interface UserRepository extends JpaRepository<User, UUID>, RevisionRepos
      * fixed sort). Six methods, one per (field, direction) pair the
      * Saleor {@code UserSortingInput} subset executes.
      */
-    Window<User> findByOrderByEmailAscIdAsc(KeysetScrollPosition position, Limit limit);
-
-    Window<User> findByOrderByEmailDescIdDesc(KeysetScrollPosition position, Limit limit);
-
     Window<User> findByOrderByCreatedAtAscIdAsc(KeysetScrollPosition position, Limit limit);
 
     Window<User> findByOrderByCreatedAtDescIdDesc(KeysetScrollPosition position, Limit limit);
@@ -62,6 +79,27 @@ public interface UserRepository extends JpaRepository<User, UUID>, RevisionRepos
     Window<User> findByOrderByUpdatedAtAscIdAsc(KeysetScrollPosition position, Limit limit);
 
     Window<User> findByOrderByUpdatedAtDescIdDesc(KeysetScrollPosition position, Limit limit);
+
+    /**
+     * The 2026-11-08 #810 round-5 review (Minor · Functional Correctness):
+     * the roster's EMAIL-vocabulary scroll keys on the EMAIL column — the
+     * SPI contract's own words ("Sort by the account email") — with the
+     * keyset's null-aware semantics made EXPLICIT: an OIDC account with no
+     * {@code email} claim keeps a NULL email column, and the framework's
+     * keyset predicate is null-aware ONLY when the {@link org.springframework.data.domain.Sort.Order}
+     * carries explicit null handling (Spring Data JPA's
+     * {@code KeysetScrollSpecification}: a non-null boundary with
+     * {@code NULLS LAST} answers {@code key > ? OR key IS NULL}; a null
+     * boundary answers the unsatisfiable tail — the null block pages by
+     * the {@code id} tiebreaker's {@code IS NULL AND id > ?} prefix leg).
+     * The NATIVE default the name-embedded sorts carried drops every
+     * null-email row from every page after the first. The service builds
+     * {@code asc(email).nullsLast()+asc(id)} / {@code desc(email).nullsFirst()+desc(id)}
+     * — PostgreSQL's own ASC/DESC defaults, so the ordering is unchanged;
+     * only the predicate becomes null-aware.
+     */
+    Window<User> findAllBy(org.springframework.data.domain.Sort sort,
+                           KeysetScrollPosition position, Limit limit);
 
     /**
      * P1 (the canonical Saleor plan §5-P1 — the {@code customers} keyset
@@ -111,22 +149,20 @@ public interface UserRepository extends JpaRepository<User, UUID>, RevisionRepos
      * {@code pseudonymizedAt IS NULL} (the admin surface's own visibility
      * law; soft-deleted rows are already absent via @SoftDelete).
      *
-     * <p>The 2026-11-06 #810 round review (Major · Functional
-     * Correctness): the EMAIL-vocabulary scrolls key on the SUBJECT
-     * column, not the email column — the subject is the account's
-     * ALWAYS-PRESENT identifier (the normalized address for password
-     * accounts, the mandatory {@code sub} claim for OIDC-provisioned
-     * ones), while the email column is NULL for an OIDC account whose
-     * token carried no {@code email} claim; a nullable keyset sort key
-     * silently drops rows from the windowed pages. Saleor's
-     * UserSortingInput.EMAIL keeps its wire vocabulary — the executed
-     * key is the platform's own non-null identifier.</p>
+     * <p>The 2026-11-06 #810 round review keyed the EMAIL vocabulary on
+     * the SUBJECT column (the always-present identifier) because a
+     * nullable keyset key drops rows under NATIVE null handling. The
+     * 2026-11-08 round-5 review corrected the vocabulary back to the
+     * contract's own words ("Sort by the account email") — the defect is
+     * closed in the PREDICATE now, not by re-keying the sort: the
+     * dynamic-sort method below takes the service-built
+     * {@code Sort} carrying explicit {@code nullsLast}/{@code nullsFirst}
+     * handling (see {@link #findAllBy} — the same null-aware keyset law;
+     * ordering unchanged from PostgreSQL's own defaults).</p>
      */
-    Window<User> findByRoleAndPseudonymizedAtIsNullOrderBySubjectAscIdAsc(
-            UserRole role, KeysetScrollPosition position, Limit limit);
-
-    Window<User> findByRoleAndPseudonymizedAtIsNullOrderBySubjectDescIdDesc(
-            UserRole role, KeysetScrollPosition position, Limit limit);
+    Window<User> findByRoleAndPseudonymizedAtIsNull(UserRole role,
+            org.springframework.data.domain.Sort sort,
+            KeysetScrollPosition position, Limit limit);
 
     Window<User> findByRoleAndPseudonymizedAtIsNullOrderByCreatedAtAscIdAsc(
             UserRole role, KeysetScrollPosition position, Limit limit);

@@ -78,7 +78,22 @@ public class AccountLifecycleSpiAdapter implements AccountLifecycleSpi {
      */
     private void requireTokenOwnedBy(String email, String token,
                                      AuthActionTokenPurpose purpose) {
-        if (email == null || token == null) {
+        // The 2026-11-08 #810 round-5 review (Minor · Security & Privacy):
+        // a MISSING named account refuses the redemption outright — the
+        // GraphQL arguments leave email nullable, and the old early-return
+        // let a valid token (a bare capability) activate the account or
+        // rotate the password with NO ownership comparison at all. The
+        // ownership wall is the link's contract (every redemption names
+        // its account); an absent name is the same wrong-account refusal
+        // a mismatched one answers. A missing TOKEN still falls through
+        // untouched — the owning service's own honest error for the
+        // absent token answers there (this guard never invented a
+        // competing vocabulary).
+        if (email == null) {
+            throw new com.marketplace.shared.api.BadRequestException(
+                    "This link is not valid for the identified account");
+        }
+        if (token == null) {
             return;
         }
         // The 2026-11-06 session-9 #806 final review (Minor · Functional

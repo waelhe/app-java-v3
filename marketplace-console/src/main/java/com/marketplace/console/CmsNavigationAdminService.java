@@ -71,8 +71,15 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
     public void assignNavigation(Authentication caller, String navigationType, UUID menuId) {
         requireAdmin(caller);
         String slot = normalizeSlot(navigationType);
-        if (menuId != null && !menuRepository.existsById(menuId)) {
-            throw new ResourceNotFoundException("No menu " + menuId);
+        // The 2026-11-08 #810 round-5 review (Minor · Data Integrity):
+        // the LOCKED existence leg — the menu's delete path takes the
+        // same row lock, so a menu cannot die between this check and the
+        // slot write (a slot pinned to a dead menu violates the
+        // live-menu-or-detached invariant the slot carries). The plain
+        // existsById read left that window open.
+        if (menuId != null) {
+            menuRepository.findByIdForUpdate(menuId)
+                    .orElseThrow(() -> new ResourceNotFoundException("No menu " + menuId));
         }
         CmsNavigationSlot row = slotRepository.findBySlot(slot)
                 .orElseGet(() -> {
@@ -131,7 +138,12 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
     @Observed(name = "cms.menu.delete")
     public MenuView deleteMenu(Authentication caller, UUID id) {
         requireAdmin(caller);
-        CmsMenu row = requireMenu(id);
+        // The 2026-11-08 #810 round-5 review (Minor · Data Integrity):
+        // the LOCKED load — the slot assignment and createMenuItem take
+        // the same row lock (a menu cannot die between their existence
+        // check and their write).
+        CmsMenu row = menuRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("No menu " + id));
         itemRepository.findAllByMenuIdOrderByPositionAscIdAsc(id).forEach(item -> {
             itemTranslationRepository.findAllByMenuItemId(item.getId())
                     .forEach(itemTranslationRepository::delete);
@@ -170,7 +182,16 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
     public MenuItemView createMenuItem(Authentication caller, UUID menuId, UUID parentId,
                                        String name, String url, UUID categoryId, UUID pageId) {
         requireAdmin(caller);
-        requireMenu(menuId);
+        // The 2026-11-08 #810 round-5 review (Minor · Data Integrity):
+        // BOTH existence legs ride the LOCKED loads — the menu's delete
+        // and the parent's delete take the same row locks (deleteMenu /
+        // deleteMenuItem), so the menu cannot die between this check and
+        // the item's insert (an item alive under a deleted menu), and the
+        // parent cannot be deleted out from under the new child (the
+        // create either precedes the delete — its row joins the promoted
+        // subtree — or waits and answers the honest 404).
+        menuRepository.findByIdForUpdate(menuId)
+                .orElseThrow(() -> new ResourceNotFoundException("No menu " + menuId));
         String trimmed = requireName(name);
         if (parentId == null) {
             requireFreeRootName(menuId, trimmed);
@@ -178,7 +199,8 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
         validateTarget(url, categoryId, pageId);
         requireLinkablePage(pageId);
         if (parentId != null) {
-            CmsMenuItem parent = requireItem(parentId);
+            CmsMenuItem parent = itemRepository.findByIdForUpdate(parentId)
+                    .orElseThrow(() -> new ResourceNotFoundException("No menu item " + parentId));
             if (!parent.getMenuId().equals(menuId)) {
                 throw new IllegalArgumentException("The parent item belongs to another menu");
             }
@@ -227,7 +249,11 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
     @Observed(name = "cms.menu_item.delete")
     public MenuItemView deleteMenuItem(Authentication caller, UUID id) {
         requireAdmin(caller);
-        CmsMenuItem row = requireItem(id);
+        // The 2026-11-08 #810 round-5 review (Minor · Data Integrity): the
+        // LOCKED load — createMenuItem locks the parent it inserts under;
+        // the doomed row takes the same lock here so the two serialize.
+        CmsMenuItem row = itemRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("No menu item " + id));
         // The subtree re-parents to the deleted node's parent (the tree
         // never orphans), then positions resequence. A child promoted into
         // the ROOT group carries the per-menu root-name invariant too —
@@ -239,16 +265,33 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
         // root-name space for its promoted children (deleting root "Home"
         // with a child also named "Home" used to conflict against the
         // doomed row itself).
-        for (CmsMenuItem child : itemRepository.findAllByMenuIdOrderByPositionAscIdAsc(row.getMenuId())) {
-            if (id.equals(child.getParentId())) {
-                if (row.getParentId() == null) {
-                    requireFreeRootName(child.getMenuId(), child.getName(),
-                            child.getId(), id);
-                }
-                child.reParent(row.getParentId());
+        //
+        // The 2026-11-08 #810 round-5 review (Minor · Functional
+        // Correctness) fixed the ORDER: the conflict check runs FIRST
+        // (nothing is deleted on a refusal), then the doomed row dies and
+        // FLUSHES, and only THEN do the children promote. Hibernate's
+        // action queue runs UPDATEs before DELETEs, so promoting while the
+        // doomed root still held the name used to hit V283's
+        // cms_menu_items_menu_root_name_live_uq with the raw unique
+        // violation at flush — although the classified check above had
+        // PASSED. The flush releases the name; the promotions land on a
+        // clean index.
+        List<CmsMenuItem> menuItems =
+                itemRepository.findAllByMenuIdOrderByPositionAscIdAsc(row.getMenuId());
+        for (CmsMenuItem child : menuItems) {
+            if (id.equals(child.getParentId()) && row.getParentId() == null) {
+                requireFreeRootName(child.getMenuId(), child.getName(),
+                        child.getId(), id);
             }
         }
         itemRepository.delete(row);
+        itemRepository.flush();
+        for (CmsMenuItem child : itemRepository.findAllByMenuIdOrderByPositionAscIdAsc(
+                row.getMenuId())) {
+            if (id.equals(child.getParentId())) {
+                child.reParent(row.getParentId());
+            }
+        }
         resequence(row.getMenuId());
         log.info("CMS menu item deleted: id={}, actor={}", id, caller.getName());
         return toView(row);
@@ -343,6 +386,16 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
             throw new IllegalArgumentException(
                     "moveMenuItems requires sortOrders with exactly one entry per item");
         }
+        // The 2026-11-08 #810 round-5 review (Minor · Functional
+        // Correctness): the root-name invariant evaluates the batch's
+        // FINAL state BEFORE any reParent mutates a managed row — the
+        // roots query used to run AFTER the mutation loop, and Hibernate's
+        // query-time AUTO FLUSH pushed the dirty promotions into V283's
+        // cms_menu_items_menu_root_name_live_uq ahead of the classified
+        // ConflictException (promoting a child "Home" over a surviving
+        // root "Home" answered the raw unique violation, a check that had
+        // PASSED). The joiners are known from the request's own
+        // parentIds; the staying roots are read from the CLEAN tree.
         List<CmsMenuItem> movedItems = new ArrayList<>(itemIds.size());
         for (int i = 0; i < itemIds.size(); i++) {
             CmsMenuItem item = requireItem(itemIds.get(i));
@@ -358,28 +411,23 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
                 if (!parent.getMenuId().equals(menuId)) {
                     throw new IllegalArgumentException("The parent item belongs to another menu");
                 }
-                if (isDescendant(parent, item.getId())) {
-                    throw new ConflictException(
-                            "The move would create a cycle in the menu tree");
-                }
             }
-            item.reParent(newParent);
             movedItems.add(item);
         }
-        // The 2026-11-05 #810 round review (Minor · Functional
-        // Correctness): the root-name invariant evaluates the batch's
-        // FINAL state, never the per-move intermediate one — a batch that
-        // frees a root name (its holder moves UNDER another item) and
-        // grants it to another item in the SAME batch is a legal end
-        // state the old per-item check rejected at the first move. The
-        // check: every item JOINING the root group must be unique against
-        // the roots that STAY (the moved set excluded — their post-batch
-        // homes are already decided in memory) and against the other
-        // joiners.
-        List<CmsMenuItem> joiningRoot = movedItems.stream()
-                .filter(item -> item.getParentId() == null)
-                .toList();
+        List<CmsMenuItem> joiningRoot = new ArrayList<>();
+        for (int i = 0; i < movedItems.size(); i++) {
+            if (parentIds.get(i) == null) {
+                joiningRoot.add(movedItems.get(i));
+            }
+        }
         if (!joiningRoot.isEmpty()) {
+            // The 2026-11-05 #810 round review's final-state law, kept
+            // verbatim: every item JOINING the root group must be unique
+            // against the roots that STAY (the moved set excluded — their
+            // post-batch homes are already decided in memory) and against
+            // the other joiners. A batch that frees a root name and
+            // grants it to another item in the SAME batch stays a legal
+            // end state.
             java.util.Set<UUID> movedIds = new HashSet<>(itemIds);
             List<CmsMenuItem> stayingRoots = itemRepository
                     .findAllByMenuIdAndParentIdIsNullOrderByPositionAscIdAsc(menuId).stream()
@@ -402,6 +450,21 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
                                     + " exists in the menu: " + joining.getName());
                         });
             }
+        }
+        // The mutation pass — the cycle checks stay INTERLEAVED with the
+        // reParents on purpose: a batch that moves A under B and B under
+        // A only conflicts on the SECOND move, whose isDescendant walk
+        // reads the FIRST move's dirty state (the managed instances the
+        // persistence context already carries). Validating before ANY
+        // mutation would wave both through and commit a cycle.
+        for (int i = 0; i < itemIds.size(); i++) {
+            CmsMenuItem item = movedItems.get(i);
+            UUID newParent = parentIds.get(i);
+            if (newParent != null && isDescendant(requireItem(newParent), item.getId())) {
+                throw new ConflictException(
+                        "The move would create a cycle in the menu tree");
+            }
+            item.reParent(newParent);
         }
         applyRelativeSortOrders(menuId, itemIds, sortOrders);
         log.info("CMS menu items moved: menuId={}, moves={}, actor={}", menuId, itemIds.size(),
@@ -554,7 +617,12 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
             }
             int delta = sortOrders.get(i) == null ? 0 : sortOrders.get(i);
             siblings.remove(from);
-            int to = Math.max(0, Math.min(from + delta, siblings.size()));
+            // The 2026-11-08 #810 round-5 review (Minor · Functional
+            // Correctness): the clamp runs in LONG — from + delta overflows
+            // int at delta near Integer.MAX_VALUE and the negative used to
+            // clamp to 0 (a forward move answering a jump to the START).
+            // The CustomerTypeService.reorderAttributes precedent verbatim.
+            int to = (int) Math.max(0L, Math.min((long) from + delta, siblings.size()));
             siblings.add(to, item);
         }
         for (List<CmsMenuItem> group : byParent.values()) {
@@ -730,6 +798,14 @@ public class CmsNavigationAdminService implements CmsNavigationSpi {
 
     private String requireFreeSlug(String slug) {
         requireSlugShape(slug);
+        // The 2026-11-08 #810 round-5 review (Minor · Functional
+        // Correctness): cms_menus.slug's own VARCHAR(255) bound — the
+        // shape check alone let a 256-character slug reach persistence
+        // and answer the flush's raw storage error (the page twin's
+        // exact precedent).
+        if (slug.length() > 255) {
+            throw new IllegalArgumentException("The slug exceeds 255 characters");
+        }
         if (menuRepository.existsBySlug(slug)) {
             throw new ConflictException("The slug already exists: " + slug);
         }

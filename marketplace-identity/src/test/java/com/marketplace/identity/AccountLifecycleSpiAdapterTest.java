@@ -11,6 +11,9 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -150,4 +153,37 @@ class AccountLifecycleSpiAdapterTest {
         adapter.requestAccountDeletion(caller);
         verify(selfServiceTokenService).requestDeletion(caller);
     }
+    /**
+     * The 2026-11-08 #810 round-5 review (Minor · Security & Privacy): a
+     * redemption that names NO account refuses outright — the old
+     * early-return let a valid token (a bare capability) activate the
+     * account or rotate the password with no ownership comparison at all.
+     * Both redemption legs carry the same refusal.
+     */
+    @Test
+    void confirmAccountRefusesAMissingEmailAddress() {
+        assertThatThrownBy(() -> adapter.confirmAccount(null, "some-token"))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class)
+                .hasMessageContaining("not valid for the identified account");
+        verify(emailVerificationService, never()).completeVerification(any());
+    }
+
+    @Test
+    void passwordResetRedemptionRefusesAMissingEmailAddress() {
+        assertThatThrownBy(() -> adapter.completePasswordReset(null, "some-token", "new-pass-1"))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class)
+                .hasMessageContaining("not valid for the identified account");
+        verify(passwordResetService, never()).completeReset(any(), any());
+    }
+
+    @Test
+    void aMissingTokenStillFallsThroughToTheOwningServiceVocabulary() {
+        // The token==null leg stays untouched: this guard never invented a
+        // competing vocabulary — the delegation proceeds and the owning
+        // service's own honest error for the absent token answers there.
+        adapter.confirmAccount("member@example.com", null);
+
+        verify(emailVerificationService).completeVerification(null);
+    }
+
 }

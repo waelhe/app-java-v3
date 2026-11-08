@@ -589,4 +589,35 @@ class NotificationEventListenerTest {
         ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
         assertNotNull(ann);
     }
+    // The 2026-11-08 #810 round-5 test nitpick: the listeners PASS the
+    // send exception through — Spring Modulith's publication tracking only
+    // records completion when the listener returns; a future swallow would
+    // leave the confirmation mail un-sent with the publication marked done.
+    @Test
+    void onAccountDeletionRequested_propagatesTheSendException() {
+        var event = new com.marketplace.shared.api.AccountDeletionRequestedEvent(
+                UUID.randomUUID(), "member@example.com", "deletion-token",
+                java.time.Instant.now().plusSeconds(1800));
+        doThrow(new RuntimeException("Notification error"))
+                .when(notificationService).onAccountDeletionRequested(
+                        event.userId(), event.email(), event.deletionToken(), event.expiresAt());
+
+        assertThrows(RuntimeException.class,
+                () -> listener.onAccountDeletionRequested(event));
+    }
+
+    @Test
+    void onEmailChangeRequested_propagatesTheSendException() {
+        var event = new com.marketplace.shared.api.EmailChangeRequestedEvent(
+                UUID.randomUUID(), "old@example.com", "new@example.com", "change-token",
+                java.time.Instant.now().plusSeconds(1800));
+        doThrow(new RuntimeException("Notification error"))
+                .when(notificationService).onEmailChangeRequested(
+                        event.userId(), event.oldEmail(), event.newEmail(),
+                        event.changeToken(), event.expiresAt());
+
+        assertThrows(RuntimeException.class,
+                () -> listener.onEmailChangeRequested(event));
+    }
+
 }

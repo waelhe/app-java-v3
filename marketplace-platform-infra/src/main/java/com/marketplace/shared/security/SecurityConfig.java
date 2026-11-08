@@ -885,8 +885,23 @@ public class SecurityConfig {
 
     @Bean
     OAuth2AuthorizationService authorizationService(JdbcTemplate jdbcTemplate,
-                                                    RegisteredClientRepository registeredClientRepository) {
-        return new JdbcOAuth2AuthorizationService(jdbcTemplate, registeredClientRepository);
+                                                    RegisteredClientRepository registeredClientRepository,
+                                                    JdbcUserDetailsManager userDetailsService) {
+        // The 2026-11-08 #810 round-5 review (Major · Security & Privacy):
+        // the account-state wall at the storage SPI — Spring Authorization
+        // Server's own code-flow surfaces (authorize + the code exchange)
+        // persist through this bean directly, invisible to the password
+        // grant's post-save re-verification and the refresh door's
+        // loginAccountEnabled check. The decorator refuses to persist any
+        // user-principal authorization whose login row is disabled or
+        // absent (client_credentials rows pass through — the principal is
+        // the client, not a subject), reading the SAME manager the
+        // authentication chain reads. See
+        // {@link DisabledAccountRefusingAuthorizationService} for the
+        // two-layer design and the documented residual window.
+        return new DisabledAccountRefusingAuthorizationService(
+                new JdbcOAuth2AuthorizationService(jdbcTemplate, registeredClientRepository),
+                userDetailsService);
     }
 
     @Bean

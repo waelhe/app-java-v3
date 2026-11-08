@@ -1,5 +1,6 @@
 package com.marketplace.identity;
 
+import com.marketplace.identity.spi.CustomerTypeView;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
@@ -129,7 +130,9 @@ class CustomerTypeServiceTest {
     @Test
     void assignAttributesRejectsADuplicateInsideOneRequest() {
         UUID typeId = UUID.randomUUID();
-        when(typeRepository.findById(typeId))
+        // The 2026-11-08 #810 round-5 review: the attribute paths ride the
+        // LOCKED type load.
+        when(typeRepository.findByIdForUpdate(typeId))
                 .thenReturn(Optional.of(CustomerType.create("T", "t", false)));
         when(attributeRepository.findAllByCustomerTypeIdOrderByPositionAscIdAsc(typeId))
                 .thenReturn(List.of());
@@ -146,7 +149,8 @@ class CustomerTypeServiceTest {
     @Test
     void reorderAppliesDeterministicRemoveAndReinsert() {
         UUID typeId = UUID.randomUUID();
-        when(typeRepository.findById(typeId))
+        // The 2026-11-08 #810 round-5 review: the LOCKED type load.
+        when(typeRepository.findByIdForUpdate(typeId))
                 .thenReturn(Optional.of(CustomerType.create("T", "t", false)));
         UUID a = UUID.randomUUID();
         UUID b = UUID.randomUUID();
@@ -170,7 +174,8 @@ class CustomerTypeServiceTest {
     @Test
     void reorderRefusesAnUnassignedAttribute() {
         UUID typeId = UUID.randomUUID();
-        when(typeRepository.findById(typeId))
+        // The 2026-11-08 #810 round-5 review: the LOCKED type load.
+        when(typeRepository.findByIdForUpdate(typeId))
                 .thenReturn(Optional.of(CustomerType.create("T", "t", false)));
         when(attributeRepository.findAllByCustomerTypeIdOrderByPositionAscIdAsc(typeId))
                 .thenReturn(List.of());
@@ -179,4 +184,57 @@ class CustomerTypeServiceTest {
                 List.of(UUID.randomUUID()), List.of(1)))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
+    /**
+     * The 2026-11-08 #810 round-5 review (Minor · Data Integrity): the
+     * registry's one-default invariant starts at the FIRST row — a first
+     * type created with isDefault omitted answers a default type, while a
+     * later type keeps the requested state.
+     */
+    @Test
+    void createForcesTheDefaultOnTheFirstRow() {
+        when(typeRepository.count()).thenReturn(0L);
+        when(typeRepository.save(any(CustomerType.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        CustomerTypeView view = service.create(admin, "First", "first", null);
+
+        assertThat(view.defaultType()).isTrue();
+    }
+
+    @Test
+    void createKeepsTheRequestedNonDefaultOnALaterRow() {
+        when(typeRepository.count()).thenReturn(3L);
+        when(typeRepository.save(any(CustomerType.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        CustomerTypeView view = service.create(admin, "Later", "later", null);
+
+        assertThat(view.defaultType()).isFalse();
+    }
+
+    /**
+     * The round-5 test nitpick: the cleared-default FLUSH verifies the
+     * batch's intermediate state — the previous default is written BEFORE
+     * the new one flips, so the V250 partial unique index never sees two
+     * live defaults.
+     */
+    @Test
+    void updateWritesTheClearedDefaultBeforeTheNewOneFlips() {
+        UUID id = UUID.randomUUID();
+        CustomerType row = CustomerType.create("Second", "second", false);
+        CustomerType previous = CustomerType.create("First", "first", true);
+        when(typeRepository.findById(id)).thenReturn(Optional.of(row));
+        when(typeRepository.findByDefaultTrue()).thenReturn(Optional.of(previous));
+        when(typeRepository.saveAndFlush(previous)).thenAnswer(invocation -> {
+            assertThat(previous.isDefault()).as("the cleared default is written first").isFalse();
+            assertThat(row.isDefault()).as("the new default has not flipped yet").isFalse();
+            return previous;
+        });
+
+        service.update(admin, id, null, null, true);
+
+        assertThat(row.isDefault()).isTrue();
+        assertThat(previous.isDefault()).isFalse();
+    }
+
 }

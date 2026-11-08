@@ -248,6 +248,24 @@ public class UserService implements IdentitySpi {
      *                          honest 409 before any store is written
      */
     public User register(String email, String rawPassword, String displayName) {
+        return register(email, rawPassword, displayName, false);
+    }
+
+    /**
+     * The 2026-11-08 #810 round-5 review (Minor · Functional Correctness):
+     * the admin-created customer's activation leg. {@code customerCreate}
+     * accepts {@code isActive} — the staff twin (createStaff →
+     * registerStaff) already honors it at creation; the consumer twin used
+     * to always take the A-04 hold (born disabled until email
+     * verification) regardless of the requested state. The default (this
+     * overload's {@code enabled=false}) keeps the A-04 hold for the
+     * self-registration flow VERBATIM; the administrative flow passes
+     * {@code Boolean.TRUE.equals(fields.isActive())} — an explicitly
+     * requested active account is born enabled (the administrator vouches,
+     * the same law the staff path carries), while {@code null} and
+     * {@code false} keep the verification policy's own hold.
+     */
+    public User register(String email, String rawPassword, String displayName, boolean enabled) {
         requireDisplayNameBound(displayName);
         // The 2026-11-06 #810 round review: the address is NORMALIZED first
         // (trim + lowercase(Locale.ROOT)) — the shape/bound validation then
@@ -280,15 +298,18 @@ public class UserService implements IdentitySpi {
         // "verified" column is invented outside the official model); the
         // verification right (V112 token + mail event) is minted in this
         // same transaction, so the account and its unlock path commit or
-        // roll back as one.
+        // roll back as one. The admin-requested activation (the 2026-11-08
+        // round-5 overload above) lifts the hold at birth — the
+        // verification right is still minted (the address-verification
+        // link stays valid); only the born-disabled flag obeys the caller.
         userDetailsManager.createUser(org.springframework.security.core.userdetails.User
                 .withUsername(subject)
                 .password(passwordEncoder.getObject().encode(rawPassword))
                 .roles("CONSUMER")
-                .disabled(true)
+                .disabled(!enabled)
                 .build());
         emailVerificationService.issueFor(subject);
-        log.info("Account registered — awaiting email verification: subject={}, role=CONSUMER", subject);
+        log.info("Account registered: subject={}, role=CONSUMER, bornEnabled={}", subject, enabled);
         return user;
     }
 
@@ -763,6 +784,17 @@ public class UserService implements IdentitySpi {
             throw new IllegalArgumentException(
                     "Unknown account status: " + status + " (expected DISABLED or ENABLED)");
         }
+        // The 2026-11-08 #810 round-5 review (Major · Security & Privacy):
+        // the auth-state serialization point — the email move
+        // (moveEmail) takes the SAME advisory lock before IT reads the
+        // login row, so the disable and the move can never interleave
+        // their read-then-write windows (a disable landing between the
+        // move's read and its insert used to leave the new login born
+        // ENABLED for a disabled account, and the flip's username-keyed
+        // UPDATE matched zero rows once the old row died). The lock is
+        // taken BEFORE any state is read; the waiter re-reads the
+        // committed truth.
+        userRepository.lockUserAuth(userId.toString());
         User user = getById(userId);
         String username = user.getSubject();
         UserDetails stored;
@@ -832,6 +864,31 @@ public class UserService implements IdentitySpi {
     private static boolean hasAdminAuthority(UserDetails details) {
         return details.getAuthorities().stream()
                 .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+    }
+
+    /**
+     * The EMAIL vocabulary's keyset Sort (the 2026-11-08 #810 round-5
+     * review): the email column with EXPLICIT null handling —
+     * {@code nullsLast} on ASC, {@code nullsFirst} on DESC (PostgreSQL's
+     * own defaults, so the ORDER BY is byte-identical to the name-embedded
+     * sorts this replaces) — plus the deterministic {@code id} tiebreaker
+     * in the same direction. The explicit handling is what makes Spring
+     * Data JPA's keyset predicate null-aware
+     * ({@code KeysetScrollSpecification}: a non-null boundary answers
+     * {@code email > ? OR email IS NULL} under NULLS LAST, a null
+     * boundary pages the null block through the tiebreaker's
+     * {@code email IS NULL AND id > ?} prefix leg) — under NATIVE
+     * handling every NULL-email row (an OIDC account with no email claim)
+     * fell out of the windowed pages after the first.
+     */
+    private static org.springframework.data.domain.Sort emailKeysetSort(boolean ascending) {
+        org.springframework.data.domain.Sort.Order email = ascending
+                ? org.springframework.data.domain.Sort.Order.asc("email").nullsLast()
+                : org.springframework.data.domain.Sort.Order.desc("email").nullsFirst();
+        org.springframework.data.domain.Sort.Order id = ascending
+                ? org.springframework.data.domain.Sort.Order.asc("id")
+                : org.springframework.data.domain.Sort.Order.desc("id");
+        return org.springframework.data.domain.Sort.by(email, id);
     }
 
     /**
@@ -909,7 +966,14 @@ public class UserService implements IdentitySpi {
         // checking (the transformation silently lost while the transaction
         // commits green). The read cache stays exactly where it belongs —
         // on the readers; the AFTER_COMMIT invalidation clears their copies.
-        User user = userRepository.findById(userId)
+        // The 2026-11-08 #810 round-5 review (Major · Security & Privacy):
+        // the load is the LOCKED load — the address book's create path
+        // (AccountAddressService.createInternal) rides the SAME row lock
+        // before inserting, so the erasure and a concurrent address create
+        // serialize: the create either lands before this transaction (its
+        // row dies with the purge below) or waits and answers the
+        // pseudonymized guard. A plain read left that window open.
+        User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
 
         // Step 2 — idempotence: a pseudonymized row is a documented no-op.
@@ -946,6 +1010,22 @@ public class UserService implements IdentitySpi {
         // pseudonymized_at := now (V46 column).
         String replacementSubject = subjectPseudonymizer.derive(originalSubject);
         user.applyPseudonymization(replacementSubject);
+
+        // Step 3-b — the address book dies with the identity (the
+        // 2026-11-08 #810 round-5 review, Major · Security & Privacy):
+        // user_addresses carries the account's OWN direct identifiers —
+        // recipient names, streets, phones — the same Art. 17(1)(a) class
+        // email/displayName belong to (the plan §5-أ step 3's own logic on
+        // the one table it missed). The rows are NOT referential (nothing
+        // foreign-keys into them — §4's rejection scope stays untouched),
+        // so both the live rows and their Envers mirror leave physically,
+        // under the SAME user-row lock the concurrent address-create
+        // serializes on. The purge precedes the login death only
+        // narratively — one transaction, all-or-nothing.
+        int addressesPurged = jdbcTemplate.update(
+                "DELETE FROM user_addresses WHERE user_id = ?", userId);
+        int addressesAuditPurged = jdbcTemplate.update(
+                "DELETE FROM user_addresses_aud WHERE user_id = ?", userId);
 
         // Step 5 — the login identity dies through the framework manager: the
         // official JdbcUserDetailsManager.deleteUser order (7.1.1 bytecode)
@@ -989,10 +1069,14 @@ public class UserService implements IdentitySpi {
         // Step 9 — the structured audit line (payments convention). The raw
         // old subject is deliberately absent (CWE-532, CodeRabbit round 1):
         // the old→new mapping lives in the Envers history — the declared b-4
-        // residual — not duplicated into log storage.
+        // residual — not duplicated into log storage. The 2026-11-08
+        // round-5 row: the address purge rides the same line (counts only
+        // — no address field ever enters the log store).
         log.info("Account pseudonymization audit: userId={}, subject -> {}, "
-                        + "email -> null, displayName -> null, actor={}, reason='{}'",
-                userId, replacementSubject, actor, reason);
+                        + "email -> null, displayName -> null, addressesPurged={}, "
+                        + "addressAuditRowsPurged={}, actor={}, reason='{}'",
+                userId, replacementSubject, addressesPurged, addressesAuditPurged,
+                actor, reason);
     }
 
     /**
@@ -1149,9 +1233,16 @@ public class UserService implements IdentitySpi {
             throw new IllegalArgumentException("A staff-user sort is required");
         }
         org.springframework.data.domain.Window<User> window = switch (sort.field()) {
-            case EMAIL -> sort.ascending()
-                    ? userRepository.findByOrderByEmailAscIdAsc(position, limit)
-                    : userRepository.findByOrderByEmailDescIdDesc(position, limit);
+            // The 2026-11-08 #810 round-5 review (Minor · Functional
+            // Correctness): the EMAIL vocabulary keys on the EMAIL column
+            // (the SPI contract's own words) with the keyset's null-aware
+            // semantics made explicit — nullsLast rides ASC and nullsFirst
+            // rides DESC (PostgreSQL's own defaults, so the ordering is
+            // byte-identical to the name-embedded sort it replaces; only
+            // the predicate becomes null-aware, so the NULL-email OIDC
+            // rows stop falling out of the windowed pages).
+            case EMAIL -> userRepository.findAllBy(
+                    emailKeysetSort(sort.ascending()), position, limit);
             case CREATED_AT -> sort.ascending()
                     ? userRepository.findByOrderByCreatedAtAscIdAsc(position, limit)
                     : userRepository.findByOrderByCreatedAtDescIdDesc(position, limit);
@@ -1205,15 +1296,15 @@ public class UserService implements IdentitySpi {
         // a tombstone the operator cannot act on and a total nobody can
         // reconcile.
         org.springframework.data.domain.Window<User> window = switch (sort.field()) {
-            // The 2026-11-06 #810 round review (Major): the EMAIL-vocabulary
-            // sort keys on the SUBJECT column — the always-present identifier
-            // (an OIDC account with no email claim keeps a NULL email column,
-            // and a nullable keyset key drops rows from the windowed pages).
-            case EMAIL -> sort.ascending()
-                    ? userRepository.findByRoleAndPseudonymizedAtIsNullOrderBySubjectAscIdAsc(
-                            UserRole.CONSUMER, position, limit)
-                    : userRepository.findByRoleAndPseudonymizedAtIsNullOrderBySubjectDescIdDesc(
-                            UserRole.CONSUMER, position, limit);
+            // The 2026-11-08 #810 round-5 review (Minor · Functional
+            // Correctness): the EMAIL vocabulary keys on the EMAIL column
+            // — the SPI contract's own words — through the same explicit
+            // null-aware Sort the roster scroll carries (see
+            // scrollStaffUsers above); the 2026-11-06 subject re-keying is
+            // retired (its row-dropping defect is closed in the
+            // predicate, not by changing the contract's sort key).
+            case EMAIL -> userRepository.findByRoleAndPseudonymizedAtIsNull(
+                    UserRole.CONSUMER, emailKeysetSort(sort.ascending()), position, limit);
             case CREATED_AT -> sort.ascending()
                     ? userRepository.findByRoleAndPseudonymizedAtIsNullOrderByCreatedAtAscIdAsc(
                             UserRole.CONSUMER, position, limit)
@@ -1508,7 +1599,13 @@ public class UserService implements IdentitySpi {
     }
 
     private static void requireDisplayNameBound(String displayName) {
-        if (displayName != null && !displayName.isBlank() && displayName.trim().length() > 200) {
+        // The 2026-11-08 #810 round-5 review (Minor · Functional
+        // Correctness): the bound validates the value the STORE keeps —
+        // updateProfile persists the raw string, so the TRIMMED-length
+        // check used to pass a 200-space-padded name (raw length 201+)
+        // that the VARCHAR(200) column then rejected at flush with the
+        // raw storage error instead of this classified validation refusal.
+        if (displayName != null && !displayName.isBlank() && displayName.length() > 200) {
             throw new IllegalArgumentException("The display name exceeds 200 characters");
         }
     }

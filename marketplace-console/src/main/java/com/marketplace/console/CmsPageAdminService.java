@@ -133,8 +133,16 @@ public class CmsPageAdminService implements CmsPageSpi {
     @Observed(name = "cms.page.bulk_delete")
     public int bulkDeletePages(Authentication caller, List<UUID> ids) {
         requireAdmin(caller);
+        // The 2026-11-08 #810 round-5 review (Minor · Stability): the
+        // batch takes its row locks in a STABLE order — two concurrent
+        // bulk deletes with overlapping ids in caller order used to
+        // deadlock (PostgreSQL cancels one transaction). The sorted
+        // de-duplicated pass keeps the per-row behavior verbatim (an
+        // already-deleted repeat answers the same honest skip).
+        List<UUID> ordered = new java.util.ArrayList<>(new java.util.LinkedHashSet<>(ids));
+        java.util.Collections.sort(ordered);
         int count = 0;
-        for (UUID id : ids) {
+        for (UUID id : ordered) {
             // The 2026-11-05 #810 round review: the same locked load the
             // single delete carries (the delete-vs-link serialization).
             Optional<CmsPage> row = pageRepository.findByIdForUpdate(id);
@@ -171,7 +179,15 @@ public class CmsPageAdminService implements CmsPageSpi {
                                   String slug, String title, String content, String seoTitle,
                                   String seoDescription) {
         requireAdmin(caller);
-        CmsPage page = requirePage(id);
+        // The 2026-11-08 #810 round-5 review (Minor · Data Integrity):
+        // the LOCKED load — the page's delete path (and the bulk twin)
+        // already serializes on findByIdForUpdate (the delete-vs-link
+        // law); the translation leg used to ride the plain load, so a
+        // delete committing after the read left the fresh translation
+        // writing over a logically dead page. Same locked-first family
+        // the translateCategory precedent (the HH batch) carries.
+        CmsPage page = pageRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("No page " + id));
         String language = requireLanguage(languageCode);
         requireFieldLimits(slug, seoTitle, seoDescription);
         // The 2026-11-05 #810 round review: the translated title carries
@@ -315,8 +331,13 @@ public class CmsPageAdminService implements CmsPageSpi {
     @Observed(name = "cms.page_type.bulk_delete")
     public int bulkDeletePageTypes(Authentication caller, List<UUID> ids) {
         requireAdmin(caller);
+        // The 2026-11-08 #810 round-5 review (Minor · Stability): the same
+        // stable lock order the pages twin above carries — the type rows
+        // lock in sorted order, never in caller order.
+        List<UUID> ordered = new java.util.ArrayList<>(new java.util.LinkedHashSet<>(ids));
+        java.util.Collections.sort(ordered);
         int count = 0;
-        for (UUID id : ids) {
+        for (UUID id : ordered) {
             // The 2026-11-06 #810 round review — the bulk leg rides the
             // same locked load + reference check the single delete
             // carries (the honest per-row skip stays).
@@ -673,6 +694,15 @@ public class CmsPageAdminService implements CmsPageSpi {
 
     private String requireFreeSlug(String slug) {
         requireSlugShape(slug);
+        // The 2026-11-08 #810 round-5 review (Minor · Functional
+        // Correctness): the derived slug carries the column's own bound —
+        // a 255-repeat title of U+0130 slugifies to a 509-character slug
+        // that passed the shape check and answered the flush's raw
+        // storage error; the page-TYPE twin (requireFreeTypeSlug, the
+        // 2026-11-06 round) already carries this exact bound.
+        if (slug.length() > 255) {
+            throw new IllegalArgumentException("The slug exceeds 255 characters");
+        }
         if (pageRepository.existsBySlug(slug)) {
             throw new ConflictException("The slug already exists: " + slug);
         }

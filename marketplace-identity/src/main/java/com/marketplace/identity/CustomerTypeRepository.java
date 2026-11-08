@@ -24,6 +24,24 @@ public interface CustomerTypeRepository extends JpaRepository<CustomerType, UUID
 
     Optional<CustomerType> findBySlug(String slug);
 
+    /**
+     * The 2026-11-08 #810 round-5 review (Minor · Functional Correctness):
+     * the attribute-modification serialization point — the locked load of
+     * the type row the three attribute paths (assign/unassign/reorder)
+     * take BEFORE reading the pairs. Two administrators assigning
+     * different attributes concurrently used to compute the SAME
+     * nextPosition from two unlocked reads (the positions then tie and
+     * the UUID tiebreaker decides the order nobody asked for). The row
+     * lock serializes the read-position-mark window (the official Spring
+     * Data JPA @Lock derived-query contract — the UserRepository
+     * findByIdForUpdate / CategoryRepository precedent verbatim).
+     */
+    @org.springframework.data.jpa.repository.Lock(
+            jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query(
+            "select t from CustomerType t where t.id = :id")
+    Optional<CustomerType> findByIdForUpdate(@org.springframework.data.repository.query.Param("id") UUID id);
+
     Optional<CustomerType> findByDefaultTrue();
 
     boolean existsBySlug(String slug);

@@ -161,14 +161,25 @@ public class EmailVerificationService {
      */
     @Observed(name = "email.verification.resend")
     public void resend(String email) {
+        // The 2026-11-08 #810 round-5 review (Minor · Functional
+        // Correctness): the lookup resolves the SAME normalized subject
+        // registration stores (trim + lowercase) — resending with the
+        // ORIGINAL mixed-case address used to answer the silent no-op
+        // (userExists is case-sensitive on the exact row), leaving the
+        // account unverified with a 202. The verbatim trimmed form stays
+        // the LEGACY fallback: the REST registration path historically
+        // stored mixed-case subjects, and those rows must keep matching.
         String subject = email.trim();
-        if (!userDetailsManager.userExists(subject)) {
+        String normalized = subject.toLowerCase(java.util.Locale.ROOT);
+        String resolved = userDetailsManager.userExists(normalized) ? normalized
+                : userDetailsManager.userExists(subject) ? subject : null;
+        if (resolved == null) {
             log.info("Verification resend requested for an address with no login account — silent no-op");
             return;
         }
         // row 8: the serialization point precedes the eligibility read —
         // the decision and the issuance both happen under the lock.
-        lockAccountRow(subject);
+        lockAccountRow(resolved);
         // The state guard: re-arm ONLY a pending verification. A consumed
         // latest row means finished — the owner completed it, or an
         // administrative surface consumed the outstanding right (the
@@ -176,13 +187,13 @@ public class EmailVerificationService {
         // mint a fresh redemption right for it. No row at all means the
         // hold never applied (grandfathered) — nothing to resend.
         boolean pending = authActionTokenService
-                .latest(subject, AuthActionTokenPurpose.EMAIL_VERIFICATION)
+                .latest(resolved, AuthActionTokenPurpose.EMAIL_VERIFICATION)
                 .map(token -> !token.isConsumed())
                 .orElse(false);
         if (pending) {
-            issueFor(subject);
+            issueFor(resolved);
         } else {
-            log.info("Verification resend skipped — the account is not pending: subject={}", subject);
+            log.info("Verification resend skipped — the account is not pending: subject={}", resolved);
         }
     }
 

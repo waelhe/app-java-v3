@@ -64,6 +64,18 @@ public class CustomerTypeService implements com.marketplace.identity.spi.Custome
         String resolvedSlug = resolveSlug(slug == null || slug.isBlank()
                 ? slugify(trimmed) : slug.trim());
         boolean makeDefault = Boolean.TRUE.equals(isDefault);
+        // The 2026-11-08 #810 round-5 review (Minor · Data Integrity):
+        // the registry's one-default invariant starts at the FIRST row —
+        // a first type created with isDefault omitted (or false) used to
+        // leave the registry with NO default at all, violating the
+        // exactly-one contract V250's partial unique index pins and every
+        // consumer of the default (the registration fallback) depends on.
+        // The FIRST type is the default whatever the caller said; later
+        // types keep the requested state (a registry with a standing
+        // default gains nothing from silently re-defaulting).
+        if (!makeDefault && typeRepository.count() == 0) {
+            makeDefault = true;
+        }
         CustomerType row = CustomerType.create(trimmed, resolvedSlug, makeDefault);
         if (makeDefault) {
             // B10 (the CodeRabbit integrity round): the cleared default
@@ -169,7 +181,7 @@ public class CustomerTypeService implements com.marketplace.identity.spi.Custome
     public CustomerTypeView assignAttributes(Authentication caller, UUID customerTypeId,
                                              List<UUID> attributeIds) {
         requireAdmin(caller);
-        CustomerType row = requireType(customerTypeId);
+        CustomerType row = requireTypeForUpdate(customerTypeId);
         requireAttributeList(attributeIds);
         List<CustomerTypeAttribute> existing =
                 attributeRepository.findAllByCustomerTypeIdOrderByPositionAscIdAsc(customerTypeId);
@@ -197,7 +209,7 @@ public class CustomerTypeService implements com.marketplace.identity.spi.Custome
     public CustomerTypeView unassignAttributes(Authentication caller, UUID customerTypeId,
                                                List<UUID> attributeIds) {
         requireAdmin(caller);
-        CustomerType row = requireType(customerTypeId);
+        CustomerType row = requireTypeForUpdate(customerTypeId);
         requireAttributeList(attributeIds);
         for (UUID attributeId : attributeIds) {
             CustomerTypeAttribute pair = attributeRepository
@@ -226,7 +238,7 @@ public class CustomerTypeService implements com.marketplace.identity.spi.Custome
     public CustomerTypeView reorderAttributes(Authentication caller, UUID customerTypeId,
                                               List<UUID> attributeIds, List<Integer> deltas) {
         requireAdmin(caller);
-        CustomerType row = requireType(customerTypeId);
+        CustomerType row = requireTypeForUpdate(customerTypeId);
         // The 2026-11-06 #810 round review (Minor · Functional
         // Correctness): the argument contract is a classified validation
         // error, never a raw NPE/IndexOutOfBounds — one delta entry per
@@ -357,6 +369,18 @@ public class CustomerTypeService implements com.marketplace.identity.spi.Custome
                 .orElseThrow(() -> new ResourceNotFoundException("No customer type " + id));
     }
 
+    /**
+     * The 2026-11-08 #810 round-5 review (Minor · Functional Correctness):
+     * the LOCKED twin the three attribute paths (assign/unassign/reorder)
+     * ride — the type row's lock serializes every read-position-mark
+     * window on its assignment list (two concurrent assigns used to both
+     * compute the same nextPosition from unlocked reads).
+     */
+    private CustomerType requireTypeForUpdate(UUID id) {
+        return typeRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("No customer type " + id));
+    }
+
     private static void requireAttributeList(List<UUID> attributeIds) {
         if (attributeIds == null || attributeIds.isEmpty() || attributeIds.size() > 100) {
             throw new IllegalArgumentException(
@@ -387,6 +411,15 @@ public class CustomerTypeService implements com.marketplace.identity.spi.Custome
         if (!SLUG_SHAPE.matcher(slug).matches()) {
             throw new IllegalArgumentException(
                     "The slug must be lowercase kebab-case: " + slug);
+        }
+        // The 2026-11-08 #810 round-5 review (Minor · Functional
+        // Correctness): the column's own 255 bound — both the create and
+        // the update legs land here, and an oversized slug used to reach
+        // persistence and answer the flush's raw storage error instead of
+        // this classified validation refusal (the CmsPageAdminService
+        // requireFreeTypeSlug precedent verbatim).
+        if (slug.length() > 255) {
+            throw new IllegalArgumentException("The slug exceeds 255 characters");
         }
         if (typeRepository.existsBySlug(slug)) {
             throw new ConflictException("The slug already exists: " + slug);

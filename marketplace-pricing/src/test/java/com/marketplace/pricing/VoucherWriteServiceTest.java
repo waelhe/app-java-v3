@@ -141,12 +141,16 @@ class VoucherWriteServiceTest {
     }
 
     @Test
-    void malformedCurrencyAnswersTheRequiredDomainError() {
+    void malformedCurrencyAnswersTheInvalidDomainError() {
+        // The 2026-11-08 #810 round-5 test nitpick: the assertion pins the
+        // CODE too — a regression that answers REQUIRED (the missing-value
+        // vocabulary) for a MALFORMED value used to pass the field-only
+        // assertion.
         VoucherMutationResult result = service.createVoucher(create("TEST-CODE", "FIXED", 500L, "riyals"));
 
         assertThat(result.errors()).singleElement()
-                .extracting(VoucherMutationError::field)
-                .isEqualTo("currency");
+                .extracting(VoucherMutationError::field, VoucherMutationError::code)
+                .containsExactly("currency", VoucherMutationErrorCode.INVALID);
     }
 
     @Test

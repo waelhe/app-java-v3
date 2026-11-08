@@ -106,10 +106,34 @@ public class EmailService {
 
             mailSender.send(mimeMessage);
 
-            log.info("Email sent: to={}, subject={}, template={}", to, subject, template);
+            // The 2026-11-08 #810 round-5 review (Minor · Security &
+            // Privacy): the SENDER's own logs never carry the full
+            // recipient address — the security legs (deletion, email
+            // change) ride this seam with the platform's most sensitive
+            // mailboxes, and the caller-side masked line
+            // (EmailNotificationService) was answered by an UNMASKED line
+            // here one frame earlier. The masked local-part answers the
+            // operator's "which mailbox" question without the PII.
+            log.info("Email sent: to={}, subject={}, template={}", mask(to), subject, template);
         } catch (Exception ex) {
-            log.error("Failed to send email: to={}, subject={}, template={}", to, subject, template, ex);
-            throw new EmailSendException("Failed to send email to " + to, ex);
+            log.error("Failed to send email: to={}, subject={}, template={}",
+                    mask(to), subject, template, ex);
+            // The exception MESSAGE carries the masked form too — the
+            // failure surfaces in the caller's logs and error handlers,
+            // which are log stores under the same discipline.
+            throw new EmailSendException("Failed to send email to " + mask(to), ex);
         }
+    }
+
+    /** The logging-safe rendering: the first character plus the domain. */
+    private static String mask(String address) {
+        if (address == null) {
+            return null;
+        }
+        int at = address.indexOf('@');
+        if (at <= 0) {
+            return "***";
+        }
+        return address.charAt(0) + "***" + address.substring(at);
     }
 }

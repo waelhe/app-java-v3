@@ -86,6 +86,11 @@ class AccountAddressServiceTest {
     void createWithDefaultClearsThePreviousHolderThroughTheFlush() {
         when(userRepository.findBySubject("member@example.com"))
                 .thenReturn(Optional.of(userRow(USER_ID, "member@example.com")));
+        // The 2026-11-08 #810 round-5 review: the account row locks FIRST
+        // on EVERY create branch (the erasure serialization point) — the
+        // typed-default branch used to skip the locked load.
+        when(userRepository.findByIdForUpdate(USER_ID))
+                .thenReturn(Optional.of(userRow(USER_ID, "member@example.com")));
         AccountAddress previous = AccountAddress.create(USER_ID);
         previous.applyFields(null, null, null, "Old", null, "OldCity", null, null, "US", null, null);
         previous.markDefaultShipping(true);
@@ -220,4 +225,27 @@ class AccountAddressServiceTest {
         when(addressRepository.findById(OTHER_ROW_ID)).thenReturn(Optional.empty());
         assertThat(service.find(admin, OTHER_ROW_ID)).isEmpty();
     }
+    /**
+     * The 2026-11-08 #810 round-5 review (Major · Security & Privacy): the
+     * erasure hole — the account row locks FIRST on every create branch and
+     * a pseudonymized account refuses the address book outright (the
+     * erasure deletes the rows under the SAME lock, so a concurrent create
+     * either lands before the purge or answers this refusal).
+     */
+    @Test
+    void createRefusesAnErasedAccount() {
+        User erased = userRow(USER_ID, "member@example.com");
+        erased.applyPseudonymization("tombstone-subject");
+        when(userRepository.findBySubject("member@example.com"))
+                .thenReturn(Optional.of(erased));
+        when(userRepository.findByIdForUpdate(USER_ID))
+                .thenReturn(Optional.of(erased));
+
+        assertThatThrownBy(() -> service.createForCaller(consumer, fullFields(), null))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("no address book");
+
+        verify(addressRepository, never()).save(any(AccountAddress.class));
+    }
+
 }

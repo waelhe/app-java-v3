@@ -94,7 +94,9 @@ class UserAccountAdminServiceTest {
 
     @Test
     void createCustomerRegistersBothStores() {
-        when(userService.register(eq(CUSTOMER_EMAIL), anyString(), any()))
+        // The 2026-11-08 #810 round-5 review: the creation rides the
+        // enabled-aware overload (a null isActive keeps the A-04 hold).
+        when(userService.register(eq(CUSTOMER_EMAIL), anyString(), any(), eq(false)))
                 .thenReturn(customerRow);
 
         UUID id = service.createCustomer(admin,
@@ -106,7 +108,7 @@ class UserAccountAdminServiceTest {
 
     @Test
     void createCustomerWithTheSetPasswordMailLeg() {
-        when(userService.register(eq(CUSTOMER_EMAIL), anyString(), any()))
+        when(userService.register(eq(CUSTOMER_EMAIL), anyString(), any(), eq(false)))
                 .thenReturn(customerRow);
 
         service.createCustomer(admin,
@@ -114,8 +116,27 @@ class UserAccountAdminServiceTest {
 
         // requireEmail's lowercase discipline: the register and the mailed
         // set-password right both address the SAME normalized account.
-        verify(userService).register(eq(CUSTOMER_EMAIL), anyString(), any());
+        verify(userService).register(eq(CUSTOMER_EMAIL), anyString(), any(), eq(false));
         verify(passwordResetService).requestReset(CUSTOMER_EMAIL);
+    }
+
+    /**
+     * The 2026-11-08 #810 round-5 review (Minor · Functional Correctness):
+     * the requested activation rides the creation — an explicitly
+     * requested {@code isActive=true} answers a BORN-ENABLED login (the
+     * staff twin's law), while the A-04 hold stays the default the null /
+     * false cases keep.
+     */
+    @Test
+    void createCustomerHonorsTheRequestedActivation() {
+        when(userService.register(eq(CUSTOMER_EMAIL), anyString(), any(), eq(true)))
+                .thenReturn(customerRow);
+
+        UUID id = service.createCustomer(admin,
+                new UserWriteFields(CUSTOMER_EMAIL, "First", "Last", true), false);
+
+        assertThat(id).isEqualTo(customerRow.getId());
+        verify(userService).register(eq(CUSTOMER_EMAIL), anyString(), any(), eq(true));
     }
 
     @Test
@@ -375,4 +396,27 @@ class UserAccountAdminServiceTest {
         }
         throw new IllegalArgumentException("Unknown primitive type: " + type);
     }
+    /**
+     * The 2026-11-08 #810 round-5 review (Major · Security & Privacy): the
+     * email move takes the per-user auth-state advisory lock BEFORE the
+     * login row is read — the disable rides the same lock, so the two can
+     * never interleave their read-then-write windows.
+     */
+    @Test
+    void updateCustomerTakesTheAuthStateLockBeforeTheLoginRead() {
+        when(userRepository.findById(CUSTOMER_ID)).thenReturn(Optional.of(customerRow));
+        when(userRepository.existsBySubject(NEW_EMAIL)).thenReturn(false);
+        when(userDetailsManager.userExists(NEW_EMAIL)).thenReturn(false);
+        when(userDetailsManager.loadUserByUsername(CUSTOMER_EMAIL)).thenReturn(loginRow(CUSTOMER_EMAIL));
+
+        service.updateCustomer(admin, CUSTOMER_ID,
+                new UserWriteFields(NEW_EMAIL, null, null, null));
+
+        org.mockito.InOrder lockFirst = org.mockito.Mockito.inOrder(userRepository);
+        // The lock rides the loaded row's OWN id (the stable identifier —
+        // the subject is what moves).
+        lockFirst.verify(userRepository).lockUserAuth(customerRow.getId().toString());
+        lockFirst.verify(userRepository).existsBySubject(NEW_EMAIL);
+    }
+
 }

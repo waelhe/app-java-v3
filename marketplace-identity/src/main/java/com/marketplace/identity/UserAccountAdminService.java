@@ -112,7 +112,14 @@ public class UserAccountAdminService implements com.marketplace.identity.spi.Use
         byte[] secret = new byte[32];
         SECURE_RANDOM.nextBytes(secret);
         String generated = Base64.getEncoder().encodeToString(secret);
-        User created = userService.register(email, generated, displayName);
+        // The 2026-11-08 #810 round-5 review (Minor · Functional
+        // Correctness): the requested activation state rides the creation
+        // — the staff twin already honors it (registerStaff); the consumer
+        // twin used to drop it on the floor (an explicitly requested
+        // isActive=true still answered a born-disabled login). null/false
+        // keep the email-verification policy's own A-04 hold.
+        User created = userService.register(email, generated, displayName,
+                Boolean.TRUE.equals(fields.isActive()));
         if (sendSetPassword) {
             passwordResetService.requestReset(email);
         }
@@ -373,6 +380,17 @@ public class UserAccountAdminService implements com.marketplace.identity.spi.Use
      * shared {@link UserService#loginIdentityMoved} aftermath.
      */
     private void moveEmail(User user, String newEmail) {
+        // The 2026-11-08 #810 round-5 review (Major · Security & Privacy):
+        // the auth-state serialization point — the disable
+        // (UserService.updateUserStatus) takes the SAME advisory lock
+        // before IT reads the login row, so this move's copy-the-flags
+        // window can never interleave with a concurrent disable (the move
+        // used to read the login row enabled, the disable then flipped
+        // and deleted rows, and the move's insert landed a NEW login born
+        // ENABLED for a now-disabled account — its username-keyed
+        // UPDATE had already matched zero rows). The lock rides the
+        // STABLE user id (the subject is what moves here).
+        userRepository.lockUserAuth(user.getId().toString());
         // The round-2 CodeRabbit finding: the move path rides the SAME
         // requireEmail contract as the create paths — the address shape AND
         // the 50-character login-store domain are validated before any

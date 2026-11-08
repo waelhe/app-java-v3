@@ -18,6 +18,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -395,7 +396,9 @@ class CmsPageAdminServiceTest {
     void translatePageCreatesAndThenUpdatesTheTranslation() {
         UUID id = UUID.randomUUID();
         CmsPage page = CmsPage.create(typeId, "about", "About");
-        when(pageRepository.findById(id)).thenReturn(Optional.of(page));
+        // The 2026-11-08 #810 round-5 review: the locked page load (the
+        // delete-vs-translation serialization).
+        when(pageRepository.findByIdForUpdate(id)).thenReturn(Optional.of(page));
         CmsPageTranslation standing = CmsPageTranslation.create(id, "ar");
         when(translationRepository.findByPageIdAndLanguageCode(id, "ar"))
                 .thenReturn(Optional.of(standing))
@@ -411,7 +414,7 @@ class CmsPageAdminServiceTest {
     @Test
     void translatePageRefusesAMalformedLanguage() {
         UUID id = UUID.randomUUID();
-        when(pageRepository.findById(id))
+        when(pageRepository.findByIdForUpdate(id))
                 .thenReturn(Optional.of(CmsPage.create(typeId, "a", "A")));
 
         assertThatThrownBy(() -> service.translatePage(admin, id, "not-a-lang", null, null,
@@ -560,4 +563,73 @@ class CmsPageAdminServiceTest {
                 null, typeId))
                 .isInstanceOf(ConflictException.class);
     }
+    // ==== The 2026-11-08 #810 round-5 review additions ====
+
+    /**
+     * The round-5 overflow nitpick (T1): the reorder clamp catches the
+     * overflow from a POSITIVE index too — THREE attributes, the MIDDLE
+     * one moves with Integer.MAX_VALUE, and must land at the END (index 0
+     * + MAX_VALUE never overflows, so the existing clamp test alone could
+     * not tell int math from long math).
+     */
+    @Test
+    void reorderPageTypeAttributesClampsAPositiveIndexOverflowToTheEnd() {
+        CmsPageType type = CmsPageType.create("T", "t");
+        UUID typeId = type.getId();
+        when(pageTypeRepository.findByIdForUpdate(typeId)).thenReturn(Optional.of(type));
+        CmsPageTypeAttribute first = CmsPageTypeAttribute.create(typeId, UUID.randomUUID(), 0);
+        CmsPageTypeAttribute middle = CmsPageTypeAttribute.create(typeId, UUID.randomUUID(), 1);
+        CmsPageTypeAttribute last = CmsPageTypeAttribute.create(typeId, UUID.randomUUID(), 2);
+        when(attributeRepository.findAllByPageTypeIdOrderByPositionAscIdAsc(typeId))
+                .thenReturn(List.of(first, middle, last));
+
+        service.reorderPageTypeAttributes(admin, typeId,
+                List.of(middle.getAttributeId()), List.of(Integer.MAX_VALUE));
+
+        assertThat(first.getPosition()).isZero();
+        assertThat(last.getPosition()).isEqualTo(1);
+        assertThat(middle.getPosition()).isEqualTo(2);
+    }
+
+    /**
+     * The round-5 translation nitpick (T3): the ABSENT translation leg —
+     * a fresh row is created with the page's id and the requested
+     * language (the existing test only exercised the standing row).
+     */
+    @Test
+    void translatePageCreatesTheTranslationWhenAbsent() {
+        UUID id = UUID.randomUUID();
+        when(pageRepository.findByIdForUpdate(id))
+                .thenReturn(Optional.of(CmsPage.create(typeId, "about", "About")));
+        when(translationRepository.findByPageIdAndLanguageCode(id, "ar"))
+                .thenReturn(Optional.empty());
+        org.mockito.ArgumentCaptor<CmsPageTranslation> captured =
+                org.mockito.ArgumentCaptor.forClass(CmsPageTranslation.class);
+
+        service.translatePage(admin, id, "ar", "من", "عن", "{\"blocks\":[]}", null, null);
+
+        verify(translationRepository).save(captured.capture());
+        assertThat(captured.getValue().getPageId()).isEqualTo(id);
+        assertThat(captured.getValue().getLanguageCode()).isEqualTo("ar");
+    }
+
+    /**
+     * The round-5 boundary (#1): the page slug's own VARCHAR(255) bound —
+     * the derived slug of a long title answers the classified validation
+     * error, never the flush's raw storage error.
+     */
+    @Test
+    void createPageRefusesAnOverlongDerivedSlug() {
+        when(pageTypeRepository.findByIdForUpdate(typeId))
+                .thenReturn(Optional.of(CmsPageType.create("T", "t")));
+        // A 255-repeat of U+0130 slugifies beyond the column's bound.
+        String longTitle = "\u0130".repeat(255);
+
+        assertThatThrownBy(() -> service.createPage(admin, longTitle, null,
+                null, null, null, null, typeId))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("255");
+        verify(pageRepository, never()).save(any(CmsPage.class));
+    }
+
 }

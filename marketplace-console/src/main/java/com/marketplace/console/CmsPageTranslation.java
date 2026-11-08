@@ -142,11 +142,40 @@ public class CmsPageTranslation extends BaseEntity {
                         "The page translation content must be a serialized JSON document"
                                 + " (rich text): the document is empty");
             }
+            rejectNulCharacters(parsed);
         } catch (JacksonException malformed) {
             throw new IllegalArgumentException(
                     "The page translation content must be a serialized JSON document"
                             + " (rich text): " + malformed.getOriginalMessage());
         }
         return content;
+    }
+    /**
+     * The 2026-11-08 #810 round-5 review (Minor · Functional Correctness):
+     * the NUL character is valid JSON but NOT valid jsonb — PostgreSQL
+     * rejects a U+0000 inside a text value at flush (the raw storage
+     * error), so the guard walks the parsed tree (object KEYS included)
+     * and answers the same classified validation refusal for the
+     * offending document, on every write path (the page's own content
+     * AND the translation's — the twin validators carry the same law).
+     */
+    private static void rejectNulCharacters(tools.jackson.databind.JsonNode node) {
+        if (node.isObject()) {
+            for (java.util.Map.Entry<String, tools.jackson.databind.JsonNode> entry
+                    : node.properties()) {
+                if (entry.getKey().indexOf('\u0000') >= 0) {
+                    throw new IllegalArgumentException(
+                            "The document contains a NUL character the jsonb column cannot store");
+                }
+                rejectNulCharacters(entry.getValue());
+            }
+        } else if (node.isArray()) {
+            for (tools.jackson.databind.JsonNode child : node) {
+                rejectNulCharacters(child);
+            }
+        } else if (node.isTextual() && node.asString().indexOf('\u0000') >= 0) {
+            throw new IllegalArgumentException(
+                    "The document contains a NUL character the jsonb column cannot store");
+        }
     }
 }

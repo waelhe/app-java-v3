@@ -72,7 +72,7 @@ class CmsNavigationAdminServiceTest {
 
     @Test
     void createMenuItemRejectsADuplicateRootName() {
-        when(menuRepository.findById(menuId))
+        when(menuRepository.findByIdForUpdate(menuId))
                 .thenReturn(Optional.of(CmsMenu.create("Main", "main")));
         when(itemRepository.findByMenuIdAndNameAndParentIdIsNull(menuId, "Home"))
                 .thenReturn(Optional.of(root("Home", 0)));
@@ -219,7 +219,10 @@ class CmsNavigationAdminServiceTest {
     void deleteMenuItemPromotesTheSubtreeUnderTheDeletedParent() {
         CmsMenuItem parent = root("Parent", 0);
         CmsMenuItem kid = child(parent, "Kid", 0);
-        when(itemRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        // The 2026-11-08 #810 round-5 review: the locked load + the
+        // delete-before-promote order.
+        when(itemRepository.findByIdForUpdate(parent.getId()))
+                .thenReturn(Optional.of(parent));
         when(itemRepository.findAllByMenuIdOrderByPositionAscIdAsc(menuId))
                 .thenReturn(List.of(parent, kid));
 
@@ -233,7 +236,10 @@ class CmsNavigationAdminServiceTest {
     void deleteMenuItemRefusesARootPromotionThatWouldCollide() {
         CmsMenuItem parent = root("Parent", 0);
         CmsMenuItem kid = child(parent, "Home", 0);
-        when(itemRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        // The 2026-11-08 #810 round-5 review: the locked load + the
+        // delete-before-promote order.
+        when(itemRepository.findByIdForUpdate(parent.getId()))
+                .thenReturn(Optional.of(parent));
         when(itemRepository.findAllByMenuIdOrderByPositionAscIdAsc(menuId))
                 .thenReturn(List.of(parent, kid));
         when(itemRepository.findByMenuIdAndNameAndParentIdIsNull(menuId, "Home"))
@@ -257,7 +263,10 @@ class CmsNavigationAdminServiceTest {
     void deleteMenuItemPromotesAChildNamedLikeTheDoomedRoot() {
         CmsMenuItem parent = root("Home", 0);
         CmsMenuItem kid = child(parent, "Home", 0);
-        when(itemRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        // The 2026-11-08 #810 round-5 review: the locked load + the
+        // delete-before-promote order.
+        when(itemRepository.findByIdForUpdate(parent.getId()))
+                .thenReturn(Optional.of(parent));
         when(itemRepository.findAllByMenuIdOrderByPositionAscIdAsc(menuId))
                 .thenReturn(List.of(parent, kid));
         when(itemRepository.findByMenuIdAndNameAndParentIdIsNull(menuId, "Home"))
@@ -331,8 +340,14 @@ class CmsNavigationAdminServiceTest {
         CmsMenuItem kid = child(parent, "Home", 0);
         CmsMenuItem otherRoot = root("Home", 1);
         // The parent's chain: root (depth 0); the kid: depth 1.
+        // depthOf keeps the plain findById; the locked delete loads ride
+        // findByIdForUpdate (the 2026-11-08 round-5 law).
         when(itemRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
         when(itemRepository.findById(kid.getId())).thenReturn(Optional.of(kid));
+        when(itemRepository.findByIdForUpdate(parent.getId()))
+                .thenReturn(Optional.of(parent));
+        when(itemRepository.findByIdForUpdate(kid.getId()))
+                .thenReturn(Optional.of(kid));
         when(itemRepository.findAllByMenuIdOrderByPositionAscIdAsc(menuId))
                 .thenReturn(List.of(parent, otherRoot, kid));
         // The kid's promotion (parent still alive at that point in the OLD
@@ -422,7 +437,7 @@ class CmsNavigationAdminServiceTest {
 
     @Test
     void createMenuItemRequiresAMenu() {
-        when(menuRepository.findById(menuId)).thenReturn(Optional.empty());
+        when(menuRepository.findByIdForUpdate(menuId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.createMenuItem(admin, menuId, null,
                 "Home", null, null, null))
@@ -592,7 +607,8 @@ class CmsNavigationAdminServiceTest {
     void deleteMenuDetachesTheSlotsAndClearsTheItems() {
         UUID id = UUID.randomUUID();
         CmsMenu menu = CmsMenu.create("Main", "main");
-        when(menuRepository.findById(id)).thenReturn(Optional.of(menu));
+        // The 2026-11-08 #810 round-5 review: the locked menu load.
+        when(menuRepository.findByIdForUpdate(id)).thenReturn(Optional.of(menu));
         CmsMenuItem item = root("Home", 0);
         when(itemRepository.findAllByMenuIdOrderByPositionAscIdAsc(id)).thenReturn(List.of(item));
         when(itemTranslationRepository.findAllByMenuItemId(item.getId())).thenReturn(List.of());
@@ -610,9 +626,10 @@ class CmsNavigationAdminServiceTest {
     @Test
     void createMenuItemAppendsTheChildUnderAValidParent() {
         CmsMenuItem parent = root("Parent", 0);
-        when(menuRepository.findById(menuId))
+        when(menuRepository.findByIdForUpdate(menuId))
                 .thenReturn(Optional.of(CmsMenu.create("Main", "main")));
-        when(itemRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(itemRepository.findByIdForUpdate(parent.getId()))
+                .thenReturn(Optional.of(parent));
         when(itemRepository.findAllByMenuIdAndParentIdOrderByPositionAscIdAsc(menuId,
                 parent.getId())).thenReturn(List.of());
 
@@ -625,11 +642,11 @@ class CmsNavigationAdminServiceTest {
 
     @Test
     void createMenuItemRefusesACrossMenuParent() {
-        when(menuRepository.findById(menuId))
+        when(menuRepository.findByIdForUpdate(menuId))
                 .thenReturn(Optional.of(CmsMenu.create("Main", "main")));
         UUID foreignParent = UUID.randomUUID();
         CmsMenuItem parent = CmsMenuItem.create(UUID.randomUUID(), null, "Foreign");
-        when(itemRepository.findById(foreignParent)).thenReturn(Optional.of(parent));
+        when(itemRepository.findByIdForUpdate(foreignParent)).thenReturn(Optional.of(parent));
 
         assertThatThrownBy(() -> service.createMenuItem(admin, menuId, foreignParent, "Kid",
                 null, null, null))
@@ -656,14 +673,15 @@ class CmsNavigationAdminServiceTest {
                 .isInstanceOf(IllegalArgumentException.class);
 
         UUID unknown = UUID.randomUUID();
-        when(menuRepository.existsById(unknown)).thenReturn(false);
+        when(menuRepository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.assignNavigation(admin, "MAIN", unknown))
                 .isInstanceOf(ResourceNotFoundException.class);
 
         CmsNavigationSlot slot = CmsNavigationSlot.create("MAIN", null);
         when(slotRepository.findBySlot("MAIN")).thenReturn(Optional.of(slot));
         UUID target = UUID.randomUUID();
-        when(menuRepository.existsById(target)).thenReturn(true);
+        when(menuRepository.findByIdForUpdate(target))
+                .thenReturn(Optional.of(CmsMenu.create("Main", "main")));
 
         service.assignNavigation(admin, "main", target);
 
@@ -737,4 +755,97 @@ class CmsNavigationAdminServiceTest {
         assertThatThrownBy(() -> service.translateMenuItem(admin, UUID.randomUUID(), "BAD", "x"))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
+    // ==== The 2026-11-08 #810 round-5 review additions ====
+
+    /**
+     * The round-5 overflow nitpick: a move from a POSITIVE index with a
+     * near-MAX delta — the sum overflows int to a negative the old clamp
+     * read as 0 (a forward move answering a jump to the START). Three
+     * siblings; the MIDDLE one moves with Integer.MAX_VALUE and must land
+     * at the END.
+     */
+    @Test
+    void moveMenuItemsClampsAPositiveIndexOverflowToTheEnd() {
+        CmsMenuItem a = root("A", 0);
+        CmsMenuItem b = root("B", 1);
+        CmsMenuItem c = root("C", 2);
+        when(menuRepository.findById(menuId))
+                .thenReturn(Optional.of(CmsMenu.create("Main", "main")));
+        when(itemRepository.findById(b.getId())).thenReturn(Optional.of(b));
+        when(itemRepository.findAllByMenuIdOrderByPositionAscIdAsc(menuId))
+                .thenReturn(List.of(a, b, c));
+
+        service.moveMenuItems(admin, menuId, List.of(b.getId()),
+                java.util.Arrays.asList((UUID) null), List.of(Integer.MAX_VALUE));
+
+        assertThat(a.getPosition()).isZero();
+        assertThat(c.getPosition()).isEqualTo(1);
+        assertThat(b.getPosition()).isEqualTo(2);
+    }
+
+    /**
+     * The round-5 ordering fix (#18): the doomed row dies (and FLUSHES)
+     * BEFORE any child promotes — the delete, the flush and the promotion
+     * pass ride that exact order, so the V283 unique index never sees a
+     * promoted root name while its previous holder still lives.
+     */
+    @Test
+    void deleteMenuItemFlushesTheDoomedRowBeforeThePromotionPass() {
+        CmsMenuItem parent = root("Home", 0);
+        CmsMenuItem kid = child(parent, "Home", 0);
+        when(itemRepository.findByIdForUpdate(parent.getId()))
+                .thenReturn(Optional.of(parent));
+        when(itemRepository.findAllByMenuIdOrderByPositionAscIdAsc(menuId))
+                .thenReturn(List.of(parent, kid));
+
+        service.deleteMenuItem(admin, parent.getId());
+
+        assertThat(kid.getParentId()).isNull();
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(itemRepository);
+        order.verify(itemRepository).delete(parent);
+        order.verify(itemRepository).flush();
+    }
+
+    /**
+     * The round-5 final-state fix (#19): the roots check runs BEFORE any
+     * reParent mutates a managed row — the classified ConflictException
+     * answers even when the would-be promotion collides with a SURVIVING
+     * root (the query-time AUTO FLUSH used to push the dirty promotion
+     * into V283's raw unique violation first).
+     */
+    @Test
+    void moveMenuItemsRefusesARootJoinerBeforeMutatingAnything() {
+        CmsMenuItem parent = root("Parent", 0);
+        CmsMenuItem item = child(parent, "Home", 0);
+        CmsMenuItem stayingHomeRoot = root("Home", 1);
+        when(menuRepository.findById(menuId))
+                .thenReturn(Optional.of(CmsMenu.create("Main", "main")));
+        when(itemRepository.findById(item.getId())).thenReturn(Optional.of(item));
+        when(itemRepository.findAllByMenuIdAndParentIdIsNullOrderByPositionAscIdAsc(menuId))
+                .thenReturn(List.of(parent, stayingHomeRoot));
+
+        assertThatThrownBy(() -> service.moveMenuItems(admin, menuId,
+                List.of(item.getId()), java.util.Arrays.asList((UUID) null), List.of(0)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("root menu item with this name");
+
+        // The refusal precedes ANY mutation — the item never moved.
+        assertThat(item.getParentId()).isEqualTo(parent.getId());
+    }
+
+    /**
+     * The round-5 boundary (#5-family): the menu slug's own VARCHAR(255)
+     * bound — an oversized slug answers the classified validation error,
+     * never the flush's raw storage error.
+     */
+    @Test
+    void createMenuRefusesAnOverlongSlug() {
+        String overlong = "s".repeat(256);
+
+        assertThatThrownBy(() -> service.createMenu(admin, "Main", overlong))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("255");
+        verify(menuRepository, never()).save(any(CmsMenu.class));
+    }
+
 }

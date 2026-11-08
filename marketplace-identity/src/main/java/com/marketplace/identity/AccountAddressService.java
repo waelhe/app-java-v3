@@ -1,5 +1,6 @@
 package com.marketplace.identity;
 
+import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import io.micrometer.observation.annotation.Observed;
 import org.slf4j.Logger;
@@ -187,6 +188,23 @@ public class AccountAddressService implements com.marketplace.identity.spi.Addre
 
     private AddressView createInternal(UUID userId, AddressFields fields, String defaultType) {
         fields.validate();
+        // The account row locks FIRST — one lock, two laws (the 2026-11-08
+        // #810 round-5 review, Major · Security & Privacy, closing the
+        // erasure hole): (1) the pseudonymization path (UserService
+        // .pseudonymizeAccount) deletes the address rows under this SAME
+        // row lock, so a concurrent create either lands before the erasure
+        // (its row dies with the purge) or waits and answers the guard
+        // below — the account can never gain an address AFTER its identity
+        // died; (2) the count-then-mark window below stays serialized the
+        // way the 2026-11-05 round fixed it (two concurrent first-address
+        // creates both counted one live row and both marked default — the
+        // reservation-wall pattern the catalog carries).
+        User account = userRepository.findByIdForUpdate(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("No account " + userId));
+        if (account.getPseudonymizedAt() != null) {
+            throw new ConflictException(
+                    "The account holds no address book — its identity was erased");
+        }
         AccountAddress row = AccountAddress.create(userId);
         row.applyFields(fields.firstName(), fields.lastName(), fields.companyName(),
                 fields.streetAddress1(), fields.streetAddress2(), fields.city(),
@@ -197,17 +215,9 @@ public class AccountAddressService implements com.marketplace.identity.spi.Addre
             setDefaultInternal(row.getId(), userId, defaultType);
         } else {
             // Saleor's convenience: the FIRST address of an account becomes
-            // its default for both types unless the caller said otherwise.
-            // The 2026-11-05 #810 round review (Minor · Functional
-            // Correctness): the count-then-mark reads the ACCOUNT row
-            // PESSIMISTIC_WRITE first — two concurrent first-address
-            // creates both counted one live row and both marked default
-            // (the V248 partial unique index then rejected the loser as a
-            // raw database error mid-transaction). The account-row lock
-            // serializes the whole read-count-mark window (the same
-            // reservation-wall pattern the catalog carries).
-            userRepository.findByIdForUpdate(userId).orElseThrow(
-                    () -> new ResourceNotFoundException("No account " + userId));
+            // its default for both types unless the caller said otherwise
+            // (the account row is already locked above — the count-then-mark
+            // window rides that same serialization point).
             if (addressRepository.countByUserId(userId) == 1) {
                 row.markDefaultShipping(true);
                 row.markDefaultBilling(true);

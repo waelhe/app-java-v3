@@ -30,6 +30,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -199,6 +200,14 @@ class UserServiceTest {
         assertEquals("mixed@example.com", created.getSubject());
         assertEquals("mixed@example.com", created.getEmail());
         verify(emailVerificationService).issueFor("mixed@example.com");
+        // The 2026-11-08 #810 round-5 test nitpick: the LOGIN row's
+        // username is captured too — the domain assertions alone could not
+        // tell a login born under the raw mixed-case input from one born
+        // under the normalized subject (the login row IS the join key the
+        // reset/verification legs resolve).
+        ArgumentCaptor<UserDetails> createdLogin = ArgumentCaptor.forClass(UserDetails.class);
+        verify(userDetailsManager).createUser(createdLogin.capture());
+        assertEquals("mixed@example.com", createdLogin.getValue().getUsername());
     }
 
     @Test
@@ -823,7 +832,9 @@ class UserServiceTest {
     void pseudonymizeAccount_transformsDeletesIdentityAndPublishesCacheInvalidation() {
         UUID id = UUID.randomUUID();
         User user = User.create("target-subject", "t@b.com", "Target", UserRole.CONSUMER);
-        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        // The 2026-11-08 #810 round-5 review: the erasure rides the LOCKED
+        // account load (the address-create serialization point).
+        when(userRepository.findByIdForUpdate(id)).thenReturn(Optional.of(user));
         when(userDetailsManager.loadUserByUsername("target-subject"))
                 .thenReturn(userDetails(true, "USER"));
         when(subjectPseudonymizer.derive("target-subject")).thenReturn(DERIVED_SUBJECT);
@@ -862,6 +873,12 @@ class UserServiceTest {
         verify(userDetailsManager, never()).updateUser(any());
         // Step 6: the issued authorizations die immediately.
         verify(jdbcTemplate).update(eq(UserService.DELETE_AUTHORIZATIONS_BY_PRINCIPAL), eq("target-subject"));
+        // The 2026-11-08 #810 round-5 review (Major · Security & Privacy):
+        // Step 3-b — the address book (the account's OWN direct
+        // identifiers) dies with the identity, live rows AND the Envers
+        // mirror, inside the SAME transaction.
+        verify(jdbcTemplate).update("DELETE FROM user_addresses WHERE user_id = ?", id);
+        verify(jdbcTemplate).update("DELETE FROM user_addresses_aud WHERE user_id = ?", id);
         // Step 6-b (CodeRabbit agent findings, row 7 / CWE-613): the
         // surviving-session kill — the erasure fact rides the house R8
         // channel under the ORIGINAL subject, so
@@ -880,7 +897,7 @@ class UserServiceTest {
         UUID id = UUID.randomUUID();
         User user = User.create("target-subject", "t@b.com", "Target", UserRole.CONSUMER);
         user.applyPseudonymization(DERIVED_SUBJECT);
-        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(id)).thenReturn(Optional.of(user));
 
         userService.pseudonymizeAccount(id, "re-run", "admin-actor");
 
@@ -894,7 +911,8 @@ class UserServiceTest {
     void pseudonymizeAccount_unboundSecretChannelIsOffNotBroken() {
         UUID id = UUID.randomUUID();
         User user = User.create("target-subject", "t@b.com", "Target", UserRole.CONSUMER);
-        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        // The 2026-11-08 round-5: the LOCKED erasure load.
+        when(userRepository.findByIdForUpdate(id)).thenReturn(Optional.of(user));
         when(userDetailsManager.loadUserByUsername("target-subject"))
                 .thenReturn(userDetails(true, "USER"));
         when(subjectPseudonymizer.derive("target-subject"))
@@ -914,7 +932,8 @@ class UserServiceTest {
     @Test
     void pseudonymizeAccount_throwsWhenAuthenticationAccountMissing() {
         UUID id = UUID.randomUUID();
-        when(userRepository.findById(id)).thenReturn(Optional.of(
+        // The 2026-11-08 round-5: the LOCKED erasure load.
+        when(userRepository.findByIdForUpdate(id)).thenReturn(Optional.of(
                 User.create("ghost-subject", "g@b.com", "Ghost", UserRole.CONSUMER)));
         when(userDetailsManager.loadUserByUsername("ghost-subject"))
                 .thenThrow(new UsernameNotFoundException("ghost-subject"));
@@ -928,7 +947,8 @@ class UserServiceTest {
     void pseudonymizeAccount_rejectsTheLastActiveAdmin() {
         UUID id = UUID.randomUUID();
         User user = User.create("admin-user", "a@b.com", "Admin", UserRole.ADMIN);
-        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        // The 2026-11-08 round-5: the LOCKED erasure load.
+        when(userRepository.findByIdForUpdate(id)).thenReturn(Optional.of(user));
         when(userDetailsManager.loadUserByUsername("admin-user"))
                 .thenReturn(userDetails(true, "ADMIN"));
         when(jdbcTemplate.queryForList(eq(UserService.LOCK_ACTIVE_ADMINS), eq(String.class)))
@@ -952,7 +972,8 @@ class UserServiceTest {
     void pseudonymizeAccount_skipsTheAdminCountForNonAdminTargets() {
         UUID id = UUID.randomUUID();
         User user = User.create("target-subject", "t@b.com", "Target", UserRole.CONSUMER);
-        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        // The 2026-11-08 round-5: the LOCKED erasure load.
+        when(userRepository.findByIdForUpdate(id)).thenReturn(Optional.of(user));
         when(userDetailsManager.loadUserByUsername("target-subject"))
                 .thenReturn(userDetails(true, "USER"));
         when(subjectPseudonymizer.derive("target-subject")).thenReturn(DERIVED_SUBJECT);
@@ -1072,4 +1093,92 @@ class UserServiceTest {
                 .isEqualTo(UserService.FORMER_MEMBER_LABEL);
         assertThat(result.getContent().get(1).email()).isNull();
     }
+    // ==== The 2026-11-08 #810 round-5 review additions ====
+
+    @Test
+    void updateUserStatus_takesTheAuthStateLockBeforeAnyRead() {
+        // M2 (Major · Security & Privacy): the disable and the email move
+        // serialize on the SAME per-user advisory lock, taken BEFORE the
+        // login state is read — the lock precedes the user load and the
+        // auth row read (the waiter re-reads the committed truth).
+        UUID id = UUID.randomUUID();
+        User user = User.create("target-user", "t@b.com", "Target", UserRole.CONSUMER);
+        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userDetailsManager.loadUserByUsername("target-user"))
+                .thenReturn(userDetails(true, "USER"));
+
+        userService.updateUserStatus(id, "DISABLED", "policy", "admin-actor");
+
+        org.mockito.InOrder lockFirst = org.mockito.Mockito.inOrder(userRepository);
+        lockFirst.verify(userRepository).lockUserAuth(id.toString());
+        lockFirst.verify(userRepository).findById(id);
+    }
+
+    @Test
+    void register_refusesAnOverlongRawDisplayName() {
+        // The 2026-11-08 round-5 review: the bound validates the value the
+        // store keeps — 200 leading spaces plus a letter passes the TRIMMED
+        // check but the VARCHAR(200) column refuses the raw 201 characters
+        // at flush; the raw-length check answers the classified refusal.
+        assertThatThrownBy(() -> userService.register("raw@example.com", "clear-password",
+                " ".repeat(200) + "N"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("200");
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void register_explicitlyRequestedActivationAnswersABornEnabledLogin() {
+        // The 2026-11-08 round-5 review: the admin-created customer's
+        // requested isActive rides the creation (the staff twin's law) —
+        // the login row is born ENABLED while the verification right is
+        // still minted for the address.
+        when(userRepository.existsBySubject("active@example.com")).thenReturn(false);
+        when(userDetailsManager.userExists("active@example.com")).thenReturn(false);
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        userService.register("active@example.com", "clear-password", "Active", true);
+
+        ArgumentCaptor<UserDetails> captured = ArgumentCaptor.forClass(UserDetails.class);
+        verify(userDetailsManager).createUser(captured.capture());
+        assertTrue(captured.getValue().isEnabled(), "an explicitly requested active account"
+                + " is born enabled");
+        verify(emailVerificationService).issueFor("active@example.com");
+    }
+
+    @Test
+    void scrollCustomers_emailSortsByTheEmailColumnWithExplicitNullHandling() {
+        // The 2026-11-08 round-5 review: the EMAIL vocabulary keys on the
+        // EMAIL column (the SPI contract's own words) through the
+        // null-aware Sort — nullsLast on ASC, nullsFirst on DESC — so the
+        // NULL-email OIDC rows stop falling out of the windowed pages.
+        org.springframework.data.domain.KeysetScrollPosition position =
+                org.springframework.data.domain.ScrollPosition.keyset();
+        org.springframework.data.domain.Limit limit = org.springframework.data.domain.Limit.of(20);
+        when(userRepository.findByRoleAndPseudonymizedAtIsNull(
+                eq(UserRole.CONSUMER), any(org.springframework.data.domain.Sort.class),
+                eq(position), eq(limit)))
+                .thenReturn(org.springframework.data.domain.Window.from(
+                        List.of(), index -> org.springframework.data.domain.ScrollPosition.keyset()));
+        when(userRepository.countByRoleAndPseudonymizedAtIsNull(UserRole.CONSUMER))
+                .thenReturn(0L);
+
+        userService.scrollCustomers(null,
+                com.marketplace.identity.spi.UserAccountSort.of(
+                        com.marketplace.identity.spi.UserAccountSort.Field.EMAIL, true),
+                position, limit);
+
+        org.mockito.ArgumentCaptor<org.springframework.data.domain.Sort> sort =
+                org.mockito.ArgumentCaptor.forClass(org.springframework.data.domain.Sort.class);
+        verify(userRepository).findByRoleAndPseudonymizedAtIsNull(
+                eq(UserRole.CONSUMER), sort.capture(), eq(position), eq(limit));
+        var orders = sort.getValue().toList();
+        assertEquals(2, orders.size());
+        assertEquals("email", orders.get(0).getProperty());
+        assertTrue(orders.get(0).isAscending());
+        assertEquals(org.springframework.data.domain.Sort.NullHandling.NULLS_LAST,
+                orders.get(0).getNullHandling());
+        assertEquals("id", orders.get(1).getProperty());
+    }
+
 }

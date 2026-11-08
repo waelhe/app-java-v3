@@ -272,4 +272,53 @@ class EmailVerificationServiceTest {
 
         verify(userDetailsManager, never()).updateUser(any(UserDetails.class));
     }
+    /**
+     * The 2026-11-08 #810 round-5 review (Minor · Functional Correctness):
+     * the resend resolves the SAME normalized subject registration stores —
+     * a mixed-case address used to answer the silent no-op (a 202 with no
+     * mail), leaving the account unverified.
+     */
+    @Test
+    void resend_aMixedCaseAddressResolvesTheNormalizedSubject() {
+        // The normalized form of the TEST INPUT ("  Mixed@Example.COM " →
+        // "mixed@example.com") — not the fixture's own address.
+        when(userDetailsManager.userExists("mixed@example.com")).thenReturn(true);
+        when(authActionTokenService.latest("mixed@example.com",
+                AuthActionTokenPurpose.EMAIL_VERIFICATION))
+                .thenReturn(Optional.of(verificationToken(false)));
+        when(userRepository.findBySubject("mixed@example.com"))
+                .thenReturn(Optional.of(member()));
+        when(authActionTokenService.issue("mixed@example.com",
+                AuthActionTokenPurpose.EMAIL_VERIFICATION, TTL))
+                .thenReturn(Optional.of(new AuthActionTokenService.IssuedToken(
+                        "fresh-token", NOW.plus(TTL))));
+
+        service.resend("  Mixed@Example.COM ");
+
+        verify(eventPublisher).publishEvent(any(EmailVerificationRequestedEvent.class));
+        verify(authActionTokenService).latest("mixed@example.com",
+                AuthActionTokenPurpose.EMAIL_VERIFICATION);
+    }
+
+    @Test
+    void resend_aLegacyMixedCaseRowStillMatchesTheVerbatimForm() {
+        // The REST registration path historically stored mixed-case
+        // subjects — the verbatim trimmed form stays the fallback so those
+        // rows keep matching.
+        when(userDetailsManager.userExists("mixed@example.com")).thenReturn(false);
+        when(userDetailsManager.userExists("Mixed@Example.COM")).thenReturn(true);
+        when(authActionTokenService.latest("Mixed@Example.COM",
+                AuthActionTokenPurpose.EMAIL_VERIFICATION))
+                .thenReturn(Optional.of(verificationToken(false)));
+        when(userRepository.findBySubject("Mixed@Example.COM")).thenReturn(Optional.of(member()));
+        when(authActionTokenService.issue("Mixed@Example.COM",
+                AuthActionTokenPurpose.EMAIL_VERIFICATION, TTL))
+                .thenReturn(Optional.of(new AuthActionTokenService.IssuedToken(
+                        "fresh-token", NOW.plus(TTL))));
+
+        service.resend("  Mixed@Example.COM ");
+
+        verify(eventPublisher).publishEvent(any(EmailVerificationRequestedEvent.class));
+    }
+
 }

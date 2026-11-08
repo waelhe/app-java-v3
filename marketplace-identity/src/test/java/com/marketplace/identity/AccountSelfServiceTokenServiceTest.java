@@ -206,4 +206,34 @@ class AccountSelfServiceTokenServiceTest {
         assertThatThrownBy(() -> service.changePassword(caller, "old", "new-password-1"))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
+    /**
+     * The 2026-11-08 #810 round-5 test nitpick: a CAS update answering ZERO
+     * rows (a concurrent rotation won between the verification and the
+     * swap) refuses with the optimistic-locking failure — and never
+     * invalidates rights, deletes authorizations or publishes the rotation
+     * event for a write that did not land.
+     */
+    @Test
+    void changePasswordRefusesWhenTheCasUpdateMatchesNoRow() {
+        when(userDetailsManager.loadUserByUsername(SUBJECT))
+                .thenReturn((UserDetails) org.springframework.security.core.userdetails.User
+                        .withUsername(SUBJECT).password("{bcrypt}old")
+                        .authorities("ROLE_CONSUMER").build());
+        when(encoder.getObject()).thenReturn(passwordEncoder);
+        when(passwordEncoder.matches("old", "{bcrypt}old")).thenReturn(true);
+        when(passwordEncoder.encode("new-password-1")).thenReturn("{bcrypt}new");
+        when(jdbcTemplate.update(any(String.class), any(), any(), any()))
+                .thenAnswer(invocation -> 0);
+
+        assertThatThrownBy(() -> service.changePassword(caller, "old", "new-password-1"))
+                .isInstanceOf(org.springframework.dao.OptimisticLockingFailureException.class);
+
+        verify(jdbcTemplate, never()).update(
+                org.mockito.ArgumentMatchers.eq("DELETE FROM oauth2_authorization"
+                        + " WHERE principal_name = ?"),
+                org.mockito.ArgumentMatchers.anyString());
+        verify(eventPublisher, never()).publishEvent(any(
+                com.marketplace.shared.api.AccountCredentialsRotated.class));
+    }
+
 }
