@@ -901,6 +901,49 @@ class OrdersServiceTest {
     }
 
     @Test
+    void theCancelAuthorshipAnswersTheExecutorNotTheLeg() {
+        // The 2026-11-08 #811 round-7 review (Minor · Data Integrity &
+        // Integration): both legs are gated self-OR-admin, and an admin's
+        // cancel through either leg recorded the LEG's authorship
+        // (CONSUMER/SELLER) instead of the executor the audit column
+        // exists to name. The buyer's own cancel keeps CONSUMER, the
+        // seller's own keeps SELLER, and the admin's cancel through
+        // either leg records ADMIN.
+        Order buyerOrder = placedOrder();
+        buyerOrder.markStockReserved();
+        when(orderRepository.findById(buyerOrder.getId())).thenReturn(Optional.of(buyerOrder));
+        when(orderRepository.findByIdForUpdate(buyerOrder.getId())).thenReturn(Optional.of(buyerOrder));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(orderItemRepository.findByOrderId(buyerOrder.getId())).thenReturn(List.of());
+
+        // The buyer's own cancel through the buyer leg: CONSUMER.
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumer);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+        service.cancelForUser(buyerOrder.getId(), "buyer changed mind", authentication);
+        assertThat(buyerOrder.getCancelAuthor()).isEqualTo("CONSUMER");
+
+        // The admin's cancel through the buyer leg: ADMIN.
+        Order adminCancelled = placedOrder();
+        adminCancelled.markStockReserved();
+        when(orderRepository.findById(adminCancelled.getId())).thenReturn(Optional.of(adminCancelled));
+        when(orderRepository.findByIdForUpdate(adminCancelled.getId())).thenReturn(Optional.of(adminCancelled));
+        UUID admin = UUID.randomUUID();
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(admin);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(true);
+        service.cancelForUser(adminCancelled.getId(), "compliance takedown", authentication);
+        assertThat(adminCancelled.getCancelAuthor()).isEqualTo("ADMIN");
+
+        // The admin's cancel through the seller leg: ADMIN.
+        Order sellerOrder = soldOrder();
+        sellerOrder.markStockReserved();
+        when(orderRepository.findById(sellerOrder.getId())).thenReturn(Optional.of(sellerOrder));
+        when(orderRepository.findByIdForUpdate(sellerOrder.getId())).thenReturn(Optional.of(sellerOrder));
+        when(orderItemRepository.findByOrderId(sellerOrder.getId())).thenReturn(List.of());
+        service.cancelForSeller(sellerOrder.getId(), "compliance takedown", authentication);
+        assertThat(sellerOrder.getCancelAuthor()).isEqualTo("ADMIN");
+    }
+
+    @Test
     void aForeignCallerCannotPullTheMerchantLevers() {
         Order order = soldOrder();
         when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));

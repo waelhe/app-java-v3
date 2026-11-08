@@ -1340,9 +1340,19 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
     @Transactional
     public OrderDetail cancelForUser(UUID orderId, String reason, Authentication authentication) {
         Order order = getOrderForUser(orderId, authentication);
+        // The 2026-11-08 #811 round-7 review (Minor · Data Integrity &
+        // Integration): the authorship answers the EXECUTOR — the leg is
+        // gated consumer-OR-admin, and an admin cancelling another user's
+        // order through it recorded CONSUMER (the audit trail's own
+        // misattribution — V300's cancel_author exists to name WHO
+        // cancelled). The gate guarantees the only other passer is the
+        // admin.
+        String cancelAuthor = order.getConsumerId()
+                .equals(currentUserProvider.getCurrentUserId(authentication))
+                ? "CONSUMER" : "ADMIN";
         // The 2026-11-05 #811 round-3 review: the BUYER's own words (the
         // erasure surface V300 attributes).
-        Order cancelled = cancel(order.getId(), reason, "CONSUMER");
+        Order cancelled = cancel(order.getId(), reason, cancelAuthor);
         return new OrderDetail(cancelled, orderItemRepository.findByOrderId(orderId));
     }
 
@@ -1469,10 +1479,18 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
     @Transactional
     @Observed(name = "order.seller.cancel")
     public OrderDetail cancelForSeller(UUID orderId, String reason, Authentication authentication) {
-        requireSellerOrder(orderId, authentication);
-        // The 2026-11-08 #811 round-5 review: the seller leg names its own
-        // authorship (the two-argument core stamped CONSUMER).
-        Order cancelled = cancel(orderId, reason, "SELLER");
+        Order order = requireSellerOrder(orderId, authentication);
+        // The 2026-11-08 #811 round-7 review (Minor · Data Integrity &
+        // Integration): the seller leg's twin — the gate is
+        // seller-OR-admin, and an admin's cancel through it recorded
+        // SELLER. The round-5 authorship law, completed: the row names
+        // the executor (the seller for the seller's own cancel, the
+        // admin for everyone else the gate lets through — a
+        // seller-less legacy row is admin-only by the gate's own law).
+        String cancelAuthor = order.getSellerId() != null
+                && order.getSellerId().equals(currentUserProvider.getCurrentUserId(authentication))
+                ? "SELLER" : "ADMIN";
+        Order cancelled = cancel(orderId, reason, cancelAuthor);
         return new OrderDetail(cancelled, orderItemRepository.findByOrderId(orderId));
     }
 

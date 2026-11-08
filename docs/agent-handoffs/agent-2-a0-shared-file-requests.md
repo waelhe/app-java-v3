@@ -36,11 +36,9 @@ The full 31-row table lives in `agent-2-completion.md` §1.0.2 (root / ledger st
 
 **The enforcement review request (the guidance's own point):** the CSV correction alone does not prove the permission is enforced in Java. The enforcement reality on this packet's delivered roots (measured in the owning use cases' own code): the `@PreAuthorize` families ride the platform's role model — PROVIDER for the MANAGE_PRODUCTS-family roots (the two-sided ownership law over provider-owned rows), ADMIN for the MANAGE_TRANSLATIONS-family roots and the MANAGE_PRODUCT_TYPES_AND_ATTRIBUTES-family roots. A0's integration review should re-verify each delivered root's `@PreAuthorize` at the use-case boundary against the pinned requirement — the ten delivered rows were verified pinned-faithful at the correction pass; the blocked rows' enforcement lands with their future implementations.
 
-## 4. SYSTEM.md derived counts (the standing A0 proposals, unchanged)
+## 4. SYSTEM.md derived counts (derive from the final merge tree — never copy fixed values)
 
-(a) The failsafe selection line: "**176**" → "**179**" (the measured tree: 178 on the clean frozen head + `CollectionGraphQlIntegrationTest`; the `DocumentationNumbersGuardTest` legs fail identically on this branch head until the central edit).
-(b) The migration inventory: "194 ترحيلة نسخية `V1..V247` — **197 ملفًا في الشجرة**" → "195 ترحيلة نسخية `V1..V253` — **198 ملفًا في الشجرة**".
-Both live in the central `SYSTEM.md` this packet must not edit; the exact edits are recorded here for A0's collection pass.
+The two central `SYSTEM.md` lines (the failsafe selection count and the versioned-migration inventory count) are **derived facts**: they are whatever the final merge tree actually contains, and `DocumentationNumbersGuardTest` enforces them against the tree. The standing numbers recorded in earlier handoffs (176→179, 194/197→195/198) are **stale by now** — the tree kept moving after they were measured. A0 must therefore **re-derive both counts from the final merge tree itself** (count the failsafe-selected test classes and the `V*` migration files under `marketplace-app/src/main/resources/db/migration/` on the collected candidate head), apply the derived values to `SYSTEM.md`, and let `DocumentationNumbersGuardTest` be the arbiter — a green guard is the proof, and any copied historical number that disagrees with the tree is a defect, not a shortcut.
 
 ## 5. Modulith allowlist entry — `marketplace-app/src/main/java/com/marketplace/app/package-info.java`
 

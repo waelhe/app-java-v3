@@ -55,7 +55,7 @@ This file adds project-specific conventions.
 ## Additional Rules
 
 - **CI**: GitHub Actions والبوابات المطلوبة على رأس PR هي سجل التحقق الإلزامي. يمكن تشغيل Maven محلياً كفحص إضافي عندما تكون بيئة التنفيذ متاحة، لكنه لا يحل محل CI ولا يمنع مسار GitHub-first عندما لا تتوفر بيئة محلية.
-- **Local verification** (GOV-02, added 2026-11-04): when the environment allows (JDK 25 + Docker/Testcontainers available), run the touched modules' suites locally BEFORE opening the PR — CI is the final arbiter, never the first test run; a red local run never goes to GitHub unexplained. When the environment does not allow it, the PR body says so explicitly (CI then carries the proof alone)
+- **التحقق المحلي** (GOV-02، أضيفت 2026-11-04؛ عُرِّبت 2026-11-08 بمراجعة #811 جولة-7): عند توفر البيئة (JDK 25 + Docker/Testcontainers متاحان)، شغّل مجموعات اختبارات الوحدات المتأثرة محلياً **قبل** فتح PR — فـCI هو الحكم النهائي دائماً وليس أول تشغيل للاختبارات؛ ولا يصل أي تشغيل محلي أحمر إلى GitHub دون تفسير. وعندما لا تسمح البيئة بذلك، ينصّ متن PR صراحةً على السبب (ويحمل CI وحده عبء الإثبات حينها).
 - **Testing**: All integration tests MUST have `@ActiveProfiles("test")` and `@Testcontainers(disabledWithoutDocker = true)` or `@Container`
 - **Flyway**: Any schema change = new V{number} migration file. Never modify existing migrations
 - **Envers**: All domain entities MUST have `@Audited`
